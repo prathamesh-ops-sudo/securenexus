@@ -24,9 +24,12 @@ function SeverityBadge({ severity }: { severity: string }) {
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, string> = {
     new: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    triaged: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
     correlated: "bg-purple-500/10 text-purple-500 border-purple-500/20",
     dismissed: "bg-muted text-muted-foreground border-muted",
+    false_positive: "bg-muted text-muted-foreground border-muted",
     investigating: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+    resolved: "bg-green-500/10 text-green-500 border-green-500/20",
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${variants[status] || variants.new}`}>
@@ -99,6 +102,7 @@ export default function AlertsPage() {
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Alert</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">Source</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Category</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">MITRE Tactic</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
                 </tr>
@@ -110,6 +114,7 @@ export default function AlertsPage() {
                       <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                       <td className="px-4 py-3 hidden md:table-cell"><Skeleton className="h-4 w-24" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                      <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-20" /></td>
                       <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-28" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                     </tr>
@@ -137,6 +142,9 @@ export default function AlertsPage() {
                         <SeverityBadge severity={alert.severity} />
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
+                        <span className="text-xs text-muted-foreground">{alert.category?.replace(/_/g, " ") || "-"}</span>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
                         <span className="text-xs text-muted-foreground">{alert.mitreTactic || "-"}</span>
                       </td>
                       <td className="px-4 py-3">
@@ -146,7 +154,7 @@ export default function AlertsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
                       No alerts found
                     </td>
                   </tr>

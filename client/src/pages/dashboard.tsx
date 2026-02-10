@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Shield, AlertTriangle, FileWarning, CheckCircle2, TrendingDown, Clock } from "lucide-react";
+import { Shield, AlertTriangle, FileWarning, CheckCircle2, TrendingDown, Clock, Zap, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +51,8 @@ export default function Dashboard() {
     openIncidents: number;
     criticalAlerts: number;
     resolvedIncidents: number;
+    newAlertsToday: number;
+    escalatedIncidents: number;
   }>({
     queryKey: ["/api/dashboard/stats"],
   });
@@ -70,12 +72,12 @@ export default function Dashboard() {
         <p className="text-sm text-muted-foreground mt-1">Real-time overview of your security posture</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           title="Total Alerts"
           value={stats?.totalAlerts ?? 0}
           icon={AlertTriangle}
-          subtitle="Last 24 hours"
+          subtitle="All sources"
           loading={statsLoading}
         />
         <StatCard
@@ -93,10 +95,24 @@ export default function Dashboard() {
           loading={statsLoading}
         />
         <StatCard
+          title="New Today"
+          value={stats?.newAlertsToday ?? 0}
+          icon={Zap}
+          subtitle="Alerts ingested today"
+          loading={statsLoading}
+        />
+        <StatCard
+          title="Escalated"
+          value={stats?.escalatedIncidents ?? 0}
+          icon={ArrowUpRight}
+          subtitle="Incidents escalated"
+          loading={statsLoading}
+        />
+        <StatCard
           title="Resolved"
           value={stats?.resolvedIncidents ?? 0}
           icon={CheckCircle2}
-          subtitle="This week"
+          subtitle="Incidents resolved"
           loading={statsLoading}
         />
       </div>
