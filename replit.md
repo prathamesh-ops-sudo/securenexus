@@ -1,83 +1,43 @@
 # SecureNexus - AI Security Intelligence Platform
 
 ## Overview
-SecureNexus is an AI-powered Security Orchestration & Intelligence Platform built as a full SaaS product. It unifies alerts from multiple cybersecurity tools (EDR, SIEM, IDS/IPS, cloud security), correlates them using AI, and produces attacker-centric incident narratives.
-
-## Tech Stack
-- **Frontend**: React + TypeScript, Vite, TailwindCSS, shadcn/ui, wouter (routing), TanStack Query
-- **Backend**: Express.js, TypeScript
-- **Database**: PostgreSQL (Drizzle ORM)
-- **Auth**: Replit Auth (OpenID Connect)
-- **AI**: AWS Bedrock (Claude 3.5 Sonnet for cybersecurity analysis) - planned
-- **Deployment**: GitHub → AWS App Runner (planned)
-
-## Project Structure
-```
-client/src/
-  App.tsx                    - Main app with auth-gated routing
-  components/
-    app-sidebar.tsx          - Navigation sidebar
-    theme-provider.tsx       - Dark/light mode
-    theme-toggle.tsx         - Theme toggle button
-    ui/                      - shadcn components
-  pages/
-    landing.tsx              - Marketing landing page
-    dashboard.tsx            - Security dashboard
-    alerts.tsx               - Alert list/table
-    incidents.tsx            - Incident list
-    incident-detail.tsx      - Individual incident view
-    audit-log.tsx            - Activity log
-    settings.tsx             - User settings
-  hooks/
-    use-auth.ts              - Auth state hook
-  lib/
-    queryClient.ts           - TanStack Query setup
-    auth-utils.ts            - Auth utility functions
-
-server/
-  index.ts                   - Express server entry
-  routes.ts                  - API routes
-  storage.ts                 - Database storage layer
-  db.ts                      - Database connection
-  seed.ts                    - Seed data
-  replit_integrations/auth/  - Replit Auth integration
-
-shared/
-  schema.ts                  - Drizzle schemas + types
-  models/auth.ts             - Auth-specific schemas
-```
-
-## Development Phases (0-16)
-- **Phase 0** (Current): Foundation - Auth, DB, UI shell, dashboard, basic CRUD
-- Phase 1: Data Models & Alert Schema refinements
-- Phase 2: Alert Ingestion System
-- Phase 3: Normalization Engine
-- Phase 4: Enhanced SOC Dashboard
-- Phase 5: AI Correlation Engine (AWS Bedrock)
-- Phase 6: Incident Management
-- Phase 7: AI-Generated Narratives
-- Phase 8: MITRE ATT&CK Integration
-- Phase 9: Threat Intelligence Layer
-- Phase 10: Reporting & Export
-- Phase 11: Multi-Tenant & RBAC
-- Phase 12: Analyst Feedback Loop
-- Phase 13: SOAR-Lite Automation
-- Phase 14: Analytics & Metrics
-- Phase 15: Advanced Features
-- Phase 16: Payment & Billing (Stripe)
-
-## Key Commands
-- `npm run dev` - Start development server
-- `npm run db:push` - Push schema changes to database
-
-## Environment Variables
-- DATABASE_URL - PostgreSQL connection
-- SESSION_SECRET - Session encryption
-- AWS_ACCESS_KEY_ID - AWS credentials
-- AWS_SECRET_ACCESS_KEY - AWS credentials
-- GITHUB_API_KEY - GitHub API access
+SecureNexus is an AI-powered Security Orchestration & Intelligence Platform designed as a full SaaS product. It consolidates cybersecurity alerts from various tools, correlates them using AI, and generates attacker-centric incident narratives. The platform aims to provide comprehensive security intelligence, automate incident response, and enhance threat detection capabilities, with a strategic roadmap to achieve feature parity with leading security platforms.
 
 ## User Preferences
 - Default to dark mode
 - Cybersecurity-focused design language
 - Professional, enterprise-grade UI
+- Human-in-the-loop approach for AI features
+
+## System Architecture
+The platform is built with a modern web stack, featuring a React + TypeScript frontend utilizing Vite, TailwindCSS, and shadcn/ui for a polished user experience. The backend is an Express.js application, also in TypeScript, interacting with a PostgreSQL database via Drizzle ORM. Authentication is handled through Replit Auth (OpenID Connect).
+
+Key architectural decisions and features include:
+- **AI Integration**: Leverages AWS Bedrock Converse API (Mistral Large 2 Instruct) for specialized cybersecurity analysis, with support for custom fine-tuned models via SageMaker. The AI engine is central to alert correlation, triage, and generating detailed incident narratives, focusing on evidence-backed, citable intelligence. AI analysis is augmented with threat intelligence context: IOCs from alerts are cross-referenced against entity enrichment data (AbuseIPDB, VirusTotal, OTX) and cached OSINT feed indicators before being injected into prompts for more accurate classification.
+- **Data Model**: Comprehensive database schemas for organizations, alerts, incidents, comments, tags, audit logs, API keys, ingestion logs, and connectors, designed for security operations.
+- **Normalization Engine**: Supports 24 diverse cybersecurity data sources, normalizing incoming alerts into a consistent format (OCSF-aligned) for effective correlation.
+- **Correlation Engine**: Dual correlation approach: (1) Legacy temporal entity clustering (v1) with 24-hour time windows, and (2) Phase 2 Graph-Based Correlation Engine (v2) using BFS traversal over entity-alert bipartite graphs to detect "low and slow" APT campaigns spanning weeks without time constraints. Includes multi-hop attack path detection, 6-factor confidence scoring (entity density, kill chain progression, source diversity, severity escalation, hop count, temporal spread), and campaign fingerprinting via SHA-256 hashing of TTP patterns. Data model includes attack_paths and campaigns tables.
+- **Incident Management**: Provides a robust workflow for incident status, priority, assignment, and escalation, including an activity timeline and audit logging.
+- **MITRE ATT&CK Integration**: Visualizes the MITRE ATT&CK matrix, mapping techniques from alerts to provide a clearer picture of attacker methodologies.
+- **Entity Resolution & Graph**: Extracts and resolves entities from security findings, building a relationship graph for visualizing attack paths and identity resolution.
+- **SOAR-Lite Automation**: Visual playbook builder with node-based flow canvas, supporting 25+ action types including ticketing (Jira/ServiceNow), notifications (Slack/Teams/Email/PagerDuty/Webhook), EDR containment (isolate host, block IP/domain, quarantine file, disable user, kill process), and incident management actions. Graph-based execution engine with BFS traversal, condition nodes, and simulated execution mode. Action dispatcher (server/action-dispatcher.ts) routes actions to platform-specific handlers.
+- **Bi-Directional Integrations**: Integration config management (integrationConfigs table) for Jira, ServiceNow, Slack, Teams, PagerDuty, Email, Webhook with encrypted credential storage. Push incidents to ticketing systems, send containment commands to EDRs, and trigger notifications. Notification channels (notificationChannels table) with configurable event triggers. Response actions log (responseActions table) tracks all automated containment actions with full audit trail. Integrations page with 3 tabs: Integrations, Notification Channels, Response Actions.
+- **Real-time Capabilities**: Real-time streaming via SSE and webhook ingestion with HMAC signature verification for instant threat detection and live dashboard updates.
+- **Threat Intelligence Enrichment**: Automated enrichment via AbuseIPDB, VirusTotal, OTX AlienVault with org-level API key management (threatIntelConfigs table). Free public OSINT feeds (abuse.ch URLhaus, ThreatFox, SSL Blacklist, CISA KEV) fetched on-demand with 1-hour cache (server/osint-feeds.ts). Enrichment scores boost correlation confidence by up to 15%.
+- **Kill Chain Visualization**: Interactive Cyber Kill Chain timeline page mapping MITRE ATT&CK tactics to 7 Lockheed Martin stages. Executive attack summary on incident detail with Diamond Model quadrant (Adversary, Infrastructure, Capability, Victim), kill chain progress bar, impact assessment, and key IOCs.
+- **UI/UX**: Focuses on a professional, cybersecurity-centric design with features like a global command palette, advanced dashboards with analytics (Recharts), and interactive visualizations for MITRE ATT&CK, threat intelligence, entity graphs, kill chain timeline, and Diamond Model.
+- **Enterprise Compliance & Data Governance**: DPDP Act/GDPR compliance with configurable data retention policies per org (alerts, incidents, audit logs). PII pseudonymization engine masks emails, IPs, usernames, hostnames in alert data with RBAC-gated unmasking. Compliance reporting for GDPR Article 30, DPDP Act, and retention status. Immutable audit trails with SHA-256 hash chain verification (entryHash, prevHash, sequenceNum per entry). DSAR (Data Subject Access Request) management with subject data search across alerts, entities, and audit logs. Automated retention scheduler runs 24-hour cleanup cycles. Compliance page with 5 tabs: Policies, DSAR, Reports, Audit Integrity, Retention.
+- **Multi-Tenancy & RBAC**: Supports multiple organizations with role-based access control (Admin, Analyst, Viewer).
+- **Real-Time Streaming**: Server-Sent Events (SSE) via EventBus (server/event-bus.ts) for live dashboard updates. Events broadcast on alert ingestion, incident changes, and correlation discoveries. Frontend useEventStream hook auto-invalidates React Query caches. Webhook signature verification (HMAC SHA-256) with timestamp-based replay protection on ingestion endpoints.
+- **Scalability**: Designed for SaaS deployment with planned migration to AWS App Runner.
+
+## External Dependencies
+- **Authentication**: Replit Auth (OpenID Connect)
+- **Database**: PostgreSQL (via Drizzle ORM)
+- **Cloud AI Services**: AWS Bedrock Converse API (Mistral Large 2 Instruct), AWS SageMaker
+- **Version Control**: GitHub (integrated via Replit GitHub connector using @octokit/rest)
+- **Deployment (Planned)**: AWS App Runner
+- **Threat Intelligence Feeds (Planned)**: AbuseIPDB, VirusTotal, OTX AlienVault for IP/Domain reputation enrichment.
+- **Ticketing Systems (Planned)**: Jira, ServiceNow, PagerDuty for bi-directional integration.
+- **Communication Platforms (Planned)**: Email, Slack, Microsoft Teams for notifications.
+- **EDR/Security Tools**: Integration with 24 specific tools for alert ingestion and potential push-back actions (e.g., CrowdStrike, Splunk, Palo Alto, GuardDuty, Suricata, Defender, Elastic Security, IBM QRadar, Fortinet FortiGate, Carbon Black, Qualys, Tenable Nessus, Cisco Umbrella, Darktrace, Rapid7 InsightIDR, Trend Micro Vision One, Okta, Proofpoint, Snort IDS, Zscaler, Check Point, Wiz, Wazuh, SentinelOne).

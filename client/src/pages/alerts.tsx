@@ -1,49 +1,101 @@
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Search, Filter } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert } from "@shared/schema";
 
-function SeverityBadge({ severity }: { severity: string }) {
-  const variants: Record<string, string> = {
-    critical: "bg-red-500/10 text-red-500 border-red-500/20",
-    high: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-    medium: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-    low: "bg-green-500/10 text-green-500 border-green-500/20",
-  };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${variants[severity] || variants.medium}`}>
-      {severity}
-    </span>
-  );
+interface CorrelationGroup {
+  groupName: string;
+  alertIds: string[];
+  confidence: number;
+  reasoning: string;
+  suggestedIncidentTitle: string;
+  severity: string;
+  mitreTactics: string[];
+  mitreTechniques: string[];
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, string> = {
-    new: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-    triaged: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
-    correlated: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-    dismissed: "bg-muted text-muted-foreground border-muted",
-    false_positive: "bg-muted text-muted-foreground border-muted",
-    investigating: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-    resolved: "bg-green-500/10 text-green-500 border-green-500/20",
-  };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${variants[status] || variants.new}`}>
-      {status}
-    </span>
-  );
+interface CorrelationResult {
+  correlatedGroups: CorrelationGroup[];
+  uncorrelatedAlertIds: string[];
+  overallAssessment: string;
+}
+
+interface TriageResult {
+  severity: string;
+  priority: number;
+  category: string;
+  recommendedAction: string;
+  reasoning: string;
+  mitreTactic: string;
+  mitreTechnique: string;
+  falsePositiveLikelihood: number;
+  relatedIocs: string[];
 }
 
 export default function AlertsPage() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
+  const [correlationResult, setCorrelationResult] = useState<CorrelationResult | null>(null);
+  const [selectedAlertForTriage, setSelectedAlertForTriage] = useState<string | null>(null);
+  const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
+  const { toast } = useToast();
 
   const { data: alerts, isLoading } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
+  });
+
+  const correlate = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ai/correlate", {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setCorrelationResult(data);
+      toast({ title: "AI Correlation Complete", description: `Found ${data.correlatedGroups.length} correlated group(s)` });
+    },
+    onError: (error: any) => {
+      toast({ title: "AI Correlation Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const triage = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("POST", `/api/ai/triage/${alertId}`, {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setTriageResult(data);
+    },
+    onError: (error: any) => {
+      toast({ title: "AI Triage Failed", description: error.message, variant: "destructive" });
+      setSelectedAlertForTriage(null);
+    },
+  });
+
+  const applyCorrelation = useMutation({
+    mutationFn: async (group: CorrelationGroup) => {
+      const res = await apiRequest("POST", "/api/ai/correlate/apply", { group });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Incident Created", description: `Created incident: ${data.title}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to Apply", description: error.message, variant: "destructive" });
+    },
   });
 
   const filtered = alerts?.filter((alert) => {
@@ -57,11 +109,32 @@ export default function AlertsPage() {
 
   const severities = ["all", "critical", "high", "medium", "low"];
 
+  const handleTriageClick = (alertId: string) => {
+    setSelectedAlertForTriage(alertId);
+    setTriageResult(null);
+    triage.mutate(alertId);
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">Alerts</h1>
-        <p className="text-sm text-muted-foreground mt-1">All security alerts from integrated tools</p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Alerts</span></h1>
+          <p className="text-sm text-muted-foreground mt-1">All security alerts from integrated tools</p>
+          <div className="gradient-accent-line w-24 mt-2" />
+        </div>
+        <Button
+          onClick={() => correlate.mutate()}
+          disabled={correlate.isPending}
+          data-testid="button-ai-correlate"
+        >
+          {correlate.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Brain className="h-4 w-4 mr-2" />
+          )}
+          {correlate.isPending ? "Analyzing..." : "AI Correlate Alerts"}
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -75,6 +148,9 @@ export default function AlertsPage() {
             data-testid="input-search-alerts"
           />
         </div>
+        <Button variant="outline" size="icon" data-testid="button-export-alerts" onClick={() => window.open('/api/export/alerts', '_blank')}>
+          <Download className="h-4 w-4" />
+        </Button>
         <div className="flex items-center gap-1">
           {severities.map((sev) => (
             <button
@@ -93,6 +169,139 @@ export default function AlertsPage() {
         </div>
       </div>
 
+      {correlationResult && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                AI Correlation Results
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setCorrelationResult(null)}
+                data-testid="button-dismiss-correlation"
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1" data-testid="text-correlation-assessment">{correlationResult.overallAssessment}</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {correlationResult.correlatedGroups.map((group, i) => (
+              <div key={i} className="p-3 rounded-md bg-muted/30 space-y-2" data-testid={`correlation-group-${i}`}>
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div>
+                    <div className="text-sm font-medium">{group.suggestedIncidentTitle}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{group.reasoning}</div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <SeverityBadge severity={group.severity} />
+                    <span className="text-xs text-primary font-medium">{Math.round(group.confidence * 100)}%</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground">{group.alertIds.length} alerts</span>
+                  {group.mitreTactics.map((t, j) => (
+                    <span key={j} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">{t}</span>
+                  ))}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => applyCorrelation.mutate(group)}
+                  disabled={applyCorrelation.isPending}
+                  data-testid={`button-apply-correlation-${i}`}
+                >
+                  {applyCorrelation.isPending ? (
+                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                  )}
+                  Create Incident
+                </Button>
+              </div>
+            ))}
+            {correlationResult.uncorrelatedAlertIds.length > 0 && (
+              <p className="text-xs text-muted-foreground">{correlationResult.uncorrelatedAlertIds.length} alert(s) did not correlate to any group</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {selectedAlertForTriage && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Brain className="h-4 w-4 text-primary" />
+                AI Triage Analysis
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setSelectedAlertForTriage(null); setTriageResult(null); }}
+                data-testid="button-dismiss-triage"
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {triage.isPending ? (
+              <div className="flex items-center gap-2 py-4">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Analyzing alert...</span>
+              </div>
+            ) : triageResult ? (
+              <div className="space-y-3" data-testid="triage-result">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase">Severity</div>
+                    <SeverityBadge severity={triageResult.severity} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase">Priority</div>
+                    <div className="text-sm font-bold">P{triageResult.priority}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase">Category</div>
+                    <div className="text-xs">{triageResult.category}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase">False Positive</div>
+                    <div className="text-xs">{Math.round(triageResult.falsePositiveLikelihood * 100)}%</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase mb-1">Recommended Action</div>
+                  <div className="text-sm text-primary font-medium" data-testid="text-triage-action">{triageResult.recommendedAction}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase mb-1">Reasoning</div>
+                  <div className="text-xs text-muted-foreground" data-testid="text-triage-reasoning">{triageResult.reasoning}</div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {triageResult.mitreTactic && <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">{triageResult.mitreTactic}</span>}
+                  {triageResult.mitreTechnique && <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">{triageResult.mitreTechnique}</span>}
+                </div>
+                {triageResult.relatedIocs && triageResult.relatedIocs.length > 0 && (
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase mb-1">IOCs</div>
+                    <div className="flex flex-wrap gap-1">
+                      {triageResult.relatedIocs.map((ioc, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">{ioc}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -105,6 +314,7 @@ export default function AlertsPage() {
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Category</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">MITRE Tactic</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">AI</th>
                 </tr>
               </thead>
               <tbody>
@@ -117,6 +327,7 @@ export default function AlertsPage() {
                       <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-20" /></td>
                       <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-28" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                     </tr>
                   ))
                 ) : filtered && filtered.length > 0 ? (
@@ -124,6 +335,7 @@ export default function AlertsPage() {
                     <tr
                       key={alert.id}
                       className="border-b last:border-0 hover-elevate cursor-pointer"
+                      onClick={() => navigate('/alerts/' + alert.id)}
                       data-testid={`row-alert-${alert.id}`}
                     >
                       <td className="px-4 py-3">
@@ -148,13 +360,28 @@ export default function AlertsPage() {
                         <span className="text-xs text-muted-foreground">{alert.mitreTactic || "-"}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={alert.status} />
+                        <AlertStatusBadge status={alert.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => { e.stopPropagation(); handleTriageClick(alert.id); }}
+                          disabled={triage.isPending && selectedAlertForTriage === alert.id}
+                          data-testid={`button-triage-${alert.id}`}
+                        >
+                          {triage.isPending && selectedAlertForTriage === alert.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Brain className="h-3 w-3" />
+                          )}
+                        </Button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
                       No alerts found
                     </td>
                   </tr>

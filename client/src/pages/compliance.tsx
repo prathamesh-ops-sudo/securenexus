@@ -1,0 +1,1167 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Shield, FileText, Users, CheckCircle2, XCircle, AlertTriangle,
+  Loader2, Download, Play, Clock, Hash, Mail, Calendar,
+  Lock, Eye, EyeOff, Database, RefreshCw, Plus, ChevronRight,
+  ScrollText, Scale, ShieldCheck, Trash2
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
+} from "@/components/ui/dialog";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+
+interface CompliancePolicy {
+  id: string;
+  orgId: string;
+  alertRetentionDays: number;
+  incidentRetentionDays: number;
+  auditLogRetentionDays: number;
+  piiMaskingEnabled: boolean;
+  pseudonymizeExports: boolean;
+  enabledFrameworks: string[];
+  dataProcessingBasis: string;
+  dpoEmail: string | null;
+  dsarSlaDays: number;
+  retentionLastRunAt: string | null;
+  retentionLastDeletedCount: number;
+}
+
+interface DsarRequest {
+  id: string;
+  orgId: string;
+  requestorEmail: string;
+  requestType: string;
+  subjectIdentifiers: any;
+  status: string;
+  dueDate: string | null;
+  notes: string | null;
+  resultSummary: any;
+  fulfilledAt: string | null;
+  fulfilledBy: string | null;
+  createdAt: string;
+}
+
+interface AuditVerifyResult {
+  verified: boolean;
+  totalEntries: number;
+  lastVerifiedSeq: number;
+  errors: string[];
+}
+
+interface RetentionReport {
+  alertRetentionDays: number;
+  incidentRetentionDays: number;
+  auditLogRetentionDays: number;
+  oldestAlert: string | null;
+  oldestIncident: string | null;
+  oldestAuditLog: string | null;
+  alertsWithinPolicy: boolean;
+  incidentsWithinPolicy: boolean;
+  auditLogsWithinPolicy: boolean;
+  totalAlerts: number;
+  totalIncidents: number;
+  totalAuditLogs: number;
+  lastCleanupAt: string | null;
+  lastDeletedCount: number;
+}
+
+const FRAMEWORKS = ["GDPR", "DPDP", "HIPAA", "SOX", "PCI-DSS", "ISO27001", "NIST"];
+
+const PROCESSING_BASES = [
+  { value: "legitimate_interest", label: "Legitimate Interest" },
+  { value: "consent", label: "Consent" },
+  { value: "contract", label: "Contract" },
+  { value: "legal_obligation", label: "Legal Obligation" },
+  { value: "vital_interest", label: "Vital Interest" },
+  { value: "public_interest", label: "Public Interest" },
+];
+
+const DSAR_STATUS_COLORS: Record<string, string> = {
+  pending: "border-yellow-500/30 text-yellow-400",
+  in_progress: "border-blue-500/30 text-blue-400",
+  fulfilled: "border-green-500/30 text-green-400",
+  rejected: "border-red-500/30 text-red-400",
+  expired: "border-gray-500/30 text-gray-400",
+};
+
+const REQUEST_TYPES = ["access", "erasure", "portability", "rectification"];
+
+function formatDate(date: string | null | undefined): string {
+  if (!date) return "N/A";
+  return new Date(date).toLocaleDateString("en-US", {
+    year: "numeric", month: "short", day: "numeric",
+  });
+}
+
+function formatDateTime(date: string | null | undefined): string {
+  if (!date) return "Never";
+  return new Date(date).toLocaleString("en-US", {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function PoliciesTab() {
+  const { toast } = useToast();
+  const { data: policy, isLoading } = useQuery<CompliancePolicy>({
+    queryKey: ["/api/compliance/policy"],
+  });
+
+  const [alertRetention, setAlertRetention] = useState<number>(365);
+  const [incidentRetention, setIncidentRetention] = useState<number>(730);
+  const [auditLogRetention, setAuditLogRetention] = useState<number>(2555);
+  const [piiMasking, setPiiMasking] = useState(false);
+  const [pseudonymize, setPseudonymize] = useState(false);
+  const [frameworks, setFrameworks] = useState<string[]>([]);
+  const [processingBasis, setProcessingBasis] = useState("legitimate_interest");
+  const [dpoEmail, setDpoEmail] = useState("");
+  const [dsarSla, setDsarSla] = useState<number>(30);
+  const [initialized, setInitialized] = useState(false);
+
+  if (policy && !initialized) {
+    setAlertRetention(policy.alertRetentionDays);
+    setIncidentRetention(policy.incidentRetentionDays);
+    setAuditLogRetention(policy.auditLogRetentionDays);
+    setPiiMasking(policy.piiMaskingEnabled);
+    setPseudonymize(policy.pseudonymizeExports);
+    setFrameworks(policy.enabledFrameworks || []);
+    setProcessingBasis(policy.dataProcessingBasis || "legitimate_interest");
+    setDpoEmail(policy.dpoEmail || "");
+    setDsarSla(policy.dsarSlaDays);
+    setInitialized(true);
+  }
+
+  const savePolicy = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", "/api/compliance/policy", {
+        alertRetentionDays: alertRetention,
+        incidentRetentionDays: incidentRetention,
+        auditLogRetentionDays: auditLogRetention,
+        piiMaskingEnabled: piiMasking,
+        pseudonymizeExports: pseudonymize,
+        enabledFrameworks: frameworks,
+        dataProcessingBasis: processingBasis,
+        dpoEmail: dpoEmail || null,
+        dsarSlaDays: dsarSla,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/policy"] });
+      toast({ title: "Policy saved", description: "Compliance policy updated successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save policy", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleFramework = (fw: string) => {
+    setFrameworks((prev) =>
+      prev.includes(fw) ? prev.filter((f) => f !== fw) : [...prev, fw]
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <Scale className="h-4 w-4 text-muted-foreground" />
+            Data Governance Policy
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Retention Periods</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Alert Retention (days)</label>
+                <Input
+                  type="number"
+                  value={alertRetention}
+                  onChange={(e) => setAlertRetention(Number(e.target.value))}
+                  data-testid="input-alert-retention"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Incident Retention (days)</label>
+                <Input
+                  type="number"
+                  value={incidentRetention}
+                  onChange={(e) => setIncidentRetention(Number(e.target.value))}
+                  data-testid="input-incident-retention"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Audit Log Retention (days)</label>
+                <Input
+                  type="number"
+                  value={auditLogRetention}
+                  onChange={(e) => setAuditLogRetention(Number(e.target.value))}
+                  data-testid="input-audit-log-retention"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Privacy Controls</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <EyeOff className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium">PII Masking</div>
+                    <div className="text-xs text-muted-foreground">Mask personally identifiable information</div>
+                  </div>
+                </div>
+                <Switch
+                  checked={piiMasking}
+                  onCheckedChange={setPiiMasking}
+                  data-testid="switch-pii-masking"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium">Pseudonymize Exports</div>
+                    <div className="text-xs text-muted-foreground">Replace identifiers in exported data</div>
+                  </div>
+                </div>
+                <Switch
+                  checked={pseudonymize}
+                  onCheckedChange={setPseudonymize}
+                  data-testid="switch-pseudonymize"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Compliance Frameworks</h3>
+            <div className="flex flex-wrap gap-2">
+              {FRAMEWORKS.map((fw) => (
+                <Badge
+                  key={fw}
+                  variant="outline"
+                  className={`cursor-pointer toggle-elevate ${frameworks.includes(fw) ? "toggle-elevated border-red-500/40 text-red-400" : ""}`}
+                  onClick={() => toggleFramework(fw)}
+                  data-testid={`badge-framework-${fw}`}
+                >
+                  {frameworks.includes(fw) && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                  {fw}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Data Processing Basis</label>
+              <Select value={processingBasis} onValueChange={setProcessingBasis}>
+                <SelectTrigger data-testid="select-processing-basis">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROCESSING_BASES.map((b) => (
+                    <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">DPO Email</label>
+              <Input
+                type="email"
+                placeholder="dpo@example.com"
+                value={dpoEmail}
+                onChange={(e) => setDpoEmail(e.target.value)}
+                data-testid="input-dpo-email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">DSAR SLA (days)</label>
+              <Input
+                type="number"
+                value={dsarSla}
+                onChange={(e) => setDsarSla(Number(e.target.value))}
+                data-testid="input-dsar-sla"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 pt-2 flex-wrap">
+            <div className="text-xs text-muted-foreground space-y-0.5">
+              {policy?.retentionLastRunAt && (
+                <div data-testid="text-last-retention-run">
+                  Last retention run: {formatDateTime(policy.retentionLastRunAt)}
+                  {policy.retentionLastDeletedCount > 0 && (
+                    <span className="ml-1 text-red-400">({policy.retentionLastDeletedCount} records deleted)</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <Button
+              onClick={() => savePolicy.mutate()}
+              disabled={savePolicy.isPending}
+              data-testid="button-save-policy"
+            >
+              {savePolicy.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Shield className="h-4 w-4 mr-2" />
+              )}
+              Save Policy
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DsarTab() {
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newType, setNewType] = useState("access");
+  const [newSubjectEmail, setNewSubjectEmail] = useState("");
+  const [newSubjectIp, setNewSubjectIp] = useState("");
+  const [newSubjectUserId, setNewSubjectUserId] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+  const [statusUpdateId, setStatusUpdateId] = useState<string | null>(null);
+  const [statusUpdateValue, setStatusUpdateValue] = useState("in_progress");
+
+  const { data: dsarRequests, isLoading } = useQuery<DsarRequest[]>({
+    queryKey: ["/api/compliance/dsar"],
+  });
+
+  const createDsar = useMutation({
+    mutationFn: async () => {
+      const subjectIdentifiers: Record<string, string> = {};
+      if (newSubjectEmail) subjectIdentifiers.email = newSubjectEmail;
+      if (newSubjectIp) subjectIdentifiers.ip = newSubjectIp;
+      if (newSubjectUserId) subjectIdentifiers.userId = newSubjectUserId;
+      await apiRequest("POST", "/api/compliance/dsar", {
+        requestorEmail: newEmail,
+        requestType: newType,
+        subjectIdentifiers,
+        notes: newNotes || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/dsar"] });
+      setShowCreate(false);
+      setNewEmail("");
+      setNewType("access");
+      setNewSubjectEmail("");
+      setNewSubjectIp("");
+      setNewSubjectUserId("");
+      setNewNotes("");
+      toast({ title: "DSAR created", description: "Data subject request submitted successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create DSAR", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const fulfillDsar = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/compliance/dsar/${id}/fulfill`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/dsar"] });
+      toast({
+        title: "DSAR fulfilled",
+        description: data?.summary || "Request has been fulfilled successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to fulfill DSAR", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      await apiRequest("PATCH", `/api/compliance/dsar/${id}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/dsar"] });
+      setStatusUpdateId(null);
+      toast({ title: "Status updated", description: "DSAR status has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update status", description: error.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            Data Subject Access Requests
+          </CardTitle>
+          <Dialog open={showCreate} onOpenChange={setShowCreate}>
+            <DialogTrigger asChild>
+              <Button size="sm" data-testid="button-create-dsar">
+                <Plus className="h-4 w-4 mr-1" />
+                New Request
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create DSAR Request</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Requestor Email</label>
+                  <Input
+                    type="email"
+                    placeholder="requestor@example.com"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    data-testid="input-dsar-email"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Request Type</label>
+                  <Select value={newType} onValueChange={setNewType}>
+                    <SelectTrigger data-testid="select-dsar-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REQUEST_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Subject Identifiers</label>
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="Subject email"
+                      value={newSubjectEmail}
+                      onChange={(e) => setNewSubjectEmail(e.target.value)}
+                      data-testid="input-dsar-subject-email"
+                    />
+                    <Input
+                      placeholder="Subject IP address"
+                      value={newSubjectIp}
+                      onChange={(e) => setNewSubjectIp(e.target.value)}
+                      data-testid="input-dsar-subject-ip"
+                    />
+                    <Input
+                      placeholder="Subject User ID"
+                      value={newSubjectUserId}
+                      onChange={(e) => setNewSubjectUserId(e.target.value)}
+                      data-testid="input-dsar-subject-userid"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Notes</label>
+                  <Input
+                    placeholder="Additional notes..."
+                    value={newNotes}
+                    onChange={(e) => setNewNotes(e.target.value)}
+                    data-testid="input-dsar-notes"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" data-testid="button-cancel-dsar">Cancel</Button>
+                </DialogClose>
+                <Button
+                  onClick={() => createDsar.mutate()}
+                  disabled={!newEmail || createDsar.isPending}
+                  data-testid="button-submit-dsar"
+                >
+                  {createDsar.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
+                  Create Request
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto border rounded-md">
+            <Table data-testid="table-dsar">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">ID</TableHead>
+                  <TableHead className="text-xs">Requestor</TableHead>
+                  <TableHead className="text-xs">Type</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs">Due Date</TableHead>
+                  <TableHead className="text-xs">Created</TableHead>
+                  <TableHead className="text-xs">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dsarRequests && dsarRequests.length > 0 ? (
+                  dsarRequests.map((req) => (
+                    <TableRow key={req.id} data-testid={`row-dsar-${req.id}`}>
+                      <TableCell>
+                        <span className="text-xs font-mono" data-testid={`text-dsar-id-${req.id}`}>
+                          {req.id.slice(0, 8)}...
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs" data-testid={`text-dsar-email-${req.id}`}>{req.requestorEmail}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase" data-testid={`badge-dsar-type-${req.id}`}>
+                          {req.requestType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${DSAR_STATUS_COLORS[req.status] || ""}`}
+                          data-testid={`badge-dsar-status-${req.id}`}
+                        >
+                          {req.status.replace("_", " ")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground" data-testid={`text-dsar-due-${req.id}`}>
+                          {formatDate(req.dueDate)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground" data-testid={`text-dsar-created-${req.id}`}>
+                          {formatDate(req.createdAt)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {req.status === "pending" || req.status === "in_progress" ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fulfillDsar.mutate(req.id)}
+                                disabled={fulfillDsar.isPending && fulfillDsar.variables === req.id}
+                                data-testid={`button-fulfill-dsar-${req.id}`}
+                              >
+                                {fulfillDsar.isPending && fulfillDsar.variables === req.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="h-3 w-3" />
+                                )}
+                              </Button>
+                              {statusUpdateId === req.id ? (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <Select value={statusUpdateValue} onValueChange={setStatusUpdateValue}>
+                                    <SelectTrigger className="text-xs w-28" data-testid={`select-status-update-${req.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pending</SelectItem>
+                                      <SelectItem value="in_progress">In Progress</SelectItem>
+                                      <SelectItem value="rejected">Rejected</SelectItem>
+                                      <SelectItem value="expired">Expired</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => updateStatus.mutate({ id: req.id, status: statusUpdateValue })}
+                                    disabled={updateStatus.isPending}
+                                    data-testid={`button-confirm-status-${req.id}`}
+                                  >
+                                    {updateStatus.isPending ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="h-3 w-3" />
+                                    )}
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => { setStatusUpdateId(req.id); setStatusUpdateValue(req.status); }}
+                                  data-testid={`button-update-status-${req.id}`}
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              {req.fulfilledAt ? `Fulfilled ${formatDate(req.fulfilledAt)}` : "Closed"}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <Users className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                      <p className="text-sm text-muted-foreground" data-testid="text-no-dsar">No DSAR requests found</p>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ReportsTab() {
+  const { toast } = useToast();
+  const [activeReport, setActiveReport] = useState<string | null>(null);
+  const [reportData, setReportData] = useState<any>(null);
+
+  const generateReport = useMutation({
+    mutationFn: async (reportType: string) => {
+      const res = await apiRequest("GET", `/api/compliance/report/${reportType}`);
+      return res.json();
+    },
+    onSuccess: (data, reportType) => {
+      setActiveReport(reportType);
+      setReportData(data);
+      toast({ title: "Report generated", description: `${reportType} report generated successfully.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to generate report", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const reports = [
+    {
+      key: "gdpr_article30",
+      title: "GDPR Article 30 Report",
+      description: "Record of Processing Activities as required by GDPR Article 30",
+      icon: ScrollText,
+    },
+    {
+      key: "retention_status",
+      title: "Data Retention Status",
+      description: "Current retention compliance metrics and data lifecycle status",
+      icon: Database,
+    },
+    {
+      key: "dpdp_compliance",
+      title: "DPDP Act Compliance",
+      description: "Digital Personal Data Protection Act compliance summary",
+      icon: ShieldCheck,
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {reports.map((report) => (
+          <Card key={report.key} data-testid={`card-report-${report.key}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                <report.icon className="h-4 w-4 text-muted-foreground" />
+                {report.title}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">{report.description}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => generateReport.mutate(report.key)}
+                disabled={generateReport.isPending && generateReport.variables === report.key}
+                data-testid={`button-generate-${report.key}`}
+              >
+                {generateReport.isPending && generateReport.variables === report.key ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Generate Report
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {activeReport && reportData && (
+        <Card data-testid="card-report-result">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+            <CardTitle className="text-sm font-semibold" data-testid="text-report-title">
+              {reports.find((r) => r.key === activeReport)?.title || activeReport}
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${activeReport}_report.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              data-testid="button-download-report"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Download
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-xs bg-muted/30 rounded-md p-4 overflow-auto max-h-96 whitespace-pre-wrap" data-testid="text-report-data">
+              {JSON.stringify(reportData, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AuditIntegrityTab() {
+  const { toast } = useToast();
+  const [verifyResult, setVerifyResult] = useState<AuditVerifyResult | null>(null);
+
+  const verifyIntegrity = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/compliance/audit/verify");
+      return res.json() as Promise<AuditVerifyResult>;
+    },
+    onSuccess: (data) => {
+      setVerifyResult(data);
+      toast({
+        title: data.verified ? "Audit trail verified" : "Integrity issues detected",
+        description: data.verified
+          ? `${data.totalEntries} entries verified successfully.`
+          : `${data.errors.length} integrity errors found.`,
+        variant: data.verified ? undefined : "destructive",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const exportAudit = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/compliance/audit/export");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "audit_trail_export.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Audit trail exported", description: "JSON export downloaded successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <Hash className="h-4 w-4 text-muted-foreground" />
+            Immutable Audit Trail Verification
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              onClick={() => verifyIntegrity.mutate()}
+              disabled={verifyIntegrity.isPending}
+              data-testid="button-verify-integrity"
+            >
+              {verifyIntegrity.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <ShieldCheck className="h-4 w-4 mr-2" />
+              )}
+              Verify Integrity
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => exportAudit.mutate()}
+              disabled={exportAudit.isPending}
+              data-testid="button-export-audit"
+            >
+              {exportAudit.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              Export Audit Trail
+            </Button>
+          </div>
+
+          {verifyResult && (
+            <div className="space-y-3 pt-2" data-testid="section-verify-result">
+              <div className="flex items-center gap-3 p-4 rounded-md bg-muted/30">
+                {verifyResult.verified ? (
+                  <CheckCircle2 className="h-8 w-8 text-green-500 flex-shrink-0" />
+                ) : (
+                  <XCircle className="h-8 w-8 text-red-500 flex-shrink-0" />
+                )}
+                <div>
+                  <div className={`text-sm font-semibold ${verifyResult.verified ? "text-green-400" : "text-red-400"}`} data-testid="text-verify-status">
+                    {verifyResult.verified ? "Audit Chain Verified" : "Integrity Issues Detected"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5" data-testid="text-verify-details">
+                    {verifyResult.totalEntries} total entries | Last verified sequence: {verifyResult.lastVerifiedSeq}
+                  </div>
+                </div>
+              </div>
+              {verifyResult.errors.length > 0 && (
+                <div className="space-y-1" data-testid="section-verify-errors">
+                  <h4 className="text-xs font-semibold text-red-400">Integrity Errors:</h4>
+                  {verifyResult.errors.map((err, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-xs text-red-300 p-2 rounded bg-red-500/10">
+                      <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                      <span data-testid={`text-verify-error-${idx}`}>{err}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card data-testid="card-audit-total">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Database className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div>
+                <div className="text-xs text-muted-foreground">Total Entries</div>
+                <div className="text-lg font-bold tabular-nums" data-testid="text-audit-total">
+                  {verifyResult?.totalEntries ?? "—"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-audit-sequence">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Hash className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div>
+                <div className="text-xs text-muted-foreground">Last Sequence</div>
+                <div className="text-lg font-bold tabular-nums" data-testid="text-audit-sequence">
+                  {verifyResult?.lastVerifiedSeq ?? "—"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-audit-chain-status">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              {verifyResult ? (
+                verifyResult.verified ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                )
+              ) : (
+                <Shield className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              )}
+              <div>
+                <div className="text-xs text-muted-foreground">Chain Status</div>
+                <div className={`text-sm font-semibold ${verifyResult ? (verifyResult.verified ? "text-green-400" : "text-red-400") : ""}`} data-testid="text-chain-status">
+                  {verifyResult ? (verifyResult.verified ? "Valid" : "Compromised") : "Not Verified"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function RetentionTab() {
+  const { toast } = useToast();
+  const [confirmRun, setConfirmRun] = useState(false);
+
+  const { data: policy } = useQuery<CompliancePolicy>({
+    queryKey: ["/api/compliance/policy"],
+  });
+
+  const [retentionData, setRetentionData] = useState<RetentionReport | null>(null);
+
+  const fetchRetention = useQuery<RetentionReport>({
+    queryKey: ["/api/compliance/report/retention_status"],
+    enabled: false,
+  });
+
+  const runRetention = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/compliance/retention/run");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/policy"] });
+      setConfirmRun(false);
+      setRetentionData(null);
+      toast({
+        title: "Retention cleanup completed",
+        description: `${data?.deletedCount ?? 0} records removed.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Retention cleanup failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const loadRetention = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/compliance/report/retention_status");
+      return res.json() as Promise<RetentionReport>;
+    },
+    onSuccess: (data) => {
+      setRetentionData(data);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to load retention data", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const retentionItems = [
+    {
+      label: "Alerts",
+      days: policy?.alertRetentionDays ?? 365,
+      oldest: retentionData?.oldestAlert,
+      withinPolicy: retentionData?.alertsWithinPolicy,
+      total: retentionData?.totalAlerts,
+    },
+    {
+      label: "Incidents",
+      days: policy?.incidentRetentionDays ?? 730,
+      oldest: retentionData?.oldestIncident,
+      withinPolicy: retentionData?.incidentsWithinPolicy,
+      total: retentionData?.totalIncidents,
+    },
+    {
+      label: "Audit Logs",
+      days: policy?.auditLogRetentionDays ?? 2555,
+      oldest: retentionData?.oldestAuditLog,
+      withinPolicy: retentionData?.auditLogsWithinPolicy,
+      total: retentionData?.totalAuditLogs,
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            Data Retention Dashboard
+          </CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => loadRetention.mutate()}
+              disabled={loadRetention.isPending}
+              data-testid="button-refresh-retention"
+            >
+              {loadRetention.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {retentionItems.map((item) => (
+              <div key={item.label} className="p-4 rounded-md bg-muted/30 space-y-2" data-testid={`retention-card-${item.label.toLowerCase().replace(/\s/g, "-")}`}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{item.label}</span>
+                  {item.withinPolicy !== undefined && (
+                    item.withinPolicy ? (
+                      <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] border-green-500/30 text-green-400" data-testid={`badge-retention-status-${item.label.toLowerCase()}`}>
+                        <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
+                        Compliant
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] border-red-500/30 text-red-400" data-testid={`badge-retention-status-${item.label.toLowerCase()}`}>
+                        <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+                        Non-compliant
+                      </Badge>
+                    )
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <div>Retention: {item.days} days</div>
+                  <div>Oldest record: {item.oldest ? formatDate(item.oldest) : "N/A"}</div>
+                  {item.total !== undefined && <div>Total records: {item.total.toLocaleString()}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/50 flex-wrap">
+            <div className="text-xs text-muted-foreground" data-testid="text-retention-last-cleanup">
+              {policy?.retentionLastRunAt ? (
+                <span>
+                  Last cleanup: {formatDateTime(policy.retentionLastRunAt)}
+                  {policy.retentionLastDeletedCount > 0 && (
+                    <span className="ml-1 text-red-400">({policy.retentionLastDeletedCount} deleted)</span>
+                  )}
+                </span>
+              ) : (
+                "No cleanup has been run yet"
+              )}
+            </div>
+            <Dialog open={confirmRun} onOpenChange={setConfirmRun}>
+              <DialogTrigger asChild>
+                <Button variant="destructive" size="sm" data-testid="button-run-retention">
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Run Retention Cleanup
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Confirm Retention Cleanup</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground py-4">
+                  This will permanently delete records that exceed the configured retention periods.
+                  This action cannot be undone. Are you sure you want to proceed?
+                </p>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline" data-testid="button-cancel-retention">Cancel</Button>
+                  </DialogClose>
+                  <Button
+                    variant="destructive"
+                    onClick={() => runRetention.mutate()}
+                    disabled={runRetention.isPending}
+                    data-testid="button-confirm-retention"
+                  >
+                    {runRetention.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 mr-2" />
+                    )}
+                    Run Cleanup
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function CompliancePage() {
+  return (
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-compliance">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+          <span className="gradient-text-red">Compliance & Governance</span>
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1" data-testid="text-page-description">
+          Data governance, privacy controls, and regulatory compliance management
+        </p>
+        <div className="gradient-accent-line w-24 mt-2" />
+      </div>
+
+      <Tabs defaultValue="policies" data-testid="tabs-compliance">
+        <TabsList className="flex-wrap" data-testid="tabs-list">
+          <TabsTrigger value="policies" data-testid="tab-policies">
+            <Scale className="h-3.5 w-3.5 mr-1.5" />
+            Policies
+          </TabsTrigger>
+          <TabsTrigger value="dsar" data-testid="tab-dsar">
+            <Users className="h-3.5 w-3.5 mr-1.5" />
+            DSAR
+          </TabsTrigger>
+          <TabsTrigger value="reports" data-testid="tab-reports">
+            <FileText className="h-3.5 w-3.5 mr-1.5" />
+            Reports
+          </TabsTrigger>
+          <TabsTrigger value="audit-integrity" data-testid="tab-audit-integrity">
+            <Hash className="h-3.5 w-3.5 mr-1.5" />
+            Audit Integrity
+          </TabsTrigger>
+          <TabsTrigger value="retention" data-testid="tab-retention">
+            <Clock className="h-3.5 w-3.5 mr-1.5" />
+            Retention
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="policies">
+          <PoliciesTab />
+        </TabsContent>
+        <TabsContent value="dsar">
+          <DsarTab />
+        </TabsContent>
+        <TabsContent value="reports">
+          <ReportsTab />
+        </TabsContent>
+        <TabsContent value="audit-integrity">
+          <AuditIntegrityTab />
+        </TabsContent>
+        <TabsContent value="retention">
+          <RetentionTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
