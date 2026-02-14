@@ -1,4 +1,4 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor } from "lucide-react";
 import atsLogo from "@assets/Screenshot_20260213_122029_Google_1770965513052.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -29,6 +29,10 @@ const mainNavItems = [
   { title: "Attack Graph", url: "/attack-graph", icon: GitBranch, description: "Attack path correlation" },
   { title: "Kill Chain", url: "/kill-chain", icon: Swords, description: "Attack progression" },
   { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp, description: "Threat forecasting" },
+  { title: "Autonomous Response", url: "/autonomous-response", icon: Bot, description: "Agentic SOC" },
+  { title: "CSPM", url: "/cspm", icon: Cloud, description: "Cloud posture mgmt" },
+  { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor, description: "Endpoint health" },
+  { title: "Security Posture", url: "/security-posture", icon: Gauge, description: "Posture & AI deploy" },
 ];
 
 const systemNavItems = [

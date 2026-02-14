@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
-import { insertAlertSchema, insertIncidentSchema, insertCommentSchema, insertTagSchema, insertCompliancePolicySchema, insertDsarRequestSchema } from "@shared/schema";
+import { insertAlertSchema, insertIncidentSchema, insertCommentSchema, insertTagSchema, insertCompliancePolicySchema, insertDsarRequestSchema, insertCspmAccountSchema, insertEndpointAssetSchema, insertAiDeploymentConfigSchema } from "@shared/schema";
 import { correlateAlerts, generateIncidentNarrative, triageAlert, checkModelHealth, getModelConfig, getInferenceMetrics, buildThreatIntelContext } from "./ai";
 import { normalizeAlert, toInsertAlert, SOURCE_KEYS } from "./normalizer";
 import { testConnector, syncConnector, getConnectorMetadata, getAllConnectorTypes, type ConnectorConfig } from "./connector-engine";
@@ -18,6 +18,12 @@ import { startRetentionScheduler } from "./retention-scheduler";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { uploadFile, getSignedUrl, deleteFile, listFiles } from "./s3";
+import { evaluatePolicies, generateDefaultPolicies } from "./policy-engine";
+import { runInvestigation } from "./investigation-agent";
+import { canRollback, createRollbackRecord, executeRollback, getAvailableRollbacks } from "./rollback-engine";
+import { runCspmScan } from "./cspm-scanner";
+import { seedEndpointAssets, generateTelemetry, calculateEndpointRisk } from "./endpoint-telemetry";
+import { calculatePostureScore } from "./posture-engine";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -114,6 +120,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   await setupAuth(app);
   registerAuthRoutes(app);
 
@@ -2650,12 +2660,164 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to update recommendation" }); }
   });
 
+  // === Phase 9: Autonomous Response & Agentic SOC ===
+
+  // Auto-Response Policies CRUD
+  app.get("/api/autonomous/policies", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const policies = await storage.getAutoResponsePolicies(orgId);
+      res.json(policies);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch policies" }); }
+  });
+
+  app.post("/api/autonomous/policies", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const policy = await storage.createAutoResponsePolicy({ ...req.body, orgId });
+      res.status(201).json(policy);
+    } catch (error) { res.status(500).json({ message: "Failed to create policy" }); }
+  });
+
+  app.patch("/api/autonomous/policies/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const policies = await storage.getAutoResponsePolicies(orgId);
+      const policy = policies.find(p => p.id === (req.params.id as string));
+      if (!policy) return res.status(404).json({ message: "Policy not found" });
+      const updated = await storage.updateAutoResponsePolicy(req.params.id as string, req.body);
+      if (!updated) return res.status(404).json({ message: "Policy not found" });
+      res.json(updated);
+    } catch (error) { res.status(500).json({ message: "Failed to update policy" }); }
+  });
+
+  app.delete("/api/autonomous/policies/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const policies = await storage.getAutoResponsePolicies(orgId);
+      const policy = policies.find(p => p.id === (req.params.id as string));
+      if (!policy) return res.status(404).json({ message: "Policy not found" });
+      const deleted = await storage.deleteAutoResponsePolicy(req.params.id as string);
+      if (!deleted) return res.status(404).json({ message: "Policy not found" });
+      res.json({ success: true });
+    } catch (error) { res.status(500).json({ message: "Failed to delete policy" }); }
+  });
+
+  // Seed default policies
+  app.post("/api/autonomous/policies/seed-defaults", isAuthenticated, async (req, res) => {
+    try {
+      let orgId = (req as any).user?.orgId;
+      if (!orgId) {
+        const orgs = await storage.getOrganizations();
+        if (orgs.length > 0) orgId = orgs[0].id;
+      }
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      const existing = await storage.getAutoResponsePolicies(orgId);
+      if (existing.length > 0) return res.json({ message: "Policies already exist", count: existing.length });
+      const defaults = generateDefaultPolicies(orgId);
+      const created = [];
+      for (const def of defaults) {
+        const p = await storage.createAutoResponsePolicy(def as any);
+        created.push(p);
+      }
+      res.status(201).json(created);
+    } catch (error) { console.error("Seed policies error:", error); res.status(500).json({ message: "Failed to seed policies" }); }
+  });
+
+  // Evaluate policies for an incident
+  app.post("/api/autonomous/evaluate/:incidentId", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const incId = req.params.incidentId as string;
+      const incident = await storage.getIncident(incId);
+      if (!incident) return res.status(404).json({ message: "Incident not found" });
+      const allAlerts = await storage.getAlerts(orgId);
+      const incidentAlerts = allAlerts.filter(a => a.incidentId === incId);
+      const matches = await evaluatePolicies({ incident, alerts: incidentAlerts, orgId: orgId || "default", confidenceScore: req.body.confidenceScore });
+      res.json(matches);
+    } catch (error) { res.status(500).json({ message: "Failed to evaluate policies" }); }
+  });
+
+  // Investigation Runs
+  app.get("/api/autonomous/investigations", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const runs = await storage.getInvestigationRuns(orgId);
+      res.json(runs);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch investigations" }); }
+  });
+
+  app.get("/api/autonomous/investigations/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const run = await storage.getInvestigationRun(req.params.id as string);
+      if (!run) return res.status(404).json({ message: "Investigation not found" });
+      if (orgId && run.orgId !== orgId) return res.status(404).json({ message: "Investigation not found" });
+      const steps = await storage.getInvestigationSteps(run.id);
+      res.json({ ...run, steps });
+    } catch (error) { res.status(500).json({ message: "Failed to fetch investigation" }); }
+  });
+
+  app.post("/api/autonomous/investigations", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const { incidentId } = req.body;
+      if (!incidentId) return res.status(400).json({ message: "incidentId required" });
+      const incident = await storage.getIncident(incidentId);
+      if (!incident) return res.status(404).json({ message: "Incident not found" });
+      const run = await storage.createInvestigationRun({
+        orgId,
+        incidentId,
+        triggeredBy: (req as any).user?.email || "analyst",
+        triggerSource: "manual",
+        status: "queued",
+      });
+      // Start investigation async
+      runInvestigation(run.id).catch(err => console.error("Investigation error:", err));
+      res.status(201).json(run);
+    } catch (error) { res.status(500).json({ message: "Failed to start investigation" }); }
+  });
+
+  // Rollbacks
+  app.get("/api/autonomous/rollbacks", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const rollbacks = await storage.getResponseActionRollbacks(orgId);
+      res.json(rollbacks);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch rollbacks" }); }
+  });
+
+  app.post("/api/autonomous/rollbacks", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const { originalActionId, actionType, target } = req.body;
+      if (!actionType || !target) return res.status(400).json({ message: "actionType and target required" });
+      if (!canRollback(actionType)) return res.status(400).json({ message: `Cannot rollback action: ${actionType}` });
+      const rollback = await createRollbackRecord(orgId || "default", originalActionId, actionType, target);
+      res.status(201).json(rollback);
+    } catch (error: any) { res.status(500).json({ message: error.message || "Failed to create rollback" }); }
+  });
+
+  app.post("/api/autonomous/rollbacks/:id/execute", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const rollbacks = await storage.getResponseActionRollbacks(orgId);
+      const rb = rollbacks.find(r => r.id === (req.params.id as string));
+      if (!rb) return res.status(404).json({ message: "Rollback not found" });
+      const user = (req as any).user?.email || "analyst";
+      const result = await executeRollback(req.params.id as string, user);
+      if (!result) return res.status(404).json({ message: "Rollback not found or already executed" });
+      res.json(result);
+    } catch (error) { res.status(500).json({ message: "Failed to execute rollback" }); }
+  });
+
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
   app.post("/api/files/upload", isAuthenticated, upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file provided" });
-      const key = `uploads/${Date.now()}-${req.file.originalname}`;
+      const orgId = (req as any).user?.orgId || "default";
+      const key = `orgs/${orgId}/uploads/${Date.now()}-${req.file.originalname}`;
       const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
       res.status(201).json(result);
     } catch (error) {
@@ -2666,7 +2828,9 @@ export async function registerRoutes(
 
   app.get("/api/files", isAuthenticated, async (req, res) => {
     try {
-      const prefix = req.query.prefix as string | undefined;
+      const orgId = (req as any).user?.orgId || "default";
+      const subPrefix = req.query.prefix as string | undefined;
+      const prefix = `orgs/${orgId}/${subPrefix || ""}`;
       const files = await listFiles(prefix);
       res.json(files);
     } catch (error) {
@@ -2676,8 +2840,10 @@ export async function registerRoutes(
 
   app.get("/api/files/download", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId || "default";
       const key = req.query.key as string;
       if (!key) return res.status(400).json({ message: "key query param required" });
+      if (!key.startsWith(`orgs/${orgId}/`)) return res.status(403).json({ message: "Access denied" });
       const url = await getSignedUrl(key);
       res.json({ url });
     } catch (error) {
@@ -2687,12 +2853,282 @@ export async function registerRoutes(
 
   app.delete("/api/files/remove", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId || "default";
       const key = req.query.key as string;
       if (!key) return res.status(400).json({ message: "key query param required" });
+      if (!key.startsWith(`orgs/${orgId}/`)) return res.status(403).json({ message: "Access denied" });
       const result = await deleteFile(key);
       res.json(result);
     } catch (error) {
       res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  // ── CSPM Routes ──
+  app.get("/api/cspm/accounts", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const accounts = await storage.getCspmAccounts(orgId);
+      res.json(accounts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch CSPM accounts" });
+    }
+  });
+
+  app.post("/api/cspm/accounts", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const body = { ...req.body, orgId };
+      const parsed = insertCspmAccountSchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid CSPM account data", errors: parsed.error.flatten() });
+      }
+      const account = await storage.createCspmAccount(parsed.data);
+      res.status(201).json(account);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create CSPM account" });
+    }
+  });
+
+  app.patch("/api/cspm/accounts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const existing = await storage.getCspmAccount(p(req.params.id));
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+      const account = await storage.updateCspmAccount(p(req.params.id), req.body);
+      if (!account) return res.status(404).json({ message: "CSPM account not found" });
+      res.json(account);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update CSPM account" });
+    }
+  });
+
+  app.delete("/api/cspm/accounts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const existing = await storage.getCspmAccount(p(req.params.id));
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+      const deleted = await storage.deleteCspmAccount(p(req.params.id));
+      if (!deleted) return res.status(404).json({ message: "CSPM account not found" });
+      res.json({ message: "CSPM account deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete CSPM account" });
+    }
+  });
+
+  app.get("/api/cspm/scans", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const accountId = req.query.accountId as string | undefined;
+      const scans = await storage.getCspmScans(orgId, accountId);
+      res.json(scans);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch CSPM scans" });
+    }
+  });
+
+  app.post("/api/cspm/scans/:accountId", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const account = await storage.getCspmAccount(p(req.params.accountId));
+      if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+      runCspmScan(orgId, p(req.params.accountId)).catch(err => console.error("CSPM scan error:", err));
+      res.json({ message: "Scan started" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start CSPM scan" });
+    }
+  });
+
+  app.get("/api/cspm/findings", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const scanId = req.query.scanId as string | undefined;
+      const severity = req.query.severity as string | undefined;
+      const findings = await storage.getCspmFindings(orgId, scanId, severity);
+      res.json(findings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch CSPM findings" });
+    }
+  });
+
+  app.patch("/api/cspm/findings/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const findings = await storage.getCspmFindings(orgId);
+      const existing = findings.find(f => f.id === p(req.params.id));
+      if (!existing) return res.status(404).json({ message: "CSPM finding not found" });
+      const finding = await storage.updateCspmFinding(p(req.params.id), req.body);
+      if (!finding) return res.status(404).json({ message: "CSPM finding not found" });
+      res.json(finding);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update CSPM finding" });
+    }
+  });
+
+  // ── Endpoint Telemetry Routes ──
+  app.get("/api/endpoints", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const assets = await storage.getEndpointAssets(orgId);
+      res.json(assets);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch endpoint assets" });
+    }
+  });
+
+  app.get("/api/endpoints/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const asset = await storage.getEndpointAsset(p(req.params.id));
+      if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+      res.json(asset);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch endpoint asset" });
+    }
+  });
+
+  app.post("/api/endpoints/seed", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const assets = await seedEndpointAssets(orgId);
+      res.status(201).json(assets);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to seed endpoint assets" });
+    }
+  });
+
+  app.post("/api/endpoints", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const body = { ...req.body, orgId };
+      const parsed = insertEndpointAssetSchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid endpoint asset data", errors: parsed.error.flatten() });
+      }
+      const asset = await storage.createEndpointAsset(parsed.data);
+      res.status(201).json(asset);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create endpoint asset" });
+    }
+  });
+
+  app.patch("/api/endpoints/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const existing = await storage.getEndpointAsset(p(req.params.id));
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+      const asset = await storage.updateEndpointAsset(p(req.params.id), req.body);
+      if (!asset) return res.status(404).json({ message: "Endpoint asset not found" });
+      res.json(asset);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update endpoint asset" });
+    }
+  });
+
+  app.delete("/api/endpoints/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const existing = await storage.getEndpointAsset(p(req.params.id));
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+      const deleted = await storage.deleteEndpointAsset(p(req.params.id));
+      if (!deleted) return res.status(404).json({ message: "Endpoint asset not found" });
+      res.json({ message: "Endpoint asset deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete endpoint asset" });
+    }
+  });
+
+  app.get("/api/endpoints/:id/telemetry", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const asset = await storage.getEndpointAsset(p(req.params.id));
+      if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+      const telemetry = await storage.getEndpointTelemetry(p(req.params.id));
+      res.json(telemetry);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch endpoint telemetry" });
+    }
+  });
+
+  app.post("/api/endpoints/:id/telemetry", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const asset = await storage.getEndpointAsset(p(req.params.id));
+      if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+      const telemetry = await generateTelemetry(orgId, p(req.params.id));
+      res.status(201).json(telemetry);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate endpoint telemetry" });
+    }
+  });
+
+  app.post("/api/endpoints/:id/risk", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const asset = await storage.getEndpointAsset(p(req.params.id));
+      if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+      const riskScore = await calculateEndpointRisk(p(req.params.id));
+      res.json({ riskScore });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to calculate endpoint risk" });
+    }
+  });
+
+  // ── Posture Score Routes ──
+  app.get("/api/posture/scores", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const scores = await storage.getPostureScores(orgId);
+      res.json(scores);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch posture scores" });
+    }
+  });
+
+  app.post("/api/posture/calculate", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const score = await calculatePostureScore(orgId);
+      res.status(201).json(score);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to calculate posture score" });
+    }
+  });
+
+  app.get("/api/posture/latest", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const score = await storage.getLatestPostureScore(orgId);
+      if (!score) return res.status(404).json({ message: "No posture score found" });
+      res.json(score);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch latest posture score" });
+    }
+  });
+
+  // ── AI Deployment Config Routes ──
+  app.get("/api/ai-deployment/config", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const config = await storage.getAiDeploymentConfig(orgId);
+      if (!config) return res.status(404).json({ message: "AI deployment config not found" });
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch AI deployment config" });
+    }
+  });
+
+  app.put("/api/ai-deployment/config", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const parsed = insertAiDeploymentConfigSchema.safeParse({ ...req.body, orgId });
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid AI deployment config data", errors: parsed.error.flatten() });
+      }
+      const config = await storage.upsertAiDeploymentConfig(parsed.data);
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to upsert AI deployment config" });
     }
   });
 

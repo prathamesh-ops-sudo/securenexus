@@ -46,9 +46,9 @@ const MODEL_CONFIG: ModelConfig = {
 
 const TRIAGE_MODEL_CONFIG: ModelConfig = {
   backend: (process.env.AI_BACKEND as ModelBackend) || "bedrock",
-  modelId: process.env.AI_TRIAGE_MODEL_ID || "mistral.mistral-7b-instruct-v0:2",
+  modelId: process.env.AI_TRIAGE_MODEL_ID || "mistral.mistral-large-2402-v1:0",
   sagemakerEndpoint: process.env.SAGEMAKER_TRIAGE_ENDPOINT,
-  maxTokens: parseInt(process.env.AI_TRIAGE_MAX_TOKENS || "1024"),
+  maxTokens: parseInt(process.env.AI_TRIAGE_MAX_TOKENS || "2048"),
   temperature: parseFloat(process.env.AI_TRIAGE_TEMPERATURE || "0.05"),
   topP: parseFloat(process.env.AI_TOP_P || "0.9"),
 };
@@ -210,6 +210,28 @@ async function invokeBedrockWithConfig(systemPrompt: string, userMessage: string
     }
     return outputContent[0].text || "";
   } catch (error: any) {
+    if (error.name === "ValidationException" && error.message?.includes("system")) {
+      const fallbackCommand = new ConverseCommand({
+        modelId: config.modelId,
+        messages: [
+          {
+            role: "user",
+            content: [{ text: `${systemPrompt}\n\n${userMessage}` }],
+          },
+        ],
+        inferenceConfig: {
+          maxTokens: maxTokens || config.maxTokens,
+          temperature: config.temperature,
+          topP: config.topP,
+        },
+      });
+      const fallbackResponse = await bedrockClient.send(fallbackCommand);
+      const fallbackContent = fallbackResponse.output?.message?.content;
+      if (!fallbackContent || fallbackContent.length === 0) {
+        throw new Error("Empty response from model");
+      }
+      return fallbackContent[0].text || "";
+    }
     if (error.name === "AccessDeniedException" || error.name === "UnrecognizedClientException") {
       throw new Error("AWS credentials are invalid or lack Bedrock access. Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY have bedrock:InvokeModel permission.");
     }

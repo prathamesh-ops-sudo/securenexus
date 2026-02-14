@@ -38,6 +38,11 @@ export const ANOMALY_KINDS = ["volume_spike", "new_vector", "timing_anomaly", "s
 export const FORECAST_TYPES = ["ransomware", "data_exfiltration", "phishing_campaign", "lateral_movement", "privilege_escalation", "apt_campaign"] as const;
 export const RECOMMENDATION_PRIORITIES = ["critical", "high", "medium", "low"] as const;
 export const RECOMMENDATION_STATUSES = ["open", "accepted", "in_progress", "dismissed", "completed"] as const;
+export const AUTO_RESPONSE_POLICY_STATUSES = ["active", "inactive", "testing"] as const;
+export const AUTO_RESPONSE_TRIGGER_TYPES = ["incident_created", "incident_severity_change", "alert_critical", "correlation_detected"] as const;
+export const INVESTIGATION_RUN_STATUSES = ["queued", "running", "completed", "failed", "cancelled"] as const;
+export const INVESTIGATION_STEP_TYPES = ["gather_alerts", "enrich_entities", "correlate_evidence", "mitre_mapping", "ai_analysis", "recommendation", "action_taken"] as const;
+export const ROLLBACK_STATUSES = ["pending", "completed", "failed", "not_applicable"] as const;
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -583,6 +588,73 @@ export const hardeningRecommendations = pgTable("hardening_recommendations", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const autoResponsePolicies = pgTable("auto_response_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  triggerType: text("trigger_type").notNull(),
+  conditions: jsonb("conditions").notNull(),
+  actions: jsonb("actions").notNull(),
+  confidenceThreshold: real("confidence_threshold").notNull().default(0.85),
+  severityFilter: text("severity_filter").array(),
+  requiresApproval: boolean("requires_approval").default(true),
+  maxActionsPerHour: integer("max_actions_per_hour").default(10),
+  cooldownMinutes: integer("cooldown_minutes").default(30),
+  status: text("status").notNull().default("inactive"),
+  executionCount: integer("execution_count").default(0),
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const investigationRuns = pgTable("investigation_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  incidentId: varchar("incident_id").references(() => incidents.id),
+  triggeredBy: text("triggered_by").notNull(),
+  triggerSource: text("trigger_source").default("manual"),
+  status: text("status").notNull().default("queued"),
+  summary: text("summary"),
+  findings: jsonb("findings"),
+  recommendedActions: jsonb("recommended_actions"),
+  evidenceCount: integer("evidence_count").default(0),
+  confidenceScore: real("confidence_score"),
+  duration: integer("duration"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const investigationSteps = pgTable("investigation_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  runId: varchar("run_id").notNull().references(() => investigationRuns.id),
+  stepType: text("step_type").notNull(),
+  stepOrder: integer("step_order").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("pending"),
+  result: jsonb("result"),
+  artifacts: jsonb("artifacts"),
+  duration: integer("duration"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const responseActionRollbacks = pgTable("response_action_rollbacks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  originalActionId: varchar("original_action_id"),
+  actionType: text("action_type").notNull(),
+  target: text("target").notNull(),
+  rollbackAction: jsonb("rollback_action").notNull(),
+  status: text("status").notNull().default("pending"),
+  executedBy: text("executed_by"),
+  result: jsonb("result"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  executedAt: timestamp("executed_at"),
+});
+
 // Relations
 export const connectorsRelations = relations(connectors, ({ one }) => ({
   organization: one(organizations, { fields: [connectors.orgId], references: [organizations.id] }),
@@ -740,6 +812,10 @@ export const insertPredictiveAnomalySchema = createInsertSchema(predictiveAnomal
 export const insertAttackSurfaceAssetSchema = createInsertSchema(attackSurfaceAssets).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertRiskForecastSchema = createInsertSchema(riskForecasts).omit({ id: true, createdAt: true });
 export const insertHardeningRecommendationSchema = createInsertSchema(hardeningRecommendations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAutoResponsePolicySchema = createInsertSchema(autoResponsePolicies).omit({ id: true, createdAt: true, updatedAt: true, executionCount: true, lastTriggeredAt: true });
+export const insertInvestigationRunSchema = createInsertSchema(investigationRuns).omit({ id: true, createdAt: true, completedAt: true, duration: true, error: true });
+export const insertInvestigationStepSchema = createInsertSchema(investigationSteps).omit({ id: true, createdAt: true });
+export const insertResponseActionRollbackSchema = createInsertSchema(responseActionRollbacks).omit({ id: true, createdAt: true, executedAt: true });
 
 // Types
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
@@ -797,3 +873,136 @@ export type RiskForecast = typeof riskForecasts.$inferSelect;
 export type InsertRiskForecast = z.infer<typeof insertRiskForecastSchema>;
 export type HardeningRecommendation = typeof hardeningRecommendations.$inferSelect;
 export type InsertHardeningRecommendation = z.infer<typeof insertHardeningRecommendationSchema>;
+export type AutoResponsePolicy = typeof autoResponsePolicies.$inferSelect;
+export type InsertAutoResponsePolicy = z.infer<typeof insertAutoResponsePolicySchema>;
+export type InvestigationRun = typeof investigationRuns.$inferSelect;
+export type InsertInvestigationRun = z.infer<typeof insertInvestigationRunSchema>;
+export type InvestigationStep = typeof investigationSteps.$inferSelect;
+export type InsertInvestigationStep = z.infer<typeof insertInvestigationStepSchema>;
+export type ResponseActionRollback = typeof responseActionRollbacks.$inferSelect;
+export type InsertResponseActionRollback = z.infer<typeof insertResponseActionRollbackSchema>;
+
+export const CLOUD_PROVIDERS = ["aws", "azure", "gcp"] as const;
+export const CSPM_SCAN_STATUSES = ["pending", "running", "completed", "failed"] as const;
+export const CSPM_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const CSPM_FINDING_STATUSES = ["open", "resolved", "suppressed", "accepted_risk"] as const;
+export const CSPM_COMPLIANCE_FRAMEWORKS = ["cis", "nist", "pci_dss", "hipaa", "soc2", "gdpr", "iso27001"] as const;
+export const ENDPOINT_OS_TYPES = ["windows", "linux", "macos"] as const;
+export const ENDPOINT_STATUSES = ["online", "offline", "degraded", "isolated"] as const;
+export const AI_BACKENDS = ["bedrock", "sagemaker", "on_prem", "azure_openai"] as const;
+
+export const cspmAccounts = pgTable("cspm_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  cloudProvider: text("cloud_provider").notNull(),
+  accountId: text("account_id").notNull(),
+  displayName: text("display_name").notNull(),
+  regions: text("regions").array().default(sql`ARRAY[]::text[]`),
+  status: text("status").default("active"),
+  config: jsonb("config").default({}),
+  lastScanAt: timestamp("last_scan_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const cspmScans = pgTable("cspm_scans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull().references(() => cspmAccounts.id),
+  status: text("status").default("pending"),
+  findingsCount: integer("findings_count").default(0),
+  summary: jsonb("summary").default({}),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const cspmFindings = pgTable("cspm_findings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  scanId: varchar("scan_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  ruleId: text("rule_id").notNull(),
+  ruleName: text("rule_name").notNull(),
+  severity: text("severity").notNull(),
+  resourceType: text("resource_type").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceRegion: text("resource_region"),
+  description: text("description").notNull(),
+  remediation: text("remediation"),
+  complianceFrameworks: text("compliance_frameworks").array().default(sql`ARRAY[]::text[]`),
+  status: text("status").default("open"),
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+export const endpointAssets = pgTable("endpoint_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  hostname: text("hostname").notNull(),
+  os: text("os").notNull(),
+  osVersion: text("os_version"),
+  agentVersion: text("agent_version"),
+  agentStatus: text("agent_status").default("online"),
+  ipAddress: text("ip_address"),
+  macAddress: text("mac_address"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow(),
+  riskScore: integer("risk_score").default(0),
+  tags: text("tags").array().default(sql`ARRAY[]::text[]`),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const endpointTelemetry = pgTable("endpoint_telemetry", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  assetId: varchar("asset_id").notNull().references(() => endpointAssets.id),
+  metricType: text("metric_type").notNull(),
+  metricValue: jsonb("metric_value").notNull(),
+  collectedAt: timestamp("collected_at").defaultNow(),
+});
+
+export const postureScores = pgTable("posture_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  overallScore: integer("overall_score").notNull(),
+  cspmScore: integer("cspm_score").default(0),
+  endpointScore: integer("endpoint_score").default(0),
+  incidentScore: integer("incident_score").default(0),
+  complianceScore: integer("compliance_score").default(0),
+  breakdown: jsonb("breakdown").default({}),
+  generatedAt: timestamp("generated_at").defaultNow(),
+});
+
+export const aiDeploymentConfigs = pgTable("ai_deployment_configs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull().unique(),
+  backend: text("backend").default("bedrock"),
+  modelId: text("model_id"),
+  endpointUrl: text("endpoint_url"),
+  region: text("region").default("us-east-1"),
+  dataResidency: text("data_residency").default("us"),
+  allowExternalCalls: boolean("allow_external_calls").default(true),
+  config: jsonb("config").default({}),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCspmAccountSchema = createInsertSchema(cspmAccounts).omit({ id: true, createdAt: true, lastScanAt: true });
+export const insertCspmScanSchema = createInsertSchema(cspmScans).omit({ id: true, startedAt: true, completedAt: true });
+export const insertCspmFindingSchema = createInsertSchema(cspmFindings).omit({ id: true, detectedAt: true });
+export const insertEndpointAssetSchema = createInsertSchema(endpointAssets).omit({ id: true, createdAt: true, lastSeenAt: true });
+export const insertEndpointTelemetrySchema = createInsertSchema(endpointTelemetry).omit({ id: true, collectedAt: true });
+export const insertPostureScoreSchema = createInsertSchema(postureScores).omit({ id: true, generatedAt: true });
+export const insertAiDeploymentConfigSchema = createInsertSchema(aiDeploymentConfigs).omit({ id: true, updatedAt: true });
+
+export type CspmAccount = typeof cspmAccounts.$inferSelect;
+export type InsertCspmAccount = z.infer<typeof insertCspmAccountSchema>;
+export type CspmScan = typeof cspmScans.$inferSelect;
+export type InsertCspmScan = z.infer<typeof insertCspmScanSchema>;
+export type CspmFinding = typeof cspmFindings.$inferSelect;
+export type InsertCspmFinding = z.infer<typeof insertCspmFindingSchema>;
+export type EndpointAsset = typeof endpointAssets.$inferSelect;
+export type InsertEndpointAsset = z.infer<typeof insertEndpointAssetSchema>;
+export type EndpointTelemetry = typeof endpointTelemetry.$inferSelect;
+export type InsertEndpointTelemetry = z.infer<typeof insertEndpointTelemetrySchema>;
+export type PostureScore = typeof postureScores.$inferSelect;
+export type InsertPostureScore = z.infer<typeof insertPostureScoreSchema>;
+export type AiDeploymentConfig = typeof aiDeploymentConfigs.$inferSelect;
+export type InsertAiDeploymentConfig = z.infer<typeof insertAiDeploymentConfigSchema>;

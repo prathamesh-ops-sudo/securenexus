@@ -28,7 +28,7 @@ interface TriageResult {
   mitreTactic: string;
   mitreTechnique: string;
   falsePositiveLikelihood: number;
-  relatedIocs: string[];
+  relatedIocs: (string | { type: string; value: string })[];
   threatIntelSources?: string[];
 }
 
@@ -388,7 +388,7 @@ export default function AlertDetailPage() {
                     <div className="text-[10px] text-muted-foreground uppercase mb-1">IOCs</div>
                     <div className="flex flex-wrap gap-1">
                       {triageResult.relatedIocs.map((ioc, i) => (
-                        <span key={i} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono" data-testid={`triage-ioc-${i}`}>{ioc}</span>
+                        <span key={i} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono" data-testid={`triage-ioc-${i}`}>{typeof ioc === "string" ? ioc : `${ioc.value} (${ioc.type})`}</span>
                       ))}
                     </div>
                   </div>

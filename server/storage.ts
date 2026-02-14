@@ -21,6 +21,17 @@ import {
   type AttackSurfaceAsset, type InsertAttackSurfaceAsset, attackSurfaceAssets,
   type RiskForecast, type InsertRiskForecast, riskForecasts,
   type HardeningRecommendation, type InsertHardeningRecommendation, hardeningRecommendations,
+  type AutoResponsePolicy, type InsertAutoResponsePolicy, autoResponsePolicies,
+  type InvestigationRun, type InsertInvestigationRun, investigationRuns,
+  type InvestigationStep, type InsertInvestigationStep, investigationSteps,
+  type ResponseActionRollback, type InsertResponseActionRollback, responseActionRollbacks,
+  type CspmAccount, type InsertCspmAccount, cspmAccounts,
+  type CspmScan, type InsertCspmScan, cspmScans,
+  type CspmFinding, type InsertCspmFinding, cspmFindings,
+  type EndpointAsset, type InsertEndpointAsset, endpointAssets,
+  type EndpointTelemetry, type InsertEndpointTelemetry, endpointTelemetry,
+  type PostureScore, type InsertPostureScore, postureScores,
+  type AiDeploymentConfig, type InsertAiDeploymentConfig, aiDeploymentConfigs,
   alertTags, incidentTags,
 } from "@shared/schema";
 import { db } from "./db";
@@ -170,6 +181,51 @@ export interface IStorage {
   createHardeningRecommendation(rec: InsertHardeningRecommendation): Promise<HardeningRecommendation>;
   updateHardeningRecommendation(id: string, updates: Partial<InsertHardeningRecommendation>): Promise<HardeningRecommendation | undefined>;
   clearHardeningRecommendations(orgId: string): Promise<void>;
+
+  getAutoResponsePolicies(orgId?: string): Promise<AutoResponsePolicy[]>;
+  createAutoResponsePolicy(policy: InsertAutoResponsePolicy): Promise<AutoResponsePolicy>;
+  updateAutoResponsePolicy(id: string, updates: Partial<AutoResponsePolicy>): Promise<AutoResponsePolicy | null>;
+  deleteAutoResponsePolicy(id: string): Promise<boolean>;
+
+  getInvestigationRuns(orgId?: string): Promise<InvestigationRun[]>;
+  getInvestigationRun(id: string): Promise<InvestigationRun | null>;
+  createInvestigationRun(run: InsertInvestigationRun): Promise<InvestigationRun>;
+  updateInvestigationRun(id: string, updates: Partial<InvestigationRun>): Promise<InvestigationRun | null>;
+
+  getInvestigationSteps(runId: string): Promise<InvestigationStep[]>;
+  createInvestigationStep(step: InsertInvestigationStep): Promise<InvestigationStep>;
+  updateInvestigationStep(id: string, updates: Partial<InvestigationStep>): Promise<InvestigationStep | null>;
+
+  getResponseActionRollbacks(orgId?: string): Promise<ResponseActionRollback[]>;
+  createResponseActionRollback(rollback: InsertResponseActionRollback): Promise<ResponseActionRollback>;
+  updateResponseActionRollback(id: string, updates: Partial<ResponseActionRollback>): Promise<ResponseActionRollback | null>;
+
+  getCspmAccounts(orgId: string): Promise<CspmAccount[]>;
+  getCspmAccount(id: string): Promise<CspmAccount | undefined>;
+  createCspmAccount(account: InsertCspmAccount): Promise<CspmAccount>;
+  updateCspmAccount(id: string, updates: Partial<CspmAccount>): Promise<CspmAccount | null>;
+  deleteCspmAccount(id: string): Promise<boolean>;
+  getCspmScans(orgId: string, accountId?: string): Promise<CspmScan[]>;
+  createCspmScan(scan: InsertCspmScan): Promise<CspmScan>;
+  updateCspmScan(id: string, updates: Partial<CspmScan>): Promise<CspmScan | null>;
+  getCspmFindings(orgId: string, scanId?: string, severity?: string): Promise<CspmFinding[]>;
+  createCspmFinding(finding: InsertCspmFinding): Promise<CspmFinding>;
+  updateCspmFinding(id: string, updates: Partial<CspmFinding>): Promise<CspmFinding | null>;
+
+  getEndpointAssets(orgId: string): Promise<EndpointAsset[]>;
+  getEndpointAsset(id: string): Promise<EndpointAsset | undefined>;
+  createEndpointAsset(asset: InsertEndpointAsset): Promise<EndpointAsset>;
+  updateEndpointAsset(id: string, updates: Partial<EndpointAsset>): Promise<EndpointAsset | null>;
+  deleteEndpointAsset(id: string): Promise<boolean>;
+  getEndpointTelemetry(assetId: string): Promise<EndpointTelemetry[]>;
+  createEndpointTelemetry(telemetry: InsertEndpointTelemetry): Promise<EndpointTelemetry>;
+
+  getPostureScores(orgId: string): Promise<PostureScore[]>;
+  createPostureScore(score: InsertPostureScore): Promise<PostureScore>;
+  getLatestPostureScore(orgId: string): Promise<PostureScore | undefined>;
+
+  getAiDeploymentConfig(orgId: string): Promise<AiDeploymentConfig | undefined>;
+  upsertAiDeploymentConfig(config: InsertAiDeploymentConfig): Promise<AiDeploymentConfig>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -929,6 +985,200 @@ export class DatabaseStorage implements IStorage {
 
   async clearHardeningRecommendations(orgId: string): Promise<void> {
     await db.delete(hardeningRecommendations).where(eq(hardeningRecommendations.orgId, orgId));
+  }
+
+  async getAutoResponsePolicies(orgId?: string): Promise<AutoResponsePolicy[]> {
+    if (orgId) {
+      return db.select().from(autoResponsePolicies).where(eq(autoResponsePolicies.orgId, orgId)).orderBy(desc(autoResponsePolicies.createdAt));
+    }
+    return db.select().from(autoResponsePolicies).orderBy(desc(autoResponsePolicies.createdAt));
+  }
+
+  async createAutoResponsePolicy(policy: InsertAutoResponsePolicy): Promise<AutoResponsePolicy> {
+    const [created] = await db.insert(autoResponsePolicies).values(policy).returning();
+    return created;
+  }
+
+  async updateAutoResponsePolicy(id: string, updates: Partial<AutoResponsePolicy>): Promise<AutoResponsePolicy | null> {
+    const [updated] = await db.update(autoResponsePolicies).set({ ...updates, updatedAt: new Date() }).where(eq(autoResponsePolicies.id, id)).returning();
+    return updated || null;
+  }
+
+  async deleteAutoResponsePolicy(id: string): Promise<boolean> {
+    const result = await db.delete(autoResponsePolicies).where(eq(autoResponsePolicies.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getInvestigationRuns(orgId?: string): Promise<InvestigationRun[]> {
+    if (orgId) {
+      return db.select().from(investigationRuns).where(eq(investigationRuns.orgId, orgId)).orderBy(desc(investigationRuns.createdAt));
+    }
+    return db.select().from(investigationRuns).orderBy(desc(investigationRuns.createdAt));
+  }
+
+  async getInvestigationRun(id: string): Promise<InvestigationRun | null> {
+    const [run] = await db.select().from(investigationRuns).where(eq(investigationRuns.id, id));
+    return run || null;
+  }
+
+  async createInvestigationRun(run: InsertInvestigationRun): Promise<InvestigationRun> {
+    const [created] = await db.insert(investigationRuns).values(run).returning();
+    return created;
+  }
+
+  async updateInvestigationRun(id: string, updates: Partial<InvestigationRun>): Promise<InvestigationRun | null> {
+    const [updated] = await db.update(investigationRuns).set(updates).where(eq(investigationRuns.id, id)).returning();
+    return updated || null;
+  }
+
+  async getInvestigationSteps(runId: string): Promise<InvestigationStep[]> {
+    return db.select().from(investigationSteps).where(eq(investigationSteps.runId, runId)).orderBy(asc(investigationSteps.stepOrder));
+  }
+
+  async createInvestigationStep(step: InsertInvestigationStep): Promise<InvestigationStep> {
+    const [created] = await db.insert(investigationSteps).values(step).returning();
+    return created;
+  }
+
+  async updateInvestigationStep(id: string, updates: Partial<InvestigationStep>): Promise<InvestigationStep | null> {
+    const [updated] = await db.update(investigationSteps).set(updates).where(eq(investigationSteps.id, id)).returning();
+    return updated || null;
+  }
+
+  async getResponseActionRollbacks(orgId?: string): Promise<ResponseActionRollback[]> {
+    if (orgId) {
+      return db.select().from(responseActionRollbacks).where(eq(responseActionRollbacks.orgId, orgId)).orderBy(desc(responseActionRollbacks.createdAt));
+    }
+    return db.select().from(responseActionRollbacks).orderBy(desc(responseActionRollbacks.createdAt));
+  }
+
+  async createResponseActionRollback(rollback: InsertResponseActionRollback): Promise<ResponseActionRollback> {
+    const [created] = await db.insert(responseActionRollbacks).values(rollback).returning();
+    return created;
+  }
+
+  async updateResponseActionRollback(id: string, updates: Partial<ResponseActionRollback>): Promise<ResponseActionRollback | null> {
+    const [updated] = await db.update(responseActionRollbacks).set(updates).where(eq(responseActionRollbacks.id, id)).returning();
+    return updated || null;
+  }
+
+  async getCspmAccounts(orgId: string): Promise<CspmAccount[]> {
+    return db.select().from(cspmAccounts).where(eq(cspmAccounts.orgId, orgId)).orderBy(desc(cspmAccounts.createdAt));
+  }
+
+  async getCspmAccount(id: string): Promise<CspmAccount | undefined> {
+    const [account] = await db.select().from(cspmAccounts).where(eq(cspmAccounts.id, id));
+    return account;
+  }
+
+  async createCspmAccount(account: InsertCspmAccount): Promise<CspmAccount> {
+    const [created] = await db.insert(cspmAccounts).values(account).returning();
+    return created;
+  }
+
+  async updateCspmAccount(id: string, updates: Partial<CspmAccount>): Promise<CspmAccount | null> {
+    const [updated] = await db.update(cspmAccounts).set(updates).where(eq(cspmAccounts.id, id)).returning();
+    return updated || null;
+  }
+
+  async deleteCspmAccount(id: string): Promise<boolean> {
+    const result = await db.delete(cspmAccounts).where(eq(cspmAccounts.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getCspmScans(orgId: string, accountId?: string): Promise<CspmScan[]> {
+    const conditions = [eq(cspmScans.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmScans.accountId, accountId));
+    return db.select().from(cspmScans).where(and(...conditions)).orderBy(desc(cspmScans.startedAt));
+  }
+
+  async createCspmScan(scan: InsertCspmScan): Promise<CspmScan> {
+    const [created] = await db.insert(cspmScans).values(scan).returning();
+    return created;
+  }
+
+  async updateCspmScan(id: string, updates: Partial<CspmScan>): Promise<CspmScan | null> {
+    const [updated] = await db.update(cspmScans).set(updates).where(eq(cspmScans.id, id)).returning();
+    return updated || null;
+  }
+
+  async getCspmFindings(orgId: string, scanId?: string, severity?: string): Promise<CspmFinding[]> {
+    const conditions: any[] = [eq(cspmFindings.orgId, orgId)];
+    if (scanId) conditions.push(eq(cspmFindings.scanId, scanId));
+    if (severity) conditions.push(eq(cspmFindings.severity, severity));
+    return db.select().from(cspmFindings).where(and(...conditions)).orderBy(desc(cspmFindings.detectedAt));
+  }
+
+  async createCspmFinding(finding: InsertCspmFinding): Promise<CspmFinding> {
+    const [created] = await db.insert(cspmFindings).values(finding).returning();
+    return created;
+  }
+
+  async updateCspmFinding(id: string, updates: Partial<CspmFinding>): Promise<CspmFinding | null> {
+    const [updated] = await db.update(cspmFindings).set(updates).where(eq(cspmFindings.id, id)).returning();
+    return updated || null;
+  }
+
+  async getEndpointAssets(orgId: string): Promise<EndpointAsset[]> {
+    return db.select().from(endpointAssets).where(eq(endpointAssets.orgId, orgId)).orderBy(desc(endpointAssets.createdAt));
+  }
+
+  async getEndpointAsset(id: string): Promise<EndpointAsset | undefined> {
+    const [asset] = await db.select().from(endpointAssets).where(eq(endpointAssets.id, id));
+    return asset;
+  }
+
+  async createEndpointAsset(asset: InsertEndpointAsset): Promise<EndpointAsset> {
+    const [created] = await db.insert(endpointAssets).values(asset).returning();
+    return created;
+  }
+
+  async updateEndpointAsset(id: string, updates: Partial<EndpointAsset>): Promise<EndpointAsset | null> {
+    const [updated] = await db.update(endpointAssets).set(updates).where(eq(endpointAssets.id, id)).returning();
+    return updated || null;
+  }
+
+  async deleteEndpointAsset(id: string): Promise<boolean> {
+    const result = await db.delete(endpointAssets).where(eq(endpointAssets.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getEndpointTelemetry(assetId: string): Promise<EndpointTelemetry[]> {
+    return db.select().from(endpointTelemetry).where(eq(endpointTelemetry.assetId, assetId)).orderBy(desc(endpointTelemetry.collectedAt));
+  }
+
+  async createEndpointTelemetry(telemetry: InsertEndpointTelemetry): Promise<EndpointTelemetry> {
+    const [created] = await db.insert(endpointTelemetry).values(telemetry).returning();
+    return created;
+  }
+
+  async getPostureScores(orgId: string): Promise<PostureScore[]> {
+    return db.select().from(postureScores).where(eq(postureScores.orgId, orgId)).orderBy(desc(postureScores.generatedAt));
+  }
+
+  async createPostureScore(score: InsertPostureScore): Promise<PostureScore> {
+    const [created] = await db.insert(postureScores).values(score).returning();
+    return created;
+  }
+
+  async getLatestPostureScore(orgId: string): Promise<PostureScore | undefined> {
+    const [score] = await db.select().from(postureScores).where(eq(postureScores.orgId, orgId)).orderBy(desc(postureScores.generatedAt)).limit(1);
+    return score;
+  }
+
+  async getAiDeploymentConfig(orgId: string): Promise<AiDeploymentConfig | undefined> {
+    const [config] = await db.select().from(aiDeploymentConfigs).where(eq(aiDeploymentConfigs.orgId, orgId));
+    return config;
+  }
+
+  async upsertAiDeploymentConfig(config: InsertAiDeploymentConfig): Promise<AiDeploymentConfig> {
+    const existing = await this.getAiDeploymentConfig(config.orgId);
+    if (existing) {
+      const [updated] = await db.update(aiDeploymentConfigs).set({ ...config, updatedAt: new Date() }).where(eq(aiDeploymentConfigs.orgId, config.orgId)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(aiDeploymentConfigs).values(config).returning();
+    return created;
   }
 }
 
