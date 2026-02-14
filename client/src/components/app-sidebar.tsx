@@ -1,4 +1,4 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2 } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp } from "lucide-react";
 import atsLogo from "@assets/Screenshot_20260213_122029_Google_1770965513052.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -28,6 +28,7 @@ const mainNavItems = [
   { title: "Entity Graph", url: "/entity-graph", icon: Network, description: "Identity resolution" },
   { title: "Attack Graph", url: "/attack-graph", icon: GitBranch, description: "Attack path correlation" },
   { title: "Kill Chain", url: "/kill-chain", icon: Swords, description: "Attack progression" },
+  { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp, description: "Threat forecasting" },
 ];
 
 const systemNavItems = [

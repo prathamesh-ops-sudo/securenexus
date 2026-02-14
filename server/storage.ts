@@ -17,6 +17,10 @@ import {
   type IntegrationConfig, type InsertIntegrationConfig, integrationConfigs,
   type NotificationChannel, type InsertNotificationChannel, notificationChannels,
   type ResponseAction, type InsertResponseAction, responseActions,
+  type PredictiveAnomaly, type InsertPredictiveAnomaly, predictiveAnomalies,
+  type AttackSurfaceAsset, type InsertAttackSurfaceAsset, attackSurfaceAssets,
+  type RiskForecast, type InsertRiskForecast, riskForecasts,
+  type HardeningRecommendation, type InsertHardeningRecommendation, hardeningRecommendations,
   alertTags, incidentTags,
 } from "@shared/schema";
 import { db } from "./db";
@@ -151,6 +155,21 @@ export interface IStorage {
   getResponseAction(id: string): Promise<ResponseAction | undefined>;
   createResponseAction(action: InsertResponseAction): Promise<ResponseAction>;
   updateResponseAction(id: string, data: Partial<ResponseAction>): Promise<ResponseAction | undefined>;
+
+  // Predictive Defense
+  getPredictiveAnomalies(orgId?: string): Promise<PredictiveAnomaly[]>;
+  createPredictiveAnomaly(anomaly: InsertPredictiveAnomaly): Promise<PredictiveAnomaly>;
+  clearPredictiveAnomalies(orgId: string): Promise<void>;
+  getAttackSurfaceAssets(orgId?: string): Promise<AttackSurfaceAsset[]>;
+  upsertAttackSurfaceAsset(asset: InsertAttackSurfaceAsset): Promise<AttackSurfaceAsset>;
+  clearAttackSurfaceAssets(orgId: string): Promise<void>;
+  getRiskForecasts(orgId?: string): Promise<RiskForecast[]>;
+  createRiskForecast(forecast: InsertRiskForecast): Promise<RiskForecast>;
+  clearRiskForecasts(orgId: string): Promise<void>;
+  getHardeningRecommendations(orgId?: string): Promise<HardeningRecommendation[]>;
+  createHardeningRecommendation(rec: InsertHardeningRecommendation): Promise<HardeningRecommendation>;
+  updateHardeningRecommendation(id: string, updates: Partial<InsertHardeningRecommendation>): Promise<HardeningRecommendation | undefined>;
+  clearHardeningRecommendations(orgId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -828,6 +847,88 @@ export class DatabaseStorage implements IStorage {
   async updateResponseAction(id: string, data: Partial<ResponseAction>): Promise<ResponseAction | undefined> {
     const [updated] = await db.update(responseActions).set(data).where(eq(responseActions.id, id)).returning();
     return updated;
+  }
+
+  async getPredictiveAnomalies(orgId?: string): Promise<PredictiveAnomaly[]> {
+    if (orgId) {
+      return db.select().from(predictiveAnomalies).where(eq(predictiveAnomalies.orgId, orgId)).orderBy(desc(predictiveAnomalies.createdAt));
+    }
+    return db.select().from(predictiveAnomalies).orderBy(desc(predictiveAnomalies.createdAt));
+  }
+
+  async createPredictiveAnomaly(anomaly: InsertPredictiveAnomaly): Promise<PredictiveAnomaly> {
+    const [created] = await db.insert(predictiveAnomalies).values(anomaly).returning();
+    return created;
+  }
+
+  async clearPredictiveAnomalies(orgId: string): Promise<void> {
+    await db.delete(predictiveAnomalies).where(eq(predictiveAnomalies.orgId, orgId));
+  }
+
+  async getAttackSurfaceAssets(orgId?: string): Promise<AttackSurfaceAsset[]> {
+    if (orgId) {
+      return db.select().from(attackSurfaceAssets).where(eq(attackSurfaceAssets.orgId, orgId)).orderBy(desc(attackSurfaceAssets.riskScore));
+    }
+    return db.select().from(attackSurfaceAssets).orderBy(desc(attackSurfaceAssets.riskScore));
+  }
+
+  async upsertAttackSurfaceAsset(asset: InsertAttackSurfaceAsset): Promise<AttackSurfaceAsset> {
+    const conditions = [
+      eq(attackSurfaceAssets.entityType, asset.entityType),
+      eq(attackSurfaceAssets.entityValue, asset.entityValue),
+    ];
+    if (asset.orgId) conditions.push(eq(attackSurfaceAssets.orgId, asset.orgId));
+    const [existing] = await db.select().from(attackSurfaceAssets).where(and(...conditions));
+    if (existing) {
+      const [updated] = await db.update(attackSurfaceAssets).set({
+        ...asset,
+        updatedAt: new Date(),
+      }).where(eq(attackSurfaceAssets.id, existing.id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(attackSurfaceAssets).values(asset).returning();
+    return created;
+  }
+
+  async clearAttackSurfaceAssets(orgId: string): Promise<void> {
+    await db.delete(attackSurfaceAssets).where(eq(attackSurfaceAssets.orgId, orgId));
+  }
+
+  async getRiskForecasts(orgId?: string): Promise<RiskForecast[]> {
+    if (orgId) {
+      return db.select().from(riskForecasts).where(eq(riskForecasts.orgId, orgId)).orderBy(desc(riskForecasts.probability));
+    }
+    return db.select().from(riskForecasts).orderBy(desc(riskForecasts.probability));
+  }
+
+  async createRiskForecast(forecast: InsertRiskForecast): Promise<RiskForecast> {
+    const [created] = await db.insert(riskForecasts).values(forecast).returning();
+    return created;
+  }
+
+  async clearRiskForecasts(orgId: string): Promise<void> {
+    await db.delete(riskForecasts).where(eq(riskForecasts.orgId, orgId));
+  }
+
+  async getHardeningRecommendations(orgId?: string): Promise<HardeningRecommendation[]> {
+    if (orgId) {
+      return db.select().from(hardeningRecommendations).where(eq(hardeningRecommendations.orgId, orgId)).orderBy(desc(hardeningRecommendations.createdAt));
+    }
+    return db.select().from(hardeningRecommendations).orderBy(desc(hardeningRecommendations.createdAt));
+  }
+
+  async createHardeningRecommendation(rec: InsertHardeningRecommendation): Promise<HardeningRecommendation> {
+    const [created] = await db.insert(hardeningRecommendations).values(rec).returning();
+    return created;
+  }
+
+  async updateHardeningRecommendation(id: string, updates: Partial<InsertHardeningRecommendation>): Promise<HardeningRecommendation | undefined> {
+    const [updated] = await db.update(hardeningRecommendations).set({ ...updates, updatedAt: new Date() }).where(eq(hardeningRecommendations.id, id)).returning();
+    return updated;
+  }
+
+  async clearHardeningRecommendations(orgId: string): Promise<void> {
+    await db.delete(hardeningRecommendations).where(eq(hardeningRecommendations.orgId, orgId));
   }
 }
 

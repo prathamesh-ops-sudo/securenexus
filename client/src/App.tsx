@@ -31,6 +31,7 @@ import AttackGraphPage from "@/pages/attack-graph";
 import KillChainPage from "@/pages/kill-chain";
 import CompliancePage from "@/pages/compliance";
 import IntegrationsPage from "@/pages/integrations";
+import PredictiveDefensePage from "@/pages/predictive-defense";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -106,6 +107,7 @@ function AuthenticatedApp() {
                 <Route path="/kill-chain" component={KillChainPage} />
                 <Route path="/playbooks" component={PlaybooksPage} />
                 <Route path="/integrations" component={IntegrationsPage} />
+                <Route path="/predictive-defense" component={PredictiveDefensePage} />
                 <Route path="/audit-log" component={AuditLogPage} />
                 <Route path="/compliance" component={CompliancePage} />
                 <Route path="/settings" component={SettingsPage} />

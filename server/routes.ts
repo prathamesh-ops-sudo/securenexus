@@ -16,6 +16,8 @@ import { maskPiiInAlert, maskPiiInText } from "./pii-engine";
 import { runRetentionCleanup } from "./retention-scheduler";
 import { startRetentionScheduler } from "./retention-scheduler";
 import rateLimit from "express-rate-limit";
+import multer from "multer";
+import { uploadFile, getSignedUrl, deleteFile, listFiles } from "./s3";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -2575,6 +2577,122 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Notification error:", error);
       res.status(500).json({ message: "Failed to send notification" });
+    }
+  });
+
+  // Phase 8: Predictive Defense routes
+  app.get("/api/predictive/anomalies", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const anomalies = await storage.getPredictiveAnomalies(orgId);
+      res.json(anomalies);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch anomalies" }); }
+  });
+
+  app.get("/api/predictive/attack-surface", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const assets = await storage.getAttackSurfaceAssets(orgId);
+      res.json(assets);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch attack surface" }); }
+  });
+
+  app.get("/api/predictive/forecasts", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const forecasts = await storage.getRiskForecasts(orgId);
+      res.json(forecasts);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch forecasts" }); }
+  });
+
+  app.get("/api/predictive/recommendations", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const recs = await storage.getHardeningRecommendations(orgId);
+      res.json(recs);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch recommendations" }); }
+  });
+
+  app.post("/api/predictive/recompute", isAuthenticated, async (req, res) => {
+    try {
+      let orgId = (req as any).user?.orgId;
+      if (!orgId) {
+        const orgs = await storage.getOrganizations();
+        if (orgs.length > 0) orgId = orgs[0].id;
+      }
+      if (!orgId) return res.status(400).json({ message: "Organization required" });
+      const { runPredictiveAnalysis } = await import("./predictive-engine");
+      const result = await runPredictiveAnalysis(orgId, storage);
+      await storage.createAuditLog({
+        orgId,
+        userId: (req as any).user?.id,
+        action: "predictive_analysis_run",
+        resourceType: "predictive",
+        details: result,
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error("Predictive analysis error:", error);
+      res.status(500).json({ message: "Failed to run predictive analysis", error: error.message });
+    }
+  });
+
+  app.patch("/api/predictive/recommendations/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const { status } = req.body;
+      const recs = await storage.getHardeningRecommendations(orgId);
+      const rec = recs.find(r => r.id === req.params.id);
+      if (!rec) return res.status(404).json({ message: "Recommendation not found" });
+      const updated = await storage.updateHardeningRecommendation(req.params.id, { status });
+      if (!updated) return res.status(404).json({ message: "Recommendation not found" });
+      res.json(updated);
+    } catch (error) { res.status(500).json({ message: "Failed to update recommendation" }); }
+  });
+
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+  app.post("/api/files/upload", isAuthenticated, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file provided" });
+      const key = `uploads/${Date.now()}-${req.file.originalname}`;
+      const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
+      res.status(201).json(result);
+    } catch (error) {
+      console.error("File upload error:", error);
+      res.status(500).json({ message: "Failed to upload file" });
+    }
+  });
+
+  app.get("/api/files", isAuthenticated, async (req, res) => {
+    try {
+      const prefix = req.query.prefix as string | undefined;
+      const files = await listFiles(prefix);
+      res.json(files);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to list files" });
+    }
+  });
+
+  app.get("/api/files/download", isAuthenticated, async (req, res) => {
+    try {
+      const key = req.query.key as string;
+      if (!key) return res.status(400).json({ message: "key query param required" });
+      const url = await getSignedUrl(key);
+      res.json({ url });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get signed URL" });
+    }
+  });
+
+  app.delete("/api/files/remove", isAuthenticated, async (req, res) => {
+    try {
+      const key = req.query.key as string;
+      if (!key) return res.status(400).json({ message: "key query param required" });
+      const result = await deleteFile(key);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete file" });
     }
   });
 

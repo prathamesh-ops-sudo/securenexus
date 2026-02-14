@@ -34,6 +34,10 @@ export const INTEGRATION_STATUSES = ["active", "inactive", "error"] as const;
 export const CHANNEL_TYPES = ["slack", "teams", "email", "webhook", "pagerduty"] as const;
 export const RESPONSE_ACTION_TYPES = ["isolate_host", "block_ip", "quarantine_file", "disable_user", "block_domain", "kill_process"] as const;
 export const RESPONSE_ACTION_STATUSES = ["pending", "executing", "completed", "failed", "simulated"] as const;
+export const ANOMALY_KINDS = ["volume_spike", "new_vector", "timing_anomaly", "severity_escalation", "source_deviation"] as const;
+export const FORECAST_TYPES = ["ransomware", "data_exfiltration", "phishing_campaign", "lateral_movement", "privilege_escalation", "apt_campaign"] as const;
+export const RECOMMENDATION_PRIORITIES = ["critical", "high", "medium", "low"] as const;
+export const RECOMMENDATION_STATUSES = ["open", "accepted", "in_progress", "dismissed", "completed"] as const;
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -520,6 +524,65 @@ export const responseActions = pgTable("response_actions", {
   index("idx_response_actions_type").on(table.actionType),
 ]);
 
+export const predictiveAnomalies = pgTable("predictive_anomalies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  kind: text("kind").notNull(),
+  metric: text("metric").notNull(),
+  baseline: real("baseline").notNull(),
+  current: real("current").notNull(),
+  zScore: real("z_score").notNull(),
+  severity: text("severity").notNull().default("medium"),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  topSignals: jsonb("top_signals"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const attackSurfaceAssets = pgTable("attack_surface_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  entityType: text("entity_type").notNull(),
+  entityValue: text("entity_value").notNull(),
+  firstSeenAt: timestamp("first_seen_at").notNull(),
+  lastSeenAt: timestamp("last_seen_at").notNull(),
+  riskScore: real("risk_score").notNull().default(0),
+  alertCount: integer("alert_count").notNull().default(0),
+  criticalCount: integer("critical_count").notNull().default(0),
+  exposures: jsonb("exposures"),
+  relatedSources: text("related_sources").array(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const riskForecasts = pgTable("risk_forecasts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  forecastType: text("forecast_type").notNull(),
+  probability: real("probability").notNull(),
+  predictedWindowHours: integer("predicted_window_hours").notNull(),
+  confidence: real("confidence").notNull().default(0),
+  drivers: jsonb("drivers"),
+  description: text("description"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const hardeningRecommendations = pgTable("hardening_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  title: text("title").notNull(),
+  rationale: text("rationale").notNull(),
+  priority: text("priority").notNull().default("medium"),
+  category: text("category"),
+  relatedEntities: jsonb("related_entities"),
+  relatedForecasts: jsonb("related_forecasts"),
+  status: text("status").notNull().default("open"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Relations
 export const connectorsRelations = relations(connectors, ({ one }) => ({
   organization: one(organizations, { fields: [connectors.orgId], references: [organizations.id] }),
@@ -633,6 +696,22 @@ export const responseActionsRelations = relations(responseActions, ({ one }) => 
   incident: one(incidents, { fields: [responseActions.incidentId], references: [incidents.id] }),
 }));
 
+export const predictiveAnomaliesRelations = relations(predictiveAnomalies, ({ one }) => ({
+  organization: one(organizations, { fields: [predictiveAnomalies.orgId], references: [organizations.id] }),
+}));
+
+export const attackSurfaceAssetsRelations = relations(attackSurfaceAssets, ({ one }) => ({
+  organization: one(organizations, { fields: [attackSurfaceAssets.orgId], references: [organizations.id] }),
+}));
+
+export const riskForecastsRelations = relations(riskForecasts, ({ one }) => ({
+  organization: one(organizations, { fields: [riskForecasts.orgId], references: [organizations.id] }),
+}));
+
+export const hardeningRecommendationsRelations = relations(hardeningRecommendations, ({ one }) => ({
+  organization: one(organizations, { fields: [hardeningRecommendations.orgId], references: [organizations.id] }),
+}));
+
 // Insert schemas
 export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true, ingestedAt: true });
 export const insertIncidentSchema = createInsertSchema(incidents).omit({ id: true, createdAt: true, updatedAt: true });
@@ -657,6 +736,10 @@ export const insertDsarRequestSchema = createInsertSchema(dsarRequests).omit({ i
 export const insertIntegrationConfigSchema = createInsertSchema(integrationConfigs).omit({ id: true, createdAt: true, updatedAt: true, lastTestedAt: true, lastTestStatus: true });
 export const insertNotificationChannelSchema = createInsertSchema(notificationChannels).omit({ id: true, createdAt: true, updatedAt: true, lastNotifiedAt: true });
 export const insertResponseActionSchema = createInsertSchema(responseActions).omit({ id: true, createdAt: true, executedAt: true });
+export const insertPredictiveAnomalySchema = createInsertSchema(predictiveAnomalies).omit({ id: true, createdAt: true });
+export const insertAttackSurfaceAssetSchema = createInsertSchema(attackSurfaceAssets).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRiskForecastSchema = createInsertSchema(riskForecasts).omit({ id: true, createdAt: true });
+export const insertHardeningRecommendationSchema = createInsertSchema(hardeningRecommendations).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
@@ -706,3 +789,11 @@ export type NotificationChannel = typeof notificationChannels.$inferSelect;
 export type InsertNotificationChannel = z.infer<typeof insertNotificationChannelSchema>;
 export type ResponseAction = typeof responseActions.$inferSelect;
 export type InsertResponseAction = z.infer<typeof insertResponseActionSchema>;
+export type PredictiveAnomaly = typeof predictiveAnomalies.$inferSelect;
+export type InsertPredictiveAnomaly = z.infer<typeof insertPredictiveAnomalySchema>;
+export type AttackSurfaceAsset = typeof attackSurfaceAssets.$inferSelect;
+export type InsertAttackSurfaceAsset = z.infer<typeof insertAttackSurfaceAssetSchema>;
+export type RiskForecast = typeof riskForecasts.$inferSelect;
+export type InsertRiskForecast = z.infer<typeof insertRiskForecastSchema>;
+export type HardeningRecommendation = typeof hardeningRecommendations.$inferSelect;
+export type InsertHardeningRecommendation = z.infer<typeof insertHardeningRecommendationSchema>;
