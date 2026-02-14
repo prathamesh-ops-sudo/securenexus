@@ -44,7 +44,7 @@ Key architectural decisions and features include:
 - **Version Control**: GitHub (integrated via Replit GitHub connector using @octokit/rest)
 - **Object Storage**: AWS S3 (bucket: securenexus-platform-557845624595) for file uploads, reports, and exports. Server module: server/s3.ts. API: /api/files/*
 - **Container Registry**: AWS ECR (repository: securenexus) for Docker image storage with scan-on-push enabled.
-- **Deployment**: AWS App Runner (service: securenexus, URL: https://ccj9uu5msh.us-east-1.awsapprunner.com). Source: GitHub repo prathamesh-ops-sudo/securenexus, NODEJS_22 runtime, auto-deploy on push. 1 vCPU, 2 GB RAM.
+- **Deployment**: AWS App Runner (service: securenexus, URL: https://ry5m2xunq9.us-east-1.awsapprunner.com). Source: GitHub repo prathamesh-ops-sudo/securenexus, NODEJS_22 runtime, auto-deploy on push. 1 vCPU, 2 GB RAM.
 - **Threat Intelligence Feeds (Planned)**: AbuseIPDB, VirusTotal, OTX AlienVault for IP/Domain reputation enrichment.
 - **Ticketing Systems (Planned)**: Jira, ServiceNow, PagerDuty for bi-directional integration.
 - **Communication Platforms (Planned)**: Email, Slack, Microsoft Teams for notifications.
