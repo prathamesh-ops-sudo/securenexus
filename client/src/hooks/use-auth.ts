@@ -17,8 +17,41 @@ async function fetchUser(): Promise<User | null> {
   return response.json();
 }
 
-async function logout(): Promise<void> {
-  window.location.href = "/api/logout";
+async function loginFn(data: { email: string; password: string }): Promise<User> {
+  const response = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ message: "Login failed" }));
+    throw new Error(err.message);
+  }
+  return response.json();
+}
+
+async function registerFn(data: {
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+}): Promise<User> {
+  const response = await fetch("/api/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ message: "Registration failed" }));
+    throw new Error(err.message);
+  }
+  return response.json();
+}
+
+async function logoutFn(): Promise<void> {
+  await fetch("/api/logout", { method: "POST", credentials: "include" });
 }
 
 export function useAuth() {
@@ -27,11 +60,25 @@ export function useAuth() {
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
     retry: false,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: loginFn,
+    onSuccess: (user) => {
+      queryClient.setQueryData(["/api/auth/user"], user);
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: registerFn,
+    onSuccess: (user) => {
+      queryClient.setQueryData(["/api/auth/user"], user);
+    },
   });
 
   const logoutMutation = useMutation({
-    mutationFn: logout,
+    mutationFn: logoutFn,
     onSuccess: () => {
       queryClient.setQueryData(["/api/auth/user"], null);
     },
@@ -41,6 +88,12 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
+    login: loginMutation.mutateAsync,
+    loginError: loginMutation.error,
+    isLoggingIn: loginMutation.isPending,
+    register: registerMutation.mutateAsync,
+    registerError: registerMutation.error,
+    isRegistering: registerMutation.isPending,
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
   };

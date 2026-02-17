@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Zap, Brain, Eye, ArrowRight, Lock, Activity, BarChart3, Globe, Layers, Shield, ShieldCheck, Radar, Flame, Cloud, Search, AlertTriangle, Database } from "lucide-react";
 import {
   SiSplunk, SiPaloaltosoftware, SiAmazon,
@@ -7,6 +8,9 @@ import {
 import atsLogo from "@assets/Screenshot_20260213_122029_Google_1770965513052.jpg";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
 
 const features = [
   {
@@ -74,8 +78,79 @@ const integrations = [
 ];
 
 export default function LandingPage() {
+  const { login, register, loginError, registerError, isLoggingIn, isRegistering } = useAuth();
+  const [authMode, setAuthMode] = useState<"login" | "register" | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authMode === "register") {
+      await register({ email, password, firstName, lastName });
+    } else {
+      await login({ email, password });
+    }
+  };
+
+  const authError = authMode === "register" ? registerError : loginError;
+  const isSubmitting = authMode === "register" ? isRegistering : isLoggingIn;
+
   return (
     <div className="min-h-screen bg-background">
+      {authMode && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setAuthMode(null)}>
+          <Card className="w-full max-w-md mx-4 shadow-2xl border-border/50" onClick={(e) => e.stopPropagation()}>
+            <CardContent className="p-8">
+              <div className="flex items-center gap-2.5 mb-6">
+                <img src={atsLogo} alt="ATS" className="w-8 h-8 object-contain" />
+                <span className="font-semibold text-lg">SecureNexus</span>
+              </div>
+              <h2 className="text-xl font-bold mb-1">{authMode === "register" ? "Create an account" : "Welcome back"}</h2>
+              <p className="text-sm text-muted-foreground mb-6">{authMode === "register" ? "Get started with SecureNexus" : "Log in to your account"}</p>
+              {authError && (
+                <div className="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                  {authError.message}
+                </div>
+              )}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {authMode === "register" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="firstName">First name</Label>
+                      <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="John" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="lastName">Last name</Label>
+                      <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Doe" />
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password">Password</Label>
+                  <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} />
+                </div>
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? "Please wait..." : authMode === "register" ? "Create Account" : "Log In"}
+                </Button>
+              </form>
+              <p className="text-sm text-center text-muted-foreground mt-4">
+                {authMode === "register" ? (
+                  <>Already have an account? <button onClick={() => setAuthMode("login")} className="text-primary underline-offset-4 hover:underline">Log in</button></>
+                ) : (
+                  <>Don&apos;t have an account? <button onClick={() => setAuthMode("register")} className="text-primary underline-offset-4 hover:underline">Sign up</button></>
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/30 glass-strong">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
@@ -83,11 +158,11 @@ export default function LandingPage() {
             <span className="font-semibold text-lg tracking-tight" data-testid="text-logo">SecureNexus</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" asChild data-testid="button-login">
-              <a href="/api/login">Log in</a>
+            <Button variant="ghost" onClick={() => setAuthMode("login")} data-testid="button-login">
+              Log in
             </Button>
-            <Button asChild data-testid="button-get-started">
-              <a href="/api/login">Get Started <ArrowRight className="ml-1 h-4 w-4" /></a>
+            <Button onClick={() => setAuthMode("register")} data-testid="button-get-started">
+              Get Started <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -114,11 +189,9 @@ export default function LandingPage() {
             SecureNexus unifies alerts from your EDR, SIEM, and cloud security tools, correlates them with AI, and delivers attacker-centric incident narratives in real time.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 mb-14 animate-fade-in-up delay-300">
-            <Button size="lg" asChild data-testid="button-hero-cta" className="px-8">
-              <a href="/api/login">
-                Start Free Trial
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </a>
+            <Button size="lg" onClick={() => setAuthMode("register")} data-testid="button-hero-cta" className="px-8">
+              Start Free Trial
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
             <Button size="lg" variant="outline" data-testid="button-demo" className="px-8">
               View Live Demo
@@ -196,11 +269,9 @@ export default function LandingPage() {
             Join security teams reducing their MTTR by 35% with AI-powered alert correlation.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button size="lg" asChild data-testid="button-cta-bottom" className="px-8">
-              <a href="/api/login">
-                Get Started Free
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </a>
+            <Button size="lg" onClick={() => setAuthMode("register")} data-testid="button-cta-bottom" className="px-8">
+              Get Started Free
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-6 mt-6 text-xs text-muted-foreground">
