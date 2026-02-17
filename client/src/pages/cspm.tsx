@@ -13,11 +13,43 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Cloud, Shield, AlertTriangle, RefreshCw, Plus, Trash2, Play,
-  CheckCircle2, XCircle, Clock, Pencil,
+  CheckCircle2, XCircle, Clock, Pencil, Loader2, FileCheck,
 } from "lucide-react";
 import { SiAmazonwebservices, SiGooglecloud } from "react-icons/si";
+
+interface PolicyCheck {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  cloudProvider: string | null;
+  resourceType: string | null;
+  severity: string;
+  ruleLogic: any;
+  remediation: string | null;
+  complianceFrameworks: string[];
+  controlIds: string[];
+  status: string;
+  isBuiltIn: boolean;
+  lastRunAt: string | null;
+  createdAt: string;
+}
+
+interface PolicyResult {
+  id: string;
+  orgId: string;
+  policyCheckId: string;
+  scanId: string | null;
+  resourceId: string;
+  resourceType: string | null;
+  resourceRegion: string | null;
+  status: string;
+  details: any;
+  evaluatedAt: string;
+}
 
 function formatTimestamp(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
@@ -610,6 +642,446 @@ function FindingsTab() {
   );
 }
 
+function PolicyChecksTab() {
+  const { toast } = useToast();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [policyName, setPolicyName] = useState("");
+  const [policyDescription, setPolicyDescription] = useState("");
+  const [policyProvider, setPolicyProvider] = useState("aws");
+  const [policyResourceType, setPolicyResourceType] = useState("");
+  const [policySeverity, setPolicySeverity] = useState("medium");
+  const [policyRemediation, setPolicyRemediation] = useState("");
+  const [policyFrameworks, setPolicyFrameworks] = useState("");
+  const [policyRuleLogic, setPolicyRuleLogic] = useState("");
+  const [resultFilter, setResultFilter] = useState("all");
+
+  const { data: policyChecks, isLoading } = useQuery<PolicyCheck[]>({
+    queryKey: ["/api/policy-checks"],
+  });
+
+  const { data: policyResults, isLoading: resultsLoading } = useQuery<PolicyResult[]>({
+    queryKey: ["/api/policy-results"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (body: any) => {
+      await apiRequest("POST", "/api/policy-checks", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/policy-checks"] });
+      setDialogOpen(false);
+      setPolicyName("");
+      setPolicyDescription("");
+      setPolicyProvider("aws");
+      setPolicyResourceType("");
+      setPolicySeverity("medium");
+      setPolicyRemediation("");
+      setPolicyFrameworks("");
+      setPolicyRuleLogic("");
+      toast({ title: "Policy created", description: "Policy check has been created." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to create policy", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const runMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/policy-checks/${id}/run`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/policy-checks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/policy-results"] });
+      toast({ title: "Policy executed", description: "Policy check has been run." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Run failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/policy-checks/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/policy-checks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/policy-results"] });
+      toast({ title: "Policy deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  function handleCreateSubmit() {
+    if (!policyName.trim()) return;
+    let ruleLogic = {};
+    try {
+      ruleLogic = policyRuleLogic.trim() ? JSON.parse(policyRuleLogic) : {};
+    } catch {
+      toast({ title: "Invalid JSON", description: "Rule logic must be valid JSON.", variant: "destructive" });
+      return;
+    }
+    createMutation.mutate({
+      name: policyName.trim(),
+      description: policyDescription.trim() || null,
+      cloudProvider: policyProvider,
+      resourceType: policyResourceType.trim() || null,
+      severity: policySeverity,
+      remediation: policyRemediation.trim() || null,
+      complianceFrameworks: policyFrameworks.split(",").map((f: string) => f.trim()).filter(Boolean),
+      ruleLogic,
+    });
+  }
+
+  const filteredResults = (policyResults || []).filter((r: PolicyResult) =>
+    resultFilter === "all" ? true : r.policyCheckId === resultFilter
+  );
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3" data-testid="policy-checks-loading">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" data-testid="section-policy-checks">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FileCheck className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Policy-as-Code Checks</h2>
+            <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+              {policyChecks?.length ?? 0}
+            </Badge>
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-create-policy">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Policy
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Create Policy Check</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="policyName">Name</Label>
+                  <Input
+                    id="policyName"
+                    value={policyName}
+                    onChange={(e) => setPolicyName(e.target.value)}
+                    placeholder="e.g. S3 Public Access Check"
+                    data-testid="input-policy-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policyDescription">Description</Label>
+                  <Input
+                    id="policyDescription"
+                    value={policyDescription}
+                    onChange={(e) => setPolicyDescription(e.target.value)}
+                    placeholder="e.g. Ensures S3 buckets are not publicly accessible"
+                    data-testid="input-policy-description"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policyProvider">Cloud Provider</Label>
+                  <Select value={policyProvider} onValueChange={setPolicyProvider}>
+                    <SelectTrigger data-testid="select-policy-provider">
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="aws">AWS</SelectItem>
+                      <SelectItem value="azure">Azure</SelectItem>
+                      <SelectItem value="gcp">GCP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policyResourceType">Resource Type</Label>
+                  <Input
+                    id="policyResourceType"
+                    value={policyResourceType}
+                    onChange={(e) => setPolicyResourceType(e.target.value)}
+                    placeholder="e.g. aws_s3_bucket"
+                    data-testid="input-policy-resource-type"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policySeverity">Severity</Label>
+                  <Select value={policySeverity} onValueChange={setPolicySeverity}>
+                    <SelectTrigger data-testid="select-policy-severity">
+                      <SelectValue placeholder="Select severity" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="critical">Critical</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="informational">Informational</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policyRemediation">Remediation</Label>
+                  <Input
+                    id="policyRemediation"
+                    value={policyRemediation}
+                    onChange={(e) => setPolicyRemediation(e.target.value)}
+                    placeholder="e.g. Disable public access on the S3 bucket"
+                    data-testid="input-policy-remediation"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policyFrameworks">Compliance Frameworks (comma-separated)</Label>
+                  <Input
+                    id="policyFrameworks"
+                    value={policyFrameworks}
+                    onChange={(e) => setPolicyFrameworks(e.target.value)}
+                    placeholder="e.g. CIS, SOC2, HIPAA"
+                    data-testid="input-policy-frameworks"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="policyRuleLogic">Rule Logic (JSON)</Label>
+                  <Textarea
+                    id="policyRuleLogic"
+                    value={policyRuleLogic}
+                    onChange={(e) => setPolicyRuleLogic(e.target.value)}
+                    placeholder={'{\n  "condition": "AND",\n  "rules": [\n    {\n      "field": "publicAccess",\n      "operator": "equals",\n      "value": false\n    }\n  ]\n}'}
+                    className="font-mono text-sm min-h-[120px]"
+                    data-testid="textarea-policy-rule-logic"
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleCreateSubmit}
+                  disabled={createMutation.isPending || !policyName.trim()}
+                  data-testid="button-submit-policy"
+                >
+                  {createMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
+                  Create Policy
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {!policyChecks || policyChecks.length === 0 ? (
+          <Card data-testid="empty-policy-checks">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <FileCheck className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No policy checks configured</p>
+              <p className="text-xs text-muted-foreground mt-1">Create a policy check to start evaluating cloud resources</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {policyChecks.map((policy: PolicyCheck, idx: number) => {
+              const ProviderIcon = PROVIDER_ICONS[policy.cloudProvider || ""] || Cloud;
+              return (
+                <Card key={policy.id || idx} data-testid={`card-policy-${policy.id || idx}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className="p-2 rounded-md bg-muted/50 flex-shrink-0">
+                          <ProviderIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold" data-testid={`text-policy-name-${policy.id || idx}`}>
+                              {policy.name}
+                            </span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(policy.severity)}`} data-testid={`badge-policy-severity-${policy.id || idx}`}>
+                              {policy.severity}
+                            </span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${policy.status === "active" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-muted text-muted-foreground border-muted"}`} data-testid={`badge-policy-status-${policy.id || idx}`}>
+                              {policy.status}
+                            </span>
+                            {policy.cloudProvider && (
+                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">
+                                {PROVIDER_LABELS[policy.cloudProvider] || policy.cloudProvider}
+                              </Badge>
+                            )}
+                          </div>
+                          {policy.description && (
+                            <p className="text-xs text-muted-foreground" data-testid={`text-policy-description-${policy.id || idx}`}>
+                              {policy.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                            {policy.resourceType && (
+                              <span data-testid={`text-policy-resource-type-${policy.id || idx}`}>
+                                Resource: <span className="font-medium text-foreground">{policy.resourceType}</span>
+                              </span>
+                            )}
+                            {policy.lastRunAt && (
+                              <span className="flex items-center gap-1" data-testid={`text-policy-last-run-${policy.id || idx}`}>
+                                <Clock className="h-3 w-3" />
+                                Last Run: {formatTimestamp(policy.lastRunAt)}
+                              </span>
+                            )}
+                          </div>
+                          {policy.complianceFrameworks && policy.complianceFrameworks.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {policy.complianceFrameworks.map((fw: string, fi: number) => (
+                                <Badge key={fi} variant="secondary" className="text-[10px]" data-testid={`badge-policy-framework-${policy.id || idx}-${fi}`}>
+                                  {fw}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => runMutation.mutate(policy.id)}
+                          disabled={runMutation.isPending}
+                          data-testid={`button-run-policy-${policy.id || idx}`}
+                        >
+                          {runMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          data-testid={`button-edit-policy-${policy.id || idx}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => deleteMutation.mutate(policy.id)}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-policy-${policy.id || idx}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Shield className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Policy Results</h2>
+            <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+              {filteredResults.length}
+            </Badge>
+          </div>
+          <Select value={resultFilter} onValueChange={setResultFilter}>
+            <SelectTrigger className="w-52" data-testid="select-result-filter">
+              <SelectValue placeholder="Filter by policy" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Policies</SelectItem>
+              {(policyChecks || []).map((p: PolicyCheck) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {resultsLoading ? (
+          <div className="space-y-3" data-testid="policy-results-loading">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : filteredResults.length === 0 ? (
+          <Card data-testid="empty-policy-results">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <Shield className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No policy results</p>
+              <p className="text-xs text-muted-foreground mt-1">Run a policy check to see evaluation results</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {filteredResults.map((result: PolicyResult, idx: number) => {
+              const policyName = (policyChecks || []).find((p: PolicyCheck) => p.id === result.policyCheckId)?.name || result.policyCheckId;
+              return (
+                <Card key={result.id || idx} data-testid={`card-result-${result.id || idx}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${result.status === "pass" ? "bg-green-500/10 text-green-500 border-green-500/20" : result.status === "fail" ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground border-muted"}`} data-testid={`badge-result-status-${result.id || idx}`}>
+                            {result.status}
+                          </span>
+                          <span className="text-sm font-semibold" data-testid={`text-result-policy-${result.id || idx}`}>
+                            {policyName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                          <span data-testid={`text-result-resource-${result.id || idx}`}>
+                            Resource: <span className="font-mono font-medium text-foreground">{result.resourceId}</span>
+                          </span>
+                          {result.resourceType && (
+                            <span data-testid={`text-result-type-${result.id || idx}`}>
+                              Type: <span className="font-medium text-foreground">{result.resourceType}</span>
+                            </span>
+                          )}
+                          {result.resourceRegion && (
+                            <span data-testid={`text-result-region-${result.id || idx}`}>
+                              Region: <span className="font-medium text-foreground">{result.resourceRegion}</span>
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1" data-testid={`text-result-evaluated-${result.id || idx}`}>
+                            <Clock className="h-3 w-3" />
+                            {formatTimestamp(result.evaluatedAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {result.status === "pass" ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        ) : result.status === "fail" ? (
+                          <XCircle className="h-5 w-5 text-red-500" />
+                        ) : (
+                          <Clock className="h-5 w-5 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CSPMPage() {
   const [activeTab, setActiveTab] = useState("accounts");
 
@@ -639,6 +1111,10 @@ export default function CSPMPage() {
             <AlertTriangle className="h-4 w-4 mr-1.5" />
             Findings
           </TabsTrigger>
+          <TabsTrigger value="policy-checks" data-testid="tab-policy-checks">
+            <FileCheck className="h-4 w-4 mr-1.5" />
+            Policy Checks
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts" className="mt-3">
@@ -651,6 +1127,10 @@ export default function CSPMPage() {
 
         <TabsContent value="findings" className="mt-3">
           <FindingsTab />
+        </TabsContent>
+
+        <TabsContent value="policy-checks" className="mt-3">
+          <PolicyChecksTab />
         </TabsContent>
       </Tabs>
     </div>

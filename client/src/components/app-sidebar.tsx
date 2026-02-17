@@ -1,4 +1,4 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText } from "lucide-react";
 import atsLogo from "@assets/Screenshot_20260213_122029_Google_1770965513052.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -23,6 +23,7 @@ const mainNavItems = [
   { title: "Alerts", url: "/alerts", icon: AlertTriangle, description: "Threat alerts" },
   { title: "Incidents", url: "/incidents", icon: FileWarning, description: "Active incidents" },
   { title: "Analytics", url: "/analytics", icon: BarChart3, description: "Security metrics" },
+  { title: "Reports", url: "/reports", icon: FileText, description: "Reports & briefs" },
   { title: "Threat Intel", url: "/threat-intel", icon: Shield, description: "IOC intelligence" },
   { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair, description: "Attack framework" },
   { title: "Entity Graph", url: "/entity-graph", icon: Network, description: "Identity resolution" },
@@ -41,9 +42,11 @@ const systemNavItems = [
   { title: "AI Engine", url: "/ai-engine", icon: Brain, description: "Correlation engine" },
   { title: "Playbooks", url: "/playbooks", icon: Workflow, description: "Automation playbooks" },
   { title: "Integrations", url: "/integrations", icon: Link2, description: "External integrations" },
+  { title: "Operations", url: "/operations", icon: Zap, description: "Workers & SLOs" },
 ];
 
 const adminNavItems = [
+  { title: "Team Management", url: "/team", icon: Users, description: "Users & RBAC" },
   { title: "Audit Log", url: "/audit-log", icon: Activity, description: "Activity history" },
   { title: "Compliance", url: "/compliance", icon: Scale, description: "Data governance" },
   { title: "Settings", url: "/settings", icon: Settings, description: "Configuration" },

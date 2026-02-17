@@ -4,7 +4,7 @@ import {
   Shield, FileText, Users, CheckCircle2, XCircle, AlertTriangle,
   Loader2, Download, Play, Clock, Hash, Mail, Calendar,
   Lock, Eye, EyeOff, Database, RefreshCw, Plus, ChevronRight,
-  ScrollText, Scale, ShieldCheck, Trash2
+  ScrollText, Scale, ShieldCheck, Trash2, Upload
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +78,102 @@ interface RetentionReport {
   lastCleanupAt: string | null;
   lastDeletedCount: number;
 }
+
+interface ComplianceControl {
+  id: string;
+  framework: string;
+  controlId: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  parentControlId: string | null;
+  createdAt: string;
+}
+
+interface ComplianceControlMapping {
+  id: string;
+  orgId: string;
+  controlId: string;
+  resourceType: string;
+  resourceId: string;
+  status: string;
+  evidenceNotes: string | null;
+  lastAssessedAt: string | null;
+  assessedBy: string | null;
+  createdAt: string;
+}
+
+interface EvidenceLockerItem {
+  id: string;
+  orgId: string;
+  title: string;
+  description: string | null;
+  artifactType: string;
+  framework: string | null;
+  controlId: string | null;
+  storageKey: string | null;
+  url: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  checksum: string | null;
+  retentionDays: number;
+  expiresAt: string | null;
+  status: string;
+  metadata: any;
+  tags: string[];
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+  createdAt: string;
+}
+
+const ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  screenshot: "Screenshot",
+  log: "Log File",
+  config_snapshot: "Config Snapshot",
+  report: "Report",
+  policy_result: "Policy Result",
+  scan_result: "Scan Result",
+  communication: "Communication",
+  other: "Other",
+};
+
+const ARTIFACT_TYPE_COLORS: Record<string, string> = {
+  screenshot: "border-cyan-500/30 text-cyan-400",
+  log: "border-amber-500/30 text-amber-400",
+  config_snapshot: "border-indigo-500/30 text-indigo-400",
+  report: "border-blue-500/30 text-blue-400",
+  policy_result: "border-green-500/30 text-green-400",
+  scan_result: "border-purple-500/30 text-purple-400",
+  communication: "border-pink-500/30 text-pink-400",
+  other: "border-gray-500/30 text-gray-400",
+};
+
+const EVIDENCE_STATUS_COLORS: Record<string, string> = {
+  active: "border-green-500/30 text-green-400",
+  archived: "border-gray-500/30 text-gray-400",
+  expired: "border-red-500/30 text-red-400",
+};
+
+const CONTROL_FRAMEWORK_LABELS: Record<string, string> = {
+  nist_csf: "NIST CSF",
+  iso_27001: "ISO 27001",
+  cis: "CIS",
+  soc2: "SOC 2",
+};
+
+const CONTROL_FRAMEWORK_COLORS: Record<string, string> = {
+  nist_csf: "border-blue-500/30 text-blue-400",
+  iso_27001: "border-purple-500/30 text-purple-400",
+  cis: "border-green-500/30 text-green-400",
+  soc2: "border-orange-500/30 text-orange-400",
+};
+
+const MAPPING_STATUS_COLORS: Record<string, string> = {
+  compliant: "border-green-500/30 text-green-400",
+  non_compliant: "border-red-500/30 text-red-400",
+  not_assessed: "border-gray-500/30 text-gray-400",
+  partial: "border-yellow-500/30 text-yellow-400",
+};
 
 const FRAMEWORKS = ["GDPR", "DPDP", "HIPAA", "SOX", "PCI-DSS", "ISO27001", "NIST"];
 
@@ -1109,6 +1205,696 @@ function RetentionTab() {
   );
 }
 
+function ControlsTab() {
+  const { toast } = useToast();
+  const [frameworkFilter, setFrameworkFilter] = useState("all");
+  const [showAddMapping, setShowAddMapping] = useState(false);
+  const [mappingControlId, setMappingControlId] = useState("");
+  const [mappingResourceType, setMappingResourceType] = useState("");
+  const [mappingResourceId, setMappingResourceId] = useState("");
+  const [mappingStatus, setMappingStatus] = useState("not_assessed");
+  const [mappingEvidenceNotes, setMappingEvidenceNotes] = useState("");
+
+  const controlsQueryKey = frameworkFilter === "all"
+    ? ["/api/compliance-controls"]
+    : ["/api/compliance-controls", { framework: frameworkFilter }];
+
+  const { data: controls, isLoading: controlsLoading } = useQuery<ComplianceControl[]>({
+    queryKey: controlsQueryKey,
+    queryFn: async () => {
+      const url = frameworkFilter === "all"
+        ? "/api/compliance-controls"
+        : `/api/compliance-controls?framework=${frameworkFilter}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch controls");
+      return res.json();
+    },
+  });
+
+  const { data: mappings, isLoading: mappingsLoading } = useQuery<ComplianceControlMapping[]>({
+    queryKey: ["/api/compliance-control-mappings"],
+  });
+
+  const seedControls = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/compliance-controls/seed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance-controls"] });
+      toast({ title: "Controls seeded", description: "Built-in compliance controls have been loaded." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to seed controls", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createMapping = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/compliance-control-mappings", {
+        controlId: mappingControlId,
+        resourceType: mappingResourceType,
+        resourceId: mappingResourceId,
+        status: mappingStatus,
+        evidenceNotes: mappingEvidenceNotes || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance-control-mappings"] });
+      setShowAddMapping(false);
+      setMappingControlId("");
+      setMappingResourceType("");
+      setMappingResourceId("");
+      setMappingStatus("not_assessed");
+      setMappingEvidenceNotes("");
+      toast({ title: "Mapping created", description: "Control mapping has been added." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create mapping", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const groupedControls = (controls || []).reduce<Record<string, ComplianceControl[]>>((acc, ctrl) => {
+    const key = ctrl.category || "Uncategorized";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(ctrl);
+    return acc;
+  }, {});
+
+  if (controlsLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            Compliance Control Mappings
+          </CardTitle>
+          <Button
+            size="sm"
+            onClick={() => seedControls.mutate()}
+            disabled={seedControls.isPending}
+            data-testid="button-seed-controls"
+          >
+            {seedControls.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4 mr-1" />
+            )}
+            Seed Controls
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">Framework Filter</label>
+            <Select value={frameworkFilter} onValueChange={setFrameworkFilter}>
+              <SelectTrigger className="w-48" data-testid="select-framework-filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Frameworks</SelectItem>
+                <SelectItem value="nist_csf">NIST CSF</SelectItem>
+                <SelectItem value="iso_27001">ISO 27001</SelectItem>
+                <SelectItem value="cis">CIS</SelectItem>
+                <SelectItem value="soc2">SOC 2</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {Object.keys(groupedControls).length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground" data-testid="text-no-controls">
+              No controls found. Click "Seed Controls" to load built-in compliance controls.
+            </div>
+          ) : (
+            Object.entries(groupedControls).map(([category, categoryControls]) => (
+              <div key={category} className="space-y-2" data-testid={`control-group-${category.toLowerCase().replace(/\s/g, "-")}`}>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</h3>
+                <div className="overflow-x-auto border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Framework</TableHead>
+                        <TableHead className="text-xs">Control ID</TableHead>
+                        <TableHead className="text-xs">Title</TableHead>
+                        <TableHead className="text-xs">Description</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {categoryControls.map((ctrl) => (
+                        <TableRow key={ctrl.id} data-testid={`row-control-${ctrl.id}`}>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${CONTROL_FRAMEWORK_COLORS[ctrl.framework] || ""}`}
+                              data-testid={`badge-framework-${ctrl.id}`}
+                            >
+                              {CONTROL_FRAMEWORK_LABELS[ctrl.framework] || ctrl.framework}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs font-mono" data-testid={`text-control-id-${ctrl.id}`}>{ctrl.controlId}</span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm" data-testid={`text-control-title-${ctrl.id}`}>{ctrl.title}</span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs text-muted-foreground" data-testid={`text-control-desc-${ctrl.id}`}>
+                              {ctrl.description || "—"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <ScrollText className="h-4 w-4 text-muted-foreground" />
+            Control Mappings
+          </CardTitle>
+          <Dialog open={showAddMapping} onOpenChange={setShowAddMapping}>
+            <DialogTrigger asChild>
+              <Button size="sm" data-testid="button-add-mapping">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Mapping
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Control Mapping</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Control</label>
+                  <Select value={mappingControlId} onValueChange={setMappingControlId}>
+                    <SelectTrigger data-testid="select-mapping-control">
+                      <SelectValue placeholder="Select a control" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(controls || []).map((ctrl) => (
+                        <SelectItem key={ctrl.id} value={ctrl.id}>
+                          {ctrl.controlId} - {ctrl.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Resource Type</label>
+                  <Input
+                    placeholder="e.g., server, application, policy"
+                    value={mappingResourceType}
+                    onChange={(e) => setMappingResourceType(e.target.value)}
+                    data-testid="input-mapping-resource-type"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Resource ID</label>
+                  <Input
+                    placeholder="e.g., web-server-01"
+                    value={mappingResourceId}
+                    onChange={(e) => setMappingResourceId(e.target.value)}
+                    data-testid="input-mapping-resource-id"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Status</label>
+                  <Select value={mappingStatus} onValueChange={setMappingStatus}>
+                    <SelectTrigger data-testid="select-mapping-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="compliant">Compliant</SelectItem>
+                      <SelectItem value="non_compliant">Non-Compliant</SelectItem>
+                      <SelectItem value="not_assessed">Not Assessed</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Evidence Notes</label>
+                  <Input
+                    placeholder="Evidence or notes..."
+                    value={mappingEvidenceNotes}
+                    onChange={(e) => setMappingEvidenceNotes(e.target.value)}
+                    data-testid="input-mapping-evidence"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" data-testid="button-cancel-mapping">Cancel</Button>
+                </DialogClose>
+                <Button
+                  onClick={() => createMapping.mutate()}
+                  disabled={!mappingControlId || !mappingResourceType || !mappingResourceId || createMapping.isPending}
+                  data-testid="button-submit-mapping"
+                >
+                  {createMapping.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
+                  Create Mapping
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          {mappingsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : mappings && mappings.length > 0 ? (
+            <div className="overflow-x-auto border rounded-md">
+              <Table data-testid="table-mappings">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Control ID</TableHead>
+                    <TableHead className="text-xs">Resource</TableHead>
+                    <TableHead className="text-xs">Status</TableHead>
+                    <TableHead className="text-xs">Evidence</TableHead>
+                    <TableHead className="text-xs">Last Assessed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mappings.map((mapping) => (
+                    <TableRow key={mapping.id} data-testid={`row-mapping-${mapping.id}`}>
+                      <TableCell>
+                        <span className="text-xs font-mono" data-testid={`text-mapping-control-${mapping.id}`}>
+                          {mapping.controlId.slice(0, 8)}...
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs" data-testid={`text-mapping-resource-${mapping.id}`}>
+                          {mapping.resourceType} / {mapping.resourceId}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${MAPPING_STATUS_COLORS[mapping.status] || ""}`}
+                          data-testid={`badge-mapping-status-${mapping.id}`}
+                        >
+                          {mapping.status.replace(/_/g, " ")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground" data-testid={`text-mapping-evidence-${mapping.id}`}>
+                          {mapping.evidenceNotes || "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground" data-testid={`text-mapping-assessed-${mapping.id}`}>
+                          {formatDateTime(mapping.lastAssessedAt)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-sm text-muted-foreground" data-testid="text-no-mappings">
+              No control mappings found. Add a mapping to track compliance status.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (bytes === null || bytes === undefined) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function EvidenceLockerTab() {
+  const { toast } = useToast();
+  const [frameworkFilter, setFrameworkFilter] = useState("all");
+  const [artifactTypeFilter, setArtifactTypeFilter] = useState("all");
+  const [showUpload, setShowUpload] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newArtifactType, setNewArtifactType] = useState("screenshot");
+  const [newFramework, setNewFramework] = useState("nist_csf");
+  const [newControlId, setNewControlId] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [newRetentionDays, setNewRetentionDays] = useState<number>(365);
+  const [newTags, setNewTags] = useState("");
+
+  const evidenceQueryKey = ["/api/evidence-locker", { framework: frameworkFilter, artifactType: artifactTypeFilter }];
+
+  const { data: evidenceItems, isLoading } = useQuery<EvidenceLockerItem[]>({
+    queryKey: evidenceQueryKey,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (frameworkFilter !== "all") params.set("framework", frameworkFilter);
+      if (artifactTypeFilter !== "all") params.set("artifactType", artifactTypeFilter);
+      const url = `/api/evidence-locker${params.toString() ? `?${params.toString()}` : ""}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch evidence");
+      return res.json();
+    },
+  });
+
+  const createEvidence = useMutation({
+    mutationFn: async () => {
+      const tags = newTags.split(",").map((t) => t.trim()).filter(Boolean);
+      await apiRequest("POST", "/api/evidence-locker", {
+        title: newTitle,
+        description: newDescription || null,
+        artifactType: newArtifactType,
+        framework: newFramework,
+        controlId: newControlId || null,
+        url: newUrl || null,
+        retentionDays: newRetentionDays,
+        tags,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evidence-locker"] });
+      setShowUpload(false);
+      setNewTitle("");
+      setNewDescription("");
+      setNewArtifactType("screenshot");
+      setNewFramework("nist_csf");
+      setNewControlId("");
+      setNewUrl("");
+      setNewRetentionDays(365);
+      setNewTags("");
+      toast({ title: "Evidence uploaded", description: "Evidence artifact has been added to the locker." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to upload evidence", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteEvidence = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/evidence-locker/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evidence-locker"] });
+      toast({ title: "Evidence deleted", description: "Evidence artifact has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to delete evidence", description: error.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <div>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              Evidence Locker
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">Audit-ready artifacts for compliance evidence</p>
+          </div>
+          <Dialog open={showUpload} onOpenChange={setShowUpload}>
+            <DialogTrigger asChild>
+              <Button size="sm" data-testid="button-upload-evidence">
+                <Upload className="h-4 w-4 mr-1" />
+                Upload Evidence
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Evidence</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Title</label>
+                  <Input
+                    placeholder="Evidence title"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    data-testid="input-evidence-title"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Description</label>
+                  <Input
+                    placeholder="Brief description..."
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    data-testid="input-evidence-description"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-muted-foreground">Artifact Type</label>
+                    <Select value={newArtifactType} onValueChange={setNewArtifactType}>
+                      <SelectTrigger data-testid="select-evidence-artifact-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(ARTIFACT_TYPE_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-muted-foreground">Framework</label>
+                    <Select value={newFramework} onValueChange={setNewFramework}>
+                      <SelectTrigger data-testid="select-evidence-framework">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nist_csf">NIST CSF</SelectItem>
+                        <SelectItem value="iso_27001">ISO 27001</SelectItem>
+                        <SelectItem value="cis">CIS</SelectItem>
+                        <SelectItem value="soc2">SOC 2</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Control ID</label>
+                  <Input
+                    placeholder="e.g., PR.AC-1"
+                    value={newControlId}
+                    onChange={(e) => setNewControlId(e.target.value)}
+                    data-testid="input-evidence-control-id"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">URL</label>
+                  <Input
+                    placeholder="https://..."
+                    value={newUrl}
+                    onChange={(e) => setNewUrl(e.target.value)}
+                    data-testid="input-evidence-url"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Retention Days</label>
+                  <Input
+                    type="number"
+                    value={newRetentionDays}
+                    onChange={(e) => setNewRetentionDays(Number(e.target.value))}
+                    data-testid="input-evidence-retention-days"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Tags (comma-separated)</label>
+                  <Input
+                    placeholder="audit, q1-2026, access-control"
+                    value={newTags}
+                    onChange={(e) => setNewTags(e.target.value)}
+                    data-testid="input-evidence-tags"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" data-testid="button-cancel-evidence">Cancel</Button>
+                </DialogClose>
+                <Button
+                  onClick={() => createEvidence.mutate()}
+                  disabled={!newTitle || createEvidence.isPending}
+                  data-testid="button-submit-evidence"
+                >
+                  {createEvidence.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  Upload
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Framework</label>
+              <Select value={frameworkFilter} onValueChange={setFrameworkFilter}>
+                <SelectTrigger className="w-48" data-testid="select-evidence-framework-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Frameworks</SelectItem>
+                  <SelectItem value="nist_csf">NIST CSF</SelectItem>
+                  <SelectItem value="iso_27001">ISO 27001</SelectItem>
+                  <SelectItem value="cis">CIS</SelectItem>
+                  <SelectItem value="soc2">SOC 2</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Artifact Type</label>
+              <Select value={artifactTypeFilter} onValueChange={setArtifactTypeFilter}>
+                <SelectTrigger className="w-48" data-testid="select-evidence-artifact-type-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {Object.entries(ARTIFACT_TYPE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {evidenceItems && evidenceItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {evidenceItems.map((item) => (
+                <Card key={item.id} data-testid={`card-evidence-${item.id}`}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate" data-testid={`text-evidence-title-${item.id}`}>{item.title}</div>
+                        {item.description && (
+                          <div className="text-xs text-muted-foreground" data-testid={`text-evidence-desc-${item.id}`}>{item.description}</div>
+                        )}
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteEvidence.mutate(item.id)}
+                        disabled={deleteEvidence.isPending && deleteEvidence.variables === item.id}
+                        data-testid={`button-delete-evidence-${item.id}`}
+                      >
+                        {deleteEvidence.isPending && deleteEvidence.variables === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge
+                        variant="outline"
+                        className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${ARTIFACT_TYPE_COLORS[item.artifactType] || ""}`}
+                        data-testid={`badge-evidence-type-${item.id}`}
+                      >
+                        {ARTIFACT_TYPE_LABELS[item.artifactType] || item.artifactType}
+                      </Badge>
+                      {item.framework && (
+                        <Badge
+                          variant="outline"
+                          className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${CONTROL_FRAMEWORK_COLORS[item.framework] || ""}`}
+                          data-testid={`badge-evidence-framework-${item.id}`}
+                        >
+                          {CONTROL_FRAMEWORK_LABELS[item.framework] || item.framework}
+                        </Badge>
+                      )}
+                      <Badge
+                        variant="outline"
+                        className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${EVIDENCE_STATUS_COLORS[item.status] || ""}`}
+                        data-testid={`badge-evidence-status-${item.id}`}
+                      >
+                        {item.status}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {item.controlId && (
+                        <div data-testid={`text-evidence-control-${item.id}`}>
+                          Control: <span className="font-mono">{item.controlId}</span>
+                        </div>
+                      )}
+                      <div data-testid={`text-evidence-size-${item.id}`}>
+                        Size: {formatFileSize(item.fileSize)}
+                      </div>
+                      {item.checksum && (
+                        <div className="truncate" data-testid={`text-evidence-checksum-${item.id}`}>
+                          Checksum: <span className="font-mono">{item.checksum.slice(0, 12)}...</span>
+                        </div>
+                      )}
+                      <div data-testid={`text-evidence-retention-${item.id}`}>
+                        Retention: {item.retentionDays} days
+                      </div>
+                      {item.expiresAt && (
+                        <div data-testid={`text-evidence-expiry-${item.id}`}>
+                          Expires: {formatDate(item.expiresAt)}
+                        </div>
+                      )}
+                      {item.uploadedByName && (
+                        <div data-testid={`text-evidence-uploader-${item.id}`}>
+                          By: {item.uploadedByName}
+                        </div>
+                      )}
+                      <div data-testid={`text-evidence-created-${item.id}`}>
+                        Created: {formatDate(item.createdAt)}
+                      </div>
+                    </div>
+                    {item.tags && item.tags.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap" data-testid={`tags-evidence-${item.id}`}>
+                        {item.tags.map((tag) => (
+                          <Badge key={tag} variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-sm text-muted-foreground" data-testid="text-no-evidence">
+              <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+              No evidence artifacts found. Upload evidence to get started.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function CompliancePage() {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-compliance">
@@ -1144,6 +1930,14 @@ export default function CompliancePage() {
             <Clock className="h-3.5 w-3.5 mr-1.5" />
             Retention
           </TabsTrigger>
+          <TabsTrigger value="controls" data-testid="tab-controls">
+            <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+            Controls
+          </TabsTrigger>
+          <TabsTrigger value="evidence-locker" data-testid="tab-evidence-locker">
+            <Lock className="h-3.5 w-3.5 mr-1.5" />
+            Evidence Locker
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="policies">
@@ -1160,6 +1954,12 @@ export default function CompliancePage() {
         </TabsContent>
         <TabsContent value="retention">
           <RetentionTab />
+        </TabsContent>
+        <TabsContent value="controls">
+          <ControlsTab />
+        </TabsContent>
+        <TabsContent value="evidence-locker">
+          <EvidenceLockerTab />
         </TabsContent>
       </Tabs>
     </div>

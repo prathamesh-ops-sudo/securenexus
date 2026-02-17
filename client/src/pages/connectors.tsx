@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -54,7 +55,13 @@ import {
   Settings2,
   ExternalLink,
   BookOpen,
+  HeartPulse,
+  BarChart3,
+  Skull,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import type { ConnectorJobRun, ConnectorHealthCheck } from "@shared/schema";
 
 interface ConnectorType {
   type: string;
@@ -84,6 +91,14 @@ interface ConnectorItem {
   updatedAt: string | null;
 }
 
+interface ConnectorMetrics {
+  avgLatencyMs: number;
+  errorRate: number;
+  throttleCount: number;
+  totalRuns: number;
+  successRate: number;
+}
+
 const ICON_MAP: Record<string, any> = {
   Shield, Database, Cloud, Eye, Flame, Radar, ShieldCheck, CloudLightning, Zap,
 };
@@ -107,6 +122,289 @@ function statusBadge(status: string) {
   }
 }
 
+function jobStatusBadge(status: string) {
+  switch (status) {
+    case "success":
+      return <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" />Success</Badge>;
+    case "failed":
+      return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+    case "running":
+      return <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
+
+function healthStatusBadge(status: string) {
+  switch (status) {
+    case "healthy":
+      return <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" />Healthy</Badge>;
+    case "unhealthy":
+      return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Unhealthy</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
+
+function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }) {
+  const { data: jobs, isLoading: jobsLoading } = useQuery<ConnectorJobRun[]>({
+    queryKey: ["/api/connectors", connector.id, "jobs"],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/${connector.id}/jobs?limit=20`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch jobs");
+      return res.json();
+    },
+  });
+
+  const { data: metrics, isLoading: metricsLoading } = useQuery<ConnectorMetrics>({
+    queryKey: ["/api/connectors", connector.id, "metrics"],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/${connector.id}/metrics`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch metrics");
+      return res.json();
+    },
+  });
+
+  const { data: healthChecks, isLoading: healthLoading } = useQuery<ConnectorHealthCheck[]>({
+    queryKey: ["/api/connectors", connector.id, "health"],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/${connector.id}/health?limit=5`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch health");
+      return res.json();
+    },
+  });
+
+  const latestHealth = healthChecks?.[0];
+  const credentialExpiresAt = latestHealth?.credentialExpiresAt ? new Date(latestHealth.credentialExpiresAt) : null;
+  const now = new Date();
+  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const credentialExpiringSoon = credentialExpiresAt && credentialExpiresAt <= sevenDaysFromNow;
+
+  return (
+    <div className="space-y-4 p-4 bg-muted/30 rounded-md">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3" data-testid={`card-connector-metrics-${connector.id}`}>
+        {metricsLoading ? (
+          <div className="col-span-5 flex justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : metrics ? (
+          <>
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Avg Latency</span>
+                </div>
+                <span className="text-lg font-bold" data-testid={`text-metric-avg-latency-${connector.id}`}>
+                  {Math.round(metrics.avgLatencyMs)}ms
+                </span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Error Rate</span>
+                </div>
+                <span className="text-lg font-bold" data-testid={`text-metric-error-rate-${connector.id}`}>
+                  {(metrics.errorRate * 100).toFixed(1)}%
+                </span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <RefreshCw className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Throttle Count</span>
+                </div>
+                <span className="text-lg font-bold" data-testid={`text-metric-throttle-count-${connector.id}`}>
+                  {metrics.throttleCount}
+                </span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Success Rate</span>
+                </div>
+                <span className="text-lg font-bold" data-testid={`text-metric-success-rate-${connector.id}`}>
+                  {(metrics.successRate * 100).toFixed(1)}%
+                </span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <BarChart3 className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Total Runs</span>
+                </div>
+                <span className="text-lg font-bold" data-testid={`text-metric-total-runs-${connector.id}`}>
+                  {metrics.totalRuns}
+                </span>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <div className="col-span-5 text-sm text-muted-foreground text-center py-2">No metrics available</div>
+        )}
+      </div>
+
+      {latestHealth && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Health Status</CardTitle>
+            <HeartPulse className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {healthLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : (
+              <div className="flex items-center gap-4 flex-wrap">
+                <div data-testid={`text-health-status-${connector.id}`}>
+                  {healthStatusBadge(latestHealth.status)}
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  Latency: <span className="font-mono">{latestHealth.latencyMs}ms</span>
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  Credentials: <span className="font-medium">{latestHealth.credentialStatus || "unknown"}</span>
+                </span>
+                {credentialExpiringSoon && (
+                  <Badge variant="destructive" data-testid={`badge-credential-warning-${connector.id}`}>
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    Credential expires {credentialExpiresAt!.toLocaleDateString()}
+                  </Badge>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  Checked: {new Date(latestHealth.checkedAt!).toLocaleString()}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Job History</CardTitle>
+          <BarChart3 className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {jobsLoading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : !jobs?.length ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No job runs recorded yet</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table data-testid={`table-job-history-${connector.id}`}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Started At</TableHead>
+                    <TableHead>Latency</TableHead>
+                    <TableHead>Alerts Received</TableHead>
+                    <TableHead>Alerts Created</TableHead>
+                    <TableHead>Error</TableHead>
+                    <TableHead>Throttled</TableHead>
+                    <TableHead>Dead Letter</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobs.map(job => (
+                    <TableRow key={job.id} data-testid={`row-job-${job.id}`}>
+                      <TableCell>{jobStatusBadge(job.status)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {job.startedAt ? new Date(job.startedAt).toLocaleString() : "-"}
+                      </TableCell>
+                      <TableCell className="text-sm font-mono">{job.latencyMs != null ? `${job.latencyMs}ms` : "-"}</TableCell>
+                      <TableCell className="text-sm">{job.alertsReceived ?? 0}</TableCell>
+                      <TableCell className="text-sm">{job.alertsCreated ?? 0}</TableCell>
+                      <TableCell className="text-sm text-destructive max-w-xs truncate">{job.errorMessage || "-"}</TableCell>
+                      <TableCell>
+                        {job.throttled ? (
+                          <Badge variant="secondary">Throttled</Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {job.isDeadLetter ? (
+                          <Badge variant="destructive" data-testid="badge-dead-letter"><Skull className="h-3 w-3 mr-1" />Dead Letter</Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
+  const { data: deadLetters, isLoading } = useQuery<ConnectorJobRun[]>({
+    queryKey: ["/api/connectors/dead-letters"],
+  });
+
+  const connectorNameMap = connectors.reduce((acc, c) => {
+    acc[c.id] = c.name;
+    return acc;
+  }, {} as Record<string, string>);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Dead Letter Queue</CardTitle>
+        <CardDescription>Job runs that have exhausted all retry attempts</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !deadLetters?.length ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <Skull className="h-10 w-10 mb-3" />
+            <p className="text-sm">No dead letter entries</p>
+            <p className="text-xs mt-1">All job runs have been processed successfully or are still retrying</p>
+          </div>
+        ) : (
+          <Table data-testid="table-dead-letters">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Connector</TableHead>
+                <TableHead>Error</TableHead>
+                <TableHead>Started At</TableHead>
+                <TableHead>Attempts</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {deadLetters.map(dl => (
+                <TableRow key={dl.id} data-testid={`row-dead-letter-${dl.id}`}>
+                  <TableCell className="font-medium">{connectorNameMap[dl.connectorId] || dl.connectorId}</TableCell>
+                  <TableCell className="text-sm text-destructive max-w-md truncate">{dl.errorMessage || "-"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {dl.startedAt ? new Date(dl.startedAt).toLocaleString() : "-"}
+                  </TableCell>
+                  <TableCell className="text-sm font-mono">{dl.attempt}/{dl.maxAttempts}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ConnectorsPage() {
   const { toast } = useToast();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -116,6 +414,9 @@ export default function ConnectorsPage() {
   const [pollingInterval, setPollingInterval] = useState("5");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [healthCheckingId, setHealthCheckingId] = useState<string | null>(null);
+  const [expandedConnectorId, setExpandedConnectorId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("all-connectors");
 
   const { data: connectorTypes, isLoading: typesLoading } = useQuery<ConnectorType[]>({
     queryKey: ["/api/connectors/types"],
@@ -123,6 +424,10 @@ export default function ConnectorsPage() {
 
   const { data: existingConnectors, isLoading: connectorsLoading } = useQuery<ConnectorItem[]>({
     queryKey: ["/api/connectors"],
+  });
+
+  const { data: deadLetters } = useQuery<ConnectorJobRun[]>({
+    queryKey: ["/api/connectors/dead-letters"],
   });
 
   const createMutation = useMutation({
@@ -201,6 +506,27 @@ export default function ConnectorsPage() {
     },
   });
 
+  const healthCheckMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setHealthCheckingId(id);
+      const res = await apiRequest("POST", `/api/connectors/${id}/health-check`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setHealthCheckingId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      if (data.status === "healthy") {
+        toast({ title: "Health check passed", description: `Latency: ${data.latencyMs}ms` });
+      } else {
+        toast({ title: "Health check failed", description: data.errorMessage || "Unhealthy", variant: "destructive" });
+      }
+    },
+    onError: (err: any) => {
+      setHealthCheckingId(null);
+      toast({ title: "Health check failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const toggleMutation = useMutation({
     mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
       const res = await apiRequest("PATCH", `/api/connectors/${id}`, { status: newStatus });
@@ -244,6 +570,10 @@ export default function ConnectorsPage() {
   const activeCount = existingConnectors?.filter(c => c.status === "active").length || 0;
   const errorCount = existingConnectors?.filter(c => c.status === "error").length || 0;
   const totalSynced = existingConnectors?.reduce((sum, c) => sum + (c.totalAlertsSynced || 0), 0) || 0;
+
+  const deadLetterConnectorIds = new Set(
+    deadLetters?.filter(dl => dl.isDeadLetter).map(dl => dl.connectorId) || []
+  );
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -298,186 +628,247 @@ export default function ConnectorsPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Configured Connectors</CardTitle>
-          <CardDescription>Manage connections to your security tools</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {connectorsLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : !existingConnectors?.length ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Unplug className="h-10 w-10 mb-3" />
-              <p className="text-sm">No connectors configured yet</p>
-              <p className="text-xs mt-1">Add a connector to start pulling alerts from your security tools</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Connector</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Sync</TableHead>
-                  <TableHead>Alerts Synced</TableHead>
-                  <TableHead>Interval</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {existingConnectors.map(connector => {
-                  const meta = connectorTypes?.find(t => t.type === connector.type);
-                  const IconComp = getIcon(meta?.icon || "");
-                  return (
-                    <TableRow key={connector.id} data-testid={`row-connector-${connector.id}`}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <IconComp className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <span className="font-medium" data-testid={`text-connector-name-${connector.id}`}>{connector.name}</span>
-                            {connector.lastSyncError && connector.status === "error" && (
-                              <p className="text-xs text-destructive mt-0.5 max-w-xs truncate">{connector.lastSyncError}</p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">{meta?.name || connector.type}</span>
-                          {meta?.docsUrl && (
-                            <a
-                              href={meta.docsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center text-primary hover:underline"
-                              data-testid={`link-table-docs-${connector.id}`}
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{statusBadge(connector.status)}</TableCell>
-                      <TableCell>
-                        {connector.lastSyncAt ? (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Clock className="h-3 w-3" />
-                            {new Date(connector.lastSyncAt).toLocaleString()}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Never</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm font-mono" data-testid={`text-synced-${connector.id}`}>{connector.totalAlertsSynced || 0}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">{connector.pollingIntervalMin || 5}m</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => testMutation.mutate(connector.id)}
-                            disabled={testingId === connector.id}
-                            data-testid={`button-test-${connector.id}`}
-                          >
-                            {testingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => syncMutation.mutate(connector.id)}
-                            disabled={syncingId === connector.id}
-                            data-testid={`button-sync-${connector.id}`}
-                          >
-                            {syncingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => {
-                              const newStatus = connector.status === "inactive" ? "active" : "inactive";
-                              toggleMutation.mutate({ id: connector.id, newStatus });
-                            }}
-                            data-testid={`button-toggle-${connector.id}`}
-                          >
-                            {connector.status === "inactive" ? <Plug className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => {
-                              if (confirm("Delete this connector? This cannot be undone.")) {
-                                deleteMutation.mutate(connector.id);
-                              }
-                            }}
-                            data-testid={`button-delete-${connector.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="all-connectors" data-testid="tab-all-connectors">
+            <Plug className="h-4 w-4 mr-2" />
+            All Connectors
+          </TabsTrigger>
+          <TabsTrigger value="dead-letters" data-testid="tab-dead-letters">
+            <Skull className="h-4 w-4 mr-2" />
+            Dead Letter Queue
+            {deadLetters && deadLetters.length > 0 && (
+              <Badge variant="destructive" className="ml-2" data-testid="badge-dead-letter-count">
+                {deadLetters.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-      {!typesLoading && connectorTypes && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Available Integrations</CardTitle>
-            <CardDescription>Security tools you can connect to SecureNexus</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {connectorTypes.map(ct => {
-                const IconComp = getIcon(ct.icon);
-                const isConnected = existingConnectors?.some(c => c.type === ct.type);
-                return (
-                  <Card key={ct.type} className={isConnected ? "border-primary/30" : ""}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-md bg-muted flex-shrink-0">
-                          <IconComp className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm" data-testid={`text-type-name-${ct.type}`}>{ct.name}</span>
-                            {isConnected && <Badge variant="secondary" className="text-[10px]">Connected</Badge>}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ct.description}</p>
-                          {ct.docsUrl && (
-                            <a
-                              href={ct.docsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-primary mt-2 hover:underline"
-                              data-testid={`link-docs-${ct.type}`}
-                            >
-                              <BookOpen className="h-3 w-3" />
-                              API Docs
-                              <ExternalLink className="h-2.5 w-2.5" />
-                            </a>
+        <TabsContent value="all-connectors">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Configured Connectors</CardTitle>
+              <CardDescription>Manage connections to your security tools</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {connectorsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : !existingConnectors?.length ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Unplug className="h-10 w-10 mb-3" />
+                  <p className="text-sm">No connectors configured yet</p>
+                  <p className="text-xs mt-1">Add a connector to start pulling alerts from your security tools</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8"></TableHead>
+                      <TableHead>Connector</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Sync</TableHead>
+                      <TableHead>Alerts Synced</TableHead>
+                      <TableHead>Interval</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {existingConnectors.map(connector => {
+                      const meta = connectorTypes?.find(t => t.type === connector.type);
+                      const IconComp = getIcon(meta?.icon || "");
+                      const isExpanded = expandedConnectorId === connector.id;
+                      const hasDeadLetters = deadLetterConnectorIds.has(connector.id);
+                      return (
+                        <>
+                          <TableRow
+                            key={connector.id}
+                            data-testid={`row-connector-${connector.id}`}
+                            className="cursor-pointer"
+                            onClick={() => setExpandedConnectorId(isExpanded ? null : connector.id)}
+                          >
+                            <TableCell>
+                              {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <IconComp className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-medium" data-testid={`text-connector-name-${connector.id}`}>{connector.name}</span>
+                                    {hasDeadLetters && (
+                                      <Badge variant="destructive" data-testid="badge-dead-letter">
+                                        <Skull className="h-3 w-3 mr-1" />DLQ
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {connector.lastSyncError && connector.status === "error" && (
+                                    <p className="text-xs text-destructive mt-0.5 max-w-xs truncate">{connector.lastSyncError}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-muted-foreground">{meta?.name || connector.type}</span>
+                                {meta?.docsUrl && (
+                                  <a
+                                    href={meta.docsUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-primary hover:underline"
+                                    data-testid={`link-table-docs-${connector.id}`}
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{statusBadge(connector.status)}</TableCell>
+                            <TableCell>
+                              {connector.lastSyncAt ? (
+                                <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                  <Clock className="h-3 w-3" />
+                                  {new Date(connector.lastSyncAt).toLocaleString()}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">Never</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm font-mono" data-testid={`text-synced-${connector.id}`}>{connector.totalAlertsSynced || 0}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm text-muted-foreground">{connector.pollingIntervalMin || 5}m</span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => healthCheckMutation.mutate(connector.id)}
+                                  disabled={healthCheckingId === connector.id}
+                                  data-testid={`button-health-check-${connector.id}`}
+                                >
+                                  {healthCheckingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <HeartPulse className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => testMutation.mutate(connector.id)}
+                                  disabled={testingId === connector.id}
+                                  data-testid={`button-test-${connector.id}`}
+                                >
+                                  {testingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => syncMutation.mutate(connector.id)}
+                                  disabled={syncingId === connector.id}
+                                  data-testid={`button-sync-${connector.id}`}
+                                >
+                                  {syncingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const newStatus = connector.status === "inactive" ? "active" : "inactive";
+                                    toggleMutation.mutate({ id: connector.id, newStatus });
+                                  }}
+                                  data-testid={`button-toggle-${connector.id}`}
+                                >
+                                  {connector.status === "inactive" ? <Plug className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    if (confirm("Delete this connector? This cannot be undone.")) {
+                                      deleteMutation.mutate(connector.id);
+                                    }
+                                  }}
+                                  data-testid={`button-delete-${connector.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && (
+                            <TableRow key={`${connector.id}-detail`}>
+                              <TableCell colSpan={8} className="p-0">
+                                <ConnectorObservabilityPanel connector={connector} />
+                              </TableCell>
+                            </TableRow>
                           )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                        </>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {!typesLoading && connectorTypes && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="text-lg">Available Integrations</CardTitle>
+                <CardDescription>Security tools you can connect to SecureNexus</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {connectorTypes.map(ct => {
+                    const IconComp = getIcon(ct.icon);
+                    const isConnected = existingConnectors?.some(c => c.type === ct.type);
+                    return (
+                      <Card key={ct.type} className={isConnected ? "border-primary/30" : ""}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="flex items-center justify-center w-9 h-9 rounded-md bg-muted flex-shrink-0">
+                              <IconComp className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm" data-testid={`text-type-name-${ct.type}`}>{ct.name}</span>
+                                {isConnected && <Badge variant="secondary" className="text-[10px]">Connected</Badge>}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ct.description}</p>
+                              {ct.docsUrl && (
+                                <a
+                                  href={ct.docsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary mt-2 hover:underline"
+                                  data-testid={`link-docs-${ct.type}`}
+                                >
+                                  <BookOpen className="h-3 w-3" />
+                                  API Docs
+                                  <ExternalLink className="h-2.5 w-2.5" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="dead-letters">
+          <DeadLetterQueueView connectors={existingConnectors || []} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={(open) => { if (!open) resetForm(); setShowCreateDialog(open); }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">

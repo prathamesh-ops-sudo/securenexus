@@ -1,5 +1,5 @@
 version: 1.0
-runtime: nodejs22
+runtime: nodejs20
 build:
   commands:
     build:
@@ -14,3 +14,6 @@ run:
       value: "production"
     - name: PORT
       value: "5000"
+  healthCheck:
+    path: /api/ops/health
+    port: 5000

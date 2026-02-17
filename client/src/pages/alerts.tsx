@@ -1,16 +1,18 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download } from "lucide-react";
+import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
-import type { Alert } from "@shared/schema";
+import type { Alert, SuppressionRule } from "@shared/schema";
 
 interface CorrelationGroup {
   groupName: string;
@@ -41,6 +43,8 @@ interface TriageResult {
   relatedIocs: string[];
 }
 
+const SCOPE_OPTIONS = ["source", "category", "severity", "title_regex", "entity", "source_ip", "dest_ip", "hostname", "domain"] as const;
+
 export default function AlertsPage() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
@@ -48,10 +52,30 @@ export default function AlertsPage() {
   const [correlationResult, setCorrelationResult] = useState<CorrelationResult | null>(null);
   const [selectedAlertForTriage, setSelectedAlertForTriage] = useState<string | null>(null);
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
+  const [showSuppressionRules, setShowSuppressionRules] = useState(false);
+  const [showCreateRule, setShowCreateRule] = useState(false);
+  const [showSuppressed, setShowSuppressed] = useState(false);
+  const [calibratingAlertId, setCalibratingAlertId] = useState<string | null>(null);
+  const [calibrateScore, setCalibrateScore] = useState(50);
+  const [calibrateSource, setCalibrateSource] = useState("analyst");
+  const [calibrateNotes, setCalibrateNotes] = useState("");
+  const [ruleName, setRuleName] = useState("");
+  const [ruleScope, setRuleScope] = useState("");
+  const [ruleScopeValue, setRuleScopeValue] = useState("");
+  const [ruleSource, setRuleSource] = useState("");
+  const [ruleSeverity, setRuleSeverity] = useState("");
+  const [ruleCategory, setRuleCategory] = useState("");
+  const [ruleExpiresAt, setRuleExpiresAt] = useState("");
+  const [ruleEnabled, setRuleEnabled] = useState(true);
   const { toast } = useToast();
 
   const { data: alerts, isLoading } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
+  });
+
+  const { data: suppressionRules, isLoading: rulesLoading } = useQuery<SuppressionRule[]>({
+    queryKey: ["/api/suppression-rules"],
+    enabled: showSuppressionRules,
   });
 
   const correlate = useMutation({
@@ -98,13 +122,117 @@ export default function AlertsPage() {
     },
   });
 
+  const suppressAlert = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("POST", `/api/alerts/${alertId}/suppress`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Alert Suppressed" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to suppress", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unsuppressAlert = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("POST", `/api/alerts/${alertId}/unsuppress`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Alert Unsuppressed" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to unsuppress", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createRule = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, any> = {
+        name: ruleName,
+        scope: ruleScope,
+        scopeValue: ruleScopeValue,
+        enabled: ruleEnabled,
+      };
+      if (ruleSource) body.source = ruleSource;
+      if (ruleSeverity) body.severity = ruleSeverity;
+      if (ruleCategory) body.category = ruleCategory;
+      if (ruleExpiresAt) body.expiresAt = new Date(ruleExpiresAt).toISOString();
+      const res = await apiRequest("POST", "/api/suppression-rules", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppression-rules"] });
+      toast({ title: "Suppression Rule Created" });
+      setShowCreateRule(false);
+      setRuleName("");
+      setRuleScope("");
+      setRuleScopeValue("");
+      setRuleSource("");
+      setRuleSeverity("");
+      setRuleCategory("");
+      setRuleExpiresAt("");
+      setRuleEnabled(true);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create rule", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteRule = useMutation({
+    mutationFn: async (ruleId: string) => {
+      await apiRequest("DELETE", `/api/suppression-rules/${ruleId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppression-rules"] });
+      toast({ title: "Rule Deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete rule", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateConfidence = useMutation({
+    mutationFn: async ({ alertId, confidenceScore, confidenceSource, confidenceNotes }: { alertId: string; confidenceScore: number; confidenceSource: string; confidenceNotes: string }) => {
+      const res = await apiRequest("PATCH", `/api/alerts/${alertId}/confidence`, { confidenceScore: confidenceScore / 100, confidenceSource, confidenceNotes });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Confidence Updated" });
+      setCalibratingAlertId(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update confidence", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const scanDuplicates = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/dedup-clusters/scan", {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Duplicate Scan Complete", description: `Found ${data.clustersCreated ?? 0} cluster(s)` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Scan Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const filtered = alerts?.filter((alert) => {
     const matchesSearch = !search ||
       alert.title.toLowerCase().includes(search.toLowerCase()) ||
       alert.source.toLowerCase().includes(search.toLowerCase()) ||
       alert.description?.toLowerCase().includes(search.toLowerCase());
     const matchesSeverity = severityFilter === "all" || alert.severity === severityFilter;
-    return matchesSearch && matchesSeverity;
+    const matchesSuppressed = showSuppressed || !alert.suppressed;
+    return matchesSearch && matchesSeverity && matchesSuppressed;
   });
 
   const severities = ["all", "critical", "high", "medium", "low"];
@@ -123,18 +251,28 @@ export default function AlertsPage() {
           <p className="text-sm text-muted-foreground mt-1">All security alerts from integrated tools</p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        <Button
-          onClick={() => correlate.mutate()}
-          disabled={correlate.isPending}
-          data-testid="button-ai-correlate"
-        >
-          {correlate.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Brain className="h-4 w-4 mr-2" />
-          )}
-          {correlate.isPending ? "Analyzing..." : "AI Correlate Alerts"}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => setShowSuppressionRules(!showSuppressionRules)}
+            data-testid="button-suppression-rules"
+          >
+            <ShieldOff className="h-4 w-4 mr-2" />
+            Suppression Rules
+          </Button>
+          <Button
+            onClick={() => correlate.mutate()}
+            disabled={correlate.isPending}
+            data-testid="button-ai-correlate"
+          >
+            {correlate.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Brain className="h-4 w-4 mr-2" />
+            )}
+            {correlate.isPending ? "Analyzing..." : "AI Correlate Alerts"}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -150,6 +288,15 @@ export default function AlertsPage() {
         </div>
         <Button variant="outline" size="icon" data-testid="button-export-alerts" onClick={() => window.open('/api/export/alerts', '_blank')}>
           <Download className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => scanDuplicates.mutate()}
+          disabled={scanDuplicates.isPending}
+          data-testid="button-scan-duplicates"
+        >
+          {scanDuplicates.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
         </Button>
         <div className="flex items-center gap-1">
           {severities.map((sev) => (
@@ -167,7 +314,156 @@ export default function AlertsPage() {
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showSuppressed}
+            onCheckedChange={setShowSuppressed}
+            data-testid="toggle-show-suppressed"
+          />
+          <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer" onClick={() => setShowSuppressed(!showSuppressed)}>
+            {showSuppressed ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            Show Suppressed
+          </label>
+        </div>
       </div>
+
+      {showSuppressionRules && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <ShieldOff className="h-4 w-4 text-primary" />
+                Suppression Rules
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowCreateRule(!showCreateRule)}
+                  data-testid="button-create-suppression-rule"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Create Rule
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowSuppressionRules(false)}
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {showCreateRule && (
+              <div className="p-3 rounded-md bg-muted/30 space-y-3">
+                <div className="text-xs font-medium text-muted-foreground uppercase">New Suppression Rule</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input
+                    placeholder="Rule name"
+                    value={ruleName}
+                    onChange={(e) => setRuleName(e.target.value)}
+                    data-testid="input-rule-name"
+                  />
+                  <Select value={ruleScope} onValueChange={setRuleScope}>
+                    <SelectTrigger data-testid="select-rule-scope">
+                      <SelectValue placeholder="Select scope" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SCOPE_OPTIONS.map((s) => (
+                        <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Scope value"
+                    value={ruleScopeValue}
+                    onChange={(e) => setRuleScopeValue(e.target.value)}
+                    data-testid="input-rule-scope-value"
+                  />
+                  <Input
+                    placeholder="Source (optional)"
+                    value={ruleSource}
+                    onChange={(e) => setRuleSource(e.target.value)}
+                    data-testid="input-rule-source"
+                  />
+                  <Input
+                    placeholder="Severity (optional)"
+                    value={ruleSeverity}
+                    onChange={(e) => setRuleSeverity(e.target.value)}
+                    data-testid="input-rule-severity"
+                  />
+                  <Input
+                    placeholder="Category (optional)"
+                    value={ruleCategory}
+                    onChange={(e) => setRuleCategory(e.target.value)}
+                    data-testid="input-rule-category"
+                  />
+                  <Input
+                    type="date"
+                    placeholder="Expires at (optional)"
+                    value={ruleExpiresAt}
+                    onChange={(e) => setRuleExpiresAt(e.target.value)}
+                    data-testid="input-rule-expires"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={ruleEnabled}
+                      onCheckedChange={setRuleEnabled}
+                      data-testid="toggle-rule-enabled"
+                    />
+                    <span className="text-xs text-muted-foreground">Enabled</span>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => createRule.mutate()}
+                  disabled={createRule.isPending || !ruleName || !ruleScope || !ruleScopeValue}
+                  data-testid="button-submit-rule"
+                >
+                  {createRule.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                  Create Rule
+                </Button>
+              </div>
+            )}
+            {rulesLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : suppressionRules && suppressionRules.length > 0 ? (
+              suppressionRules.map((rule) => (
+                <div key={rule.id} className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                      {rule.name}
+                      <Badge variant={rule.enabled ? "default" : "secondary"} className="text-[10px]">
+                        {rule.enabled ? "Active" : "Disabled"}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {rule.scope}: {rule.scopeValue}
+                      {rule.source ? ` | Source: ${rule.source}` : ""}
+                      {rule.matchCount ? ` | ${rule.matchCount} matches` : ""}
+                    </div>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => deleteRule.mutate(rule.id)}
+                    disabled={deleteRule.isPending}
+                    data-testid={`button-delete-rule-${rule.id}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground">No suppression rules configured</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {correlationResult && (
         <Card className="border-primary/30">
@@ -302,6 +598,73 @@ export default function AlertsPage() {
         </Card>
       )}
 
+      {calibratingAlertId && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4 text-primary" />
+                Calibrate Confidence
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setCalibratingAlertId(null)}
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] text-muted-foreground uppercase">Score (0-100)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={calibrateScore}
+                  onChange={(e) => setCalibrateScore(Number(e.target.value))}
+                  className="w-24"
+                  data-testid="input-confidence-score"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-muted-foreground uppercase">Source</label>
+                <Select value={calibrateSource} onValueChange={setCalibrateSource}>
+                  <SelectTrigger className="w-32" data-testid="select-confidence-source">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="analyst">Analyst</SelectItem>
+                    <SelectItem value="ai">AI</SelectItem>
+                    <SelectItem value="automated">Automated</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 flex-1 min-w-[150px]">
+                <label className="text-[10px] text-muted-foreground uppercase">Notes</label>
+                <Input
+                  placeholder="Confidence notes..."
+                  value={calibrateNotes}
+                  onChange={(e) => setCalibrateNotes(e.target.value)}
+                  data-testid="input-confidence-notes"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => updateConfidence.mutate({ alertId: calibratingAlertId, confidenceScore: calibrateScore, confidenceSource: calibrateSource, confidenceNotes: calibrateNotes })}
+                disabled={updateConfidence.isPending}
+                data-testid="button-save-confidence"
+              >
+                {updateConfidence.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                Save
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -314,7 +677,7 @@ export default function AlertsPage() {
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Category</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">MITRE Tactic</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">AI</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -334,7 +697,7 @@ export default function AlertsPage() {
                   filtered.map((alert) => (
                     <tr
                       key={alert.id}
-                      className="border-b last:border-0 hover-elevate cursor-pointer"
+                      className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""}`}
                       onClick={() => navigate('/alerts/' + alert.id)}
                       data-testid={`row-alert-${alert.id}`}
                     >
@@ -342,7 +705,7 @@ export default function AlertsPage() {
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                           <div>
-                            <div className="text-sm font-medium">{alert.title}</div>
+                            <div className={`text-sm font-medium ${alert.suppressed ? "line-through text-muted-foreground" : ""}`}>{alert.title}</div>
                             <div className="text-xs text-muted-foreground truncate max-w-[300px]">{alert.description}</div>
                           </div>
                         </div>
@@ -351,7 +714,20 @@ export default function AlertsPage() {
                         <span className="text-xs text-muted-foreground">{alert.source}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <SeverityBadge severity={alert.severity} />
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <SeverityBadge severity={alert.severity} />
+                          {alert.confidenceScore != null && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {Math.round(alert.confidenceScore * 100)}%
+                            </Badge>
+                          )}
+                          {alert.dedupClusterId && (
+                            <Badge variant="outline" className="text-[10px]">
+                              <Layers className="h-2.5 w-2.5 mr-0.5" />
+                              Dup
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
                         <span className="text-xs text-muted-foreground">{alert.category?.replace(/_/g, " ") || "-"}</span>
@@ -363,19 +739,55 @@ export default function AlertsPage() {
                         <AlertStatusBadge status={alert.status} />
                       </td>
                       <td className="px-4 py-3">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => { e.stopPropagation(); handleTriageClick(alert.id); }}
-                          disabled={triage.isPending && selectedAlertForTriage === alert.id}
-                          data-testid={`button-triage-${alert.id}`}
-                        >
-                          {triage.isPending && selectedAlertForTriage === alert.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleTriageClick(alert.id)}
+                            disabled={triage.isPending && selectedAlertForTriage === alert.id}
+                            data-testid={`button-triage-${alert.id}`}
+                          >
+                            {triage.isPending && selectedAlertForTriage === alert.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Brain className="h-3 w-3" />
+                            )}
+                          </Button>
+                          {alert.suppressed ? (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => unsuppressAlert.mutate(alert.id)}
+                              disabled={unsuppressAlert.isPending}
+                              data-testid={`button-unsuppress-${alert.id}`}
+                            >
+                              <Eye className="h-3 w-3" />
+                            </Button>
                           ) : (
-                            <Brain className="h-3 w-3" />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => suppressAlert.mutate(alert.id)}
+                              disabled={suppressAlert.isPending}
+                              data-testid={`button-suppress-${alert.id}`}
+                            >
+                              <ShieldOff className="h-3 w-3" />
+                            </Button>
                           )}
-                        </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              setCalibratingAlertId(alert.id);
+                              setCalibrateScore(alert.confidenceScore != null ? Math.round(alert.confidenceScore * 100) : 50);
+                              setCalibrateSource(alert.confidenceSource || "analyst");
+                              setCalibrateNotes(alert.confidenceNotes || "");
+                            }}
+                            data-testid={`button-calibrate-${alert.id}`}
+                          >
+                            <SlidersHorizontal className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))

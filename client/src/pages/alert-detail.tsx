@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { ArrowLeft, Brain, Loader2, ChevronDown, ChevronRight, Network, Shield, Tag, Save, Plus, Globe, Server, Hash, Clock, FileText, Sparkles, ThumbsUp, ThumbsDown, User, Mail, Link2, Terminal } from "lucide-react";
+import { ArrowLeft, Brain, Loader2, ChevronDown, ChevronRight, Network, Shield, Tag, Save, Plus, Globe, Server, Hash, Clock, FileText, Sparkles, ThumbsUp, ThumbsDown, User, Mail, Link2, Terminal, Lightbulb } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,11 @@ export default function AlertDetailPage() {
   const [assigneeValue, setAssigneeValue] = useState<string | null>(null);
   const [showTagSelect, setShowTagSelect] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [showCorrectionForm, setShowCorrectionForm] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionComment, setCorrectionComment] = useState("");
+  const [correctedSeverity, setCorrectedSeverity] = useState("");
+  const [correctedCategory, setCorrectedCategory] = useState("");
   const { toast } = useToast();
 
   const { data: alert, isLoading } = useQuery<Alert>({
@@ -93,11 +98,12 @@ export default function AlertDetailPage() {
   });
 
   const submitFeedback = useMutation({
-    mutationFn: async (rating: number) => {
-      await apiRequest("POST", "/api/ai/feedback", { resourceType: "triage", resourceId: alert?.id, rating });
+    mutationFn: async (payload: { rating: number; correctionReason?: string; correctionComment?: string; correctedSeverity?: string; correctedCategory?: string }) => {
+      await apiRequest("POST", "/api/ai/feedback", { resourceType: "triage", resourceId: alert?.id, ...payload });
     },
     onSuccess: () => {
       setFeedbackSubmitted(true);
+      setShowCorrectionForm(false);
       toast({ title: "Feedback Submitted", description: "Thank you for your feedback" });
     },
     onError: (error: any) => {
@@ -310,33 +316,122 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          {hasCorrelation && (
-            <Card className="border-primary/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  AI Correlation Info
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {alert.correlationScore != null && (
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-xs text-muted-foreground">Correlation Score</span>
-                      <span className="text-xs font-medium" data-testid="text-correlation-score">{Math.round(alert.correlationScore * 100)}%</span>
+          {hasCorrelation && (() => {
+            const score = alert.correlationScore != null ? alert.correlationScore * 100 : null;
+            const scoreColor = score != null ? (score > 70 ? "bg-green-500" : score >= 40 ? "bg-yellow-500" : "bg-red-500") : "";
+            const reasonLines = alert.correlationReason?.split("\n").filter(Boolean) || [];
+            const methodLine = reasonLines.find(l => l.trim().startsWith("Method:"));
+            const method = methodLine ? methodLine.replace(/^Method:\s*/i, "").trim() : null;
+
+            const sharedEntitiesIdx = reasonLines.findIndex(l => l.includes("SHARED ENTITIES:"));
+            const sharedEntities: string[] = [];
+            if (sharedEntitiesIdx >= 0) {
+              const afterHeader = reasonLines[sharedEntitiesIdx].split("SHARED ENTITIES:")[1]?.trim();
+              if (afterHeader) sharedEntities.push(...afterHeader.split(",").map(s => s.trim()).filter(Boolean));
+              for (let i = sharedEntitiesIdx + 1; i < reasonLines.length; i++) {
+                const line = reasonLines[i].trim();
+                if (line.startsWith("-") || line.startsWith("*")) {
+                  sharedEntities.push(line.replace(/^[-*]\s*/, "").trim());
+                } else if (/^[A-Z_]+:/.test(line)) break;
+                else if (line) sharedEntities.push(...line.split(",").map(s => s.trim()).filter(Boolean));
+              }
+            }
+
+            const tacticPattern = /(?:tactic|ATT&CK)[:\s]*([\w\s,/-]+)/gi;
+            const tactics: string[] = [];
+            let tacticMatch: RegExpExecArray | null;
+            const reasonFull = alert.correlationReason || "";
+            while ((tacticMatch = tacticPattern.exec(reasonFull)) !== null) {
+              tactics.push(...tacticMatch[1].split(",").map(s => s.trim()).filter(Boolean));
+            }
+
+            const severityPattern = /(?:severity|severities)[:\s]*([\w\s,/-]+)/gi;
+            const severities: string[] = [];
+            let sevMatch: RegExpExecArray | null;
+            while ((sevMatch = severityPattern.exec(reasonFull)) !== null) {
+              severities.push(...sevMatch[1].split(",").map(s => s.trim()).filter(s => ["critical", "high", "medium", "low"].includes(s.toLowerCase())));
+            }
+
+            return (
+              <Card className="border-primary/30" data-testid="card-correlation-evidence">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4 text-primary" />
+                    Why This Correlation?
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {score != null && (
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs text-muted-foreground">Confidence Score</span>
+                        <span className="text-xs font-semibold" data-testid="text-confidence-score">{Math.round(score)}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${scoreColor}`} style={{ width: `${score}%` }} />
+                      </div>
                     </div>
-                    <Progress value={alert.correlationScore * 100} className="h-2" data-testid="progress-correlation" />
-                  </div>
-                )}
-                {alert.correlationReason && (
-                  <div>
-                    <span className="text-xs text-muted-foreground">Correlation Reason</span>
-                    <p className="text-sm text-muted-foreground mt-1" data-testid="text-correlation-reason">{alert.correlationReason}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                  )}
+
+                  {method && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Method</span>
+                      <div className="text-sm font-medium mt-0.5" data-testid="text-correlation-method">{method}</div>
+                    </div>
+                  )}
+
+                  {reasonLines.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Reasoning Trace</span>
+                      <pre className="text-xs font-mono bg-muted/30 p-3 rounded-md mt-1 whitespace-pre-wrap break-words overflow-auto max-h-48" data-testid="text-correlation-reason">
+                        {reasonLines.join("\n")}
+                      </pre>
+                    </div>
+                  )}
+
+                  {sharedEntities.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Shared Entities</span>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {sharedEntities.map((entity, i) => (
+                          <Badge key={i} variant="secondary" className="text-[10px]" data-testid={`badge-shared-entity-${i}`}>{entity}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {tactics.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">MITRE Tactics</span>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {tactics.map((tactic, i) => (
+                          <Badge key={i} variant="outline" className="text-[10px] border-primary/40 text-primary" data-testid={`badge-mitre-tactic-${i}`}>{tactic}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {severities.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Severity Distribution</span>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {severities.map((sev, i) => (
+                          <SeverityBadge key={i} severity={sev} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {alert.correlationClusterId && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Cluster ID</span>
+                      <div className="text-xs font-mono mt-0.5" data-testid="text-cluster-id">{alert.correlationClusterId}</div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {triageResult && (
             <Card className="border-primary/30">
@@ -407,14 +502,93 @@ export default function AlertDetailPage() {
                   </div>
                 )}
               {!feedbackSubmitted && (
-                <div className="flex items-center gap-2 pt-2 border-t">
-                  <span className="text-xs text-muted-foreground">Was this AI analysis helpful?</span>
-                  <Button size="icon" variant="ghost" data-testid="button-feedback-up" disabled={feedbackSubmitted || submitFeedback.isPending} onClick={() => submitFeedback.mutate(5)}>
-                    <ThumbsUp className="h-3 w-3" />
-                  </Button>
-                  <Button size="icon" variant="ghost" data-testid="button-feedback-down" disabled={feedbackSubmitted || submitFeedback.isPending} onClick={() => submitFeedback.mutate(1)}>
-                    <ThumbsDown className="h-3 w-3" />
-                  </Button>
+                <div className="space-y-3 pt-2 border-t">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Was this AI analysis helpful?</span>
+                    <Button size="icon" variant="ghost" data-testid="button-feedback-up" disabled={feedbackSubmitted || submitFeedback.isPending} onClick={() => submitFeedback.mutate({ rating: 5 })}>
+                      <ThumbsUp className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" data-testid="button-feedback-down" disabled={feedbackSubmitted || submitFeedback.isPending} onClick={() => setShowCorrectionForm(true)}>
+                      <ThumbsDown className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {showCorrectionForm && (
+                    <div className="space-y-3 p-3 rounded-md bg-muted/30">
+                      <div>
+                        <span className="text-xs text-muted-foreground">Correction Reason</span>
+                        <Select value={correctionReason} onValueChange={setCorrectionReason}>
+                          <SelectTrigger className="mt-1" data-testid="select-correction-reason">
+                            <SelectValue placeholder="Select reason..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="false_positive">False Positive</SelectItem>
+                            <SelectItem value="wrong_severity">Wrong Severity</SelectItem>
+                            <SelectItem value="wrong_category">Wrong Category</SelectItem>
+                            <SelectItem value="irrelevant_correlation">Irrelevant Correlation</SelectItem>
+                            <SelectItem value="duplicate">Duplicate</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground">Additional Comments</span>
+                        <Input
+                          className="mt-1"
+                          placeholder="Optional comments..."
+                          value={correctionComment}
+                          onChange={(e) => setCorrectionComment(e.target.value)}
+                          data-testid="input-correction-comment"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground">Corrected Severity</span>
+                        <Select value={correctedSeverity} onValueChange={setCorrectedSeverity}>
+                          <SelectTrigger className="mt-1" data-testid="select-corrected-severity">
+                            <SelectValue placeholder="Optional..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="critical">Critical</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="low">Low</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground">Corrected Category</span>
+                        <Select value={correctedCategory} onValueChange={setCorrectedCategory}>
+                          <SelectTrigger className="mt-1" data-testid="select-corrected-category">
+                            <SelectValue placeholder="Optional..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="malware">Malware</SelectItem>
+                            <SelectItem value="phishing">Phishing</SelectItem>
+                            <SelectItem value="brute_force">Brute Force</SelectItem>
+                            <SelectItem value="data_exfiltration">Data Exfiltration</SelectItem>
+                            <SelectItem value="unauthorized_access">Unauthorized Access</SelectItem>
+                            <SelectItem value="dos">Denial of Service</SelectItem>
+                            <SelectItem value="insider_threat">Insider Threat</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => submitFeedback.mutate({
+                          rating: 1,
+                          correctionReason: correctionReason || undefined,
+                          correctionComment: correctionComment || undefined,
+                          correctedSeverity: correctedSeverity || undefined,
+                          correctedCategory: correctedCategory || undefined,
+                        })}
+                        disabled={submitFeedback.isPending}
+                        data-testid="button-submit-correction"
+                      >
+                        {submitFeedback.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                        Submit Correction
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
               {feedbackSubmitted && (

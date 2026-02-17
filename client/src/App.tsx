@@ -36,6 +36,9 @@ import AutonomousResponsePage from "@/pages/autonomous-response";
 import SecurityPosturePage from "@/pages/security-posture";
 import CspmPage from "@/pages/cspm";
 import EndpointTelemetryPage from "@/pages/endpoint-telemetry";
+import TeamManagementPage from "@/pages/team-management";
+import ReportsPage from "@/pages/reports";
+import OperationsPage from "@/pages/operations";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -119,6 +122,9 @@ function AuthenticatedApp() {
                 <Route path="/audit-log" component={AuditLogPage} />
                 <Route path="/compliance" component={CompliancePage} />
                 <Route path="/settings" component={SettingsPage} />
+                <Route path="/team" component={TeamManagementPage} />
+                <Route path="/reports" component={ReportsPage} />
+                <Route path="/operations" component={OperationsPage} />
                 <Route component={NotFound} />
               </Switch>
             </main>

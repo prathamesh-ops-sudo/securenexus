@@ -1,5 +1,6 @@
-import { type Connector, type InsertAlert } from "@shared/schema";
+import { type Connector, type InsertAlert, type ConnectorJobRun, type InsertConnectorJobRun } from "@shared/schema";
 import { normalizeAlert, toInsertAlert, SOURCE_KEYS } from "./normalizer";
+import { storage } from "./storage";
 
 export interface ConnectorConfig {
   baseUrl: string;
@@ -1682,6 +1683,124 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
   }
 
   return result;
+}
+
+export async function syncConnectorWithRetry(
+  connector: Connector,
+  maxAttempts: number = 3
+): Promise<ConnectorJobRun> {
+  const startTime = Date.now();
+  
+  // Create initial job run record
+  const jobRun = await storage.createConnectorJobRun({
+    connectorId: connector.id,
+    orgId: connector.orgId,
+    status: "running",
+    attempt: 1,
+    maxAttempts,
+    alertsReceived: 0,
+    alertsCreated: 0,
+    alertsDeduped: 0,
+    alertsFailed: 0,
+  });
+
+  let currentAttempt = 1;
+  let lastError: Error | null = null;
+
+  while (currentAttempt <= maxAttempts) {
+    try {
+      // Call the existing syncConnector function
+      const syncResult = await syncConnector(connector);
+      
+      // Calculate latency
+      const latencyMs = Date.now() - startTime;
+      
+      // Update job run with success
+      const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
+        status: "success",
+        attempt: currentAttempt,
+        alertsReceived: syncResult.alertsReceived,
+        alertsCreated: syncResult.alertsCreated,
+        alertsDeduped: syncResult.alertsDeduped,
+        alertsFailed: syncResult.alertsFailed,
+        latencyMs,
+        completedAt: new Date(),
+      });
+
+      return updatedJobRun;
+    } catch (err: any) {
+      lastError = err;
+      const errorMessage = err.message || String(err);
+      const errorLower = errorMessage.toLowerCase();
+      
+      // Detect error type
+      let errorType = "api_error";
+      let throttled = false;
+      let httpStatus: number | undefined;
+
+      if (errorLower.includes("429") || errorLower.includes("503") || 
+          errorLower.includes("rate limit") || errorLower.includes("throttl")) {
+        errorType = "throttle";
+        throttled = true;
+        // Extract HTTP status if available
+        if (errorLower.includes("429")) httpStatus = 429;
+        if (errorLower.includes("503")) httpStatus = 503;
+      } else if (errorLower.includes("401") || errorLower.includes("403") || 
+                 errorLower.includes("unauthorized") || errorLower.includes("forbidden")) {
+        errorType = "auth_error";
+        if (errorLower.includes("401")) httpStatus = 401;
+        if (errorLower.includes("403")) httpStatus = 403;
+      }
+
+      // If max attempts exceeded, mark as dead letter
+      if (currentAttempt >= maxAttempts) {
+        const latencyMs = Date.now() - startTime;
+        const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
+          status: "failed",
+          attempt: currentAttempt,
+          latencyMs,
+          errorMessage,
+          errorType,
+          httpStatus,
+          throttled,
+          isDeadLetter: true,
+          completedAt: new Date(),
+        });
+        return updatedJobRun;
+      }
+
+      // If error and attempt < maxAttempts, calculate backoff and log next attempt
+      const backoffSeconds = Math.pow(2, currentAttempt);
+      console.log(
+        `[Connector ${connector.id}] Sync failed on attempt ${currentAttempt}/${maxAttempts}. ` +
+        `Error type: ${errorType}. Next retry in ${backoffSeconds} seconds. Error: ${errorMessage}`
+      );
+
+      // Update job run with error details but keep it in running state for retry
+      await storage.updateConnectorJobRun(jobRun.id, {
+        attempt: currentAttempt + 1,
+        errorMessage,
+        errorType,
+        httpStatus,
+        throttled,
+      });
+
+      // Increment attempt counter
+      currentAttempt++;
+    }
+  }
+
+  // If we exit the loop without success, return dead letter
+  const latencyMs = Date.now() - startTime;
+  return await storage.updateConnectorJobRun(jobRun.id, {
+    status: "failed",
+    attempt: currentAttempt - 1,
+    latencyMs,
+    errorMessage: lastError?.message || "Unknown error",
+    errorType: "api_error",
+    isDeadLetter: true,
+    completedAt: new Date(),
+  });
 }
 
 export function getConnectorMetadata(type: string): {

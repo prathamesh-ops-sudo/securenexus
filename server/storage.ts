@@ -11,6 +11,7 @@ import {
   type AiFeedback, type InsertAiFeedback, aiFeedback,
   type Playbook, type InsertPlaybook, playbooks,
   type PlaybookExecution, type InsertPlaybookExecution, playbookExecutions,
+  type PlaybookApproval, type InsertPlaybookApproval, playbookApprovals,
   type ThreatIntelConfig, type InsertThreatIntelConfig, threatIntelConfigs,
   type CompliancePolicy, type InsertCompliancePolicy, compliancePolicies,
   type DsarRequest, type InsertDsarRequest, dsarRequests,
@@ -33,9 +34,47 @@ import {
   type PostureScore, type InsertPostureScore, postureScores,
   type AiDeploymentConfig, type InsertAiDeploymentConfig, aiDeploymentConfigs,
   alertTags, incidentTags,
+  organizationMemberships, orgInvitations,
+  type OrganizationMembership, type InsertOrganizationMembership,
+  type OrgInvitation, type InsertOrgInvitation,
+  type IocFeed, type InsertIocFeed, iocFeeds,
+  type IocEntry, type InsertIocEntry, iocEntries,
+  type IocWatchlist, type InsertIocWatchlist, iocWatchlists,
+  type IocWatchlistEntry, type InsertIocWatchlistEntry, iocWatchlistEntries,
+  type IocMatchRule, type InsertIocMatchRule, iocMatchRules,
+  type IocMatch, type InsertIocMatch, iocMatches,
+  type EvidenceItem, type InsertEvidenceItem, evidenceItems,
+  type InvestigationHypothesis, type InsertInvestigationHypothesis, investigationHypotheses,
+  type InvestigationTask, type InsertInvestigationTask, investigationTasks,
+  type RunbookTemplate, type InsertRunbookTemplate, runbookTemplates,
+  type RunbookStep, type InsertRunbookStep, runbookSteps,
+  type ReportTemplate, type InsertReportTemplate, reportTemplates,
+  type ReportSchedule, type InsertReportSchedule, reportSchedules,
+  type ReportRun, type InsertReportRun, reportRuns,
+  type SuppressionRule, type InsertSuppressionRule, suppressionRules,
+  type AlertDedupCluster, type InsertAlertDedupCluster, alertDedupClusters,
+  type IncidentSlaPolicy, type InsertIncidentSlaPolicy, incidentSlaPolicies,
+  type PostIncidentReview, type InsertPostIncidentReview, postIncidentReviews,
+  type ConnectorJobRun, type InsertConnectorJobRun, connectorJobRuns,
+  type ConnectorHealthCheck, type InsertConnectorHealthCheck, connectorHealthChecks,
+  type PolicyCheck, type InsertPolicyCheck, policyChecks,
+  type PolicyResult, type InsertPolicyResult, policyResults,
+  type ComplianceControl, type InsertComplianceControl, complianceControls,
+  type ComplianceControlMapping, type InsertComplianceControlMapping, complianceControlMappings,
+  type EvidenceLockerItem, type InsertEvidenceLockerItem, evidenceLockerItems,
+  type OutboundWebhook, type InsertOutboundWebhook, outboundWebhooks,
+  type OutboundWebhookLog, type InsertOutboundWebhookLog, outboundWebhookLogs,
+  type IdempotencyKey, type InsertIdempotencyKey, idempotencyKeys,
+  type AlertArchive, type InsertAlertArchive, alertsArchive,
+  type JobQueue as Job, type InsertJobQueue as InsertJob, jobQueue,
+  type DashboardMetricsCache, type InsertDashboardMetricsCache, dashboardMetricsCache,
+  type AlertDailyStats as AlertDailyStat, type InsertAlertDailyStats as InsertAlertDailyStat, alertDailyStats,
+  type SliMetric, type InsertSliMetric, sliMetrics,
+  type SloTarget, type InsertSloTarget, sloTargets,
+  type DrRunbook, type InsertDrRunbook, drRunbooks,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and, count, ilike, or, asc } from "drizzle-orm";
+import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte } from "drizzle-orm";
 import { createHash } from "crypto";
 
 export interface IStorage {
@@ -109,8 +148,15 @@ export interface IStorage {
   deletePlaybook(id: string): Promise<boolean>;
 
   getPlaybookExecutions(playbookId?: string, limit?: number): Promise<PlaybookExecution[]>;
+  getPlaybookExecution(id: string): Promise<PlaybookExecution | undefined>;
   createPlaybookExecution(execution: InsertPlaybookExecution): Promise<PlaybookExecution>;
   updatePlaybookExecution(id: string, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined>;
+
+  getPlaybookApprovals(status?: string): Promise<PlaybookApproval[]>;
+  getPlaybookApproval(id: string): Promise<PlaybookApproval | undefined>;
+  getPlaybookApprovalsByExecution(executionId: string): Promise<PlaybookApproval[]>;
+  createPlaybookApproval(approval: InsertPlaybookApproval): Promise<PlaybookApproval>;
+  updatePlaybookApproval(id: string, data: Partial<PlaybookApproval>): Promise<PlaybookApproval | undefined>;
 
   getThreatIntelConfigs(orgId: string): Promise<ThreatIntelConfig[]>;
   getThreatIntelConfig(orgId: string, provider: string): Promise<ThreatIntelConfig | undefined>;
@@ -226,6 +272,237 @@ export interface IStorage {
 
   getAiDeploymentConfig(orgId: string): Promise<AiDeploymentConfig | undefined>;
   upsertAiDeploymentConfig(config: InsertAiDeploymentConfig): Promise<AiDeploymentConfig>;
+
+  getOrgMemberships(orgId: string): Promise<OrganizationMembership[]>;
+  getOrgMembership(orgId: string, userId: string): Promise<OrganizationMembership | undefined>;
+  getMembershipById(id: string): Promise<OrganizationMembership | undefined>;
+  getUserMemberships(userId: string): Promise<OrganizationMembership[]>;
+  createOrgMembership(membership: InsertOrganizationMembership): Promise<OrganizationMembership>;
+  updateOrgMembership(id: string, data: Partial<OrganizationMembership>): Promise<OrganizationMembership | undefined>;
+  deleteOrgMembership(id: string): Promise<boolean>;
+
+  getOrgInvitations(orgId: string): Promise<OrgInvitation[]>;
+  getOrgInvitationByToken(token: string): Promise<OrgInvitation | undefined>;
+  createOrgInvitation(invitation: InsertOrgInvitation): Promise<OrgInvitation>;
+  updateOrgInvitation(id: string, data: Partial<OrgInvitation>): Promise<OrgInvitation | undefined>;
+  deleteOrgInvitation(id: string): Promise<boolean>;
+
+  // IOC Feeds
+  getIocFeeds(orgId?: string): Promise<IocFeed[]>;
+  getIocFeed(id: string): Promise<IocFeed | undefined>;
+  createIocFeed(feed: InsertIocFeed): Promise<IocFeed>;
+  updateIocFeed(id: string, data: Partial<IocFeed>): Promise<IocFeed | undefined>;
+  deleteIocFeed(id: string): Promise<boolean>;
+
+  // IOC Entries
+  getIocEntries(orgId?: string, feedId?: string, iocType?: string, status?: string, limit?: number): Promise<IocEntry[]>;
+  getIocEntry(id: string): Promise<IocEntry | undefined>;
+  getIocEntriesByValue(iocType: string, iocValue: string, orgId?: string): Promise<IocEntry[]>;
+  createIocEntry(entry: InsertIocEntry): Promise<IocEntry>;
+  createIocEntries(entries: InsertIocEntry[]): Promise<IocEntry[]>;
+  updateIocEntry(id: string, data: Partial<IocEntry>): Promise<IocEntry | undefined>;
+  deleteIocEntry(id: string): Promise<boolean>;
+
+  // IOC Watchlists
+  getIocWatchlists(orgId?: string): Promise<IocWatchlist[]>;
+  getIocWatchlist(id: string): Promise<IocWatchlist | undefined>;
+  createIocWatchlist(watchlist: InsertIocWatchlist): Promise<IocWatchlist>;
+  updateIocWatchlist(id: string, data: Partial<IocWatchlist>): Promise<IocWatchlist | undefined>;
+  deleteIocWatchlist(id: string): Promise<boolean>;
+  addIocToWatchlist(entry: InsertIocWatchlistEntry): Promise<IocWatchlistEntry>;
+  removeIocFromWatchlist(watchlistId: string, iocEntryId: string): Promise<boolean>;
+  getWatchlistEntries(watchlistId: string): Promise<IocWatchlistEntry[]>;
+
+  // IOC Match Rules
+  getIocMatchRules(orgId?: string): Promise<IocMatchRule[]>;
+  getIocMatchRule(id: string): Promise<IocMatchRule | undefined>;
+  createIocMatchRule(rule: InsertIocMatchRule): Promise<IocMatchRule>;
+  updateIocMatchRule(id: string, data: Partial<IocMatchRule>): Promise<IocMatchRule | undefined>;
+  deleteIocMatchRule(id: string): Promise<boolean>;
+
+  // IOC Matches
+  getIocMatches(orgId?: string, alertId?: string, iocEntryId?: string, limit?: number): Promise<IocMatch[]>;
+  createIocMatch(match: InsertIocMatch): Promise<IocMatch>;
+
+  // Evidence Items
+  getEvidenceItems(incidentId: string, orgId?: string): Promise<EvidenceItem[]>;
+  getEvidenceItem(id: string): Promise<EvidenceItem | undefined>;
+  createEvidenceItem(item: InsertEvidenceItem): Promise<EvidenceItem>;
+  deleteEvidenceItem(id: string): Promise<boolean>;
+
+  // Investigation Hypotheses
+  getHypotheses(incidentId: string, orgId?: string): Promise<InvestigationHypothesis[]>;
+  getHypothesis(id: string): Promise<InvestigationHypothesis | undefined>;
+  createHypothesis(hypothesis: InsertInvestigationHypothesis): Promise<InvestigationHypothesis>;
+  updateHypothesis(id: string, data: Partial<InvestigationHypothesis>): Promise<InvestigationHypothesis | undefined>;
+  deleteHypothesis(id: string): Promise<boolean>;
+
+  // Investigation Tasks
+  getInvestigationTasks(incidentId: string, orgId?: string): Promise<InvestigationTask[]>;
+  getInvestigationTask(id: string): Promise<InvestigationTask | undefined>;
+  createInvestigationTask(task: InsertInvestigationTask): Promise<InvestigationTask>;
+  updateInvestigationTask(id: string, data: Partial<InvestigationTask>): Promise<InvestigationTask | undefined>;
+  deleteInvestigationTask(id: string): Promise<boolean>;
+
+  // Runbook Templates
+  getRunbookTemplates(orgId?: string, incidentType?: string): Promise<RunbookTemplate[]>;
+  getRunbookTemplate(id: string): Promise<RunbookTemplate | undefined>;
+  createRunbookTemplate(template: InsertRunbookTemplate): Promise<RunbookTemplate>;
+  updateRunbookTemplate(id: string, data: Partial<RunbookTemplate>): Promise<RunbookTemplate | undefined>;
+  deleteRunbookTemplate(id: string): Promise<boolean>;
+
+  // Runbook Steps
+  getRunbookSteps(templateId: string): Promise<RunbookStep[]>;
+  createRunbookStep(step: InsertRunbookStep): Promise<RunbookStep>;
+  updateRunbookStep(id: string, data: Partial<RunbookStep>): Promise<RunbookStep | undefined>;
+  deleteRunbookStep(id: string): Promise<boolean>;
+
+  // Reports
+  getReportTemplates(orgId?: string): Promise<ReportTemplate[]>;
+  getReportTemplate(id: string): Promise<ReportTemplate | undefined>;
+  createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
+  updateReportTemplate(id: string, data: Partial<ReportTemplate>): Promise<ReportTemplate | undefined>;
+  deleteReportTemplate(id: string): Promise<boolean>;
+
+  getReportSchedules(orgId?: string): Promise<ReportSchedule[]>;
+  getReportSchedule(id: string): Promise<ReportSchedule | undefined>;
+  createReportSchedule(schedule: InsertReportSchedule): Promise<ReportSchedule>;
+  updateReportSchedule(id: string, data: Partial<ReportSchedule>): Promise<ReportSchedule | undefined>;
+  deleteReportSchedule(id: string): Promise<boolean>;
+
+  getReportRuns(orgId?: string, templateId?: string, limit?: number): Promise<ReportRun[]>;
+  getReportRun(id: string): Promise<ReportRun | undefined>;
+  createReportRun(run: InsertReportRun): Promise<ReportRun>;
+  updateReportRun(id: string, data: Partial<ReportRun>): Promise<ReportRun | undefined>;
+  getDueSchedules(): Promise<ReportSchedule[]>;
+
+  // Suppression Rules
+  getSuppressionRules(orgId?: string): Promise<SuppressionRule[]>;
+  getSuppressionRule(id: string): Promise<SuppressionRule | undefined>;
+  createSuppressionRule(rule: InsertSuppressionRule): Promise<SuppressionRule>;
+  updateSuppressionRule(id: string, data: Partial<SuppressionRule>): Promise<SuppressionRule | undefined>;
+  deleteSuppressionRule(id: string): Promise<boolean>;
+
+  // Alert Dedup Clusters
+  getAlertDedupClusters(orgId?: string): Promise<AlertDedupCluster[]>;
+  getAlertDedupCluster(id: string): Promise<AlertDedupCluster | undefined>;
+  createAlertDedupCluster(cluster: InsertAlertDedupCluster): Promise<AlertDedupCluster>;
+  updateAlertDedupCluster(id: string, data: Partial<AlertDedupCluster>): Promise<AlertDedupCluster | undefined>;
+
+  // SLA Policies
+  getIncidentSlaPolicies(orgId?: string): Promise<IncidentSlaPolicy[]>;
+  getIncidentSlaPolicy(id: string): Promise<IncidentSlaPolicy | undefined>;
+  createIncidentSlaPolicy(policy: InsertIncidentSlaPolicy): Promise<IncidentSlaPolicy>;
+  updateIncidentSlaPolicy(id: string, data: Partial<IncidentSlaPolicy>): Promise<IncidentSlaPolicy | undefined>;
+  deleteIncidentSlaPolicy(id: string): Promise<boolean>;
+
+  // Post-Incident Reviews
+  getPostIncidentReviews(orgId?: string, incidentId?: string): Promise<PostIncidentReview[]>;
+  getPostIncidentReview(id: string): Promise<PostIncidentReview | undefined>;
+  createPostIncidentReview(review: InsertPostIncidentReview): Promise<PostIncidentReview>;
+  updatePostIncidentReview(id: string, data: Partial<PostIncidentReview>): Promise<PostIncidentReview | undefined>;
+  deletePostIncidentReview(id: string): Promise<boolean>;
+
+  createConnectorJobRun(run: InsertConnectorJobRun): Promise<ConnectorJobRun>;
+  updateConnectorJobRun(id: string, updates: Partial<ConnectorJobRun>): Promise<ConnectorJobRun>;
+  getConnectorJobRuns(connectorId: string, limit?: number): Promise<ConnectorJobRun[]>;
+  getDeadLetterJobRuns(orgId?: string): Promise<ConnectorJobRun[]>;
+  getConnectorMetrics(connectorId: string): Promise<{ avgLatencyMs: number; errorRate: number; throttleCount: number; totalRuns: number; successRate: number }>;
+
+  createConnectorHealthCheck(check: InsertConnectorHealthCheck): Promise<ConnectorHealthCheck>;
+  getConnectorHealthChecks(connectorId: string, limit?: number): Promise<ConnectorHealthCheck[]>;
+  getLatestHealthCheck(connectorId: string): Promise<ConnectorHealthCheck | undefined>;
+
+  getAiFeedbackMetrics(orgId?: string, days?: number): Promise<{ date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]>;
+  getAiFeedbackByResource(resourceType: string, resourceId: string): Promise<AiFeedback[]>;
+
+  getPolicyChecks(orgId: string): Promise<PolicyCheck[]>;
+  getPolicyCheck(id: string): Promise<PolicyCheck | undefined>;
+  createPolicyCheck(check: InsertPolicyCheck): Promise<PolicyCheck>;
+  updatePolicyCheck(id: string, data: Partial<PolicyCheck>): Promise<PolicyCheck | undefined>;
+  deletePolicyCheck(id: string): Promise<boolean>;
+
+  getPolicyResults(orgId: string, policyCheckId?: string): Promise<PolicyResult[]>;
+  createPolicyResult(result: InsertPolicyResult): Promise<PolicyResult>;
+
+  getComplianceControls(framework?: string): Promise<ComplianceControl[]>;
+  getComplianceControl(id: string): Promise<ComplianceControl | undefined>;
+  createComplianceControl(control: InsertComplianceControl): Promise<ComplianceControl>;
+  createComplianceControls(controls: InsertComplianceControl[]): Promise<ComplianceControl[]>;
+  updateComplianceControl(id: string, data: Partial<ComplianceControl>): Promise<ComplianceControl | undefined>;
+  deleteComplianceControl(id: string): Promise<boolean>;
+  deletePolicyResult(id: string): Promise<boolean>;
+
+  getComplianceControlMappings(orgId: string, controlId?: string): Promise<ComplianceControlMapping[]>;
+  createComplianceControlMapping(mapping: InsertComplianceControlMapping): Promise<ComplianceControlMapping>;
+  updateComplianceControlMapping(id: string, data: Partial<ComplianceControlMapping>): Promise<ComplianceControlMapping | undefined>;
+  deleteComplianceControlMapping(id: string): Promise<boolean>;
+
+  getEvidenceLockerItems(orgId: string, framework?: string, artifactType?: string): Promise<EvidenceLockerItem[]>;
+  getEvidenceLockerItem(id: string): Promise<EvidenceLockerItem | undefined>;
+  createEvidenceLockerItem(item: InsertEvidenceLockerItem): Promise<EvidenceLockerItem>;
+  updateEvidenceLockerItem(id: string, data: Partial<EvidenceLockerItem>): Promise<EvidenceLockerItem | undefined>;
+  deleteEvidenceLockerItem(id: string): Promise<boolean>;
+
+  getOutboundWebhooks(orgId: string): Promise<OutboundWebhook[]>;
+  getOutboundWebhook(id: string): Promise<OutboundWebhook | undefined>;
+  createOutboundWebhook(webhook: InsertOutboundWebhook): Promise<OutboundWebhook>;
+  updateOutboundWebhook(id: string, data: Partial<OutboundWebhook>): Promise<OutboundWebhook | undefined>;
+  deleteOutboundWebhook(id: string): Promise<boolean>;
+  getActiveWebhooksByEvent(orgId: string, event: string): Promise<OutboundWebhook[]>;
+
+  getOutboundWebhookLogs(webhookId: string, limit?: number): Promise<OutboundWebhookLog[]>;
+  createOutboundWebhookLog(log: InsertOutboundWebhookLog): Promise<OutboundWebhookLog>;
+
+  getIdempotencyKey(orgId: string, key: string, endpoint: string): Promise<IdempotencyKey | undefined>;
+  createIdempotencyKey(key: InsertIdempotencyKey): Promise<IdempotencyKey>;
+  cleanupExpiredIdempotencyKeys(): Promise<number>;
+
+  // Alert Archive
+  getArchivedAlerts(orgId: string, limit?: number, offset?: number): Promise<AlertArchive[]>;
+  getArchivedAlertCount(orgId: string): Promise<number>;
+  archiveAlerts(orgId: string, alertIds: string[], reason: string): Promise<number>;
+  restoreArchivedAlerts(ids: string[]): Promise<number>;
+  deleteArchivedAlerts(orgId: string, beforeDate: Date): Promise<number>;
+
+  // Job Queue
+  getJobs(orgId?: string, status?: string, type?: string, limit?: number): Promise<Job[]>;
+  getJob(id: string): Promise<Job | undefined>;
+  createJob(job: InsertJob): Promise<Job>;
+  claimNextJob(types?: string[]): Promise<Job | undefined>;
+  updateJob(id: string, data: Partial<Job>): Promise<Job | undefined>;
+  cancelJob(id: string): Promise<boolean>;
+  getJobStats(): Promise<{ pending: number; running: number; completed: number; failed: number }>;
+  cleanupCompletedJobs(olderThanDays: number): Promise<number>;
+
+  // Dashboard Metrics Cache
+  getCachedMetrics(orgId: string, metricType: string): Promise<DashboardMetricsCache | undefined>;
+  upsertCachedMetrics(data: InsertDashboardMetricsCache): Promise<DashboardMetricsCache>;
+  clearExpiredCache(): Promise<number>;
+
+  // Alert Daily Stats
+  getAlertDailyStats(orgId: string, startDate: string, endDate: string): Promise<AlertDailyStat[]>;
+  upsertAlertDailyStat(data: InsertAlertDailyStat): Promise<AlertDailyStat>;
+
+  // SLI Metrics
+  getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date): Promise<SliMetric[]>;
+  createSliMetric(data: InsertSliMetric): Promise<SliMetric>;
+  createSliMetricsBatch(data: InsertSliMetric[]): Promise<SliMetric[]>;
+  cleanupOldSliMetrics(olderThanDays: number): Promise<number>;
+
+  // SLO Targets
+  getSloTargets(): Promise<SloTarget[]>;
+  getSloTarget(id: string): Promise<SloTarget | undefined>;
+  createSloTarget(target: InsertSloTarget): Promise<SloTarget>;
+  updateSloTarget(id: string, data: Partial<SloTarget>): Promise<SloTarget | undefined>;
+  deleteSloTarget(id: string): Promise<boolean>;
+
+  // DR Runbooks
+  getDrRunbooks(orgId: string): Promise<DrRunbook[]>;
+  getDrRunbook(id: string): Promise<DrRunbook | undefined>;
+  createDrRunbook(runbook: InsertDrRunbook): Promise<DrRunbook>;
+  updateDrRunbook(id: string, data: Partial<DrRunbook>): Promise<DrRunbook | undefined>;
+  deleteDrRunbook(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -621,6 +898,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(playbookExecutions).orderBy(desc(playbookExecutions.createdAt)).limit(limit);
   }
 
+  async getPlaybookExecution(id: string): Promise<PlaybookExecution | undefined> {
+    const [execution] = await db.select().from(playbookExecutions).where(eq(playbookExecutions.id, id));
+    return execution;
+  }
+
   async createPlaybookExecution(execution: InsertPlaybookExecution): Promise<PlaybookExecution> {
     const [created] = await db.insert(playbookExecutions).values(execution).returning();
     return created;
@@ -628,6 +910,32 @@ export class DatabaseStorage implements IStorage {
 
   async updatePlaybookExecution(id: string, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined> {
     const [updated] = await db.update(playbookExecutions).set(data).where(eq(playbookExecutions.id, id)).returning();
+    return updated;
+  }
+
+  async getPlaybookApprovals(status?: string): Promise<PlaybookApproval[]> {
+    if (status) {
+      return db.select().from(playbookApprovals).where(eq(playbookApprovals.status, status)).orderBy(desc(playbookApprovals.requestedAt));
+    }
+    return db.select().from(playbookApprovals).orderBy(desc(playbookApprovals.requestedAt));
+  }
+
+  async getPlaybookApproval(id: string): Promise<PlaybookApproval | undefined> {
+    const [approval] = await db.select().from(playbookApprovals).where(eq(playbookApprovals.id, id));
+    return approval;
+  }
+
+  async getPlaybookApprovalsByExecution(executionId: string): Promise<PlaybookApproval[]> {
+    return db.select().from(playbookApprovals).where(eq(playbookApprovals.executionId, executionId)).orderBy(desc(playbookApprovals.requestedAt));
+  }
+
+  async createPlaybookApproval(approval: InsertPlaybookApproval): Promise<PlaybookApproval> {
+    const [created] = await db.insert(playbookApprovals).values(approval).returning();
+    return created;
+  }
+
+  async updatePlaybookApproval(id: string, data: Partial<PlaybookApproval>): Promise<PlaybookApproval | undefined> {
+    const [updated] = await db.update(playbookApprovals).set(data).where(eq(playbookApprovals.id, id)).returning();
     return updated;
   }
 
@@ -1179,6 +1487,1174 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(aiDeploymentConfigs).values(config).returning();
     return created;
+  }
+
+  async getOrgMemberships(orgId: string): Promise<OrganizationMembership[]> {
+    return db.select().from(organizationMemberships).where(eq(organizationMemberships.orgId, orgId)).orderBy(desc(organizationMemberships.createdAt));
+  }
+
+  async getOrgMembership(orgId: string, userId: string): Promise<OrganizationMembership | undefined> {
+    const [membership] = await db.select().from(organizationMemberships).where(and(eq(organizationMemberships.orgId, orgId), eq(organizationMemberships.userId, userId)));
+    return membership;
+  }
+
+  async getMembershipById(id: string): Promise<OrganizationMembership | undefined> {
+    const [membership] = await db.select().from(organizationMemberships).where(eq(organizationMemberships.id, id));
+    return membership;
+  }
+
+  async getUserMemberships(userId: string): Promise<OrganizationMembership[]> {
+    return db.select().from(organizationMemberships).where(eq(organizationMemberships.userId, userId)).orderBy(desc(organizationMemberships.createdAt));
+  }
+
+  async createOrgMembership(membership: InsertOrganizationMembership): Promise<OrganizationMembership> {
+    const [created] = await db.insert(organizationMemberships).values(membership).returning();
+    return created;
+  }
+
+  async updateOrgMembership(id: string, data: Partial<OrganizationMembership>): Promise<OrganizationMembership | undefined> {
+    const [updated] = await db.update(organizationMemberships).set(data).where(eq(organizationMemberships.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOrgMembership(id: string): Promise<boolean> {
+    const result = await db.delete(organizationMemberships).where(eq(organizationMemberships.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getOrgInvitations(orgId: string): Promise<OrgInvitation[]> {
+    return db.select().from(orgInvitations).where(eq(orgInvitations.orgId, orgId)).orderBy(desc(orgInvitations.createdAt));
+  }
+
+  async getOrgInvitationByToken(token: string): Promise<OrgInvitation | undefined> {
+    const [invitation] = await db.select().from(orgInvitations).where(eq(orgInvitations.token, token));
+    return invitation;
+  }
+
+  async createOrgInvitation(invitation: InsertOrgInvitation): Promise<OrgInvitation> {
+    const [created] = await db.insert(orgInvitations).values(invitation).returning();
+    return created;
+  }
+
+  async updateOrgInvitation(id: string, data: Partial<OrgInvitation>): Promise<OrgInvitation | undefined> {
+    const [updated] = await db.update(orgInvitations).set(data).where(eq(orgInvitations.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOrgInvitation(id: string): Promise<boolean> {
+    const result = await db.delete(orgInvitations).where(eq(orgInvitations.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getIocFeeds(orgId?: string): Promise<IocFeed[]> {
+    if (orgId) {
+      return db.select().from(iocFeeds).where(eq(iocFeeds.orgId, orgId)).orderBy(desc(iocFeeds.createdAt));
+    }
+    return db.select().from(iocFeeds).orderBy(desc(iocFeeds.createdAt));
+  }
+
+  async getIocFeed(id: string): Promise<IocFeed | undefined> {
+    const [feed] = await db.select().from(iocFeeds).where(eq(iocFeeds.id, id)).limit(1);
+    return feed;
+  }
+
+  async createIocFeed(feed: InsertIocFeed): Promise<IocFeed> {
+    const [created] = await db.insert(iocFeeds).values(feed).returning();
+    return created;
+  }
+
+  async updateIocFeed(id: string, data: Partial<IocFeed>): Promise<IocFeed | undefined> {
+    const [updated] = await db.update(iocFeeds).set({ ...data, updatedAt: new Date() }).where(eq(iocFeeds.id, id)).returning();
+    return updated;
+  }
+
+  async deleteIocFeed(id: string): Promise<boolean> {
+    const result = await db.delete(iocFeeds).where(eq(iocFeeds.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getIocEntries(orgId?: string, feedId?: string, iocType?: string, status?: string, limit?: number): Promise<IocEntry[]> {
+    const conditions: any[] = [];
+    if (orgId) conditions.push(eq(iocEntries.orgId, orgId));
+    if (feedId) conditions.push(eq(iocEntries.feedId, feedId));
+    if (iocType) conditions.push(eq(iocEntries.iocType, iocType));
+    if (status) conditions.push(eq(iocEntries.status, status));
+    const query = db.select().from(iocEntries);
+    if (conditions.length > 0) {
+      return query.where(and(...conditions)).limit(limit || 500).orderBy(desc(iocEntries.createdAt));
+    }
+    return query.limit(limit || 500).orderBy(desc(iocEntries.createdAt));
+  }
+
+  async getIocEntry(id: string): Promise<IocEntry | undefined> {
+    const [entry] = await db.select().from(iocEntries).where(eq(iocEntries.id, id)).limit(1);
+    return entry;
+  }
+
+  async getIocEntriesByValue(iocType: string, iocValue: string, orgId?: string): Promise<IocEntry[]> {
+    const conditions: any[] = [eq(iocEntries.iocType, iocType), eq(iocEntries.iocValue, iocValue.toLowerCase())];
+    if (orgId) conditions.push(eq(iocEntries.orgId, orgId));
+    return db.select().from(iocEntries).where(and(...conditions));
+  }
+
+  async createIocEntry(entry: InsertIocEntry): Promise<IocEntry> {
+    const [created] = await db.insert(iocEntries).values(entry).returning();
+    return created;
+  }
+
+  async createIocEntries(entries: InsertIocEntry[]): Promise<IocEntry[]> {
+    if (entries.length === 0) return [];
+    return db.insert(iocEntries).values(entries).returning();
+  }
+
+  async updateIocEntry(id: string, data: Partial<IocEntry>): Promise<IocEntry | undefined> {
+    const [updated] = await db.update(iocEntries).set(data).where(eq(iocEntries.id, id)).returning();
+    return updated;
+  }
+
+  async deleteIocEntry(id: string): Promise<boolean> {
+    const result = await db.delete(iocEntries).where(eq(iocEntries.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getIocWatchlists(orgId?: string): Promise<IocWatchlist[]> {
+    if (orgId) {
+      return db.select().from(iocWatchlists).where(eq(iocWatchlists.orgId, orgId)).orderBy(desc(iocWatchlists.createdAt));
+    }
+    return db.select().from(iocWatchlists).orderBy(desc(iocWatchlists.createdAt));
+  }
+
+  async getIocWatchlist(id: string): Promise<IocWatchlist | undefined> {
+    const [watchlist] = await db.select().from(iocWatchlists).where(eq(iocWatchlists.id, id)).limit(1);
+    return watchlist;
+  }
+
+  async createIocWatchlist(watchlist: InsertIocWatchlist): Promise<IocWatchlist> {
+    const [created] = await db.insert(iocWatchlists).values(watchlist).returning();
+    return created;
+  }
+
+  async updateIocWatchlist(id: string, data: Partial<IocWatchlist>): Promise<IocWatchlist | undefined> {
+    const [updated] = await db.update(iocWatchlists).set({ ...data, updatedAt: new Date() }).where(eq(iocWatchlists.id, id)).returning();
+    return updated;
+  }
+
+  async deleteIocWatchlist(id: string): Promise<boolean> {
+    const result = await db.delete(iocWatchlists).where(eq(iocWatchlists.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async addIocToWatchlist(entry: InsertIocWatchlistEntry): Promise<IocWatchlistEntry> {
+    const [created] = await db.insert(iocWatchlistEntries).values(entry).returning();
+    return created;
+  }
+
+  async removeIocFromWatchlist(watchlistId: string, iocEntryId: string): Promise<boolean> {
+    const result = await db.delete(iocWatchlistEntries).where(and(eq(iocWatchlistEntries.watchlistId, watchlistId), eq(iocWatchlistEntries.iocEntryId, iocEntryId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getWatchlistEntries(watchlistId: string): Promise<IocWatchlistEntry[]> {
+    return db.select().from(iocWatchlistEntries).where(eq(iocWatchlistEntries.watchlistId, watchlistId));
+  }
+
+  async getIocMatchRules(orgId?: string): Promise<IocMatchRule[]> {
+    if (orgId) {
+      return db.select().from(iocMatchRules).where(eq(iocMatchRules.orgId, orgId)).orderBy(desc(iocMatchRules.createdAt));
+    }
+    return db.select().from(iocMatchRules).orderBy(desc(iocMatchRules.createdAt));
+  }
+
+  async getIocMatchRule(id: string): Promise<IocMatchRule | undefined> {
+    const [rule] = await db.select().from(iocMatchRules).where(eq(iocMatchRules.id, id)).limit(1);
+    return rule;
+  }
+
+  async createIocMatchRule(rule: InsertIocMatchRule): Promise<IocMatchRule> {
+    const [created] = await db.insert(iocMatchRules).values(rule).returning();
+    return created;
+  }
+
+  async updateIocMatchRule(id: string, data: Partial<IocMatchRule>): Promise<IocMatchRule | undefined> {
+    const [updated] = await db.update(iocMatchRules).set({ ...data, updatedAt: new Date() }).where(eq(iocMatchRules.id, id)).returning();
+    return updated;
+  }
+
+  async deleteIocMatchRule(id: string): Promise<boolean> {
+    const result = await db.delete(iocMatchRules).where(eq(iocMatchRules.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getIocMatches(orgId?: string, alertId?: string, iocEntryId?: string, limit?: number): Promise<IocMatch[]> {
+    const conditions: any[] = [];
+    if (orgId) conditions.push(eq(iocMatches.orgId, orgId));
+    if (alertId) conditions.push(eq(iocMatches.alertId, alertId));
+    if (iocEntryId) conditions.push(eq(iocMatches.iocEntryId, iocEntryId));
+    const query = db.select().from(iocMatches);
+    if (conditions.length > 0) {
+      return query.where(and(...conditions)).limit(limit || 200).orderBy(desc(iocMatches.createdAt));
+    }
+    return query.limit(limit || 200).orderBy(desc(iocMatches.createdAt));
+  }
+
+  async createIocMatch(match: InsertIocMatch): Promise<IocMatch> {
+    const [created] = await db.insert(iocMatches).values(match).returning();
+    return created;
+  }
+
+  async getEvidenceItems(incidentId: string, orgId?: string): Promise<EvidenceItem[]> {
+    const conditions: any[] = [eq(evidenceItems.incidentId, incidentId)];
+    if (orgId) conditions.push(eq(evidenceItems.orgId, orgId));
+    return db.select().from(evidenceItems).where(and(...conditions)).orderBy(desc(evidenceItems.createdAt));
+  }
+
+  async getEvidenceItem(id: string): Promise<EvidenceItem | undefined> {
+    const [item] = await db.select().from(evidenceItems).where(eq(evidenceItems.id, id));
+    return item;
+  }
+
+  async createEvidenceItem(item: InsertEvidenceItem): Promise<EvidenceItem> {
+    const [created] = await db.insert(evidenceItems).values(item).returning();
+    return created;
+  }
+
+  async deleteEvidenceItem(id: string): Promise<boolean> {
+    const result = await db.delete(evidenceItems).where(eq(evidenceItems.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getHypotheses(incidentId: string, orgId?: string): Promise<InvestigationHypothesis[]> {
+    const conditions: any[] = [eq(investigationHypotheses.incidentId, incidentId)];
+    if (orgId) conditions.push(eq(investigationHypotheses.orgId, orgId));
+    return db.select().from(investigationHypotheses).where(and(...conditions)).orderBy(desc(investigationHypotheses.createdAt));
+  }
+
+  async getHypothesis(id: string): Promise<InvestigationHypothesis | undefined> {
+    const [hypothesis] = await db.select().from(investigationHypotheses).where(eq(investigationHypotheses.id, id));
+    return hypothesis;
+  }
+
+  async createHypothesis(hypothesis: InsertInvestigationHypothesis): Promise<InvestigationHypothesis> {
+    const [created] = await db.insert(investigationHypotheses).values(hypothesis).returning();
+    return created;
+  }
+
+  async updateHypothesis(id: string, data: Partial<InvestigationHypothesis>): Promise<InvestigationHypothesis | undefined> {
+    const [updated] = await db.update(investigationHypotheses).set({ ...data, updatedAt: new Date() }).where(eq(investigationHypotheses.id, id)).returning();
+    return updated;
+  }
+
+  async deleteHypothesis(id: string): Promise<boolean> {
+    const result = await db.delete(investigationHypotheses).where(eq(investigationHypotheses.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getInvestigationTasks(incidentId: string, orgId?: string): Promise<InvestigationTask[]> {
+    const conditions: any[] = [eq(investigationTasks.incidentId, incidentId)];
+    if (orgId) conditions.push(eq(investigationTasks.orgId, orgId));
+    return db.select().from(investigationTasks).where(and(...conditions)).orderBy(desc(investigationTasks.createdAt));
+  }
+
+  async getInvestigationTask(id: string): Promise<InvestigationTask | undefined> {
+    const [task] = await db.select().from(investigationTasks).where(eq(investigationTasks.id, id));
+    return task;
+  }
+
+  async createInvestigationTask(task: InsertInvestigationTask): Promise<InvestigationTask> {
+    const [created] = await db.insert(investigationTasks).values(task).returning();
+    return created;
+  }
+
+  async updateInvestigationTask(id: string, data: Partial<InvestigationTask>): Promise<InvestigationTask | undefined> {
+    const [updated] = await db.update(investigationTasks).set({ ...data, updatedAt: new Date() }).where(eq(investigationTasks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteInvestigationTask(id: string): Promise<boolean> {
+    const result = await db.delete(investigationTasks).where(eq(investigationTasks.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getRunbookTemplates(orgId?: string, incidentType?: string): Promise<RunbookTemplate[]> {
+    const conditions: any[] = [];
+    if (orgId) {
+      conditions.push(or(eq(runbookTemplates.orgId, orgId), isNull(runbookTemplates.orgId)));
+    }
+    if (incidentType) {
+      conditions.push(eq(runbookTemplates.incidentType, incidentType));
+    }
+    if (conditions.length > 0) {
+      return db.select().from(runbookTemplates).where(and(...conditions)).orderBy(desc(runbookTemplates.createdAt));
+    }
+    return db.select().from(runbookTemplates).orderBy(desc(runbookTemplates.createdAt));
+  }
+
+  async getRunbookTemplate(id: string): Promise<RunbookTemplate | undefined> {
+    const [template] = await db.select().from(runbookTemplates).where(eq(runbookTemplates.id, id));
+    return template;
+  }
+
+  async createRunbookTemplate(template: InsertRunbookTemplate): Promise<RunbookTemplate> {
+    const [created] = await db.insert(runbookTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateRunbookTemplate(id: string, data: Partial<RunbookTemplate>): Promise<RunbookTemplate | undefined> {
+    const [updated] = await db.update(runbookTemplates).set({ ...data, updatedAt: new Date() }).where(eq(runbookTemplates.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRunbookTemplate(id: string): Promise<boolean> {
+    const result = await db.delete(runbookTemplates).where(eq(runbookTemplates.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getRunbookSteps(templateId: string): Promise<RunbookStep[]> {
+    return db.select().from(runbookSteps).where(eq(runbookSteps.templateId, templateId)).orderBy(asc(runbookSteps.stepOrder));
+  }
+
+  async createRunbookStep(step: InsertRunbookStep): Promise<RunbookStep> {
+    const [created] = await db.insert(runbookSteps).values(step).returning();
+    return created;
+  }
+
+  async updateRunbookStep(id: string, data: Partial<RunbookStep>): Promise<RunbookStep | undefined> {
+    const [updated] = await db.update(runbookSteps).set(data).where(eq(runbookSteps.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRunbookStep(id: string): Promise<boolean> {
+    const result = await db.delete(runbookSteps).where(eq(runbookSteps.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getReportTemplates(orgId?: string): Promise<ReportTemplate[]> {
+    if (orgId) {
+      return db.select().from(reportTemplates)
+        .where(or(eq(reportTemplates.orgId, orgId), isNull(reportTemplates.orgId)))
+        .orderBy(desc(reportTemplates.createdAt));
+    }
+    return db.select().from(reportTemplates).orderBy(desc(reportTemplates.createdAt));
+  }
+
+  async getReportTemplate(id: string): Promise<ReportTemplate | undefined> {
+    const [t] = await db.select().from(reportTemplates).where(eq(reportTemplates.id, id));
+    return t;
+  }
+
+  async createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate> {
+    const [t] = await db.insert(reportTemplates).values(template).returning();
+    return t;
+  }
+
+  async updateReportTemplate(id: string, data: Partial<ReportTemplate>): Promise<ReportTemplate | undefined> {
+    const [t] = await db.update(reportTemplates).set({ ...data, updatedAt: new Date() }).where(eq(reportTemplates.id, id)).returning();
+    return t;
+  }
+
+  async deleteReportTemplate(id: string): Promise<boolean> {
+    const result = await db.delete(reportTemplates).where(eq(reportTemplates.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getReportSchedules(orgId?: string): Promise<ReportSchedule[]> {
+    if (orgId) {
+      return db.select().from(reportSchedules).where(eq(reportSchedules.orgId, orgId)).orderBy(desc(reportSchedules.createdAt));
+    }
+    return db.select().from(reportSchedules).orderBy(desc(reportSchedules.createdAt));
+  }
+
+  async getReportSchedule(id: string): Promise<ReportSchedule | undefined> {
+    const [s] = await db.select().from(reportSchedules).where(eq(reportSchedules.id, id));
+    return s;
+  }
+
+  async createReportSchedule(schedule: InsertReportSchedule): Promise<ReportSchedule> {
+    const [s] = await db.insert(reportSchedules).values(schedule).returning();
+    return s;
+  }
+
+  async updateReportSchedule(id: string, data: Partial<ReportSchedule>): Promise<ReportSchedule | undefined> {
+    const [s] = await db.update(reportSchedules).set({ ...data, updatedAt: new Date() }).where(eq(reportSchedules.id, id)).returning();
+    return s;
+  }
+
+  async deleteReportSchedule(id: string): Promise<boolean> {
+    const result = await db.delete(reportSchedules).where(eq(reportSchedules.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getReportRuns(orgId?: string, templateId?: string, limit = 50): Promise<ReportRun[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(reportRuns.orgId, orgId));
+    if (templateId) conditions.push(eq(reportRuns.templateId, templateId));
+    if (conditions.length > 0) {
+      return db.select().from(reportRuns).where(and(...conditions)).orderBy(desc(reportRuns.createdAt)).limit(limit);
+    }
+    return db.select().from(reportRuns).orderBy(desc(reportRuns.createdAt)).limit(limit);
+  }
+
+  async getReportRun(id: string): Promise<ReportRun | undefined> {
+    const [r] = await db.select().from(reportRuns).where(eq(reportRuns.id, id));
+    return r;
+  }
+
+  async createReportRun(run: InsertReportRun): Promise<ReportRun> {
+    const [r] = await db.insert(reportRuns).values(run).returning();
+    return r;
+  }
+
+  async updateReportRun(id: string, data: Partial<ReportRun>): Promise<ReportRun | undefined> {
+    const [r] = await db.update(reportRuns).set(data).where(eq(reportRuns.id, id)).returning();
+    return r;
+  }
+
+  async getDueSchedules(): Promise<ReportSchedule[]> {
+    return db.select().from(reportSchedules)
+      .where(and(
+        eq(reportSchedules.enabled, true),
+        sql`${reportSchedules.nextRunAt} IS NOT NULL AND ${reportSchedules.nextRunAt} <= NOW()`
+      ))
+      .orderBy(asc(reportSchedules.nextRunAt));
+  }
+
+  // Suppression Rules
+  async getSuppressionRules(orgId?: string): Promise<SuppressionRule[]> {
+    if (orgId) {
+      return db.select().from(suppressionRules).where(eq(suppressionRules.orgId, orgId)).orderBy(desc(suppressionRules.createdAt));
+    }
+    return db.select().from(suppressionRules).orderBy(desc(suppressionRules.createdAt));
+  }
+
+  async getSuppressionRule(id: string): Promise<SuppressionRule | undefined> {
+    const [rule] = await db.select().from(suppressionRules).where(eq(suppressionRules.id, id));
+    return rule;
+  }
+
+  async createSuppressionRule(rule: InsertSuppressionRule): Promise<SuppressionRule> {
+    const [created] = await db.insert(suppressionRules).values(rule).returning();
+    return created;
+  }
+
+  async updateSuppressionRule(id: string, data: Partial<SuppressionRule>): Promise<SuppressionRule | undefined> {
+    const [updated] = await db.update(suppressionRules).set({ ...data, updatedAt: new Date() }).where(eq(suppressionRules.id, id)).returning();
+    return updated;
+  }
+
+  async deleteSuppressionRule(id: string): Promise<boolean> {
+    const [deleted] = await db.delete(suppressionRules).where(eq(suppressionRules.id, id)).returning();
+    return !!deleted;
+  }
+
+  // Alert Dedup Clusters
+  async getAlertDedupClusters(orgId?: string): Promise<AlertDedupCluster[]> {
+    if (orgId) {
+      return db.select().from(alertDedupClusters).where(eq(alertDedupClusters.orgId, orgId)).orderBy(desc(alertDedupClusters.createdAt));
+    }
+    return db.select().from(alertDedupClusters).orderBy(desc(alertDedupClusters.createdAt));
+  }
+
+  async getAlertDedupCluster(id: string): Promise<AlertDedupCluster | undefined> {
+    const [cluster] = await db.select().from(alertDedupClusters).where(eq(alertDedupClusters.id, id));
+    return cluster;
+  }
+
+  async createAlertDedupCluster(cluster: InsertAlertDedupCluster): Promise<AlertDedupCluster> {
+    const [created] = await db.insert(alertDedupClusters).values(cluster).returning();
+    return created;
+  }
+
+  async updateAlertDedupCluster(id: string, data: Partial<AlertDedupCluster>): Promise<AlertDedupCluster | undefined> {
+    const [updated] = await db.update(alertDedupClusters).set(data).where(eq(alertDedupClusters.id, id)).returning();
+    return updated;
+  }
+
+  // SLA Policies
+  async getIncidentSlaPolicies(orgId?: string): Promise<IncidentSlaPolicy[]> {
+    if (orgId) {
+      return db.select().from(incidentSlaPolicies).where(eq(incidentSlaPolicies.orgId, orgId)).orderBy(desc(incidentSlaPolicies.createdAt));
+    }
+    return db.select().from(incidentSlaPolicies).orderBy(desc(incidentSlaPolicies.createdAt));
+  }
+
+  async getIncidentSlaPolicy(id: string): Promise<IncidentSlaPolicy | undefined> {
+    const [policy] = await db.select().from(incidentSlaPolicies).where(eq(incidentSlaPolicies.id, id));
+    return policy;
+  }
+
+  async createIncidentSlaPolicy(policy: InsertIncidentSlaPolicy): Promise<IncidentSlaPolicy> {
+    const [created] = await db.insert(incidentSlaPolicies).values(policy).returning();
+    return created;
+  }
+
+  async updateIncidentSlaPolicy(id: string, data: Partial<IncidentSlaPolicy>): Promise<IncidentSlaPolicy | undefined> {
+    const [updated] = await db.update(incidentSlaPolicies).set({ ...data, updatedAt: new Date() }).where(eq(incidentSlaPolicies.id, id)).returning();
+    return updated;
+  }
+
+  async deleteIncidentSlaPolicy(id: string): Promise<boolean> {
+    const [deleted] = await db.delete(incidentSlaPolicies).where(eq(incidentSlaPolicies.id, id)).returning();
+    return !!deleted;
+  }
+
+  // Post-Incident Reviews
+  async getPostIncidentReviews(orgId?: string, incidentId?: string): Promise<PostIncidentReview[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(postIncidentReviews.orgId, orgId));
+    if (incidentId) conditions.push(eq(postIncidentReviews.incidentId, incidentId));
+    if (conditions.length > 0) {
+      return db.select().from(postIncidentReviews).where(and(...conditions)).orderBy(desc(postIncidentReviews.createdAt));
+    }
+    return db.select().from(postIncidentReviews).orderBy(desc(postIncidentReviews.createdAt));
+  }
+
+  async getPostIncidentReview(id: string): Promise<PostIncidentReview | undefined> {
+    const [review] = await db.select().from(postIncidentReviews).where(eq(postIncidentReviews.id, id));
+    return review;
+  }
+
+  async createPostIncidentReview(review: InsertPostIncidentReview): Promise<PostIncidentReview> {
+    const [created] = await db.insert(postIncidentReviews).values(review).returning();
+    return created;
+  }
+
+  async updatePostIncidentReview(id: string, data: Partial<PostIncidentReview>): Promise<PostIncidentReview | undefined> {
+    const [updated] = await db.update(postIncidentReviews).set({ ...data, updatedAt: new Date() }).where(eq(postIncidentReviews.id, id)).returning();
+    return updated;
+  }
+
+  async deletePostIncidentReview(id: string): Promise<boolean> {
+    const [deleted] = await db.delete(postIncidentReviews).where(eq(postIncidentReviews.id, id)).returning();
+    return !!deleted;
+  }
+
+  async createConnectorJobRun(run: InsertConnectorJobRun): Promise<ConnectorJobRun> {
+    const [created] = await db.insert(connectorJobRuns).values(run).returning();
+    return created;
+  }
+
+  async updateConnectorJobRun(id: string, updates: Partial<ConnectorJobRun>): Promise<ConnectorJobRun> {
+    const [updated] = await db.update(connectorJobRuns).set(updates).where(eq(connectorJobRuns.id, id)).returning();
+    return updated;
+  }
+
+  async getConnectorJobRuns(connectorId: string, limit?: number): Promise<ConnectorJobRun[]> {
+    return db.select().from(connectorJobRuns)
+      .where(eq(connectorJobRuns.connectorId, connectorId))
+      .orderBy(desc(connectorJobRuns.startedAt))
+      .limit(limit || 50);
+  }
+
+  async getDeadLetterJobRuns(orgId?: string): Promise<ConnectorJobRun[]> {
+    const conditions = [eq(connectorJobRuns.isDeadLetter, true)];
+    if (orgId) conditions.push(eq(connectorJobRuns.orgId, orgId));
+    return db.select().from(connectorJobRuns)
+      .where(and(...conditions))
+      .orderBy(desc(connectorJobRuns.startedAt));
+  }
+
+  async getConnectorMetrics(connectorId: string): Promise<{ avgLatencyMs: number; errorRate: number; throttleCount: number; totalRuns: number; successRate: number }> {
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*) as total_runs,
+        COALESCE(AVG(latency_ms), 0) as avg_latency,
+        CASE WHEN COUNT(*) > 0 THEN SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::float / COUNT(*) ELSE 0 END as error_rate,
+        SUM(CASE WHEN throttled = true THEN 1 ELSE 0 END) as throttle_count,
+        CASE WHEN COUNT(*) > 0 THEN SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END)::float / COUNT(*) ELSE 0 END as success_rate
+      FROM (
+        SELECT status, latency_ms, throttled
+        FROM connector_job_runs
+        WHERE connector_id = ${connectorId}
+        ORDER BY started_at DESC
+        LIMIT 100
+      ) sub
+    `);
+    const row = (result as any).rows?.[0] || result[0] || {};
+    return {
+      totalRuns: Number(row.total_runs) || 0,
+      avgLatencyMs: Number(row.avg_latency) || 0,
+      errorRate: Number(row.error_rate) || 0,
+      throttleCount: Number(row.throttle_count) || 0,
+      successRate: Number(row.success_rate) || 0,
+    };
+  }
+
+  async createConnectorHealthCheck(check: InsertConnectorHealthCheck): Promise<ConnectorHealthCheck> {
+    const [created] = await db.insert(connectorHealthChecks).values(check).returning();
+    return created;
+  }
+
+  async getConnectorHealthChecks(connectorId: string, limit?: number): Promise<ConnectorHealthCheck[]> {
+    return db.select().from(connectorHealthChecks)
+      .where(eq(connectorHealthChecks.connectorId, connectorId))
+      .orderBy(desc(connectorHealthChecks.checkedAt))
+      .limit(limit || 50);
+  }
+
+  async getLatestHealthCheck(connectorId: string): Promise<ConnectorHealthCheck | undefined> {
+    const [check] = await db.select().from(connectorHealthChecks)
+      .where(eq(connectorHealthChecks.connectorId, connectorId))
+      .orderBy(desc(connectorHealthChecks.checkedAt))
+      .limit(1);
+    return check;
+  }
+
+  async getAiFeedbackMetrics(orgId?: string, days?: number): Promise<{ date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]> {
+    const d = days || 30;
+    const orgCondition = orgId ? sql` AND org_id = ${orgId}` : sql``;
+    const result = await db.execute(sql`
+      SELECT
+        date_trunc('day', created_at) as date,
+        AVG(rating) as avg_rating,
+        COUNT(*) as total,
+        SUM(CASE WHEN rating <= 2 THEN 1 ELSE 0 END) as negative,
+        SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as positive
+      FROM ai_feedback
+      WHERE created_at >= NOW() - make_interval(days => ${d})${orgCondition}
+      GROUP BY 1
+      ORDER BY 1
+    `);
+    const rows = (result as any).rows || result || [];
+    return rows.map((row: any) => ({
+      date: row.date ? new Date(row.date).toISOString().split('T')[0] : '',
+      avgRating: Number(row.avg_rating) || 0,
+      totalFeedback: Number(row.total) || 0,
+      negativeFeedback: Number(row.negative) || 0,
+      positiveFeedback: Number(row.positive) || 0,
+    }));
+  }
+
+  async getAiFeedbackByResource(resourceType: string, resourceId: string): Promise<AiFeedback[]> {
+    return db.select().from(aiFeedback)
+      .where(and(eq(aiFeedback.resourceType, resourceType), eq(aiFeedback.resourceId, resourceId)))
+      .orderBy(desc(aiFeedback.createdAt));
+  }
+  async getPolicyChecks(orgId: string): Promise<PolicyCheck[]> {
+    return db.select().from(policyChecks).where(eq(policyChecks.orgId, orgId)).orderBy(desc(policyChecks.createdAt));
+  }
+
+  async getPolicyCheck(id: string): Promise<PolicyCheck | undefined> {
+    const [check] = await db.select().from(policyChecks).where(eq(policyChecks.id, id));
+    return check;
+  }
+
+  async createPolicyCheck(check: InsertPolicyCheck): Promise<PolicyCheck> {
+    const [created] = await db.insert(policyChecks).values(check).returning();
+    return created;
+  }
+
+  async updatePolicyCheck(id: string, data: Partial<PolicyCheck>): Promise<PolicyCheck | undefined> {
+    const [updated] = await db.update(policyChecks).set(data).where(eq(policyChecks.id, id)).returning();
+    return updated;
+  }
+
+  async deletePolicyCheck(id: string): Promise<boolean> {
+    const result = await db.delete(policyChecks).where(eq(policyChecks.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getPolicyResults(orgId: string, policyCheckId?: string): Promise<PolicyResult[]> {
+    const conditions = [eq(policyResults.orgId, orgId)];
+    if (policyCheckId) {
+      conditions.push(eq(policyResults.policyCheckId, policyCheckId));
+    }
+    return db.select().from(policyResults).where(and(...conditions)).orderBy(desc(policyResults.evaluatedAt));
+  }
+
+  async createPolicyResult(result: InsertPolicyResult): Promise<PolicyResult> {
+    const [created] = await db.insert(policyResults).values(result).returning();
+    return created;
+  }
+
+  async getComplianceControls(framework?: string): Promise<ComplianceControl[]> {
+    if (framework) {
+      return db.select().from(complianceControls).where(eq(complianceControls.framework, framework));
+    }
+    return db.select().from(complianceControls);
+  }
+
+  async getComplianceControl(id: string): Promise<ComplianceControl | undefined> {
+    const [control] = await db.select().from(complianceControls).where(eq(complianceControls.id, id));
+    return control;
+  }
+
+  async createComplianceControl(control: InsertComplianceControl): Promise<ComplianceControl> {
+    const [created] = await db.insert(complianceControls).values(control).returning();
+    return created;
+  }
+
+  async createComplianceControls(controls: InsertComplianceControl[]): Promise<ComplianceControl[]> {
+    return db.insert(complianceControls).values(controls).returning();
+  }
+
+  async updateComplianceControl(id: string, data: Partial<ComplianceControl>): Promise<ComplianceControl | undefined> {
+    const [updated] = await db.update(complianceControls).set(data).where(eq(complianceControls.id, id)).returning();
+    return updated;
+  }
+
+  async deleteComplianceControl(id: string): Promise<boolean> {
+    const [deleted] = await db.delete(complianceControls).where(eq(complianceControls.id, id)).returning();
+    return !!deleted;
+  }
+
+  async deletePolicyResult(id: string): Promise<boolean> {
+    const [deleted] = await db.delete(policyResults).where(eq(policyResults.id, id)).returning();
+    return !!deleted;
+  }
+
+  async getComplianceControlMappings(orgId: string, controlId?: string): Promise<ComplianceControlMapping[]> {
+    const conditions = [eq(complianceControlMappings.orgId, orgId)];
+    if (controlId) {
+      conditions.push(eq(complianceControlMappings.controlId, controlId));
+    }
+    return db.select().from(complianceControlMappings).where(and(...conditions));
+  }
+
+  async createComplianceControlMapping(mapping: InsertComplianceControlMapping): Promise<ComplianceControlMapping> {
+    const [created] = await db.insert(complianceControlMappings).values(mapping).returning();
+    return created;
+  }
+
+  async updateComplianceControlMapping(id: string, data: Partial<ComplianceControlMapping>): Promise<ComplianceControlMapping | undefined> {
+    const [updated] = await db.update(complianceControlMappings).set(data).where(eq(complianceControlMappings.id, id)).returning();
+    return updated;
+  }
+
+  async deleteComplianceControlMapping(id: string): Promise<boolean> {
+    const result = await db.delete(complianceControlMappings).where(eq(complianceControlMappings.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getEvidenceLockerItems(orgId: string, framework?: string, artifactType?: string): Promise<EvidenceLockerItem[]> {
+    const conditions = [eq(evidenceLockerItems.orgId, orgId)];
+    if (framework) {
+      conditions.push(eq(evidenceLockerItems.framework, framework));
+    }
+    if (artifactType) {
+      conditions.push(eq(evidenceLockerItems.artifactType, artifactType));
+    }
+    return db.select().from(evidenceLockerItems).where(and(...conditions)).orderBy(desc(evidenceLockerItems.createdAt));
+  }
+
+  async getEvidenceLockerItem(id: string): Promise<EvidenceLockerItem | undefined> {
+    const [item] = await db.select().from(evidenceLockerItems).where(eq(evidenceLockerItems.id, id));
+    return item;
+  }
+
+  async createEvidenceLockerItem(item: InsertEvidenceLockerItem): Promise<EvidenceLockerItem> {
+    const [created] = await db.insert(evidenceLockerItems).values(item).returning();
+    return created;
+  }
+
+  async updateEvidenceLockerItem(id: string, data: Partial<EvidenceLockerItem>): Promise<EvidenceLockerItem | undefined> {
+    const [updated] = await db.update(evidenceLockerItems).set(data).where(eq(evidenceLockerItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteEvidenceLockerItem(id: string): Promise<boolean> {
+    const result = await db.delete(evidenceLockerItems).where(eq(evidenceLockerItems.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getOutboundWebhooks(orgId: string): Promise<OutboundWebhook[]> {
+    return db.select().from(outboundWebhooks).where(eq(outboundWebhooks.orgId, orgId)).orderBy(desc(outboundWebhooks.createdAt));
+  }
+
+  async getOutboundWebhook(id: string): Promise<OutboundWebhook | undefined> {
+    const [webhook] = await db.select().from(outboundWebhooks).where(eq(outboundWebhooks.id, id));
+    return webhook;
+  }
+
+  async createOutboundWebhook(webhook: InsertOutboundWebhook): Promise<OutboundWebhook> {
+    const [created] = await db.insert(outboundWebhooks).values(webhook).returning();
+    return created;
+  }
+
+  async updateOutboundWebhook(id: string, data: Partial<OutboundWebhook>): Promise<OutboundWebhook | undefined> {
+    const [updated] = await db.update(outboundWebhooks).set(data).where(eq(outboundWebhooks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOutboundWebhook(id: string): Promise<boolean> {
+    const result = await db.delete(outboundWebhooks).where(eq(outboundWebhooks.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getActiveWebhooksByEvent(orgId: string, event: string): Promise<OutboundWebhook[]> {
+    return db.select().from(outboundWebhooks)
+      .where(and(eq(outboundWebhooks.orgId, orgId), eq(outboundWebhooks.isActive, true), sql`${event} = ANY(${outboundWebhooks.events})`));
+  }
+
+  async getOutboundWebhookLogs(webhookId: string, limit?: number): Promise<OutboundWebhookLog[]> {
+    return db.select().from(outboundWebhookLogs)
+      .where(eq(outboundWebhookLogs.webhookId, webhookId))
+      .orderBy(desc(outboundWebhookLogs.deliveredAt))
+      .limit(limit || 100);
+  }
+
+  async createOutboundWebhookLog(log: InsertOutboundWebhookLog): Promise<OutboundWebhookLog> {
+    const [created] = await db.insert(outboundWebhookLogs).values(log).returning();
+    return created;
+  }
+
+  async getIdempotencyKey(orgId: string, key: string, endpoint: string): Promise<IdempotencyKey | undefined> {
+    const [found] = await db.select().from(idempotencyKeys)
+      .where(and(eq(idempotencyKeys.orgId, orgId), eq(idempotencyKeys.idempotencyKey, key), eq(idempotencyKeys.endpoint, endpoint)));
+    return found;
+  }
+
+  async createIdempotencyKey(key: InsertIdempotencyKey): Promise<IdempotencyKey> {
+    const [created] = await db.insert(idempotencyKeys).values(key).returning();
+    return created;
+  }
+
+  async cleanupExpiredIdempotencyKeys(): Promise<number> {
+    const result = await db.delete(idempotencyKeys).where(sql`${idempotencyKeys.expiresAt} < NOW()`).returning();
+    return result.length;
+  }
+
+  async getArchivedAlerts(orgId: string, limit?: number, offset?: number): Promise<AlertArchive[]> {
+    return db.select().from(alertsArchive)
+      .where(eq(alertsArchive.orgId, orgId))
+      .orderBy(desc(alertsArchive.archivedAt))
+      .limit(limit || 100)
+      .offset(offset || 0);
+  }
+
+  async getArchivedAlertCount(orgId: string): Promise<number> {
+    const [result] = await db.select({ count: count() }).from(alertsArchive).where(eq(alertsArchive.orgId, orgId));
+    return result?.count || 0;
+  }
+
+  async archiveAlerts(orgId: string, alertIds: string[], reason: string): Promise<number> {
+    const alertsToArchive = await db.select().from(alerts).where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds)));
+    if (alertsToArchive.length === 0) return 0;
+    const archiveData = alertsToArchive.map(a => ({
+      orgId: a.orgId,
+      source: a.source,
+      sourceEventId: a.sourceEventId,
+      category: a.category,
+      severity: a.severity,
+      title: a.title,
+      description: a.description,
+      rawData: a.rawData,
+      normalizedData: a.normalizedData,
+      ocsfData: a.ocsfData,
+      sourceIp: a.sourceIp,
+      destIp: a.destIp,
+      sourcePort: a.sourcePort,
+      destPort: a.destPort,
+      protocol: a.protocol,
+      userId: a.userId,
+      hostname: a.hostname,
+      fileHash: a.fileHash,
+      url: a.url,
+      domain: a.domain,
+      mitreTactic: a.mitreTactic,
+      mitreTechnique: a.mitreTechnique,
+      status: a.status,
+      incidentId: a.incidentId,
+      correlationScore: a.correlationScore,
+      correlationReason: a.correlationReason,
+      correlationClusterId: a.correlationClusterId,
+      suppressed: a.suppressed,
+      suppressedBy: a.suppressedBy,
+      suppressionRuleId: a.suppressionRuleId,
+      confidenceScore: a.confidenceScore,
+      confidenceSource: a.confidenceSource,
+      confidenceNotes: a.confidenceNotes,
+      dedupClusterId: a.dedupClusterId,
+      analystNotes: a.analystNotes,
+      assignedTo: a.assignedTo,
+      detectedAt: a.detectedAt,
+      archiveReason: reason,
+    }));
+    await db.insert(alertsArchive).values(archiveData);
+    await db.delete(alerts).where(inArray(alerts.id, alertIds));
+    return alertsToArchive.length;
+  }
+
+  async restoreArchivedAlerts(ids: string[]): Promise<number> {
+    const archived = await db.select().from(alertsArchive).where(inArray(alertsArchive.id, ids));
+    if (archived.length === 0) return 0;
+    const restoreData = archived.map(a => ({
+      orgId: a.orgId,
+      source: a.source,
+      sourceEventId: a.sourceEventId,
+      category: a.category,
+      severity: a.severity,
+      title: a.title,
+      description: a.description,
+      rawData: a.rawData,
+      normalizedData: a.normalizedData,
+      ocsfData: a.ocsfData,
+      sourceIp: a.sourceIp,
+      destIp: a.destIp,
+      sourcePort: a.sourcePort,
+      destPort: a.destPort,
+      protocol: a.protocol,
+      userId: a.userId,
+      hostname: a.hostname,
+      fileHash: a.fileHash,
+      url: a.url,
+      domain: a.domain,
+      mitreTactic: a.mitreTactic,
+      mitreTechnique: a.mitreTechnique,
+      status: a.status,
+      incidentId: a.incidentId,
+      correlationScore: a.correlationScore,
+      correlationReason: a.correlationReason,
+      correlationClusterId: a.correlationClusterId,
+      suppressed: a.suppressed,
+      suppressedBy: a.suppressedBy,
+      suppressionRuleId: a.suppressionRuleId,
+      confidenceScore: a.confidenceScore,
+      confidenceSource: a.confidenceSource,
+      confidenceNotes: a.confidenceNotes,
+      dedupClusterId: a.dedupClusterId,
+      analystNotes: a.analystNotes,
+      assignedTo: a.assignedTo,
+      detectedAt: a.detectedAt,
+    }));
+    await db.insert(alerts).values(restoreData as any);
+    await db.delete(alertsArchive).where(inArray(alertsArchive.id, ids));
+    return archived.length;
+  }
+
+  async deleteArchivedAlerts(orgId: string, beforeDate: Date): Promise<number> {
+    const result = await db.delete(alertsArchive)
+      .where(and(eq(alertsArchive.orgId, orgId), lte(alertsArchive.archivedAt, beforeDate)))
+      .returning();
+    return result.length;
+  }
+
+  async getJobs(orgId?: string, status?: string, type?: string, limit?: number): Promise<Job[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(jobQueue.orgId, orgId));
+    if (status) conditions.push(eq(jobQueue.status, status));
+    if (type) conditions.push(eq(jobQueue.type, type));
+    const query = db.select().from(jobQueue);
+    if (conditions.length > 0) {
+      return query.where(and(...conditions)).orderBy(desc(jobQueue.createdAt)).limit(limit || 100);
+    }
+    return query.orderBy(desc(jobQueue.createdAt)).limit(limit || 100);
+  }
+
+  async getJob(id: string): Promise<Job | undefined> {
+    const [job] = await db.select().from(jobQueue).where(eq(jobQueue.id, id));
+    return job;
+  }
+
+  async createJob(job: InsertJob): Promise<Job> {
+    const [created] = await db.insert(jobQueue).values(job).returning();
+    return created;
+  }
+
+  async claimNextJob(types?: string[]): Promise<Job | undefined> {
+    const typesFilter = types && types.length > 0
+      ? sql`AND type IN (${sql.join(types.map(t => sql`${t}`), sql`, `)})`
+      : sql``;
+    const result = await db.execute(sql`
+      UPDATE job_queue
+      SET status = 'running', started_at = NOW(), attempts = attempts + 1
+      WHERE id = (
+        SELECT id FROM job_queue
+        WHERE status = 'pending' AND run_at <= NOW() ${typesFilter}
+        ORDER BY priority DESC, run_at ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING *
+    `);
+    const rows = result.rows as any[];
+    if (!rows || rows.length === 0) return undefined;
+    const row = rows[0];
+    return {
+      id: row.id,
+      orgId: row.org_id,
+      type: row.type,
+      status: row.status,
+      payload: row.payload,
+      result: row.result,
+      priority: row.priority,
+      runAt: row.run_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      attempts: row.attempts,
+      maxAttempts: row.max_attempts,
+      lastError: row.last_error,
+      createdAt: row.created_at,
+    } as Job;
+  }
+
+  async updateJob(id: string, data: Partial<Job>): Promise<Job | undefined> {
+    const [updated] = await db.update(jobQueue).set(data).where(eq(jobQueue.id, id)).returning();
+    return updated;
+  }
+
+  async cancelJob(id: string): Promise<boolean> {
+    const [updated] = await db.update(jobQueue).set({ status: "cancelled" } as any).where(eq(jobQueue.id, id)).returning();
+    return !!updated;
+  }
+
+  async getJobStats(): Promise<{ pending: number; running: number; completed: number; failed: number }> {
+    const result = await db.select({
+      status: jobQueue.status,
+      count: count(),
+    }).from(jobQueue).groupBy(jobQueue.status);
+    const stats = { pending: 0, running: 0, completed: 0, failed: 0 };
+    for (const row of result) {
+      if (row.status in stats) {
+        (stats as any)[row.status] = row.count;
+      }
+    }
+    return stats;
+  }
+
+  async cleanupCompletedJobs(olderThanDays: number): Promise<number> {
+    const result = await db.delete(jobQueue)
+      .where(and(
+        or(eq(jobQueue.status, "completed"), eq(jobQueue.status, "failed")),
+        sql`${jobQueue.completedAt} < NOW() - INTERVAL '${sql.raw(String(olderThanDays))} days'`
+      ))
+      .returning();
+    return result.length;
+  }
+
+  async getCachedMetrics(orgId: string, metricType: string): Promise<DashboardMetricsCache | undefined> {
+    const [cached] = await db.select().from(dashboardMetricsCache)
+      .where(and(
+        eq(dashboardMetricsCache.orgId, orgId),
+        eq(dashboardMetricsCache.metricType, metricType),
+        sql`${dashboardMetricsCache.expiresAt} > NOW()`
+      ));
+    return cached;
+  }
+
+  async upsertCachedMetrics(data: InsertDashboardMetricsCache): Promise<DashboardMetricsCache> {
+    const [result] = await db.insert(dashboardMetricsCache).values(data)
+      .onConflictDoUpdate({
+        target: [dashboardMetricsCache.orgId, dashboardMetricsCache.metricType],
+        set: {
+          payload: data.payload,
+          expiresAt: data.expiresAt,
+          generatedAt: sql`NOW()`,
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async clearExpiredCache(): Promise<number> {
+    const result = await db.delete(dashboardMetricsCache)
+      .where(sql`${dashboardMetricsCache.expiresAt} <= NOW()`)
+      .returning();
+    return result.length;
+  }
+
+  async getAlertDailyStats(orgId: string, startDate: string, endDate: string): Promise<AlertDailyStat[]> {
+    return db.select().from(alertDailyStats)
+      .where(and(
+        eq(alertDailyStats.orgId, orgId),
+        gte(alertDailyStats.date, startDate),
+        lte(alertDailyStats.date, endDate)
+      ))
+      .orderBy(asc(alertDailyStats.date));
+  }
+
+  async upsertAlertDailyStat(data: InsertAlertDailyStat): Promise<AlertDailyStat> {
+    const [result] = await db.insert(alertDailyStats).values(data)
+      .onConflictDoUpdate({
+        target: [alertDailyStats.orgId, alertDailyStats.date],
+        set: {
+          totalAlerts: data.totalAlerts,
+          criticalCount: data.criticalCount,
+          highCount: data.highCount,
+          mediumCount: data.mediumCount,
+          lowCount: data.lowCount,
+          infoCount: data.infoCount,
+          sourceCounts: data.sourceCounts,
+          categoryCounts: data.categoryCounts,
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date): Promise<SliMetric[]> {
+    return db.select().from(sliMetrics)
+      .where(and(
+        eq(sliMetrics.service, service),
+        eq(sliMetrics.metric, metric),
+        gte(sliMetrics.recordedAt, startTime),
+        lte(sliMetrics.recordedAt, endTime)
+      ))
+      .orderBy(asc(sliMetrics.recordedAt));
+  }
+
+  async createSliMetric(data: InsertSliMetric): Promise<SliMetric> {
+    const [created] = await db.insert(sliMetrics).values(data).returning();
+    return created;
+  }
+
+  async createSliMetricsBatch(data: InsertSliMetric[]): Promise<SliMetric[]> {
+    if (data.length === 0) return [];
+    return db.insert(sliMetrics).values(data).returning();
+  }
+
+  async cleanupOldSliMetrics(olderThanDays: number): Promise<number> {
+    const result = await db.delete(sliMetrics)
+      .where(sql`${sliMetrics.recordedAt} < NOW() - INTERVAL '${sql.raw(String(olderThanDays))} days'`)
+      .returning();
+    return result.length;
+  }
+
+  async getSloTargets(): Promise<SloTarget[]> {
+    return db.select().from(sloTargets).orderBy(asc(sloTargets.service));
+  }
+
+  async getSloTarget(id: string): Promise<SloTarget | undefined> {
+    const [target] = await db.select().from(sloTargets).where(eq(sloTargets.id, id));
+    return target;
+  }
+
+  async createSloTarget(target: InsertSloTarget): Promise<SloTarget> {
+    const [created] = await db.insert(sloTargets).values(target).returning();
+    return created;
+  }
+
+  async updateSloTarget(id: string, data: Partial<SloTarget>): Promise<SloTarget | undefined> {
+    const [updated] = await db.update(sloTargets).set({ ...data, updatedAt: new Date() }).where(eq(sloTargets.id, id)).returning();
+    return updated;
+  }
+
+  async deleteSloTarget(id: string): Promise<boolean> {
+    const result = await db.delete(sloTargets).where(eq(sloTargets.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getDrRunbooks(orgId: string): Promise<DrRunbook[]> {
+    return db.select().from(drRunbooks).where(eq(drRunbooks.orgId, orgId)).orderBy(desc(drRunbooks.createdAt));
+  }
+
+  async getDrRunbook(id: string): Promise<DrRunbook | undefined> {
+    const [runbook] = await db.select().from(drRunbooks).where(eq(drRunbooks.id, id));
+    return runbook;
+  }
+
+  async createDrRunbook(runbook: InsertDrRunbook): Promise<DrRunbook> {
+    const [created] = await db.insert(drRunbooks).values(runbook).returning();
+    return created;
+  }
+
+  async updateDrRunbook(id: string, data: Partial<DrRunbook>): Promise<DrRunbook | undefined> {
+    const [updated] = await db.update(drRunbooks).set({ ...data, updatedAt: new Date() }).where(eq(drRunbooks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteDrRunbook(id: string): Promise<boolean> {
+    const result = await db.delete(drRunbooks).where(eq(drRunbooks.id, id)).returning();
+    return result.length > 0;
   }
 }
 

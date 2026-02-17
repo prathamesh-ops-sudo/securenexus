@@ -44,6 +44,46 @@ export const INVESTIGATION_RUN_STATUSES = ["queued", "running", "completed", "fa
 export const INVESTIGATION_STEP_TYPES = ["gather_alerts", "enrich_entities", "correlate_evidence", "mitre_mapping", "ai_analysis", "recommendation", "action_taken"] as const;
 export const ROLLBACK_STATUSES = ["pending", "completed", "failed", "not_applicable"] as const;
 
+export const ORG_ROLES = ["owner", "admin", "analyst", "read_only"] as const;
+export const MEMBERSHIP_STATUSES = ["active", "suspended", "invited"] as const;
+export const PERMISSION_SCOPES = ["incidents", "connectors", "api_keys", "response_actions", "settings", "team"] as const;
+export const PERMISSION_ACTIONS = ["read", "write", "admin"] as const;
+
+export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
+  owner: {
+    incidents: ["read", "write", "admin"],
+    connectors: ["read", "write", "admin"],
+    api_keys: ["read", "write", "admin"],
+    response_actions: ["read", "write", "admin"],
+    settings: ["read", "write", "admin"],
+    team: ["read", "write", "admin"],
+  },
+  admin: {
+    incidents: ["read", "write", "admin"],
+    connectors: ["read", "write", "admin"],
+    api_keys: ["read", "write", "admin"],
+    response_actions: ["read", "write", "admin"],
+    settings: ["read", "write"],
+    team: ["read", "write"],
+  },
+  analyst: {
+    incidents: ["read", "write"],
+    connectors: ["read"],
+    api_keys: ["read"],
+    response_actions: ["read", "write"],
+    settings: ["read"],
+    team: ["read"],
+  },
+  read_only: {
+    incidents: ["read"],
+    connectors: ["read"],
+    api_keys: [],
+    response_actions: ["read"],
+    settings: ["read"],
+    team: ["read"],
+  },
+};
+
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -83,6 +123,13 @@ export const alerts = pgTable("alerts", {
   correlationScore: real("correlation_score"),
   correlationReason: text("correlation_reason"),
   correlationClusterId: varchar("correlation_cluster_id"),
+  suppressed: boolean("suppressed").default(false),
+  suppressedBy: varchar("suppressed_by"),
+  suppressionRuleId: varchar("suppression_rule_id"),
+  confidenceScore: real("confidence_score"),
+  confidenceSource: text("confidence_source"),
+  confidenceNotes: text("confidence_notes"),
+  dedupClusterId: varchar("dedup_cluster_id"),
   analystNotes: text("analyst_notes"),
   assignedTo: varchar("assigned_to"),
   detectedAt: timestamp("detected_at"),
@@ -125,6 +172,12 @@ export const incidents = pgTable("incidents", {
   escalatedAt: timestamp("escalated_at"),
   containedAt: timestamp("contained_at"),
   resolvedAt: timestamp("resolved_at"),
+  ackDueAt: timestamp("ack_due_at"),
+  containDueAt: timestamp("contain_due_at"),
+  resolveDueAt: timestamp("resolve_due_at"),
+  ackAt: timestamp("ack_at"),
+  slaBreached: boolean("sla_breached").default(false),
+  slaBreachType: text("sla_breach_type"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -260,6 +313,9 @@ export const aiFeedback = pgTable("ai_feedback", {
   resourceId: varchar("resource_id"),
   rating: integer("rating").notNull(),
   comment: text("comment"),
+  correctionReason: text("correction_reason"),
+  correctedSeverity: text("corrected_severity"),
+  correctedCategory: text("corrected_category"),
   aiOutput: jsonb("ai_output"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
@@ -296,15 +352,37 @@ export const playbookExecutions = pgTable("playbook_executions", {
   resourceType: text("resource_type"),
   resourceId: varchar("resource_id"),
   status: text("status").notNull().default("running"),
+  dryRun: boolean("dry_run").default(false),
   actionsExecuted: jsonb("actions_executed"),
   result: jsonb("result"),
   errorMessage: text("error_message"),
   executionTimeMs: integer("execution_time_ms"),
+  pausedAtNodeId: varchar("paused_at_node_id"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_playbook_executions_playbook").on(table.playbookId),
   index("idx_playbook_executions_status").on(table.status),
   index("idx_playbook_executions_created").on(table.createdAt),
+]);
+
+export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
+
+export const playbookApprovals = pgTable("playbook_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  executionId: varchar("execution_id").notNull().references(() => playbookExecutions.id),
+  playbookId: varchar("playbook_id").notNull().references(() => playbooks.id),
+  nodeId: varchar("node_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  requestedBy: text("requested_by"),
+  approverRole: text("approver_role"),
+  approvalMessage: text("approval_message"),
+  decidedBy: text("decided_by"),
+  decisionNote: text("decision_note"),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  decidedAt: timestamp("decided_at"),
+}, (table) => [
+  index("idx_playbook_approvals_execution").on(table.executionId),
+  index("idx_playbook_approvals_status").on(table.status),
 ]);
 
 export const entities = pgTable("entities", {
@@ -667,8 +745,14 @@ export const playbooksRelations = relations(playbooks, ({ one, many }) => ({
   executions: many(playbookExecutions),
 }));
 
-export const playbookExecutionsRelations = relations(playbookExecutions, ({ one }) => ({
+export const playbookExecutionsRelations = relations(playbookExecutions, ({ one, many }) => ({
   playbook: one(playbooks, { fields: [playbookExecutions.playbookId], references: [playbooks.id] }),
+  approvals: many(playbookApprovals),
+}));
+
+export const playbookApprovalsRelations = relations(playbookApprovals, ({ one }) => ({
+  execution: one(playbookExecutions, { fields: [playbookApprovals.executionId], references: [playbookExecutions.id] }),
+  playbook: one(playbooks, { fields: [playbookApprovals.playbookId], references: [playbooks.id] }),
 }));
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
@@ -816,6 +900,7 @@ export const insertAutoResponsePolicySchema = createInsertSchema(autoResponsePol
 export const insertInvestigationRunSchema = createInsertSchema(investigationRuns).omit({ id: true, createdAt: true, completedAt: true, duration: true, error: true });
 export const insertInvestigationStepSchema = createInsertSchema(investigationSteps).omit({ id: true, createdAt: true });
 export const insertResponseActionRollbackSchema = createInsertSchema(responseActionRollbacks).omit({ id: true, createdAt: true, executedAt: true });
+export const insertPlaybookApprovalSchema = createInsertSchema(playbookApprovals).omit({ id: true, requestedAt: true, decidedAt: true });
 
 // Types
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
@@ -881,6 +966,8 @@ export type InvestigationStep = typeof investigationSteps.$inferSelect;
 export type InsertInvestigationStep = z.infer<typeof insertInvestigationStepSchema>;
 export type ResponseActionRollback = typeof responseActionRollbacks.$inferSelect;
 export type InsertResponseActionRollback = z.infer<typeof insertResponseActionRollbackSchema>;
+export type PlaybookApproval = typeof playbookApprovals.$inferSelect;
+export type InsertPlaybookApproval = z.infer<typeof insertPlaybookApprovalSchema>;
 
 export const CLOUD_PROVIDERS = ["aws", "azure", "gcp"] as const;
 export const CSPM_SCAN_STATUSES = ["pending", "running", "completed", "failed"] as const;
@@ -984,6 +1071,269 @@ export const aiDeploymentConfigs = pgTable("ai_deployment_configs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const organizationMemberships = pgTable("organization_memberships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  userId: varchar("user_id").notNull(),
+  role: text("role").notNull().default("analyst"),
+  status: text("status").notNull().default("active"),
+  invitedBy: varchar("invited_by"),
+  invitedEmail: text("invited_email"),
+  invitedAt: timestamp("invited_at"),
+  joinedAt: timestamp("joined_at"),
+  suspendedAt: timestamp("suspended_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_membership_org_user").on(table.orgId, table.userId),
+  index("idx_membership_org").on(table.orgId),
+  index("idx_membership_user").on(table.userId),
+]);
+
+export const orgInvitations = pgTable("org_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("analyst"),
+  token: text("token").notNull().unique(),
+  invitedBy: varchar("invited_by").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_invitation_org").on(table.orgId),
+  index("idx_invitation_email").on(table.email),
+  index("idx_invitation_token").on(table.token),
+]);
+
+export const IOC_FEED_TYPES = ["misp", "stix", "taxii", "otx", "virustotal", "csv", "custom"] as const;
+export const IOC_ENTRY_STATUSES = ["active", "expired", "revoked", "whitelisted"] as const;
+export const IOC_TYPES = ["ip", "domain", "url", "hash", "email", "hostname", "cidr", "cve"] as const;
+
+export const iocFeeds = pgTable("ioc_feeds", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  feedType: text("feed_type").notNull(),
+  url: text("url"),
+  apiKeyRef: text("api_key_ref"),
+  schedule: text("schedule").default("manual"),
+  enabled: boolean("enabled").default(true),
+  config: jsonb("config").default({}),
+  lastFetchAt: timestamp("last_fetch_at"),
+  lastFetchStatus: text("last_fetch_status"),
+  lastFetchCount: integer("last_fetch_count").default(0),
+  totalIocCount: integer("total_ioc_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ioc_feeds_org").on(table.orgId),
+]);
+
+export const iocEntries = pgTable("ioc_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  feedId: varchar("feed_id").references(() => iocFeeds.id, { onDelete: "cascade" }),
+  iocType: text("ioc_type").notNull(),
+  iocValue: text("ioc_value").notNull(),
+  confidence: integer("confidence").default(50),
+  severity: text("severity").default("medium"),
+  malwareFamily: text("malware_family"),
+  campaignId: text("campaign_id"),
+  campaignName: text("campaign_name"),
+  tags: text("tags").array().default(sql`ARRAY[]::text[]`),
+  metadata: jsonb("metadata").default({}),
+  source: text("source"),
+  status: text("status").default("active"),
+  firstSeen: timestamp("first_seen").defaultNow(),
+  lastSeen: timestamp("last_seen").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ioc_entries_org").on(table.orgId),
+  index("idx_ioc_entries_feed").on(table.feedId),
+  index("idx_ioc_entries_type").on(table.iocType),
+  index("idx_ioc_entries_value").on(table.iocValue),
+  index("idx_ioc_entries_type_value").on(table.iocType, table.iocValue),
+]);
+
+export const iocWatchlists = pgTable("ioc_watchlists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").default("#3b82f6"),
+  autoMatch: boolean("auto_match").default(true),
+  createdBy: varchar("created_by"),
+  entryCount: integer("entry_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ioc_watchlists_org").on(table.orgId),
+]);
+
+export const iocWatchlistEntries = pgTable("ioc_watchlist_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  watchlistId: varchar("watchlist_id").notNull().references(() => iocWatchlists.id, { onDelete: "cascade" }),
+  iocEntryId: varchar("ioc_entry_id").notNull().references(() => iocEntries.id, { onDelete: "cascade" }),
+  addedBy: varchar("added_by"),
+  addedAt: timestamp("added_at").defaultNow(),
+}, (table) => [
+  index("idx_ioc_watchlist_entries_wl").on(table.watchlistId),
+  index("idx_ioc_watchlist_entries_ioc").on(table.iocEntryId),
+]);
+
+export const iocMatchRules = pgTable("ioc_match_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  iocTypes: text("ioc_types").array().default(sql`ARRAY[]::text[]`),
+  matchFields: text("match_fields").array().default(sql`ARRAY[]::text[]`),
+  minConfidence: integer("min_confidence").default(0),
+  enabled: boolean("enabled").default(true),
+  autoEnrich: boolean("auto_enrich").default(true),
+  action: text("action").default("tag"),
+  actionConfig: jsonb("action_config").default({}),
+  matchCount: integer("match_count").default(0),
+  lastMatchAt: timestamp("last_match_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ioc_match_rules_org").on(table.orgId),
+]);
+
+export const iocMatches = pgTable("ioc_matches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  ruleId: varchar("rule_id").references(() => iocMatchRules.id),
+  iocEntryId: varchar("ioc_entry_id").notNull().references(() => iocEntries.id),
+  alertId: varchar("alert_id").references(() => alerts.id),
+  incidentId: varchar("incident_id").references(() => incidents.id),
+  entityId: varchar("entity_id").references(() => entities.id),
+  matchField: text("match_field").notNull(),
+  matchValue: text("match_value").notNull(),
+  confidence: integer("confidence").default(50),
+  enrichmentData: jsonb("enrichment_data").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ioc_matches_org").on(table.orgId),
+  index("idx_ioc_matches_alert").on(table.alertId),
+  index("idx_ioc_matches_ioc").on(table.iocEntryId),
+]);
+
+export const evidenceItems = pgTable("evidence_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  incidentId: varchar("incident_id").notNull().references(() => incidents.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  storageKey: text("storage_key"),
+  url: text("url"),
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+  metadata: jsonb("metadata"),
+  createdBy: varchar("created_by"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_evidence_items_incident").on(table.incidentId),
+  index("idx_evidence_items_org").on(table.orgId),
+]);
+
+export const investigationHypotheses = pgTable("investigation_hypotheses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  incidentId: varchar("incident_id").notNull().references(() => incidents.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("open"),
+  confidence: real("confidence").default(0),
+  evidenceFor: text("evidence_for").array(),
+  evidenceAgainst: text("evidence_against").array(),
+  mitreTactics: text("mitre_tactics").array(),
+  createdBy: varchar("created_by"),
+  createdByName: text("created_by_name"),
+  validatedAt: timestamp("validated_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_hypotheses_incident").on(table.incidentId),
+  index("idx_hypotheses_org").on(table.orgId),
+  index("idx_hypotheses_status").on(table.status),
+]);
+
+export const investigationTasks = pgTable("investigation_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  incidentId: varchar("incident_id").notNull().references(() => incidents.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("open"),
+  priority: integer("priority").default(3),
+  assignedTo: varchar("assigned_to"),
+  assignedToName: text("assigned_to_name"),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_inv_tasks_incident").on(table.incidentId),
+  index("idx_inv_tasks_org").on(table.orgId),
+  index("idx_inv_tasks_assigned").on(table.assignedTo),
+  index("idx_inv_tasks_status").on(table.status),
+]);
+
+export const runbookTemplates = pgTable("runbook_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  incidentType: text("incident_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  severity: text("severity").default("medium"),
+  estimatedDuration: text("estimated_duration"),
+  tags: text("tags").array(),
+  isBuiltIn: boolean("is_built_in").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_runbook_templates_type").on(table.incidentType),
+  index("idx_runbook_templates_org").on(table.orgId),
+]);
+
+export const runbookSteps = pgTable("runbook_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => runbookTemplates.id, { onDelete: "cascade" }),
+  stepOrder: integer("step_order").notNull(),
+  title: text("title").notNull(),
+  instructions: text("instructions"),
+  actionType: text("action_type"),
+  isRequired: boolean("is_required").default(true),
+  estimatedMinutes: integer("estimated_minutes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_runbook_steps_template").on(table.templateId),
+]);
+
+export const insertEvidenceItemSchema = createInsertSchema(evidenceItems).omit({ id: true, createdAt: true });
+export const insertInvestigationHypothesisSchema = createInsertSchema(investigationHypotheses).omit({ id: true, createdAt: true, updatedAt: true, validatedAt: true });
+export const insertInvestigationTaskSchema = createInsertSchema(investigationTasks).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true });
+export const insertRunbookTemplateSchema = createInsertSchema(runbookTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRunbookStepSchema = createInsertSchema(runbookSteps).omit({ id: true, createdAt: true });
+
+export type EvidenceItem = typeof evidenceItems.$inferSelect;
+export type InsertEvidenceItem = z.infer<typeof insertEvidenceItemSchema>;
+export type InvestigationHypothesis = typeof investigationHypotheses.$inferSelect;
+export type InsertInvestigationHypothesis = z.infer<typeof insertInvestigationHypothesisSchema>;
+export type InvestigationTask = typeof investigationTasks.$inferSelect;
+export type InsertInvestigationTask = z.infer<typeof insertInvestigationTaskSchema>;
+export type RunbookTemplate = typeof runbookTemplates.$inferSelect;
+export type InsertRunbookTemplate = z.infer<typeof insertRunbookTemplateSchema>;
+export type RunbookStep = typeof runbookSteps.$inferSelect;
+export type InsertRunbookStep = z.infer<typeof insertRunbookStepSchema>;
+
 export const insertCspmAccountSchema = createInsertSchema(cspmAccounts).omit({ id: true, createdAt: true, lastScanAt: true });
 export const insertCspmScanSchema = createInsertSchema(cspmScans).omit({ id: true, startedAt: true, completedAt: true });
 export const insertCspmFindingSchema = createInsertSchema(cspmFindings).omit({ id: true, detectedAt: true });
@@ -1006,3 +1356,607 @@ export type PostureScore = typeof postureScores.$inferSelect;
 export type InsertPostureScore = z.infer<typeof insertPostureScoreSchema>;
 export type AiDeploymentConfig = typeof aiDeploymentConfigs.$inferSelect;
 export type InsertAiDeploymentConfig = z.infer<typeof insertAiDeploymentConfigSchema>;
+
+export const insertOrganizationMembershipSchema = createInsertSchema(organizationMemberships).omit({ id: true, createdAt: true });
+export const insertOrgInvitationSchema = createInsertSchema(orgInvitations).omit({ id: true, createdAt: true });
+
+export type OrganizationMembership = typeof organizationMemberships.$inferSelect;
+export type InsertOrganizationMembership = z.infer<typeof insertOrganizationMembershipSchema>;
+export type OrgInvitation = typeof orgInvitations.$inferSelect;
+export type InsertOrgInvitation = z.infer<typeof insertOrgInvitationSchema>;
+
+export const REPORT_TYPES = ["soc_kpi", "incidents", "attack_coverage", "connector_health", "executive_summary", "compliance"] as const;
+export const REPORT_FORMATS = ["pdf", "csv", "json"] as const;
+export const REPORT_CADENCES = ["daily", "weekly", "biweekly", "monthly", "quarterly"] as const;
+export const REPORT_DELIVERY_TYPES = ["email", "s3", "webhook"] as const;
+export const REPORT_RUN_STATUSES = ["queued", "running", "completed", "failed"] as const;
+export const DASHBOARD_ROLES = ["ciso", "soc_manager", "analyst"] as const;
+
+export const reportTemplates = pgTable("report_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  reportType: text("report_type").notNull(),
+  format: text("format").notNull().default("pdf"),
+  config: text("config"),
+  dashboardRole: text("dashboard_role"),
+  isBuiltIn: boolean("is_built_in").default(false),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const reportSchedules = pgTable("report_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  templateId: varchar("template_id").references(() => reportTemplates.id).notNull(),
+  name: text("name").notNull(),
+  cadence: text("cadence").notNull(),
+  timezone: text("timezone").default("UTC"),
+  deliveryTargets: text("delivery_targets"),
+  enabled: boolean("enabled").default(true),
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const reportRuns = pgTable("report_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  templateId: varchar("template_id").references(() => reportTemplates.id).notNull(),
+  scheduleId: varchar("schedule_id").references(() => reportSchedules.id),
+  status: text("status").notNull().default("queued"),
+  format: text("format").notNull().default("pdf"),
+  outputLocation: text("output_location"),
+  fileSize: integer("file_size"),
+  error: text("error"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertReportScheduleSchema = createInsertSchema(reportSchedules).omit({ id: true, createdAt: true, updatedAt: true, lastRunAt: true, nextRunAt: true });
+export const insertReportRunSchema = createInsertSchema(reportRuns).omit({ id: true, createdAt: true, startedAt: true, completedAt: true });
+
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
+export type ReportSchedule = typeof reportSchedules.$inferSelect;
+export type InsertReportSchedule = z.infer<typeof insertReportScheduleSchema>;
+export type ReportRun = typeof reportRuns.$inferSelect;
+export type InsertReportRun = z.infer<typeof insertReportRunSchema>;
+
+export const insertIocFeedSchema = createInsertSchema(iocFeeds).omit({ id: true, createdAt: true, updatedAt: true, lastFetchAt: true, lastFetchStatus: true, lastFetchCount: true, totalIocCount: true });
+export const insertIocEntrySchema = createInsertSchema(iocEntries).omit({ id: true, createdAt: true, firstSeen: true, lastSeen: true });
+export const insertIocWatchlistSchema = createInsertSchema(iocWatchlists).omit({ id: true, createdAt: true, updatedAt: true, entryCount: true });
+export const insertIocWatchlistEntrySchema = createInsertSchema(iocWatchlistEntries).omit({ id: true, addedAt: true });
+export const insertIocMatchRuleSchema = createInsertSchema(iocMatchRules).omit({ id: true, createdAt: true, updatedAt: true, matchCount: true, lastMatchAt: true });
+export const insertIocMatchSchema = createInsertSchema(iocMatches).omit({ id: true, createdAt: true });
+
+export type IocFeed = typeof iocFeeds.$inferSelect;
+export type InsertIocFeed = z.infer<typeof insertIocFeedSchema>;
+export type IocEntry = typeof iocEntries.$inferSelect;
+export type InsertIocEntry = z.infer<typeof insertIocEntrySchema>;
+export type IocWatchlist = typeof iocWatchlists.$inferSelect;
+export type InsertIocWatchlist = z.infer<typeof insertIocWatchlistSchema>;
+export type IocWatchlistEntry = typeof iocWatchlistEntries.$inferSelect;
+export type InsertIocWatchlistEntry = z.infer<typeof insertIocWatchlistEntrySchema>;
+export type IocMatchRule = typeof iocMatchRules.$inferSelect;
+export type InsertIocMatchRule = z.infer<typeof insertIocMatchRuleSchema>;
+export type IocMatch = typeof iocMatches.$inferSelect;
+export type InsertIocMatch = z.infer<typeof insertIocMatchSchema>;
+
+export const SUPPRESSION_SCOPES = ["source", "category", "severity", "title_regex", "entity", "source_ip", "dest_ip", "hostname", "domain"] as const;
+
+export const suppressionRules = pgTable("suppression_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  scope: text("scope").notNull(),
+  scopeValue: text("scope_value").notNull(),
+  source: text("source"),
+  severity: text("severity"),
+  category: text("category"),
+  enabled: boolean("enabled").default(true),
+  expiresAt: timestamp("expires_at"),
+  matchCount: integer("match_count").default(0),
+  lastMatchAt: timestamp("last_match_at"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_suppression_rules_org").on(table.orgId),
+  index("idx_suppression_rules_enabled").on(table.enabled),
+]);
+
+export const alertDedupClusters = pgTable("alert_dedup_clusters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  canonicalAlertId: varchar("canonical_alert_id").references(() => alerts.id),
+  matchReason: text("match_reason").notNull(),
+  matchConfidence: real("match_confidence").default(0),
+  alertCount: integer("alert_count").default(1),
+  firstSeenAt: timestamp("first_seen_at").defaultNow(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_dedup_clusters_org").on(table.orgId),
+  index("idx_dedup_clusters_canonical").on(table.canonicalAlertId),
+]);
+
+export const SLA_SEVERITY_LEVELS = ["critical", "high", "medium", "low"] as const;
+
+export const incidentSlaPolicies = pgTable("incident_sla_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  severity: text("severity").notNull(),
+  ackMinutes: integer("ack_minutes").notNull(),
+  containMinutes: integer("contain_minutes").notNull(),
+  resolveMinutes: integer("resolve_minutes").notNull(),
+  enabled: boolean("enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_sla_policies_org").on(table.orgId),
+  index("idx_sla_policies_severity").on(table.severity),
+]);
+
+export const PIR_STATUSES = ["draft", "in_review", "finalized"] as const;
+
+export const postIncidentReviews = pgTable("post_incident_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  incidentId: varchar("incident_id").notNull().references(() => incidents.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("draft"),
+  summary: text("summary"),
+  timeline: text("timeline"),
+  rootCause: text("root_cause"),
+  lessonsLearned: text("lessons_learned"),
+  whatWentWell: text("what_went_well"),
+  whatWentWrong: text("what_went_wrong"),
+  actionItems: jsonb("action_items"),
+  attendees: text("attendees").array(),
+  reviewDate: timestamp("review_date"),
+  createdBy: varchar("created_by"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_pir_incident").on(table.incidentId),
+  index("idx_pir_org").on(table.orgId),
+]);
+
+export const connectorJobRuns = pgTable("connector_job_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  connectorId: varchar("connector_id").notNull().references(() => connectors.id, { onDelete: "cascade" }),
+  orgId: varchar("org_id"),
+  status: text("status").notNull().default("running"),
+  attempt: integer("attempt").notNull().default(1),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  alertsReceived: integer("alerts_received").default(0),
+  alertsCreated: integer("alerts_created").default(0),
+  alertsDeduped: integer("alerts_deduped").default(0),
+  alertsFailed: integer("alerts_failed").default(0),
+  latencyMs: integer("latency_ms"),
+  errorMessage: text("error_message"),
+  errorType: text("error_type"),
+  httpStatus: integer("http_status"),
+  throttled: boolean("throttled").default(false),
+  isDeadLetter: boolean("is_dead_letter").default(false),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, (table) => [
+  index("idx_connector_job_runs_connector").on(table.connectorId),
+  index("idx_connector_job_runs_status").on(table.status),
+  index("idx_connector_job_runs_dead_letter").on(table.isDeadLetter),
+  index("idx_connector_job_runs_started").on(table.startedAt),
+]);
+
+export const connectorHealthChecks = pgTable("connector_health_checks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  connectorId: varchar("connector_id").notNull().references(() => connectors.id, { onDelete: "cascade" }),
+  orgId: varchar("org_id"),
+  status: text("status").notNull().default("healthy"),
+  latencyMs: integer("latency_ms"),
+  errorMessage: text("error_message"),
+  credentialExpiresAt: timestamp("credential_expires_at"),
+  credentialStatus: text("credential_status").default("valid"),
+  checkedAt: timestamp("checked_at").defaultNow(),
+}, (table) => [
+  index("idx_connector_health_connector").on(table.connectorId),
+  index("idx_connector_health_checked").on(table.checkedAt),
+]);
+
+export const insertSuppressionRuleSchema = createInsertSchema(suppressionRules).omit({ id: true, createdAt: true, updatedAt: true, matchCount: true, lastMatchAt: true });
+export const insertAlertDedupClusterSchema = createInsertSchema(alertDedupClusters).omit({ id: true, createdAt: true, firstSeenAt: true, lastSeenAt: true });
+export const insertIncidentSlaPolicySchema = createInsertSchema(incidentSlaPolicies).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPostIncidentReviewSchema = createInsertSchema(postIncidentReviews).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertConnectorJobRunSchema = createInsertSchema(connectorJobRuns).omit({ id: true, startedAt: true, completedAt: true });
+export const insertConnectorHealthCheckSchema = createInsertSchema(connectorHealthChecks).omit({ id: true, checkedAt: true });
+
+export type SuppressionRule = typeof suppressionRules.$inferSelect;
+export type InsertSuppressionRule = z.infer<typeof insertSuppressionRuleSchema>;
+export type AlertDedupCluster = typeof alertDedupClusters.$inferSelect;
+export type InsertAlertDedupCluster = z.infer<typeof insertAlertDedupClusterSchema>;
+export type IncidentSlaPolicy = typeof incidentSlaPolicies.$inferSelect;
+export type InsertIncidentSlaPolicy = z.infer<typeof insertIncidentSlaPolicySchema>;
+export type PostIncidentReview = typeof postIncidentReviews.$inferSelect;
+export type InsertPostIncidentReview = z.infer<typeof insertPostIncidentReviewSchema>;
+export type ConnectorJobRun = typeof connectorJobRuns.$inferSelect;
+export type InsertConnectorJobRun = z.infer<typeof insertConnectorJobRunSchema>;
+export type ConnectorHealthCheck = typeof connectorHealthChecks.$inferSelect;
+export type InsertConnectorHealthCheck = z.infer<typeof insertConnectorHealthCheckSchema>;
+
+export const POLICY_CHECK_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const POLICY_CHECK_STATUSES = ["active", "disabled", "draft"] as const;
+export const POLICY_RESULT_STATUSES = ["pass", "fail", "error", "skip"] as const;
+
+export const policyChecks = pgTable("policy_checks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  cloudProvider: text("cloud_provider"),
+  resourceType: text("resource_type"),
+  severity: text("severity").notNull().default("medium"),
+  ruleLogic: jsonb("rule_logic").notNull(),
+  remediation: text("remediation"),
+  complianceFrameworks: text("compliance_frameworks").array().default(sql`ARRAY[]::text[]`),
+  controlIds: text("control_ids").array().default(sql`ARRAY[]::text[]`),
+  status: text("status").default("active"),
+  isBuiltIn: boolean("is_built_in").default(false),
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_policy_checks_org").on(table.orgId),
+  index("idx_policy_checks_provider").on(table.cloudProvider),
+  index("idx_policy_checks_status").on(table.status),
+]);
+
+export const policyResults = pgTable("policy_results", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  policyCheckId: varchar("policy_check_id").notNull().references(() => policyChecks.id, { onDelete: "cascade" }),
+  scanId: varchar("scan_id"),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type"),
+  resourceRegion: text("resource_region"),
+  status: text("status").notNull().default("fail"),
+  details: jsonb("details").default({}),
+  evaluatedAt: timestamp("evaluated_at").defaultNow(),
+}, (table) => [
+  index("idx_policy_results_org").on(table.orgId),
+  index("idx_policy_results_check").on(table.policyCheckId),
+  index("idx_policy_results_status").on(table.status),
+]);
+
+export const COMPLIANCE_CONTROL_FRAMEWORKS = ["nist_csf", "iso_27001", "cis", "soc2"] as const;
+
+export const complianceControls = pgTable("compliance_controls", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  framework: text("framework").notNull(),
+  controlId: text("control_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category"),
+  parentControlId: text("parent_control_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_compliance_controls_framework").on(table.framework),
+  index("idx_compliance_controls_control_id").on(table.controlId),
+]);
+
+export const complianceControlMappings = pgTable("compliance_control_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  controlId: varchar("control_id").notNull().references(() => complianceControls.id, { onDelete: "cascade" }),
+  resourceType: text("resource_type").notNull(),
+  resourceId: text("resource_id").notNull(),
+  status: text("status").notNull().default("not_assessed"),
+  evidenceNotes: text("evidence_notes"),
+  lastAssessedAt: timestamp("last_assessed_at"),
+  assessedBy: text("assessed_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_control_mappings_org").on(table.orgId),
+  index("idx_control_mappings_control").on(table.controlId),
+  index("idx_control_mappings_resource").on(table.resourceType, table.resourceId),
+]);
+
+export const EVIDENCE_LOCKER_TYPES = ["screenshot", "log", "config_snapshot", "report", "policy_result", "scan_result", "communication", "other"] as const;
+export const EVIDENCE_LOCKER_STATUSES = ["active", "archived", "expired"] as const;
+
+export const evidenceLockerItems = pgTable("evidence_locker_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  artifactType: text("artifact_type").notNull(),
+  framework: text("framework"),
+  controlId: text("control_id"),
+  storageKey: text("storage_key"),
+  url: text("url"),
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+  checksum: text("checksum"),
+  retentionDays: integer("retention_days").default(365),
+  expiresAt: timestamp("expires_at"),
+  status: text("status").default("active"),
+  metadata: jsonb("metadata").default({}),
+  tags: text("tags").array().default(sql`ARRAY[]::text[]`),
+  uploadedBy: text("uploaded_by"),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_evidence_locker_org").on(table.orgId),
+  index("idx_evidence_locker_framework").on(table.framework),
+  index("idx_evidence_locker_type").on(table.artifactType),
+  index("idx_evidence_locker_status").on(table.status),
+]);
+
+export const OUTBOUND_WEBHOOK_EVENTS = [
+  "incident.created", "incident.updated", "incident.closed", "incident.escalated",
+  "alert.created", "alert.correlated", "alert.closed",
+  "scan.completed", "policy.violation",
+] as const;
+
+export const outboundWebhooks = pgTable("outbound_webhooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  secret: text("secret"),
+  events: text("events").array().notNull(),
+  isActive: boolean("is_active").default(true),
+  retryCount: integer("retry_count").default(3),
+  timeoutMs: integer("timeout_ms").default(10000),
+  headers: jsonb("headers").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_outbound_webhooks_org").on(table.orgId),
+  index("idx_outbound_webhooks_active").on(table.isActive),
+]);
+
+export const outboundWebhookLogs = pgTable("outbound_webhook_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  webhookId: varchar("webhook_id").notNull().references(() => outboundWebhooks.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  payload: jsonb("payload").default({}),
+  responseStatus: integer("response_status"),
+  responseBody: text("response_body"),
+  attempt: integer("attempt").default(1),
+  success: boolean("success").default(false),
+  errorMessage: text("error_message"),
+  deliveredAt: timestamp("delivered_at").defaultNow(),
+}, (table) => [
+  index("idx_webhook_logs_webhook").on(table.webhookId),
+  index("idx_webhook_logs_event").on(table.event),
+  index("idx_webhook_logs_delivered").on(table.deliveredAt),
+]);
+
+export const idempotencyKeys = pgTable("idempotency_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  endpoint: text("endpoint").notNull(),
+  method: text("method").notNull(),
+  responseStatus: integer("response_status"),
+  responseBody: jsonb("response_body"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_idempotency_org_key").on(table.orgId, table.idempotencyKey, table.endpoint),
+]);
+
+export const insertPolicyCheckSchema = createInsertSchema(policyChecks).omit({ id: true, createdAt: true, updatedAt: true, lastRunAt: true });
+export const insertPolicyResultSchema = createInsertSchema(policyResults).omit({ id: true, evaluatedAt: true });
+export const insertComplianceControlSchema = createInsertSchema(complianceControls).omit({ id: true, createdAt: true });
+export const insertComplianceControlMappingSchema = createInsertSchema(complianceControlMappings).omit({ id: true, createdAt: true, lastAssessedAt: true });
+export const insertEvidenceLockerItemSchema = createInsertSchema(evidenceLockerItems).omit({ id: true, createdAt: true });
+export const insertOutboundWebhookSchema = createInsertSchema(outboundWebhooks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertOutboundWebhookLogSchema = createInsertSchema(outboundWebhookLogs).omit({ id: true, deliveredAt: true });
+export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).omit({ id: true, createdAt: true });
+
+export type PolicyCheck = typeof policyChecks.$inferSelect;
+export type InsertPolicyCheck = z.infer<typeof insertPolicyCheckSchema>;
+export type PolicyResult = typeof policyResults.$inferSelect;
+export type InsertPolicyResult = z.infer<typeof insertPolicyResultSchema>;
+export type ComplianceControl = typeof complianceControls.$inferSelect;
+export type InsertComplianceControl = z.infer<typeof insertComplianceControlSchema>;
+export type ComplianceControlMapping = typeof complianceControlMappings.$inferSelect;
+export type InsertComplianceControlMapping = z.infer<typeof insertComplianceControlMappingSchema>;
+export type EvidenceLockerItem = typeof evidenceLockerItems.$inferSelect;
+export type InsertEvidenceLockerItem = z.infer<typeof insertEvidenceLockerItemSchema>;
+export type OutboundWebhook = typeof outboundWebhooks.$inferSelect;
+export type InsertOutboundWebhook = z.infer<typeof insertOutboundWebhookSchema>;
+export type OutboundWebhookLog = typeof outboundWebhookLogs.$inferSelect;
+export type InsertOutboundWebhookLog = z.infer<typeof insertOutboundWebhookLogSchema>;
+export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
+export type InsertIdempotencyKey = z.infer<typeof insertIdempotencyKeySchema>;
+
+export const JOB_TYPES = ["connector_sync", "threat_enrichment", "report_generation", "cache_refresh", "archive_alerts", "daily_stats_rollup", "sli_collection"] as const;
+export const JOB_STATUSES = ["pending", "running", "completed", "failed", "cancelled"] as const;
+export const DR_CATEGORIES = ["backup", "restore", "failover", "data_recovery", "incident_response"] as const;
+export const SLI_SERVICES = ["api", "ingestion", "ai", "enrichment", "connector"] as const;
+export const SLI_METRICS = ["latency_p50", "latency_p95", "latency_p99", "error_rate", "throughput", "availability"] as const;
+export const ARCHIVE_REASONS = ["retention", "manual", "cold_storage"] as const;
+
+export const alertsArchive = pgTable("alerts_archive", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  source: text("source").notNull(),
+  sourceEventId: text("source_event_id"),
+  category: text("category").default("other"),
+  severity: text("severity").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  rawData: jsonb("raw_data"),
+  normalizedData: jsonb("normalized_data"),
+  ocsfData: jsonb("ocsf_data"),
+  sourceIp: text("source_ip"),
+  destIp: text("dest_ip"),
+  sourcePort: integer("source_port"),
+  destPort: integer("dest_port"),
+  protocol: text("protocol"),
+  userId: text("user_id_field"),
+  hostname: text("hostname"),
+  fileHash: text("file_hash"),
+  url: text("url"),
+  domain: text("domain"),
+  mitreTactic: text("mitre_tactic"),
+  mitreTechnique: text("mitre_technique"),
+  status: text("status").notNull().default("new"),
+  incidentId: varchar("incident_id"),
+  correlationScore: real("correlation_score"),
+  correlationReason: text("correlation_reason"),
+  correlationClusterId: varchar("correlation_cluster_id"),
+  suppressed: boolean("suppressed").default(false),
+  suppressedBy: varchar("suppressed_by"),
+  suppressionRuleId: varchar("suppression_rule_id"),
+  confidenceScore: real("confidence_score"),
+  confidenceSource: text("confidence_source"),
+  confidenceNotes: text("confidence_notes"),
+  dedupClusterId: varchar("dedup_cluster_id"),
+  analystNotes: text("analyst_notes"),
+  assignedTo: varchar("assigned_to"),
+  detectedAt: timestamp("detected_at"),
+  ingestedAt: timestamp("ingested_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  archivedAt: timestamp("archived_at").defaultNow(),
+  archiveReason: text("archive_reason"),
+}, (table) => [
+  index("idx_alerts_archive_org_archived").on(table.orgId, table.archivedAt),
+  index("idx_alerts_archive_org_severity").on(table.orgId, table.severity),
+]);
+
+export const jobQueue = pgTable("job_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  type: text("type").notNull(),
+  status: text("status").notNull().default("pending"),
+  payload: jsonb("payload"),
+  result: jsonb("result"),
+  priority: integer("priority").default(0),
+  runAt: timestamp("run_at").defaultNow(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(3),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_job_queue_status_run").on(table.status, table.runAt),
+  index("idx_job_queue_org").on(table.orgId),
+  index("idx_job_queue_type_status").on(table.type, table.status),
+]);
+
+export const dashboardMetricsCache = pgTable("dashboard_metrics_cache", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  metricType: text("metric_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_dashboard_cache_org_type").on(table.orgId, table.metricType),
+  index("idx_dashboard_cache_expires").on(table.expiresAt),
+  uniqueIndex("idx_dashboard_cache_org_type_unique").on(table.orgId, table.metricType),
+]);
+
+export const alertDailyStats = pgTable("alert_daily_stats", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  date: text("date").notNull(),
+  totalAlerts: integer("total_alerts").default(0),
+  criticalCount: integer("critical_count").default(0),
+  highCount: integer("high_count").default(0),
+  mediumCount: integer("medium_count").default(0),
+  lowCount: integer("low_count").default(0),
+  infoCount: integer("info_count").default(0),
+  sourceCounts: jsonb("source_counts"),
+  categoryCounts: jsonb("category_counts"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_alert_daily_stats_org_date_unique").on(table.orgId, table.date),
+  index("idx_alert_daily_stats_org_date").on(table.orgId, table.date),
+]);
+
+export const sliMetrics = pgTable("sli_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  service: text("service").notNull(),
+  metric: text("metric").notNull(),
+  value: real("value").notNull(),
+  labels: jsonb("labels"),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+}, (table) => [
+  index("idx_sli_metrics_service_metric_recorded").on(table.service, table.metric, table.recordedAt),
+  index("idx_sli_metrics_recorded").on(table.recordedAt),
+]);
+
+export const sloTargets = pgTable("slo_targets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  service: text("service").notNull(),
+  metric: text("metric").notNull(),
+  target: real("target").notNull(),
+  operator: text("operator").notNull().default("gte"),
+  windowMinutes: integer("window_minutes").notNull().default(60),
+  alertOnBreach: boolean("alert_on_breach").default(true),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_slo_targets_service_metric").on(table.service, table.metric),
+]);
+
+export const drRunbooks = pgTable("dr_runbooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category").notNull(),
+  steps: jsonb("steps").notNull(),
+  rtoMinutes: integer("rto_minutes"),
+  rpoMinutes: integer("rpo_minutes"),
+  owner: text("owner"),
+  lastTestedAt: timestamp("last_tested_at"),
+  lastTestResult: text("last_test_result"),
+  testNotes: text("test_notes"),
+  status: text("status").default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_dr_runbooks_org").on(table.orgId),
+  index("idx_dr_runbooks_category").on(table.category),
+]);
+
+export const insertAlertsArchiveSchema = createInsertSchema(alertsArchive).omit({ id: true, ingestedAt: true, createdAt: true, archivedAt: true });
+export const insertJobQueueSchema = createInsertSchema(jobQueue).omit({ id: true, createdAt: true });
+export const insertDashboardMetricsCacheSchema = createInsertSchema(dashboardMetricsCache).omit({ id: true, generatedAt: true, createdAt: true });
+export const insertAlertDailyStatsSchema = createInsertSchema(alertDailyStats).omit({ id: true, createdAt: true });
+export const insertSliMetricsSchema = createInsertSchema(sliMetrics).omit({ id: true, recordedAt: true });
+export const insertSloTargetsSchema = createInsertSchema(sloTargets).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertDrRunbooksSchema = createInsertSchema(drRunbooks).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type AlertArchive = typeof alertsArchive.$inferSelect;
+export type InsertAlertArchive = z.infer<typeof insertAlertsArchiveSchema>;
+export type JobQueue = typeof jobQueue.$inferSelect;
+export type InsertJobQueue = z.infer<typeof insertJobQueueSchema>;
+export type DashboardMetricsCache = typeof dashboardMetricsCache.$inferSelect;
+export type InsertDashboardMetricsCache = z.infer<typeof insertDashboardMetricsCacheSchema>;
+export type AlertDailyStats = typeof alertDailyStats.$inferSelect;
+export type InsertAlertDailyStats = z.infer<typeof insertAlertDailyStatsSchema>;
+export type SliMetric = typeof sliMetrics.$inferSelect;
+export type InsertSliMetric = z.infer<typeof insertSliMetricsSchema>;
+export type SloTarget = typeof sloTargets.$inferSelect;
+export type InsertSloTarget = z.infer<typeof insertSloTargetsSchema>;
+export type DrRunbook = typeof drRunbooks.$inferSelect;
+export type InsertDrRunbook = z.infer<typeof insertDrRunbooksSchema>;

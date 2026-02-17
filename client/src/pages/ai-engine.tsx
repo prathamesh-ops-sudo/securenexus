@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Brain, Zap, Shield, Target, Activity, Crosshair, AlertTriangle,
   CheckCircle2, XCircle, Loader2, Sparkles, Network, Users, Server, MapPin,
-  Search, ChevronsUpDown, BarChart3, Cpu,
+  Search, ChevronsUpDown, BarChart3, Cpu, TrendingUp, TrendingDown, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +16,17 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SeverityBadge } from "@/components/security-badges";
 import type { Alert } from "@shared/schema";
+
+interface FeedbackMetric {
+  date: string;
+  avgRating: number;
+  totalFeedback: number;
+  negativeFeedback: number;
+  positiveFeedback: number;
+}
 
 interface CorrelationGroup {
   groupName: string;
@@ -130,6 +139,7 @@ export default function AIEnginePage() {
   const [triageAlertId, setTriageAlertId] = useState<string>("");
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [alertPickerOpen, setAlertPickerOpen] = useState(false);
+  const [driftDays, setDriftDays] = useState("30");
 
   const { data: config, isLoading: configLoading } = useQuery<AIConfig>({
     queryKey: ["/api/ai/config"],
@@ -142,6 +152,33 @@ export default function AIEnginePage() {
   const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
   });
+
+  const { data: feedbackMetrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
+    queryKey: ["/api/ai/feedback/metrics", driftDays],
+    queryFn: async () => {
+      const res = await fetch(`/api/ai/feedback/metrics?days=${driftDays}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const driftStats = (() => {
+    if (!feedbackMetrics || feedbackMetrics.length === 0) {
+      return { totalFeedback: 0, avgRating: 0, positiveRate: 0, negativeRate: 0 };
+    }
+    const totalFeedback = feedbackMetrics.reduce((s, m) => s + m.totalFeedback, 0);
+    const weightedRating = totalFeedback > 0
+      ? feedbackMetrics.reduce((s, m) => s + m.avgRating * m.totalFeedback, 0) / totalFeedback
+      : 0;
+    const totalPositive = feedbackMetrics.reduce((s, m) => s + m.positiveFeedback, 0);
+    const totalNegative = feedbackMetrics.reduce((s, m) => s + m.negativeFeedback, 0);
+    return {
+      totalFeedback,
+      avgRating: Math.round(weightedRating * 100) / 100,
+      positiveRate: totalFeedback > 0 ? Math.round((totalPositive / totalFeedback) * 10000) / 100 : 0,
+      negativeRate: totalFeedback > 0 ? Math.round((totalNegative / totalFeedback) * 10000) / 100 : 0,
+    };
+  })();
 
   const uncorrelatedAlerts = alerts?.filter(
     (a) => a.status === "new" || a.status === "triaged"
@@ -862,6 +899,137 @@ export default function AIEnginePage() {
                 </div>
               </div>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-model-drift">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-primary" />
+                <CardTitle className="text-sm font-medium">Model Drift Dashboard</CardTitle>
+              </div>
+              <CardDescription className="text-xs mt-0.5">
+                AI feedback quality trends over time
+              </CardDescription>
+            </div>
+            <Select value={driftDays} onValueChange={setDriftDays}>
+              <SelectTrigger className="w-[120px]" data-testid="select-drift-days">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">7 days</SelectItem>
+                <SelectItem value="14">14 days</SelectItem>
+                <SelectItem value="30">30 days</SelectItem>
+                <SelectItem value="60">60 days</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {metricsLoading ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-md bg-muted/40 p-3 space-y-1">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-6 w-12" />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-full" />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-md bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Feedback</div>
+                    <BarChart3 className="h-3 w-3 text-muted-foreground" />
+                  </div>
+                  <div className="text-xl font-bold mt-1 tabular-nums" data-testid="text-total-feedback">
+                    {driftStats.totalFeedback}
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Rating</div>
+                    {driftStats.avgRating >= 3.5 ? (
+                      <TrendingUp className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3 text-red-500" />
+                    )}
+                  </div>
+                  <div className="text-xl font-bold mt-1 tabular-nums" data-testid="text-avg-rating">
+                    {driftStats.avgRating.toFixed(2)}
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Positive Rate</div>
+                    <ThumbsUp className="h-3 w-3 text-emerald-500" />
+                  </div>
+                  <div className="text-xl font-bold mt-1 tabular-nums" data-testid="text-positive-rate">
+                    {driftStats.positiveRate}%
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Negative Rate</div>
+                    <ThumbsDown className="h-3 w-3 text-red-500" />
+                  </div>
+                  <div className="text-xl font-bold mt-1 tabular-nums" data-testid="text-negative-rate">
+                    {driftStats.negativeRate}%
+                  </div>
+                </div>
+              </div>
+
+              <div data-testid="chart-drift-trend">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Rating Trend</div>
+                {feedbackMetrics && feedbackMetrics.length > 0 ? (
+                  <div className="space-y-1">
+                    {feedbackMetrics.map((m) => {
+                      const barWidth = (m.avgRating / 5) * 100;
+                      const barColor =
+                        m.avgRating >= 4
+                          ? "bg-emerald-500"
+                          : m.avgRating >= 3
+                          ? "bg-yellow-500"
+                          : "bg-red-500";
+                      return (
+                        <div key={m.date} className="flex items-center gap-2 text-xs">
+                          <span className="w-20 text-muted-foreground tabular-nums flex-shrink-0 text-right">
+                            {m.date.slice(5)}
+                          </span>
+                          <div className="flex-1 h-4 rounded bg-muted/40 overflow-hidden relative">
+                            <div
+                              className={`h-full rounded ${barColor} transition-all duration-300`}
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                          <span className="w-8 tabular-nums font-medium text-right flex-shrink-0">
+                            {m.avgRating.toFixed(1)}
+                          </span>
+                          <span className="w-8 text-muted-foreground tabular-nums text-right flex-shrink-0" title="Total feedback">
+                            {m.totalFeedback}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No feedback data available for the selected period
+                  </p>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

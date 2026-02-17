@@ -34,8 +34,18 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
     if (policy.alertRetentionDays && policy.alertRetentionDays > 0) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - policy.alertRetentionDays);
-      const alertResult = await db.execute(sql`DELETE FROM alerts WHERE org_id = ${orgId} AND created_at < ${cutoff}`);
-      alertsDeleted = Number(alertResult.rowCount) || 0;
+      const oldAlerts = await db.execute(sql`SELECT id FROM alerts WHERE org_id = ${orgId} AND created_at < ${cutoff}`);
+      const alertIds = ((oldAlerts as any).rows || []).map((r: any) => r.id);
+      if (alertIds.length > 0) {
+        try {
+          await storage.archiveAlerts(orgId, alertIds, "retention");
+          alertsDeleted = alertIds.length;
+        } catch (archiveErr) {
+          console.error("Failed to archive alerts, falling back to delete:", archiveErr);
+          const alertResult = await db.execute(sql`DELETE FROM alerts WHERE org_id = ${orgId} AND created_at < ${cutoff}`);
+          alertsDeleted = Number(alertResult.rowCount) || 0;
+        }
+      }
     }
 
     if (policy.incidentRetentionDays && policy.incidentRetentionDays > 0) {

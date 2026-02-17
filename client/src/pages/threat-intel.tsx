@@ -1,7 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Shield, Search, Globe, Server, ExternalLink, Database, RefreshCw, CheckCircle2, XCircle, Zap, Network, Rss, Loader2, Clock, ChevronDown } from "lucide-react";
+import { Shield, Search, Globe, Server, ExternalLink, Database, RefreshCw, CheckCircle2, XCircle, Zap, Network, Rss, Loader2, Clock, ChevronDown, Plus, Trash2, Eye, AlertTriangle, Filter, Upload, Settings2, List, BookOpen, Play } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip as ShadTooltip,
   TooltipContent,
@@ -252,6 +258,198 @@ export default function ThreatIntelPage() {
     },
   });
 
+  const [activeTab, setActiveTab] = useState("overview");
+  const [showAddFeedDialog, setShowAddFeedDialog] = useState(false);
+  const [showAddWatchlistDialog, setShowAddWatchlistDialog] = useState(false);
+  const [showAddRuleDialog, setShowAddRuleDialog] = useState(false);
+  const [showAddIOCDialog, setShowAddIOCDialog] = useState(false);
+  const [iocSearch, setIocSearch] = useState("");
+  const [iocTypeFilter, setIocTypeFilter] = useState("all");
+
+  const [feedFormName, setFeedFormName] = useState("");
+  const [feedFormType, setFeedFormType] = useState("STIX");
+  const [feedFormUrl, setFeedFormUrl] = useState("");
+  const [feedFormSchedule, setFeedFormSchedule] = useState("manual");
+  const [feedFormEnabled, setFeedFormEnabled] = useState(true);
+
+  const [watchlistFormName, setWatchlistFormName] = useState("");
+  const [watchlistFormDescription, setWatchlistFormDescription] = useState("");
+  const [watchlistFormColor, setWatchlistFormColor] = useState("#6366f1");
+  const [watchlistFormAutoMatch, setWatchlistFormAutoMatch] = useState(false);
+
+  const [ruleFormName, setRuleFormName] = useState("");
+  const [ruleFormDescription, setRuleFormDescription] = useState("");
+  const [ruleFormIocTypes, setRuleFormIocTypes] = useState<string[]>([]);
+  const [ruleFormMatchFields, setRuleFormMatchFields] = useState<string[]>([]);
+  const [ruleFormMinConfidence, setRuleFormMinConfidence] = useState("70");
+  const [ruleFormEnabled, setRuleFormEnabled] = useState(true);
+  const [ruleFormAutoEnrich, setRuleFormAutoEnrich] = useState(false);
+
+  const [iocFormType, setIocFormType] = useState("ip");
+  const [iocFormValue, setIocFormValue] = useState("");
+  const [iocFormConfidence, setIocFormConfidence] = useState("80");
+  const [iocFormSeverity, setIocFormSeverity] = useState("medium");
+  const [iocFormMalwareFamily, setIocFormMalwareFamily] = useState("");
+  const [iocFormCampaignName, setIocFormCampaignName] = useState("");
+  const [iocFormTags, setIocFormTags] = useState("");
+  const [iocFormSource, setIocFormSource] = useState("");
+
+  const { data: iocFeeds, isLoading: iocFeedsLoading } = useQuery<any[]>({
+    queryKey: ["/api/ioc-feeds"],
+  });
+
+  const { data: iocEntriesData, isLoading: iocEntriesLoading } = useQuery<any[]>({
+    queryKey: ["/api/ioc-entries", iocTypeFilter !== "all" ? iocTypeFilter : undefined],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (iocTypeFilter !== "all") params.set("iocType", iocTypeFilter);
+      params.set("limit", "200");
+      const res = await fetch(`/api/ioc-entries?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const { data: iocWatchlists, isLoading: watchlistsLoading } = useQuery<any[]>({
+    queryKey: ["/api/ioc-watchlists"],
+  });
+
+  const { data: iocMatchRules, isLoading: matchRulesLoading } = useQuery<any[]>({
+    queryKey: ["/api/ioc-match-rules"],
+  });
+
+  const { data: iocMatchesData } = useQuery<any[]>({
+    queryKey: ["/api/ioc-matches"],
+  });
+
+  const { data: iocStats } = useQuery<any>({
+    queryKey: ["/api/ioc-stats"],
+  });
+
+  const createFeedMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/ioc-feeds", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
+      setShowAddFeedDialog(false);
+      toast({ title: "Feed created", description: "IOC feed source added successfully" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteFeedMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/ioc-feeds/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
+      toast({ title: "Feed deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const ingestFeedMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/ioc-feeds/${id}/ingest`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-stats"] });
+      toast({ title: "Feed ingested", description: `${data.newEntries} new IOC entries added (${data.totalParsed} parsed)` });
+    },
+    onError: (e: Error) => toast({ title: "Ingestion failed", description: e.message, variant: "destructive" }),
+  });
+
+  const createWatchlistMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/ioc-watchlists", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-watchlists"] });
+      setShowAddWatchlistDialog(false);
+      toast({ title: "Watchlist created" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteWatchlistMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/ioc-watchlists/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-watchlists"] });
+      toast({ title: "Watchlist deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/ioc-match-rules", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-match-rules"] });
+      setShowAddRuleDialog(false);
+      toast({ title: "Match rule created" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/ioc-match-rules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-match-rules"] });
+      toast({ title: "Match rule deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const createIOCMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/ioc-entries", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-stats"] });
+      setShowAddIOCDialog(false);
+      toast({ title: "IOC entry added" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteIOCMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/ioc-entries/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-stats"] });
+      toast({ title: "IOC entry deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const filteredIocEntries = useMemo(() => {
+    if (!iocEntriesData) return [];
+    if (!iocSearch.trim()) return iocEntriesData;
+    const q = iocSearch.toLowerCase();
+    return iocEntriesData.filter((e: any) =>
+      e.iocValue?.toLowerCase().includes(q) ||
+      e.malwareFamily?.toLowerCase().includes(q) ||
+      e.source?.toLowerCase().includes(q) ||
+      e.campaignName?.toLowerCase().includes(q)
+    );
+  }, [iocEntriesData, iocSearch]);
+
   const isLoading = alertsLoading || incidentsLoading;
   const anyProviderConfigured = providers?.some((p) => p.configured) ?? false;
 
@@ -290,6 +488,14 @@ export default function ThreatIntelPage() {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [allIOCs]);
 
+  const toggleRuleIocType = (t: string) => {
+    setRuleFormIocTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
+  };
+
+  const toggleRuleMatchField = (f: string) => {
+    setRuleFormMatchFields((prev) => prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]);
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-threat-intel">
       <div>
@@ -297,475 +503,733 @@ export default function ThreatIntelPage() {
           <span className="gradient-text-red">Threat Intelligence</span>
         </h1>
         <p className="text-sm text-muted-foreground mt-1" data-testid="text-page-description">
-          Indicators of Compromise (IOCs) extracted from alerts and incidents
+          IOC ingestion, enrichment, watchlists, and auto-matching rules
         </p>
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="section-enrichment-providers">
-        {providersLoading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-8 w-8 rounded-full" />
-                  <div className="space-y-2 flex-1">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-3 w-32" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : providers && providers.length > 0 ? (
-          providers.map((provider) => (
-            <Card key={provider.name} data-testid={`card-provider-${provider.name}`}>
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium" data-testid={`text-provider-name-${provider.name}`}>
-                        {provider.name}
-                      </span>
-                      <span
-                        className={`h-2 w-2 rounded-full flex-shrink-0 ${provider.configured ? "bg-green-500" : "bg-red-500"}`}
-                        data-testid={`status-provider-${provider.name}`}
-                      />
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList data-testid="tabs-threat-intel">
+          <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+          <TabsTrigger value="ioc-database" data-testid="tab-ioc-database">IOC Database</TabsTrigger>
+          <TabsTrigger value="watchlists" data-testid="tab-watchlists">Watchlists</TabsTrigger>
+          <TabsTrigger value="match-rules" data-testid="tab-match-rules">Match Rules</TabsTrigger>
+          <TabsTrigger value="feed-sources" data-testid="tab-feed-sources">Feed Sources</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="section-enrichment-providers">
+            {providersLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="h-8 w-8 rounded-full" />
+                      <div className="space-y-2 flex-1">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
                     </div>
-                    <p
-                      className={`text-xs ${provider.configured ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}
-                      data-testid={`text-provider-status-${provider.name}`}
-                    >
-                      {provider.configured ? "Configured" : "API Key Required"}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {provider.supportedTypes.map((type) => (
-                        <Badge
-                          key={type}
-                          variant="outline"
-                          className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
-                          data-testid={`badge-provider-type-${provider.name}-${type}`}
+                  </CardContent>
+                </Card>
+              ))
+            ) : providers && providers.length > 0 ? (
+              providers.map((provider) => (
+                <Card key={provider.name} data-testid={`card-provider-${provider.name}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium" data-testid={`text-provider-name-${provider.name}`}>
+                            {provider.name}
+                          </span>
+                          <span
+                            className={`h-2 w-2 rounded-full flex-shrink-0 ${provider.configured ? "bg-green-500" : "bg-red-500"}`}
+                            data-testid={`status-provider-${provider.name}`}
+                          />
+                        </div>
+                        <p
+                          className={`text-xs ${provider.configured ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}
+                          data-testid={`text-provider-status-${provider.name}`}
                         >
-                          {type}
-                        </Badge>
-                      ))}
+                          {provider.configured ? "Configured" : "API Key Required"}
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {provider.supportedTypes.map((type) => (
+                            <Badge
+                              key={type}
+                              variant="outline"
+                              className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                              data-testid={`badge-provider-type-${provider.name}-${type}`}
+                            >
+                              {type}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <Card className="sm:col-span-3">
+                <CardContent className="p-4 text-center">
+                  <p className="text-sm text-muted-foreground" data-testid="text-no-providers">
+                    No enrichment providers available
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <Card data-testid="section-osint-feeds">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Rss className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">Public OSINT Feeds</CardTitle>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={refreshAllMutation.isPending}
+                onClick={() => refreshAllMutation.mutate()}
+                data-testid="button-fetch-all-feeds"
+              >
+                {refreshAllMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Fetch All
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {feedStatusesLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="border rounded-md p-4 space-y-3">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-3 w-20" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <Card className="sm:col-span-3">
-            <CardContent className="p-4 text-center">
-              <p className="text-sm text-muted-foreground" data-testid="text-no-providers">
-                No enrichment providers available
-              </p>
+              ) : feedStatuses && feedStatuses.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="grid-osint-feeds">
+                    {feedStatuses.map((feed) => {
+                      const isFetching = refreshFeedMutation.isPending && refreshFeedMutation.variables === feed.name;
+                      return (
+                        <div key={feed.name} className="border rounded-md p-4 space-y-3" data-testid={`card-feed-${feed.name}`}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`h-2 w-2 rounded-full flex-shrink-0 ${FEED_STATUS_DOT[feed.status] || "bg-gray-400"}`}
+                                data-testid={`status-feed-${feed.name}`}
+                              />
+                              <span className="text-sm font-medium truncate" data-testid={`text-feed-name-${feed.name}`}>
+                                {feed.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Database className="h-3 w-3 flex-shrink-0" />
+                              <span data-testid={`text-feed-count-${feed.name}`}>
+                                {feed.totalIndicators.toLocaleString()} indicators
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3 flex-shrink-0" />
+                              <span data-testid={`text-feed-last-fetched-${feed.name}`}>
+                                {formatRelativeTimestamp(feed.lastFetched)}
+                              </span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              disabled={isFetching}
+                              onClick={() => refreshFeedMutation.mutate(feed.slug)}
+                              data-testid={`button-fetch-feed-${feed.name}`}
+                            >
+                              {isFetching ? (
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                              )}
+                              Fetch
+                            </Button>
+                          </div>
+                      );
+                    })}
+                  </div>
+
+                  {expandedFeed && feedDataMap[expandedFeed] && (
+                    <Collapsible open={true} onOpenChange={(open) => { if (!open) setExpandedFeed(null); }}>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          className="w-full flex items-center justify-between gap-2"
+                          data-testid="button-toggle-feed-data"
+                        >
+                          <span className="text-sm font-medium">
+                            {feedDataMap[expandedFeed].feedName} - {feedDataMap[expandedFeed].indicators.length} indicators
+                          </span>
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="overflow-x-auto mt-2 border rounded-md">
+                          <Table data-testid="table-feed-indicators">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Type</TableHead>
+                                <TableHead className="text-xs">Value</TableHead>
+                                <TableHead className="text-xs hidden md:table-cell">Threat</TableHead>
+                                <TableHead className="text-xs hidden lg:table-cell">Source</TableHead>
+                                <TableHead className="text-xs hidden md:table-cell">First Seen</TableHead>
+                                <TableHead className="text-xs">Tags</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {feedDataMap[expandedFeed].indicators.length > 0 ? (
+                                feedDataMap[expandedFeed].indicators.map((indicator, idx) => (
+                                  <TableRow key={`${indicator.value}-${idx}`} data-testid={`row-feed-indicator-${idx}`}>
+                                    <TableCell>
+                                      <Badge
+                                        variant={IOC_TYPE_BADGE_VARIANT[indicator.type] || "secondary"}
+                                        className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                                        data-testid={`badge-feed-indicator-type-${idx}`}
+                                      >
+                                        {indicator.type}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className="text-xs font-mono truncate max-w-[250px] block" data-testid={`text-feed-indicator-value-${idx}`}>
+                                        {indicator.value}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="hidden md:table-cell">
+                                      <span className="text-xs text-muted-foreground truncate max-w-[200px] block" data-testid={`text-feed-indicator-threat-${idx}`}>
+                                        {indicator.threat}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="hidden lg:table-cell">
+                                      <span className="text-xs text-muted-foreground" data-testid={`text-feed-indicator-source-${idx}`}>
+                                        {indicator.source}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="hidden md:table-cell">
+                                      <span className="text-xs text-muted-foreground" data-testid={`text-feed-indicator-firstseen-${idx}`}>
+                                        {indicator.firstSeen ? formatTimestamp(indicator.firstSeen) : "N/A"}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex flex-wrap gap-1">
+                                        {indicator.tags.slice(0, 3).map((tag, tIdx) => (
+                                          <Badge
+                                            key={`${tag}-${tIdx}`}
+                                            variant="outline"
+                                            className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                                            data-testid={`badge-feed-indicator-tag-${idx}-${tIdx}`}
+                                          >
+                                            {tag}
+                                          </Badge>
+                                        ))}
+                                        {indicator.tags.length > 3 && (
+                                          <Badge
+                                            variant="outline"
+                                            className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                                          >
+                                            +{indicator.tags.length - 3}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={6} className="text-center py-8">
+                                    <p className="text-sm text-muted-foreground" data-testid="text-no-feed-indicators">
+                                      No indicators available for this feed
+                                    </p>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-feeds">
+                  No OSINT feeds available
+                </p>
+              )}
             </CardContent>
           </Card>
-        )}
-      </div>
 
-      <Card data-testid="section-osint-feeds">
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Rss className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">Public OSINT Feeds</CardTitle>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card data-testid="card-total-iocs">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Total IOCs</CardTitle>
+                <Database className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <Skeleton className="h-7 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold" data-testid="stat-total-iocs">
+                    {stats.total}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card data-testid="card-unique-domains">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Unique Domains</CardTitle>
+                <Globe className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <Skeleton className="h-7 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold" data-testid="stat-unique-domains">
+                    {stats.uniqueDomains}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card data-testid="card-unique-ips">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Unique IPs</CardTitle>
+                <Server className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <Skeleton className="h-7 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold" data-testid="stat-unique-ips">
+                    {stats.uniqueIPs}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={refreshAllMutation.isPending}
-            onClick={() => refreshAllMutation.mutate()}
-            data-testid="button-fetch-all-feeds"
-          >
-            {refreshAllMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            )}
-            Fetch All
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {feedStatusesLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="border rounded-md p-4 space-y-3">
-                  <Skeleton className="h-4 w-28" />
-                  <Skeleton className="h-3 w-20" />
-                  <Skeleton className="h-3 w-16" />
-                </div>
-              ))}
-            </div>
-          ) : feedStatuses && feedStatuses.length > 0 ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="grid-osint-feeds">
-                {feedStatuses.map((feed) => {
-                  const isFetching = refreshFeedMutation.isPending && refreshFeedMutation.variables === feed.name;
-                  return (
-                    <div key={feed.name} className="border rounded-md p-4 space-y-3" data-testid={`card-feed-${feed.name}`}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className={`h-2 w-2 rounded-full flex-shrink-0 ${FEED_STATUS_DOT[feed.status] || "bg-gray-400"}`}
-                            data-testid={`status-feed-${feed.name}`}
-                          />
-                          <span className="text-sm font-medium truncate" data-testid={`text-feed-name-${feed.name}`}>
-                            {feed.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Database className="h-3 w-3 flex-shrink-0" />
-                          <span data-testid={`text-feed-count-${feed.name}`}>
-                            {feed.totalIndicators.toLocaleString()} indicators
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Clock className="h-3 w-3 flex-shrink-0" />
-                          <span data-testid={`text-feed-last-fetched-${feed.name}`}>
-                            {formatRelativeTimestamp(feed.lastFetched)}
-                          </span>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full"
-                          disabled={isFetching}
-                          onClick={() => refreshFeedMutation.mutate(feed.slug)}
-                          data-testid={`button-fetch-feed-${feed.name}`}
-                        >
-                          {isFetching ? (
-                            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                          )}
-                          Fetch
-                        </Button>
-                      </div>
-                  );
-                })}
-              </div>
 
-              {expandedFeed && feedDataMap[expandedFeed] && (
-                <Collapsible open={true} onOpenChange={(open) => { if (!open) setExpandedFeed(null); }}>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="w-full flex items-center justify-between gap-2"
-                      data-testid="button-toggle-feed-data"
-                    >
-                      <span className="text-sm font-medium">
-                        {feedDataMap[expandedFeed].feedName} - {feedDataMap[expandedFeed].indicators.length} indicators
-                      </span>
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="overflow-x-auto mt-2 border rounded-md">
-                      <Table data-testid="table-feed-indicators">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-xs">Type</TableHead>
-                            <TableHead className="text-xs">Value</TableHead>
-                            <TableHead className="text-xs hidden md:table-cell">Threat</TableHead>
-                            <TableHead className="text-xs hidden lg:table-cell">Source</TableHead>
-                            <TableHead className="text-xs hidden md:table-cell">First Seen</TableHead>
-                            <TableHead className="text-xs">Tags</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {feedDataMap[expandedFeed].indicators.length > 0 ? (
-                            feedDataMap[expandedFeed].indicators.map((indicator, idx) => (
-                              <TableRow key={`${indicator.value}-${idx}`} data-testid={`row-feed-indicator-${idx}`}>
-                                <TableCell>
-                                  <Badge
-                                    variant={IOC_TYPE_BADGE_VARIANT[indicator.type] || "secondary"}
-                                    className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
-                                    data-testid={`badge-feed-indicator-type-${idx}`}
-                                  >
-                                    {indicator.type}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <span className="text-xs font-mono truncate max-w-[250px] block" data-testid={`text-feed-indicator-value-${idx}`}>
-                                    {indicator.value}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="hidden md:table-cell">
-                                  <span className="text-xs text-muted-foreground truncate max-w-[200px] block" data-testid={`text-feed-indicator-threat-${idx}`}>
-                                    {indicator.threat}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="hidden lg:table-cell">
-                                  <span className="text-xs text-muted-foreground" data-testid={`text-feed-indicator-source-${idx}`}>
-                                    {indicator.source}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="hidden md:table-cell">
-                                  <span className="text-xs text-muted-foreground" data-testid={`text-feed-indicator-firstseen-${idx}`}>
-                                    {indicator.firstSeen ? formatTimestamp(indicator.firstSeen) : "N/A"}
-                                  </span>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex flex-wrap gap-1">
-                                    {indicator.tags.slice(0, 3).map((tag, tIdx) => (
-                                      <Badge
-                                        key={`${tag}-${tIdx}`}
-                                        variant="outline"
-                                        className="no-default-hover-elevate no-default-active-elevate text-[10px]"
-                                        data-testid={`badge-feed-indicator-tag-${idx}-${tIdx}`}
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search IOCs by value, type, or source..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-iocs"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:col-span-3">
+              <Card data-testid="card-ioc-table">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Indicator</TableHead>
+                          <TableHead className="text-xs">Type</TableHead>
+                          <TableHead className="text-xs hidden md:table-cell">Source</TableHead>
+                          <TableHead className="text-xs hidden lg:table-cell">Alert Title</TableHead>
+                          <TableHead className="text-xs">Severity</TableHead>
+                          <TableHead className="text-xs hidden md:table-cell">First Seen</TableHead>
+                          <TableHead className="text-xs w-10">Enrich</TableHead>
+                          <TableHead className="text-xs w-10"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {isLoading ? (
+                          Array.from({ length: 6 }).map((_, i) => (
+                            <TableRow key={i}>
+                              <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                              <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+                              <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-32" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                              <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-6" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-6" /></TableCell>
+                            </TableRow>
+                          ))
+                        ) : filteredIOCs.length > 0 ? (
+                          filteredIOCs.map((ioc, idx) => (
+                            <Fragment key={`${ioc.value}-${ioc.alertId}-${idx}`}>
+                            <TableRow
+                              data-testid={`row-ioc-${idx}`}
+                              className="cursor-pointer"
+                              onClick={() => setSelectedIOCIdx(selectedIOCIdx === idx ? null : idx)}
+                            >
+                              <TableCell>
+                                <span className="text-sm font-mono truncate max-w-[200px] block" data-testid={`text-ioc-value-${idx}`}>
+                                  {ioc.value}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={IOC_TYPE_BADGE_VARIANT[ioc.type] || "secondary"}
+                                  className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                                  data-testid={`badge-ioc-type-${idx}`}
+                                >
+                                  {ioc.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <span className="text-xs text-muted-foreground" data-testid={`text-ioc-source-${idx}`}>
+                                  {ioc.source}
+                                </span>
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell">
+                                <span className="text-xs text-muted-foreground truncate max-w-[200px] block" data-testid={`text-ioc-alert-${idx}`}>
+                                  {ioc.alertTitle}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <SeverityBadge severity={ioc.severity} />
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <span className="text-xs text-muted-foreground" data-testid={`text-ioc-firstseen-${idx}`}>
+                                  {formatTimestamp(ioc.firstSeen)}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <ShadTooltip>
+                                  <TooltipTrigger asChild>
+                                    <span>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        disabled={!anyProviderConfigured}
+                                        data-testid={`button-enrich-${idx}`}
+                                        onClick={(e) => e.stopPropagation()}
                                       >
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                    {indicator.tags.length > 3 && (
-                                      <Badge
-                                        variant="outline"
-                                        className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs">
+                                      {anyProviderConfigured
+                                        ? "Enrich this IOC"
+                                        : "Configure API keys to enable enrichment"}
+                                    </p>
+                                  </TooltipContent>
+                                </ShadTooltip>
+                              </TableCell>
+                              <TableCell>
+                                {ioc.alertId ? (
+                                  <Link href={`/alerts/${ioc.alertId}`} data-testid={`link-ioc-alert-${idx}`}>
+                                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                                  </Link>
+                                ) : null}
+                              </TableCell>
+                            </TableRow>
+                            {selectedIOCIdx === idx && (
+                              <TableRow key={`${ioc.value}-${ioc.alertId}-${idx}-detail`} data-testid={`row-ioc-detail-${idx}`}>
+                                <TableCell colSpan={8} className="bg-muted/30 p-4">
+                                  <div className="flex items-center gap-4 flex-wrap">
+                                    <div className="flex items-center gap-2 text-sm">
+                                      <Network className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-muted-foreground">View in Entity Graph:</span>
+                                      <Link
+                                        href={`/entity-graph?search=${encodeURIComponent(ioc.value)}`}
+                                        data-testid={`link-entity-graph-${idx}`}
                                       >
-                                        +{indicator.tags.length - 3}
-                                      </Badge>
+                                        <Badge variant="outline" className="text-xs font-mono">
+                                          {ioc.value}
+                                          <ExternalLink className="h-3 w-3 ml-1" />
+                                        </Badge>
+                                      </Link>
+                                    </div>
+                                    {!anyProviderConfigured && (
+                                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <XCircle className="h-3.5 w-3.5" />
+                                        <span>No enrichment providers configured</span>
+                                      </div>
+                                    )}
+                                    {anyProviderConfigured && (
+                                      <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                        <span>Enrichment available</span>
+                                      </div>
                                     )}
                                   </div>
                                 </TableCell>
                               </TableRow>
-                            ))
-                          ) : (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center py-8">
-                                <p className="text-sm text-muted-foreground" data-testid="text-no-feed-indicators">
-                                  No indicators available for this feed
-                                </p>
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-feeds">
-              No OSINT feeds available
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card data-testid="card-total-iocs">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total IOCs</CardTitle>
-            <Database className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-16" />
-            ) : (
-              <div className="text-2xl font-bold" data-testid="stat-total-iocs">
-                {stats.total}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        <Card data-testid="card-unique-domains">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unique Domains</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-16" />
-            ) : (
-              <div className="text-2xl font-bold" data-testid="stat-unique-domains">
-                {stats.uniqueDomains}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        <Card data-testid="card-unique-ips">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unique IPs</CardTitle>
-            <Server className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-16" />
-            ) : (
-              <div className="text-2xl font-bold" data-testid="stat-unique-ips">
-                {stats.uniqueIPs}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search IOCs by value, type, or source..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-          data-testid="input-search-iocs"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3">
-          <Card data-testid="card-ioc-table">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Indicator</TableHead>
-                      <TableHead className="text-xs">Type</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">Source</TableHead>
-                      <TableHead className="text-xs hidden lg:table-cell">Alert Title</TableHead>
-                      <TableHead className="text-xs">Severity</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">First Seen</TableHead>
-                      <TableHead className="text-xs w-10">Enrich</TableHead>
-                      <TableHead className="text-xs w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoading ? (
-                      Array.from({ length: 6 }).map((_, i) => (
-                        <TableRow key={i}>
-                          <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                          <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
-                          <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-32" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                          <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-6" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-6" /></TableCell>
-                        </TableRow>
-                      ))
-                    ) : filteredIOCs.length > 0 ? (
-                      filteredIOCs.map((ioc, idx) => (
-                        <Fragment key={`${ioc.value}-${ioc.alertId}-${idx}`}>
-                        <TableRow
-                          data-testid={`row-ioc-${idx}`}
-                          className="cursor-pointer"
-                          onClick={() => setSelectedIOCIdx(selectedIOCIdx === idx ? null : idx)}
-                        >
-                          <TableCell>
-                            <span className="text-sm font-mono truncate max-w-[200px] block" data-testid={`text-ioc-value-${idx}`}>
-                              {ioc.value}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={IOC_TYPE_BADGE_VARIANT[ioc.type] || "secondary"}
-                              className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
-                              data-testid={`badge-ioc-type-${idx}`}
-                            >
-                              {ioc.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-source-${idx}`}>
-                              {ioc.source}
-                            </span>
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <span className="text-xs text-muted-foreground truncate max-w-[200px] block" data-testid={`text-ioc-alert-${idx}`}>
-                              {ioc.alertTitle}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <SeverityBadge severity={ioc.severity} />
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-firstseen-${idx}`}>
-                              {formatTimestamp(ioc.firstSeen)}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <ShadTooltip>
-                              <TooltipTrigger asChild>
-                                <span>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    disabled={!anyProviderConfigured}
-                                    data-testid={`button-enrich-${idx}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="text-xs">
-                                  {anyProviderConfigured
-                                    ? "Enrich this IOC"
-                                    : "Configure API keys to enable enrichment"}
-                                </p>
-                              </TooltipContent>
-                            </ShadTooltip>
-                          </TableCell>
-                          <TableCell>
-                            {ioc.alertId ? (
-                              <Link href={`/alerts/${ioc.alertId}`} data-testid={`link-ioc-alert-${idx}`}>
-                                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                              </Link>
-                            ) : null}
-                          </TableCell>
-                        </TableRow>
-                        {selectedIOCIdx === idx && (
-                          <TableRow key={`${ioc.value}-${ioc.alertId}-${idx}-detail`} data-testid={`row-ioc-detail-${idx}`}>
-                            <TableCell colSpan={8} className="bg-muted/30 p-4">
-                              <div className="flex items-center gap-4 flex-wrap">
-                                <div className="flex items-center gap-2 text-sm">
-                                  <Network className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-muted-foreground">View in Entity Graph:</span>
-                                  <Link
-                                    href={`/entity-graph?search=${encodeURIComponent(ioc.value)}`}
-                                    data-testid={`link-entity-graph-${idx}`}
-                                  >
-                                    <Badge variant="outline" className="text-xs font-mono">
-                                      {ioc.value}
-                                      <ExternalLink className="h-3 w-3 ml-1" />
-                                    </Badge>
-                                  </Link>
-                                </div>
-                                {!anyProviderConfigured && (
-                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                    <XCircle className="h-3.5 w-3.5" />
-                                    <span>No enrichment providers configured</span>
-                                  </div>
-                                )}
-                                {anyProviderConfigured && (
-                                  <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    <span>Enrichment available</span>
-                                  </div>
+                            )}
+                            </Fragment>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-12">
+                              <div className="flex flex-col items-center gap-2" data-testid="empty-state-iocs">
+                                <Shield className="h-8 w-8 text-muted-foreground/50" />
+                                <p className="text-sm text-muted-foreground">No IOCs found</p>
+                                {search && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Try adjusting your search query
+                                  </p>
                                 )}
                               </div>
                             </TableCell>
                           </TableRow>
                         )}
-                        </Fragment>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="lg:col-span-1">
+              <Card data-testid="card-ioc-distribution">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">IOC Type Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Skeleton className="h-32 w-32 rounded-full" />
+                    </div>
+                  ) : typeDistribution.length > 0 ? (
+                    <div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <PieChart>
+                          <Pie
+                            data={typeDistribution}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={40}
+                            outerRadius={70}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {typeDistribution.map((_, i) => (
+                              <Cell
+                                key={i}
+                                fill={CHART_COLORS[i % CHART_COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip
+                            contentStyle={{
+                              backgroundColor: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="space-y-1.5 mt-2">
+                        {typeDistribution.map((entry, i) => (
+                          <div
+                            key={entry.name}
+                            className="flex items-center justify-between text-xs"
+                            data-testid={`legend-ioc-type-${entry.name}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                              />
+                              <span className="text-muted-foreground uppercase">{entry.name}</span>
+                            </div>
+                            <span className="font-medium">{entry.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-8" data-testid="empty-distribution">
+                      No data available
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="ioc-database" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card data-testid="card-ioc-db-total">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Total IOCs</CardTitle>
+                <Database className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="stat-ioc-db-total">
+                  {iocStats?.totalEntries ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card data-testid="card-ioc-db-active">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Active IOCs</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="stat-ioc-db-active">
+                  {iocStats?.activeEntries ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card data-testid="card-ioc-db-matches">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Total Matches</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="stat-ioc-db-matches">
+                  {iocStats?.totalMatches ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search IOC entries..."
+                value={iocSearch}
+                onChange={(e) => setIocSearch(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-ioc-db"
+              />
+            </div>
+            <Select value={iocTypeFilter} onValueChange={setIocTypeFilter}>
+              <SelectTrigger className="w-[140px]" data-testid="select-ioc-type-filter">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="ip">IP</SelectItem>
+                <SelectItem value="domain">Domain</SelectItem>
+                <SelectItem value="url">URL</SelectItem>
+                <SelectItem value="hash">Hash</SelectItem>
+                <SelectItem value="email">Email</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              onClick={() => setShowAddIOCDialog(true)}
+              data-testid="button-add-ioc"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add IOC
+            </Button>
+          </div>
+
+          <Card data-testid="card-ioc-db-table">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Value</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Confidence</TableHead>
+                      <TableHead className="text-xs">Severity</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Malware Family</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Campaign</TableHead>
+                      <TableHead className="text-xs hidden lg:table-cell">Source</TableHead>
+                      <TableHead className="text-xs hidden lg:table-cell">First Seen</TableHead>
+                      <TableHead className="text-xs w-10"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {iocEntriesLoading ? (
+                      Array.from({ length: 5 }).map((_, i) => (
+                        <TableRow key={i}>
+                          <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                          <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
+                          <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
+                          <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
+                          <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-6" /></TableCell>
+                        </TableRow>
+                      ))
+                    ) : filteredIocEntries.length > 0 ? (
+                      filteredIocEntries.map((entry: any, idx: number) => (
+                        <TableRow key={entry.id || idx} data-testid={`row-ioc-entry-${idx}`}>
+                          <TableCell>
+                            <span className="text-sm font-mono truncate max-w-[200px] block" data-testid={`text-ioc-entry-value-${idx}`}>
+                              {entry.iocValue}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={IOC_TYPE_BADGE_VARIANT[entry.iocType] || "secondary"}
+                              className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                              data-testid={`badge-ioc-entry-type-${idx}`}
+                            >
+                              {entry.iocType}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs" data-testid={`text-ioc-entry-confidence-${idx}`}>
+                              {entry.confidence ?? "-"}%
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <SeverityBadge severity={entry.severity || "medium"} />
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-malware-${idx}`}>
+                              {entry.malwareFamily || "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-campaign-${idx}`}>
+                              {entry.campaignName || "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-source-${idx}`}>
+                              {entry.source || "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-firstseen-${idx}`}>
+                              {entry.firstSeen ? formatTimestamp(entry.firstSeen) : "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => deleteIOCMutation.mutate(entry.id)}
+                              data-testid={`button-delete-ioc-entry-${idx}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-12">
-                          <div className="flex flex-col items-center gap-2" data-testid="empty-state-iocs">
-                            <Shield className="h-8 w-8 text-muted-foreground/50" />
-                            <p className="text-sm text-muted-foreground">No IOCs found</p>
-                            {search && (
-                              <p className="text-xs text-muted-foreground">
-                                Try adjusting your search query
-                              </p>
-                            )}
+                        <TableCell colSpan={9} className="text-center py-12">
+                          <div className="flex flex-col items-center gap-2" data-testid="empty-state-ioc-db">
+                            <Database className="h-8 w-8 text-muted-foreground/50" />
+                            <p className="text-sm text-muted-foreground">No IOC entries found</p>
+                            <p className="text-xs text-muted-foreground">Add entries manually or ingest from a feed source</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -775,76 +1239,716 @@ export default function ThreatIntelPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </TabsContent>
 
-        <div className="lg:col-span-1">
-          <Card data-testid="card-ioc-distribution">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">IOC Type Distribution</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Skeleton className="h-32 w-32 rounded-full" />
-                </div>
-              ) : typeDistribution.length > 0 ? (
-                <div>
-                  <ResponsiveContainer width="100%" height={180}>
-                    <PieChart>
-                      <Pie
-                        data={typeDistribution}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={40}
-                        outerRadius={70}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        {typeDistribution.map((_, i) => (
-                          <Cell
-                            key={i}
-                            fill={CHART_COLORS[i % CHART_COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip
-                        contentStyle={{
-                          backgroundColor: "hsl(var(--card))",
-                          border: "1px solid hsl(var(--border))",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                        }}
+        <TabsContent value="watchlists" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold" data-testid="text-watchlists-title">IOC Watchlists</h2>
+              <p className="text-sm text-muted-foreground">Group and monitor IOCs by campaign, threat actor, or custom criteria</p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setShowAddWatchlistDialog(true)}
+              data-testid="button-add-watchlist"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New Watchlist
+            </Button>
+          </div>
+
+          {watchlistsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-20" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : iocWatchlists && iocWatchlists.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="grid-watchlists">
+              {iocWatchlists.map((wl: any, idx: number) => (
+                <Card key={wl.id || idx} data-testid={`card-watchlist-${idx}`}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="h-3 w-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: wl.color || "#6366f1" }}
                       />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="space-y-1.5 mt-2">
-                    {typeDistribution.map((entry, i) => (
-                      <div
-                        key={entry.name}
-                        className="flex items-center justify-between text-xs"
-                        data-testid={`legend-ioc-type-${entry.name}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
-                            style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                          />
-                          <span className="text-muted-foreground uppercase">{entry.name}</span>
-                        </div>
-                        <span className="font-medium">{entry.value}</span>
+                      <CardTitle className="text-sm font-medium" data-testid={`text-watchlist-name-${idx}`}>
+                        {wl.name}
+                      </CardTitle>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteWatchlistMutation.mutate(wl.id)}
+                      data-testid={`button-delete-watchlist-${idx}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <p className="text-xs text-muted-foreground" data-testid={`text-watchlist-desc-${idx}`}>
+                      {wl.description || "No description"}
+                    </p>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <List className="h-3 w-3" />
+                        <span data-testid={`text-watchlist-count-${idx}`}>{wl.entryCount ?? 0} entries</span>
                       </div>
-                    ))}
-                  </div>
+                      {wl.autoMatch && (
+                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]" data-testid={`badge-watchlist-automatch-${idx}`}>
+                          Auto-Match
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="flex flex-col items-center gap-2" data-testid="empty-state-watchlists">
+                  <BookOpen className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">No watchlists created</p>
+                  <p className="text-xs text-muted-foreground">Create watchlists to group and monitor IOCs</p>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground text-center py-8" data-testid="empty-distribution">
-                  No data available
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="match-rules" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold" data-testid="text-match-rules-title">Auto-Matching Rules</h2>
+              <p className="text-sm text-muted-foreground">Configure rules to automatically match IOCs against incoming alerts and events</p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setShowAddRuleDialog(true)}
+              data-testid="button-add-rule"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New Rule
+            </Button>
+          </div>
+
+          {matchRulesLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4 space-y-2">
+                    <Skeleton className="h-5 w-40" />
+                    <Skeleton className="h-4 w-60" />
+                    <Skeleton className="h-3 w-32" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : iocMatchRules && iocMatchRules.length > 0 ? (
+            <div className="space-y-3" data-testid="list-match-rules">
+              {iocMatchRules.map((rule: any, idx: number) => (
+                <Card key={rule.id || idx} data-testid={`card-match-rule-${idx}`}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <CardTitle className="text-sm font-medium" data-testid={`text-rule-name-${idx}`}>
+                          {rule.name}
+                        </CardTitle>
+                        <Badge
+                          variant={rule.enabled ? "default" : "secondary"}
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                          data-testid={`badge-rule-status-${idx}`}
+                        >
+                          {rule.enabled ? "Enabled" : "Disabled"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground" data-testid={`text-rule-desc-${idx}`}>
+                        {rule.description || "No description"}
+                      </p>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteRuleMutation.mutate(rule.id)}
+                      data-testid={`button-delete-rule-${idx}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Filter className="h-3 w-3" />
+                        <span>IOC Types: {(rule.iocTypes || []).join(", ") || "All"}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Settings2 className="h-3 w-3" />
+                        <span>Min Confidence: {rule.minConfidence ?? 0}%</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        <span data-testid={`text-rule-matches-${idx}`}>Matches: {rule.matchCount ?? 0}</span>
+                      </div>
+                      {rule.lastMatchAt && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          <span>Last: {formatRelativeTimestamp(rule.lastMatchAt)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="flex flex-col items-center gap-2" data-testid="empty-state-match-rules">
+                  <Settings2 className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">No match rules configured</p>
+                  <p className="text-xs text-muted-foreground">Create rules to auto-match IOCs against alerts</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="feed-sources" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold" data-testid="text-feed-sources-title">IOC Feed Sources</h2>
+              <p className="text-sm text-muted-foreground">Configure external feeds to automatically ingest IOC data</p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setShowAddFeedDialog(true)}
+              data-testid="button-add-feed"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add Feed
+            </Button>
+          </div>
+
+          {iocFeedsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-20" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : iocFeeds && iocFeeds.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="grid-feed-sources">
+              {iocFeeds.map((feed: any, idx: number) => (
+                <Card key={feed.id || idx} data-testid={`card-feed-source-${idx}`}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <CardTitle className="text-sm font-medium" data-testid={`text-feed-source-name-${idx}`}>
+                          {feed.name}
+                        </CardTitle>
+                        <Badge
+                          variant={feed.enabled ? "default" : "secondary"}
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                          data-testid={`badge-feed-source-status-${idx}`}
+                        >
+                          {feed.enabled ? "Active" : "Inactive"}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                          data-testid={`badge-feed-source-type-${idx}`}
+                        >
+                          {feed.feedType}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate" data-testid={`text-feed-source-url-${idx}`}>
+                        {feed.url || "No URL configured"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => ingestFeedMutation.mutate(feed.id)}
+                        disabled={ingestFeedMutation.isPending}
+                        data-testid={`button-ingest-feed-${idx}`}
+                      >
+                        {ingestFeedMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Play className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteFeedMutation.mutate(feed.id)}
+                        data-testid={`button-delete-feed-${idx}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        <span>Schedule: {feed.schedule || "Manual"}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Database className="h-3 w-3" />
+                        <span data-testid={`text-feed-source-count-${idx}`}>{feed.totalIocs ?? 0} IOCs</span>
+                      </div>
+                      {feed.lastFetchAt && (
+                        <div className="flex items-center gap-1">
+                          <RefreshCw className="h-3 w-3" />
+                          <span>Last fetch: {formatRelativeTimestamp(feed.lastFetchAt)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="flex flex-col items-center gap-2" data-testid="empty-state-feed-sources">
+                  <Rss className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">No feed sources configured</p>
+                  <p className="text-xs text-muted-foreground">Add external IOC feeds to automatically ingest threat data</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={showAddFeedDialog} onOpenChange={setShowAddFeedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Feed Source</DialogTitle>
+            <DialogDescription>Configure an external IOC feed for automatic ingestion</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="feed-name">Name</Label>
+              <Input
+                id="feed-name"
+                value={feedFormName}
+                onChange={(e) => setFeedFormName(e.target.value)}
+                placeholder="Feed name"
+                data-testid="input-feed-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="feed-type">Feed Type</Label>
+              <Select value={feedFormType} onValueChange={setFeedFormType}>
+                <SelectTrigger data-testid="select-feed-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MISP">MISP</SelectItem>
+                  <SelectItem value="STIX">STIX</SelectItem>
+                  <SelectItem value="TAXII">TAXII</SelectItem>
+                  <SelectItem value="OTX">OTX</SelectItem>
+                  <SelectItem value="VirusTotal">VirusTotal</SelectItem>
+                  <SelectItem value="CSV">CSV</SelectItem>
+                  <SelectItem value="Custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="feed-url">URL</Label>
+              <Input
+                id="feed-url"
+                value={feedFormUrl}
+                onChange={(e) => setFeedFormUrl(e.target.value)}
+                placeholder="https://..."
+                data-testid="input-feed-url"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="feed-schedule">Schedule</Label>
+              <Select value={feedFormSchedule} onValueChange={setFeedFormSchedule}>
+                <SelectTrigger data-testid="select-feed-schedule">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual</SelectItem>
+                  <SelectItem value="hourly">Hourly</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="feed-enabled">Enabled</Label>
+              <Switch
+                id="feed-enabled"
+                checked={feedFormEnabled}
+                onCheckedChange={setFeedFormEnabled}
+                data-testid="switch-feed-enabled"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddFeedDialog(false)}
+              data-testid="button-cancel-feed"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createFeedMutation.mutate({
+                name: feedFormName,
+                feedType: feedFormType,
+                url: feedFormUrl,
+                schedule: feedFormSchedule,
+                enabled: feedFormEnabled,
+              })}
+              disabled={!feedFormName.trim() || createFeedMutation.isPending}
+              data-testid="button-save-feed"
+            >
+              {createFeedMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Create Feed
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddWatchlistDialog} onOpenChange={setShowAddWatchlistDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Watchlist</DialogTitle>
+            <DialogDescription>Group IOCs for monitoring and tracking</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="wl-name">Name</Label>
+              <Input
+                id="wl-name"
+                value={watchlistFormName}
+                onChange={(e) => setWatchlistFormName(e.target.value)}
+                placeholder="Watchlist name"
+                data-testid="input-watchlist-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="wl-desc">Description</Label>
+              <Textarea
+                id="wl-desc"
+                value={watchlistFormDescription}
+                onChange={(e) => setWatchlistFormDescription(e.target.value)}
+                placeholder="Optional description..."
+                data-testid="input-watchlist-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="wl-color">Color</Label>
+              <Input
+                id="wl-color"
+                type="color"
+                value={watchlistFormColor}
+                onChange={(e) => setWatchlistFormColor(e.target.value)}
+                data-testid="input-watchlist-color"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="wl-automatch">Auto-Match</Label>
+              <Switch
+                id="wl-automatch"
+                checked={watchlistFormAutoMatch}
+                onCheckedChange={setWatchlistFormAutoMatch}
+                data-testid="switch-watchlist-automatch"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddWatchlistDialog(false)}
+              data-testid="button-cancel-watchlist"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createWatchlistMutation.mutate({
+                name: watchlistFormName,
+                description: watchlistFormDescription,
+                color: watchlistFormColor,
+                autoMatch: watchlistFormAutoMatch,
+              })}
+              disabled={!watchlistFormName.trim() || createWatchlistMutation.isPending}
+              data-testid="button-save-watchlist"
+            >
+              {createWatchlistMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Create Watchlist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddRuleDialog} onOpenChange={setShowAddRuleDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Match Rule</DialogTitle>
+            <DialogDescription>Define auto-matching criteria for IOC detection</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="rule-name">Name</Label>
+              <Input
+                id="rule-name"
+                value={ruleFormName}
+                onChange={(e) => setRuleFormName(e.target.value)}
+                placeholder="Rule name"
+                data-testid="input-rule-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rule-desc">Description</Label>
+              <Textarea
+                id="rule-desc"
+                value={ruleFormDescription}
+                onChange={(e) => setRuleFormDescription(e.target.value)}
+                placeholder="Optional description..."
+                data-testid="input-rule-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>IOC Types</Label>
+              <div className="flex flex-wrap gap-2">
+                {["ip", "domain", "url", "hash", "email"].map((t) => (
+                  <Badge
+                    key={t}
+                    variant={ruleFormIocTypes.includes(t) ? "default" : "outline"}
+                    className="cursor-pointer text-[10px] uppercase"
+                    onClick={() => toggleRuleIocType(t)}
+                    data-testid={`badge-rule-ioctype-${t}`}
+                  >
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Match Fields</Label>
+              <div className="flex flex-wrap gap-2">
+                {["source_ip", "dest_ip", "domain", "url", "file_hash", "hostname"].map((f) => (
+                  <Badge
+                    key={f}
+                    variant={ruleFormMatchFields.includes(f) ? "default" : "outline"}
+                    className="cursor-pointer text-[10px]"
+                    onClick={() => toggleRuleMatchField(f)}
+                    data-testid={`badge-rule-matchfield-${f}`}
+                  >
+                    {f}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rule-confidence">Min Confidence (%)</Label>
+              <Input
+                id="rule-confidence"
+                type="number"
+                min="0"
+                max="100"
+                value={ruleFormMinConfidence}
+                onChange={(e) => setRuleFormMinConfidence(e.target.value)}
+                data-testid="input-rule-confidence"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="rule-enabled">Enabled</Label>
+              <Switch
+                id="rule-enabled"
+                checked={ruleFormEnabled}
+                onCheckedChange={setRuleFormEnabled}
+                data-testid="switch-rule-enabled"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="rule-autoenrich">Auto-Enrich on Match</Label>
+              <Switch
+                id="rule-autoenrich"
+                checked={ruleFormAutoEnrich}
+                onCheckedChange={setRuleFormAutoEnrich}
+                data-testid="switch-rule-autoenrich"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddRuleDialog(false)}
+              data-testid="button-cancel-rule"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createRuleMutation.mutate({
+                name: ruleFormName,
+                description: ruleFormDescription,
+                iocTypes: ruleFormIocTypes,
+                matchFields: ruleFormMatchFields,
+                minConfidence: parseInt(ruleFormMinConfidence) || 0,
+                enabled: ruleFormEnabled,
+                autoEnrich: ruleFormAutoEnrich,
+              })}
+              disabled={!ruleFormName.trim() || createRuleMutation.isPending}
+              data-testid="button-save-rule"
+            >
+              {createRuleMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Create Rule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddIOCDialog} onOpenChange={setShowAddIOCDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add IOC Entry</DialogTitle>
+            <DialogDescription>Manually add an Indicator of Compromise</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="ioc-type">IOC Type</Label>
+              <Select value={iocFormType} onValueChange={setIocFormType}>
+                <SelectTrigger data-testid="select-ioc-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ip">IP Address</SelectItem>
+                  <SelectItem value="domain">Domain</SelectItem>
+                  <SelectItem value="url">URL</SelectItem>
+                  <SelectItem value="hash">File Hash</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ioc-value">IOC Value</Label>
+              <Input
+                id="ioc-value"
+                value={iocFormValue}
+                onChange={(e) => setIocFormValue(e.target.value)}
+                placeholder="e.g., 192.168.1.1 or malicious.com"
+                data-testid="input-ioc-value"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ioc-confidence">Confidence (%)</Label>
+                <Input
+                  id="ioc-confidence"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={iocFormConfidence}
+                  onChange={(e) => setIocFormConfidence(e.target.value)}
+                  data-testid="input-ioc-confidence"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ioc-severity">Severity</Label>
+                <Select value={iocFormSeverity} onValueChange={setIocFormSeverity}>
+                  <SelectTrigger data-testid="select-ioc-severity">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ioc-malware">Malware Family</Label>
+              <Input
+                id="ioc-malware"
+                value={iocFormMalwareFamily}
+                onChange={(e) => setIocFormMalwareFamily(e.target.value)}
+                placeholder="Optional"
+                data-testid="input-ioc-malware"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ioc-campaign">Campaign Name</Label>
+              <Input
+                id="ioc-campaign"
+                value={iocFormCampaignName}
+                onChange={(e) => setIocFormCampaignName(e.target.value)}
+                placeholder="Optional"
+                data-testid="input-ioc-campaign"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ioc-tags">Tags (comma-separated)</Label>
+              <Input
+                id="ioc-tags"
+                value={iocFormTags}
+                onChange={(e) => setIocFormTags(e.target.value)}
+                placeholder="e.g., apt, ransomware"
+                data-testid="input-ioc-tags"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ioc-source">Source</Label>
+              <Input
+                id="ioc-source"
+                value={iocFormSource}
+                onChange={(e) => setIocFormSource(e.target.value)}
+                placeholder="Manual entry"
+                data-testid="input-ioc-source"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddIOCDialog(false)}
+              data-testid="button-cancel-ioc"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createIOCMutation.mutate({
+                iocType: iocFormType,
+                iocValue: iocFormValue,
+                confidence: parseInt(iocFormConfidence) || 80,
+                severity: iocFormSeverity,
+                malwareFamily: iocFormMalwareFamily || undefined,
+                campaignName: iocFormCampaignName || undefined,
+                tags: iocFormTags ? iocFormTags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+                source: iocFormSource || "Manual",
+              })}
+              disabled={!iocFormValue.trim() || createIOCMutation.isPending}
+              data-testid="button-save-ioc"
+            >
+              {createIOCMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Add IOC
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

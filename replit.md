@@ -1,7 +1,7 @@
 # SecureNexus - AI Security Intelligence Platform
 
 ## Overview
-SecureNexus is an AI-powered Security Orchestration & Intelligence Platform designed as a full SaaS product. It consolidates cybersecurity alerts from various tools, correlates them using AI, and generates attacker-centric incident narratives. The platform aims to provide comprehensive security intelligence, automate incident response, and enhance threat detection capabilities, with a strategic roadmap to achieve feature parity with leading security platforms.
+SecureNexus is an AI-powered Security Orchestration & Intelligence Platform offered as a full SaaS solution. It centralizes cybersecurity alerts from diverse tools, employs AI for correlation, and generates attacker-centric incident narratives. The platform aims to deliver comprehensive security intelligence, automate incident response, and enhance threat detection, with a roadmap to achieve feature parity with leading security platforms and address market needs for unified, intelligent security operations.
 
 ## User Preferences
 - Default to dark mode
@@ -10,42 +10,51 @@ SecureNexus is an AI-powered Security Orchestration & Intelligence Platform desi
 - Human-in-the-loop approach for AI features
 
 ## System Architecture
-The platform is built with a modern web stack, featuring a React + TypeScript frontend utilizing Vite, TailwindCSS, and shadcn/ui for a polished user experience. The backend is an Express.js application, also in TypeScript, interacting with a PostgreSQL database via Drizzle ORM. Authentication is handled through Replit Auth (OpenID Connect).
+The platform features a modern web stack: React + TypeScript frontend using Vite, TailwindCSS, and shadcn/ui, with an Express.js (TypeScript) backend. Data persistence is managed by PostgreSQL via Drizzle ORM, and authentication uses Replit Auth (OpenID Connect).
 
-Key architectural decisions and features include:
-- **AI Integration**: Leverages AWS Bedrock Converse API (Mistral Large 2 Instruct) for specialized cybersecurity analysis, with support for custom fine-tuned models via SageMaker. The AI engine is central to alert correlation, triage, and generating detailed incident narratives, focusing on evidence-backed, citable intelligence. AI analysis is augmented with threat intelligence context: IOCs from alerts are cross-referenced against entity enrichment data (AbuseIPDB, VirusTotal, OTX) and cached OSINT feed indicators before being injected into prompts for more accurate classification.
-- **Data Model**: Comprehensive database schemas for organizations, alerts, incidents, comments, tags, audit logs, API keys, ingestion logs, and connectors, designed for security operations.
-- **Normalization Engine**: Supports 24 diverse cybersecurity data sources, normalizing incoming alerts into a consistent format (OCSF-aligned) for effective correlation.
-- **Correlation Engine**: Dual correlation approach: (1) Legacy temporal entity clustering (v1) with 24-hour time windows, and (2) Phase 2 Graph-Based Correlation Engine (v2) using BFS traversal over entity-alert bipartite graphs to detect "low and slow" APT campaigns spanning weeks without time constraints. Includes multi-hop attack path detection, 6-factor confidence scoring (entity density, kill chain progression, source diversity, severity escalation, hop count, temporal spread), and campaign fingerprinting via SHA-256 hashing of TTP patterns. Data model includes attack_paths and campaigns tables.
-- **Incident Management**: Provides a robust workflow for incident status, priority, assignment, and escalation, including an activity timeline and audit logging.
-- **MITRE ATT&CK Integration**: Visualizes the MITRE ATT&CK matrix, mapping techniques from alerts to provide a clearer picture of attacker methodologies.
+**Key Architectural Decisions and Features:**
+
+- **AI Integration**: Leverages AWS Bedrock Converse API (Mistral Large 2 Instruct) for cybersecurity analysis, supported by custom SageMaker models. AI assists in alert correlation, triage, and generating evidence-backed incident narratives, enriched with threat intelligence from various sources.
+- **Data Model**: Comprehensive schemas for organizations, alerts, incidents, and associated operational data, optimized for security operations.
+- **Normalization Engine**: Supports 24 diverse cybersecurity data sources, normalizing alerts into an OCSF-aligned format.
+- **Correlation Engine**: Employs both temporal entity clustering and a graph-based approach (BFS traversal over entity-alert bipartite graphs) to detect sophisticated campaigns, including multi-hop attack paths with a 6-factor confidence scoring system.
+- **Alert Quality Management**: Implements suppression rules and fuzzy duplicate clustering to reduce noise and enhance alert relevance, with custom tagging and confidence calibration.
+- **Incident Workflow Management**: Features SLA tracking with configurable policies, queue views, and post-incident review templates for continuous improvement.
+- **Incident Management**: Provides robust capabilities for managing incident status, priority, assignment, escalation, and an auditable activity timeline.
+- **Case Management & Investigation Workspace**: Offers a tabbed interface for evidence tracking, investigation hypotheses, task management, and built-in runbook templates.
+- **MITRE ATT&CK Integration**: Visualizes the MITRE ATT&CK matrix, mapping techniques from alerts to enhance understanding of attacker methodologies.
 - **Entity Resolution & Graph**: Extracts and resolves entities from security findings, building a relationship graph for visualizing attack paths and identity resolution.
-- **SOAR-Lite Automation**: Visual playbook builder with node-based flow canvas, supporting 25+ action types including ticketing (Jira/ServiceNow), notifications (Slack/Teams/Email/PagerDuty/Webhook), EDR containment (isolate host, block IP/domain, quarantine file, disable user, kill process), and incident management actions. Graph-based execution engine with BFS traversal, condition nodes, and simulated execution mode. Action dispatcher (server/action-dispatcher.ts) routes actions to platform-specific handlers.
-- **Bi-Directional Integrations**: Integration config management (integrationConfigs table) for Jira, ServiceNow, Slack, Teams, PagerDuty, Email, Webhook with encrypted credential storage. Push incidents to ticketing systems, send containment commands to EDRs, and trigger notifications. Notification channels (notificationChannels table) with configurable event triggers. Response actions log (responseActions table) tracks all automated containment actions with full audit trail. Integrations page with 3 tabs: Integrations, Notification Channels, Response Actions.
-- **Real-time Capabilities**: Real-time streaming via SSE and webhook ingestion with HMAC signature verification for instant threat detection and live dashboard updates.
-- **Threat Intelligence Enrichment**: Automated enrichment via AbuseIPDB, VirusTotal, OTX AlienVault with org-level API key management (threatIntelConfigs table). Free public OSINT feeds (abuse.ch URLhaus, ThreatFox, SSL Blacklist, CISA KEV) fetched on-demand with 1-hour cache (server/osint-feeds.ts). Enrichment scores boost correlation confidence by up to 15%.
-- **Kill Chain Visualization**: Interactive Cyber Kill Chain timeline page mapping MITRE ATT&CK tactics to 7 Lockheed Martin stages. Executive attack summary on incident detail with Diamond Model quadrant (Adversary, Infrastructure, Capability, Victim), kill chain progress bar, impact assessment, and key IOCs.
-- **Predictive Attack Modeling & Proactive Defense**: Anomaly detection engine with z-score analysis (volume spikes, new attack vectors, timing anomalies, severity escalation). Attack surface mapping aggregates entities from alerts with risk scoring. Risk forecasting predicts ransomware, data exfiltration, phishing, lateral movement, APT campaigns based on MITRE tactic coverage and alert velocity. Rule-based hardening recommendations with accept/dismiss workflow. Predictive engine (server/predictive-engine.ts) runs on-demand analysis. Predictive Defense page with forecast banners, anomaly timeline, attack surface table, and recommendations management. Data model includes predictive_anomalies, attack_surface_assets, risk_forecasts, hardening_recommendations tables.
-- **Autonomous Response & Agentic SOC**: Auto-response policies with confidence thresholds, cooldowns, and rate limits. AI investigation agent (6-step workflow: gather alerts, enrich entities, correlate evidence, MITRE mapping, AI analysis, recommendations). Rollback engine for automated containment actions. 12 API routes with 3-tab UI (Policies/Investigations/Rollbacks). Data model: auto_response_policies, investigation_runs, investigation_steps, response_action_rollbacks.
-- **Cloud Security Posture Management (CSPM)**: Wiz-like cloud posture scanning for AWS, Azure, and GCP. Cloud account management with region configuration. Simulated CSPM scans generating 15-30 realistic findings per account with CIS/NIST/PCI-DSS/SOC2 compliance framework mapping. Findings include real rule IDs (e.g., AWS-S3-001), resource ARN formats, severity-weighted distribution, and remediation guidance. CSPM scanner (server/cspm-scanner.ts). CSPM page with 3 tabs: Cloud Accounts, Scan History, Findings. Data model: cspm_accounts, cspm_scans, cspm_findings.
-- **Endpoint Telemetry Dashboards**: CrowdStrike-like endpoint health monitoring. Endpoint asset inventory with OS, agent version, IP, status tracking. Telemetry snapshots covering CPU, memory, disk, process count, suspicious processes, AV status, patch level, and network connections. Automated risk scoring (0-100) based on AV definitions, patch level, suspicious processes, CPU usage, and network anomalies. Endpoint telemetry simulator (server/endpoint-telemetry.ts). Endpoint Telemetry page with inventory and asset detail views. Data model: endpoint_assets, endpoint_telemetry.
-- **Unified Security Posture Scoring**: Single aggregated security posture score (0-100) combining CSPM (35%), endpoint health (30%), incident trends (20%), and compliance status (15%). Score history tracking for trend analysis. Posture engine (server/posture-engine.ts). Visual gauge display with component breakdown on Security Posture page. Data model: posture_scores.
-- **On-Prem/Sovereign AI Deployment Configuration**: Configurable AI model backend selection (AWS Bedrock, SageMaker, on-prem, Azure OpenAI). Model ID, endpoint URL, region, and data residency settings per organization. "Allow External Calls" toggle for sovereign/air-gapped deployments. AI Deployment tab on Security Posture page. Data model: ai_deployment_configs.
-- **UI/UX**: Focuses on a professional, cybersecurity-centric design with features like a global command palette, advanced dashboards with analytics (Recharts), and interactive visualizations for MITRE ATT&CK, threat intelligence, entity graphs, kill chain timeline, Diamond Model, predictive defense, CSPM findings, endpoint telemetry, and security posture scoring.
-- **Enterprise Compliance & Data Governance**: DPDP Act/GDPR compliance with configurable data retention policies per org (alerts, incidents, audit logs). PII pseudonymization engine masks emails, IPs, usernames, hostnames in alert data with RBAC-gated unmasking. Compliance reporting for GDPR Article 30, DPDP Act, and retention status. Immutable audit trails with SHA-256 hash chain verification (entryHash, prevHash, sequenceNum per entry). DSAR (Data Subject Access Request) management with subject data search across alerts, entities, and audit logs. Automated retention scheduler runs 24-hour cleanup cycles. Compliance page with 5 tabs: Policies, DSAR, Reports, Audit Integrity, Retention.
-- **Multi-Tenancy & RBAC**: Supports multiple organizations with role-based access control (Admin, Analyst, Viewer).
-- **Real-Time Streaming**: Server-Sent Events (SSE) via EventBus (server/event-bus.ts) for live dashboard updates. Events broadcast on alert ingestion, incident changes, and correlation discoveries. Frontend useEventStream hook auto-invalidates React Query caches. Webhook signature verification (HMAC SHA-256) with timestamp-based replay protection on ingestion endpoints.
-- **Scalability**: Designed for SaaS deployment with planned migration to AWS App Runner.
+- **Reporting & Executive Briefs**: Provides configurable report templates, scheduled delivery, and role-specific dashboards with CSV/JSON export options.
+- **SOAR-Lite Automation**: A visual playbook builder with node-based flow canvas supports 25+ action types, including ticketing, notifications, and EDR containment actions, with a graph-based execution engine.
+- **Bi-Directional Integrations**: Configurable integrations for ticketing systems, communication platforms, and EDRs, with encrypted credential storage and an audit trail for response actions.
+- **Real-time Capabilities**: Utilizes Server-Sent Events (SSE) and webhook ingestion with HMAC signature verification for instant threat detection and live updates.
+- **Threat Intelligence Enrichment**: Automated enrichment via AbuseIPDB, VirusTotal, and OTX AlienVault, complemented by free public OSINT feeds.
+- **Threat Intel Fusion Layer**: An IOC ingestion engine with multi-format parsers and an IOC matcher for rule-based matching against alerts, with watchlists for curated indicators.
+- **Kill Chain Visualization**: Interactive Cyber Kill Chain timeline and Executive Attack Summary integrating the Diamond Model, kill chain progress, and impact assessment.
+- **Predictive Attack Modeling & Proactive Defense**: Anomaly detection, attack surface mapping with risk scoring, risk forecasting, and rule-based hardening recommendations.
+- **Autonomous Response & Agentic SOC**: Auto-response policies with confidence thresholds, an AI investigation agent, and a rollback engine for automated containment actions.
+- **Cloud Security Posture Management (CSPM)**: Wiz-like cloud posture scanning for AWS, Azure, and GCP, generating findings mapped to compliance frameworks (CIS/NIST/PCI-DSS/SOC2). Includes policy-as-code checks with rule-based evaluation against CSPM findings.
+- **Compliance Control Mappings**: Mapped controls for NIST CSF, ISO 27001, CIS, and SOC 2 frameworks with seedable built-in controls and resource-level status tracking.
+- **Evidence Locker**: Audit-ready artifact management with retention policies, framework/control mapping, checksums, and expiry tracking for compliance evidence.
+- **Versioned API & OpenAPI**: Public /api/v1/status and /api/v1/openapi endpoints for API consumers, with typed OpenAPI 3.0 specification.
+- **Outbound Webhooks**: Configurable webhooks for incident lifecycle events (created/updated/closed/escalated) with HMAC signing, retry policies, delivery logging, and test functionality.
+- **Idempotency Keys**: X-Idempotency-Key header support on ingestion endpoints for at-most-once delivery with 24-hour key expiry.
+- **Endpoint Telemetry Dashboards**: Provides CrowdStrike-like endpoint health monitoring, asset inventory, telemetry snapshots, and automated risk scoring.
+- **Unified Security Posture Scoring**: Aggregates security posture into a single score (0-100) combining CSPM, endpoint health, incident trends, and compliance status.
+- **On-Prem/Sovereign AI Deployment Configuration**: Configurable AI model backend selection (AWS Bedrock, SageMaker, on-prem, Azure OpenAI) with data residency settings.
+- **UI/UX**: Emphasizes a professional, cybersecurity-centric design with a global command palette, advanced dashboards, and interactive visualizations.
+- **Enterprise Compliance & Data Governance**: Supports DPDP Act/GDPR compliance with configurable data retention policies, PII pseudonymization, immutable audit trails, and DSAR management.
+- **Multi-Tenancy & RBAC**: Designed for multi-organization support with role-based access control (Admin, Analyst, Viewer).
+- **Scalability**: Engineered for SaaS deployment with planned migration to AWS App Runner.
 
 ## External Dependencies
 - **Authentication**: Replit Auth (OpenID Connect)
-- **Database**: PostgreSQL (via Drizzle ORM)
-- **Cloud AI Services**: AWS Bedrock Converse API (Mistral Large 2 Instruct), AWS SageMaker
-- **Version Control**: GitHub (integrated via Replit GitHub connector using @octokit/rest)
-- **Object Storage**: AWS S3 (bucket: securenexus-platform-557845624595) for file uploads, reports, and exports. Server module: server/s3.ts. API: /api/files/*
-- **Container Registry**: AWS ECR (repository: securenexus) for Docker image storage with scan-on-push enabled.
-- **Deployment**: AWS App Runner (service: securenexus, URL: https://ry5m2xunq9.us-east-1.awsapprunner.com). Source: GitHub repo prathamesh-ops-sudo/securenexus, NODEJS_22 runtime, auto-deploy on push. 1 vCPU, 2 GB RAM.
-- **Threat Intelligence Feeds (Planned)**: AbuseIPDB, VirusTotal, OTX AlienVault for IP/Domain reputation enrichment.
-- **Ticketing Systems (Planned)**: Jira, ServiceNow, PagerDuty for bi-directional integration.
-- **Communication Platforms (Planned)**: Email, Slack, Microsoft Teams for notifications.
-- **EDR/Security Tools**: Integration with 24 specific tools for alert ingestion and potential push-back actions (e.g., CrowdStrike, Splunk, Palo Alto, GuardDuty, Suricata, Defender, Elastic Security, IBM QRadar, Fortinet FortiGate, Carbon Black, Qualys, Tenable Nessus, Cisco Umbrella, Darktrace, Rapid7 InsightIDR, Trend Micro Vision One, Okta, Proofpoint, Snort IDS, Zscaler, Check Point, Wiz, Wazuh, SentinelOne).
+- **Database**: PostgreSQL
+- **Cloud AI Services**: AWS Bedrock Converse API, AWS SageMaker
+- **Object Storage**: AWS S3
+- **Container Registry**: AWS ECR
+- **Deployment**: AWS App Runner
+- **Threat Intelligence Feeds**: AbuseIPDB, VirusTotal, OTX AlienVault
+- **Ticketing Systems**: Jira, ServiceNow, PagerDuty
+- **Communication Platforms**: Email, Slack, Microsoft Teams
+- **EDR/Security Tools**: Integration with 24 specific cybersecurity tools (e.g., CrowdStrike, Splunk, Palo Alto, GuardDuty).

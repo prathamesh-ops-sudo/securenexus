@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -51,6 +52,7 @@ import {
   Settings,
   Bell,
   Shield,
+  ShieldCheck,
   Target,
   Tag,
   UserCheck,
@@ -68,12 +70,13 @@ import {
   Ticket,
   Gauge,
   Timer,
+  Undo2,
 } from "lucide-react";
-import type { Playbook, PlaybookExecution } from "@shared/schema";
+import type { Playbook, PlaybookExecution, PlaybookApproval } from "@shared/schema";
 
 interface FlowNode {
   id: string;
-  type: "trigger" | "action" | "condition";
+  type: "trigger" | "action" | "condition" | "approval";
   data: {
     trigger?: string;
     actionType?: string;
@@ -128,6 +131,10 @@ const PALETTE_CONDITIONS = [
   { value: "time_check", label: "Time Check", icon: Timer },
 ] as const;
 
+const PALETTE_GATES = [
+  { value: "approval_gate", label: "Approval Gate", icon: ShieldCheck },
+] as const;
+
 const TRIGGER_OPTIONS = [
   { value: "alert_created", label: "Alert Created" },
   { value: "alert_critical", label: "Alert Critical" },
@@ -135,6 +142,16 @@ const TRIGGER_OPTIONS = [
   { value: "incident_escalated", label: "Incident Escalated" },
   { value: "manual", label: "Manual" },
 ] as const;
+
+const ROLLBACK_ACTION_TYPES = ["isolate_host", "block_ip", "block_domain", "quarantine_file", "disable_user", "kill_process"];
+
+function hasRollbackableActions(actionsExecuted: unknown): boolean {
+  if (!Array.isArray(actionsExecuted)) return false;
+  return actionsExecuted.some((a: any) => {
+    const actionType = a?.actionType || a?.type || "";
+    return ROLLBACK_ACTION_TYPES.includes(actionType);
+  });
+}
 
 function formatRelativeTime(date: string | Date | null | undefined): string {
   if (!date) return "Never";
@@ -177,6 +194,8 @@ function executionStatusBadge(status: string) {
       return <Badge variant="secondary" data-testid={`badge-exec-status-${status}`}><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</Badge>;
     case "failed":
       return <Badge variant="destructive" data-testid={`badge-exec-status-${status}`}><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+    case "awaiting_approval":
+      return <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400" data-testid={`badge-exec-status-${status}`}><Clock className="h-3 w-3 mr-1" />Awaiting Approval</Badge>;
     default:
       return <Badge variant="outline" data-testid={`badge-exec-status-${status}`}>{status}</Badge>;
   }
@@ -195,6 +214,9 @@ function getNodeIcon(node: FlowNode) {
     const found = PALETTE_CONDITIONS.find(c => c.value === node.data.conditionType);
     return found ? found.icon : Eye;
   }
+  if (node.type === "approval") {
+    return ShieldCheck;
+  }
   return Settings;
 }
 
@@ -203,6 +225,7 @@ function getNodeBorderColor(type: string) {
     case "trigger": return "border-l-blue-500";
     case "action": return "border-l-green-500";
     case "condition": return "border-l-orange-500";
+    case "approval": return "border-l-purple-500";
     default: return "border-l-muted-foreground";
   }
 }
@@ -212,6 +235,7 @@ function getNodeTypeBadge(type: string) {
     case "trigger": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-blue-500/40 text-blue-400">Trigger</Badge>;
     case "action": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-green-500/40 text-green-400">Action</Badge>;
     case "condition": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-orange-500/40 text-orange-400">Condition</Badge>;
+    case "approval": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-purple-500/40 text-purple-400">Approval</Badge>;
     default: return null;
   }
 }
@@ -256,6 +280,34 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
       <div className="space-y-3">
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Trigger Configuration</h4>
         <p className="text-xs text-muted-foreground">Trigger: {node.data.label}</p>
+      </div>
+    );
+  }
+
+  if (node.type === "approval") {
+    return (
+      <div className="space-y-3">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Approval Gate Configuration</h4>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Approver Role</Label>
+          <Input
+            placeholder="e.g. soc_lead, admin"
+            value={config.approverRole || ""}
+            onChange={e => updateField("approverRole", e.target.value)}
+            data-testid="config-approver-role"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Approval Message</Label>
+          <Textarea
+            placeholder="Describe what needs to be approved..."
+            value={config.message || ""}
+            onChange={e => updateField("message", e.target.value)}
+            className="resize-none text-xs"
+            rows={3}
+            data-testid="config-approval-message"
+          />
+        </div>
       </div>
     );
   }
@@ -442,6 +494,12 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
 function configSummary(node: FlowNode): string {
   const cfg = node.data.config;
   if (!cfg) return "";
+  if (node.type === "approval") {
+    const parts: string[] = [];
+    if (cfg.approverRole) parts.push(`role: ${cfg.approverRole}`);
+    if (cfg.message) parts.push(`msg: ${cfg.message.substring(0, 40)}${cfg.message.length > 40 ? "..." : ""}`);
+    return parts.join(", ");
+  }
   const parts = Object.entries(cfg).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
   return parts.join(", ");
 }
@@ -457,7 +515,7 @@ function VisualBuilder({
   selectedNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
 }) {
-  const addNode = useCallback((type: "trigger" | "action" | "condition", value: string, label: string) => {
+  const addNode = useCallback((type: "trigger" | "action" | "condition" | "approval", value: string, label: string) => {
     const newNode: FlowNode = {
       id: nextNodeId(),
       type,
@@ -547,6 +605,25 @@ function VisualBuilder({
                 >
                   <Icon className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />
                   <span className="truncate">{c.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gates</h4>
+          <div className="space-y-1">
+            {PALETTE_GATES.map(g => {
+              const Icon = g.icon;
+              return (
+                <button
+                  key={g.value}
+                  className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-md text-xs hover-elevate"
+                  onClick={() => addNode("approval", g.value, g.label)}
+                  data-testid={`palette-gate-${g.value}`}
+                >
+                  <Icon className="h-3.5 w-3.5 text-purple-400 flex-shrink-0" />
+                  <span className="truncate">{g.label}</span>
                 </button>
               );
             })}
@@ -654,6 +731,8 @@ export default function PlaybooksPage() {
   const [formStatus, setFormStatus] = useState("draft");
   const [flowNodes, setFlowNodes] = useState<FlowNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [executeDryRun, setExecuteDryRun] = useState(false);
+  const [executeDialogId, setExecuteDialogId] = useState<string | null>(null);
 
   const { data: playbooks, isLoading: playbooksLoading } = useQuery<Playbook[]>({
     queryKey: ["/api/playbooks"],
@@ -661,6 +740,10 @@ export default function PlaybooksPage() {
 
   const { data: executions, isLoading: executionsLoading } = useQuery<(PlaybookExecution & { playbookName?: string })[]>({
     queryKey: ["/api/playbook-executions"],
+  });
+
+  const { data: approvals, isLoading: approvalsLoading } = useQuery<PlaybookApproval[]>({
+    queryKey: ["/api/playbook-approvals"],
   });
 
   const createMutation = useMutation({
@@ -708,17 +791,48 @@ export default function PlaybooksPage() {
   });
 
   const executeMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("POST", `/api/playbooks/${id}/execute`, {});
+    mutationFn: async ({ id, dryRun }: { id: string; dryRun: boolean }) => {
+      const res = await apiRequest("POST", `/api/playbooks/${id}/execute`, { dryRun });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/playbooks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/playbook-executions"] });
+      setExecuteDialogId(null);
+      setExecuteDryRun(false);
       toast({ title: "Playbook executed", description: "Manual execution started." });
     },
     onError: (err: any) => {
       toast({ title: "Execution failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const decideMutation = useMutation({
+    mutationFn: async ({ id, decision, note }: { id: string; decision: string; note?: string }) => {
+      const res = await apiRequest("POST", `/api/playbook-approvals/${id}/decide`, { decision, note });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbook-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/playbook-executions"] });
+      toast({ title: "Approval decision recorded" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Decision failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/playbook-executions/${id}/rollback`, {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbook-executions"] });
+      toast({ title: "Rollback initiated", description: `Created ${Array.isArray(data) ? data.length : 0} rollback record(s)` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Rollback failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -774,6 +888,7 @@ export default function PlaybooksPage() {
 
   const activeCount = playbooks?.filter(p => p.status === "active").length || 0;
   const totalExecutions = playbooks?.reduce((sum, p) => sum + (p.triggerCount || 0), 0) || 0;
+  const pendingApprovals = approvals?.filter(a => a.status === "pending").length || 0;
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -789,7 +904,7 @@ export default function PlaybooksPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Playbooks</CardTitle>
@@ -829,6 +944,19 @@ export default function PlaybooksPage() {
             )}
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pending Approvals</CardTitle>
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {approvalsLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <div className="text-2xl font-bold" data-testid="text-pending-approvals">{pendingApprovals}</div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Tabs defaultValue="playbooks" data-testid="tabs-playbooks">
@@ -836,6 +964,15 @@ export default function PlaybooksPage() {
           <TabsTrigger value="playbooks" data-testid="tab-playbooks">
             <Workflow className="h-4 w-4 mr-1.5" />
             Playbooks
+          </TabsTrigger>
+          <TabsTrigger value="approvals" data-testid="tab-approvals">
+            <ShieldCheck className="h-4 w-4 mr-1.5" />
+            Approvals
+            {pendingApprovals > 0 && (
+              <Badge variant="secondary" className="ml-1.5 no-default-hover-elevate no-default-active-elevate" data-testid="badge-pending-count">
+                {pendingApprovals}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <Activity className="h-4 w-4 mr-1.5" />
@@ -916,7 +1053,10 @@ export default function PlaybooksPage() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => executeMutation.mutate(pb.id)}
+                          onClick={() => {
+                            setExecuteDryRun(false);
+                            setExecuteDialogId(pb.id);
+                          }}
                           disabled={executeMutation.isPending}
                           data-testid={`button-execute-${pb.id}`}
                         >
@@ -941,6 +1081,129 @@ export default function PlaybooksPage() {
               })}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="approvals" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Approval Queue</CardTitle>
+              <CardDescription>Review and approve pending playbook execution gates</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {approvalsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex items-center gap-4">
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                  ))}
+                </div>
+              ) : !approvals?.length ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <ShieldCheck className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No approval requests</p>
+                  <p className="text-xs mt-1">Approval gates in playbooks will appear here when triggered</p>
+                </div>
+              ) : (
+                <Table data-testid="table-approvals">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Playbook</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead>Requested By</TableHead>
+                      <TableHead>Requested At</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {approvals.map(approval => {
+                      const pb = playbooks?.find(p => p.id === approval.playbookId);
+                      return (
+                        <TableRow key={approval.id} data-testid={`row-approval-${approval.id}`}>
+                          <TableCell>
+                            {approval.status === "pending" && (
+                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400" data-testid={`badge-approval-status-${approval.id}`}>
+                                <Clock className="h-3 w-3 mr-1" />Pending
+                              </Badge>
+                            )}
+                            {approval.status === "approved" && (
+                              <Badge variant="default" className="no-default-hover-elevate no-default-active-elevate" data-testid={`badge-approval-status-${approval.id}`}>
+                                <CheckCircle className="h-3 w-3 mr-1" />Approved
+                              </Badge>
+                            )}
+                            {approval.status === "rejected" && (
+                              <Badge variant="destructive" className="no-default-hover-elevate no-default-active-elevate" data-testid={`badge-approval-status-${approval.id}`}>
+                                <XCircle className="h-3 w-3 mr-1" />Rejected
+                              </Badge>
+                            )}
+                            {approval.status === "expired" && (
+                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate" data-testid={`badge-approval-status-${approval.id}`}>
+                                Expired
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-medium text-sm" data-testid={`text-approval-playbook-${approval.id}`}>
+                              {pb?.name || "Unknown"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground" data-testid={`text-approval-message-${approval.id}`}>
+                              {approval.approvalMessage || "\u2014"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground" data-testid={`text-approval-requested-by-${approval.id}`}>
+                              {approval.requestedBy || "System"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground" data-testid={`text-approval-requested-at-${approval.id}`}>
+                              {formatRelativeTime(approval.requestedAt)}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {approval.status === "pending" ? (
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => decideMutation.mutate({ id: approval.id, decision: "approved" })}
+                                  disabled={decideMutation.isPending}
+                                  data-testid={`button-approve-${approval.id}`}
+                                >
+                                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => decideMutation.mutate({ id: approval.id, decision: "rejected" })}
+                                  disabled={decideMutation.isPending}
+                                  data-testid={`button-reject-${approval.id}`}
+                                >
+                                  <XCircle className="h-3.5 w-3.5 mr-1" />
+                                  Reject
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground" data-testid={`text-approval-decided-${approval.id}`}>
+                                {approval.decidedBy ? `by ${approval.decidedBy}` : "\u2014"}
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -976,14 +1239,25 @@ export default function PlaybooksPage() {
                       <TableHead>Resource</TableHead>
                       <TableHead>Execution Time</TableHead>
                       <TableHead>When</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {executions.map(exec => {
                       const pb = playbooks?.find(p => p.id === exec.playbookId);
+                      const canRollback = hasRollbackableActions(exec.actionsExecuted);
                       return (
                         <TableRow key={exec.id} data-testid={`row-execution-${exec.id}`}>
-                          <TableCell>{executionStatusBadge(exec.status)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {executionStatusBadge(exec.status)}
+                              {exec.dryRun && (
+                                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-cyan-500/40 text-cyan-400 text-[10px]" data-testid={`badge-dry-run-${exec.id}`}>
+                                  DRY RUN
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <span className="font-medium text-sm" data-testid={`text-exec-playbook-${exec.id}`}>
                               {exec.playbookName || pb?.name || "Unknown"}
@@ -1011,6 +1285,23 @@ export default function PlaybooksPage() {
                               {formatRelativeTime(exec.createdAt)}
                             </span>
                           </TableCell>
+                          <TableCell>
+                            {canRollback && !exec.dryRun && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  if (confirm("Rollback this execution? This will attempt to reverse all EDR actions.")) {
+                                    rollbackMutation.mutate(exec.id);
+                                  }
+                                }}
+                                disabled={rollbackMutation.isPending}
+                                data-testid={`button-rollback-${exec.id}`}
+                              >
+                                <Undo2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -1021,6 +1312,56 @@ export default function PlaybooksPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!executeDialogId} onOpenChange={(open) => { if (!open) { setExecuteDialogId(null); setExecuteDryRun(false); } }}>
+        <DialogContent className="max-w-md" data-testid="dialog-execute">
+          <DialogHeader>
+            <DialogTitle>Execute Playbook</DialogTitle>
+            <DialogDescription>
+              Configure execution options for {playbooks?.find(p => p.id === executeDialogId)?.name || "this playbook"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label className="text-sm font-medium">Dry Run Mode</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Simulate execution without taking real actions</p>
+              </div>
+              <Switch
+                checked={executeDryRun}
+                onCheckedChange={setExecuteDryRun}
+                data-testid="switch-dry-run"
+              />
+            </div>
+            {executeDryRun && (
+              <div className="rounded-md bg-cyan-500/10 p-3">
+                <p className="text-xs text-cyan-400">Actions will be logged but not executed. No changes will be made to your environment.</p>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" onClick={() => { setExecuteDialogId(null); setExecuteDryRun(false); }} data-testid="button-cancel-execute">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (executeDialogId) {
+                  executeMutation.mutate({ id: executeDialogId, dryRun: executeDryRun });
+                }
+              }}
+              disabled={executeMutation.isPending}
+              data-testid="button-confirm-execute"
+            >
+              {executeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              {executeDryRun ? "Dry Run" : "Run"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showDialog} onOpenChange={(open) => { if (!open) closeDialog(); else setShowDialog(true); }}>
         <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
