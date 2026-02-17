@@ -5,7 +5,7 @@ import {
   SiElastic, SiFortinet,
   SiCisco, SiOkta, SiTrendmicro,
 } from "react-icons/si";
-import atsLogo from "@assets/Screenshot_20260213_122029_Google_1770965513052.jpg";
+import atsLogo from "@/assets/logo.jpg";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
