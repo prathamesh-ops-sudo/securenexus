@@ -1,0 +1,71 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: securenexus
+  namespace: production
+  labels:
+    app: securenexus
+    environment: production
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: securenexus
+      environment: production
+  strategy:
+    canary:
+      canaryService: securenexus-canary
+      stableService: securenexus-stable
+      steps:
+        - setWeight: 20
+        - pause: { duration: 60s }
+        - setWeight: 50
+        - pause: { duration: 60s }
+        - setWeight: 80
+        - pause: { duration: 30s }
+      canaryMetadata:
+        labels:
+          role: canary
+      stableMetadata:
+        labels:
+          role: stable
+  template:
+    metadata:
+      labels:
+        app: securenexus
+        environment: production
+    spec:
+      containers:
+        - name: securenexus
+          image: ${IMAGE}
+          ports:
+            - containerPort: 5000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: securenexus-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "5000"
+          readinessProbe:
+            httpGet:
+              path: /api/ops/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/ops/health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 256m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi

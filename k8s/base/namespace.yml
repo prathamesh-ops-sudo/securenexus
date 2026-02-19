@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    app: securenexus
+    environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    app: securenexus
+    environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-rollouts
+  labels:
+    app: securenexus
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app: securenexus

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: securenexus
+  namespace: staging
+  labels:
+    app: securenexus
+    environment: staging
+spec:
+  type: LoadBalancer
+  selector:
+    app: securenexus
+    environment: staging
+  ports:
+    - port: 80
+      targetPort: 5000
+      protocol: TCP
+      name: http
