@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -16,11 +17,16 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-check:
     name: Build Check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,8 +36,9 @@ jobs:
 
   build-and-push:
     name: Build & Push to ECR
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -54,6 +61,7 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
+          set -euo pipefail
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
@@ -62,8 +70,9 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     needs: build-and-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: staging
     steps:
       - name: Checkout
@@ -81,16 +90,49 @@ jobs:
 
       - name: Deploy to staging
         run: |
+          set -euo pipefail
           export IMAGE=${{ needs.build-and-push.outputs.image }}
           envsubst < k8s/staging/rollout.yml | kubectl apply -f -
           kubectl apply -f k8s/staging/service.yml
-          kubectl -n staging rollout status deployment/securenexus --timeout=300s || true
+          kubectl -n staging rollout status deployment/securenexus --timeout=300s
+
+
+
+  deploy-uat:
+    name: Deploy to UAT
+    needs: [build-and-push, deploy-staging]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: uat
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+      - name: Deploy to UAT
+        run: |
+          set -euo pipefail
+          export IMAGE=${{ needs.build-and-push.outputs.image }}
+          envsubst < k8s/uat/rollout.yml | kubectl apply -f -
+          kubectl apply -f k8s/uat/service.yml
+          kubectl -n uat rollout status deployment/securenexus --timeout=300s
 
   deploy-production:
     name: Deploy to Production (Argo Rollout)
-    needs: [build-and-push, deploy-staging]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-and-push, deploy-staging, deploy-uat]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     steps:
       - name: Checkout
@@ -114,10 +156,11 @@ jobs:
 
       - name: Deploy production via Argo Rollout
         run: |
+          set -euo pipefail
           export IMAGE=${{ needs.build-and-push.outputs.image }}
           envsubst < k8s/production/rollout.yml | kubectl apply -f -
           kubectl apply -f k8s/production/service.yml
 
       - name: Wait for rollout
         run: |
-          kubectl argo rollouts status securenexus -n production --timeout 600 || echo "Rollout in progress"
+          kubectl argo rollouts status securenexus -n production --timeout 600

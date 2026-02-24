@@ -9,6 +9,14 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: uat
+  labels:
+    app: securenexus
+    environment: uat
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: production
   labels:
     app: securenexus

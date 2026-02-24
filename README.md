@@ -145,38 +145,16 @@ POST   /api/connectors/:id/sync  - Trigger sync
 
 ### CI/CD Pipeline Architecture
 
-```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌─────────────┐
-│  Developer   │────▶│     GitHub       │────▶│  GitHub Actions  │────▶│   Docker    │
-│  (feature    │     │  (Pull Request)  │     │   CI Pipeline    │     │   Build     │
-│   branch)    │     │                  │     │                  │     │             │
-└─────────────┘     └──────────────────┘     └──────────────────┘     └──────┬──────┘
-                                                                              │
-                    ┌─────────────────────────────────────────────────────────┘
-                    │
-                    ▼
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────────────────┐
-│   Amazon ECR     │────▶│   Deploy to      │────▶│   Deploy to Production       │
-│  (Image Store)   │     │   Staging (EKS)  │     │   (EKS + Argo Rollouts)      │
-│                  │     │                  │     │                              │
-│  securenexus:    │     │  K8s Namespace:  │     │  Canary Strategy:            │
-│   <git-sha>      │     │  "staging"       │     │  20% ─▶ 50% ─▶ 80% ─▶ 100% │
-│   latest         │     │  1 replica       │     │  K8s Namespace: "production" │
-└──────────────────┘     └──────────────────┘     │  2 replicas                  │
-                                                  └──────────────────────────────┘
-                                                              │
-                    ┌─────────────────────────────────────────┘
-                    │
-                    ▼
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                           Monitoring & Observability                             │
-│                                                                                  │
-│   ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────────┐    │
-│   │  Prometheus   │────▶│   Grafana    │     │  Argo Rollouts Dashboard     │    │
-│   │  (Metrics)    │     │ (Dashboards) │     │  (Canary Status & Control)   │    │
-│   └──────────────┘     └──────────────┘     └──────────────────────────────┘    │
-│                                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────┘
+```text
+Pull Request -> Build Check
+Merge to main (or manual dispatch) -> Build & Push image to ECR
+  -> Deploy to staging namespace (EKS)
+  -> Deploy to uat namespace (EKS)
+  -> Deploy to production namespace (EKS + Argo Rollouts canary 20%/50%/80%/100%)
+
+Observability:
+- Prometheus + Grafana (monitoring namespace)
+- Argo Rollouts status via kubectl plugin/dashboard
 ```
 
 ### Infrastructure Map
@@ -188,6 +166,9 @@ AWS Account (us-east-1)
 │   ├── Node Group: 2x t3.medium (auto-scale: 2–4)
 │   │
 │   ├── Namespace: staging
+│   │   └── Deployment: securenexus (1 replica)
+│   │
+│   ├── Namespace: uat
 │   │   └── Deployment: securenexus (1 replica)
 │   │
 │   ├── Namespace: production
@@ -255,7 +236,7 @@ kubectl argo rollouts promote securenexus -n production
 | AI/ML | AWS Bedrock (Mistral Large 2), AWS SageMaker |
 | Storage | AWS S3 |
 | Infrastructure | AWS EKS (Kubernetes), Docker, Argo Rollouts |
-| CI/CD | GitHub Actions → ECR → EKS (staging → canary production) |
+| CI/CD | GitHub Actions → ECR → EKS (staging → uat → canary production) |
 | Monitoring | Prometheus + Grafana |
 | Security Frameworks | MITRE ATT&CK v15, NIST SP 800-61r2, Cyber Kill Chain, Diamond Model, OCSF |
 
