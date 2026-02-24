@@ -46,6 +46,7 @@ const systemNavItems = [
 ];
 
 const adminNavItems = [
+  { title: "Onboarding", url: "/onboarding", icon: Activity, description: "Workspace setup checklist" },
   { title: "Team Management", url: "/team", icon: Users, description: "Users & RBAC" },
   { title: "Audit Log", url: "/audit-log", icon: Activity, description: "Activity history" },
   { title: "Compliance", url: "/compliance", icon: Scale, description: "Data governance" },
