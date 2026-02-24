@@ -27,6 +27,13 @@ import {
   Shield,
   Crosshair,
   Workflow,
+  Download,
+  Users,
+  FileText,
+  Bot,
+  Scale,
+  ShieldCheck,
+  RefreshCw,
 } from "lucide-react";
 import { SeverityBadge } from "@/components/security-badges";
 import type { Alert, Incident } from "@shared/schema";
@@ -36,14 +43,19 @@ const navigationItems = [
   { label: "Alerts", icon: AlertTriangle, path: "/alerts" },
   { label: "Incidents", icon: FileWarning, path: "/incidents" },
   { label: "Analytics", icon: BarChart3, path: "/analytics" },
+  { label: "Reports", icon: FileText, path: "/reports" },
   { label: "Threat Intel", icon: Shield, path: "/threat-intel" },
   { label: "MITRE ATT&CK", icon: Crosshair, path: "/mitre-attack" },
   { label: "Entity Graph", icon: Network, path: "/entity-graph" },
+  { label: "Autonomous Response", icon: Bot, path: "/autonomous-response" },
   { label: "Ingestion", icon: ArrowDownToLine, path: "/ingestion" },
   { label: "Connectors", icon: Plug, path: "/connectors" },
   { label: "AI Engine", icon: Brain, path: "/ai-engine" },
   { label: "Playbooks", icon: Workflow, path: "/playbooks" },
+  { label: "Operations", icon: Zap, path: "/operations" },
+  { label: "Team Management", icon: Users, path: "/team" },
   { label: "Audit Log", icon: Activity, path: "/audit-log" },
+  { label: "Compliance", icon: Scale, path: "/compliance" },
   { label: "Settings", icon: Settings, path: "/settings" },
 ];
 
@@ -169,6 +181,49 @@ export function CommandPalette() {
           >
             <Plus className="mr-2" />
             <span>Add Connector</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(() => window.open("/api/export/alerts", "_blank"))}
+            data-testid="command-action-export-alerts"
+          >
+            <Download className="mr-2" />
+            <span>Export Alerts (CSV)</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(() => window.open("/api/export/incidents", "_blank"))}
+            data-testid="command-action-export-incidents"
+          >
+            <Download className="mr-2" />
+            <span>Export Incidents (CSV)</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() =>
+              runCommand(() => {
+                navigate("/alerts");
+                setTimeout(() => {
+                  const btn = document.querySelector('[data-testid="button-scan-duplicates"]') as HTMLButtonElement;
+                  btn?.click();
+                }, 500);
+              })
+            }
+            data-testid="command-action-scan-duplicates"
+          >
+            <RefreshCw className="mr-2" />
+            <span>Scan for Duplicate Alerts</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(() => navigate("/compliance"))}
+            data-testid="command-action-audit-verify"
+          >
+            <ShieldCheck className="mr-2" />
+            <span>Verify Audit Integrity</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(() => navigate("/team"))}
+            data-testid="command-action-manage-team"
+          >
+            <Users className="mr-2" />
+            <span>Manage Team Members</span>
           </CommandItem>
         </CommandGroup>
       </CommandList>

@@ -15,8 +15,11 @@ declare module "http" {
   }
 }
 
+app.disable("x-powered-by");
+
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
@@ -75,13 +78,20 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Internal Server Error:", err);
+    } else {
+      console.error(`Error ${status}: ${message}`);
+    }
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return res.status(status).json({
+      error: true,
+      message: process.env.NODE_ENV === "production" ? "Internal Server Error" : message,
+    });
   });
 
   // importantly only setup vite in development and after
