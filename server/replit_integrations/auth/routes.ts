@@ -2,6 +2,41 @@ import type { Express } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
 import { isAuthenticated, hashPassword } from "./replitAuth";
+import { storage } from "../../storage";
+
+async function ensureOrgMembership(user: any) {
+  try {
+    const memberships = await storage.getUserMemberships(user.id);
+    if (memberships.length > 0) return;
+
+    const orgs = await storage.getOrganizations();
+    if (orgs.length > 0) {
+      await storage.createOrgMembership({
+        orgId: orgs[0].id,
+        userId: user.id,
+        role: "owner",
+        status: "active",
+        joinedAt: new Date(),
+      });
+      return;
+    }
+
+    const newOrg = await storage.createOrganization({
+      name: `${user.email ? user.email.split("@")[0] : "User"}'s Organization`,
+      slug: `org-${Date.now()}`,
+      contactEmail: user.email || undefined,
+    });
+    await storage.createOrgMembership({
+      orgId: newOrg.id,
+      userId: user.id,
+      role: "owner",
+      status: "active",
+      joinedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("Error ensuring org membership:", err);
+  }
+}
 
 export function registerAuthRoutes(app: Express): void {
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
@@ -38,8 +73,9 @@ export function registerAuthRoutes(app: Express): void {
         lastName: lastName || null,
       });
 
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) return next(err);
+        await ensureOrgMembership(user);
         const { passwordHash: _, ...safeUser } = user;
         res.status(201).json(safeUser);
       });
@@ -57,8 +93,9 @@ export function registerAuthRoutes(app: Express): void {
         if (!user) {
           return res.status(401).json({ message: info?.message || "Invalid credentials" });
         }
-        req.login(user, (loginErr) => {
+        req.login(user, async (loginErr) => {
           if (loginErr) return next(loginErr);
+          await ensureOrgMembership(user);
           const { passwordHash, ...safeUser } = user;
           res.json(safeUser);
         });

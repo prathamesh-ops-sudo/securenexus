@@ -11,11 +11,11 @@ const ROLE_HIERARCHY: Record<string, number> = {
 
 export async function resolveOrgContext(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
-  if (!user?.claims?.sub) {
+  if (!user?.id) {
     return res.status(401).json({ error: "Authentication required" });
   }
 
-  const userId = user.claims.sub;
+  const userId = user.id;
   const memberships = await storage.getUserMemberships(userId);
   const activeMemberships = memberships.filter(m => m.status === "active");
 
