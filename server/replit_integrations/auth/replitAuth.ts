@@ -4,6 +4,7 @@ import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
+import { storage } from "../../storage";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 
@@ -78,7 +79,12 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser(async (id: string, cb) => {
     try {
       const user = await authStorage.getUser(id);
-      cb(null, user || null);
+      if (!user) return cb(null, null);
+      const memberships = await storage.getUserMemberships(user.id);
+      const active = memberships.find(m => m.status === "active");
+      (user as any).orgId = active?.orgId || null;
+      (user as any).orgRole = active?.role || null;
+      cb(null, user);
     } catch (err) {
       cb(err);
     }
