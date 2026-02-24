@@ -90,10 +90,24 @@ export interface IStorage {
   findAlertByDedup(orgId: string | null, source: string, sourceEventId: string): Promise<Alert | undefined>;
   upsertAlert(alert: InsertAlert): Promise<{ alert: Alert; isNew: boolean }>;
 
+  getAlertsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+  }): Promise<{ items: Alert[]; total: number }>;
+
   getIncidents(orgId?: string): Promise<Incident[]>;
   getIncident(id: string): Promise<Incident | undefined>;
   createIncident(incident: InsertIncident): Promise<Incident>;
   updateIncident(id: string, data: Partial<Incident>): Promise<Incident | undefined>;
+
+  getIncidentsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    queue?: string;
+  }): Promise<{ items: Incident[]; total: number }>;
 
   getOrganizations(): Promise<Organization[]>;
   getOrganization(id: string): Promise<Organization | undefined>;
@@ -125,6 +139,11 @@ export interface IStorage {
 
   createIngestionLog(log: InsertIngestionLog): Promise<IngestionLog>;
   getIngestionLogs(orgId?: string, limit?: number): Promise<IngestionLog[]>;
+  getIngestionLogsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ items: IngestionLog[]; total: number }>;
   getIngestionStats(orgId?: string): Promise<{
     totalIngested: number;
     totalCreated: number;
@@ -139,6 +158,12 @@ export interface IStorage {
   updateConnector(id: string, data: Partial<Connector>): Promise<Connector | undefined>;
   deleteConnector(id: string): Promise<boolean>;
   updateConnectorSyncStatus(id: string, data: { lastSyncAt: Date; lastSyncStatus: string; lastSyncAlerts: number; lastSyncError?: string; totalAlertsSynced?: number }): Promise<void>;
+
+  getConnectorsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ items: Connector[]; total: number }>;
 
   createAiFeedback(feedback: InsertAiFeedback): Promise<AiFeedback>;
   getAiFeedback(resourceType?: string, resourceId?: string): Promise<AiFeedback[]>;
@@ -580,6 +605,41 @@ export class DatabaseStorage implements IStorage {
     return { alert: created, isNew: true };
   }
 
+  async getAlertsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+  }): Promise<{ items: Alert[]; total: number }> {
+    const { orgId, offset, limit, search } = params;
+    const searchPattern = search ? `%${search}%` : undefined;
+    const textCondition = searchPattern
+      ? or(
+          ilike(alerts.title, searchPattern),
+          ilike(alerts.description, searchPattern),
+          ilike(alerts.hostname, searchPattern),
+          ilike(alerts.sourceIp, searchPattern),
+        )
+      : undefined;
+
+    let whereCondition: any = undefined;
+    if (orgId && textCondition) {
+      whereCondition = and(eq(alerts.orgId, orgId), textCondition);
+    } else if (orgId) {
+      whereCondition = eq(alerts.orgId, orgId);
+    } else if (textCondition) {
+      whereCondition = textCondition;
+    }
+
+    const totalQuery = db.select({ total: count() }).from(alerts);
+    const itemsQuery = db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(limit).offset(offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+
+    return { items, total: Number(totalRow?.total ?? 0) };
+  }
+
   async getIncidents(orgId?: string): Promise<Incident[]> {
     if (orgId) {
       return db.select().from(incidents).where(eq(incidents.orgId, orgId)).orderBy(desc(incidents.createdAt));
@@ -600,6 +660,38 @@ export class DatabaseStorage implements IStorage {
   async updateIncident(id: string, data: Partial<Incident>): Promise<Incident | undefined> {
     const [updated] = await db.update(incidents).set({ ...data, updatedAt: new Date() }).where(eq(incidents.id, id)).returning();
     return updated;
+  }
+
+  async getIncidentsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    queue?: string;
+  }): Promise<{ items: Incident[]; total: number }> {
+    const { orgId, offset, limit, queue } = params;
+
+    const conditions: any[] = [];
+    if (orgId) {
+      conditions.push(eq(incidents.orgId, orgId));
+    }
+    if (queue) {
+      conditions.push(eq(incidents.queueState, queue as any));
+    }
+
+    const whereCondition = conditions.length ? and(...conditions) : undefined;
+
+    const totalQuery = db.select({ total: count() }).from(incidents);
+    const itemsQuery = db
+      .select()
+      .from(incidents)
+      .orderBy(desc(incidents.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+
+    return { items, total: Number(totalRow?.total ?? 0) };
   }
 
   async getOrganizations(): Promise<Organization[]> {
@@ -744,6 +836,29 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(ingestionLogs).orderBy(desc(ingestionLogs.receivedAt)).limit(limit);
   }
 
+  async getIngestionLogsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ items: IngestionLog[]; total: number }> {
+    const { orgId, offset, limit } = params;
+
+    const whereCondition = orgId ? eq(ingestionLogs.orgId, orgId) : undefined;
+
+    const totalQuery = db.select({ total: count() }).from(ingestionLogs);
+    const itemsQuery = db
+      .select()
+      .from(ingestionLogs)
+      .orderBy(desc(ingestionLogs.receivedAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+
+    return { items, total: Number(totalRow?.total ?? 0) };
+  }
+
   async getIngestionStats(orgId?: string): Promise<{
     totalIngested: number;
     totalCreated: number;
@@ -826,6 +941,28 @@ export class DatabaseStorage implements IStorage {
       return db.select().from(connectors).where(eq(connectors.orgId, orgId)).orderBy(desc(connectors.createdAt));
     }
     return db.select().from(connectors).orderBy(desc(connectors.createdAt));
+  }
+
+  async getConnectorsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ items: Connector[]; total: number }> {
+    const { orgId, offset, limit } = params;
+    const whereCondition = orgId ? eq(connectors.orgId, orgId) : undefined;
+
+    const totalQuery = db.select({ total: count() }).from(connectors);
+    const itemsQuery = db
+      .select()
+      .from(connectors)
+      .orderBy(desc(connectors.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+
+    return { items, total: Number(totalRow?.total ?? 0) };
   }
 
   async getConnector(id: string): Promise<Connector | undefined> {

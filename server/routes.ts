@@ -30,6 +30,21 @@ function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
 }
 
+function sendEnvelope(
+  res: Response,
+  data: any,
+  options?: {
+    status?: number;
+    meta?: Record<string, any>;
+    errors?: { code: string; message: string; details?: any }[] | null;
+  }
+) {
+  const status = options?.status ?? 200;
+  const meta = options?.meta ?? {};
+  const errors = options?.errors ?? null;
+  return res.status(status).json({ data, meta, errors });
+}
+
 function hashApiKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
@@ -254,6 +269,64 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/v1/alerts", isAuthenticated, async (req, res) => {
+    try {
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+
+      const { items, total } = await storage.getAlertsPaginated({
+        offset,
+        limit,
+        search,
+      });
+
+      return sendEnvelope(res, items, {
+        meta: { offset, limit, total, search: search ?? null },
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "ALERTS_LIST_FAILED",
+            message: "Failed to fetch alerts",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
+  app.get("/api/v1/alerts", isAuthenticated, async (req, res) => {
+    try {
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+
+      const { items, total } = await storage.getAlertsPaginated({
+        offset,
+        limit,
+        search,
+      });
+
+      return sendEnvelope(res, items, {
+        meta: { offset, limit, total, search: search ?? null },
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "ALERTS_LIST_FAILED",
+            message: "Failed to fetch alerts",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
   app.get("/api/alerts/:id", isAuthenticated, async (req, res) => {
     try {
       const alert = await storage.getAlert(p(req.params.id));
@@ -382,6 +455,35 @@ export async function registerRoutes(
       res.json(allIncidents);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch incidents" });
+    }
+  });
+
+  app.get("/api/v1/incidents", isAuthenticated, async (req, res) => {
+    try {
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
+      const queue = typeof req.query.queue === "string" ? req.query.queue : undefined;
+
+      const { items, total } = await storage.getIncidentsPaginated({
+        offset,
+        limit,
+        queue,
+      });
+
+      return sendEnvelope(res, items, {
+        meta: { offset, limit, total, queue: queue ?? null },
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "INCIDENTS_LIST_FAILED",
+            message: "Failed to fetch incidents",
+            details: error?.message,
+          },
+        ],
+      });
     }
   });
 
@@ -834,6 +936,44 @@ export async function registerRoutes(
     }
   });
 
+  // Versioned API key governance (v1) - scopes and policies metadata
+  app.get("/api/v1/api-keys/scopes", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    // These templates can be evolved over time and surfaced in UI as presets
+    const templates = [
+      {
+        id: "read-only",
+        label: "Read-only",
+        description: "Can read alerts and incidents but cannot modify data.",
+        scopes: ["alerts:read", "incidents:read"],
+      },
+      {
+        id: "ingestion-only",
+        label: "Ingestion only",
+        description: "Can send data into the platform but cannot read or modify existing data.",
+        scopes: ["ingest:write"],
+      },
+      {
+        id: "integration-full",
+        label: "Integration (full)",
+        description: "For trusted SIEM/EDR integrations that can both ingest and manage alerts.",
+        scopes: ["ingest:write", "alerts:read", "alerts:write"],
+      },
+    ];
+
+    return sendEnvelope(res, templates);
+  });
+
+  app.get("/api/v1/api-keys/policies", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    const policies = {
+      defaultRotationDays: 90,
+      maxLifetimeDays: 365,
+      minKeyLength: 40,
+      recommendedScopes: ["ingest:write", "alerts:read"],
+    };
+
+    return sendEnvelope(res, policies);
+  });
+
   app.post("/api/api-keys", isAuthenticated, async (req, res) => {
     try {
       const { name, orgId, scopes } = req.body;
@@ -1074,6 +1214,33 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/v1/ingestion/logs", isAuthenticated, async (req, res) => {
+    try {
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
+
+      const { items, total } = await storage.getIngestionLogsPaginated({
+        offset,
+        limit,
+      });
+
+      return sendEnvelope(res, items, {
+        meta: { offset, limit, total },
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "INGESTION_LOGS_LIST_FAILED",
+            message: "Failed to fetch ingestion logs",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
   app.get("/api/ingestion/stats", isAuthenticated, async (req, res) => {
     try {
       const stats = await storage.getIngestionStats();
@@ -1137,6 +1304,45 @@ export async function registerRoutes(
       res.json(sanitized);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch connectors" });
+    }
+  });
+
+  app.get("/api/v1/connectors", isAuthenticated, async (req, res) => {
+    try {
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
+
+      const { items, total } = await storage.getConnectorsPaginated({
+        offset,
+        limit,
+      });
+
+      const sanitized = items.map(c => {
+        const config = c.config as ConnectorConfig;
+        const safeConfig: any = { ...config };
+        if (safeConfig.clientSecret) safeConfig.clientSecret = "••••••••";
+        if (safeConfig.password) safeConfig.password = "••••••••";
+        if (safeConfig.apiKey) safeConfig.apiKey = "••••••••";
+        if (safeConfig.secretAccessKey) safeConfig.secretAccessKey = "••••••••";
+        if (safeConfig.token) safeConfig.token = "••••••••";
+        if (safeConfig.siteToken) safeConfig.siteToken = "••••••••";
+        return { ...c, config: safeConfig };
+      });
+
+      return sendEnvelope(res, sanitized, {
+        meta: { offset, limit, total },
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "CONNECTORS_LIST_FAILED",
+            message: "Failed to fetch connectors",
+            details: error?.message,
+          },
+        ],
+      });
     }
   });
 
@@ -5913,6 +6119,129 @@ export async function registerRoutes(
     }
   });
 
+  // Versioned outbound webhooks API (v1 envelope)
+  app.get("/api/v1/webhooks", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const webhooks = await storage.getOutboundWebhooks(orgId);
+      return sendEnvelope(res, webhooks);
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "WEBHOOKS_LIST_FAILED",
+            message: "Failed to fetch outbound webhooks",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
+  app.post("/api/v1/webhooks", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const parsed = insertOutboundWebhookSchema.safeParse({ ...req.body, orgId });
+      if (!parsed.success) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [
+            {
+              code: "WEBHOOK_INVALID",
+              message: "Invalid webhook data",
+              details: parsed.error.flatten(),
+            },
+          ],
+        });
+      }
+      const webhook = await storage.createOutboundWebhook(parsed.data);
+      return sendEnvelope(res, webhook, { status: 201 });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "WEBHOOK_CREATE_FAILED",
+            message: "Failed to create outbound webhook",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
+  app.patch("/api/v1/webhooks/:id", isAuthenticated, async (req, res) => {
+    try {
+      const webhook = await storage.updateOutboundWebhook(p(req.params.id), req.body);
+      if (!webhook) {
+        return sendEnvelope(res, null, {
+          status: 404,
+          errors: [{ code: "WEBHOOK_NOT_FOUND", message: "Webhook not found" }],
+        });
+      }
+      return sendEnvelope(res, webhook);
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "WEBHOOK_UPDATE_FAILED",
+            message: "Failed to update outbound webhook",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
+  app.delete("/api/v1/webhooks/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteOutboundWebhook(p(req.params.id));
+      if (!deleted) {
+        return sendEnvelope(res, null, {
+          status: 404,
+          errors: [{ code: "WEBHOOK_NOT_FOUND", message: "Webhook not found" }],
+        });
+      }
+      return sendEnvelope(res, { deleted: true });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "WEBHOOK_DELETE_FAILED",
+            message: "Failed to delete outbound webhook",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
+  app.get("/api/v1/webhooks/:id/logs", isAuthenticated, async (req, res) => {
+    try {
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+      const allLogs = await storage.getOutboundWebhookLogs(p(req.params.id), offset + limit);
+      const items = allLogs.slice(offset, offset + limit);
+      return sendEnvelope(res, items, {
+        meta: { offset, limit, total: allLogs.length },
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [
+          {
+            code: "WEBHOOK_LOGS_FAILED",
+            message: "Failed to fetch webhook logs",
+            details: error?.message,
+          },
+        ],
+      });
+    }
+  });
+
   // === Alert Archive (Cold Storage) ===
   app.get("/api/alerts/archive", isAuthenticated, async (req, res) => {
     try {
@@ -6071,7 +6400,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/ops/slo-targets", isAuthenticated, async (req, res) => {
+  app.get("/api/ops/slo-targets", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const targets = await storage.getSloTargets();
       res.json(targets);
@@ -6080,7 +6409,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ops/slo-targets", isAuthenticated, async (req, res) => {
+  app.post("/api/ops/slo-targets", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const target = await storage.createSloTarget(req.body);
       res.status(201).json(target);
@@ -6089,7 +6418,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/ops/slo-targets/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const updated = await storage.updateSloTarget(req.params.id, req.body);
       if (!updated) return res.status(404).json({ message: "SLO target not found" });
@@ -6099,7 +6428,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/ops/slo-targets/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const deleted = await storage.deleteSloTarget(req.params.id);
       if (!deleted) return res.status(404).json({ message: "SLO target not found" });
@@ -6505,6 +6834,29 @@ export async function registerRoutes(
         },
         "/api/v1/incidents": {
           get: { summary: "List incidents with pagination/filter/sort envelope", tags: ["Incidents", "v1"] },
+        },
+        "/api/v1/connectors": {
+          get: { summary: "List connectors with pagination envelope", tags: ["Connectors", "v1"] },
+        },
+        "/api/v1/ingestion/logs": {
+          get: { summary: "List ingestion logs with pagination envelope", tags: ["Ingestion", "v1"] },
+        },
+        "/api/v1/webhooks": {
+          get: { summary: "List outbound webhooks", tags: ["Webhooks", "v1"] },
+          post: { summary: "Create an outbound webhook", tags: ["Webhooks", "v1"] },
+        },
+        "/api/v1/webhooks/{id}": {
+          patch: { summary: "Update an outbound webhook", tags: ["Webhooks", "v1"] },
+          delete: { summary: "Delete an outbound webhook", tags: ["Webhooks", "v1"] },
+        },
+        "/api/v1/webhooks/{id}/logs": {
+          get: { summary: "List outbound webhook delivery logs with pagination", tags: ["Webhooks", "v1"] },
+        },
+        "/api/v1/api-keys/scopes": {
+          get: { summary: "List API key scope templates", tags: ["API Keys", "v1"] },
+        },
+        "/api/v1/api-keys/policies": {
+          get: { summary: "Get API key rotation and governance policies", tags: ["API Keys", "v1"] },
         },
       },
     });
