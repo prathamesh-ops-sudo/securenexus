@@ -5,10 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
@@ -67,7 +68,26 @@ export default function AlertsPage() {
   const [ruleCategory, setRuleCategory] = useState("");
   const [ruleExpiresAt, setRuleExpiresAt] = useState("");
   const [ruleEnabled, setRuleEnabled] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>("triaged");
+  const [savedViews, setSavedViews] = useState<Array<{ name: string; search: string; severity: string; showSuppressed: boolean }>>([]);
+  const [savedViewName, setSavedViewName] = useState("");
+  const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
+  const [queueFilter, setQueueFilter] = useState<"all" | "new" | "aging" | "breached">("all");
   const { toast } = useToast();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("alerts.savedViews.v1");
+      if (raw) setSavedViews(JSON.parse(raw));
+    } catch {
+      setSavedViews([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("alerts.savedViews.v1", JSON.stringify(savedViews));
+  }, [savedViews]);
 
   const { data: alerts, isLoading } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
@@ -225,6 +245,21 @@ export default function AlertsPage() {
     },
   });
 
+  const bulkUpdate = useMutation({
+    mutationFn: async (payload: { status?: string; suppressed?: boolean }) => {
+      const res = await apiRequest("POST", "/api/alerts/bulk-update", { alertIds: selectedIds, ...payload });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Bulk update complete", description: `Updated ${data.updatedCount || 0} alert(s)` });
+      setSelectedIds([]);
+    },
+    onError: (error: any) => {
+      toast({ title: "Bulk update failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const filtered = alerts?.filter((alert) => {
     const matchesSearch = !search ||
       alert.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -232,10 +267,49 @@ export default function AlertsPage() {
       alert.description?.toLowerCase().includes(search.toLowerCase());
     const matchesSeverity = severityFilter === "all" || alert.severity === severityFilter;
     const matchesSuppressed = showSuppressed || !alert.suppressed;
-    return matchesSearch && matchesSeverity && matchesSuppressed;
+    const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
+    const queueState = alert.status !== "new"
+      ? "other"
+      : ageMs >= 72 * 60 * 60 * 1000
+        ? "breached"
+        : ageMs >= 24 * 60 * 60 * 1000
+          ? "aging"
+          : "new";
+    const matchesQueue = queueFilter === "all" || queueState === queueFilter;
+    return matchesSearch && matchesSeverity && matchesSuppressed && matchesQueue;
   });
 
   const severities = ["all", "critical", "high", "medium", "low"];
+
+  useEffect(() => {
+    if (!filtered || filtered.length === 0) return;
+    if (!focusedAlertId || !filtered.some((a) => a.id === focusedAlertId)) {
+      setFocusedAlertId(filtered[0].id);
+    }
+  }, [filtered, focusedAlertId]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!filtered || filtered.length === 0) return;
+      const target = e.target as HTMLElement;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      const idx = filtered.findIndex((a) => a.id === focusedAlertId);
+      if (e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setFocusedAlertId(filtered[Math.min(idx < 0 ? 0 : idx + 1, filtered.length - 1)]?.id || null);
+      }
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setFocusedAlertId(filtered[Math.max(idx < 0 ? 0 : idx - 1, 0)]?.id || null);
+      }
+      if (e.key.toLowerCase() === "t" && selectedIds.length > 0) {
+        e.preventDefault();
+        bulkUpdate.mutate({ status: "triaged" });
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [filtered, focusedAlertId, selectedIds, bulkUpdate]);
 
   const handleTriageClick = (alertId: string) => {
     setSelectedAlertForTriage(alertId);
@@ -314,6 +388,17 @@ export default function AlertsPage() {
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-1">
+          {(["all", "new", "aging", "breached"] as const).map((state) => (
+            <button
+              key={state}
+              onClick={() => setQueueFilter(state)}
+              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${queueFilter === state ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"}`}
+            >
+              {state === "all" ? "Queue: All" : state === "new" ? "Queue: New" : state === "aging" ? "Queue: Aging" : "Queue: Breached"}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-2">
           <Switch
             checked={showSuppressed}
@@ -325,7 +410,56 @@ export default function AlertsPage() {
             Show Suppressed
           </label>
         </div>
+        <Input placeholder="View name" value={savedViewName} onChange={(e) => setSavedViewName(e.target.value)} className="w-36" />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!savedViewName.trim()}
+          onClick={() => {
+            const entry = { name: savedViewName.trim(), search, severity: severityFilter, showSuppressed };
+            setSavedViews((prev) => [entry, ...prev.filter((v) => v.name !== entry.name)].slice(0, 8));
+            setSavedViewName("");
+          }}
+        >
+          Save View
+        </Button>
       </div>
+
+      {savedViews.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {savedViews.map((v) => (
+            <Button key={v.name} size="sm" variant="secondary" onClick={() => {
+              setSearch(v.search);
+              setSeverityFilter(v.severity);
+              setShowSuppressed(v.showSuppressed);
+            }}>
+              {v.name}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {selectedIds.length > 0 && (
+        <Card>
+          <CardContent className="pt-4 flex items-center flex-wrap gap-2">
+            <Badge variant="outline">{selectedIds.length} selected</Badge>
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="new">New</SelectItem>
+                <SelectItem value="triaged">Triaged</SelectItem>
+                <SelectItem value="investigating">Investigating</SelectItem>
+                <SelectItem value="resolved">Resolved</SelectItem>
+                <SelectItem value="false_positive">False Positive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending}>Apply Status</Button>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: true })} disabled={bulkUpdate.isPending}>Suppress</Button>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: false })} disabled={bulkUpdate.isPending}>Unsuppress</Button>
+            <span className="text-xs text-muted-foreground">Shortcuts: J/K focus rows, T set selected to triaged.</span>
+          </CardContent>
+        </Card>
+      )}
 
       {showSuppressionRules && (
         <Card className="border-primary/30">
@@ -671,12 +805,22 @@ export default function AlertsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b text-left">
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
+                    <Checkbox
+                      checked={filtered && filtered.length > 0 && filtered.every((a) => selectedIds.includes(a.id))}
+                      onCheckedChange={(checked) => {
+                        if (!filtered) return;
+                        setSelectedIds(checked ? filtered.map((a) => a.id) : []);
+                      }}
+                    />
+                  </th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Alert</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">Source</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Category</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">MITRE Tactic</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Queue</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -684,11 +828,13 @@ export default function AlertsPage() {
                 {isLoading ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i} className="border-b last:border-0">
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-4" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                       <td className="px-4 py-3 hidden md:table-cell"><Skeleton className="h-4 w-24" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                       <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-20" /></td>
                       <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-28" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                     </tr>
@@ -697,10 +843,18 @@ export default function AlertsPage() {
                   filtered.map((alert) => (
                     <tr
                       key={alert.id}
-                      className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""}`}
+                      className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-muted/40" : ""}`}
                       onClick={() => navigate('/alerts/' + alert.id)}
                       data-testid={`row-alert-${alert.id}`}
                     >
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.includes(alert.id)}
+                          onCheckedChange={(checked) => {
+                            setSelectedIds((prev) => checked ? (prev.includes(alert.id) ? prev : [...prev, alert.id]) : prev.filter((id) => id !== alert.id));
+                          }}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -737,6 +891,25 @@ export default function AlertsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <AlertStatusBadge status={alert.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
+                          const queueState = alert.status !== "new"
+                            ? "other"
+                            : ageMs >= 72 * 60 * 60 * 1000
+                              ? "breached"
+                              : ageMs >= 24 * 60 * 60 * 1000
+                                ? "aging"
+                                : "new";
+                          if (queueState === "other") return <span className="text-[10px] text-muted-foreground">—</span>;
+                          const style = queueState === "breached"
+                            ? "bg-red-500/10 text-red-500 border-red-500/20"
+                            : queueState === "aging"
+                              ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                              : "bg-blue-500/10 text-blue-500 border-blue-500/20";
+                          return <span className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${style}`}>{queueState}</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -793,7 +966,7 @@ export default function AlertsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
                       No alerts found
                     </td>
                   </tr>

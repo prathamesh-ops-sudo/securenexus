@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securenexus
+  namespace: uat
+  labels:
+    app: securenexus
+    environment: uat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: securenexus
+      environment: uat
+  template:
+    metadata:
+      labels:
+        app: securenexus
+        environment: uat
+    spec:
+      containers:
+        - name: securenexus
+          image: ${IMAGE}
+          ports:
+            - containerPort: 5000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: securenexus-secrets
+          env:
+            - name: NODE_ENV
+              value: "uat"
+            - name: PORT
+              value: "5000"
+          readinessProbe:
+            httpGet:
+              path: /api/ops/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/ops/health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 256m
+              memory: 512Mi
+            limits:
+              cpu: 512m
+              memory: 1Gi

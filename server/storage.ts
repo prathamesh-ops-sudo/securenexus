@@ -21,6 +21,8 @@ import {
   type PredictiveAnomaly, type InsertPredictiveAnomaly, predictiveAnomalies,
   type AttackSurfaceAsset, type InsertAttackSurfaceAsset, attackSurfaceAssets,
   type RiskForecast, type InsertRiskForecast, riskForecasts,
+  type AnomalySubscription, type InsertAnomalySubscription, anomalySubscriptions,
+  type ForecastQualitySnapshot, type InsertForecastQualitySnapshot, forecastQualitySnapshots,
   type HardeningRecommendation, type InsertHardeningRecommendation, hardeningRecommendations,
   type AutoResponsePolicy, type InsertAutoResponsePolicy, autoResponsePolicies,
   type InvestigationRun, type InsertInvestigationRun, investigationRuns,
@@ -223,6 +225,12 @@ export interface IStorage {
   getRiskForecasts(orgId?: string): Promise<RiskForecast[]>;
   createRiskForecast(forecast: InsertRiskForecast): Promise<RiskForecast>;
   clearRiskForecasts(orgId: string): Promise<void>;
+  getAnomalySubscriptions(orgId?: string): Promise<AnomalySubscription[]>;
+  createAnomalySubscription(subscription: InsertAnomalySubscription): Promise<AnomalySubscription>;
+  updateAnomalySubscription(id: string, updates: Partial<AnomalySubscription>): Promise<AnomalySubscription | undefined>;
+  deleteAnomalySubscription(id: string): Promise<boolean>;
+  getForecastQualitySnapshots(orgId?: string): Promise<ForecastQualitySnapshot[]>;
+  createForecastQualitySnapshot(snapshot: InsertForecastQualitySnapshot): Promise<ForecastQualitySnapshot>;
   getHardeningRecommendations(orgId?: string): Promise<HardeningRecommendation[]>;
   createHardeningRecommendation(rec: InsertHardeningRecommendation): Promise<HardeningRecommendation>;
   updateHardeningRecommendation(id: string, updates: Partial<InsertHardeningRecommendation>): Promise<HardeningRecommendation | undefined>;
@@ -1272,6 +1280,40 @@ export class DatabaseStorage implements IStorage {
 
   async clearRiskForecasts(orgId: string): Promise<void> {
     await db.delete(riskForecasts).where(eq(riskForecasts.orgId, orgId));
+  }
+
+  async getAnomalySubscriptions(orgId?: string): Promise<AnomalySubscription[]> {
+    if (orgId) {
+      return db.select().from(anomalySubscriptions).where(eq(anomalySubscriptions.orgId, orgId)).orderBy(desc(anomalySubscriptions.createdAt));
+    }
+    return db.select().from(anomalySubscriptions).orderBy(desc(anomalySubscriptions.createdAt));
+  }
+
+  async createAnomalySubscription(subscription: InsertAnomalySubscription): Promise<AnomalySubscription> {
+    const [created] = await db.insert(anomalySubscriptions).values(subscription).returning();
+    return created;
+  }
+
+  async updateAnomalySubscription(id: string, updates: Partial<AnomalySubscription>): Promise<AnomalySubscription | undefined> {
+    const [updated] = await db.update(anomalySubscriptions).set({ ...updates, updatedAt: new Date() }).where(eq(anomalySubscriptions.id, id)).returning();
+    return updated;
+  }
+
+  async deleteAnomalySubscription(id: string): Promise<boolean> {
+    const result = await db.delete(anomalySubscriptions).where(eq(anomalySubscriptions.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getForecastQualitySnapshots(orgId?: string): Promise<ForecastQualitySnapshot[]> {
+    if (orgId) {
+      return db.select().from(forecastQualitySnapshots).where(eq(forecastQualitySnapshots.orgId, orgId)).orderBy(desc(forecastQualitySnapshots.measuredAt));
+    }
+    return db.select().from(forecastQualitySnapshots).orderBy(desc(forecastQualitySnapshots.measuredAt));
+  }
+
+  async createForecastQualitySnapshot(snapshot: InsertForecastQualitySnapshot): Promise<ForecastQualitySnapshot> {
+    const [created] = await db.insert(forecastQualitySnapshots).values(snapshot).returning();
+    return created;
   }
 
   async getHardeningRecommendations(orgId?: string): Promise<HardeningRecommendation[]> {

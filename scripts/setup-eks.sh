@@ -24,7 +24,7 @@ kubectl apply -f k8s/monitoring/prometheus.yml
 kubectl apply -f k8s/monitoring/grafana.yml
 
 echo "6. Setup complete!"
-echo "   - Namespaces: staging, production, argo-rollouts, monitoring"
+echo "   - Namespaces: staging, uat, production, argo-rollouts, monitoring"
 echo "   - Argo Rollouts: installed in argo-rollouts namespace"
 echo "   - Monitoring: Prometheus + Grafana in monitoring namespace"
 echo ""
@@ -32,4 +32,5 @@ echo "Next steps:"
 echo "  1. Update k8s/base/secrets.yml with real DATABASE_URL and SESSION_SECRET"
 echo "  2. Build and push Docker image: docker build -t $ECR_REPO:latest . && docker push $ECR_REPO:latest"
 echo "  3. Deploy staging: export IMAGE=$ECR_REPO:latest && envsubst < k8s/staging/rollout.yml | kubectl apply -f -"
-echo "  4. Deploy production: export IMAGE=$ECR_REPO:latest && envsubst < k8s/production/rollout.yml | kubectl apply -f -"
+echo "  4. Deploy UAT: export IMAGE=$ECR_REPO:latest && envsubst < k8s/uat/rollout.yml | kubectl apply -f -"
+echo "  5. Deploy production: export IMAGE=$ECR_REPO:latest && envsubst < k8s/production/rollout.yml | kubectl apply -f -"

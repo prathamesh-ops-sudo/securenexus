@@ -67,6 +67,8 @@ function stepIcon(stepType: string) {
 
 function PoliciesTab() {
   const { toast } = useToast();
+  const [globalCooldown, setGlobalCooldown] = useState("30");
+  const [globalRatePerHour, setGlobalRatePerHour] = useState("10");
 
   const { data: policies, isLoading } = useQuery<any[]>({
     queryKey: ["/api/autonomous/policies"],
@@ -112,6 +114,27 @@ function PoliciesTab() {
     },
   });
 
+  const applyGlobalControls = useMutation({
+    mutationFn: async () => {
+      const list = Array.isArray(policies) ? policies : [];
+      const targets = list.filter((p) => p.status === "active");
+      await Promise.all(targets.map((policy) =>
+        apiRequest("PATCH", `/api/autonomous/policies/${policy.id}`, {
+          cooldownMinutes: Number(globalCooldown) || 0,
+          maxActionsPerHour: Number(globalRatePerHour) || 0,
+        })
+      ));
+      return targets.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/autonomous/policies"] });
+      toast({ title: "Global controls applied", description: `Updated ${count} active policy(ies)` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to apply controls", description: err.message, variant: "destructive" });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-3" data-testid="policies-loading">
@@ -147,6 +170,26 @@ function PoliciesTab() {
           Seed Default Policies
         </Button>
       </div>
+
+      <Card data-testid="card-global-safety-controls">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Unified Cooldown / Rate Controls</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase text-muted-foreground">Cooldown (min)</div>
+            <Input value={globalCooldown} onChange={(e) => setGlobalCooldown(e.target.value)} className="w-28" />
+          </div>
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase text-muted-foreground">Rate (/hour)</div>
+            <Input value={globalRatePerHour} onChange={(e) => setGlobalRatePerHour(e.target.value)} className="w-28" />
+          </div>
+          <Button onClick={() => applyGlobalControls.mutate()} disabled={applyGlobalControls.isPending}>
+            {applyGlobalControls.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Apply to Active Policies
+          </Button>
+        </CardContent>
+      </Card>
 
       {!policies || policies.length === 0 ? (
         <Card data-testid="empty-policies">
@@ -203,7 +246,7 @@ function PoliciesTab() {
                           </span>
                         )}
                       </div>
-                      {(policy.cooldownMinutes || policy.rateLimitPerHour) && (
+                      {(policy.cooldownMinutes || policy.maxActionsPerHour || policy.rateLimitPerHour) && (
                         <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                           {policy.cooldownMinutes && (
                             <span className="flex items-center gap-1">
@@ -211,10 +254,10 @@ function PoliciesTab() {
                               Cooldown: {policy.cooldownMinutes}m
                             </span>
                           )}
-                          {policy.rateLimitPerHour && (
+                          {(policy.maxActionsPerHour || policy.rateLimitPerHour) && (
                             <span className="flex items-center gap-1">
                               <Zap className="h-3 w-3" />
-                              Rate: {policy.rateLimitPerHour}/hr
+                              Rate: {policy.maxActionsPerHour || policy.rateLimitPerHour}/hr
                             </span>
                           )}
                         </div>
@@ -258,6 +301,51 @@ function PoliciesTab() {
               </Card>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionTimelineTab() {
+  const { data: actions, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/response-actions"],
+  });
+
+  if (isLoading) {
+    return <Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>;
+  }
+
+  return (
+    <div className="space-y-3" data-testid="section-action-timeline">
+      <div className="flex items-center gap-2">
+        <Clock className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Action Audit Timeline</h2>
+        <Badge variant="outline" className="text-[10px]">{actions?.length ?? 0}</Badge>
+      </div>
+      {!actions || actions.length === 0 ? (
+        <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">No response actions recorded yet.</CardContent></Card>
+      ) : (
+        <div className="space-y-2">
+          {actions.slice(0, 50).map((action, idx) => (
+            <Card key={action.id || idx}>
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${runStatusBadge(action.status || "queued")}`}>
+                      {action.status || "queued"}
+                    </span>
+                    <span className="text-sm font-medium">{formatType(action.actionType || "unknown")}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{formatTimestamp(action.executedAt || action.createdAt)}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Target: <span className="text-foreground font-medium">{action.targetValue || action.target || "n/a"}</span>
+                  {action.incidentId ? <span> · Incident: <span className="text-foreground font-medium">{action.incidentId}</span></span> : null}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>
@@ -684,6 +772,10 @@ export default function AutonomousResponsePage() {
             <RotateCcw className="h-4 w-4 mr-1.5" />
             Rollbacks
           </TabsTrigger>
+          <TabsTrigger value="timeline" data-testid="tab-action-timeline">
+            <Clock className="h-4 w-4 mr-1.5" />
+            Action Timeline
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="policies" className="mt-4">
@@ -696,6 +788,10 @@ export default function AutonomousResponsePage() {
 
         <TabsContent value="rollbacks" className="mt-4">
           <RollbacksTab />
+        </TabsContent>
+
+        <TabsContent value="timeline" className="mt-4">
+          <ActionTimelineTab />
         </TabsContent>
       </Tabs>
     </div>

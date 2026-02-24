@@ -733,6 +733,9 @@ export default function PlaybooksPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [executeDryRun, setExecuteDryRun] = useState(false);
   const [executeDialogId, setExecuteDialogId] = useState<string | null>(null);
+  const [proposalObjective, setProposalObjective] = useState("");
+  const [proposalSeverity, setProposalSeverity] = useState("high");
+  const [proposal, setProposal] = useState<any | null>(null);
 
   const { data: playbooks, isLoading: playbooksLoading } = useQuery<Playbook[]>({
     queryKey: ["/api/playbooks"],
@@ -836,6 +839,23 @@ export default function PlaybooksPage() {
     },
   });
 
+  const proposePlaybookMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ai/playbook-authoring/propose", {
+        objective: proposalObjective,
+        severity: proposalSeverity,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setProposal(data);
+      toast({ title: "AI proposal generated", description: "Review and approve the suggested actions." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Proposal failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   function closeDialog() {
     setShowDialog(false);
     setEditingPlaybook(null);
@@ -903,6 +923,51 @@ export default function PlaybooksPage() {
           Create Playbook
         </Button>
       </div>
+
+      <Card data-testid="card-ai-playbook-authoring">
+        <CardHeader>
+          <CardTitle className="text-base">Guardrailed AI Playbook Authoring</CardTitle>
+          <CardDescription>AI proposes actions; analyst reviews and approves before execution.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <Input
+              placeholder="Objective (e.g. contain lateral movement)"
+              value={proposalObjective}
+              onChange={(e) => setProposalObjective(e.target.value)}
+              data-testid="input-proposal-objective"
+            />
+            <Select value={proposalSeverity} onValueChange={setProposalSeverity}>
+              <SelectTrigger data-testid="select-proposal-severity"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={() => proposePlaybookMutation.mutate()} disabled={!proposalObjective || proposePlaybookMutation.isPending} data-testid="button-generate-proposal">
+              {proposePlaybookMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Generate Proposal
+            </Button>
+          </div>
+          {proposal && (
+            <div className="border rounded-md p-3 space-y-2" data-testid="panel-playbook-proposal">
+              <div className="text-sm font-medium">{proposal.objective}</div>
+              <div className="text-xs text-muted-foreground">Guardrails: {(proposal.guardrailsApplied || []).join(", ")}</div>
+              <div className="space-y-1">
+                {(proposal.proposedActions || []).map((action: any, idx: number) => (
+                  <div key={idx} className="text-sm flex items-center justify-between border rounded p-2">
+                    <span>{action.type}</span>
+                    <span className="text-xs text-muted-foreground">{action.reason}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs font-medium text-amber-500">Requires analyst approval before playbook execution.</div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card>

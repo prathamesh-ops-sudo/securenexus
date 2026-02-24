@@ -304,6 +304,47 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/alerts/bulk-update", isAuthenticated, async (req, res) => {
+    try {
+      const { alertIds, status, suppressed, assignedTo } = req.body || {};
+      const orgId = (req as any).user?.orgId;
+      if (!Array.isArray(alertIds) || alertIds.length === 0) {
+        return res.status(400).json({ message: "alertIds array is required" });
+      }
+
+      let updatedCount = 0;
+      for (const id of alertIds) {
+        const alertId = p(String(id));
+        const existing = await storage.getAlert(alertId);
+        if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) continue;
+        const patch: Record<string, any> = {};
+        if (typeof status === "string" && status.length > 0) patch.status = status;
+        if (typeof suppressed === "boolean") {
+          patch.suppressed = suppressed;
+          patch.suppressedBy = suppressed ? ((req as any).user?.id || null) : null;
+        }
+        if (typeof assignedTo === "string") patch.assignedTo = assignedTo.trim() || null;
+        if (Object.keys(patch).length === 0) continue;
+        const updated = await storage.updateAlert(alertId, patch as any);
+        if (updated) updatedCount++;
+      }
+
+      await storage.createAuditLog({
+        orgId,
+        userId: (req as any).user?.id,
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
+        action: "alerts_bulk_update",
+        resourceType: "alert",
+        details: { updatedCount, status: status || null, suppressed: typeof suppressed === "boolean" ? suppressed : null, assignedTo: assignedTo || null },
+      });
+
+      res.json({ updatedCount });
+    } catch (error) {
+      console.error("Bulk alert update failed:", error);
+      res.status(500).json({ message: "Failed to bulk update alerts" });
+    }
+  });
+
   // Alert tags
   app.get("/api/alerts/:id/tags", isAuthenticated, async (req, res) => {
     try {
@@ -3333,7 +3374,8 @@ export async function registerRoutes(
   app.get("/api/response-actions", isAuthenticated, async (req, res) => {
     try {
       const { incidentId } = req.query;
-      res.json(await storage.getResponseActions(undefined, incidentId as string));
+      const orgId = (req as any).user?.orgId;
+      res.json(await storage.getResponseActions(orgId, incidentId as string));
     } catch (error) { res.status(500).json({ message: "Failed to fetch response actions" }); }
   });
 
@@ -3454,6 +3496,33 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch forecasts" }); }
   });
 
+  app.get("/api/predictive/forecast-quality", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const snapshots = await storage.getForecastQualitySnapshots(orgId);
+      const grouped = snapshots.reduce((acc: Record<string, any[]>, s) => {
+        if (!acc[s.module]) acc[s.module] = [];
+        acc[s.module].push(s);
+        return acc;
+      }, {});
+      const trends = Object.entries(grouped).map(([module, records]) => {
+        const ordered = [...records].sort((a, b) => +new Date(a.measuredAt || 0) - +new Date(b.measuredAt || 0));
+        const latest = ordered[ordered.length - 1];
+        const earliest = ordered[0];
+        return {
+          module,
+          latestPrecision: latest?.precision || 0,
+          latestRecall: latest?.recall || 0,
+          precisionTrend: (latest?.precision || 0) - (earliest?.precision || 0),
+          recallTrend: (latest?.recall || 0) - (earliest?.recall || 0),
+          sampleSize: latest?.sampleSize || 0,
+          points: ordered,
+        };
+      });
+      res.json(trends);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch forecast quality" }); }
+  });
+
   app.get("/api/predictive/recommendations", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -3472,6 +3541,26 @@ export async function registerRoutes(
       if (!orgId) return res.status(400).json({ message: "Organization required" });
       const { runPredictiveAnalysis } = await import("./predictive-engine");
       const result = await runPredictiveAnalysis(orgId, storage);
+
+      const feedback = await storage.getAiFeedback(undefined, undefined);
+      const moduleFeedback = ["triage", "correlation", "forecast"].map((module) => {
+        const filtered = feedback.filter((f) => (f.resourceType || "").includes(module));
+        const positives = filtered.filter((f) => f.rating >= 4).length;
+        const negatives = filtered.filter((f) => f.rating <= 2).length;
+        const precision = filtered.length > 0 ? positives / filtered.length : 0.5;
+        const recall = filtered.length > 0 ? positives / Math.max(positives + negatives, 1) : 0.5;
+        return { module, precision, recall, sampleSize: filtered.length };
+      });
+      for (const metric of moduleFeedback) {
+        await storage.createForecastQualitySnapshot({
+          orgId,
+          module: metric.module,
+          precision: metric.precision,
+          recall: metric.recall,
+          sampleSize: metric.sampleSize,
+        });
+      }
+
       await storage.createAuditLog({
         orgId,
         userId: (req as any).user?.id,
@@ -3497,6 +3586,73 @@ export async function registerRoutes(
       if (!updated) return res.status(404).json({ message: "Recommendation not found" });
       res.json(updated);
     } catch (error) { res.status(500).json({ message: "Failed to update recommendation" }); }
+  });
+
+  app.get("/api/predictive/anomaly-subscriptions", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const rows = await storage.getAnomalySubscriptions(orgId);
+      res.json(rows);
+    } catch (error) { res.status(500).json({ message: "Failed to fetch anomaly subscriptions" }); }
+  });
+
+  app.post("/api/predictive/anomaly-subscriptions", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const userId = (req as any).user?.id;
+      const created = await storage.createAnomalySubscription({ ...req.body, orgId, createdBy: userId });
+      res.status(201).json(created);
+    } catch (error) { res.status(500).json({ message: "Failed to create anomaly subscription" }); }
+  });
+
+  app.delete("/api/predictive/anomaly-subscriptions/:id", isAuthenticated, async (req, res) => {
+    try {
+      const ok = await storage.deleteAnomalySubscription(req.params.id);
+      if (!ok) return res.status(404).json({ message: "Subscription not found" });
+      res.status(204).send();
+    } catch (error) { res.status(500).json({ message: "Failed to delete anomaly subscription" }); }
+  });
+
+  app.get("/api/incidents/:id/root-cause-summary", isAuthenticated, async (req, res) => {
+    try {
+      const incident = await storage.getIncident(req.params.id);
+      if (!incident) return res.status(404).json({ message: "Incident not found" });
+      const relatedAlerts = await storage.getAlertsByIncident(incident.id);
+      const byCategory = relatedAlerts.reduce((acc: Record<string, number>, a) => {
+        acc[a.category || "other"] = (acc[a.category || "other"] || 0) + 1;
+        return acc;
+      }, {});
+      const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown";
+      const impactedAssets = Array.from(new Set(relatedAlerts.flatMap((a) => [a.sourceIp, a.destIp, a.hostname].filter(Boolean)))).slice(0, 6);
+      const summary = `Correlated ${relatedAlerts.length} alerts indicate a likely ${topCategory.replace(/_/g, " ")} driven campaign. Most evidence converges on shared entities (${impactedAssets.slice(0, 3).join(", ") || "none"}) with escalating severity and temporal proximity. Recommended next step: validate initial access vector and contain high-risk assets first.`;
+      res.json({
+        incidentId: incident.id,
+        summary,
+        contributingSignals: Object.entries(byCategory).map(([category, count]) => ({ category, count })),
+        impactedAssets,
+      });
+    } catch (error) { res.status(500).json({ message: "Failed to build root cause summary" }); }
+  });
+
+  app.post("/api/ai/playbook-authoring/propose", isAuthenticated, async (req, res) => {
+    try {
+      const { objective, severity = "high", guardrails = [] } = req.body || {};
+      const normalized = String(objective || "Contain suspicious activity").trim();
+      const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
+      const actions = [
+        { type: "auto_triage", reason: "Initial enrichment and classification" },
+        { type: "assign_analyst", reason: "Ensure analyst ownership" },
+        severity === "critical"
+          ? { type: "isolate_host", reason: "Containment for critical blast radius" }
+          : { type: "notify_slack", reason: "Notify response channel" },
+      ].filter((a) => !blocked.has(a.type));
+      res.json({
+        objective: normalized,
+        guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
+        proposedActions: actions,
+        requiresAnalystApproval: true,
+      });
+    } catch (error) { res.status(500).json({ message: "Failed to generate playbook proposal" }); }
   });
 
   // === Phase 9: Autonomous Response & Agentic SOC ===
@@ -6181,6 +6337,90 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/v1/alerts", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "25"), 10) || 25, 1), 200);
+      const search = String(req.query.search || "").trim().toLowerCase();
+      const severity = String(req.query.severity || "all").toLowerCase();
+      const status = String(req.query.status || "all").toLowerCase();
+      const sortBy = String(req.query.sortBy || "createdAt");
+      const sortDir = String(req.query.sortDir || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+
+      let rows = await storage.getAlerts(orgId);
+      if (search) {
+        rows = rows.filter((a) =>
+          (a.title || "").toLowerCase().includes(search)
+          || (a.source || "").toLowerCase().includes(search)
+          || (a.description || "").toLowerCase().includes(search)
+        );
+      }
+      if (severity !== "all") rows = rows.filter((a) => String(a.severity || "").toLowerCase() === severity);
+      if (status !== "all") rows = rows.filter((a) => String(a.status || "").toLowerCase() === status);
+
+      const sortable = [...rows];
+      sortable.sort((a: any, b: any) => {
+        const av = a?.[sortBy];
+        const bv = b?.[sortBy];
+        if (av == null && bv == null) return 0;
+        if (av == null) return sortDir === "asc" ? -1 : 1;
+        if (bv == null) return sortDir === "asc" ? 1 : -1;
+        if (av < bv) return sortDir === "asc" ? -1 : 1;
+        if (av > bv) return sortDir === "asc" ? 1 : -1;
+        return 0;
+      });
+
+      const total = sortable.length;
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      const start = (page - 1) * limit;
+      const data = sortable.slice(start, start + limit);
+
+      res.json({
+        data,
+        meta: { page, limit, total, totalPages, sortBy, sortDir, filters: { search: search || null, severity, status } },
+        errors: null,
+      });
+    } catch (error) {
+      res.status(500).json({ data: [], meta: null, errors: [{ message: "Failed to fetch alerts" }] });
+    }
+  });
+
+  app.get("/api/v1/incidents", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "25"), 10) || 25, 1), 200);
+      const search = String(req.query.search || "").trim().toLowerCase();
+      const severity = String(req.query.severity || "all").toLowerCase();
+      const status = String(req.query.status || "all").toLowerCase();
+
+      let rows = await storage.getIncidents(orgId);
+      if (search) {
+        rows = rows.filter((i) =>
+          (i.title || "").toLowerCase().includes(search)
+          || (i.summary || "").toLowerCase().includes(search)
+        );
+      }
+      if (severity !== "all") rows = rows.filter((i) => String(i.severity || "").toLowerCase() === severity);
+      if (status !== "all") rows = rows.filter((i) => String(i.status || "").toLowerCase() === status);
+
+      rows.sort((a, b) => (+new Date(b.createdAt || 0)) - (+new Date(a.createdAt || 0)));
+      const total = rows.length;
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      const start = (page - 1) * limit;
+      const data = rows.slice(start, start + limit);
+
+      res.json({
+        data,
+        meta: { page, limit, total, totalPages, sortBy: "createdAt", sortDir: "desc", filters: { search: search || null, severity, status } },
+        errors: null,
+      });
+    } catch (error) {
+      res.status(500).json({ data: [], meta: null, errors: [{ message: "Failed to fetch incidents" }] });
+    }
+  });
+
   app.get("/api/v1/openapi", async (_req, res) => {
     res.json({
       openapi: "3.0.3",
@@ -6259,6 +6499,12 @@ export async function registerRoutes(
         },
         "/api/v1/status": {
           get: { summary: "Get API version and status", tags: ["System"] },
+        },
+        "/api/v1/alerts": {
+          get: { summary: "List alerts with pagination/filter/sort envelope", tags: ["Alerts", "v1"] },
+        },
+        "/api/v1/incidents": {
+          get: { summary: "List incidents with pagination/filter/sort envelope", tags: ["Incidents", "v1"] },
         },
       },
     });

@@ -652,6 +652,31 @@ export const riskForecasts = pgTable("risk_forecasts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const anomalySubscriptions = pgTable("anomaly_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  metricPrefix: text("metric_prefix").default(""),
+  minimumSeverity: text("minimum_severity").notNull().default("medium"),
+  minDelta: real("min_delta").notNull().default(10),
+  channel: text("channel").notNull().default("in_app"),
+  target: text("target"),
+  status: text("status").notNull().default("active"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const forecastQualitySnapshots = pgTable("forecast_quality_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  module: text("module").notNull(),
+  precision: real("precision").notNull().default(0),
+  recall: real("recall").notNull().default(0),
+  sampleSize: integer("sample_size").notNull().default(0),
+  measuredAt: timestamp("measured_at").defaultNow(),
+});
+
 export const hardeningRecommendations = pgTable("hardening_recommendations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").references(() => organizations.id),
@@ -864,6 +889,14 @@ export const riskForecastsRelations = relations(riskForecasts, ({ one }) => ({
   organization: one(organizations, { fields: [riskForecasts.orgId], references: [organizations.id] }),
 }));
 
+export const anomalySubscriptionsRelations = relations(anomalySubscriptions, ({ one }) => ({
+  organization: one(organizations, { fields: [anomalySubscriptions.orgId], references: [organizations.id] }),
+}));
+
+export const forecastQualitySnapshotsRelations = relations(forecastQualitySnapshots, ({ one }) => ({
+  organization: one(organizations, { fields: [forecastQualitySnapshots.orgId], references: [organizations.id] }),
+}));
+
 export const hardeningRecommendationsRelations = relations(hardeningRecommendations, ({ one }) => ({
   organization: one(organizations, { fields: [hardeningRecommendations.orgId], references: [organizations.id] }),
 }));
@@ -895,6 +928,8 @@ export const insertResponseActionSchema = createInsertSchema(responseActions).om
 export const insertPredictiveAnomalySchema = createInsertSchema(predictiveAnomalies).omit({ id: true, createdAt: true });
 export const insertAttackSurfaceAssetSchema = createInsertSchema(attackSurfaceAssets).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertRiskForecastSchema = createInsertSchema(riskForecasts).omit({ id: true, createdAt: true });
+export const insertAnomalySubscriptionSchema = createInsertSchema(anomalySubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertForecastQualitySnapshotSchema = createInsertSchema(forecastQualitySnapshots).omit({ id: true, measuredAt: true });
 export const insertHardeningRecommendationSchema = createInsertSchema(hardeningRecommendations).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAutoResponsePolicySchema = createInsertSchema(autoResponsePolicies).omit({ id: true, createdAt: true, updatedAt: true, executionCount: true, lastTriggeredAt: true });
 export const insertInvestigationRunSchema = createInsertSchema(investigationRuns).omit({ id: true, createdAt: true, completedAt: true, duration: true, error: true });
@@ -956,6 +991,10 @@ export type AttackSurfaceAsset = typeof attackSurfaceAssets.$inferSelect;
 export type InsertAttackSurfaceAsset = z.infer<typeof insertAttackSurfaceAssetSchema>;
 export type RiskForecast = typeof riskForecasts.$inferSelect;
 export type InsertRiskForecast = z.infer<typeof insertRiskForecastSchema>;
+export type AnomalySubscription = typeof anomalySubscriptions.$inferSelect;
+export type InsertAnomalySubscription = z.infer<typeof insertAnomalySubscriptionSchema>;
+export type ForecastQualitySnapshot = typeof forecastQualitySnapshots.$inferSelect;
+export type InsertForecastQualitySnapshot = z.infer<typeof insertForecastQualitySnapshotSchema>;
 export type HardeningRecommendation = typeof hardeningRecommendations.$inferSelect;
 export type InsertHardeningRecommendation = z.infer<typeof insertHardeningRecommendationSchema>;
 export type AutoResponsePolicy = typeof autoResponsePolicies.$inferSelect;
