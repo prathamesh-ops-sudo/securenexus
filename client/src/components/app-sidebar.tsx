@@ -1,9 +1,11 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronRight, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText, Star, StarOff, Clock } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -53,19 +55,59 @@ const adminNavItems = [
   { title: "Settings", url: "/settings", icon: Settings, description: "Configuration" },
 ];
 
+const ADMIN_ONLY_URLS = ["/team", "/onboarding", "/settings", "/compliance"];
+const ANALYST_HIDDEN_URLS = ["/team", "/onboarding"];
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [recentPages, setRecentPages] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("sidebar.favorites.v1");
+      if (raw) setFavorites(JSON.parse(raw));
+    } catch { setFavorites([]); }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar.favorites.v1", JSON.stringify(favorites));
+  }, [favorites]);
+
+  useEffect(() => {
+    if (location === "/") return;
+    setRecentPages(prev => {
+      const updated = [location, ...prev.filter(p => p !== location)].slice(0, 5);
+      return updated;
+    });
+  }, [location]);
+
+  const toggleFavorite = (url: string) => {
+    setFavorites(prev =>
+      prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url].slice(0, 8)
+    );
+  };
+
+  const userRole = (user as any)?.role || "analyst";
 
   const initials = user
     ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U"
     : "U";
 
+  function filterByRole(items: typeof mainNavItems) {
+    if (userRole === "owner" || userRole === "admin") return items;
+    if (userRole === "read_only") return items.filter(i => !ADMIN_ONLY_URLS.includes(i.url));
+    return items.filter(i => !ANALYST_HIDDEN_URLS.includes(i.url));
+  }
+
   function renderNavGroup(items: typeof mainNavItems) {
+    const filtered = filterByRole(items);
     return (
       <SidebarMenu>
-        {items.map((item) => {
+        {filtered.map((item) => {
           const isActive = item.url === "/" ? location === "/" : location.startsWith(item.url);
+          const isFav = favorites.includes(item.url);
           return (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton
@@ -79,6 +121,14 @@ export function AppSidebar() {
                   {isActive && <ChevronRight className="ml-auto h-3 w-3 opacity-50" />}
                 </Link>
               </SidebarMenuButton>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-5 w-5 opacity-0 group-hover/sidebar:opacity-100 hover:opacity-100 transition-opacity"
+                onClick={(e) => { e.stopPropagation(); toggleFavorite(item.url); }}
+              >
+                {isFav ? <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" /> : <StarOff className="h-3 w-3 text-muted-foreground" />}
+              </Button>
             </SidebarMenuItem>
           );
         })}

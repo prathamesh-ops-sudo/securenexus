@@ -9,11 +9,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule } from "@shared/schema";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface CorrelationGroup {
   groupName: string;
@@ -74,6 +75,8 @@ export default function AlertsPage() {
   const [savedViewName, setSavedViewName] = useState("");
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
   const [queueFilter, setQueueFilter] = useState<"all" | "new" | "aging" | "breached">("all");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
   const { toast } = useToast();
 
   useEffect(() => {
@@ -840,7 +843,7 @@ export default function AlertsPage() {
                     </tr>
                   ))
                 ) : filtered && filtered.length > 0 ? (
-                  filtered.map((alert) => (
+                  filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((alert) => (
                     <tr
                       key={alert.id}
                       className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-muted/40" : ""}`}
@@ -967,13 +970,31 @@ export default function AlertsPage() {
                 ) : (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                      No alerts found
+                      <AlertTriangle className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
+                      <p>No alerts found</p>
+                      <p className="text-xs mt-1">Try adjusting your filters or search criteria</p>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {filtered && filtered.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <span className="text-xs text-muted-foreground">
+                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+                <span className="text-xs px-2">{page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}</span>
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

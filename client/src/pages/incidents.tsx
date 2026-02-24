@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -247,6 +248,8 @@ export default function IncidentsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [queueTab, setQueueTab] = useState<QueueTab>("all");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
 
   const { data: incidents, isLoading } = useQuery<Incident[]>({
     queryKey: ["/api/incidents"],
@@ -386,7 +389,7 @@ export default function IncidentsPage() {
                     </tr>
                   ))
                 ) : filtered.length > 0 ? (
-                  filtered.map((incident) => {
+                  filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((incident) => {
                     const slaStatus = getSlaStatus(incident);
                     return (
                       <tr
@@ -448,6 +451,22 @@ export default function IncidentsPage() {
               </tbody>
             </table>
           </div>
+          {filtered.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <span className="text-xs text-muted-foreground">
+                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+                <span className="text-xs px-2">{page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}</span>
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

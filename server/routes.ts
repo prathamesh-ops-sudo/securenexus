@@ -349,35 +349,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/alerts", isAuthenticated, async (req, res) => {
-    try {
-      const offset = Number(req.query.offset ?? 0) || 0;
-      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
-      const search = typeof req.query.search === "string" ? req.query.search : undefined;
-
-      const { items, total } = await storage.getAlertsPaginated({
-        offset,
-        limit,
-        search,
-      });
-
-      return sendEnvelope(res, items, {
-        meta: { offset, limit, total, search: search ?? null },
-      });
-    } catch (error: any) {
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [
-          {
-            code: "ALERTS_LIST_FAILED",
-            message: "Failed to fetch alerts",
-            details: error?.message,
-          },
-        ],
-      });
-    }
-  });
-
   app.get("/api/alerts/:id", isAuthenticated, async (req, res) => {
     try {
       const alert = await storage.getAlert(p(req.params.id));
@@ -388,7 +359,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts", isAuthenticated, async (req, res) => {
+  app.post("/api/alerts", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const parsed = insertAlertSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -402,7 +373,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/alerts/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const parsed = insertAlertSchema.partial().safeParse(req.body);
       if (!parsed.success) {
@@ -416,7 +387,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id/status", isAuthenticated, async (req, res) => {
+  app.patch("/api/alerts/:id/status", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const { status, incidentId } = req.body;
       if (!status) return res.status(400).json({ message: "Status required" });
@@ -428,7 +399,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts/bulk-update", isAuthenticated, async (req, res) => {
+  app.post("/api/alerts/bulk-update", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const { alertIds, status, suppressed, assignedTo } = req.body || {};
       const orgId = (req as any).user?.orgId;
@@ -572,7 +543,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/incidents", isAuthenticated, async (req, res) => {
+  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const parsed = insertIncidentSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -598,7 +569,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/incidents/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/incidents/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const parsed = insertIncidentSchema.partial().safeParse(req.body);
       if (!parsed.success) {
@@ -1025,7 +996,7 @@ export async function registerRoutes(
     return sendEnvelope(res, policies);
   });
 
-  app.post("/api/api-keys", isAuthenticated, async (req, res) => {
+  app.post("/api/api-keys", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "write"), async (req, res) => {
     try {
       const { name, orgId, scopes } = req.body;
       if (!name) return res.status(400).json({ message: "Key name is required" });
@@ -1060,7 +1031,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/api-keys/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/api-keys/:id", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "admin"), async (req, res) => {
     try {
       const revoked = await storage.revokeApiKey(p(req.params.id));
       if (!revoked) return res.status(404).json({ message: "API key not found" });
@@ -3414,7 +3385,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/compliance/retention/run", isAuthenticated, async (req, res) => {
+  app.post("/api/compliance/retention/run", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const user = (req as any).user;
       const orgId = user?.orgId;
@@ -4370,7 +4341,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/ai-deployment/config", isAuthenticated, async (req, res) => {
+  app.put("/api/ai-deployment/config", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId || "default";
       const parsed = insertAiDeploymentConfigSchema.safeParse({ ...req.body, orgId });
