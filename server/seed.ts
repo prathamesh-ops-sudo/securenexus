@@ -1,5 +1,10 @@
 import { db } from "./db";
-import { organizations, alerts, incidents, tags, incidentTags, alertTags, auditLogs, incidentComments } from "@shared/schema";
+import {
+  organizations, alerts, incidents, tags, incidentTags, alertTags,
+  auditLogs, incidentComments, connectors, integrationConfigs,
+  endpointAssets, cspmAccounts, cspmScans, cspmFindings,
+  endpointTelemetry, ingestionLogs,
+} from "@shared/schema";
 import { count } from "drizzle-orm";
 
 export async function seedDatabase() {
@@ -162,5 +167,116 @@ export async function seedDatabase() {
     { orgId: org.id, userId: "alex.wong", userName: "Alex Wong", action: "alert.dismiss", resourceType: "alert", resourceId: insertedAlerts[11].id, details: JSON.stringify({ reason: "Expected vulnerability scanner activity" }) },
   ]);
 
-  console.log("Database seeded with Phase 1 data: org, 3 incidents, 12 alerts, 10 tags, comments, audit logs");
+  // Seed connectors for onboarding checklist
+  await db.insert(connectors).values([
+    {
+      orgId: org.id, name: "CrowdStrike Falcon", type: "crowdstrike", authType: "oauth2",
+      config: { baseUrl: "https://api.crowdstrike.com", clientId: "demo-client-id" },
+      status: "active", pollingIntervalMin: 5,
+      lastSyncAt: new Date(now.getTime() - 5 * 60000), lastSyncStatus: "success", lastSyncAlerts: 3, totalAlertsSynced: 247,
+    },
+    {
+      orgId: org.id, name: "Splunk Enterprise", type: "splunk", authType: "token",
+      config: { baseUrl: "https://splunk.acme-corp.internal:8089", index: "security" },
+      status: "active", pollingIntervalMin: 3,
+      lastSyncAt: new Date(now.getTime() - 3 * 60000), lastSyncStatus: "success", lastSyncAlerts: 5, totalAlertsSynced: 412,
+    },
+    {
+      orgId: org.id, name: "Palo Alto Cortex XDR", type: "paloalto", authType: "api_key",
+      config: { baseUrl: "https://api.xdr.paloaltonetworks.com" },
+      status: "active", pollingIntervalMin: 5,
+      lastSyncAt: new Date(now.getTime() - 8 * 60000), lastSyncStatus: "success", lastSyncAlerts: 2, totalAlertsSynced: 189,
+    },
+    {
+      orgId: org.id, name: "AWS GuardDuty", type: "aws_guardduty", authType: "iam_role",
+      config: { region: "us-east-1", detectorId: "demo-detector" },
+      status: "active", pollingIntervalMin: 10,
+      lastSyncAt: new Date(now.getTime() - 12 * 60000), lastSyncStatus: "success", lastSyncAlerts: 1, totalAlertsSynced: 78,
+    },
+  ]);
+
+  // Seed integration configs for onboarding
+  await db.insert(integrationConfigs).values([
+    {
+      orgId: org.id, type: "siem", name: "Splunk SIEM Integration",
+      config: { url: "https://splunk.acme-corp.internal:8089", token: "demo-hec-token" },
+      status: "active", lastTestedAt: new Date(now.getTime() - 1 * 3600000), lastTestStatus: "success",
+    },
+    {
+      orgId: org.id, type: "edr", name: "CrowdStrike EDR",
+      config: { clientId: "demo-cs-client", baseUrl: "https://api.crowdstrike.com" },
+      status: "active", lastTestedAt: new Date(now.getTime() - 2 * 3600000), lastTestStatus: "success",
+    },
+    {
+      orgId: org.id, type: "ticketing", name: "ServiceNow ITSM",
+      config: { instanceUrl: "https://acme.service-now.com", table: "incident" },
+      status: "active", lastTestedAt: new Date(now.getTime() - 6 * 3600000), lastTestStatus: "success",
+    },
+  ]);
+
+  // Seed endpoint assets
+  const endpointData = [
+    { orgId: org.id, hostname: "FIN-WKS-042", os: "Windows", osVersion: "11 Enterprise 23H2", agentVersion: "7.12.0", agentStatus: "isolated", ipAddress: "10.0.15.42", macAddress: "AA:BB:CC:DD:EE:01", riskScore: 95, tags: ["finance", "compromised"] },
+    { orgId: org.id, hostname: "FIN-WKS-050", os: "Windows", osVersion: "11 Enterprise 23H2", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.15.50", macAddress: "AA:BB:CC:DD:EE:02", riskScore: 45, tags: ["finance"] },
+    { orgId: org.id, hostname: "FIN-SRV-01", os: "Windows Server", osVersion: "2022 Datacenter", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.15.100", macAddress: "AA:BB:CC:DD:EE:03", riskScore: 60, tags: ["finance", "server"] },
+    { orgId: org.id, hostname: "DC-01", os: "Windows Server", osVersion: "2022 Datacenter", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.1.10", macAddress: "AA:BB:CC:DD:EE:04", riskScore: 30, tags: ["domain-controller", "critical"] },
+    { orgId: org.id, hostname: "HR-WKS-012", os: "Windows", osVersion: "11 Enterprise 23H2", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.25.100", macAddress: "AA:BB:CC:DD:EE:05", riskScore: 75, tags: ["hr"] },
+    { orgId: org.id, hostname: "DEV-SRV-003", os: "Ubuntu", osVersion: "24.04 LTS", agentVersion: "7.11.2", agentStatus: "online", ipAddress: "10.0.10.88", macAddress: "AA:BB:CC:DD:EE:06", riskScore: 55, tags: ["engineering", "server"] },
+    { orgId: org.id, hostname: "MKT-WKS-007", os: "macOS", osVersion: "15.2 Sequoia", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.20.15", macAddress: "AA:BB:CC:DD:EE:07", riskScore: 40, tags: ["marketing"] },
+    { orgId: org.id, hostname: "QA-SRV-001", os: "Ubuntu", osVersion: "22.04 LTS", agentVersion: "7.10.5", agentStatus: "online", ipAddress: "10.0.30.55", macAddress: "AA:BB:CC:DD:EE:08", riskScore: 20, tags: ["qa", "server"] },
+    { orgId: org.id, hostname: "EXEC-WKS-001", os: "macOS", osVersion: "15.2 Sequoia", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.5.10", macAddress: "AA:BB:CC:DD:EE:09", riskScore: 15, tags: ["executive", "critical"] },
+    { orgId: org.id, hostname: "VPN-GW-01", os: "Linux", osVersion: "Debian 12", agentVersion: "7.12.0", agentStatus: "online", ipAddress: "10.0.0.1", macAddress: "AA:BB:CC:DD:EE:10", riskScore: 50, tags: ["network", "gateway", "critical"] },
+  ];
+  const insertedEndpoints = await db.insert(endpointAssets).values(endpointData).returning();
+
+  // Seed telemetry for endpoints
+  await db.insert(endpointTelemetry).values([
+    { orgId: org.id, assetId: insertedEndpoints[0].id, metricType: "cpu_usage", metricValue: { percent: 87, processes: 142 } },
+    { orgId: org.id, assetId: insertedEndpoints[0].id, metricType: "network_connections", metricValue: { active: 34, suspicious: 12 } },
+    { orgId: org.id, assetId: insertedEndpoints[3].id, metricType: "cpu_usage", metricValue: { percent: 42, processes: 89 } },
+    { orgId: org.id, assetId: insertedEndpoints[5].id, metricType: "disk_usage", metricValue: { percent: 78, available_gb: 45 } },
+  ]);
+
+  // Seed CSPM accounts
+  const [cspmAws] = await db.insert(cspmAccounts).values([
+    {
+      orgId: org.id, cloudProvider: "aws", accountId: "557845624595",
+      displayName: "Acme Production (AWS)", regions: ["us-east-1", "us-west-2", "eu-west-1"],
+      status: "active", config: { roleArn: "arn:aws:iam::557845624595:role/CspmReadOnly" },
+      lastScanAt: new Date(now.getTime() - 2 * 3600000),
+    },
+    {
+      orgId: org.id, cloudProvider: "aws", accountId: "123456789012",
+      displayName: "Acme Staging (AWS)", regions: ["us-east-1"],
+      status: "active", config: { roleArn: "arn:aws:iam::123456789012:role/CspmReadOnly" },
+      lastScanAt: new Date(now.getTime() - 4 * 3600000),
+    },
+  ]).returning();
+
+  // Seed CSPM scans and findings
+  const [scan1] = await db.insert(cspmScans).values({
+    orgId: org.id, accountId: cspmAws.id, status: "completed", findingsCount: 5,
+    summary: { critical: 1, high: 2, medium: 1, low: 1 },
+    startedAt: new Date(now.getTime() - 2 * 3600000), completedAt: new Date(now.getTime() - 1.5 * 3600000),
+  }).returning();
+
+  await db.insert(cspmFindings).values([
+    { orgId: org.id, scanId: scan1.id, accountId: cspmAws.id, ruleId: "CIS-1.14", ruleName: "Ensure access keys are rotated within 90 days", severity: "high", resourceType: "IAM User", resourceId: "arn:aws:iam::557845624595:user/deploy-bot", resourceRegion: "global", description: "IAM user deploy-bot has access keys older than 90 days", remediation: "Rotate access keys for user deploy-bot", complianceFrameworks: ["CIS AWS 1.4", "SOC 2"], status: "open" },
+    { orgId: org.id, scanId: scan1.id, accountId: cspmAws.id, ruleId: "CIS-2.1.1", ruleName: "Ensure S3 Block Public Access is enabled", severity: "critical", resourceType: "S3 Bucket", resourceId: "acme-customer-exports-2025", resourceRegion: "us-east-1", description: "S3 bucket does not have Block Public Access enabled at bucket level", remediation: "Enable S3 Block Public Access setting on the bucket", complianceFrameworks: ["CIS AWS 1.4", "PCI DSS", "SOC 2"], status: "remediated" },
+    { orgId: org.id, scanId: scan1.id, accountId: cspmAws.id, ruleId: "CIS-4.3", ruleName: "Ensure VPC flow logging is enabled", severity: "medium", resourceType: "VPC", resourceId: "vpc-0abc123def456789", resourceRegion: "us-east-1", description: "VPC does not have flow logs enabled", remediation: "Enable VPC flow logging to CloudWatch or S3", complianceFrameworks: ["CIS AWS 1.4", "NIST 800-53"], status: "open" },
+    { orgId: org.id, scanId: scan1.id, accountId: cspmAws.id, ruleId: "CIS-2.2.1", ruleName: "Ensure EBS volume encryption is enabled by default", severity: "high", resourceType: "EBS Settings", resourceId: "us-east-1", resourceRegion: "us-east-1", description: "EBS default encryption is not enabled in us-east-1", remediation: "Enable default EBS encryption in the region settings", complianceFrameworks: ["CIS AWS 1.4", "HIPAA"], status: "open" },
+    { orgId: org.id, scanId: scan1.id, accountId: cspmAws.id, ruleId: "CIS-1.4", ruleName: "Ensure no root account access key exists", severity: "low", resourceType: "IAM Root", resourceId: "root", resourceRegion: "global", description: "Root account has active access keys", remediation: "Delete root account access keys and use IAM users instead", complianceFrameworks: ["CIS AWS 1.4"], status: "open" },
+  ]);
+
+  // Seed ingestion logs
+  await db.insert(ingestionLogs).values([
+    { orgId: org.id, source: "CrowdStrike EDR", alertsReceived: 15, alertsCreated: 12, alertsDeduped: 3, alertsFailed: 0, durationMs: 1240 },
+    { orgId: org.id, source: "Splunk SIEM", alertsReceived: 28, alertsCreated: 22, alertsDeduped: 5, alertsFailed: 1, durationMs: 2100 },
+    { orgId: org.id, source: "Palo Alto Firewall", alertsReceived: 8, alertsCreated: 7, alertsDeduped: 1, alertsFailed: 0, durationMs: 890 },
+    { orgId: org.id, source: "AWS GuardDuty", alertsReceived: 4, alertsCreated: 4, alertsDeduped: 0, alertsFailed: 0, durationMs: 650 },
+    { orgId: org.id, source: "CrowdStrike EDR", alertsReceived: 10, alertsCreated: 8, alertsDeduped: 2, alertsFailed: 0, durationMs: 1100 },
+    { orgId: org.id, source: "Splunk SIEM", alertsReceived: 19, alertsCreated: 16, alertsDeduped: 2, alertsFailed: 1, durationMs: 1800 },
+  ]);
+
+  console.log("Database seeded: org, 3 incidents, 12 alerts, 10 tags, 4 connectors, 3 integrations, 10 endpoints, 2 CSPM accounts, 5 findings, 6 ingestion logs");
 }

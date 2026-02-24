@@ -39,6 +39,7 @@ import EndpointTelemetryPage from "@/pages/endpoint-telemetry";
 import TeamManagementPage from "@/pages/team-management";
 import ReportsPage from "@/pages/reports";
 import OperationsPage from "@/pages/operations";
+import OnboardingPage from "@/pages/onboarding";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -125,6 +126,7 @@ function AuthenticatedApp() {
                 <Route path="/team" component={TeamManagementPage} />
                 <Route path="/reports" component={ReportsPage} />
                 <Route path="/operations" component={OperationsPage} />
+                <Route path="/onboarding" component={OnboardingPage} />
                 <Route component={NotFound} />
               </Switch>
             </main>
