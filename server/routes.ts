@@ -215,6 +215,7 @@ export async function registerRoutes(
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: "Too many requests, please try again later." },
+    skip: (req) => req.path === "/ops/health" || req.path === "/health",
   });
 
   const strictLimiter = rateLimit({
