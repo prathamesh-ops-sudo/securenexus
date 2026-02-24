@@ -4360,7 +4360,7 @@ export async function registerRoutes(
   // Get current user's org context and memberships
   app.get("/api/auth/me", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Not authenticated" });
       const memberships = await storage.getUserMemberships(userId);
       const activeMemberships = memberships.filter(m => m.status === "active");
@@ -4377,8 +4377,8 @@ export async function registerRoutes(
   // Auto-provision: ensure user has org membership on first access
   app.post("/api/auth/ensure-org", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.claims?.sub;
-      const userEmail = (req as any).user?.claims?.email;
+      const userId = (req as any).user?.id;
+      const userEmail = (req as any).user?.email;
       if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
       const memberships = await storage.getUserMemberships(userId);
@@ -4465,7 +4465,7 @@ export async function registerRoutes(
       }
 
       // Cannot change own role
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       if (target.userId === userId) {
         return res.status(400).json({ error: "Cannot change your own role" });
       }
@@ -4473,7 +4473,7 @@ export async function registerRoutes(
       const updated = await storage.updateOrgMembership(memberId, { role });
       await storage.createAuditLog({
         userId,
-        userName: (req as any).user?.claims?.first_name ? `${(req as any).user.claims.first_name} ${(req as any).user.claims.last_name || ""}`.trim() : "Admin",
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Admin",
         action: "member_role_changed",
         resourceType: "membership",
         resourceId: memberId,
@@ -4496,14 +4496,14 @@ export async function registerRoutes(
       const target = await storage.getMembershipById(memberId);
       if (!target || target.orgId !== orgId) return res.status(404).json({ error: "Member not found" });
 
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       if (target.userId === userId) return res.status(400).json({ error: "Cannot suspend yourself" });
       if (target.role === "owner") return res.status(400).json({ error: "Cannot suspend an owner" });
 
       const updated = await storage.updateOrgMembership(memberId, { status: "suspended", suspendedAt: new Date() });
       await storage.createAuditLog({
         userId,
-        userName: (req as any).user?.claims?.first_name ? `${(req as any).user.claims.first_name} ${(req as any).user.claims.last_name || ""}`.trim() : "Admin",
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Admin",
         action: "member_suspended",
         resourceType: "membership",
         resourceId: memberId,
@@ -4527,10 +4527,10 @@ export async function registerRoutes(
       if (!target || target.orgId !== orgId) return res.status(404).json({ error: "Member not found" });
 
       const updated = await storage.updateOrgMembership(memberId, { status: "active", suspendedAt: null });
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       await storage.createAuditLog({
         userId,
-        userName: (req as any).user?.claims?.first_name ? `${(req as any).user.claims.first_name} ${(req as any).user.claims.last_name || ""}`.trim() : "Admin",
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Admin",
         action: "member_activated",
         resourceType: "membership",
         resourceId: memberId,
@@ -4553,14 +4553,14 @@ export async function registerRoutes(
       const target = await storage.getMembershipById(memberId);
       if (!target || target.orgId !== orgId) return res.status(404).json({ error: "Member not found" });
 
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       if (target.userId === userId) return res.status(400).json({ error: "Cannot remove yourself" });
       if (target.role === "owner") return res.status(400).json({ error: "Cannot remove an owner" });
 
       await storage.deleteOrgMembership(memberId);
       await storage.createAuditLog({
         userId,
-        userName: (req as any).user?.claims?.first_name ? `${(req as any).user.claims.first_name} ${(req as any).user.claims.last_name || ""}`.trim() : "Admin",
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Admin",
         action: "member_removed",
         resourceType: "membership",
         resourceId: memberId,
@@ -4585,7 +4585,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid role for invitation" });
       }
 
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       const token = randomBytes(32).toString("hex");
       const invitation = await storage.createOrgInvitation({
         orgId,
@@ -4598,7 +4598,7 @@ export async function registerRoutes(
 
       await storage.createAuditLog({
         userId,
-        userName: (req as any).user?.claims?.first_name ? `${(req as any).user.claims.first_name} ${(req as any).user.claims.last_name || ""}`.trim() : "Admin",
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Admin",
         action: "invitation_created",
         resourceType: "invitation",
         resourceId: invitation.id,
@@ -4633,10 +4633,10 @@ export async function registerRoutes(
       if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
 
       await storage.deleteOrgInvitation(invitationId);
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       await storage.createAuditLog({
         userId,
-        userName: (req as any).user?.claims?.first_name ? `${(req as any).user.claims.first_name} ${(req as any).user.claims.last_name || ""}`.trim() : "Admin",
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Admin",
         action: "invitation_cancelled",
         resourceType: "invitation",
         resourceId: invitationId,
@@ -4650,7 +4650,7 @@ export async function registerRoutes(
   // Accept invitation by token
   app.post("/api/invitations/accept", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.claims?.sub;
+      const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
       const { token } = req.body;
