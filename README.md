@@ -45,21 +45,6 @@ SecureNexus is a full-stack SaaS platform that unifies alerts from multiple cybe
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React, TypeScript, Vite, TailwindCSS, shadcn/ui |
-| Backend | Express.js, TypeScript |
-| Database | PostgreSQL with Drizzle ORM |
-| Authentication | OpenID Connect (Replit Auth) |
-| AI Engine | AWS Bedrock Converse API (Mistral Large 2 Instruct) |
-| Charts | Recharts |
-| Routing | wouter |
-| Data Fetching | TanStack Query |
-
----
-
 ## Getting Started
 
 ### Prerequisites
@@ -136,6 +121,8 @@ POST   /api/connectors/:id/sync  - Trigger sync
 
 ## Architecture
 
+### Application Architecture
+
 ```
                     +------------------+
                     |   React Frontend |
@@ -156,6 +143,122 @@ POST   /api/connectors/:id/sync  - Trigger sync
                      +--------+ +--------------+
 ```
 
+### CI/CD Pipeline Architecture
+
+```
+┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌─────────────┐
+│  Developer   │────▶│     GitHub       │────▶│  GitHub Actions  │────▶│   Docker    │
+│  (feature    │     │  (Pull Request)  │     │   CI Pipeline    │     │   Build     │
+│   branch)    │     │                  │     │                  │     │             │
+└─────────────┘     └──────────────────┘     └──────────────────┘     └──────┬──────┘
+                                                                              │
+                    ┌─────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────────────────┐
+│   Amazon ECR     │────▶│   Deploy to      │────▶│   Deploy to Production       │
+│  (Image Store)   │     │   Staging (EKS)  │     │   (EKS + Argo Rollouts)      │
+│                  │     │                  │     │                              │
+│  securenexus:    │     │  K8s Namespace:  │     │  Canary Strategy:            │
+│   <git-sha>      │     │  "staging"       │     │  20% ─▶ 50% ─▶ 80% ─▶ 100% │
+│   latest         │     │  1 replica       │     │  K8s Namespace: "production" │
+└──────────────────┘     └──────────────────┘     │  2 replicas                  │
+                                                  └──────────────────────────────┘
+                                                              │
+                    ┌─────────────────────────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                           Monitoring & Observability                             │
+│                                                                                  │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────────┐    │
+│   │  Prometheus   │────▶│   Grafana    │     │  Argo Rollouts Dashboard     │    │
+│   │  (Metrics)    │     │ (Dashboards) │     │  (Canary Status & Control)   │    │
+│   └──────────────┘     └──────────────┘     └──────────────────────────────┘    │
+│                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Infrastructure Map
+
+```
+AWS Account (us-east-1)
+│
+├── Amazon EKS Cluster: "securenexus" (K8s 1.31)
+│   ├── Node Group: 2x t3.medium (auto-scale: 2–4)
+│   │
+│   ├── Namespace: staging
+│   │   └── Deployment: securenexus (1 replica)
+│   │
+│   ├── Namespace: production
+│   │   └── Argo Rollout: securenexus (2 replicas, canary)
+│   │       ├── Service: securenexus-stable  (production traffic)
+│   │       └── Service: securenexus-canary  (canary traffic)
+│   │
+│   ├── Namespace: argo-rollouts
+│   │   └── Argo Rollouts Controller
+│   │
+│   └── Namespace: monitoring
+│       ├── Prometheus (metrics collection)
+│       └── Grafana (dashboards & visualization)
+│
+├── Amazon ECR: securenexus (Docker image registry)
+├── Amazon RDS: PostgreSQL (database)
+├── Amazon S3: securenexus-platform (file storage)
+└── Amazon ELB: Load Balancers (one per service)
+```
+
+### Developer Workflow
+
+```
+1. Code ─▶ Push to feature branch ─▶ Open Pull Request
+                                          │
+                                          ▼
+                                    Build Check (CI)
+                                    Docker build verification
+                                          │
+                                          ▼
+                                    Review & Merge to main
+                                          │
+                                          ▼
+                              ┌───────────────────────┐
+                              │  Automatic Pipeline    │
+                              │                        │
+                              │  Build ─▶ ECR Push     │
+                              │       ─▶ Staging       │
+                              │       ─▶ Production    │
+                              │          (canary)      │
+                              └───────────────────────┘
+```
+
+**Manual rollout controls:**
+```bash
+# Check canary rollout status
+kubectl argo rollouts status securenexus -n production
+
+# Abort a bad rollout (instant rollback)
+kubectl argo rollouts abort securenexus -n production
+
+# Skip wait timers and promote immediately
+kubectl argo rollouts promote securenexus -n production
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React, TypeScript, Vite, TailwindCSS, shadcn/ui, Recharts |
+| Backend | Express.js, TypeScript, Drizzle ORM |
+| Database | PostgreSQL (AWS RDS) |
+| AI/ML | AWS Bedrock (Mistral Large 2), AWS SageMaker |
+| Storage | AWS S3 |
+| Infrastructure | AWS EKS (Kubernetes), Docker, Argo Rollouts |
+| CI/CD | GitHub Actions → ECR → EKS (staging → canary production) |
+| Monitoring | Prometheus + Grafana |
+| Security Frameworks | MITRE ATT&CK v15, NIST SP 800-61r2, Cyber Kill Chain, Diamond Model, OCSF |
+
 ---
 
 ## License
@@ -166,4 +269,4 @@ Proprietary - All rights reserved.
 
 ## Repository
 
-[https://github.com/prathamesh-ops-sudo/ATS-AI-SEC](https://github.com/prathamesh-ops-sudo/ATS-AI-SEC)
+[https://github.com/prathamesh-ops-sudo/securenexus](https://github.com/prathamesh-ops-sudo/securenexus)
