@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 import { storage } from "../storage";
+import { config } from "../config";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 
@@ -31,19 +32,19 @@ export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
+    conString: config.databaseUrl,
     createTableIfMissing: true,
     ttl: sessionTtl,
     tableName: "sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET || "securenexus-default-secret",
+    secret: config.session.secret,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.FORCE_HTTPS === "true",
+      secure: config.session.forceHttps,
       maxAge: sessionTtl,
       sameSite: "lax",
     },
@@ -77,14 +78,13 @@ export async function setupAuth(app: Express) {
     )
   );
 
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    const googleCallbackURL = process.env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback";
+  if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
     passport.use(
       new GoogleStrategy(
         {
-          clientID: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-          callbackURL: googleCallbackURL,
+          clientID: config.oauth.google.clientId,
+          clientSecret: config.oauth.google.clientSecret,
+          callbackURL: config.oauth.google.callbackUrl,
         },
         async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
           try {
@@ -109,14 +109,13 @@ export async function setupAuth(app: Express) {
     console.log("[Auth] Google OAuth strategy configured");
   }
 
-  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    const githubCallbackURL = process.env.GITHUB_CALLBACK_URL || "/api/auth/github/callback";
+  if (config.oauth.github.clientId && config.oauth.github.clientSecret) {
     passport.use(
       new GitHubStrategy(
         {
-          clientID: process.env.GITHUB_CLIENT_ID,
-          clientSecret: process.env.GITHUB_CLIENT_SECRET,
-          callbackURL: githubCallbackURL,
+          clientID: config.oauth.github.clientId,
+          clientSecret: config.oauth.github.clientSecret,
+          callbackURL: config.oauth.github.callbackUrl,
           scope: ["user:email"],
         },
         async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
