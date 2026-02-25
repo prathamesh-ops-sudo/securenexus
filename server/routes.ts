@@ -143,8 +143,11 @@ async function dispatchWebhookEvent(orgId: string, event: string, payload: any) 
         const body = JSON.stringify(payload);
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (webhook.secret) {
-          const signature = createHmac("sha256", webhook.secret).update(body).digest("hex");
+          const timestamp = String(Date.now());
+          const signedPayload = `${timestamp}.${body}`;
+          const signature = createHmac("sha256", webhook.secret).update(signedPayload).digest("hex");
           headers["X-Webhook-Signature"] = `sha256=${signature}`;
+          headers["X-Webhook-Timestamp"] = timestamp;
         }
         let statusCode = 0;
         let responseBody = "";
@@ -1471,6 +1474,16 @@ export async function registerRoutes(
     res.json(metadata);
   });
 
+  app.get("/api/connectors", isAuthenticated, async (_req, res) => {
+    try {
+      const allConnectors = await storage.getConnectors();
+      const sanitized = allConnectors.map(c => ({ ...c, config: sanitizeConfig(c.config) }));
+      res.json(sanitized);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch connectors" });
+    }
+  });
+
   app.get("/api/connectors/dead-letters", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.organizationId;
@@ -1483,14 +1496,7 @@ export async function registerRoutes(
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
-      const config = connector.config as ConnectorConfig;
-      const safeConfig: any = { ...config };
-      if (safeConfig.clientSecret) safeConfig.clientSecret = "••••••••";
-      if (safeConfig.password) safeConfig.password = "••••••••";
-      if (safeConfig.apiKey) safeConfig.apiKey = "••••••••";
-      if (safeConfig.secretAccessKey) safeConfig.secretAccessKey = "••••••••";
-      if (safeConfig.token) safeConfig.token = "••••••••";
-      if (safeConfig.siteToken) safeConfig.siteToken = "••••••••";
+      const safeConfig = sanitizeConfig(connector.config);
       res.json({ ...connector, config: safeConfig });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch connector" });
@@ -3516,7 +3522,7 @@ export async function registerRoutes(
   function sanitizeConfig(config: any): any {
     if (!config) return config;
     const safe = { ...config };
-    const secretFields = ["apiKey", "apiToken", "clientSecret", "password", "secretAccessKey", "webhookSecret", "token"];
+    const secretFields = ["apiKey", "apiToken", "clientSecret", "password", "secretAccessKey", "webhookSecret", "token", "siteToken"];
     for (const field of secretFields) {
       if (safe[field]) safe[field] = "••••••••";
     }
@@ -6794,90 +6800,6 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/v1/alerts", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
-      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "25"), 10) || 25, 1), 200);
-      const search = String(req.query.search || "").trim().toLowerCase();
-      const severity = String(req.query.severity || "all").toLowerCase();
-      const status = String(req.query.status || "all").toLowerCase();
-      const sortBy = String(req.query.sortBy || "createdAt");
-      const sortDir = String(req.query.sortDir || "desc").toLowerCase() === "asc" ? "asc" : "desc";
-
-      let rows = await storage.getAlerts(orgId);
-      if (search) {
-        rows = rows.filter((a) =>
-          (a.title || "").toLowerCase().includes(search)
-          || (a.source || "").toLowerCase().includes(search)
-          || (a.description || "").toLowerCase().includes(search)
-        );
-      }
-      if (severity !== "all") rows = rows.filter((a) => String(a.severity || "").toLowerCase() === severity);
-      if (status !== "all") rows = rows.filter((a) => String(a.status || "").toLowerCase() === status);
-
-      const sortable = [...rows];
-      sortable.sort((a: any, b: any) => {
-        const av = a?.[sortBy];
-        const bv = b?.[sortBy];
-        if (av == null && bv == null) return 0;
-        if (av == null) return sortDir === "asc" ? -1 : 1;
-        if (bv == null) return sortDir === "asc" ? 1 : -1;
-        if (av < bv) return sortDir === "asc" ? -1 : 1;
-        if (av > bv) return sortDir === "asc" ? 1 : -1;
-        return 0;
-      });
-
-      const total = sortable.length;
-      const totalPages = Math.max(Math.ceil(total / limit), 1);
-      const start = (page - 1) * limit;
-      const data = sortable.slice(start, start + limit);
-
-      res.json({
-        data,
-        meta: { page, limit, total, totalPages, sortBy, sortDir, filters: { search: search || null, severity, status } },
-        errors: null,
-      });
-    } catch (error) {
-      res.status(500).json({ data: [], meta: null, errors: [{ message: "Failed to fetch alerts" }] });
-    }
-  });
-
-  app.get("/api/v1/incidents", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
-      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "25"), 10) || 25, 1), 200);
-      const search = String(req.query.search || "").trim().toLowerCase();
-      const severity = String(req.query.severity || "all").toLowerCase();
-      const status = String(req.query.status || "all").toLowerCase();
-
-      let rows = await storage.getIncidents(orgId);
-      if (search) {
-        rows = rows.filter((i) =>
-          (i.title || "").toLowerCase().includes(search)
-          || (i.summary || "").toLowerCase().includes(search)
-        );
-      }
-      if (severity !== "all") rows = rows.filter((i) => String(i.severity || "").toLowerCase() === severity);
-      if (status !== "all") rows = rows.filter((i) => String(i.status || "").toLowerCase() === status);
-
-      rows.sort((a, b) => (+new Date(b.createdAt || 0)) - (+new Date(a.createdAt || 0)));
-      const total = rows.length;
-      const totalPages = Math.max(Math.ceil(total / limit), 1);
-      const start = (page - 1) * limit;
-      const data = rows.slice(start, start + limit);
-
-      res.json({
-        data,
-        meta: { page, limit, total, totalPages, sortBy: "createdAt", sortDir: "desc", filters: { search: search || null, severity, status } },
-        errors: null,
-      });
-    } catch (error) {
-      res.status(500).json({ data: [], meta: null, errors: [{ message: "Failed to fetch incidents" }] });
-    }
-  });
-
   app.get("/api/v1/openapi", async (_req, res) => {
     res.json({
       openapi: "3.0.3",
@@ -7822,17 +7744,7 @@ export async function registerRoutes(
         sortOrder,
       });
 
-      const sanitized = items.map(c => {
-        const config = c.config as ConnectorConfig;
-        const safeConfig: Record<string, unknown> = { ...config };
-        if (safeConfig.clientSecret) safeConfig.clientSecret = "••••••••";
-        if (safeConfig.password) safeConfig.password = "••••••••";
-        if (safeConfig.apiKey) safeConfig.apiKey = "••••••••";
-        if (safeConfig.secretAccessKey) safeConfig.secretAccessKey = "••••••••";
-        if (safeConfig.token) safeConfig.token = "••••••••";
-        if (safeConfig.siteToken) safeConfig.siteToken = "••••••••";
-        return { ...c, config: safeConfig };
-      });
+      const sanitized = items.map(c => ({ ...c, config: sanitizeConfig(c.config) }));
 
       return sendEnvelope(res, sanitized, {
         meta: { offset, limit, total, search: search ?? null, type: type ?? null, status: status ?? null, sortBy: sortBy ?? "createdAt", sortOrder },
