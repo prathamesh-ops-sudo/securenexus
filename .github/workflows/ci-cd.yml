@@ -94,10 +94,10 @@ jobs:
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id securenexus/staging --query SecretString --output text)
           kubectl create secret generic securenexus-secrets \
             --namespace=staging \
-            --from-literal=DATABASE_URL=$(echo $SECRET_JSON | jq -r '.DATABASE_URL') \
-            --from-literal=SESSION_SECRET=$(echo $SECRET_JSON | jq -r '.SESSION_SECRET') \
-            --from-literal=S3_BUCKET_NAME=$(echo $SECRET_JSON | jq -r '.S3_BUCKET_NAME') \
-            --from-literal=AWS_REGION=$(echo $SECRET_JSON | jq -r '.AWS_REGION') \
+            --from-literal="DATABASE_URL=$(echo "$SECRET_JSON" | jq -r '.DATABASE_URL')" \
+            --from-literal="SESSION_SECRET=$(echo "$SECRET_JSON" | jq -r '.SESSION_SECRET')" \
+            --from-literal="S3_BUCKET_NAME=$(echo "$SECRET_JSON" | jq -r '.S3_BUCKET_NAME')" \
+            --from-literal="AWS_REGION=$(echo "$SECRET_JSON" | jq -r '.AWS_REGION')" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to staging
@@ -134,13 +134,13 @@ jobs:
       - name: Sync secrets from AWS Secrets Manager
         run: |
           set -euo pipefail
-          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id securenexus/staging --query SecretString --output text)
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id securenexus/uat --query SecretString --output text)
           kubectl create secret generic securenexus-secrets \
             --namespace=uat \
-            --from-literal=DATABASE_URL=$(echo $SECRET_JSON | jq -r '.DATABASE_URL') \
-            --from-literal=SESSION_SECRET=$(echo $SECRET_JSON | jq -r '.SESSION_SECRET') \
-            --from-literal=S3_BUCKET_NAME=$(echo $SECRET_JSON | jq -r '.S3_BUCKET_NAME') \
-            --from-literal=AWS_REGION=$(echo $SECRET_JSON | jq -r '.AWS_REGION') \
+            --from-literal="DATABASE_URL=$(echo "$SECRET_JSON" | jq -r '.DATABASE_URL')" \
+            --from-literal="SESSION_SECRET=$(echo "$SECRET_JSON" | jq -r '.SESSION_SECRET')" \
+            --from-literal="S3_BUCKET_NAME=$(echo "$SECRET_JSON" | jq -r '.S3_BUCKET_NAME')" \
+            --from-literal="AWS_REGION=$(echo "$SECRET_JSON" | jq -r '.AWS_REGION')" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to UAT
@@ -184,10 +184,10 @@ jobs:
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id securenexus/production --query SecretString --output text)
           kubectl create secret generic securenexus-secrets \
             --namespace=production \
-            --from-literal=DATABASE_URL=$(echo $SECRET_JSON | jq -r '.DATABASE_URL') \
-            --from-literal=SESSION_SECRET=$(echo $SECRET_JSON | jq -r '.SESSION_SECRET') \
-            --from-literal=S3_BUCKET_NAME=$(echo $SECRET_JSON | jq -r '.S3_BUCKET_NAME') \
-            --from-literal=AWS_REGION=$(echo $SECRET_JSON | jq -r '.AWS_REGION') \
+            --from-literal="DATABASE_URL=$(echo "$SECRET_JSON" | jq -r '.DATABASE_URL')" \
+            --from-literal="SESSION_SECRET=$(echo "$SECRET_JSON" | jq -r '.SESSION_SECRET')" \
+            --from-literal="S3_BUCKET_NAME=$(echo "$SECRET_JSON" | jq -r '.S3_BUCKET_NAME')" \
+            --from-literal="AWS_REGION=$(echo "$SECRET_JSON" | jq -r '.AWS_REGION')" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy production via Argo Rollout
