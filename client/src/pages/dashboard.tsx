@@ -2,16 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
 import {
   Shield, AlertTriangle, FileWarning, CheckCircle2, Zap, ArrowUpRight,
-  Clock, Target, Plug, Activity, TrendingUp, Crosshair, RefreshCw
+  Clock, Target, Plug, Activity, TrendingUp, Crosshair, RefreshCw, Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { SeverityBadge } from "@/components/security-badges";
-import { LiveActivityFeed } from "@/components/live-activity-feed";
-import type { Alert, Incident } from "@shared/schema";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -27,48 +24,69 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const SOURCE_COLORS = [
-  "#ef4444", "#f97316", "#ec4899", "#14b8a6", "#f59e0b",
-  "#e11d48", "#10b981", "#f43f5e", "#d946ef", "#84cc16",
+  "#06b6d4", "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b",
+  "#e11d48", "#14b8a6", "#f43f5e", "#d946ef", "#84cc16",
 ];
 
-function StatCard({ title, value, icon: Icon, subtitle, loading, accent, href }: {
+const TACTIC_COLORS = [
+  "#f97316", "#3b82f6", "#eab308", "#8b5cf6", "#10b981",
+  "#ef4444", "#06b6d4", "#ec4899",
+];
+
+function StatCardSkeleton() {
+  return (
+    <Card className="gradient-card">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-5 w-5 rounded" />
+        </div>
+        <Skeleton className="h-9 w-16 mb-1" />
+        <Skeleton className="h-3 w-16" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatCard({ title, value, icon: Icon, subtitle, subtitleColor, loading, href, iconColor, badge }: {
   title: string;
   value: number | string;
-  icon: any;
+  icon: React.ElementType;
   subtitle?: string;
+  subtitleColor?: string;
   loading?: boolean;
-  accent?: string;
   href?: string;
+  iconColor?: string;
+  badge?: boolean;
 }) {
-  const testId = `stat-${title.toLowerCase().replace(/\s/g, "-")}`;
-  const card = (
-    <Card className={href ? "gradient-card cursor-pointer" : "glass-subtle gradient-stat-card"} data-testid={testId}>
-      <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-        <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</CardTitle>
-        <div className={`p-1.5 rounded-md ${accent ? 'gradient-icon-bg' : 'bg-muted/50'}`}>
-          <Icon className={`h-3.5 w-3.5 ${accent || "text-muted-foreground"}`} />
+  const content = (
+    <Card className={`gradient-card group ${href ? "cursor-pointer" : ""}`}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</span>
+          <div className="relative">
+            <Icon className={`h-4 w-4 ${iconColor || "text-muted-foreground"}`} />
+            {badge && (
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500" />
+            )}
+          </div>
         </div>
-      </CardHeader>
-      <CardContent>
         {loading ? (
-          <Skeleton className="h-7 w-16" />
+          <Skeleton className="h-9 w-16" />
         ) : (
-          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${title.toLowerCase().replace(/\s/g, "-")}`}>{value}</div>
+          <div className="text-3xl font-bold tabular-nums tracking-tight">{value}</div>
         )}
-        {subtitle && <p className="text-[11px] text-muted-foreground mt-1">{subtitle}</p>}
+        {subtitle && (
+          <p className={`text-[11px] mt-1 font-medium ${subtitleColor || "text-muted-foreground"}`}>{subtitle}</p>
+        )}
       </CardContent>
     </Card>
   );
 
   if (href) {
-    return (
-      <Link href={href} data-testid={`link-${testId}`}>
-        {card}
-      </Link>
-    );
+    return <Link href={href}>{content}</Link>;
   }
-
-  return card;
+  return content;
 }
 
 function ChartSkeleton() {
@@ -125,49 +143,72 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
   const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
-    <Card className="gradient-card" data-testid="chart-severity">
+    <Card className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Severity Distribution</CardTitle>
+        <div className="flex items-center gap-2">
+          <div className="w-1 h-4 rounded-full bg-purple-500" />
+          <CardTitle className="text-sm font-semibold">Severity Distribution</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-4">
-          <div className="w-[140px] h-[140px] flex-shrink-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={sorted}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={40}
-                  outerRadius={65}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {sorted.map((entry) => (
-                    <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name] || "#6b7280"} />
-                  ))}
-                </Pie>
-                <RechartsTooltip content={<PieTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
+        {sorted.length === 0 ? (
+          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+            No severity data available
           </div>
-          <div className="flex-1 space-y-1.5">
-            {sorted.map((entry) => (
-              <div key={entry.name} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: SEVERITY_COLORS[entry.name] || "#6b7280" }}
-                  />
-                  <span className="capitalize text-muted-foreground">{entry.name}</span>
-                </div>
-                <span className="font-medium tabular-nums">
-                  {entry.value} <span className="text-muted-foreground">({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)</span>
-                </span>
+        ) : (
+          <div className="flex items-center gap-6">
+            <div className="w-[150px] h-[150px] flex-shrink-0 relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <defs>
+                    <filter id="donutGlow">
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <Pie
+                    data={sorted}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={70}
+                    dataKey="value"
+                    stroke="none"
+                    filter="url(#donutGlow)"
+                  >
+                    {sorted.map((entry) => (
+                      <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name] || "#6b7280"} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip content={<PieTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-bold tabular-nums">{total}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</span>
               </div>
-            ))}
+            </div>
+            <div className="flex-1 space-y-2">
+              {sorted.map((entry) => (
+                <div key={entry.name} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: SEVERITY_COLORS[entry.name] || "#6b7280" }}
+                    />
+                    <span className="capitalize">{entry.name}</span>
+                  </div>
+                  <span className="font-semibold tabular-nums">
+                    {entry.value} <span className="text-muted-foreground font-normal">({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)</span>
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -175,32 +216,57 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
 
 function SourceChart({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <Card className="gradient-card" data-testid="chart-source">
+    <Card className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Alerts by Source</CardTitle>
+        <div className="flex items-center gap-2">
+          <div className="w-1 h-4 rounded-full bg-cyan-500" />
+          <CardTitle className="text-sm font-semibold">Alerts by Source</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[180px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} layout="vertical" margin={{ left: 0, right: 12, top: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-              <XAxis type="number" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 10 }}
-                width={100}
-                stroke="hsl(var(--muted-foreground))"
-              />
-              <RechartsTooltip content={<CustomTooltip />} />
-              <Bar dataKey="value" name="Alerts" radius={[0, 4, 4, 0]}>
-                {data.map((_, i) => (
-                  <Cell key={i} fill={SOURCE_COLORS[i % SOURCE_COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {data.length === 0 ? (
+          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+            No source data available
+          </div>
+        ) : (
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} layout="vertical" margin={{ left: 0, right: 12, top: 4, bottom: 4 }}>
+                <defs>
+                  <filter id="barGlow">
+                    <feGaussianBlur stdDeviation="2" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                  {SOURCE_COLORS.map((color, i) => (
+                    <linearGradient key={i} id={`barGrad${i}`} x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor={color} stopOpacity={0.85} />
+                      <stop offset="100%" stopColor={color} stopOpacity={1} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <XAxis type="number" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  tick={{ fontSize: 11 }}
+                  width={100}
+                  stroke="hsl(var(--muted-foreground))"
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Bar dataKey="value" name="Alerts" radius={[0, 4, 4, 0]} barSize={16} filter="url(#barGlow)">
+                  {data.map((_, i) => (
+                    <Cell key={i} fill={`url(#barGrad${i % SOURCE_COLORS.length})`} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -213,35 +279,55 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
   }));
 
   return (
-    <Card className="gradient-card" data-testid="chart-trend">
+    <Card className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Alert Trend (7 Days)</CardTitle>
+        <div className="flex items-center gap-2">
+          <div className="w-1 h-4 rounded-full bg-indigo-500" />
+          <CardTitle className="text-sm font-semibold">Alert Trend (7 Days)</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[180px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={formatted} margin={{ left: 0, right: 12, top: 4, bottom: 4 }}>
-              <defs>
-                <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
-              <RechartsTooltip content={<CustomTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="count"
-                name="Alerts"
-                stroke="#ef4444"
-                strokeWidth={2}
-                fill="url(#trendGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        {formatted.length === 0 ? (
+          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+            No trend data available
+          </div>
+        ) : (
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={formatted} margin={{ left: -10, right: 12, top: 4, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.45} />
+                    <stop offset="50%" stopColor="#818cf8" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
+                  </linearGradient>
+                  <filter id="trendLineGlow">
+                    <feGaussianBlur stdDeviation="3" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} axisLine={false} tickLine={false} />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="count"
+                  name="Alerts"
+                  stroke="#818cf8"
+                  strokeWidth={2.5}
+                  fill="url(#trendGradient)"
+                  filter="url(#trendLineGlow)"
+                  dot={{ r: 3, fill: "#a78bfa", strokeWidth: 2, stroke: "#818cf8" }}
+                  activeDot={{ r: 6, fill: "#a78bfa", strokeWidth: 2, stroke: "#fff" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -250,30 +336,35 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
 function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] }) {
   const maxVal = Math.max(...data.map(d => d.value), 1);
   return (
-    <Card className="gradient-card" data-testid="widget-mitre">
+    <Card className="gradient-card h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <Crosshair className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-medium">Top MITRE ATT&CK Tactics</CardTitle>
+          <CardTitle className="text-sm font-semibold">Top MITRE Tactics</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">No MITRE data available</p>
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">
+            No MITRE data available
+          </div>
         ) : (
-          <div className="space-y-2.5">
-            {data.map((item) => (
-              <div key={item.name} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground truncate max-w-[70%]">{item.name}</span>
-                  <span className="font-medium tabular-nums">{item.value}</span>
-                </div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className="space-y-3">
+            {data.slice(0, 5).map((item, idx) => (
+              <div key={item.name} className="flex items-center gap-3">
+                <span className="text-xs min-w-0 flex-1 truncate">{item.name}</span>
+                <div className="w-24 h-2 bg-muted rounded-full overflow-hidden flex-shrink-0">
                   <div
-                    className="h-full rounded-full transition-all bg-gradient-to-r from-red-500 to-red-600"
-                    style={{ width: `${(item.value / maxVal) * 100}%` }}
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${(item.value / maxVal) * 100}%`,
+                      backgroundColor: TACTIC_COLORS[idx % TACTIC_COLORS.length],
+                    }}
                   />
                 </div>
+                <Badge variant="secondary" className="text-[10px] tabular-nums h-5 min-w-[24px] justify-center px-1.5">
+                  {item.value}
+                </Badge>
               </div>
             ))}
           </div>
@@ -285,20 +376,26 @@ function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] 
 
 function CategoryWidget({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <Card className="gradient-card" data-testid="widget-categories">
+    <Card className="gradient-card h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-medium">Threat Categories</CardTitle>
+          <CardTitle className="text-sm font-semibold">Threat Categories</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">No category data</p>
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">
+            No category data available
+          </div>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {data.map((item) => (
-              <Badge key={item.name} variant="secondary" className="text-[10px]" data-testid={`badge-category-${item.name}`}>
+              <Badge
+                key={item.name}
+                variant="outline"
+                className="text-[11px] px-2.5 py-1 border-border/60 bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
                 {item.name.replace(/_/g, " ")} ({item.value})
               </Badge>
             ))}
@@ -310,39 +407,56 @@ function CategoryWidget({ data }: { data: { name: string; value: number }[] }) {
 }
 
 function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"] }) {
-  const statusColors: Record<string, string> = {
-    active: "bg-emerald-500",
-    inactive: "bg-gray-400",
-    error: "bg-red-500",
-    syncing: "bg-red-500",
+  const statusConfig: Record<string, { color: string; dotColor: string }> = {
+    active: { color: "text-emerald-400", dotColor: "bg-emerald-500" },
+    inactive: { color: "text-gray-400", dotColor: "bg-gray-400" },
+    error: { color: "text-red-400", dotColor: "bg-red-500" },
+    degraded: { color: "text-amber-400", dotColor: "bg-amber-500" },
+    syncing: { color: "text-blue-400", dotColor: "bg-blue-500" },
   };
 
+  function formatSyncTime(lastSyncAt: string | null): string {
+    if (!lastSyncAt) return "-";
+    const diff = Date.now() - new Date(lastSyncAt).getTime();
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h`;
+  }
+
   return (
-    <Card className="gradient-card" data-testid="widget-connectors">
+    <Card className="gradient-card h-full">
       <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
         <div className="flex items-center gap-2">
           <Plug className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-medium">Connector Health</CardTitle>
+          <CardTitle className="text-sm font-semibold">Connector Health</CardTitle>
         </div>
-        <Link href="/connectors" className="text-xs text-primary hover:underline" data-testid="link-manage-connectors">Manage</Link>
+        <Link href="/connectors" className="text-xs text-primary hover:underline font-medium">Manage</Link>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">No connectors configured</p>
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">
+            No connectors configured
+          </div>
         ) : (
-          <div className="space-y-2">
-            {data.slice(0, 6).map((c) => (
-              <div key={c.name} className="flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[c.status] || "bg-gray-400"}`} />
-                  <span className="truncate">{c.name}</span>
+          <div className="space-y-3">
+            {data.slice(0, 5).map((c) => {
+              const cfg = statusConfig[c.status] || statusConfig.inactive;
+              return (
+                <div key={c.name} className="flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dotColor}`} />
+                    <span className="truncate font-medium">{c.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className={`capitalize font-medium ${cfg.color}`}>{c.status}</span>
+                    <span className="text-muted-foreground tabular-nums">{formatSyncTime(c.lastSyncAt)}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
-                  <span className="capitalize">{c.status}</span>
-                  {c.lastSyncAlerts > 0 && <span className="tabular-nums">{c.lastSyncAlerts} synced</span>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
@@ -353,33 +467,58 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
 function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) {
   const formatted = data.map(d => ({
     ...d,
+    total: d.created + d.deduped + d.failed,
     label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   }));
 
   return (
-    <Card className="gradient-card" data-testid="chart-ingestion">
+    <Card className="gradient-card h-full">
       <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-medium">Ingestion Rate (7 Days)</CardTitle>
+          <CardTitle className="text-sm font-semibold">Ingestion Rate</CardTitle>
         </div>
-        <Link href="/ingestion" className="text-xs text-primary hover:underline" data-testid="link-ingestion-details">Details</Link>
+        <Link href="/ingestion" className="text-xs text-primary hover:underline font-medium">Details</Link>
       </CardHeader>
       <CardContent>
         {formatted.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">No ingestion data</p>
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">
+            No ingestion data available
+          </div>
         ) : (
-          <div className="h-[140px]">
+          <div className="h-[160px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={formatted} margin={{ left: 0, right: 4, top: 4, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+              <AreaChart data={formatted} margin={{ left: -10, right: 4, top: 4, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="ingestionGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#a855f7" stopOpacity={0.4} />
+                    <stop offset="50%" stopColor="#818cf8" stopOpacity={0.15} />
+                    <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
+                  </linearGradient>
+                  <filter id="ingestionGlow">
+                    <feGaussianBlur stdDeviation="2.5" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} axisLine={false} tickLine={false} />
                 <RechartsTooltip content={<CustomTooltip />} />
-                <Bar dataKey="created" name="Created" fill="#10b981" stackId="a" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="deduped" name="Deduped" fill="#f59e0b" stackId="a" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="failed" name="Failed" fill="#ef4444" stackId="a" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <Area
+                  type="monotone"
+                  dataKey="total"
+                  name="Events"
+                  stroke="#a855f7"
+                  strokeWidth={2.5}
+                  fill="url(#ingestionGradient)"
+                  filter="url(#ingestionGlow)"
+                  dot={{ r: 2, fill: "#c084fc", strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: "#c084fc", strokeWidth: 2, stroke: "#fff" }}
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
@@ -389,8 +528,10 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
 }
 
 export default function Dashboard() {
+  const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const [secondsAgo, setSecondsAgo] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const { data: stats, isLoading: statsLoading, dataUpdatedAt: statsUpdatedAt, refetch: refetchStats } = useQuery<{
     totalAlerts: number;
@@ -401,20 +542,12 @@ export default function Dashboard() {
     escalatedIncidents: number;
   }>({
     queryKey: ["/api/dashboard/stats"],
-    refetchInterval: 30000,
+    refetchInterval: timeRange === "live" ? 5000 : 30000,
   });
 
   const { data: analytics, isLoading: analyticsLoading, dataUpdatedAt: analyticsUpdatedAt, refetch: refetchAnalytics } = useQuery<AnalyticsData>({
     queryKey: ["/api/dashboard/analytics"],
-    refetchInterval: 30000,
-  });
-
-  const { data: recentAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
-  });
-
-  const { data: recentIncidents, isLoading: incidentsLoading, refetch: refetchIncidents } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+    refetchInterval: timeRange === "live" ? 5000 : 30000,
   });
 
   useEffect(() => {
@@ -424,211 +557,233 @@ export default function Dashboard() {
     }
   }, [statsUpdatedAt, analyticsUpdatedAt]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSecondsAgo(Math.floor((Date.now() - lastUpdated.getTime()) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [lastUpdated]);
-
-  const handleRefresh = useCallback(() => {
-    refetchStats();
-    refetchAnalytics();
-    refetchAlerts();
-    refetchIncidents();
-  }, [refetchStats, refetchAnalytics, refetchAlerts, refetchIncidents]);
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.all([refetchStats(), refetchAnalytics()]);
+    setLastUpdated(new Date());
+    setTimeout(() => setIsRefreshing(false), 600);
+  }, [refetchStats, refetchAnalytics]);
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
-      <div className="flex items-center justify-between gap-4 flex-wrap animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Security Operations Center</span></h1>
-          <p className="text-sm text-muted-foreground mt-1">Real-time threat monitoring and operational intelligence</p>
-          <div className="gradient-accent-line w-24 mt-2" />
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground" data-testid="text-last-updated">
-              Last updated: {secondsAgo < 60 ? `${secondsAgo}s ago` : `${Math.floor(secondsAgo / 60)}m ago`}
-            </span>
-            <Button size="icon" variant="ghost" onClick={handleRefresh} data-testid="button-refresh">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+    <div className="flex flex-col min-h-[calc(100vh-2rem)]">
+      <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
+
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Security Operations Center</h1>
+            <p className="text-sm text-muted-foreground mt-1">Real-time threat monitoring and operational intelligence</p>
           </div>
-          {analytics?.mttrHours !== null && analytics?.mttrHours !== undefined && (
-            <Card className="gradient-card px-4 py-2" data-testid="stat-mttr">
-              <div className="flex items-center gap-3">
-                <div className="p-1.5 rounded-md bg-primary/10">
-                  <Clock className="h-4 w-4 text-primary" />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
+              <Button
+                size="sm"
+                variant={timeRange === "24h" ? "secondary" : "ghost"}
+                className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "24h" ? "shadow-sm" : "hover:bg-muted/50"}`}
+                onClick={() => { setTimeRange("24h"); handleRefresh(); }}
+              >
+                Last 24h
+              </Button>
+              <Button
+                size="sm"
+                variant={timeRange === "live" ? "secondary" : "ghost"}
+                className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "live" ? "shadow-sm" : "hover:bg-muted/50"}`}
+                onClick={() => { setTimeRange("live"); handleRefresh(); }}
+              >
+                <span className={`${timeRange === "live" ? "flex items-center gap-1.5" : ""}`}>
+                  {timeRange === "live" && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" /></span>}
+                  Live
+                </span>
+              </Button>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
+              onClick={handleRefresh}
+              title="Refresh data"
+            >
+              <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`} />
+            </Button>
+            <div className="relative">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
+                onClick={() => setShowNotifications(!showNotifications)}
+                title="Notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {(stats?.criticalAlerts ?? 0) > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white animate-pulse">
+                    {stats?.criticalAlerts}
+                  </span>
+                )}
+              </Button>
+              {showNotifications && (
+                <div className="absolute right-0 top-10 w-72 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-border bg-muted/30">
+                    <span className="text-xs font-semibold">Notifications</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {(stats?.criticalAlerts ?? 0) > 0 ? (
+                      <Link href="/alerts?severity=critical" onClick={() => setShowNotifications(false)}>
+                        <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer border-b border-border/50">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2 w-2 rounded-full bg-red-500" />
+                            <span className="text-xs font-medium">{stats?.criticalAlerts} critical alert{(stats?.criticalAlerts ?? 0) > 1 ? "s" : ""} need attention</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to view critical alerts</p>
+                        </div>
+                      </Link>
+                    ) : null}
+                    {(stats?.openIncidents ?? 0) > 0 ? (
+                      <Link href="/incidents?status=open" onClick={() => setShowNotifications(false)}>
+                        <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer border-b border-border/50">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2 w-2 rounded-full bg-orange-500" />
+                            <span className="text-xs font-medium">{stats?.openIncidents} open incident{(stats?.openIncidents ?? 0) > 1 ? "s" : ""}</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to investigate</p>
+                        </div>
+                      </Link>
+                    ) : null}
+                    {(stats?.escalatedIncidents ?? 0) > 0 ? (
+                      <Link href="/incidents" onClick={() => setShowNotifications(false)}>
+                        <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2 w-2 rounded-full bg-amber-500" />
+                            <span className="text-xs font-medium">{stats?.escalatedIncidents} escalated for Tier 2</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to review</p>
+                        </div>
+                      </Link>
+                    ) : null}
+                    {!(stats?.criticalAlerts) && !(stats?.openIncidents) && !(stats?.escalatedIncidents) && (
+                      <div className="px-3 py-6 text-center">
+                        <CheckCircle2 className="h-5 w-5 mx-auto text-emerald-500 mb-1.5" />
+                        <p className="text-xs text-muted-foreground">All clear — no new notifications</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-3 py-2 border-t border-border bg-muted/20 text-center">
+                    <span className="text-[10px] text-muted-foreground">Updated {lastUpdated.toLocaleTimeString()}</span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">MTTR</p>
-                  <p className="text-lg font-bold tabular-nums">{analytics.mttrHours}h</p>
-                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {statsLoading ? (
+            Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
+          ) : (
+            <>
+              <StatCard
+                title="Total Alerts"
+                value={stats?.totalAlerts ?? 0}
+                icon={AlertTriangle}
+                subtitle="All sources"
+                iconColor="text-amber-500"
+                href="/alerts"
+              />
+              <StatCard
+                title="Critical"
+                value={stats?.criticalAlerts ?? 0}
+                icon={Shield}
+                subtitle={stats?.criticalAlerts ? "Action Required" : "All clear"}
+                subtitleColor={stats?.criticalAlerts ? "text-orange-400" : "text-emerald-400"}
+                iconColor="text-red-500"
+                badge={(stats?.criticalAlerts ?? 0) > 0}
+                href="/alerts?severity=critical"
+              />
+              <StatCard
+                title="Open Incidents"
+                value={stats?.openIncidents ?? 0}
+                icon={FileWarning}
+                subtitle={stats?.openIncidents ? "Investigating" : "None open"}
+                subtitleColor={stats?.openIncidents ? "text-orange-400" : "text-emerald-400"}
+                iconColor="text-orange-500"
+                badge={(stats?.openIncidents ?? 0) > 0}
+                href="/incidents?status=open"
+              />
+              <StatCard
+                title="New Today"
+                value={stats?.newAlertsToday ?? 0}
+                icon={Zap}
+                subtitle="+0 from avg"
+                subtitleColor="text-cyan-400"
+                iconColor="text-cyan-500"
+                href="/alerts"
+              />
+              <StatCard
+                title="Escalated"
+                value={stats?.escalatedIncidents ?? 0}
+                icon={ArrowUpRight}
+                subtitle={stats?.escalatedIncidents ? "Tier 2 review" : "None pending"}
+                subtitleColor={stats?.escalatedIncidents ? "text-amber-400" : "text-muted-foreground"}
+                iconColor="text-indigo-500"
+                href="/incidents"
+              />
+              <StatCard
+                title="Resolved"
+                value={stats?.resolvedIncidents ?? 0}
+                icon={CheckCircle2}
+                subtitle="Last 24h"
+                iconColor="text-emerald-500"
+                href="/incidents?status=resolved"
+              />
+            </>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {analyticsLoading ? (
+            <>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+            </>
+          ) : analytics ? (
+            <>
+              <SeverityChart data={analytics.severityDistribution} />
+              <SourceChart data={analytics.sourceDistribution} />
+              <TrendChart data={analytics.alertTrend} />
+            </>
+          ) : (
+            <Card className="gradient-card col-span-3">
+              <div className="flex items-center justify-center h-[240px] text-sm text-muted-foreground">
+                No analytics data available
               </div>
             </Card>
           )}
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {analyticsLoading ? (
+            <>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+              <Card className="gradient-card"><ChartSkeleton /></Card>
+            </>
+          ) : analytics ? (
+            <>
+              <MitreTacticsWidget data={analytics.topMitreTactics} />
+              <CategoryWidget data={analytics.categoryDistribution} />
+              <ConnectorHealthWidget data={analytics.connectorHealth} />
+              <IngestionRateChart data={analytics.ingestionRate} />
+            </>
+          ) : null}
+        </div>
+
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="animate-fade-in delay-100">
-          <StatCard title="Total Alerts" value={stats?.totalAlerts ?? 0} icon={AlertTriangle} subtitle="All sources" loading={statsLoading} href="/alerts" />
-        </div>
-        <div className="animate-fade-in delay-150">
-          <StatCard title="Open Incidents" value={stats?.openIncidents ?? 0} icon={FileWarning} subtitle="Requires attention" loading={statsLoading} accent="text-orange-500" href="/incidents?status=open" />
-        </div>
-        <div className="animate-fade-in delay-200">
-          <StatCard title="Critical Alerts" value={stats?.criticalAlerts ?? 0} icon={Shield} subtitle="Immediate action" loading={statsLoading} accent="text-red-500" href="/alerts?severity=critical" />
-        </div>
-        <div className="animate-fade-in delay-300">
-          <StatCard title="New Today" value={stats?.newAlertsToday ?? 0} icon={Zap} subtitle="Ingested today" loading={statsLoading} accent="text-red-500" href="/alerts" />
-        </div>
-        <div className="animate-fade-in delay-400">
-          <StatCard title="Escalated" value={stats?.escalatedIncidents ?? 0} icon={ArrowUpRight} subtitle="Escalated incidents" loading={statsLoading} accent="text-amber-500" href="/incidents" />
-        </div>
-        <div className="animate-fade-in delay-500">
-          <StatCard title="Resolved" value={stats?.resolvedIncidents ?? 0} icon={CheckCircle2} subtitle="Resolved incidents" loading={statsLoading} accent="text-emerald-500" href="/incidents?status=resolved" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fade-in delay-300">
-        {analyticsLoading ? (
-          <>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-          </>
-        ) : analytics ? (
-          <>
-            <SeverityChart data={analytics.severityDistribution} />
-            <SourceChart data={analytics.sourceDistribution} />
-            <TrendChart data={analytics.alertTrend} />
-          </>
-        ) : null}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in delay-500">
-        {analyticsLoading ? (
-          <>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-          </>
-        ) : analytics ? (
-          <>
-            <MitreTacticsWidget data={analytics.topMitreTactics} />
-            <CategoryWidget data={analytics.categoryDistribution} />
-            <ConnectorHealthWidget data={analytics.connectorHealth} />
-            <IngestionRateChart data={analytics.ingestionRate} />
-          </>
-        ) : null}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fade-in delay-600">
-        <Card className="gradient-card">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
-            <CardTitle className="text-sm font-medium">Active Incidents</CardTitle>
-            <Link href="/incidents" className="text-xs text-primary hover:underline" data-testid="link-view-all-incidents">View all</Link>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {incidentsLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-md bg-muted/30">
-                  <Skeleton className="h-10 w-10 rounded-md flex-shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
-                  </div>
-                </div>
-              ))
-            ) : recentIncidents && recentIncidents.length > 0 ? (
-              recentIncidents.slice(0, 5).map((incident) => (
-                <Link
-                  key={incident.id}
-                  href={`/incidents/${incident.id}`}
-                  className="flex items-start gap-3 p-3 rounded-md hover-elevate cursor-pointer"
-                  data-testid={`card-incident-${incident.id}`}
-                >
-                  <div className="flex items-center justify-center w-10 h-10 rounded-md bg-muted/50 flex-shrink-0">
-                    <FileWarning className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium truncate">{incident.title}</span>
-                      <SeverityBadge severity={incident.severity} />
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        {incident.alertCount} alerts
-                      </span>
-                      {incident.confidence && (
-                        <span className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3" />
-                          {Math.round(incident.confidence * 100)}%
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {incident.status}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))
-            ) : (
-              <div className="text-center py-6 text-sm text-muted-foreground">
-                No active incidents
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gradient-card">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
-            <CardTitle className="text-sm font-medium">Recent Alerts</CardTitle>
-            <Link href="/alerts" className="text-xs text-primary hover:underline" data-testid="link-view-all-alerts">View all</Link>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {alertsLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 p-2 rounded-md">
-                  <Skeleton className="h-8 w-8 rounded-md flex-shrink-0" />
-                  <div className="flex-1 space-y-1">
-                    <Skeleton className="h-3 w-3/4" />
-                    <Skeleton className="h-2 w-1/2" />
-                  </div>
-                </div>
-              ))
-            ) : recentAlerts && recentAlerts.length > 0 ? (
-              recentAlerts.slice(0, 8).map((alert) => (
-                <div
-                  key={alert.id}
-                  className="flex items-center gap-3 p-2 rounded-md hover-elevate"
-                  data-testid={`card-alert-${alert.id}`}
-                >
-                  <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted/50 flex-shrink-0">
-                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{alert.title}</div>
-                    <div className="text-[11px] text-muted-foreground truncate">{alert.source}</div>
-                  </div>
-                  <SeverityBadge severity={alert.severity} />
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-6 text-sm text-muted-foreground">
-                No alerts yet
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <LiveActivityFeed />
-      </div>
+      <footer className="border-t border-border/40 py-3 px-6 text-center">
+        <span className="text-[11px] text-muted-foreground/60">
+          SecureNexus SOC Platform v3.0.0 (Obsidian Build) &copy; {new Date().getFullYear()}
+        </span>
+      </footer>
     </div>
   );
 }

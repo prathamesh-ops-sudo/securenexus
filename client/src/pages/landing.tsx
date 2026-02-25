@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Zap, Brain, Eye, ArrowRight, Lock, Activity, BarChart3, Globe, Layers, Shield, ShieldCheck, Radar, Flame, Cloud, Search, AlertTriangle, Database } from "lucide-react";
+import { FaGoogle, FaGithub } from "react-icons/fa";
 import {
   SiSplunk, SiPaloaltosoftware, SiAmazon,
   SiElastic, SiFortinet,
@@ -84,6 +85,29 @@ export default function LandingPage() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<string | null>(null);
+
+  const handleOAuth = async (provider: "google" | "github") => {
+    setOauthError(null);
+    setOauthLoading(provider);
+    try {
+      const res = await fetch(`/api/auth/${provider}`, { redirect: "manual" });
+      if (res.type === "opaqueredirect" || res.status === 302 || res.status === 301) {
+        window.location.href = `/api/auth/${provider}`;
+        return;
+      }
+      if (res.status === 501) {
+        setOauthError(`${provider === "google" ? "Google" : "GitHub"} login is not configured yet. Please use email login.`);
+      } else {
+        window.location.href = `/api/auth/${provider}`;
+      }
+    } catch {
+      window.location.href = `/api/auth/${provider}`;
+    } finally {
+      setOauthLoading(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +138,35 @@ export default function LandingPage() {
                   {authError.message}
                 </div>
               )}
+              <div className="space-y-2 mb-4">
+                {oauthError && (
+                  <div className="mb-2 p-2.5 rounded-md bg-amber-500/10 text-amber-500 text-xs">
+                    {oauthError}
+                  </div>
+                )}
+                <Button
+                  variant="outline"
+                  className="w-full h-10 gap-2 text-sm font-medium hover:bg-muted/50 transition-all"
+                  disabled={oauthLoading === "google"}
+                  onClick={() => handleOAuth("google")}
+                >
+                  <FaGoogle className="h-4 w-4 text-[#4285F4]" />
+                  {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full h-10 gap-2 text-sm font-medium hover:bg-muted/50 transition-all"
+                  disabled={oauthLoading === "github"}
+                  onClick={() => handleOAuth("github")}
+                >
+                  <FaGithub className="h-4 w-4" />
+                  {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+                </Button>
+                <div className="relative my-3">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+                  <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">or continue with email</span></div>
+                </div>
+              </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 {authMode === "register" && (
                   <div className="grid grid-cols-2 gap-3">

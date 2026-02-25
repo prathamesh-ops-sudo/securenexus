@@ -106,6 +106,11 @@ export default function IncidentDetailPage() {
     enabled: !!params.id,
   });
 
+  const { data: rootCauseSummary } = useQuery<{ incidentId: string; summary: string; contributingSignals: { category: string; count: number }[]; impactedAssets: string[] }>({
+    queryKey: ["/api/incidents", params.id, "root-cause-summary"],
+    enabled: !!params.id,
+  });
+
   const updateIncident = useMutation({
     mutationFn: async (data: Partial<Incident>) => {
       await apiRequest("PATCH", `/api/incidents/${params.id}`, data);
@@ -997,6 +1002,42 @@ export default function IncidentDetailPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {rootCauseSummary && (
+            <Card className="gradient-card border-amber-500/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Target className="h-4 w-4 text-amber-500" />
+                  Root-Cause Summary
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm leading-relaxed text-muted-foreground" data-testid="text-root-cause-summary">{rootCauseSummary.summary}</p>
+                {rootCauseSummary.contributingSignals.length > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-1.5">Contributing Signal Categories</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {rootCauseSummary.contributingSignals.map((signal) => (
+                        <Badge key={signal.category} variant="secondary" className="text-[10px]">
+                          {signal.category.replace(/_/g, " ")} ({signal.count})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {rootCauseSummary.impactedAssets.length > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-1.5">Impacted Assets</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {rootCauseSummary.impactedAssets.map((asset) => (
+                        <span key={asset} className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-500 text-xs font-mono">{asset}</span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>

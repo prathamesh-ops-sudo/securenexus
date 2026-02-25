@@ -660,6 +660,52 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/incidents/bulk-update", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+    try {
+      const { incidentIds, status, assignedTo, escalated, priority } = req.body || {};
+      const orgId = (req as any).user?.orgId;
+      if (!Array.isArray(incidentIds) || incidentIds.length === 0) {
+        return res.status(400).json({ message: "incidentIds array is required" });
+      }
+
+      let updatedCount = 0;
+      for (const id of incidentIds) {
+        const incidentId = p(String(id));
+        const existing = await storage.getIncident(incidentId);
+        if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) continue;
+        const patch: Record<string, any> = { updatedAt: new Date() };
+        if (typeof status === "string" && status.length > 0) {
+          patch.status = status;
+          if (status === "contained") patch.containedAt = new Date();
+          if (status === "resolved" || status === "closed") patch.resolvedAt = new Date();
+        }
+        if (typeof assignedTo === "string") patch.assignedTo = assignedTo.trim() || null;
+        if (typeof escalated === "boolean") {
+          patch.escalated = escalated;
+          if (escalated && !existing.escalated) patch.escalatedAt = new Date();
+        }
+        if (typeof priority === "number") patch.priority = priority;
+        if (Object.keys(patch).length <= 1) continue;
+        const updated = await storage.updateIncident(incidentId, patch as any);
+        if (updated) updatedCount++;
+      }
+
+      await storage.createAuditLog({
+        orgId,
+        userId: (req as any).user?.id,
+        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
+        action: "incidents_bulk_update",
+        resourceType: "incident",
+        details: { updatedCount, status: status || null, assignedTo: assignedTo || null, escalated: typeof escalated === "boolean" ? escalated : null, priority: priority || null },
+      });
+
+      res.json({ updatedCount });
+    } catch (error) {
+      console.error("Bulk incident update failed:", error);
+      res.status(500).json({ message: "Failed to bulk update incidents" });
+    }
+  });
+
   app.get("/api/incidents/:id/activity", isAuthenticated, async (req, res) => {
     try {
       const logs = await storage.getAuditLogsByResource("incident", p(req.params.id));
