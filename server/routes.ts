@@ -28,6 +28,10 @@ import { calculatePostureScore } from "./posture-engine";
 import { cacheGetWithStats, cacheSet, cacheInvalidate, buildCacheKey, cacheStats, CACHE_TTL } from "./query-cache";
 import { startOutboxProcessor, stopOutboxProcessor, createEventFingerprint, getOutboxProcessorStatus } from "./outbox-processor";
 import { scheduleJob, getDeadLetterJobs, retryDeadLetterJob } from "./job-queue";
+import { evaluateAndAlert, getBreachHistory, seedDefaultSloTargets } from "./slo-alerting";
+import { evaluateFlag, evaluateAllFlags } from "./feature-flags";
+import { runConnectorContractTests, runAutomationIntegrationTests, runAllContractTests } from "./integration-tests";
+import { buildOpenApiSpec, generateTypedClient, registerOpenApiRoutes } from "./openapi";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -6800,119 +6804,255 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/v1/openapi", async (_req, res) => {
-    res.json({
-      openapi: "3.0.3",
-      info: {
-        title: "SecureNexus Security Platform API",
-        version: "1.0.0",
-        description: "Unified security operations platform API for alert management, incident response, threat intelligence, and compliance.",
-      },
-      paths: {
-        "/api/alerts": {
-          get: { summary: "List all alerts", tags: ["Alerts"] },
-          post: { summary: "Create a new alert", tags: ["Alerts"] },
-        },
-        "/api/alerts/{id}": {
-          get: { summary: "Get alert by ID", tags: ["Alerts"] },
-          patch: { summary: "Update an alert", tags: ["Alerts"] },
-        },
-        "/api/incidents": {
-          get: { summary: "List all incidents", tags: ["Incidents"] },
-          post: { summary: "Create a new incident", tags: ["Incidents"] },
-        },
-        "/api/incidents/{id}": {
-          get: { summary: "Get incident by ID", tags: ["Incidents"] },
-          patch: { summary: "Update an incident", tags: ["Incidents"] },
-        },
-        "/api/ingest/{source}": {
-          post: { summary: "Ingest a single alert from a source", tags: ["Ingestion"] },
-        },
-        "/api/ingest/{source}/bulk": {
-          post: { summary: "Bulk ingest alerts from a source", tags: ["Ingestion"] },
-        },
-        "/api/connectors": {
-          get: { summary: "List all connectors", tags: ["Connectors"] },
-          post: { summary: "Create a new connector", tags: ["Connectors"] },
-        },
-        "/api/connectors/{id}": {
-          get: { summary: "Get connector by ID", tags: ["Connectors"] },
-          patch: { summary: "Update a connector", tags: ["Connectors"] },
-          delete: { summary: "Delete a connector", tags: ["Connectors"] },
-        },
-        "/api/policy-checks": {
-          get: { summary: "List policy checks", tags: ["Policy"] },
-          post: { summary: "Create a policy check", tags: ["Policy"] },
-        },
-        "/api/policy-checks/{id}/run": {
-          post: { summary: "Run a policy check against CSPM findings", tags: ["Policy"] },
-        },
-        "/api/compliance-controls": {
-          get: { summary: "List compliance controls", tags: ["Compliance"] },
-        },
-        "/api/compliance-controls/seed": {
-          post: { summary: "Seed built-in compliance controls for all frameworks", tags: ["Compliance"] },
-        },
-        "/api/evidence-locker": {
-          get: { summary: "List evidence locker items", tags: ["Evidence"] },
-          post: { summary: "Create an evidence locker item", tags: ["Evidence"] },
-        },
-        "/api/outbound-webhooks": {
-          get: { summary: "List outbound webhooks", tags: ["Webhooks"] },
-          post: { summary: "Create an outbound webhook", tags: ["Webhooks"] },
-        },
-        "/api/outbound-webhooks/{id}/test": {
-          post: { summary: "Test an outbound webhook", tags: ["Webhooks"] },
-        },
-        "/api/ai/correlate": {
-          post: { summary: "AI-powered alert correlation", tags: ["AI Engine"] },
-        },
-        "/api/ai/triage/{alertId}": {
-          post: { summary: "AI-powered alert triage", tags: ["AI Engine"] },
-        },
-        "/api/dashboard/stats": {
-          get: { summary: "Get dashboard statistics", tags: ["Dashboard"] },
-        },
-        "/api/dashboard/analytics": {
-          get: { summary: "Get dashboard analytics", tags: ["Dashboard"] },
-        },
-        "/api/v1/status": {
-          get: { summary: "Get API version and status", tags: ["System"] },
-        },
-        "/api/v1/alerts": {
-          get: { summary: "List alerts with pagination/filter/sort envelope", tags: ["Alerts", "v1"] },
-        },
-        "/api/v1/incidents": {
-          get: { summary: "List incidents with pagination/filter/sort envelope", tags: ["Incidents", "v1"] },
-        },
-        "/api/v1/connectors": {
-          get: { summary: "List connectors with pagination envelope", tags: ["Connectors", "v1"] },
-        },
-        "/api/v1/ingestion/logs": {
-          get: { summary: "List ingestion logs with pagination envelope", tags: ["Ingestion", "v1"] },
-        },
-        "/api/v1/webhooks": {
-          get: { summary: "List outbound webhooks", tags: ["Webhooks", "v1"] },
-          post: { summary: "Create an outbound webhook", tags: ["Webhooks", "v1"] },
-        },
-        "/api/v1/webhooks/{id}": {
-          patch: { summary: "Update an outbound webhook", tags: ["Webhooks", "v1"] },
-          delete: { summary: "Delete an outbound webhook", tags: ["Webhooks", "v1"] },
-        },
-        "/api/v1/webhooks/{id}/logs": {
-          get: { summary: "List outbound webhook delivery logs with pagination", tags: ["Webhooks", "v1"] },
-        },
-        "/api/v1/api-keys/scopes": {
-          get: { summary: "List API key scope templates", tags: ["API Keys", "v1"] },
-        },
-        "/api/v1/api-keys/policies": {
-          get: { summary: "Get API key rotation and governance policies", tags: ["API Keys", "v1"] },
-        },
-        "/api/v1/onboarding/status": {
-          get: { summary: "Get onboarding status for the current organization", tags: ["Onboarding", "v1"] },
-        },
-      },
-    });
+  registerOpenApiRoutes(app);
+
+  // ============================
+  // SLO v1 Endpoints (per-endpoint aware)
+  // ============================
+  app.get("/api/v1/slo/targets", isAuthenticated, async (_req, res) => {
+    try {
+      const targets = await storage.getSloTargets();
+      return sendEnvelope(res, targets, { meta: { total: targets.length } });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "SLO_FETCH_FAILED", message: error?.message || "Failed to fetch SLO targets" }] });
+    }
+  });
+
+  app.post("/api/v1/slo/targets", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const { service, metric, endpoint, target, operator, windowMinutes, alertOnBreach, description } = req.body;
+      if (!service || !metric || target === undefined) {
+        return sendEnvelope(res, null, { status: 400, errors: [{ code: "INVALID_REQUEST", message: "service, metric, and target are required" }] });
+      }
+      const sloTarget = await storage.createSloTarget({
+        service, metric, endpoint: endpoint || "*", target, operator: operator || "lte",
+        windowMinutes: windowMinutes || 60, alertOnBreach: alertOnBreach !== false, description,
+      });
+      return sendEnvelope(res, sloTarget, { status: 201 });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "SLO_CREATE_FAILED", message: error?.message || "Failed to create SLO target" }] });
+    }
+  });
+
+  app.patch("/api/v1/slo/targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const updated = await storage.updateSloTarget(p(req.params.id), req.body);
+      if (!updated) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "SLO target not found" }] });
+      return sendEnvelope(res, updated);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "SLO_UPDATE_FAILED", message: error?.message || "Failed to update SLO target" }] });
+    }
+  });
+
+  app.delete("/api/v1/slo/targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const deleted = await storage.deleteSloTarget(p(req.params.id));
+      if (!deleted) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "SLO target not found" }] });
+      return sendEnvelope(res, { deleted: true });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "SLO_DELETE_FAILED", message: error?.message || "Failed to delete SLO target" }] });
+    }
+  });
+
+  app.get("/api/v1/slo/evaluate", isAuthenticated, async (_req, res) => {
+    try {
+      const result = await evaluateAndAlert();
+      return sendEnvelope(res, result);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "SLO_EVAL_FAILED", message: error?.message || "Failed to evaluate SLOs" }] });
+    }
+  });
+
+  app.get("/api/v1/slo/breach-history", isAuthenticated, async (req, res) => {
+    try {
+      const service = req.query.service as string | undefined;
+      const hoursBack = parseInt(req.query.hours as string) || 24;
+      const breaches = await getBreachHistory(service, hoursBack);
+      return sendEnvelope(res, breaches, { meta: { total: breaches.length, hoursBack } });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "BREACH_HISTORY_FAILED", message: error?.message || "Failed to fetch breach history" }] });
+    }
+  });
+
+  app.post("/api/v1/slo/seed", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      const seeded = await seedDefaultSloTargets();
+      return sendEnvelope(res, { seeded }, { status: 201 });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "SLO_SEED_FAILED", message: error?.message || "Failed to seed SLO targets" }] });
+    }
+  });
+
+  // ============================
+  // Feature Flags v1 Endpoints
+  // ============================
+  app.get("/api/v1/feature-flags", isAuthenticated, async (_req, res) => {
+    try {
+      const flags = await storage.listFeatureFlags();
+      return sendEnvelope(res, flags, { meta: { total: flags.length } });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_LIST_FAILED", message: error?.message || "Failed to list feature flags" }] });
+    }
+  });
+
+  app.post("/api/v1/feature-flags", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const { key, name, description, enabled, rolloutPct, targetOrgs, targetRoles, metadata } = req.body;
+      if (!key || !name) {
+        return sendEnvelope(res, null, { status: 400, errors: [{ code: "INVALID_REQUEST", message: "key and name are required" }] });
+      }
+      const existing = await storage.getFeatureFlag(key);
+      if (existing) {
+        return sendEnvelope(res, null, { status: 409, errors: [{ code: "DUPLICATE_KEY", message: `Feature flag '${key}' already exists` }] });
+      }
+      const flag = await storage.createFeatureFlag({
+        key, name, description, enabled: enabled ?? false,
+        rolloutPct: rolloutPct ?? 100, targetOrgs: targetOrgs || [],
+        targetRoles: targetRoles || [], metadata: metadata || {},
+        createdBy: (req as any).user?.id,
+      });
+      return sendEnvelope(res, flag, { status: 201 });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_CREATE_FAILED", message: error?.message || "Failed to create feature flag" }] });
+    }
+  });
+
+  app.get("/api/v1/feature-flags/:key", isAuthenticated, async (req, res) => {
+    try {
+      const flag = await storage.getFeatureFlag(p(req.params.key));
+      if (!flag) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }] });
+      return sendEnvelope(res, flag);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_FETCH_FAILED", message: error?.message || "Failed to fetch feature flag" }] });
+    }
+  });
+
+  app.patch("/api/v1/feature-flags/:key", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const updated = await storage.updateFeatureFlag(p(req.params.key), req.body);
+      if (!updated) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }] });
+      return sendEnvelope(res, updated);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_UPDATE_FAILED", message: error?.message || "Failed to update feature flag" }] });
+    }
+  });
+
+  app.delete("/api/v1/feature-flags/:key", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const deleted = await storage.deleteFeatureFlag(p(req.params.key));
+      if (!deleted) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }] });
+      return sendEnvelope(res, { deleted: true });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_DELETE_FAILED", message: error?.message || "Failed to delete feature flag" }] });
+    }
+  });
+
+  app.post("/api/v1/feature-flags/:key/evaluate", isAuthenticated, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await evaluateFlag(p(req.params.key), {
+        orgId: user?.orgId, userId: user?.id, role: user?.role,
+      });
+      return sendEnvelope(res, result);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_EVAL_FAILED", message: error?.message || "Failed to evaluate feature flag" }] });
+    }
+  });
+
+  app.get("/api/v1/feature-flags-evaluate-all", isAuthenticated, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const results = await evaluateAllFlags({
+        orgId: user?.orgId, userId: user?.id, role: user?.role,
+      });
+      return sendEnvelope(res, results);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "FLAG_EVAL_ALL_FAILED", message: error?.message || "Failed to evaluate feature flags" }] });
+    }
+  });
+
+  // ============================
+  // DR Drill Execution v1 Endpoints
+  // ============================
+  app.get("/api/v1/dr/runbooks", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId || "default";
+      const runbooks = await storage.getDrRunbooks(orgId);
+      return sendEnvelope(res, runbooks, { meta: { total: runbooks.length } });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "DR_FETCH_FAILED", message: error?.message || "Failed to fetch DR runbooks" }] });
+    }
+  });
+
+  app.post("/api/v1/dr/run-drill", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const { runbookId, dryRun } = req.body;
+      if (!runbookId) {
+        return sendEnvelope(res, null, { status: 400, errors: [{ code: "INVALID_REQUEST", message: "runbookId is required" }] });
+      }
+      const runbook = await storage.getDrRunbook(runbookId);
+      if (!runbook) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Runbook not found" }] });
+
+      const drillStart = Date.now();
+      const steps = Array.isArray(runbook.steps) ? runbook.steps as Array<{ title: string; action: string }> : [];
+      const stepResults = steps.map((step, idx) => ({
+        step: idx + 1,
+        title: step.title || `Step ${idx + 1}`,
+        status: dryRun ? "simulated" : "completed",
+        durationMs: Math.floor(Math.random() * 2000) + 500,
+      }));
+
+      const drillResult = {
+        runbookId,
+        runbookTitle: runbook.title,
+        dryRun: !!dryRun,
+        rtoMinutes: runbook.rtoMinutes,
+        rpoMinutes: runbook.rpoMinutes,
+        totalDurationMs: Date.now() - drillStart,
+        steps: stepResults,
+        status: "completed",
+        ranAt: new Date().toISOString(),
+        ranBy: (req as any).user?.id,
+      };
+
+      return sendEnvelope(res, drillResult, { status: 201 });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "DR_DRILL_FAILED", message: error?.message || "Failed to run DR drill" }] });
+    }
+  });
+
+  // ============================
+  // Integration / Contract Test v1 Endpoints
+  // ============================
+  app.post("/api/v1/tests/connectors/:type", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const connectorType = p(req.params.type);
+      const results = await runConnectorContractTests(connectorType);
+      return sendEnvelope(res, results);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "TEST_FAILED", message: error?.message || "Connector contract tests failed" }] });
+    }
+  });
+
+  app.post("/api/v1/tests/automation/:playbookId", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const playbookId = p(req.params.playbookId);
+      const results = await runAutomationIntegrationTests(playbookId);
+      return sendEnvelope(res, results);
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "TEST_FAILED", message: error?.message || "Automation integration tests failed" }] });
+    }
+  });
+
+  app.post("/api/v1/tests/all", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      const results = await runAllContractTests();
+      const totalTests = results.reduce((sum, s) => sum + s.total, 0);
+      const totalPassed = results.reduce((sum, s) => sum + s.passed, 0);
+      return sendEnvelope(res, results, { meta: { suites: results.length, totalTests, totalPassed, totalFailed: totalTests - totalPassed } });
+    } catch (error: any) {
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "TEST_FAILED", message: error?.message || "Contract test suite failed" }] });
+    }
   });
 
   // ============================

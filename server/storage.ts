@@ -83,6 +83,7 @@ import {
   type OnboardingProgressItem, type InsertOnboardingProgress, onboardingProgress,
   type WorkspaceTemplate, type InsertWorkspaceTemplate, workspaceTemplates,
   type OutboxEvent, type InsertOutboxEvent, outboxEvents,
+  type FeatureFlag, type InsertFeatureFlag, featureFlags,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
@@ -529,7 +530,7 @@ export interface IStorage {
   upsertAlertDailyStat(data: InsertAlertDailyStat): Promise<AlertDailyStat>;
 
   // SLI Metrics
-  getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date): Promise<SliMetric[]>;
+  getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date, labels?: Record<string, string>): Promise<SliMetric[]>;
   createSliMetric(data: InsertSliMetric): Promise<SliMetric>;
   createSliMetricsBatch(data: InsertSliMetric[]): Promise<SliMetric[]>;
   cleanupOldSliMetrics(olderThanDays: number): Promise<number>;
@@ -574,6 +575,14 @@ export interface IStorage {
   getOutboxEvents(orgId?: string, status?: string, limit?: number, offset?: number): Promise<{ items: OutboxEvent[]; total: number }>;
   replayOutboxEvent(id: string): Promise<OutboxEvent | undefined>;
   cleanupDispatchedOutboxEvents(olderThanDays: number): Promise<number>;
+
+  // Feature Flags
+  listFeatureFlags(): Promise<FeatureFlag[]>;
+  getFeatureFlag(key: string): Promise<FeatureFlag | undefined>;
+  getFeatureFlagById(id: string): Promise<FeatureFlag | undefined>;
+  createFeatureFlag(flag: InsertFeatureFlag): Promise<FeatureFlag>;
+  updateFeatureFlag(key: string, data: Partial<FeatureFlag>): Promise<FeatureFlag | undefined>;
+  deleteFeatureFlag(key: string): Promise<boolean>;
 
   // Enhanced Pagination
   getAlertsPaginatedWithSort(params: {
@@ -2854,14 +2863,20 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date): Promise<SliMetric[]> {
+  async getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date, labels?: Record<string, string>): Promise<SliMetric[]> {
+    const conditions: any[] = [
+      eq(sliMetrics.service, service),
+      eq(sliMetrics.metric, metric),
+      gte(sliMetrics.recordedAt, startTime),
+      lte(sliMetrics.recordedAt, endTime),
+    ];
+
+    if (labels?.endpoint) {
+      conditions.push(sql`${sliMetrics.labels} ->> 'endpoint' = ${labels.endpoint}`);
+    }
+
     return db.select().from(sliMetrics)
-      .where(and(
-        eq(sliMetrics.service, service),
-        eq(sliMetrics.metric, metric),
-        gte(sliMetrics.recordedAt, startTime),
-        lte(sliMetrics.recordedAt, endTime)
-      ))
+      .where(and(...conditions))
       .orderBy(asc(sliMetrics.recordedAt));
   }
 
@@ -3332,6 +3347,34 @@ export class DatabaseStorage implements IStorage {
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
     return { items, total: Number(totalRow?.total ?? 0) };
+  }
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    return db.select().from(featureFlags).orderBy(desc(featureFlags.createdAt));
+  }
+
+  async getFeatureFlag(key: string): Promise<FeatureFlag | undefined> {
+    const [flag] = await db.select().from(featureFlags).where(eq(featureFlags.key, key));
+    return flag;
+  }
+
+  async getFeatureFlagById(id: string): Promise<FeatureFlag | undefined> {
+    const [flag] = await db.select().from(featureFlags).where(eq(featureFlags.id, id));
+    return flag;
+  }
+
+  async createFeatureFlag(flag: InsertFeatureFlag): Promise<FeatureFlag> {
+    const [created] = await db.insert(featureFlags).values(flag).returning();
+    return created;
+  }
+
+  async updateFeatureFlag(key: string, data: Partial<FeatureFlag>): Promise<FeatureFlag | undefined> {
+    const [updated] = await db.update(featureFlags).set({ ...data, updatedAt: new Date() }).where(eq(featureFlags.key, key)).returning();
+    return updated;
+  }
+
+  async deleteFeatureFlag(key: string): Promise<boolean> {
+    const result = await db.delete(featureFlags).where(eq(featureFlags.key, key)).returning();
+    return result.length > 0;
   }
 }
 
