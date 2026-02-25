@@ -530,6 +530,8 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
 export default function Dashboard() {
   const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const { data: stats, isLoading: statsLoading, dataUpdatedAt: statsUpdatedAt, refetch: refetchStats } = useQuery<{
     totalAlerts: number;
@@ -555,9 +557,11 @@ export default function Dashboard() {
     }
   }, [statsUpdatedAt, analyticsUpdatedAt]);
 
-  const handleRefresh = useCallback(() => {
-    refetchStats();
-    refetchAnalytics();
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.all([refetchStats(), refetchAnalytics()]);
+    setLastUpdated(new Date());
+    setTimeout(() => setIsRefreshing(false), 600);
   }, [refetchStats, refetchAnalytics]);
 
   return (
@@ -574,31 +578,99 @@ export default function Dashboard() {
               <Button
                 size="sm"
                 variant={timeRange === "24h" ? "secondary" : "ghost"}
-                className="h-7 px-3 text-xs font-medium rounded-md"
-                onClick={() => setTimeRange("24h")}
+                className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "24h" ? "shadow-sm" : "hover:bg-muted/50"}`}
+                onClick={() => { setTimeRange("24h"); handleRefresh(); }}
               >
                 Last 24h
               </Button>
               <Button
                 size="sm"
                 variant={timeRange === "live" ? "secondary" : "ghost"}
-                className="h-7 px-3 text-xs font-medium rounded-md"
-                onClick={() => setTimeRange("live")}
+                className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "live" ? "shadow-sm" : "hover:bg-muted/50"}`}
+                onClick={() => { setTimeRange("live"); handleRefresh(); }}
               >
-                Live
+                <span className={`${timeRange === "live" ? "flex items-center gap-1.5" : ""}`}>
+                  {timeRange === "live" && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" /></span>}
+                  Live
+                </span>
               </Button>
             </div>
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleRefresh}>
-              <RefreshCw className="h-4 w-4" />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
+              onClick={handleRefresh}
+              title="Refresh data"
+            >
+              <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`} />
             </Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8 relative">
-              <Bell className="h-4 w-4" />
-              {(stats?.criticalAlerts ?? 0) > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
-                  {stats?.criticalAlerts}
-                </span>
+            <div className="relative">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
+                onClick={() => setShowNotifications(!showNotifications)}
+                title="Notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {(stats?.criticalAlerts ?? 0) > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white animate-pulse">
+                    {stats?.criticalAlerts}
+                  </span>
+                )}
+              </Button>
+              {showNotifications && (
+                <div className="absolute right-0 top-10 w-72 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-border bg-muted/30">
+                    <span className="text-xs font-semibold">Notifications</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {(stats?.criticalAlerts ?? 0) > 0 ? (
+                      <Link href="/alerts?severity=critical" onClick={() => setShowNotifications(false)}>
+                        <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer border-b border-border/50">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2 w-2 rounded-full bg-red-500" />
+                            <span className="text-xs font-medium">{stats?.criticalAlerts} critical alert{(stats?.criticalAlerts ?? 0) > 1 ? "s" : ""} need attention</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to view critical alerts</p>
+                        </div>
+                      </Link>
+                    ) : null}
+                    {(stats?.openIncidents ?? 0) > 0 ? (
+                      <Link href="/incidents?status=open" onClick={() => setShowNotifications(false)}>
+                        <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer border-b border-border/50">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2 w-2 rounded-full bg-orange-500" />
+                            <span className="text-xs font-medium">{stats?.openIncidents} open incident{(stats?.openIncidents ?? 0) > 1 ? "s" : ""}</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to investigate</p>
+                        </div>
+                      </Link>
+                    ) : null}
+                    {(stats?.escalatedIncidents ?? 0) > 0 ? (
+                      <Link href="/incidents" onClick={() => setShowNotifications(false)}>
+                        <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2 w-2 rounded-full bg-amber-500" />
+                            <span className="text-xs font-medium">{stats?.escalatedIncidents} escalated for Tier 2</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to review</p>
+                        </div>
+                      </Link>
+                    ) : null}
+                    {!(stats?.criticalAlerts) && !(stats?.openIncidents) && !(stats?.escalatedIncidents) && (
+                      <div className="px-3 py-6 text-center">
+                        <CheckCircle2 className="h-5 w-5 mx-auto text-emerald-500 mb-1.5" />
+                        <p className="text-xs text-muted-foreground">All clear — no new notifications</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-3 py-2 border-t border-border bg-muted/20 text-center">
+                    <span className="text-[10px] text-muted-foreground">Updated {lastUpdated.toLocaleTimeString()}</span>
+                  </div>
+                </div>
               )}
-            </Button>
+            </div>
           </div>
         </div>
 

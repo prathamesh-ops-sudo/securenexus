@@ -199,8 +199,8 @@ export function AppSidebar() {
 
       <SidebarSeparator />
 
-      <SidebarContent className="[&>div]:py-1">
-        <SidebarGroup className="py-1">
+      <SidebarContent className="gap-0 [&>div]:py-0">
+        <SidebarGroup className="px-2 py-1">
           <SidebarGroupContent>
             <SidebarMenu>
               {coreItems.map(renderItem)}
@@ -208,9 +208,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator className="my-0.5" />
+        <SidebarSeparator className="my-0" />
 
-        <SidebarGroup className="py-1">
+        <SidebarGroup className="px-2 py-1">
           <SidebarGroupContent>
             <SidebarMenu>
               {navGroups.map(renderCollapsibleGroup)}
@@ -218,9 +218,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator className="my-0.5" />
+        <SidebarSeparator className="my-0" />
 
-        <SidebarGroup className="py-1">
+        <SidebarGroup className="px-2 py-1">
           <SidebarGroupContent>
             <SidebarMenu>
               {renderCollapsibleGroup(adminGroup)}
