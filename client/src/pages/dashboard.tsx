@@ -1,19 +1,67 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Shield, AlertTriangle, FileWarning, CheckCircle2, Zap, ArrowUpRight,
-  Clock, Target, Plug, Activity, TrendingUp, Crosshair, RefreshCw, Bell
+  Clock, Target, Plug, Activity, TrendingUp, Crosshair, RefreshCw, Bell,
+  Eye, EyeOff, Pin, GripVertical, LayoutDashboard, Save, RotateCcw,
+  TrendingDown, ArrowDown, ArrowUp, Minus, ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link } from "wouter";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   AreaChart, Area,
 } from "recharts";
+
+type WidgetId = "severity" | "sources" | "trend" | "mitre" | "categories" | "connectors" | "ingestion" | "whatChanged";
+
+type WidgetConfig = {
+  id: WidgetId;
+  label: string;
+  visible: boolean;
+  pinned: boolean;
+  order: number;
+};
+
+type LayoutPreset = {
+  name: string;
+  key: string;
+  widgets: WidgetId[];
+};
+
+const DEFAULT_WIDGETS: WidgetConfig[] = [
+  { id: "severity", label: "Severity Distribution", visible: true, pinned: false, order: 0 },
+  { id: "sources", label: "Alerts by Source", visible: true, pinned: false, order: 1 },
+  { id: "trend", label: "Alert Trend", visible: true, pinned: false, order: 2 },
+  { id: "mitre", label: "MITRE Tactics", visible: true, pinned: false, order: 3 },
+  { id: "categories", label: "Threat Categories", visible: true, pinned: false, order: 4 },
+  { id: "connectors", label: "Connector Health", visible: true, pinned: false, order: 5 },
+  { id: "ingestion", label: "Ingestion Rate", visible: true, pinned: false, order: 6 },
+  { id: "whatChanged", label: "What Changed (24h)", visible: true, pinned: false, order: 7 },
+];
+
+const LAYOUT_PRESETS: LayoutPreset[] = [
+  { name: "SOC Analyst", key: "soc", widgets: ["severity", "trend", "mitre", "sources", "whatChanged", "connectors"] },
+  { name: "Enterprise", key: "enterprise", widgets: ["severity", "sources", "trend", "categories", "connectors", "ingestion", "whatChanged", "mitre"] },
+  { name: "Cloud-first", key: "cloud", widgets: ["connectors", "ingestion", "trend", "severity", "whatChanged"] },
+];
+
+function loadWidgetConfig(): WidgetConfig[] {
+  try {
+    const raw = localStorage.getItem("dashboard.widgets.v1");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return DEFAULT_WIDGETS;
+}
+
+function saveWidgetConfig(config: WidgetConfig[]) {
+  localStorage.setItem("dashboard.widgets.v1", JSON.stringify(config));
+}
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#ef4444",
@@ -527,11 +575,151 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
   );
 }
 
+function AnomalyBanners({ stats }: { stats: { totalAlerts: number; openIncidents: number; criticalAlerts: number; resolvedIncidents: number; newAlertsToday: number; escalatedIncidents: number } | undefined }) {
+  const banners: { message: string; severity: "critical" | "warning" | "info"; href: string }[] = [];
+  if ((stats?.criticalAlerts ?? 0) >= 5) {
+    banners.push({ message: `${stats?.criticalAlerts} critical alerts detected — immediate triage recommended`, severity: "critical", href: "/alerts?severity=critical" });
+  }
+  if ((stats?.escalatedIncidents ?? 0) >= 3) {
+    banners.push({ message: `${stats?.escalatedIncidents} incidents escalated to Tier 2 — review queue`, severity: "warning", href: "/incidents" });
+  }
+  if ((stats?.newAlertsToday ?? 0) > 50) {
+    banners.push({ message: `Unusual spike: ${stats?.newAlertsToday} new alerts today (above normal baseline)`, severity: "warning", href: "/alerts" });
+  }
+  if ((stats?.openIncidents ?? 0) >= 10) {
+    banners.push({ message: `${stats?.openIncidents} open incidents — consider prioritizing resolution`, severity: "info", href: "/incidents?status=open" });
+  }
+  if (banners.length === 0) return null;
+  const severityStyles = {
+    critical: "bg-red-500/10 border-red-500/30 text-red-400",
+    warning: "bg-amber-500/10 border-amber-500/30 text-amber-400",
+    info: "bg-blue-500/10 border-blue-500/30 text-blue-400",
+  };
+  return (
+    <div className="space-y-2">
+      {banners.map((b, i) => (
+        <Link key={i} href={b.href}>
+          <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity ${severityStyles[b.severity]}`}>
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            <span className="text-xs font-medium flex-1">{b.message}</span>
+            <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function WhatChangedWidget({ stats }: { stats: { totalAlerts: number; openIncidents: number; criticalAlerts: number; resolvedIncidents: number; newAlertsToday: number; escalatedIncidents: number } | undefined }) {
+  const metrics = useMemo(() => {
+    if (!stats) return [];
+    return [
+      { label: "New Alerts Today", value: stats.newAlertsToday, baseline: 20, href: "/alerts" },
+      { label: "Critical Alerts", value: stats.criticalAlerts, baseline: 2, href: "/alerts?severity=critical" },
+      { label: "Open Incidents", value: stats.openIncidents, baseline: 5, href: "/incidents?status=open" },
+      { label: "Resolved (24h)", value: stats.resolvedIncidents, baseline: 3, href: "/incidents?status=resolved" },
+      { label: "Escalated", value: stats.escalatedIncidents, baseline: 1, href: "/incidents" },
+    ];
+  }, [stats]);
+
+  return (
+    <Card className="gradient-card h-full">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">What Changed (Last 24h)</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!stats ? (
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">No data available</div>
+        ) : (
+          <div className="space-y-3">
+            {metrics.map((m) => {
+              const delta = m.value - m.baseline;
+              const pct = m.baseline > 0 ? Math.round((delta / m.baseline) * 100) : 0;
+              const isUp = delta > 0;
+              const isDown = delta < 0;
+              return (
+                <Link key={m.label} href={m.href}>
+                  <div className="flex items-center justify-between py-1.5 hover:bg-muted/30 rounded px-2 -mx-2 transition-colors cursor-pointer">
+                    <span className="text-xs">{m.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold tabular-nums">{m.value}</span>
+                      <div className={`flex items-center gap-0.5 text-[10px] font-medium ${isUp ? "text-red-400" : isDown ? "text-emerald-400" : "text-muted-foreground"}`}>
+                        {isUp ? <ArrowUp className="h-3 w-3" /> : isDown ? <ArrowDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+                        <span>{Math.abs(pct)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WidgetCustomizer({ widgets, onToggle, onPin, onApplyPreset, onReset }: {
+  widgets: WidgetConfig[];
+  onToggle: (id: WidgetId) => void;
+  onPin: (id: WidgetId) => void;
+  onApplyPreset: (preset: LayoutPreset) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Presets:</span>
+        {LAYOUT_PRESETS.map((p) => (
+          <Button key={p.key} size="sm" variant="outline" className="text-[10px] h-6 px-2" onClick={() => onApplyPreset(p)}>
+            <LayoutDashboard className="h-3 w-3 mr-1" />
+            {p.name}
+          </Button>
+        ))}
+        <Button size="sm" variant="ghost" className="text-[10px] h-6 px-2" onClick={onReset}>
+          <RotateCcw className="h-3 w-3 mr-1" />
+          Reset
+        </Button>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Widgets:</span>
+        {widgets.sort((a, b) => a.order - b.order).map((w) => (
+          <div key={w.id} className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant={w.visible ? "secondary" : "outline"}
+              className={`text-[10px] h-6 px-2 ${!w.visible ? "opacity-50" : ""}`}
+              onClick={() => onToggle(w.id)}
+            >
+              {w.visible ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
+              {w.label}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`h-6 w-6 p-0 ${w.pinned ? "text-amber-400" : "text-muted-foreground/40"}`}
+              onClick={() => onPin(w.id)}
+              title={w.pinned ? "Unpin" : "Pin to top"}
+            >
+              <Pin className="h-3 w-3" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showCustomizer, setShowCustomizer] = useState(false);
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig[]>(loadWidgetConfig);
 
   const { data: stats, isLoading: statsLoading, dataUpdatedAt: statsUpdatedAt, refetch: refetchStats } = useQuery<{
     totalAlerts: number;
@@ -564,9 +752,58 @@ export default function Dashboard() {
     setTimeout(() => setIsRefreshing(false), 600);
   }, [refetchStats, refetchAnalytics]);
 
+  const toggleWidget = useCallback((id: WidgetId) => {
+    setWidgetConfig(prev => {
+      const updated = prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w);
+      saveWidgetConfig(updated);
+      return updated;
+    });
+  }, []);
+
+  const pinWidget = useCallback((id: WidgetId) => {
+    setWidgetConfig(prev => {
+      const updated = prev.map(w => w.id === id ? { ...w, pinned: !w.pinned } : w);
+      saveWidgetConfig(updated);
+      return updated;
+    });
+  }, []);
+
+  const applyPreset = useCallback((preset: LayoutPreset) => {
+    setWidgetConfig(prev => {
+      const updated = prev.map(w => ({
+        ...w,
+        visible: preset.widgets.includes(w.id),
+        order: preset.widgets.indexOf(w.id) >= 0 ? preset.widgets.indexOf(w.id) : w.order + 100,
+      }));
+      saveWidgetConfig(updated);
+      return updated;
+    });
+  }, []);
+
+  const resetWidgets = useCallback(() => {
+    setWidgetConfig(DEFAULT_WIDGETS);
+    saveWidgetConfig(DEFAULT_WIDGETS);
+  }, []);
+
+  const isWidgetVisible = useCallback((id: WidgetId) => {
+    return widgetConfig.find(w => w.id === id)?.visible ?? true;
+  }, [widgetConfig]);
+
+  const visibleChartWidgets = useMemo(() => {
+    const chartIds: WidgetId[] = ["severity", "sources", "trend"];
+    return chartIds.filter(id => isWidgetVisible(id));
+  }, [isWidgetVisible]);
+
+  const visibleBottomWidgets = useMemo(() => {
+    const bottomIds: WidgetId[] = ["mitre", "categories", "connectors", "ingestion", "whatChanged"];
+    return bottomIds.filter(id => isWidgetVisible(id));
+  }, [isWidgetVisible]);
+
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
+
+        <AnomalyBanners stats={stats} />
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -603,6 +840,15 @@ export default function Dashboard() {
               title="Refresh data"
             >
               <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`} />
+            </Button>
+            <Button
+              size="icon"
+              variant={showCustomizer ? "secondary" : "ghost"}
+              className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
+              onClick={() => setShowCustomizer(!showCustomizer)}
+              title="Customize dashboard"
+            >
+              <LayoutDashboard className="h-4 w-4" />
             </Button>
             <div className="relative">
               <Button
@@ -674,6 +920,20 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {showCustomizer && (
+          <Card className="gradient-card">
+            <CardContent className="p-4">
+              <WidgetCustomizer
+                widgets={widgetConfig}
+                onToggle={toggleWidget}
+                onPin={pinWidget}
+                onApplyPreset={applyPreset}
+                onReset={resetWidgets}
+              />
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {statsLoading ? (
             Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
@@ -737,45 +997,41 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {analyticsLoading ? (
-            <>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-            </>
-          ) : analytics ? (
-            <>
-              <SeverityChart data={analytics.severityDistribution} />
-              <SourceChart data={analytics.sourceDistribution} />
-              <TrendChart data={analytics.alertTrend} />
-            </>
-          ) : (
-            <Card className="gradient-card col-span-3">
-              <div className="flex items-center justify-center h-[240px] text-sm text-muted-foreground">
-                No analytics data available
-              </div>
-            </Card>
-          )}
-        </div>
+        {visibleChartWidgets.length > 0 && (
+          <div className={`grid grid-cols-1 ${visibleChartWidgets.length === 2 ? "lg:grid-cols-2" : visibleChartWidgets.length >= 3 ? "lg:grid-cols-3" : ""} gap-4`}>
+            {analyticsLoading ? (
+              visibleChartWidgets.map((_, i) => <Card key={i} className="gradient-card"><ChartSkeleton /></Card>)
+            ) : analytics ? (
+              <>
+                {isWidgetVisible("severity") && <SeverityChart data={analytics.severityDistribution} />}
+                {isWidgetVisible("sources") && <SourceChart data={analytics.sourceDistribution} />}
+                {isWidgetVisible("trend") && <TrendChart data={analytics.alertTrend} />}
+              </>
+            ) : (
+              <Card className="gradient-card col-span-3">
+                <div className="flex items-center justify-center h-[240px] text-sm text-muted-foreground">
+                  No analytics data available
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {analyticsLoading ? (
-            <>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-              <Card className="gradient-card"><ChartSkeleton /></Card>
-            </>
-          ) : analytics ? (
-            <>
-              <MitreTacticsWidget data={analytics.topMitreTactics} />
-              <CategoryWidget data={analytics.categoryDistribution} />
-              <ConnectorHealthWidget data={analytics.connectorHealth} />
-              <IngestionRateChart data={analytics.ingestionRate} />
-            </>
-          ) : null}
-        </div>
+        {visibleBottomWidgets.length > 0 && (
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${visibleBottomWidgets.length >= 4 ? "lg:grid-cols-4" : visibleBottomWidgets.length === 3 ? "lg:grid-cols-3" : visibleBottomWidgets.length === 2 ? "lg:grid-cols-2" : ""} gap-4`}>
+            {analyticsLoading ? (
+              visibleBottomWidgets.map((_, i) => <Card key={i} className="gradient-card"><ChartSkeleton /></Card>)
+            ) : analytics ? (
+              <>
+                {isWidgetVisible("mitre") && <MitreTacticsWidget data={analytics.topMitreTactics} />}
+                {isWidgetVisible("categories") && <CategoryWidget data={analytics.categoryDistribution} />}
+                {isWidgetVisible("connectors") && <ConnectorHealthWidget data={analytics.connectorHealth} />}
+                {isWidgetVisible("ingestion") && <IngestionRateChart data={analytics.ingestionRate} />}
+                {isWidgetVisible("whatChanged") && <WhatChangedWidget stats={stats} />}
+              </>
+            ) : null}
+          </div>
+        )}
 
       </div>
 

@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight, X, Clock, Tag, MapPin, UserPlus, ArrowUpRight } from "lucide-react";
+import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight, X, Clock, Tag, MapPin, UserPlus, ArrowUpRight, Activity, User } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,12 +9,58 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule } from "@shared/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+
+function MiniTimeline({ alert }: { alert: Alert }) {
+  const events: { label: string; actor?: string }[] = [];
+  if (alert.createdAt) events.push({ label: "Created" });
+  if (alert.assignedTo) events.push({ label: "Assigned", actor: alert.assignedTo });
+  if (alert.status === "resolved" || alert.status === "false_positive") {
+    events.push({ label: alert.status === "resolved" ? "Resolved" : "False Positive" });
+  }
+  if (events.length === 0) return null;
+  const recent = events.slice(-3);
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      {recent.map((ev, i) => (
+        <span key={i} className="inline-flex items-center gap-0.5">
+          {i > 0 && <span className="text-muted-foreground/40 mx-0.5">→</span>}
+          <span className="text-[9px] text-muted-foreground">{ev.label}</span>
+          {ev.actor && <span className="text-[9px] text-primary/70">{ev.actor}</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function FilterChips({ filters, onRemove, onClearAll }: {
+  filters: { key: string; label: string; value: string }[];
+  onRemove: (key: string) => void;
+  onClearAll: () => void;
+}) {
+  if (filters.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Active Filters:</span>
+      {filters.map((f) => (
+        <Badge key={f.key} variant="secondary" className="text-[10px] pl-2 pr-1 py-0.5 gap-1 cursor-pointer hover:bg-destructive/10 transition-colors">
+          <span className="text-muted-foreground">{f.label}:</span> {f.value}
+          <button onClick={(e) => { e.stopPropagation(); onRemove(f.key); }} className="ml-0.5 rounded-full hover:bg-muted p-0.5">
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </Badge>
+      ))}
+      <button onClick={onClearAll} className="text-[10px] text-destructive hover:underline">
+        Clear all
+      </button>
+    </div>
+  );
+}
 
 interface CorrelationGroup {
   groupName: string;
@@ -320,6 +366,56 @@ export default function AlertsPage() {
     if (page > maxPage) setPage(maxPage);
   }, [filtered, page]);
 
+  const assignFocused = useCallback(() => {
+    if (!focusedAlertId) return;
+    const name = prompt("Assign to:");
+    if (name && name.trim()) {
+      apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { assignedTo: name.trim() }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        toast({ title: "Assigned", description: `Alert assigned to ${name.trim()}` });
+      });
+    }
+  }, [focusedAlertId, toast]);
+
+  const escalateFocused = useCallback(() => {
+    if (!focusedAlertId) return;
+    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "escalated" }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Escalated" });
+    });
+  }, [focusedAlertId, toast]);
+
+  const resolveFocused = useCallback(() => {
+    if (!focusedAlertId) return;
+    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "resolved" }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Resolved" });
+    });
+  }, [focusedAlertId, toast]);
+
+  const activeFilters = useMemo(() => {
+    const chips: { key: string; label: string; value: string }[] = [];
+    if (severityFilter !== "all") chips.push({ key: "severity", label: "Severity", value: severityFilter });
+    if (search) chips.push({ key: "search", label: "Search", value: search });
+    if (queueFilter !== "all") chips.push({ key: "queue", label: "Queue", value: queueFilter });
+    if (showSuppressed) chips.push({ key: "suppressed", label: "Showing", value: "Suppressed" });
+    return chips;
+  }, [severityFilter, search, queueFilter, showSuppressed]);
+
+  const handleRemoveFilter = useCallback((key: string) => {
+    if (key === "severity") setSeverityFilter("all");
+    if (key === "search") setSearch("");
+    if (key === "queue") setQueueFilter("all");
+    if (key === "suppressed") setShowSuppressed(false);
+  }, []);
+
+  const handleClearAllFilters = useCallback(() => {
+    setSeverityFilter("all");
+    setSearch("");
+    setQueueFilter("all");
+    setShowSuppressed(false);
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!filtered || filtered.length === 0) return;
@@ -333,15 +429,33 @@ export default function AlertsPage() {
       const idx = filtered.findIndex((a) => a.id === focusedAlertId);
       if (e.key.toLowerCase() === "j") {
         e.preventDefault();
-        setFocusedAlertId(filtered[Math.min(idx < 0 ? 0 : idx + 1, filtered.length - 1)]?.id || null);
+        const next = Math.min(idx < 0 ? 0 : idx + 1, filtered.length - 1);
+        setFocusedAlertId(filtered[next]?.id || null);
+        const newPage = Math.floor(next / PAGE_SIZE);
+        if (newPage !== page) setPage(newPage);
       }
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setFocusedAlertId(filtered[Math.max(idx < 0 ? 0 : idx - 1, 0)]?.id || null);
+        const prev = Math.max(idx < 0 ? 0 : idx - 1, 0);
+        setFocusedAlertId(filtered[prev]?.id || null);
+        const newPage = Math.floor(prev / PAGE_SIZE);
+        if (newPage !== page) setPage(newPage);
       }
       if (e.key.toLowerCase() === "t" && selectedIds.length > 0) {
         e.preventDefault();
         bulkUpdate.mutate({ status: "triaged" });
+      }
+      if (e.key.toLowerCase() === "a" && focusedAlertId) {
+        e.preventDefault();
+        assignFocused();
+      }
+      if (e.key.toLowerCase() === "e" && focusedAlertId) {
+        e.preventDefault();
+        escalateFocused();
+      }
+      if (e.key.toLowerCase() === "r" && focusedAlertId) {
+        e.preventDefault();
+        resolveFocused();
       }
       if (e.key === "Enter" && focusedAlertId) {
         e.preventDefault();
@@ -353,7 +467,7 @@ export default function AlertsPage() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [filtered, focusedAlertId, selectedIds, bulkUpdate]);
+  }, [filtered, focusedAlertId, selectedIds, bulkUpdate, page, assignFocused, escalateFocused, resolveFocused]);
 
   const selectedAlert = useMemo(
     () => (alerts && focusedAlertId ? alerts.find((alert) => alert.id === focusedAlertId) ?? null : null),
@@ -502,6 +616,8 @@ export default function AlertsPage() {
         </div>
       )}
 
+      <FilterChips filters={activeFilters} onRemove={handleRemoveFilter} onClearAll={handleClearAllFilters} />
+
       {selectedIds.length > 0 && (
         <Card>
           <CardContent className="pt-4 flex items-center flex-wrap gap-2">
@@ -530,7 +646,7 @@ export default function AlertsPage() {
             </Button>
             <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: true })} disabled={bulkUpdate.isPending}>Suppress</Button>
             <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: false })} disabled={bulkUpdate.isPending}>Unsuppress</Button>
-            <span className="text-xs text-muted-foreground">Shortcuts: J/K focus rows, Enter open detail, Esc close detail, T set selected to triaged.</span>
+            <span className="text-xs text-muted-foreground">Keys: J/K nav, Enter open, Esc close, T triage, A assign, E escalate, R resolve</span>
           </CardContent>
         </Card>
       )}
@@ -873,7 +989,8 @@ export default function AlertsPage() {
         </Card>
       )}
 
-      <Card>
+      <div className={`flex gap-4 ${isDetailOpen && selectedAlert ? "" : ""}`}>
+      <Card className={`${isDetailOpen && selectedAlert ? "flex-1 min-w-0" : "w-full"} transition-all duration-200`}>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -917,8 +1034,8 @@ export default function AlertsPage() {
                   pageAlerts.map((alert) => (
                     <tr
                       key={alert.id}
-                      className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-muted/40" : ""}`}
-                      onClick={() => navigate('/alerts/' + alert.id)}
+                      className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}
+                      onClick={() => { setFocusedAlertId(alert.id); setIsDetailOpen(true); }}
                       data-testid={`row-alert-${alert.id}`}
                     >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -935,6 +1052,7 @@ export default function AlertsPage() {
                           <div>
                             <div className={`text-sm font-medium ${alert.suppressed ? "line-through text-muted-foreground" : ""}`}>{alert.title}</div>
                             <div className="text-xs text-muted-foreground truncate max-w-[300px]">{alert.description}</div>
+                            <MiniTimeline alert={alert} />
                           </div>
                         </div>
                       </td>
@@ -1069,7 +1187,7 @@ export default function AlertsPage() {
       </Card>
 
       {isDetailOpen && selectedAlert && (
-        <div className="fixed top-0 right-0 h-full w-full max-w-md border-l bg-background shadow-xl z-50 flex flex-col" role="complementary" aria-label="Alert detail panel">
+        <Card className="w-full max-w-md flex-shrink-0 hidden lg:flex flex-col max-h-[calc(100vh-12rem)] sticky top-24">
           <div className="flex items-center justify-between gap-2 p-4 border-b">
             <h3 className="text-sm font-semibold truncate">Alert Detail</h3>
             <Button size="icon" variant="ghost" onClick={() => setIsDetailOpen(false)} aria-label="Close detail panel">
@@ -1099,6 +1217,12 @@ export default function AlertsPage() {
                 <p className="text-xs mt-0.5">{selectedAlert.category?.replace(/_/g, " ") || "-"}</p>
               </div>
             </div>
+            {selectedAlert.assignedTo && (
+              <div className="flex items-center gap-2">
+                <User className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs">Assigned to: <span className="font-medium">{selectedAlert.assignedTo}</span></span>
+              </div>
+            )}
             {selectedAlert.mitreTactic && (
               <div className="flex items-center gap-2">
                 <Tag className="h-3 w-3 text-muted-foreground" />
@@ -1147,19 +1271,37 @@ export default function AlertsPage() {
                 </div>
               );
             })()}
-            <div className="flex items-center gap-2 pt-2 border-t">
-              <Button size="sm" onClick={() => navigate('/alerts/' + selectedAlert.id)}>
-                <ExternalLink className="h-3 w-3 mr-1.5" />
-                Full Detail
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => handleTriageClick(selectedAlert.id)} disabled={triage.isPending}>
-                <Brain className="h-3 w-3 mr-1.5" />
-                AI Triage
-              </Button>
+            <div className="space-y-2 pt-2 border-t">
+              <div className="text-[10px] text-muted-foreground uppercase">Quick Actions</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button size="sm" variant="outline" onClick={assignFocused}>
+                  <UserPlus className="h-3 w-3 mr-1" />
+                  Assign (A)
+                </Button>
+                <Button size="sm" variant="outline" onClick={escalateFocused}>
+                  <ArrowUpRight className="h-3 w-3 mr-1" />
+                  Escalate (E)
+                </Button>
+                <Button size="sm" variant="outline" onClick={resolveFocused}>
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Resolve (R)
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => navigate('/alerts/' + selectedAlert.id)}>
+                  <ExternalLink className="h-3 w-3 mr-1.5" />
+                  Full Detail
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handleTriageClick(selectedAlert.id)} disabled={triage.isPending}>
+                  <Brain className="h-3 w-3 mr-1.5" />
+                  AI Triage
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        </Card>
       )}
+      </div>
     </div>
   );
 }
