@@ -80,7 +80,9 @@ export async function getProviderStatuses(orgId?: string): Promise<ProviderStatu
           configured = !!config.apiKey || configured;
           enabled = config.enabled ?? configured;
         }
-      } catch {}
+      } catch (err) {
+        console.warn("Failed to load threat intel config for org:", err);
+      }
     }
 
     statuses.push({

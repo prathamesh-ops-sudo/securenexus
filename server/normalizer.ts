@@ -154,8 +154,8 @@ function normalizeSplunk(payload: any): NormalizedAlert {
     },
     sourceIp: event.src_ip || event.src || event.source_ip,
     destIp: event.dest_ip || event.dest || event.destination_ip,
-    sourcePort: parseInt(event.src_port) || undefined,
-    destPort: parseInt(event.dest_port) || undefined,
+    sourcePort: parseInt(event.src_port, 10) || undefined,
+    destPort: parseInt(event.dest_port, 10) || undefined,
     protocol: event.transport || event.protocol,
     hostname: event.host || event.hostname || event.dvc,
     userId: event.user || event.src_user,
@@ -207,8 +207,8 @@ function normalizePaloAlto(payload: any): NormalizedAlert {
     },
     sourceIp: event.src || event.source_ip || event.srcip,
     destIp: event.dst || event.destination_ip || event.dstip,
-    sourcePort: parseInt(event.sport || event.src_port) || undefined,
-    destPort: parseInt(event.dport || event.dst_port) || undefined,
+    sourcePort: parseInt(event.sport || event.src_port, 10) || undefined,
+    destPort: parseInt(event.dport || event.dst_port, 10) || undefined,
     protocol: event.proto || event.protocol,
     hostname: event.device_name || event.hostname,
     userId: event.srcuser || event.user,
@@ -386,8 +386,8 @@ function normalizeElastic(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "elastic", timestamp: new Date().toISOString() },
     sourceIp: source.ip || event.source?.ip,
     destIp: destination.ip || event.destination?.ip,
-    sourcePort: parseInt(source.port || event.source?.port) || undefined,
-    destPort: parseInt(destination.port || event.destination?.port) || undefined,
+    sourcePort: parseInt(source.port || event.source?.port, 10) || undefined,
+    destPort: parseInt(destination.port || event.destination?.port, 10) || undefined,
     protocol: network.protocol || event.network?.protocol,
     hostname: host.hostname || event.host?.hostname,
     userId: user.name || event.user?.name,
@@ -402,7 +402,7 @@ function normalizeElastic(payload: any): NormalizedAlert {
 
 function normalizeQRadar(payload: any): NormalizedAlert {
   const event = payload.event || payload;
-  const magnitude = parseInt(event.magnitude) || 5;
+  const magnitude = parseInt(event.magnitude, 10) || 5;
   const severityStr =
     magnitude >= 9 ? "critical" :
     magnitude >= 7 ? "high" :
@@ -419,8 +419,8 @@ function normalizeQRadar(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "qradar", timestamp: new Date().toISOString() },
     sourceIp: event.sourceIP || event.source_ip,
     destIp: event.destinationIP || event.destination_ip,
-    sourcePort: parseInt(event.sourcePort || event.source_port) || undefined,
-    destPort: parseInt(event.destinationPort || event.destination_port) || undefined,
+    sourcePort: parseInt(event.sourcePort || event.source_port, 10) || undefined,
+    destPort: parseInt(event.destinationPort || event.destination_port, 10) || undefined,
     protocol: event.protocol,
     hostname: event.hostName || event.hostname,
     userId: event.username || event.user,
@@ -441,8 +441,8 @@ function normalizeFortiGate(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "fortigate", timestamp: new Date().toISOString() },
     sourceIp: event.srcip || event.src,
     destIp: event.dstip || event.dst,
-    sourcePort: parseInt(event.srcport) || undefined,
-    destPort: parseInt(event.dstport) || undefined,
+    sourcePort: parseInt(event.srcport, 10) || undefined,
+    destPort: parseInt(event.dstport, 10) || undefined,
     protocol: event.proto || event.protocol,
     hostname: event.hostname || event.devname,
     userId: event.user || event.srcuser,
@@ -454,7 +454,7 @@ function normalizeFortiGate(payload: any): NormalizedAlert {
 
 function normalizeCarbonBlack(payload: any): NormalizedAlert {
   const event = payload.alert || payload;
-  const severity = parseInt(event.severity) || 5;
+  const severity = parseInt(event.severity, 10) || 5;
   const severityStr =
     severity >= 9 ? "critical" :
     severity >= 7 ? "high" :
@@ -483,7 +483,7 @@ function normalizeCarbonBlack(payload: any): NormalizedAlert {
 
 function normalizeQualys(payload: any): NormalizedAlert {
   const event = payload.vulnerability || payload;
-  const severity = parseInt(event.severity) || 3;
+  const severity = parseInt(event.severity, 10) || 3;
   const severityStr =
     severity >= 5 ? "critical" :
     severity >= 4 ? "high" :
@@ -499,7 +499,7 @@ function normalizeQualys(payload: any): NormalizedAlert {
     rawData: payload,
     normalizedData: { normalized: true, source: "qualys", timestamp: new Date().toISOString() },
     sourceIp: event.ip || event.host_ip,
-    sourcePort: parseInt(event.port) || undefined,
+    sourcePort: parseInt(event.port, 10) || undefined,
     protocol: event.protocol,
     hostname: event.fqdn || event.hostname || event.os,
     url: event.cveList ? `https://cve.mitre.org/cgi-bin/cvename.cgi?name=${event.cveList}` : undefined,
@@ -512,7 +512,7 @@ function normalizeTenable(payload: any): NormalizedAlert {
   const plugin = event.plugin || {};
   const asset = event.asset || {};
   const port = event.port || {};
-  const severity = parseInt(event.severity ?? plugin.severity) || 2;
+  const severity = parseInt(event.severity ?? plugin.severity, 10) || 2;
   const severityStr =
     severity >= 4 ? "critical" :
     severity >= 3 ? "high" :
@@ -528,7 +528,7 @@ function normalizeTenable(payload: any): NormalizedAlert {
     rawData: payload,
     normalizedData: { normalized: true, source: "tenable", timestamp: new Date().toISOString() },
     sourceIp: asset.ipv4 || event.ip,
-    sourcePort: parseInt(port.port) || undefined,
+    sourcePort: parseInt(port.port, 10) || undefined,
     protocol: port.protocol,
     hostname: asset.hostname || event.hostname,
     detectedAt: parseTimestamp(event.first_found || event.timestamp),
@@ -557,7 +557,7 @@ function normalizeDarktrace(payload: any): NormalizedAlert {
   const event = payload.breach || payload;
   const model = event.model || {};
   const device = event.device || {};
-  const score = parseInt(event.score) || 50;
+  const score = parseInt(event.score, 10) || 50;
   const severityStr =
     score >= 80 ? "critical" :
     score >= 60 ? "high" :
@@ -616,8 +616,8 @@ function normalizeTrendMicro(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "trendmicro", timestamp: new Date().toISOString() },
     sourceIp: event.srcIp || event.src_ip,
     destIp: event.dstIp || event.dst_ip,
-    sourcePort: parseInt(event.srcPort || event.src_port) || undefined,
-    destPort: parseInt(event.dstPort || event.dst_port) || undefined,
+    sourcePort: parseInt(event.srcPort || event.src_port, 10) || undefined,
+    destPort: parseInt(event.dstPort || event.dst_port, 10) || undefined,
     hostname: event.endpointHostName || event.hostname,
     mitreTactic: event.matchedRules?.[0]?.name,
     mitreTechnique: event.matchedRules?.[0]?.id,
@@ -656,8 +656,8 @@ function normalizeOkta(payload: any): NormalizedAlert {
 function normalizeProofpoint(payload: any): NormalizedAlert {
   const event = payload.message || payload;
   const threatInfo = event.threatsInfoMap?.[0] || {};
-  const spamScore = parseInt(event.spamScore) || 0;
-  const phishScore = parseInt(event.phishScore) || 0;
+  const spamScore = parseInt(event.spamScore, 10) || 0;
+  const phishScore = parseInt(event.phishScore, 10) || 0;
   const maxScore = Math.max(spamScore, phishScore);
   const severityStr =
     maxScore >= 90 ? "critical" :
@@ -698,8 +698,8 @@ function normalizeSnort(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "snort", timestamp: new Date().toISOString() },
     sourceIp: event.src_addr || event.src_ip,
     destIp: event.dst_addr || event.dst_ip,
-    sourcePort: parseInt(event.src_port) || undefined,
-    destPort: parseInt(event.dst_port) || undefined,
+    sourcePort: parseInt(event.src_port, 10) || undefined,
+    destPort: parseInt(event.dst_port, 10) || undefined,
     protocol: event.proto || event.protocol,
     detectedAt: parseTimestamp(event.timestamp),
   };
@@ -739,8 +739,8 @@ function normalizeCheckPoint(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "checkpoint", timestamp: new Date().toISOString() },
     sourceIp: event.src || event.source_ip,
     destIp: event.dst || event.destination_ip,
-    sourcePort: parseInt(event.s_port || event.source_port) || undefined,
-    destPort: parseInt(event.service || event.dest_port) || undefined,
+    sourcePort: parseInt(event.s_port || event.source_port, 10) || undefined,
+    destPort: parseInt(event.service || event.dest_port, 10) || undefined,
     protocol: event.proto || event.protocol,
     hostname: event.origin || event.hostname,
     mitreTactic: event.attack,
@@ -761,8 +761,8 @@ function normalizeCustom(payload: any): NormalizedAlert {
     normalizedData: { normalized: true, source: "custom", timestamp: new Date().toISOString() },
     sourceIp: payload.source_ip || payload.src_ip,
     destIp: payload.dest_ip || payload.dst_ip,
-    sourcePort: parseInt(payload.source_port) || undefined,
-    destPort: parseInt(payload.dest_port) || undefined,
+    sourcePort: parseInt(payload.source_port, 10) || undefined,
+    destPort: parseInt(payload.dest_port, 10) || undefined,
     protocol: payload.protocol,
     hostname: payload.hostname,
     userId: payload.user_id || payload.user,
