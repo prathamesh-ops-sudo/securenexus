@@ -88,7 +88,7 @@ async function apiKeyAuth(req: Request, res: Response, next: NextFunction) {
   if (!apiKey.isActive) {
     return replyForbidden(res, "API key has been revoked.", ERROR_CODES.API_KEY_REVOKED);
   }
-  storage.updateApiKeyLastUsed(apiKey.id).catch(() => {});
+  storage.updateApiKeyLastUsed(apiKey.id).catch((err) => console.warn("Failed to update API key last used:", err));
   (req as any).apiKey = apiKey;
   (req as any).orgId = apiKey.orgId;
   next();
@@ -176,10 +176,11 @@ async function dispatchWebhookEvent(orgId: string, event: string, payload: any) 
           responseStatus: statusCode,
           responseBody: responseBody.slice(0, 2000),
           success,
-        }).catch(() => {});
-      })().catch(() => {});
+        }).catch((err) => console.warn("Failed to log outbound webhook:", err));
+      })().catch((err) => console.warn("Webhook dispatch error:", err));
     }
-  } catch {
+  } catch (err) {
+    console.warn("dispatchWebhookEvent error:", err);
   }
 }
 
@@ -1336,7 +1337,9 @@ export async function registerRoutes(
             try {
               await resolveAndLinkEntities(alert);
               await correlateAlert(alert);
-            } catch (err) {}
+            } catch (err) {
+              console.warn("Bulk ingestion entity/correlation warning:", err);
+            }
             broadcastEvent({
               type: "alert:created",
               orgId: orgId || null,
@@ -1392,7 +1395,7 @@ export async function registerRoutes(
   // Ingestion health/stats (authenticated user routes)
   app.get("/api/ingestion/logs", isAuthenticated, async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
+      const limit = parseInt(req.query.limit as string, 10) || 50;
       const logs = await storage.getIngestionLogs(undefined, Math.min(limit, 200));
       res.json(logs);
     } catch (error) {
@@ -1708,7 +1711,7 @@ export async function registerRoutes(
 
   app.get("/api/connectors/:id/jobs", isAuthenticated, async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
+      const limit = parseInt(req.query.limit as string, 10) || 50;
       const runs = await storage.getConnectorJobRuns(p(req.params.id), limit);
       res.json(runs);
     } catch (error) { res.status(500).json({ message: "Failed to fetch job runs" }); }
@@ -1754,7 +1757,7 @@ export async function registerRoutes(
 
   app.get("/api/connectors/:id/health", isAuthenticated, async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
+      const limit = parseInt(req.query.limit as string, 10) || 50;
       const checks = await storage.getConnectorHealthChecks(p(req.params.id), limit);
       res.json(checks);
     } catch (error) { res.status(500).json({ message: "Failed to fetch health checks" }); }
@@ -1788,7 +1791,7 @@ export async function registerRoutes(
   app.get("/api/ai/feedback/metrics", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.organizationId;
-      const days = parseInt(req.query.days as string) || 30;
+      const days = parseInt(req.query.days as string, 10) || 30;
       const metrics = await storage.getAiFeedbackMetrics(orgId, days);
       res.json(metrics);
     } catch (error) { res.status(500).json({ message: "Failed to fetch feedback metrics" }); }
@@ -2017,7 +2020,7 @@ export async function registerRoutes(
   app.get("/api/playbook-executions", isAuthenticated, async (req, res) => {
     try {
       const { playbookId, limit } = req.query;
-      res.json(await storage.getPlaybookExecutions(playbookId as string, parseInt(limit as string) || 50));
+      res.json(await storage.getPlaybookExecutions(playbookId as string, parseInt(limit as string, 10) || 50));
     } catch (error) { res.status(500).json({ message: "Failed to fetch executions" }); }
   });
 
@@ -2443,7 +2446,7 @@ export async function registerRoutes(
   app.get("/api/entity-graph", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.query.orgId as string | undefined;
-      const limit = parseInt(req.query.limit as string) || 80;
+      const limit = parseInt(req.query.limit as string, 10) || 80;
       const graph = await getEntityGraphWithEdges(orgId, limit);
       res.json(graph);
     } catch (error) { res.status(500).json({ message: "Failed to fetch entity graph" }); }
@@ -2867,7 +2870,7 @@ export async function registerRoutes(
         feedId as string | undefined,
         iocType as string | undefined,
         status as string | undefined,
-        limit ? parseInt(limit as string) : undefined,
+        limit ? parseInt(limit as string, 10) : undefined,
       );
       res.json(entries);
     } catch (error) {
@@ -3080,7 +3083,7 @@ export async function registerRoutes(
     try {
       const user = (req as any).user;
       const { alertId, iocEntryId, limit } = req.query;
-      const matches = await storage.getIocMatches(user?.orgId, alertId as string | undefined, iocEntryId as string | undefined, limit ? parseInt(limit as string) : undefined);
+      const matches = await storage.getIocMatches(user?.orgId, alertId as string | undefined, iocEntryId as string | undefined, limit ? parseInt(limit as string, 10) : undefined);
       res.json(matches);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC matches" });
@@ -6387,8 +6390,8 @@ export async function registerRoutes(
   app.get("/api/alerts/archive", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId || "default";
-      const limit = parseInt(req.query.limit as string) || 100;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const limit = parseInt(req.query.limit as string, 10) || 100;
+      const offset = parseInt(req.query.offset as string, 10) || 0;
       const [items, count] = await Promise.all([
         storage.getArchivedAlerts(orgId, limit, offset),
         storage.getArchivedAlertCount(orgId),
@@ -6446,7 +6449,7 @@ export async function registerRoutes(
       const orgId = req.query.orgId as string;
       const status = req.query.status as string;
       const type = req.query.type as string;
-      const limit = parseInt(req.query.limit as string) || 50;
+      const limit = parseInt(req.query.limit as string, 10) || 50;
       const jobs = await storage.getJobs(orgId, status, type, limit);
       res.json(jobs);
     } catch (error) {
@@ -6517,7 +6520,7 @@ export async function registerRoutes(
     try {
       const service = req.query.service as string;
       const metric = req.query.metric as string;
-      const hours = parseInt(req.query.hours as string) || 24;
+      const hours = parseInt(req.query.hours as string, 10) || 24;
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
       if (!service || !metric) {
@@ -6787,7 +6790,7 @@ export async function registerRoutes(
   app.get("/api/ops/alert-daily-stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId || "default";
-      const days = parseInt(req.query.days as string) || 30;
+      const days = parseInt(req.query.days as string, 10) || 30;
       const endDate = new Date().toISOString().split("T")[0];
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
       const stats = await storage.getAlertDailyStats(orgId, startDate, endDate);
@@ -6869,7 +6872,7 @@ export async function registerRoutes(
   app.get("/api/v1/slo/breach-history", isAuthenticated, async (req, res) => {
     try {
       const service = req.query.service as string | undefined;
-      const hoursBack = parseInt(req.query.hours as string) || 24;
+      const hoursBack = parseInt(req.query.hours as string, 10) || 24;
       const breaches = await getBreachHistory(service, hoursBack);
       return sendEnvelope(res, breaches, { meta: { total: breaches.length, hoursBack } });
     } catch (error: any) {
@@ -7331,7 +7334,7 @@ export async function registerRoutes(
 
   app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
-      const daysAhead = parseInt(req.query.days as string) || 30;
+      const daysAhead = parseInt(req.query.days as string, 10) || 30;
       const expiring = await storage.getExpiringSecretRotations(daysAhead);
       res.json(expiring);
     } catch (error) { res.status(500).json({ message: "Failed to fetch expiring rotations" }); }

@@ -146,7 +146,9 @@ async function fetchSplunk(config: ConnectorConfig, since?: Date): Promise<any[]
     try {
       const parsed = JSON.parse(line);
       if (parsed.result) results.push(parsed.result);
-    } catch {}
+    } catch {
+      // Skip malformed JSON lines in Splunk streaming response
+    }
   }
   return results;
 }
@@ -594,8 +596,8 @@ function normalizeSplunkAlert(raw: any): Partial<InsertAlert> {
     category: raw.category || "other",
     sourceIp: raw.src_ip || raw.src || raw.source_ip,
     destIp: raw.dest_ip || raw.dest || raw.destination_ip,
-    sourcePort: raw.src_port ? parseInt(raw.src_port) : undefined,
-    destPort: raw.dest_port ? parseInt(raw.dest_port) : undefined,
+    sourcePort: raw.src_port ? parseInt(raw.src_port, 10) : undefined,
+    destPort: raw.dest_port ? parseInt(raw.dest_port, 10) : undefined,
     hostname: raw.host || raw.hostname,
     userId: raw.user || raw.src_user,
     detectedAt: raw._time ? new Date(raw._time) : new Date(),
@@ -768,8 +770,8 @@ function normalizeFortiGateAlert(raw: any): Partial<InsertAlert> {
     category: mapFortiGateCategory(raw.type || raw.subtype),
     sourceIp: raw.srcip || raw.srcintf,
     destIp: raw.dstip,
-    sourcePort: raw.srcport ? parseInt(raw.srcport) : undefined,
-    destPort: raw.dstport ? parseInt(raw.dstport) : undefined,
+    sourcePort: raw.srcport ? parseInt(raw.srcport, 10) : undefined,
+    destPort: raw.dstport ? parseInt(raw.dstport, 10) : undefined,
     hostname: raw.devname || raw.hostname,
     userId: raw.user || raw.srcuser,
     detectedAt: raw.date && raw.time ? new Date(`${raw.date}T${raw.time}`) : new Date(),
@@ -935,8 +937,8 @@ function normalizeSnortAlert(raw: any): Partial<InsertAlert> {
     category: mapSnortCategory(raw.classtype || raw.classification),
     sourceIp: raw.src_addr || raw.srcIP,
     destIp: raw.dst_addr || raw.dstIP,
-    sourcePort: raw.src_port || raw.srcPort ? parseInt(raw.src_port || raw.srcPort) : undefined,
-    destPort: raw.dst_port || raw.dstPort ? parseInt(raw.dst_port || raw.dstPort) : undefined,
+    sourcePort: raw.src_port || raw.srcPort ? parseInt(raw.src_port || raw.srcPort, 10) : undefined,
+    destPort: raw.dst_port || raw.dstPort ? parseInt(raw.dst_port || raw.dstPort, 10) : undefined,
     protocol: raw.proto || raw.protocol,
     detectedAt: raw.timestamp ? new Date(raw.timestamp) : new Date(),
     rawData: raw,
@@ -972,8 +974,8 @@ function normalizeCheckPointAlert(raw: any): Partial<InsertAlert> {
     category: mapCheckPointCategory(raw.blade || raw.product),
     sourceIp: raw.src || raw.origin,
     destIp: raw.dst || raw.destination,
-    sourcePort: raw.s_port ? parseInt(raw.s_port) : undefined,
-    destPort: raw.service ? parseInt(raw.service) : undefined,
+    sourcePort: raw.s_port ? parseInt(raw.s_port, 10) : undefined,
+    destPort: raw.service ? parseInt(raw.service, 10) : undefined,
     protocol: raw.proto || raw.ip_proto,
     hostname: raw.origin_sic_name || raw.hostname,
     detectedAt: raw.time ? new Date(raw.time) : new Date(),
@@ -982,7 +984,7 @@ function normalizeCheckPointAlert(raw: any): Partial<InsertAlert> {
 }
 
 function mapCrowdStrikeSeverity(sev: number | string): string {
-  const n = typeof sev === "number" ? sev : parseInt(sev) || 0;
+  const n = typeof sev === "number" ? sev : parseInt(sev, 10) || 0;
   if (n >= 5) return "critical";
   if (n >= 4) return "high";
   if (n >= 3) return "medium";
@@ -1178,7 +1180,7 @@ function mapCarbonBlackCategory(type?: string): string {
 }
 
 function mapQualysSeverity(sev?: number | string): string {
-  const n = typeof sev === "string" ? parseInt(sev) || 0 : (sev || 0);
+  const n = typeof sev === "string" ? parseInt(sev, 10) || 0 : (sev || 0);
   if (n >= 5) return "critical";
   if (n >= 4) return "high";
   if (n >= 3) return "medium";
@@ -1320,7 +1322,7 @@ function mapProofpointCategory(threatType?: string): string {
 }
 
 function mapSnortSeverity(priority?: number | string): string {
-  const n = typeof priority === "string" ? parseInt(priority) || 3 : (priority || 3);
+  const n = typeof priority === "string" ? parseInt(priority, 10) || 3 : (priority || 3);
   if (n <= 1) return "critical";
   if (n <= 2) return "high";
   if (n <= 3) return "medium";
