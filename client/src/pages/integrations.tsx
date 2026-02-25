@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plug, Bell, Shield, Plus, Trash2, Pencil, TestTube, RefreshCw,
@@ -125,6 +125,46 @@ function statusBadge(status: string) {
   }
 }
 
+function IntegrationTestResultCard({ result, integrationType }: { result: { success: boolean; message?: string } | null; integrationType: string }) {
+  if (!result) return null;
+  if (result.success) {
+    return (
+      <div className="mt-2 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="h-4 w-4 text-emerald-400" />
+          <span className="text-sm font-medium text-emerald-400">Connection Successful</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">{result.message || `${integrationType} integration is responding correctly.`}</p>
+      </div>
+    );
+  }
+  const remediationSteps: Record<string, string[]> = {
+    jira: ["Verify the Base URL includes https:// and your domain", "Check the API token hasn't expired", "Ensure the email matches the token owner"],
+    servicenow: ["Confirm the Instance URL is correct", "Verify username and password credentials", "Check instance is not in maintenance mode"],
+    slack: ["Verify the Webhook URL is a valid Slack incoming webhook", "Check the channel exists and bot has access", "Regenerate the webhook if it was revoked"],
+    teams: ["Verify the Webhook URL is a valid Teams connector URL", "Check the connector hasn't been removed from the channel"],
+    pagerduty: ["Verify the Routing Key is correct", "Check the Service ID matches an active service", "Ensure the integration key hasn't been rotated"],
+    email: ["Verify SMTP host and port are correct", "Check SMTP credentials and authentication method", "Ensure the SMTP server allows connections from your IP"],
+    webhook: ["Verify the URL is reachable from the server", "Check the signing secret matches", "Ensure the endpoint accepts the configured HTTP method"],
+  };
+  const steps = remediationSteps[integrationType] || ["Check the integration configuration", "Verify network connectivity", "Review the service status page"];
+  return (
+    <div className="mt-2 p-3 rounded-lg border border-destructive/30 bg-destructive/5">
+      <div className="flex items-center gap-2">
+        <XCircle className="h-4 w-4 text-destructive" />
+        <span className="text-sm font-medium text-destructive">Connection Failed</span>
+      </div>
+      {result.message && <p className="text-xs text-muted-foreground mt-1 font-mono bg-muted/30 p-2 rounded">{result.message}</p>}
+      <div className="mt-2">
+        <p className="text-xs font-medium mb-1">Remediation Steps:</p>
+        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+          {steps.map((step, i) => <li key={i}>{step}</li>)}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
 function IntegrationsTab() {
   const { toast } = useToast();
   const [showDialog, setShowDialog] = useState(false);
@@ -133,6 +173,8 @@ function IntegrationsTab() {
   const [formType, setFormType] = useState("");
   const [formConfig, setFormConfig] = useState<Record<string, string>>({});
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string }>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   const { data: integrations, isLoading } = useQuery<IntegrationConfig[]>({
     queryKey: ["/api/integrations"],
@@ -185,10 +227,11 @@ function IntegrationsTab() {
     mutationFn: async (id: string) => {
       setTestingId(id);
       const res = await apiRequest("POST", `/api/integrations/${id}/test`);
-      return res.json();
+      return { id, data: await res.json() };
     },
-    onSuccess: (data: any) => {
+    onSuccess: ({ id, data }: { id: string; data: { success: boolean; message?: string } }) => {
       setTestingId(null);
+      setTestResults(prev => ({ ...prev, [id]: data }));
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
       if (data.success) {
         toast({ title: "Connection successful", description: data.message || "Integration is working." });
@@ -208,6 +251,7 @@ function IntegrationsTab() {
     setFormName("");
     setFormType("");
     setFormConfig({});
+    setTouchedFields({});
   }
 
   function openCreate() {
@@ -282,7 +326,10 @@ function IntegrationsTab() {
                   {integrations.map((item) => (
                     <TableRow key={item.id} data-testid={`row-integration-${item.id}`}>
                       <TableCell>
-                        <span className="text-sm font-medium" data-testid={`text-integration-name-${item.id}`}>{item.name}</span>
+                        <div>
+                          <span className="text-sm font-medium" data-testid={`text-integration-name-${item.id}`}>{item.name}</span>
+                          <IntegrationTestResultCard result={testResults[item.id] || null} integrationType={item.type} />
+                        </div>
                       </TableCell>
                       <TableCell data-testid={`badge-integration-type-${item.id}`}>
                         {typeBadge(item.type)}
@@ -368,19 +415,32 @@ function IntegrationsTab() {
                 </SelectContent>
               </Select>
             </div>
-            {fields.map((field) => (
-              <div key={field.key} className="space-y-2">
-                <Label htmlFor={`field-${field.key}`}>{field.label}</Label>
-                <Input
-                  id={`field-${field.key}`}
-                  type={field.type === "password" ? "password" : "text"}
-                  placeholder={field.placeholder}
-                  value={formConfig[field.key] || ""}
-                  onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                  data-testid={`input-integration-${field.key}`}
-                />
-              </div>
-            ))}
+            {fields.map((field) => {
+              const val = formConfig[field.key] || "";
+              const isTouched = touchedFields[field.key];
+              const isUrl = field.key.toLowerCase().includes("url");
+              const isEmail = field.type === "email";
+              const urlInvalid = isUrl && val.trim() && !/^https?:\/\/.+/.test(val.trim());
+              const emailInvalid = isEmail && val.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
+              return (
+                <div key={field.key} className="space-y-2">
+                  <Label htmlFor={`field-${field.key}`}>{field.label}</Label>
+                  <Input
+                    id={`field-${field.key}`}
+                    type={field.type === "password" ? "password" : "text"}
+                    placeholder={field.placeholder}
+                    value={val}
+                    onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    onBlur={() => setTouchedFields(prev => ({ ...prev, [field.key]: true }))}
+                    className={urlInvalid ? "border-amber-500" : emailInvalid ? "border-amber-500" : ""}
+                    data-testid={`input-integration-${field.key}`}
+                  />
+                  {urlInvalid && <p className="text-xs text-amber-400">URL should start with http:// or https://</p>}
+                  {emailInvalid && <p className="text-xs text-amber-400">Please enter a valid email address</p>}
+                  {isTouched && !val.trim() && <p className="text-xs text-muted-foreground">This field is recommended for the integration to work</p>}
+                </div>
+              );
+            })}
           </div>
           <DialogFooter>
             <DialogClose asChild>
@@ -631,19 +691,26 @@ function NotificationChannelsTab() {
                 </SelectContent>
               </Select>
             </div>
-            {channelFields.map((field) => (
-              <div key={field.key} className="space-y-2">
-                <Label htmlFor={`channel-field-${field.key}`}>{field.label}</Label>
-                <Input
-                  id={`channel-field-${field.key}`}
-                  type={field.type === "password" ? "password" : "text"}
-                  placeholder={field.placeholder}
-                  value={formConfig[field.key] || ""}
-                  onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                  data-testid={`input-channel-${field.key}`}
-                />
-              </div>
-            ))}
+            {channelFields.map((field) => {
+              const val = formConfig[field.key] || "";
+              const isUrl = field.key.toLowerCase().includes("url");
+              const urlInvalid = isUrl && val.trim() && !/^https?:\/\/.+/.test(val.trim());
+              return (
+                <div key={field.key} className="space-y-2">
+                  <Label htmlFor={`channel-field-${field.key}`}>{field.label}</Label>
+                  <Input
+                    id={`channel-field-${field.key}`}
+                    type={field.type === "password" ? "password" : "text"}
+                    placeholder={field.placeholder}
+                    value={val}
+                    onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    className={urlInvalid ? "border-amber-500" : ""}
+                    data-testid={`input-channel-${field.key}`}
+                  />
+                  {urlInvalid && <p className="text-xs text-amber-400">URL should start with http:// or https://</p>}
+                </div>
+              );
+            })}
             <div className="space-y-3">
               <Label>Events</Label>
               <div className="flex flex-wrap gap-2">

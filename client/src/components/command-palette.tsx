@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   CommandDialog,
   CommandInput,
@@ -34,9 +36,41 @@ import {
   Scale,
   ShieldCheck,
   RefreshCw,
+  History,
+  UserPlus,
+  Play,
+  Search,
 } from "lucide-react";
 import { SeverityBadge } from "@/components/security-badges";
 import type { Alert, Incident } from "@shared/schema";
+
+const RECENT_RECORDS_KEY = "securenexus.recentRecords.v1";
+const MAX_RECENT_RECORDS = 10;
+
+type RecentRecord = {
+  type: "alert" | "incident" | "entity" | "page";
+  id: string;
+  label: string;
+  path: string;
+  visitedAt: number;
+};
+
+function loadRecentRecords(): RecentRecord[] {
+  try {
+    const raw = localStorage.getItem(RECENT_RECORDS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+function saveRecentRecord(record: Omit<RecentRecord, "visitedAt">) {
+  const records = loadRecentRecords();
+  const updated = [
+    { ...record, visitedAt: Date.now() },
+    ...records.filter(r => !(r.type === record.type && r.id === record.id)),
+  ].slice(0, MAX_RECENT_RECORDS);
+  localStorage.setItem(RECENT_RECORDS_KEY, JSON.stringify(updated));
+}
 
 const navigationItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/" },
@@ -62,6 +96,7 @@ const navigationItems = [
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   const { data: alerts } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
@@ -70,6 +105,8 @@ export function CommandPalette() {
   const { data: incidents } = useQuery<Incident[]>({
     queryKey: ["/api/incidents"],
   });
+
+  const recentRecords = useMemo(() => loadRecentRecords(), [open]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -90,6 +127,50 @@ export function CommandPalette() {
     []
   );
 
+  const handleCreateIncident = useCallback(() => {
+    const title = prompt("Incident title:");
+    if (!title?.trim()) return;
+    apiRequest("POST", "/api/incidents", {
+      title: title.trim(),
+      severity: "medium",
+      status: "open",
+    }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      toast({ title: "Incident created", description: title.trim() });
+      navigate("/incidents");
+    }).catch(() => {
+      toast({ title: "Failed to create incident", variant: "destructive" });
+    });
+  }, [toast, navigate]);
+
+  const handleAssignAlert = useCallback(() => {
+    if (!alerts?.length) {
+      toast({ title: "No alerts available", variant: "destructive" });
+      return;
+    }
+    const alertTitle = alerts[0].title;
+    const name = prompt(`Assign "${alertTitle}" to:`);
+    if (!name?.trim()) return;
+    apiRequest("PATCH", `/api/alerts/${alerts[0].id}`, { assignedTo: name.trim() }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({ title: "Alert assigned", description: `Assigned to ${name.trim()}` });
+    }).catch(() => {
+      toast({ title: "Failed to assign", variant: "destructive" });
+    });
+  }, [alerts, toast]);
+
+  const handleRunPlaybook = useCallback(() => {
+    navigate("/playbooks");
+    toast({ title: "Navigate to Playbooks", description: "Select a playbook to execute" });
+  }, [navigate, toast]);
+
+  const handleOpenEntity = useCallback(() => {
+    const entity = prompt("Entity to search (IP, hostname, user, hash):");
+    if (!entity?.trim()) return;
+    navigate(`/entity-graph?search=${encodeURIComponent(entity.trim())}`);
+    saveRecentRecord({ type: "entity", id: entity.trim(), label: entity.trim(), path: `/entity-graph?search=${encodeURIComponent(entity.trim())}` });
+  }, [navigate]);
+
   const recentAlerts = alerts?.slice(0, 5) ?? [];
   const recentIncidents = incidents?.slice(0, 5) ?? [];
 
@@ -99,11 +180,65 @@ export function CommandPalette() {
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
+        {recentRecords.length > 0 && (
+          <>
+            <CommandGroup heading="Recently Viewed">
+              {recentRecords.slice(0, 5).map((record) => (
+                <CommandItem
+                  key={`${record.type}-${record.id}`}
+                  onSelect={() => runCommand(() => navigate(record.path))}
+                >
+                  <History className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <span className="flex-1 truncate">{record.label}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase">{record.type}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        <CommandGroup heading="Operations">
+          <CommandItem
+            onSelect={() => runCommand(handleCreateIncident)}
+            data-testid="command-op-create-incident"
+          >
+            <Plus className="mr-2" />
+            <span>Create Incident</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(handleAssignAlert)}
+            data-testid="command-op-assign-alert"
+          >
+            <UserPlus className="mr-2" />
+            <span>Assign Latest Alert</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(handleRunPlaybook)}
+            data-testid="command-op-run-playbook"
+          >
+            <Play className="mr-2" />
+            <span>Run Playbook</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(handleOpenEntity)}
+            data-testid="command-op-open-entity"
+          >
+            <Search className="mr-2" />
+            <span>Open Entity (IP, Host, User)</span>
+          </CommandItem>
+        </CommandGroup>
+
+        <CommandSeparator />
+
         <CommandGroup heading="Navigation">
           {navigationItems.map((item) => (
             <CommandItem
               key={item.path}
-              onSelect={() => runCommand(() => navigate(item.path))}
+              onSelect={() => runCommand(() => {
+                navigate(item.path);
+                saveRecentRecord({ type: "page", id: item.path, label: item.label, path: item.path });
+              })}
               data-testid={`command-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
               <item.icon className="mr-2" />
@@ -120,7 +255,10 @@ export function CommandPalette() {
               {recentAlerts.map((alert) => (
                 <CommandItem
                   key={alert.id}
-                  onSelect={() => runCommand(() => navigate(`/alerts/${alert.id}`))}
+                  onSelect={() => runCommand(() => {
+                    navigate(`/alerts/${alert.id}`);
+                    saveRecentRecord({ type: "alert", id: alert.id, label: alert.title, path: `/alerts/${alert.id}` });
+                  })}
                   data-testid={`command-alert-${alert.id}`}
                 >
                   <AlertTriangle className="mr-2" />
@@ -139,7 +277,10 @@ export function CommandPalette() {
               {recentIncidents.map((incident) => (
                 <CommandItem
                   key={incident.id}
-                  onSelect={() => runCommand(() => navigate(`/incidents/${incident.id}`))}
+                  onSelect={() => runCommand(() => {
+                    navigate(`/incidents/${incident.id}`);
+                    saveRecentRecord({ type: "incident", id: incident.id, label: incident.title, path: `/incidents/${incident.id}` });
+                  })}
                   data-testid={`command-incident-${incident.id}`}
                 >
                   <FileWarning className="mr-2" />
