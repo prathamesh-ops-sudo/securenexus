@@ -34,7 +34,7 @@ export function cacheSet<T>(key: string, data: T, ttlMs: number = DEFAULT_TTL_MS
 
 export function cacheInvalidate(pattern: string): number {
   let removed = 0;
-  for (const key of cache.keys()) {
+  for (const key of Array.from(cache.keys())) {
     if (key.startsWith(pattern)) {
       cache.delete(key);
       removed++;
@@ -77,7 +77,7 @@ function evictExpiredOrOldest(): void {
   let oldestKey: string | null = null;
   let oldestTime = Infinity;
 
-  for (const [key, entry] of cache.entries()) {
+  for (const [key, entry] of Array.from(cache.entries())) {
     if (now > entry.expiresAt) {
       cache.delete(key);
       return;

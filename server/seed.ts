@@ -269,14 +269,17 @@ export async function seedDatabase() {
   ]);
 
   // Seed ingestion logs
-  await db.insert(ingestionLogs).values([
+  const ingestionLogEntries = [
     { orgId: org.id, source: "CrowdStrike EDR", alertsReceived: 15, alertsCreated: 12, alertsDeduped: 3, alertsFailed: 0, durationMs: 1240 },
     { orgId: org.id, source: "Splunk SIEM", alertsReceived: 28, alertsCreated: 22, alertsDeduped: 5, alertsFailed: 1, durationMs: 2100 },
     { orgId: org.id, source: "Palo Alto Firewall", alertsReceived: 8, alertsCreated: 7, alertsDeduped: 1, alertsFailed: 0, durationMs: 890 },
     { orgId: org.id, source: "AWS GuardDuty", alertsReceived: 4, alertsCreated: 4, alertsDeduped: 0, alertsFailed: 0, durationMs: 650 },
     { orgId: org.id, source: "CrowdStrike EDR", alertsReceived: 10, alertsCreated: 8, alertsDeduped: 2, alertsFailed: 0, durationMs: 1100 },
     { orgId: org.id, source: "Splunk SIEM", alertsReceived: 19, alertsCreated: 16, alertsDeduped: 2, alertsFailed: 1, durationMs: 1800 },
-  ]);
+  ];
+  for (const entry of ingestionLogEntries) {
+    await db.insert(ingestionLogs).values(entry);
+  }
 
   console.log("Database seeded: org, 3 incidents, 12 alerts, 10 tags, 4 connectors, 3 integrations, 10 endpoints, 2 CSPM accounts, 5 findings, 6 ingestion logs");
 }

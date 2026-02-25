@@ -250,7 +250,7 @@ export async function fetchAllOsintFeeds(force?: boolean): Promise<OsintFeedResu
 
 export function getCachedOsintIndicators(): OsintIndicator[] {
   const all: OsintIndicator[] = [];
-  for (const [, cached] of feedCache) {
+  for (const [, cached] of Array.from(feedCache)) {
     if (cached.data.status === "success") {
       all.push(...cached.data.indicators);
     }

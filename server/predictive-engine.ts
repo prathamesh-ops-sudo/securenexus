@@ -204,11 +204,11 @@ async function mapAttackSurface(orgId: string, allAlerts: Alert[], storage: ISto
   let count = 0;
   const now = new Date();
 
-  for (const [_key, data] of entityMap) {
-    const criticalCount = data.severities.filter(s => s === "critical").length;
-    const highCount = data.severities.filter(s => s === "high").length;
-    const mediumCount = data.severities.filter(s => s === "medium").length;
-    const lowCount = data.severities.filter(s => s === "low").length;
+  for (const [_key, data] of Array.from(entityMap)) {
+    const criticalCount = data.severities.filter((s: string) => s === "critical").length;
+    const highCount = data.severities.filter((s: string) => s === "high").length;
+    const mediumCount = data.severities.filter((s: string) => s === "medium").length;
+    const lowCount = data.severities.filter((s: string) => s === "low").length;
 
     const rawScore = criticalCount * 4 + highCount * 3 + mediumCount * 2 + lowCount * 1;
     const daysSinceLastSeen = Math.max(1, (now.getTime() - data.lastSeen.getTime()) / (24 * 60 * 60 * 1000));

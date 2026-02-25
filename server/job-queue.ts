@@ -20,7 +20,7 @@ function isJobDuplicate(type: string, orgId: string, payload: any): boolean {
   recentJobFingerprints.set(fp, Date.now());
   if (recentJobFingerprints.size > 500) {
     const now = Date.now();
-    for (const [key, ts] of recentJobFingerprints) {
+    for (const [key, ts] of Array.from(recentJobFingerprints)) {
       if (now - ts > JOB_DEDUP_WINDOW_MS) recentJobFingerprints.delete(key);
     }
   }
