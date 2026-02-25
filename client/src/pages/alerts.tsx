@@ -861,6 +861,7 @@ export default function AlertsPage() {
         </Card>
       )}
 
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_24rem] gap-4 items-start">
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -902,11 +903,14 @@ export default function AlertsPage() {
                     </tr>
                   ))
                 ) : filtered && filtered.length > 0 ? (
-                  filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((alert) => (
+                  pageAlerts.map((alert) => (
                     <tr
                       key={alert.id}
                       className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-muted/40" : ""}`}
-                      onClick={() => navigate('/alerts/' + alert.id)}
+                      onClick={() => {
+                        setFocusedAlertId(alert.id);
+                        setIsDetailOpen(true);
+                      }}
                       data-testid={`row-alert-${alert.id}`}
                     >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -956,15 +960,8 @@ export default function AlertsPage() {
                       </td>
                       <td className="px-4 py-3">
                         {(() => {
-                          const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
-                          const queueState = alert.status !== "new"
-                            ? "other"
-                            : ageMs >= 72 * 60 * 60 * 1000
-                              ? "breached"
-                              : ageMs >= 24 * 60 * 60 * 1000
-                                ? "aging"
-                                : "new";
-                          if (queueState === "other") return <span className="text-[10px] text-muted-foreground">—</span>;
+                          const queueState = getQueueState(alert);
+                          if (queueState === "other") return <span className="text-[10px] text-muted-foreground">N/A</span>;
                           const style = queueState === "breached"
                             ? "bg-red-500/10 text-red-500 border-red-500/20"
                             : queueState === "aging"
@@ -1041,7 +1038,7 @@ export default function AlertsPage() {
           {filtered && filtered.length > PAGE_SIZE && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <span className="text-xs text-muted-foreground">
-                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+                Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
               </span>
               <div className="flex items-center gap-1">
                 <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
@@ -1056,6 +1053,116 @@ export default function AlertsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="xl:sticky xl:top-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Alert Detail Drawer</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!isDetailOpen || !selectedAlert ? (
+            <div className="text-sm text-muted-foreground space-y-2" data-testid="empty-detail-pane">
+              <p>Select an alert from the list to open inline detail.</p>
+              <p className="text-xs">Shortcuts: J/K move focus, Enter open, Esc close.</p>
+            </div>
+          ) : (
+            <div className="space-y-4" data-testid={`alert-detail-drawer-${selectedAlert.id}`}>
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold truncate">{selectedAlert.title}</h3>
+                    <p className="text-xs text-muted-foreground">{selectedAlert.source}</p>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => setIsDetailOpen(false)} data-testid="button-close-detail-pane">
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <SeverityBadge severity={selectedAlert.severity} />
+                  <AlertStatusBadge status={selectedAlert.status} />
+                  {selectedAlert.suppressed && <Badge variant="secondary" className="text-[10px]">Suppressed</Badge>}
+                  {selectedAlert.dedupClusterId && <Badge variant="outline" className="text-[10px]">Duplicate Cluster</Badge>}
+                </div>
+                {selectedAlert.description && (
+                  <p className="text-xs text-muted-foreground leading-relaxed">{selectedAlert.description}</p>
+                )}
+              </div>
+
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase text-muted-foreground">Queue State</span>
+                  <span className="text-xs font-medium uppercase">{getQueueLabel(getQueueState(selectedAlert))}</span>
+                </div>
+                {getQueueCountdown(selectedAlert) && (
+                  <p className="text-xs text-muted-foreground">{getQueueCountdown(selectedAlert)}</p>
+                )}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Category</span>
+                    <div>{selectedAlert.category?.replace(/_/g, " ") || "-"}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">MITRE</span>
+                    <div>{selectedAlert.mitreTactic || "-"}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Button
+                  className="w-full"
+                  size="sm"
+                  onClick={() => handleTriageClick(selectedAlert.id)}
+                  disabled={triage.isPending && selectedAlertForTriage === selectedAlert.id}
+                  data-testid="button-drawer-triage"
+                >
+                  {triage.isPending && selectedAlertForTriage === selectedAlert.id ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Brain className="h-3.5 w-3.5 mr-1.5" />}
+                  Triage with AI
+                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setCalibratingAlertId(selectedAlert.id);
+                      setCalibrateScore(selectedAlert.confidenceScore != null ? Math.round(selectedAlert.confidenceScore * 100) : 50);
+                      setCalibrateSource(selectedAlert.confidenceSource || "analyst");
+                      setCalibrateNotes(selectedAlert.confidenceNotes || "");
+                    }}
+                    data-testid="button-drawer-calibrate"
+                  >
+                    Calibrate
+                  </Button>
+                  {selectedAlert.suppressed ? (
+                    <Button size="sm" variant="outline" onClick={() => unsuppressAlert.mutate(selectedAlert.id)} disabled={unsuppressAlert.isPending} data-testid="button-drawer-unsuppress">
+                      Unsuppress
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => suppressAlert.mutate(selectedAlert.id)} disabled={suppressAlert.isPending} data-testid="button-drawer-suppress">
+                      Suppress
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => navigate(`/alerts/${selectedAlert.id}`)}
+                  data-testid="button-open-full-detail"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                  Open Full Detail
+                </Button>
+              </div>
+
+              <div className="text-[11px] text-muted-foreground space-y-1">
+                <div>ID: {selectedAlert.id}</div>
+                <div>Created: {selectedAlert.createdAt ? new Date(selectedAlert.createdAt).toLocaleString() : "Unknown"}</div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
