@@ -2,7 +2,6 @@ import type { Express } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
 import { isAuthenticated, hashPassword } from "./session";
-import { storage } from "../storage";
 import {
   reply,
   replyUnauthenticated,
@@ -11,42 +10,7 @@ import {
   replyValidation,
   replyInternal,
   replyNotImplemented,
-  ERROR_CODES,
 } from "../api-response";
-
-async function ensureOrgMembership(user: any) {
-  try {
-    const memberships = await storage.getUserMemberships(user.id);
-    if (memberships.length > 0) return;
-
-    const orgs = await storage.getOrganizations();
-    if (orgs.length > 0) {
-      await storage.createOrgMembership({
-        orgId: orgs[0].id,
-        userId: user.id,
-        role: "owner",
-        status: "active",
-        joinedAt: new Date(),
-      });
-      return;
-    }
-
-    const newOrg = await storage.createOrganization({
-      name: `${user.email ? user.email.split("@")[0] : "User"}'s Organization`,
-      slug: `org-${Date.now()}`,
-      contactEmail: user.email || undefined,
-    });
-    await storage.createOrgMembership({
-      orgId: newOrg.id,
-      userId: user.id,
-      role: "owner",
-      status: "active",
-      joinedAt: new Date(),
-    });
-  } catch (err) {
-    console.error("Error ensuring org membership:", err);
-  }
-}
 
 export function registerAuthRoutes(app: Express): void {
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
@@ -87,7 +51,6 @@ export function registerAuthRoutes(app: Express): void {
 
       req.login(user, async (err) => {
         if (err) return next(err);
-        await ensureOrgMembership(user);
         const { passwordHash: _, ...safeUser } = user;
         return reply(res, safeUser, {}, 201);
       });
@@ -107,7 +70,6 @@ export function registerAuthRoutes(app: Express): void {
         }
         req.login(user, async (loginErr) => {
           if (loginErr) return next(loginErr);
-          await ensureOrgMembership(user);
           const { passwordHash, ...safeUser } = user;
           return reply(res, safeUser);
         });
@@ -143,7 +105,6 @@ export function registerAuthRoutes(app: Express): void {
       passport.authenticate("google", { failureRedirect: "/?error=google_auth_failed" })(req, res, next);
     },
     async (req: any, res) => {
-      if (req.user) await ensureOrgMembership(req.user);
       res.redirect("/");
     }
   );
@@ -160,7 +121,6 @@ export function registerAuthRoutes(app: Express): void {
       passport.authenticate("github", { failureRedirect: "/?error=github_auth_failed" })(req, res, next);
     },
     async (req: any, res) => {
-      if (req.user) await ensureOrgMembership(req.user);
       res.redirect("/");
     }
   );

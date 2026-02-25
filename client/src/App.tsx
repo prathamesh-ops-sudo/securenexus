@@ -1,7 +1,7 @@
-import { Switch, Route } from "wouter";
-import { createContext, useContext } from "react";
+import { Switch, Route, useLocation } from "wouter";
+import { createContext, useContext, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -39,7 +39,7 @@ import EndpointTelemetryPage from "@/pages/endpoint-telemetry";
 import TeamManagementPage from "@/pages/team-management";
 import ReportsPage from "@/pages/reports";
 import OperationsPage from "@/pages/operations";
-import OnboardingPage from "@/pages/onboarding";
+import OnboardingWizardPage from "@/pages/onboarding-wizard";
 import UsageBillingPage from "@/pages/usage-billing";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
@@ -131,7 +131,7 @@ function AuthenticatedApp() {
                 <Route path="/team" component={TeamManagementPage} />
                 <Route path="/reports" component={ReportsPage} />
                 <Route path="/operations" component={OperationsPage} />
-                <Route path="/onboarding" component={OnboardingPage} />
+                <Route path="/onboarding" component={OnboardingWizardPage} />
                 <Route path="/usage-billing" component={UsageBillingPage} />
                 <Route component={NotFound} />
               </Switch>
@@ -148,6 +148,25 @@ function AuthenticatedApp() {
 
 function AppContent() {
   const { user, isLoading } = useAuth();
+  const [location, navigate] = useLocation();
+  const { data: wizardStatus, isLoading: wizardLoading } = useQuery<{
+    shouldOnboard: boolean;
+  }>({
+    queryKey: ["/api/onboarding/wizard-status"],
+    enabled: !!user,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (!user || wizardLoading || !wizardStatus) return;
+    const inOnboarding = location.startsWith("/onboarding");
+    if (wizardStatus.shouldOnboard && !inOnboarding) {
+      navigate("/onboarding");
+    } else if (!wizardStatus.shouldOnboard && inOnboarding) {
+      navigate("/");
+    }
+  }, [user, wizardLoading, wizardStatus, location, navigate]);
 
   if (isLoading) {
     return (
@@ -162,6 +181,17 @@ function AppContent() {
 
   if (!user) {
     return <LandingPage />;
+  }
+
+  if (wizardLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="space-y-3 text-center">
+          <Skeleton className="h-10 w-10 rounded-md mx-auto" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+      </div>
+    );
   }
 
   return <AuthenticatedApp />;

@@ -81,6 +81,7 @@ import {
   type OrgPlanLimit, type InsertOrgPlanLimit, orgPlanLimits,
   type UsageMeterSnapshot, type InsertUsageMeterSnapshot, usageMeterSnapshots,
   type OnboardingProgressItem, type InsertOnboardingProgress, onboardingProgress,
+  type OnboardingWizardProgress, type InsertOnboardingWizardProgress, onboardingWizardProgress,
   type WorkspaceTemplate, type InsertWorkspaceTemplate, workspaceTemplates,
   type OutboxEvent, type InsertOutboxEvent, outboxEvents,
   type FeatureFlag, type InsertFeatureFlag, featureFlags,
@@ -562,6 +563,9 @@ export interface IStorage {
   getOnboardingProgress(orgId: string): Promise<OnboardingProgressItem[]>;
   upsertOnboardingStep(data: InsertOnboardingProgress): Promise<OnboardingProgressItem>;
   completeOnboardingStep(orgId: string, stepKey: string, completedBy?: string): Promise<OnboardingProgressItem | undefined>;
+  getOnboardingWizardProgressByUser(userId: string): Promise<OnboardingWizardProgress | undefined>;
+  createOnboardingWizardProgress(data: InsertOnboardingWizardProgress): Promise<OnboardingWizardProgress>;
+  updateOnboardingWizardProgressByUser(userId: string, data: Partial<OnboardingWizardProgress>): Promise<OnboardingWizardProgress | undefined>;
 
   // Workspace Templates
   getWorkspaceTemplates(): Promise<WorkspaceTemplate[]>;
@@ -3105,6 +3109,24 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db.update(onboardingProgress)
       .set({ isCompleted: true, completedAt: new Date(), completedBy: completedBy || null })
       .where(and(eq(onboardingProgress.orgId, orgId), eq(onboardingProgress.stepKey, stepKey)))
+      .returning();
+    return updated;
+  }
+
+  async getOnboardingWizardProgressByUser(userId: string): Promise<OnboardingWizardProgress | undefined> {
+    const [progress] = await db.select().from(onboardingWizardProgress).where(eq(onboardingWizardProgress.userId, userId));
+    return progress;
+  }
+
+  async createOnboardingWizardProgress(data: InsertOnboardingWizardProgress): Promise<OnboardingWizardProgress> {
+    const [created] = await db.insert(onboardingWizardProgress).values(data).returning();
+    return created;
+  }
+
+  async updateOnboardingWizardProgressByUser(userId: string, data: Partial<OnboardingWizardProgress>): Promise<OnboardingWizardProgress | undefined> {
+    const [updated] = await db.update(onboardingWizardProgress)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(onboardingWizardProgress.userId, userId))
       .returning();
     return updated;
   }

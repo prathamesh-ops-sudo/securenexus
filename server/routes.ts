@@ -46,6 +46,92 @@ function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
 }
 
+type WizardSteps = {
+  createOrg: boolean;
+  choosePlan: boolean;
+  inviteTeam: boolean;
+  connectIntegration: boolean;
+  dashboardTour: boolean;
+};
+
+const DEFAULT_WIZARD_STEPS: WizardSteps = {
+  createOrg: false,
+  choosePlan: false,
+  inviteTeam: false,
+  connectIntegration: false,
+  dashboardTour: false,
+};
+
+const VALID_INVITE_ROLES = ["admin", "analyst", "read_only"];
+
+function normalizeWizardSteps(input: any): WizardSteps {
+  return {
+    createOrg: !!input?.createOrg,
+    choosePlan: !!input?.choosePlan,
+    inviteTeam: !!input?.inviteTeam,
+    connectIntegration: !!input?.connectIntegration,
+    dashboardTour: !!input?.dashboardTour,
+  };
+}
+
+function deriveCurrentStep(steps: WizardSteps): number {
+  if (!steps.createOrg) return 1;
+  if (!steps.choosePlan) return 2;
+  if (!steps.inviteTeam) return 3;
+  if (!steps.connectIntegration) return 4;
+  if (!steps.dashboardTour) return 5;
+  return 5;
+}
+
+function slugifyOrgName(name: string): string {
+  const base = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "org";
+  return `${base}-${Date.now().toString().slice(-6)}`;
+}
+
+function mapCompanySizeToMaxUsers(size?: string): number {
+  switch ((size || "").toLowerCase()) {
+    case "1-10": return 10;
+    case "11-50": return 50;
+    case "51-200": return 200;
+    case "201-1000": return 1000;
+    case "1000+": return 5000;
+    default: return 25;
+  }
+}
+
+async function ensureWizardProgress(userId: string) {
+  const existing = await storage.getOnboardingWizardProgressByUser(userId);
+  if (existing) return existing;
+  return storage.createOnboardingWizardProgress({
+    userId,
+    currentStep: 1,
+    stepsCompleted: DEFAULT_WIZARD_STEPS,
+  });
+}
+
+async function findPendingInvitationByEmail(userEmail: string) {
+  const normalized = userEmail.toLowerCase();
+  const now = new Date();
+  const orgs = await storage.getOrganizations();
+  for (const org of orgs) {
+    const invitations = await storage.getOrgInvitations(org.id);
+    const pending = invitations.find(inv =>
+      inv.email.toLowerCase() === normalized &&
+      !inv.acceptedAt &&
+      new Date(inv.expiresAt) > now
+    );
+    if (pending) {
+      return { org, invitation: pending };
+    }
+  }
+  return null;
+}
+
 function sendEnvelope(
   res: Response,
   data: any,
@@ -1522,6 +1608,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: `Invalid connector type. Valid types: ${validTypes.join(", ")}` });
       }
       const connector = await storage.createConnector({
+        orgId: (req as any).user?.orgId || null,
         name,
         type,
         authType,
@@ -4494,7 +4581,7 @@ export async function registerRoutes(
     }
   });
 
-  // Auto-provision: ensure user has org membership on first access
+  // Auto-provision: accept invitation if available, but do not auto-create orgs
   app.post("/api/auth/ensure-org", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
@@ -4510,46 +4597,298 @@ export async function registerRoutes(
         }
       }
 
-      // Check for pending invitations by email
       if (userEmail) {
-        const orgs = await storage.getOrganizations();
-        for (const org of orgs) {
-          const invitations = await storage.getOrgInvitations(org.id);
-          const pending = invitations.find(inv => inv.email === userEmail && !inv.acceptedAt && new Date(inv.expiresAt) > new Date());
-          if (pending) {
-            const membership = await storage.createOrgMembership({
-              orgId: org.id,
-              userId,
-              role: pending.role,
-              status: "active",
-              joinedAt: new Date(),
-            });
-            await storage.updateOrgInvitation(pending.id, { acceptedAt: new Date() });
-            return res.json({ membership, organization: org });
-          }
+        const pending = await findPendingInvitationByEmail(userEmail);
+        if (pending) {
+          const existingMembership = await storage.getOrgMembership(pending.org.id, userId);
+          const membership = existingMembership || await storage.createOrgMembership({
+            orgId: pending.org.id,
+            userId,
+            role: pending.invitation.role,
+            status: "active",
+            invitedBy: pending.invitation.invitedBy,
+            invitedEmail: pending.invitation.email,
+            invitedAt: pending.invitation.createdAt,
+            joinedAt: new Date(),
+          });
+          await storage.updateOrgInvitation(pending.invitation.id, { acceptedAt: new Date() });
+          return res.json({ membership, organization: pending.org });
         }
       }
 
-      // No existing membership or invitation — create a new org for this user
-      const newOrg = await storage.createOrganization({
-        name: `${userEmail ? userEmail.split("@")[0] : "User"}'s Organization`,
-        slug: `org-${Date.now()}`,
-        contactEmail: userEmail || undefined,
-      });
-      const membership = await storage.createOrgMembership({
-        orgId: newOrg.id,
-        userId,
-        role: "owner",
-        status: "active",
-        joinedAt: new Date(),
-      });
-      return res.json({ membership, organization: newOrg });
+      return res.status(404).json({ message: "No organization membership found" });
     } catch (error) {
       console.error("Error ensuring org:", error);
       res.status(500).json({ message: "Failed to ensure organization membership" });
     }
   });
 
+  app.get("/api/onboarding/wizard-status", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id as string | undefined;
+      const userEmail = (req as any).user?.email as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      let activeMembership = (await storage.getUserMemberships(userId)).find(m => m.status === "active");
+      let org = activeMembership ? await storage.getOrganization(activeMembership.orgId) : undefined;
+      let autoAcceptedInvitation = false;
+
+      if (!activeMembership && userEmail) {
+        const pending = await findPendingInvitationByEmail(userEmail);
+        if (pending) {
+          const existingMembership = await storage.getOrgMembership(pending.org.id, userId);
+          activeMembership = existingMembership || await storage.createOrgMembership({
+            orgId: pending.org.id,
+            userId,
+            role: pending.invitation.role,
+            status: "active",
+            invitedBy: pending.invitation.invitedBy,
+            invitedEmail: pending.invitation.email,
+            invitedAt: pending.invitation.createdAt,
+            joinedAt: new Date(),
+          });
+          await storage.updateOrgInvitation(pending.invitation.id, { acceptedAt: new Date() });
+          org = pending.org;
+          autoAcceptedInvitation = true;
+        }
+      }
+
+      let progress = await storage.getOnboardingWizardProgressByUser(userId);
+      if (!progress && !activeMembership) {
+        progress = await ensureWizardProgress(userId);
+      }
+
+      if (progress?.orgId && !org) {
+        org = await storage.getOrganization(progress.orgId);
+      }
+
+      if (progress?.orgId) {
+        const connectors = await storage.getConnectors(progress.orgId);
+        const steps = normalizeWizardSteps(progress.stepsCompleted);
+        if (connectors.length > 0 && !steps.connectIntegration) {
+          steps.connectIntegration = true;
+          progress = await storage.updateOnboardingWizardProgressByUser(userId, {
+            stepsCompleted: steps,
+            currentStep: deriveCurrentStep(steps),
+          });
+        }
+      }
+
+      const steps = progress ? normalizeWizardSteps(progress.stepsCompleted) : DEFAULT_WIZARD_STEPS;
+      const pendingInvite = !activeMembership && !!userEmail ? await findPendingInvitationByEmail(userEmail) : null;
+      const shouldOnboard = !!progress && !progress.completedAt;
+
+      return res.json({
+        shouldOnboard,
+        autoAcceptedInvitation,
+        hasPendingInvitation: !!pendingInvite,
+        membership: activeMembership || null,
+        organization: org || null,
+        progress: progress ? { ...progress, stepsCompleted: steps, currentStep: deriveCurrentStep(steps) } : null,
+      });
+    } catch (error) {
+      console.error("Failed to fetch onboarding wizard status:", error);
+      return res.status(500).json({ message: "Failed to fetch onboarding wizard status" });
+    }
+  });
+
+  app.post("/api/onboarding/create-org", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id as string | undefined;
+      const userEmail = (req as any).user?.email as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      const { name, industry, companySize, contactEmail } = req.body || {};
+      if (!name || typeof name !== "string" || name.trim().length < 2) {
+        return res.status(400).json({ message: "Organization name is required" });
+      }
+
+      const existingActiveMembership = (await storage.getUserMemberships(userId)).find(m => m.status === "active");
+      let progress = await ensureWizardProgress(userId);
+
+      if (existingActiveMembership) {
+        const existingOrg = await storage.getOrganization(existingActiveMembership.orgId);
+        const steps = normalizeWizardSteps(progress.stepsCompleted);
+        steps.createOrg = true;
+        progress = await storage.updateOnboardingWizardProgressByUser(userId, {
+          orgId: existingActiveMembership.orgId,
+          stepsCompleted: steps,
+          currentStep: deriveCurrentStep(steps),
+        });
+        return res.json({ organization: existingOrg, membership: existingActiveMembership, progress });
+      }
+
+      const org = await storage.createOrganization({
+        name: name.trim(),
+        slug: slugifyOrgName(name),
+        industry: typeof industry === "string" ? industry : null,
+        contactEmail: typeof contactEmail === "string" ? contactEmail : (userEmail || undefined),
+        maxUsers: mapCompanySizeToMaxUsers(companySize),
+      });
+      const membership = await storage.createOrgMembership({
+        orgId: org.id,
+        userId,
+        role: "owner",
+        status: "active",
+        joinedAt: new Date(),
+      });
+
+      const steps = normalizeWizardSteps(progress.stepsCompleted);
+      steps.createOrg = true;
+      progress = await storage.updateOnboardingWizardProgressByUser(userId, {
+        orgId: org.id,
+        stepsCompleted: steps,
+        currentStep: deriveCurrentStep(steps),
+      });
+
+      return res.status(201).json({ organization: org, membership, progress });
+    } catch (error) {
+      console.error("Failed to create onboarding organization:", error);
+      return res.status(500).json({ message: "Failed to create organization" });
+    }
+  });
+
+  app.post("/api/onboarding/select-plan", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      const { plan } = req.body || {};
+      if (!["free", "pro", "enterprise"].includes(plan)) {
+        return res.status(400).json({ message: "Invalid plan selection" });
+      }
+
+      const progress = await ensureWizardProgress(userId);
+      const orgId = progress.orgId || ((await storage.getUserMemberships(userId)).find(m => m.status === "active")?.orgId);
+      if (!orgId) return res.status(400).json({ message: "Create an organization first" });
+
+      const limitsByPlan: Record<string, any> = {
+        free: { planTier: "free", eventsPerMonth: 10000, maxConnectors: 3, aiTokensPerMonth: 5000, automationRunsPerMonth: 100, apiCallsPerMonth: 10000, storageGb: 5, softThresholdPct: 80, hardThresholdPct: 95, overageAllowed: false },
+        pro: { planTier: "professional", eventsPerMonth: 500000, maxConnectors: 50, aiTokensPerMonth: 100000, automationRunsPerMonth: 5000, apiCallsPerMonth: 250000, storageGb: 100, softThresholdPct: 80, hardThresholdPct: 95, overageAllowed: true },
+        enterprise: { planTier: "enterprise", eventsPerMonth: 5000000, maxConnectors: 500, aiTokensPerMonth: 1000000, automationRunsPerMonth: 50000, apiCallsPerMonth: 2500000, storageGb: 1000, softThresholdPct: 85, hardThresholdPct: 98, overageAllowed: true },
+      };
+
+      await storage.upsertOrgPlanLimit({ orgId, ...limitsByPlan[plan] });
+
+      const steps = normalizeWizardSteps(progress.stepsCompleted);
+      steps.choosePlan = true;
+      const updated = await storage.updateOnboardingWizardProgressByUser(userId, {
+        stepsCompleted: steps,
+        currentStep: deriveCurrentStep(steps),
+      });
+
+      if (plan === "pro") {
+        const checkoutUrl = process.env.STRIPE_PRO_CHECKOUT_URL;
+        if (!checkoutUrl) return res.status(501).json({ message: "Stripe Pro checkout is not configured" });
+        return res.json({ plan, checkoutUrl, progress: updated });
+      }
+
+      if (plan === "enterprise") {
+        const checkoutUrl = process.env.STRIPE_ENTERPRISE_CHECKOUT_URL;
+        if (checkoutUrl) return res.json({ plan, checkoutUrl, progress: updated });
+        return res.json({ plan, contactSales: true, progress: updated });
+      }
+
+      return res.json({ plan, activated: true, progress: updated });
+    } catch (error) {
+      console.error("Failed to select plan:", error);
+      return res.status(500).json({ message: "Failed to select plan" });
+    }
+  });
+
+  app.post("/api/onboarding/invite-team", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      const progress = await ensureWizardProgress(userId);
+      const orgId = progress.orgId || ((await storage.getUserMemberships(userId)).find(m => m.status === "active")?.orgId);
+      if (!orgId) return res.status(400).json({ message: "Create an organization first" });
+
+      const { invites, skip } = req.body || {};
+      const created: any[] = [];
+      const skipped: any[] = [];
+      const errors: any[] = [];
+      const existingInvites = await storage.getOrgInvitations(orgId);
+
+      if (!skip && (!Array.isArray(invites) || invites.length === 0)) {
+        return res.status(400).json({ message: "Provide invites[] or use skip=true" });
+      }
+
+      if (Array.isArray(invites)) {
+        for (const item of invites) {
+          const email = String(item?.email || "").trim().toLowerCase();
+          const role = String(item?.role || "analyst");
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            errors.push({ email, reason: "invalid_email" });
+            continue;
+          }
+          if (!VALID_INVITE_ROLES.includes(role)) {
+            errors.push({ email, reason: "invalid_role" });
+            continue;
+          }
+          if (existingInvites.some(inv => inv.email.toLowerCase() === email && !inv.acceptedAt && new Date(inv.expiresAt) > new Date())) {
+            skipped.push({ email, reason: "already_invited" });
+            continue;
+          }
+          const invitation = await storage.createOrgInvitation({
+            orgId,
+            email,
+            role: role as any,
+            invitedBy: userId,
+            token: randomBytes(24).toString("hex"),
+            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+          });
+          created.push(invitation);
+        }
+      }
+
+      const steps = normalizeWizardSteps(progress.stepsCompleted);
+      if (skip || created.length > 0) {
+        steps.inviteTeam = true;
+      }
+      const updated = await storage.updateOnboardingWizardProgressByUser(userId, {
+        stepsCompleted: steps,
+        currentStep: deriveCurrentStep(steps),
+      });
+
+      return res.json({ created, skipped, errors, skippedAll: !!skip, progress: updated });
+    } catch (error) {
+      console.error("Failed to invite team:", error);
+      return res.status(500).json({ message: "Failed to invite team" });
+    }
+  });
+
+  app.post("/api/onboarding/complete", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      const progress = await ensureWizardProgress(userId);
+      const orgId = progress.orgId || ((await storage.getUserMemberships(userId)).find(m => m.status === "active")?.orgId);
+      if (!orgId) return res.status(400).json({ message: "Create an organization first" });
+
+      const connectorCount = (await storage.getConnectors(orgId)).length;
+      const steps = normalizeWizardSteps(progress.stepsCompleted);
+      if (connectorCount > 0) steps.connectIntegration = true;
+      if (req.body?.tourCompleted) steps.dashboardTour = true;
+
+      if (!steps.createOrg || !steps.choosePlan || !steps.inviteTeam || !steps.connectIntegration || !steps.dashboardTour) {
+        return res.status(400).json({ message: "Complete all onboarding steps before finishing", stepsCompleted: steps });
+      }
+
+      const updated = await storage.updateOnboardingWizardProgressByUser(userId, {
+        stepsCompleted: steps,
+        currentStep: 5,
+        completedAt: new Date(),
+      });
+
+      return res.json({ completed: true, progress: updated, redirectTo: "/" });
+    } catch (error) {
+      console.error("Failed to complete onboarding:", error);
+      return res.status(500).json({ message: "Failed to complete onboarding" });
+    }
+  });
   // List org members
   app.get("/api/orgs/:orgId/members", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
@@ -8087,3 +8426,4 @@ function calculateNextRunFromCadence(cadence: string): Date {
     default: return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   }
 }
+

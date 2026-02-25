@@ -2479,6 +2479,26 @@ export const onboardingProgress = pgTable("onboarding_progress", {
   index("idx_onboarding_org").on(table.orgId),
 ]);
 
+export const onboardingWizardProgress = pgTable("onboarding_wizard_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique(),
+  orgId: varchar("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+  currentStep: integer("current_step").notNull().default(1),
+  stepsCompleted: jsonb("steps_completed").notNull().default({
+    createOrg: false,
+    choosePlan: false,
+    inviteTeam: false,
+    connectIntegration: false,
+    dashboardTour: false,
+  }),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_onboarding_wizard_user").on(table.userId),
+  index("idx_onboarding_wizard_org").on(table.orgId),
+]);
+
 export const workspaceTemplates = pgTable("workspace_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -2499,6 +2519,7 @@ export const workspaceTemplates = pgTable("workspace_templates", {
 export const insertOrgPlanLimitsSchema = createInsertSchema(orgPlanLimits).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUsageMeterSnapshotSchema = createInsertSchema(usageMeterSnapshots).omit({ id: true, snapshotAt: true });
 export const insertOnboardingProgressSchema = createInsertSchema(onboardingProgress).omit({ id: true, createdAt: true });
+export const insertOnboardingWizardProgressSchema = createInsertSchema(onboardingWizardProgress).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertWorkspaceTemplateSchema = createInsertSchema(workspaceTemplates).omit({ id: true, createdAt: true });
 
 export type OrgPlanLimit = typeof orgPlanLimits.$inferSelect;
@@ -2507,6 +2528,8 @@ export type UsageMeterSnapshot = typeof usageMeterSnapshots.$inferSelect;
 export type InsertUsageMeterSnapshot = z.infer<typeof insertUsageMeterSnapshotSchema>;
 export type OnboardingProgressItem = typeof onboardingProgress.$inferSelect;
 export type InsertOnboardingProgress = z.infer<typeof insertOnboardingProgressSchema>;
+export type OnboardingWizardProgress = typeof onboardingWizardProgress.$inferSelect;
+export type InsertOnboardingWizardProgress = z.infer<typeof insertOnboardingWizardProgressSchema>;
 export type WorkspaceTemplate = typeof workspaceTemplates.$inferSelect;
 export type InsertWorkspaceTemplate = z.infer<typeof insertWorkspaceTemplateSchema>;
 
