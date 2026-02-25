@@ -765,7 +765,7 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(incidents.orgId, orgId));
     }
     if (queue) {
-      conditions.push(eq(incidents.queueState, queue as any));
+      conditions.push(eq(incidents.status, queue));
     }
 
     const whereCondition = conditions.length ? and(...conditions) : undefined;
@@ -2351,7 +2351,7 @@ export class DatabaseStorage implements IStorage {
         LIMIT 100
       ) sub
     `);
-    const row = (result as any).rows?.[0] || result[0] || {};
+    const row = (result as any).rows?.[0] || (result as any)[0] || {};
     return {
       totalRuns: Number(row.total_runs) || 0,
       avgLatencyMs: Number(row.avg_latency) || 0,
@@ -3254,12 +3254,12 @@ export class DatabaseStorage implements IStorage {
     if (params.orgId) conditions.push(eq(incidents.orgId, params.orgId));
     if (params.severity) conditions.push(eq(incidents.severity, params.severity));
     if (params.status) conditions.push(eq(incidents.status, params.status));
-    if (params.queue) conditions.push(eq(incidents.queueState, params.queue as any));
+    if (params.queue) conditions.push(eq(incidents.status, params.queue));
     if (params.search) {
       const pattern = `%${params.search}%`;
       conditions.push(or(
         ilike(incidents.title, pattern),
-        ilike(incidents.description, pattern),
+        ilike(incidents.summary, pattern),
       ));
     }
     const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
@@ -3301,7 +3301,7 @@ export class DatabaseStorage implements IStorage {
     const orderFn = params.sortOrder === "asc" ? asc : desc;
 
     const totalQuery = db.select({ total: count() }).from(auditLogs);
-    const itemsQuery = db.select().from(auditLogs).orderBy(orderFn(auditLogs.timestamp)).limit(params.limit).offset(params.offset);
+    const itemsQuery = db.select().from(auditLogs).orderBy(orderFn(auditLogs.createdAt)).limit(params.limit).offset(params.offset);
 
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);

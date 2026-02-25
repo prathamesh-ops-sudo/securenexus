@@ -55,7 +55,7 @@ export async function runConnectorContractTests(connectorType: string): Promise<
     const types = getAllConnectorTypes();
     const found = types.find((t: any) => t.type === connectorType);
     assertDefined(found, `connector type '${connectorType}'`);
-    assertHasFields(found as Record<string, unknown>, ["type", "name", "category"], "connector metadata");
+    assertHasFields(found as unknown as Record<string, unknown>, ["type", "name", "category"], "connector metadata");
   }));
 
   results.push(await runTest(`${connectorType}: connector schema has required fields`, async () => {
@@ -138,13 +138,13 @@ export async function runAutomationIntegrationTests(playbookId: string): Promise
   results.push(await runTest("playbook: exists and has valid schema", async () => {
     const playbook = await storage.getPlaybook(playbookId);
     assertDefined(playbook, "playbook");
-    assertHasFields(playbook as unknown as Record<string, unknown>, ["id", "name", "trigger", "steps", "status"], "playbook");
+    assertHasFields(playbook as unknown as Record<string, unknown>, ["id", "name", "trigger", "actions", "status"], "playbook");
   }));
 
   results.push(await runTest("playbook: steps array is well-formed", async () => {
     const playbook = await storage.getPlaybook(playbookId);
     assertDefined(playbook, "playbook");
-    const steps = playbook!.steps;
+    const steps = playbook!.actions;
     assertDefined(steps, "steps");
   }));
 
@@ -217,10 +217,10 @@ export async function runAllContractTests(): Promise<TestSuiteResult[]> {
   const suites: TestSuiteResult[] = [];
 
   for (const ct of types.slice(0, 5)) {
-    suites.push(await runConnectorContractTests(ct.type));
+    suites.push(await runConnectorContractTests((ct as any).type || ct));
   }
 
-  const playbooks = await storage.getPlaybooks("default");
+  const playbooks = await storage.getPlaybooks();
   for (const pb of playbooks.slice(0, 3)) {
     suites.push(await runAutomationIntegrationTests(pb.id));
   }

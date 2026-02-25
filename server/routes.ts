@@ -168,10 +168,9 @@ async function dispatchWebhookEvent(orgId: string, event: string, payload: any) 
           webhookId: webhook.id,
           event,
           payload,
-          statusCode,
+          responseStatus: statusCode,
           responseBody: responseBody.slice(0, 2000),
           success,
-          deliveredAt: new Date(),
         }).catch(() => {});
       })().catch(() => {});
     }
@@ -221,8 +220,9 @@ function idempotencyCheck(req: Request, res: Response, next: NextFunction) {
     res.json = function (body: any) {
       storage.createIdempotencyKey({
         orgId,
-        key: idempotencyKey,
+        idempotencyKey,
         endpoint,
+        method: req.method,
         responseStatus: res.statusCode,
         responseBody: body,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -975,12 +975,11 @@ export async function registerRoutes(
       const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
       const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx);
       if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
-        (result as any).threatIntelSources = [
-          ...new Set([
-            ...threatIntelCtx.enrichmentResults.map(r => r.provider),
-            ...threatIntelCtx.osintMatches.map(r => r.feedName),
-          ])
-        ];
+          (result as any).threatIntelSources = 
+            Array.from(new Set([
+              ...threatIntelCtx.enrichmentResults.map(r => r.provider),
+              ...threatIntelCtx.osintMatches.map(r => r.feedName),
+            ]));
       }
       const storedIocs = Array.isArray(result.iocs)
         ? result.iocs.map((ioc: any) => typeof ioc === "string" ? ioc : `${ioc.value} (${ioc.type}: ${ioc.context})`)
@@ -1016,12 +1015,11 @@ export async function registerRoutes(
       const threatIntelCtx = await buildThreatIntelContext([alert]);
       const result = await triageAlert(alert, threatIntelCtx);
       if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
-        result.threatIntelSources = [
-          ...new Set([
-            ...threatIntelCtx.enrichmentResults.map(r => r.provider),
-            ...threatIntelCtx.osintMatches.map(r => r.feedName),
-          ])
-        ];
+          result.threatIntelSources = 
+            Array.from(new Set([
+              ...threatIntelCtx.enrichmentResults.map(r => r.provider),
+              ...threatIntelCtx.osintMatches.map(r => r.feedName),
+            ]));
       }
       await storage.createAuditLog({
         userId: (req as any).user?.id,
@@ -1705,14 +1703,14 @@ export async function registerRoutes(
   app.get("/api/connectors/:id/jobs", isAuthenticated, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
-      const runs = await storage.getConnectorJobRuns(req.params.id, limit);
+      const runs = await storage.getConnectorJobRuns(p(req.params.id), limit);
       res.json(runs);
     } catch (error) { res.status(500).json({ message: "Failed to fetch job runs" }); }
   });
 
   app.get("/api/connectors/:id/metrics", isAuthenticated, async (req, res) => {
     try {
-      const metrics = await storage.getConnectorMetrics(req.params.id);
+      const metrics = await storage.getConnectorMetrics(p(req.params.id));
       res.json(metrics);
     } catch (error) { res.status(500).json({ message: "Failed to fetch connector metrics" }); }
   });
@@ -1751,7 +1749,7 @@ export async function registerRoutes(
   app.get("/api/connectors/:id/health", isAuthenticated, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
-      const checks = await storage.getConnectorHealthChecks(req.params.id, limit);
+      const checks = await storage.getConnectorHealthChecks(p(req.params.id), limit);
       res.json(checks);
     } catch (error) { res.status(500).json({ message: "Failed to fetch health checks" }); }
   });
@@ -1792,7 +1790,7 @@ export async function registerRoutes(
 
   app.get("/api/ai/feedback/:resourceType/:resourceId", isAuthenticated, async (req, res) => {
     try {
-      const feedback = await storage.getAiFeedbackByResource(req.params.resourceType, req.params.resourceId);
+      const feedback = await storage.getAiFeedbackByResource(p(req.params.resourceType), p(req.params.resourceId));
       res.json(feedback);
     } catch (error) { res.status(500).json({ message: "Failed to fetch feedback for resource" }); }
   });
@@ -2929,7 +2927,7 @@ export async function registerRoutes(
   app.get("/api/ioc-entries/search/:type/:value", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      const entries = await storage.getIocEntriesByValue(req.params.type, req.params.value, user?.orgId);
+      const entries = await storage.getIocEntriesByValue(p(req.params.type), p(req.params.value), user?.orgId);
       res.json(entries);
     } catch (error) {
       res.status(500).json({ message: "Failed to search IOC entries" });
@@ -3926,7 +3924,7 @@ export async function registerRoutes(
       const recs = await storage.getHardeningRecommendations(orgId);
       const rec = recs.find(r => r.id === req.params.id);
       if (!rec) return res.status(404).json({ message: "Recommendation not found" });
-      const updated = await storage.updateHardeningRecommendation(req.params.id, { status });
+      const updated = await storage.updateHardeningRecommendation(p(req.params.id), { status });
       if (!updated) return res.status(404).json({ message: "Recommendation not found" });
       res.json(updated);
     } catch (error) { res.status(500).json({ message: "Failed to update recommendation" }); }
@@ -3951,7 +3949,7 @@ export async function registerRoutes(
 
   app.delete("/api/predictive/anomaly-subscriptions/:id", isAuthenticated, async (req, res) => {
     try {
-      const ok = await storage.deleteAnomalySubscription(req.params.id);
+      const ok = await storage.deleteAnomalySubscription(p(req.params.id));
       if (!ok) return res.status(404).json({ message: "Subscription not found" });
       res.status(204).send();
     } catch (error) { res.status(500).json({ message: "Failed to delete anomaly subscription" }); }
@@ -3959,7 +3957,7 @@ export async function registerRoutes(
 
   app.get("/api/incidents/:id/root-cause-summary", isAuthenticated, async (req, res) => {
     try {
-      const incident = await storage.getIncident(req.params.id);
+      const incident = await storage.getIncident(p(req.params.id));
       if (!incident) return res.status(404).json({ message: "Incident not found" });
       const relatedAlerts = await storage.getAlertsByIncident(incident.id);
       const byCategory = relatedAlerts.reduce((acc: Record<string, number>, a) => {
@@ -5328,7 +5326,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/report-templates/:id", isAuthenticated, async (req, res) => {
-    const template = await storage.getReportTemplate(req.params.id);
+    const template = await storage.getReportTemplate(p(req.params.id));
     if (!template) return res.status(404).json({ message: "Template not found" });
     const user = req.user as any;
     if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
@@ -5344,20 +5342,20 @@ export async function registerRoutes(
 
   app.patch("/api/report-templates/:id", isAuthenticated, async (req, res) => {
     const user = req.user as any;
-    const existing = await storage.getReportTemplate(req.params.id);
+    const existing = await storage.getReportTemplate(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Template not found" });
     if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
     const { id: _id, orgId: _org, ...updateData } = req.body;
-    const template = await storage.updateReportTemplate(req.params.id, updateData);
+    const template = await storage.updateReportTemplate(p(req.params.id), updateData);
     res.json(template);
   });
 
   app.delete("/api/report-templates/:id", isAuthenticated, async (req, res) => {
     const user = req.user as any;
-    const existing = await storage.getReportTemplate(req.params.id);
+    const existing = await storage.getReportTemplate(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Template not found" });
     if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
-    await storage.deleteReportTemplate(req.params.id);
+    await storage.deleteReportTemplate(p(req.params.id));
     res.json({ success: true });
   });
 
@@ -5368,7 +5366,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/report-schedules/:id", isAuthenticated, async (req, res) => {
-    const schedule = await storage.getReportSchedule(req.params.id);
+    const schedule = await storage.getReportSchedule(p(req.params.id));
     if (!schedule) return res.status(404).json({ message: "Schedule not found" });
     const user = req.user as any;
     if (schedule.orgId && user?.orgId && schedule.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
@@ -5391,23 +5389,23 @@ export async function registerRoutes(
 
   app.patch("/api/report-schedules/:id", isAuthenticated, async (req, res) => {
     const user = req.user as any;
-    const existing = await storage.getReportSchedule(req.params.id);
+    const existing = await storage.getReportSchedule(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Schedule not found" });
     if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
     const { id: _id, orgId: _org, ...updateData } = req.body;
     if (updateData.cadence) {
       updateData.nextRunAt = calculateNextRunFromCadence(updateData.cadence);
     }
-    const schedule = await storage.updateReportSchedule(req.params.id, updateData);
+    const schedule = await storage.updateReportSchedule(p(req.params.id), updateData);
     res.json(schedule);
   });
 
   app.delete("/api/report-schedules/:id", isAuthenticated, async (req, res) => {
     const user = req.user as any;
-    const existing = await storage.getReportSchedule(req.params.id);
+    const existing = await storage.getReportSchedule(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Schedule not found" });
     if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
-    await storage.deleteReportSchedule(req.params.id);
+    await storage.deleteReportSchedule(p(req.params.id));
     res.json({ success: true });
   });
 
@@ -5419,7 +5417,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/report-runs/:id", isAuthenticated, async (req, res) => {
-    const run = await storage.getReportRun(req.params.id);
+    const run = await storage.getReportRun(p(req.params.id));
     if (!run) return res.status(404).json({ message: "Run not found" });
     const user = req.user as any;
     if (run.orgId && user?.orgId && run.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
@@ -5440,7 +5438,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/reports/:runId/download", isAuthenticated, async (req, res) => {
-    const run = await storage.getReportRun(req.params.runId);
+    const run = await storage.getReportRun(p(req.params.runId));
     if (!run) return res.status(404).json({ message: "Report run not found" });
     const user = req.user as any;
     if (run.orgId && user?.orgId && run.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
@@ -5465,7 +5463,7 @@ export async function registerRoutes(
     const user = req.user as any;
     try {
       const { generateReportData } = await import("./report-engine");
-      const data = await generateReportData(req.params.reportType, user?.orgId);
+      const data = await generateReportData(p(req.params.reportType), user?.orgId);
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -5496,7 +5494,7 @@ export async function registerRoutes(
 
   app.get("/api/dashboard/:role", isAuthenticated, async (req, res) => {
     const user = req.user as any;
-    const role = req.params.role;
+    const role = p(req.params.role);
     if (!["ciso", "soc_manager", "analyst"].includes(role)) {
       return res.status(400).json({ message: "Invalid role. Must be ciso, soc_manager, or analyst" });
     }
@@ -6246,10 +6244,9 @@ export async function registerRoutes(
         webhookId: webhook.id,
         event: "test",
         payload: testPayload,
-        statusCode,
+        responseStatus: statusCode,
         responseBody: responseBody.slice(0, 2000),
         success,
-        deliveredAt: new Date(),
       });
       res.json({ success, statusCode, responseBody: responseBody.slice(0, 500) });
     } catch (error) {
@@ -6483,7 +6480,7 @@ export async function registerRoutes(
 
   app.post("/api/ops/jobs/:id/cancel", isAuthenticated, async (req, res) => {
     try {
-      const success = await storage.cancelJob(req.params.id);
+      const success = await storage.cancelJob(p(req.params.id));
       if (!success) return res.status(404).json({ message: "Job not found or not cancellable" });
       res.json({ cancelled: true });
     } catch (error) {
@@ -6558,7 +6555,7 @@ export async function registerRoutes(
 
   app.patch("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
-      const updated = await storage.updateSloTarget(req.params.id, req.body);
+      const updated = await storage.updateSloTarget(p(req.params.id), req.body);
       if (!updated) return res.status(404).json({ message: "SLO target not found" });
       res.json(updated);
     } catch (error) {
@@ -6568,7 +6565,7 @@ export async function registerRoutes(
 
   app.delete("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
-      const deleted = await storage.deleteSloTarget(req.params.id);
+      const deleted = await storage.deleteSloTarget(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "SLO target not found" });
       res.json({ deleted: true });
     } catch (error) {
@@ -6615,7 +6612,7 @@ export async function registerRoutes(
 
   app.get("/api/ops/dr-runbooks/:id", isAuthenticated, async (req, res) => {
     try {
-      const runbook = await storage.getDrRunbook(req.params.id);
+      const runbook = await storage.getDrRunbook(p(req.params.id));
       if (!runbook) return res.status(404).json({ message: "Runbook not found" });
       res.json(runbook);
     } catch (error) {
@@ -6635,7 +6632,7 @@ export async function registerRoutes(
 
   app.patch("/api/ops/dr-runbooks/:id", isAuthenticated, async (req, res) => {
     try {
-      const updated = await storage.updateDrRunbook(req.params.id, req.body);
+      const updated = await storage.updateDrRunbook(p(req.params.id), req.body);
       if (!updated) return res.status(404).json({ message: "Runbook not found" });
       res.json(updated);
     } catch (error) {
@@ -6645,7 +6642,7 @@ export async function registerRoutes(
 
   app.delete("/api/ops/dr-runbooks/:id", isAuthenticated, async (req, res) => {
     try {
-      const deleted = await storage.deleteDrRunbook(req.params.id);
+      const deleted = await storage.deleteDrRunbook(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Runbook not found" });
       res.json({ deleted: true });
     } catch (error) {
@@ -6657,7 +6654,7 @@ export async function registerRoutes(
     try {
       const { result, notes } = req.body;
       if (!result) return res.status(400).json({ message: "result (pass/fail/partial) required" });
-      const updated = await storage.updateDrRunbook(req.params.id, {
+      const updated = await storage.updateDrRunbook(p(req.params.id), {
         lastTestedAt: new Date(),
         lastTestResult: result,
         testNotes: notes || null,
@@ -7472,24 +7469,23 @@ export async function registerRoutes(
       const startTime = Date.now();
       const jobRun = await storage.createConnectorJobRun({
         connectorId: connector.id, orgId,
-        status: "running", triggeredBy: "replay",
-        startedAt: new Date(),
+        status: "running",
       });
       try {
-        const syncResult = await syncConnector(connector.type, config);
+        const syncResult = await syncConnector(connector);
         const latency = Date.now() - startTime;
         await storage.updateConnectorJobRun(jobRun.id, {
-          status: "success", finishedAt: new Date(), latencyMs: latency,
-          alertsIngested: syncResult.alertsReceived || 0,
+          status: "success", completedAt: new Date(), latencyMs: latency,
+          alertsReceived: syncResult.alertsReceived || 0,
         });
         await storage.updateConnectorSyncStatus(connector.id, {
           lastSyncAt: new Date(), lastSyncStatus: "success",
           lastSyncAlerts: syncResult.alertsReceived || 0,
         });
-        res.json({ success: true, jobRunId: jobRun.id, alertsIngested: syncResult.alertsReceived || 0 });
+        res.json({ success: true, jobRunId: jobRun.id, alertsReceived: syncResult.alertsReceived || 0 });
       } catch (syncError: any) {
         await storage.updateConnectorJobRun(jobRun.id, {
-          status: "failed", finishedAt: new Date(), latencyMs: Date.now() - startTime,
+          status: "failed", completedAt: new Date(), latencyMs: Date.now() - startTime,
           errorMessage: syncError.message,
         });
         res.json({ success: false, jobRunId: jobRun.id, error: syncError.message });
@@ -7660,7 +7656,7 @@ export async function registerRoutes(
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
-      const updated = await storage.completeOnboardingStep(orgId, req.params.stepKey, user?.id);
+      const updated = await storage.completeOnboardingStep(orgId, p(req.params.stepKey), user?.id);
       if (!updated) return res.status(404).json({ message: "Onboarding step not found" });
       res.json(updated);
     } catch (error) { res.status(500).json({ message: "Failed to complete onboarding step" }); }
@@ -7786,8 +7782,9 @@ export async function registerRoutes(
         try {
           await storage.createConnector({
             orgId, name: conn.name, type: conn.type,
+            authType: conn.authType || "none",
             config: { description: conn.description },
-            enabled: false,
+            status: "inactive",
           });
           applied.push(`Connector: ${conn.name}`);
         } catch { /* skip duplicates */ }
@@ -7798,8 +7795,8 @@ export async function registerRoutes(
           await storage.createPlaybook({
             name: pb.name, orgId,
             trigger: pb.trigger || "manual",
-            steps: pb.steps ? pb.steps.map((s: string, i: number) => ({ id: `step-${i}`, action: s, order: i })) : [],
-            isActive: false,
+            actions: pb.steps ? pb.steps.map((s: string, i: number) => ({ id: `step-${i}`, action: s, order: i })) : [],
+            status: "inactive",
           });
           applied.push(`Playbook: ${pb.name}`);
         } catch { /* skip duplicates */ }
