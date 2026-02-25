@@ -1,6 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
 
+function extractEnvelopeError(body: unknown, fallback: string): string {
+  if (typeof body === "object" && body !== null) {
+    const envelope = body as { errors?: { message?: string }[] | null; message?: string };
+    if (Array.isArray(envelope.errors) && envelope.errors.length > 0 && envelope.errors[0].message) {
+      return envelope.errors[0].message;
+    }
+    if (envelope.message) return envelope.message;
+  }
+  return fallback;
+}
+
 async function fetchUser(): Promise<User | null> {
   const response = await fetch("/api/auth/user", {
     credentials: "include",
@@ -14,7 +25,8 @@ async function fetchUser(): Promise<User | null> {
     throw new Error(`${response.status}: ${response.statusText}`);
   }
 
-  return response.json();
+  const body = await response.json();
+  return body.data !== undefined ? body.data : body;
 }
 
 async function loginFn(data: { email: string; password: string }): Promise<User> {
@@ -25,10 +37,11 @@ async function loginFn(data: { email: string; password: string }): Promise<User>
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const err = await response.json().catch(() => ({ message: "Login failed" }));
-    throw new Error(err.message);
+    const err = await response.json().catch(() => null);
+    throw new Error(extractEnvelopeError(err, "Login failed"));
   }
-  return response.json();
+  const body = await response.json();
+  return body.data !== undefined ? body.data : body;
 }
 
 async function registerFn(data: {
@@ -44,10 +57,11 @@ async function registerFn(data: {
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const err = await response.json().catch(() => ({ message: "Registration failed" }));
-    throw new Error(err.message);
+    const err = await response.json().catch(() => null);
+    throw new Error(extractEnvelopeError(err, "Registration failed"));
   }
-  return response.json();
+  const body = await response.json();
+  return body.data !== undefined ? body.data : body;
 }
 
 async function logoutFn(): Promise<void> {

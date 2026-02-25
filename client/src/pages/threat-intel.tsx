@@ -1833,7 +1833,7 @@ export default function ThreatIntelPage() {
                 description: ruleFormDescription,
                 iocTypes: ruleFormIocTypes,
                 matchFields: ruleFormMatchFields,
-                minConfidence: parseInt(ruleFormMinConfidence) || 0,
+                minConfidence: parseInt(ruleFormMinConfidence, 10) || 0,
                 enabled: ruleFormEnabled,
                 autoEnrich: ruleFormAutoEnrich,
               })}
@@ -1960,7 +1960,7 @@ export default function ThreatIntelPage() {
               onClick={() => createIOCMutation.mutate({
                 iocType: iocFormType,
                 iocValue: iocFormValue,
-                confidence: parseInt(iocFormConfidence) || 80,
+                confidence: parseInt(iocFormConfidence, 10) || 80,
                 severity: iocFormSeverity,
                 malwareFamily: iocFormMalwareFamily || undefined,
                 campaignName: iocFormCampaignName || undefined,

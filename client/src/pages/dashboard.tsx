@@ -55,7 +55,9 @@ function loadWidgetConfig(): WidgetConfig[] {
   try {
     const raw = localStorage.getItem("dashboard.widgets.v1");
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch (_parseErr) {
+    console.warn("Failed to parse dashboard widget config from localStorage", _parseErr);
+  }
   return DEFAULT_WIDGETS;
 }
 

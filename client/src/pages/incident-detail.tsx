@@ -604,7 +604,7 @@ export default function IncidentDetailPage() {
             <span className="text-xs text-muted-foreground">Priority:</span>
             <Select
               value={String(incident.priority ?? 3)}
-              onValueChange={(value) => updateIncident.mutate({ priority: parseInt(value) })}
+              onValueChange={(value) => updateIncident.mutate({ priority: parseInt(value, 10) })}
             >
               <SelectTrigger className="w-[80px]" data-testid="select-priority">
                 <SelectValue />
@@ -2371,7 +2371,7 @@ export default function IncidentDetailPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddTaskDialog(false)} data-testid="button-cancel-task">Cancel</Button>
             <Button
-              onClick={() => createTask.mutate({ title: taskTitle, description: taskDescription, assignedTo: taskAssignee || undefined, assignedToName: taskAssignee || undefined, priority: parseInt(taskPriority) })}
+              onClick={() => createTask.mutate({ title: taskTitle, description: taskDescription, assignedTo: taskAssignee || undefined, assignedToName: taskAssignee || undefined, priority: parseInt(taskPriority, 10) })}
               disabled={!taskTitle.trim() || createTask.isPending}
               data-testid="button-submit-task"
             >

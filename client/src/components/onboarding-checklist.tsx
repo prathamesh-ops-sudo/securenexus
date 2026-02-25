@@ -40,7 +40,9 @@ export function OnboardingChecklist() {
     try {
       const raw = localStorage.getItem(DISMISSED_KEY);
       if (raw === "true") setIsDismissed(true);
-    } catch {}
+    } catch (_storageErr) {
+      console.warn("Failed to read onboarding dismissed state from localStorage", _storageErr);
+    }
   }, []);
 
   const { data, isLoading } = useQuery<OnboardingData>({

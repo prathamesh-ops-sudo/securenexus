@@ -2401,7 +2401,7 @@ export async function registerRoutes(
       if (!title || !severity) return res.status(400).json({ message: "Title and severity are required" });
       const result = await promoteClusterToIncident(p(req.params.id), title, severity);
       res.json(result);
-    } catch (error: any) { res.status(500).json({ message: error.message || "Failed to promote cluster" }); }
+    } catch (error) { console.error("Promote cluster error:", error); res.status(500).json({ message: "Failed to promote cluster" }); }
   });
 
   app.get("/api/entities/:id/aliases", isAuthenticated, async (req, res) => {
@@ -2426,7 +2426,7 @@ export async function registerRoutes(
       if (!targetId || !sourceId) return res.status(400).json({ message: "targetId and sourceId required" });
       const merged = await mergeEntities(targetId, sourceId);
       res.json(merged);
-    } catch (error: any) { res.status(500).json({ message: error.message || "Failed to merge entities" }); }
+    } catch (error) { console.error("Merge entities error:", error); res.status(500).json({ message: "Failed to merge entities" }); }
   });
 
   app.patch("/api/entities/:id/metadata", isAuthenticated, async (req, res) => {
@@ -3922,7 +3922,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: any) {
       console.error("Predictive analysis error:", error);
-      res.status(500).json({ message: "Failed to run predictive analysis", error: error.message });
+      res.status(500).json({ message: "Failed to run predictive analysis" });
     }
   });
 
@@ -4141,7 +4141,7 @@ export async function registerRoutes(
       if (!canRollback(actionType)) return res.status(400).json({ message: `Cannot rollback action: ${actionType}` });
       const rollback = await createRollbackRecord(orgId || "default", originalActionId, actionType, target);
       res.status(201).json(rollback);
-    } catch (error: any) { res.status(500).json({ message: error.message || "Failed to create rollback" }); }
+    } catch (error) { console.error("Create rollback error:", error); res.status(500).json({ message: "Failed to create rollback" }); }
   });
 
   app.post("/api/autonomous/rollbacks/:id/execute", isAuthenticated, async (req, res) => {

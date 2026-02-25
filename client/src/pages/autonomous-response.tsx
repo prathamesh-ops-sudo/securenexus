@@ -458,7 +458,9 @@ function InvestigationsTab() {
                 try {
                   if (Array.isArray(run.steps)) return run.steps;
                   if (typeof run.steps === "string") return JSON.parse(run.steps);
-                } catch {}
+                } catch (_parseErr) {
+                  console.warn("Failed to parse investigation steps", _parseErr);
+                }
               }
               return [];
             })();

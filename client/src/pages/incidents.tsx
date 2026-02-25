@@ -421,6 +421,8 @@ export default function IncidentsPage() {
       apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { assignedTo: name.trim() }).then(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
         toast({ title: "Assigned", description: `Incident assigned to ${name.trim()}` });
+      }).catch((err: Error) => {
+        toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
       });
     }
   }, [focusedIncidentId, toast]);
