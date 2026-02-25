@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +74,7 @@ export default function AlertsPage() {
   const [savedViews, setSavedViews] = useState<Array<{ name: string; search: string; severity: string; showSuppressed: boolean }>>([]);
   const [savedViewName, setSavedViewName] = useState("");
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "new" | "aging" | "breached">("all");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
@@ -263,6 +264,31 @@ export default function AlertsPage() {
     },
   });
 
+  const getQueueState = (alert: Alert): "new" | "aging" | "breached" | "other" => {
+    const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
+    if (alert.status !== "new") return "other";
+    if (ageMs >= 72 * 60 * 60 * 1000) return "breached";
+    if (ageMs >= 24 * 60 * 60 * 1000) return "aging";
+    return "new";
+  };
+
+  const getQueueLabel = (state: "new" | "aging" | "breached" | "other") => {
+    if (state === "other") return "N/A";
+    return state;
+  };
+
+  const getQueueCountdown = (alert: Alert) => {
+    const state = getQueueState(alert);
+    if (state === "other" || state === "breached") return null;
+    const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
+    const targetMs = state === "new" ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
+    const remainingMs = Math.max(0, targetMs - ageMs);
+    const totalMinutes = Math.floor(remainingMs / (60 * 1000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m remaining`;
+  };
+
   const filtered = alerts?.filter((alert) => {
     const matchesSearch = !search ||
       alert.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -270,14 +296,7 @@ export default function AlertsPage() {
       alert.description?.toLowerCase().includes(search.toLowerCase());
     const matchesSeverity = severityFilter === "all" || alert.severity === severityFilter;
     const matchesSuppressed = showSuppressed || !alert.suppressed;
-    const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
-    const queueState = alert.status !== "new"
-      ? "other"
-      : ageMs >= 72 * 60 * 60 * 1000
-        ? "breached"
-        : ageMs >= 24 * 60 * 60 * 1000
-          ? "aging"
-          : "new";
+    const queueState = getQueueState(alert);
     const matchesQueue = queueFilter === "all" || queueState === queueFilter;
     return matchesSearch && matchesSeverity && matchesSuppressed && matchesQueue;
   });
@@ -292,10 +311,24 @@ export default function AlertsPage() {
   }, [filtered, focusedAlertId]);
 
   useEffect(() => {
+    if (!filtered || filtered.length === 0) {
+      setPage(0);
+      return;
+    }
+    const maxPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1);
+    if (page > maxPage) setPage(maxPage);
+  }, [filtered, page]);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!filtered || filtered.length === 0) return;
       const target = e.target as HTMLElement;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable
+      ) return;
       const idx = filtered.findIndex((a) => a.id === focusedAlertId);
       if (e.key.toLowerCase() === "j") {
         e.preventDefault();
@@ -309,10 +342,26 @@ export default function AlertsPage() {
         e.preventDefault();
         bulkUpdate.mutate({ status: "triaged" });
       }
+      if (e.key === "Enter" && focusedAlertId) {
+        e.preventDefault();
+        setIsDetailOpen(true);
+      }
+      if (e.key === "Escape") {
+        setIsDetailOpen(false);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [filtered, focusedAlertId, selectedIds, bulkUpdate]);
+
+  const selectedAlert = useMemo(
+    () => (alerts && focusedAlertId ? alerts.find((alert) => alert.id === focusedAlertId) ?? null : null),
+    [alerts, focusedAlertId],
+  );
+  const pageAlerts = useMemo(
+    () => filtered?.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) ?? [],
+    [filtered, page],
+  );
 
   const handleTriageClick = (alertId: string) => {
     setSelectedAlertForTriage(alertId);
@@ -426,6 +475,16 @@ export default function AlertsPage() {
         >
           Save View
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsDetailOpen((prev) => !prev)}
+          disabled={!selectedAlert}
+          data-testid="button-toggle-detail-pane"
+        >
+          <PanelRight className="h-3.5 w-3.5 mr-1.5" />
+          {isDetailOpen ? "Hide Detail" : "Show Detail"}
+        </Button>
       </div>
 
       {savedViews.length > 0 && (
@@ -459,7 +518,7 @@ export default function AlertsPage() {
             <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending}>Apply Status</Button>
             <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: true })} disabled={bulkUpdate.isPending}>Suppress</Button>
             <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: false })} disabled={bulkUpdate.isPending}>Unsuppress</Button>
-            <span className="text-xs text-muted-foreground">Shortcuts: J/K focus rows, T set selected to triaged.</span>
+            <span className="text-xs text-muted-foreground">Shortcuts: J/K focus rows, Enter open detail, Esc close detail, T set selected to triaged.</span>
           </CardContent>
         </Card>
       )}
