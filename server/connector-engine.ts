@@ -1,6 +1,7 @@
 import { type Connector, type InsertAlert, type ConnectorJobRun, type InsertConnectorJobRun } from "@shared/schema";
 import { normalizeAlert, toInsertAlert, SOURCE_KEYS } from "./normalizer";
 import { storage } from "./storage";
+import { config as appConfig } from "./config";
 
 export interface ConnectorConfig {
   baseUrl: string;
@@ -246,12 +247,13 @@ async function fetchPaloAlto(config: ConnectorConfig, since?: Date): Promise<any
 
 async function fetchGuardDuty(config: ConnectorConfig, since?: Date): Promise<any[]> {
   const { GuardDutyClient, ListDetectorsCommand, ListFindingsCommand, GetFindingsCommand } = await import("@aws-sdk/client-guardduty");
+  const resolvedAccessKeyId = config.accessKeyId || appConfig.aws.accessKeyId;
+  const resolvedSecretAccessKey = config.secretAccessKey || appConfig.aws.secretAccessKey;
   const client = new GuardDutyClient({
     region: config.region || "us-east-1",
-    credentials: {
-      accessKeyId: config.accessKeyId || process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY!,
-    },
+    ...(resolvedAccessKeyId && resolvedSecretAccessKey
+      ? { credentials: { accessKeyId: resolvedAccessKeyId, secretAccessKey: resolvedSecretAccessKey } }
+      : {}),
   });
   const detectorsRes = await client.send(new ListDetectorsCommand({}));
   const detectorId = detectorsRes.DetectorIds?.[0];
@@ -1485,12 +1487,13 @@ export async function testConnector(type: string, config: ConnectorConfig): Prom
       }
       case "guardduty": {
         const { GuardDutyClient, ListDetectorsCommand } = await import("@aws-sdk/client-guardduty");
+        const gdAccessKeyId = config.accessKeyId || appConfig.aws.accessKeyId;
+        const gdSecretAccessKey = config.secretAccessKey || appConfig.aws.secretAccessKey;
         const client = new GuardDutyClient({
           region: config.region || "us-east-1",
-          credentials: {
-            accessKeyId: config.accessKeyId || process.env.AWS_ACCESS_KEY_ID!,
-            secretAccessKey: config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY!,
-          },
+          ...(gdAccessKeyId && gdSecretAccessKey
+            ? { credentials: { accessKeyId: gdAccessKeyId, secretAccessKey: gdSecretAccessKey } }
+            : {}),
         });
         const res = await client.send(new ListDetectorsCommand({}));
         if (!res.DetectorIds?.length) throw new Error("No GuardDuty detectors found");
