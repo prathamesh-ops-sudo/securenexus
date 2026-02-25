@@ -311,6 +311,14 @@ export default function IncidentsPage() {
   const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
+  // Optimistic update helper for incident status changes
+  const optimisticStatusUpdate = useCallback((incidentId: string, updates: Partial<Incident>) => {
+    queryClient.setQueryData<Incident[]>(['/api/incidents'], (old) => {
+      if (!old) return old;
+      return old.map(inc => inc.id === incidentId ? { ...inc, ...updates } as Incident : inc);
+    });
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem("incidents.savedViews.v1");
@@ -419,19 +427,25 @@ export default function IncidentsPage() {
 
   const escalateFocused = useCallback(() => {
     if (!focusedIncidentId) return;
+    optimisticStatusUpdate(focusedIncidentId, { escalated: true });
     apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { escalated: true }).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
       toast({ title: "Escalated" });
+    }).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
     });
-  }, [focusedIncidentId, toast]);
+  }, [focusedIncidentId, toast, optimisticStatusUpdate]);
 
   const resolveFocused = useCallback(() => {
     if (!focusedIncidentId) return;
+    optimisticStatusUpdate(focusedIncidentId, { status: "resolved" } as Partial<Incident>);
     apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { status: "resolved" }).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
       toast({ title: "Resolved" });
+    }).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
     });
-  }, [focusedIncidentId, toast]);
+  }, [focusedIncidentId, toast, optimisticStatusUpdate]);
 
   const activeFilters = useMemo(() => {
     const chips: { key: string; label: string; value: string }[] = [];
@@ -701,7 +715,7 @@ export default function IncidentsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <FileWarning className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            <FileWarning className="h-3 w-3 text-muted-foreground flex-shrink-0" aria-hidden="true" />
                             <div>
                               <div className="text-sm font-medium">{incident.title}</div>
                               <div className="text-xs text-muted-foreground truncate max-w-[300px]">{incident.summary}</div>
@@ -745,8 +759,11 @@ export default function IncidentsPage() {
                 ) : (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                      <FileWarning className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
-                      <p>No incidents found</p>
+                      <div role="status" aria-label="No incidents found">
+                        <FileWarning className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" aria-hidden="true" />
+                        <p className="font-medium">No incidents found</p>
+                        <p className="text-xs mt-1">Adjust your filters or check back later</p>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -779,8 +796,8 @@ export default function IncidentsPage() {
               <PanelRight className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-semibold truncate">{selectedIncident.title}</span>
             </div>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsDetailOpen(false)}>
-              <X className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsDetailOpen(false)} aria-label="Close detail panel">
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">

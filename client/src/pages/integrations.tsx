@@ -22,6 +22,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { IntegrationConfig, NotificationChannel, ResponseAction } from "@shared/schema";
@@ -284,8 +285,17 @@ function IntegrationsTab() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="space-y-3 py-6" role="status" aria-label="Loading integrations">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-0">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-8 w-8 rounded" />
+          </div>
+        ))}
+        <span className="sr-only">Loading integrations...</span>
       </div>
     );
   }
@@ -295,20 +305,24 @@ function IntegrationsTab() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
-            <Plug className="h-4 w-4 text-muted-foreground" />
+            <Plug className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             Configured Integrations
           </CardTitle>
-          <Button size="sm" onClick={openCreate} data-testid="button-add-integration">
-            <Plus className="h-4 w-4 mr-1" />
+          <Button size="sm" onClick={openCreate} aria-label="Add new integration" data-testid="button-add-integration">
+            <Plus className="h-4 w-4 mr-1" aria-hidden="true" />
             Add Integration
           </Button>
         </CardHeader>
         <CardContent>
           {!integrations?.length ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Plug className="h-10 w-10 mb-3" />
-              <p className="text-sm">No integrations configured yet</p>
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" role="status" aria-label="No integrations">
+              <Plug className="h-10 w-10 mb-3" aria-hidden="true" />
+              <p className="text-sm font-medium">No integrations configured yet</p>
               <p className="text-xs mt-1">Add an integration to connect with external tools</p>
+              <Button className="mt-4" size="sm" onClick={openCreate} aria-label="Add your first integration">
+                <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                Add First Integration
+              </Button>
             </div>
           ) : (
             <div className="overflow-x-auto border rounded-md">
@@ -351,7 +365,7 @@ function IntegrationsTab() {
                             disabled={testingId === item.id}
                             data-testid={`button-test-integration-${item.id}`}
                           >
-                            {testingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube className="h-4 w-4" />}
+                            {testingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTube className="h-4 w-4" aria-hidden="true" />}
                           </Button>
                           <Button
                             size="icon"
@@ -1339,7 +1353,7 @@ function ResponseApprovalsTab() {
 
 export default function IntegrationsPage() {
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-integrations">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Integrations & Response" data-testid="page-integrations">
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
           <span className="gradient-text-red">Integrations & Response</span>
@@ -1353,23 +1367,23 @@ export default function IntegrationsPage() {
       <Tabs defaultValue="integrations" data-testid="tabs-integrations">
         <TabsList className="flex-wrap" data-testid="tabs-list">
           <TabsTrigger value="integrations" data-testid="tab-integrations">
-            <Plug className="h-3.5 w-3.5 mr-1.5" />
+            <Plug className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Integrations
           </TabsTrigger>
           <TabsTrigger value="ticket-sync" data-testid="tab-ticket-sync">
-            <ArrowLeftRight className="h-3.5 w-3.5 mr-1.5" />
+            <ArrowLeftRight className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Ticket Sync
           </TabsTrigger>
           <TabsTrigger value="channels" data-testid="tab-channels">
-            <Bell className="h-3.5 w-3.5 mr-1.5" />
+            <Bell className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Notification Channels
           </TabsTrigger>
           <TabsTrigger value="response-actions" data-testid="tab-response-actions">
-            <Zap className="h-3.5 w-3.5 mr-1.5" />
+            <Zap className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Response Actions
           </TabsTrigger>
           <TabsTrigger value="approvals" data-testid="tab-approvals">
-            <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+            <ShieldCheck className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Approvals
           </TabsTrigger>
         </TabsList>

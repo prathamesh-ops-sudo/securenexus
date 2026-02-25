@@ -485,7 +485,7 @@ export default function AlertsPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Alerts Management">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Alerts</span></h1>
@@ -496,9 +496,11 @@ export default function AlertsPage() {
           <Button
             variant="outline"
             onClick={() => setShowSuppressionRules(!showSuppressionRules)}
+            aria-label="Toggle suppression rules panel"
+            aria-expanded={showSuppressionRules}
             data-testid="button-suppression-rules"
           >
-            <ShieldOff className="h-4 w-4 mr-2" />
+            <ShieldOff className="h-4 w-4 mr-2" aria-hidden="true" />
             Suppression Rules
           </Button>
           <Button
@@ -507,9 +509,9 @@ export default function AlertsPage() {
             data-testid="button-ai-correlate"
           >
             {correlate.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
             ) : (
-              <Brain className="h-4 w-4 mr-2" />
+              <Brain className="h-4 w-4 mr-2" aria-hidden="true" />
             )}
             {correlate.isPending ? "Analyzing..." : "AI Correlate Alerts"}
           </Button>
@@ -518,7 +520,7 @@ export default function AlertsPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
           <Input
             placeholder="Search alerts..."
             value={search}
@@ -1048,7 +1050,7 @@ export default function AlertsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" aria-hidden="true" />
                           <div>
                             <div className={`text-sm font-medium ${alert.suppressed ? "line-through text-muted-foreground" : ""}`}>{alert.title}</div>
                             <div className="text-xs text-muted-foreground truncate max-w-[300px]">{alert.description}</div>
@@ -1109,6 +1111,7 @@ export default function AlertsPage() {
                             variant="ghost"
                             onClick={() => handleTriageClick(alert.id)}
                             disabled={triage.isPending && selectedAlertForTriage === alert.id}
+                            aria-label="AI triage this alert"
                             data-testid={`button-triage-${alert.id}`}
                           >
                             {triage.isPending && selectedAlertForTriage === alert.id ? (
@@ -1123,9 +1126,10 @@ export default function AlertsPage() {
                               variant="ghost"
                               onClick={() => unsuppressAlert.mutate(alert.id)}
                               disabled={unsuppressAlert.isPending}
+                              aria-label="Unsuppress this alert"
                               data-testid={`button-unsuppress-${alert.id}`}
                             >
-                              <Eye className="h-3 w-3" />
+                              <Eye className="h-3 w-3" aria-hidden="true" />
                             </Button>
                           ) : (
                             <Button
@@ -1133,9 +1137,10 @@ export default function AlertsPage() {
                               variant="ghost"
                               onClick={() => suppressAlert.mutate(alert.id)}
                               disabled={suppressAlert.isPending}
+                              aria-label="Suppress this alert"
                               data-testid={`button-suppress-${alert.id}`}
                             >
-                              <ShieldOff className="h-3 w-3" />
+                              <ShieldOff className="h-3 w-3" aria-hidden="true" />
                             </Button>
                           )}
                           <Button
@@ -1158,9 +1163,11 @@ export default function AlertsPage() {
                 ) : (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                      <AlertTriangle className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
-                      <p>No alerts found</p>
-                      <p className="text-xs mt-1">Try adjusting your filters or search criteria</p>
+                      <div role="status" aria-label="No alerts found">
+                        <AlertTriangle className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" aria-hidden="true" />
+                        <p className="font-medium">No alerts found</p>
+                        <p className="text-xs mt-1">Try adjusting your filters or search criteria</p>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -1173,12 +1180,12 @@ export default function AlertsPage() {
                 Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
               </span>
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
-                  <ChevronLeft className="h-3 w-3" />
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)} aria-label="Previous page">
+                  <ChevronLeft className="h-3 w-3" aria-hidden="true" />
                 </Button>
-                <span className="text-xs px-2">{page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}</span>
-                <Button variant="outline" size="icon" className="h-7 w-7" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(p => p + 1)}>
-                  <ChevronRight className="h-3 w-3" />
+                <span className="text-xs px-2" aria-live="polite">{page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}</span>
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(p => p + 1)} aria-label="Next page">
+                  <ChevronRight className="h-3 w-3" aria-hidden="true" />
                 </Button>
               </div>
             </div>

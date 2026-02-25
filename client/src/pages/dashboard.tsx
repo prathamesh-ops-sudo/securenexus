@@ -84,13 +84,14 @@ const TACTIC_COLORS = [
 function StatCardSkeleton() {
   return (
     <Card className="gradient-card">
-      <CardContent className="p-4">
+      <CardContent className="p-4" role="status" aria-label="Loading statistic">
         <div className="flex items-center justify-between mb-3">
           <Skeleton className="h-3 w-20" />
           <Skeleton className="h-5 w-5 rounded" />
         </div>
         <Skeleton className="h-9 w-16 mb-1" />
         <Skeleton className="h-3 w-16" />
+        <span className="sr-only">Loading...</span>
       </CardContent>
     </Card>
   );
@@ -113,7 +114,7 @@ function StatCard({ title, value, icon: Icon, subtitle, subtitleColor, loading, 
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</span>
           <div className="relative">
-            <Icon className={`h-4 w-4 ${iconColor || "text-muted-foreground"}`} />
+            <Icon className={`h-4 w-4 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
             {badge && (
               <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500" />
             )}
@@ -139,9 +140,10 @@ function StatCard({ title, value, icon: Icon, subtitle, subtitleColor, loading, 
 
 function ChartSkeleton() {
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-3 p-4" role="status" aria-label="Loading chart">
       <Skeleton className="h-4 w-32" />
       <Skeleton className="h-[180px] w-full" />
+      <span className="sr-only">Loading chart...</span>
     </div>
   );
 }
@@ -200,8 +202,8 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
       </CardHeader>
       <CardContent>
         {sorted.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            No severity data available
+          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground" role="status" aria-label="No severity data">
+            <div className="text-center"><AlertTriangle className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No severity data available</span></div>
           </div>
         ) : (
           <div className="flex items-center gap-6">
@@ -273,8 +275,8 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            No source data available
+          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground" role="status" aria-label="No source data">
+            <div className="text-center"><Activity className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No source data available</span></div>
           </div>
         ) : (
           <div className="h-[200px]">
@@ -336,8 +338,8 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
       </CardHeader>
       <CardContent>
         {formatted.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            No trend data available
+          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground" role="status" aria-label="No trend data">
+            <div className="text-center"><TrendingUp className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No trend data available</span></div>
           </div>
         ) : (
           <div className="h-[200px]">
@@ -393,8 +395,8 @@ function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] 
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">
-            No MITRE data available
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground" role="status" aria-label="No MITRE data">
+            <div className="text-center"><Crosshair className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No MITRE data available</span></div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -800,7 +802,7 @@ export default function Dashboard() {
   }, [isWidgetVisible]);
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-2rem)]">
+    <div className="flex flex-col min-h-[calc(100vh-2rem)]" role="main" aria-label="Security Operations Dashboard">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
 
         <AnomalyBanners stats={stats} />
@@ -837,18 +839,21 @@ export default function Dashboard() {
               variant="ghost"
               className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
               onClick={handleRefresh}
+              aria-label="Refresh dashboard data"
               title="Refresh data"
             >
-              <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`} aria-hidden="true" />
             </Button>
             <Button
               size="icon"
               variant={showCustomizer ? "secondary" : "ghost"}
               className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
               onClick={() => setShowCustomizer(!showCustomizer)}
+              aria-label="Customize dashboard widgets"
+              aria-expanded={showCustomizer}
               title="Customize dashboard"
             >
-              <LayoutDashboard className="h-4 w-4" />
+              <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
             </Button>
             <div className="relative">
               <Button
@@ -856,9 +861,11 @@ export default function Dashboard() {
                 variant="ghost"
                 className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
                 onClick={() => setShowNotifications(!showNotifications)}
+                aria-label="Toggle notifications panel"
+                aria-expanded={showNotifications}
                 title="Notifications"
               >
-                <Bell className="h-4 w-4" />
+                <Bell className="h-4 w-4" aria-hidden="true" />
                 {(stats?.criticalAlerts ?? 0) > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white animate-pulse">
                     {stats?.criticalAlerts}
@@ -1009,8 +1016,10 @@ export default function Dashboard() {
               </>
             ) : (
               <Card className="gradient-card col-span-3">
-                <div className="flex items-center justify-center h-[240px] text-sm text-muted-foreground">
-                  No analytics data available
+                <div className="flex flex-col items-center justify-center h-[240px] text-sm text-muted-foreground" role="status" aria-label="No analytics data">
+                  <Activity className="h-8 w-8 mb-3 opacity-50" aria-hidden="true" />
+                  <p>No analytics data available</p>
+                  <p className="text-xs mt-1">Connect a data source to start seeing analytics</p>
                 </div>
               </Card>
             )}
