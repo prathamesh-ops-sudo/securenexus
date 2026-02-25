@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FileWarning, Search, Download, Settings, ArrowUpRight, UserPlus, Bookmark, Trash2 } from "lucide-react";
+import { FileWarning, Search, Download, Settings, ArrowUpRight, UserPlus, Bookmark, Trash2, X, PanelRight, ExternalLink, CheckCircle2, User, Clock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,13 +11,57 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Incident, IncidentSlaPolicy } from "@shared/schema";
+
+function IncidentMiniTimeline({ incident }: { incident: Incident }) {
+  const events: { label: string; actor?: string }[] = [];
+  if (incident.createdAt) events.push({ label: "Created" });
+  if (incident.assignedTo) events.push({ label: "Assigned", actor: incident.assignedTo });
+  if (incident.ackAt) events.push({ label: "Acknowledged" });
+  if (incident.containedAt) events.push({ label: "Contained" });
+  if (incident.status === "resolved" || incident.status === "closed") events.push({ label: incident.status === "resolved" ? "Resolved" : "Closed" });
+  if (events.length <= 1) return null;
+  const recent = events.slice(-3);
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      {recent.map((ev, i) => (
+        <span key={i} className="inline-flex items-center gap-0.5">
+          {i > 0 && <span className="text-muted-foreground/40 mx-0.5">&rarr;</span>}
+          <span className="text-[9px] text-muted-foreground">{ev.label}</span>
+          {ev.actor && <span className="text-[9px] text-primary/70">{ev.actor}</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function IncidentFilterChips({ filters, onRemove, onClearAll }: {
+  filters: { key: string; label: string; value: string }[];
+  onRemove: (key: string) => void;
+  onClearAll: () => void;
+}) {
+  if (filters.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Active Filters:</span>
+      {filters.map((f) => (
+        <Badge key={f.key} variant="secondary" className="text-[10px] pl-2 pr-1 py-0.5 gap-1 cursor-pointer hover:bg-destructive/10 transition-colors">
+          <span className="text-muted-foreground">{f.label}:</span> {f.value}
+          <button onClick={(e) => { e.stopPropagation(); onRemove(f.key); }} className="ml-0.5 rounded-full hover:bg-muted p-0.5">
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </Badge>
+      ))}
+      <button onClick={onClearAll} className="text-[10px] text-destructive hover:underline">Clear all</button>
+    </div>
+  );
+}
 
 const STATUSES = ["all", "open", "investigating", "contained", "eradicated", "recovered", "resolved", "closed"] as const;
 
@@ -264,6 +308,8 @@ export default function IncidentsPage() {
   const [bulkAssignee, setBulkAssignee] = useState("");
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [savedViewName, setSavedViewName] = useState("");
+  const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -354,6 +400,102 @@ export default function IncidentsPage() {
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
+
+  const selectedIncident = useMemo(() => {
+    if (!focusedIncidentId || !filtered) return null;
+    return filtered.find((i) => i.id === focusedIncidentId) || null;
+  }, [focusedIncidentId, filtered]);
+
+  const assignFocused = useCallback(() => {
+    if (!focusedIncidentId) return;
+    const name = prompt("Assign to:");
+    if (name && name.trim()) {
+      apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { assignedTo: name.trim() }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        toast({ title: "Assigned", description: `Incident assigned to ${name.trim()}` });
+      });
+    }
+  }, [focusedIncidentId, toast]);
+
+  const escalateFocused = useCallback(() => {
+    if (!focusedIncidentId) return;
+    apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { status: "escalated" }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      toast({ title: "Escalated" });
+    });
+  }, [focusedIncidentId, toast]);
+
+  const resolveFocused = useCallback(() => {
+    if (!focusedIncidentId) return;
+    apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { status: "resolved" }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      toast({ title: "Resolved" });
+    });
+  }, [focusedIncidentId, toast]);
+
+  const activeFilters = useMemo(() => {
+    const chips: { key: string; label: string; value: string }[] = [];
+    if (statusFilter !== "all") chips.push({ key: "status", label: "Status", value: STATUS_LABELS[statusFilter] || statusFilter });
+    if (search) chips.push({ key: "search", label: "Search", value: search });
+    if (queueTab !== "all") chips.push({ key: "queue", label: "Queue", value: queueTab });
+    return chips;
+  }, [statusFilter, search, queueTab]);
+
+  const handleRemoveFilter = useCallback((key: string) => {
+    if (key === "status") setStatusFilter("all");
+    if (key === "search") setSearch("");
+    if (key === "queue") setQueueTab("all");
+  }, []);
+
+  const handleClearAllFilters = useCallback(() => {
+    setStatusFilter("all");
+    setSearch("");
+    setQueueTab("all");
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!filtered || filtered.length === 0) return;
+      const target = e.target as HTMLElement;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable) return;
+      const idx = filtered.findIndex((i) => i.id === focusedIncidentId);
+      if (e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        const next = Math.min(idx < 0 ? 0 : idx + 1, filtered.length - 1);
+        setFocusedIncidentId(filtered[next]?.id || null);
+        const newPage = Math.floor(next / PAGE_SIZE);
+        if (newPage !== page) setPage(newPage);
+      }
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const prev = Math.max(idx < 0 ? 0 : idx - 1, 0);
+        setFocusedIncidentId(filtered[prev]?.id || null);
+        const newPage = Math.floor(prev / PAGE_SIZE);
+        if (newPage !== page) setPage(newPage);
+      }
+      if (e.key.toLowerCase() === "a" && focusedIncidentId) {
+        e.preventDefault();
+        assignFocused();
+      }
+      if (e.key.toLowerCase() === "e" && focusedIncidentId) {
+        e.preventDefault();
+        escalateFocused();
+      }
+      if (e.key.toLowerCase() === "r" && focusedIncidentId) {
+        e.preventDefault();
+        resolveFocused();
+      }
+      if (e.key === "Enter" && focusedIncidentId) {
+        e.preventDefault();
+        setIsDetailOpen(true);
+      }
+      if (e.key === "Escape") {
+        setIsDetailOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [filtered, focusedIncidentId, page, assignFocused, escalateFocused, resolveFocused]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
@@ -450,6 +592,18 @@ export default function IncidentsPage() {
         </div>
       )}
 
+      <IncidentFilterChips filters={activeFilters} onRemove={handleRemoveFilter} onClearAll={handleClearAllFilters} />
+
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground border border-border/50 rounded-md px-3 py-1.5 bg-muted/20">
+        <span className="font-medium">Shortcuts:</span>
+        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">J/K</kbd> navigate
+        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">Enter</kbd> open
+        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">A</kbd> assign
+        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">E</kbd> escalate
+        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">R</kbd> resolve
+        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">Esc</kbd> close
+      </div>
+
       {selectedIds.length > 0 && (
         <Card data-testid="section-bulk-actions">
           <CardContent className="pt-4 flex items-center flex-wrap gap-2">
@@ -485,7 +639,8 @@ export default function IncidentsPage() {
         </Card>
       )}
 
-      <Card>
+      <div className={`flex gap-4 ${isDetailOpen && selectedIncident ? "" : ""}`}>
+      <Card className={`${isDetailOpen && selectedIncident ? "flex-1 min-w-0" : "w-full"} transition-all duration-200`}>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -528,11 +683,13 @@ export default function IncidentsPage() {
                   filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((incident) => {
                     const slaStatus = getSlaStatus(incident);
                     const isSelected = selectedIds.includes(incident.id);
+                    const isFocused = focusedIncidentId === incident.id;
                     return (
                       <tr
                         key={incident.id}
-                        className={`border-b last:border-0 hover-elevate cursor-pointer ${isSelected ? "bg-primary/5" : ""}`}
+                        className={`border-b last:border-0 hover-elevate cursor-pointer ${isSelected ? "bg-primary/5" : ""} ${isFocused ? "ring-1 ring-primary/40 bg-primary/5" : ""}`}
                         data-testid={`row-incident-${incident.id}`}
+                        onClick={() => { setFocusedIncidentId(incident.id); setIsDetailOpen(true); }}
                       >
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -542,25 +699,26 @@ export default function IncidentsPage() {
                             data-testid={`checkbox-incident-${incident.id}`}
                           />
                         </td>
-                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <FileWarning className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                             <div>
                               <div className="text-sm font-medium">{incident.title}</div>
                               <div className="text-xs text-muted-foreground truncate max-w-[300px]">{incident.summary}</div>
+                              <IncidentMiniTimeline incident={incident} />
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3">
                           <SeverityBadge severity={incident.severity} />
                         </td>
-                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3">
                           <IncidentStatusBadge status={incident.status} />
                         </td>
-                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3">
                           <PriorityBadge priority={incident.priority ?? 3} />
                         </td>
-                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)} data-testid={`badge-sla-${incident.id}`}>
+                        <td className="px-4 py-3" data-testid={`badge-sla-${incident.id}`}>
                           {slaStatus ? (
                             <Badge
                               variant={slaStatus.variant}
@@ -572,13 +730,13 @@ export default function IncidentsPage() {
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 hidden md:table-cell" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3 hidden md:table-cell">
                           <span className="text-xs text-muted-foreground">{incident.assignedTo || "-"}</span>
                         </td>
-                        <td className="px-4 py-3 hidden lg:table-cell" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3 hidden lg:table-cell">
                           <span className="text-xs text-muted-foreground">{incident.alertCount ?? 0}</span>
                         </td>
-                        <td className="px-4 py-3 hidden lg:table-cell" onClick={() => navigate(`/incidents/${incident.id}`)}>
+                        <td className="px-4 py-3 hidden lg:table-cell">
                           <span className="text-xs text-muted-foreground">{formatRelativeTime(incident.updatedAt)}</span>
                         </td>
                       </tr>
@@ -613,6 +771,85 @@ export default function IncidentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {isDetailOpen && selectedIncident && (
+        <Card className="w-full max-w-md flex-shrink-0 hidden lg:flex flex-col max-h-[calc(100vh-12rem)] sticky top-24">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <div className="flex items-center gap-2">
+              <PanelRight className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-semibold truncate">{selectedIncident.title}</span>
+            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsDetailOpen(false)}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Severity</span>
+                <div className="mt-1"><SeverityBadge severity={selectedIncident.severity} /></div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Status</span>
+                <div className="mt-1"><IncidentStatusBadge status={selectedIncident.status} /></div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</span>
+                <div className="mt-1"><PriorityBadge priority={selectedIncident.priority ?? 3} /></div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Assigned To</span>
+                <div className="mt-1 flex items-center gap-1">
+                  <User className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs">{selectedIncident.assignedTo || "Unassigned"}</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Alert Count</span>
+                <div className="mt-1 text-xs">{selectedIncident.alertCount ?? 0}</div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Updated</span>
+                <div className="mt-1 flex items-center gap-1">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs">{formatRelativeTime(selectedIncident.updatedAt)}</span>
+                </div>
+              </div>
+            </div>
+            {selectedIncident.summary && (
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Summary</span>
+                <p className="text-xs mt-1 text-muted-foreground leading-relaxed">{selectedIncident.summary}</p>
+              </div>
+            )}
+            <IncidentMiniTimeline incident={selectedIncident} />
+            <div className="space-y-2">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Quick Actions</span>
+              <div className="grid grid-cols-3 gap-2">
+                <Button size="sm" variant="outline" className="text-xs h-8" onClick={assignFocused}>
+                  <UserPlus className="h-3 w-3 mr-1" />
+                  Assign <kbd className="ml-1 text-[9px] opacity-50">A</kbd>
+                </Button>
+                <Button size="sm" variant="outline" className="text-xs h-8" onClick={escalateFocused}>
+                  <ArrowUpRight className="h-3 w-3 mr-1" />
+                  Escalate <kbd className="ml-1 text-[9px] opacity-50">E</kbd>
+                </Button>
+                <Button size="sm" variant="outline" className="text-xs h-8" onClick={resolveFocused}>
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Resolve <kbd className="ml-1 text-[9px] opacity-50">R</kbd>
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="px-4 py-3 border-t">
+            <Button size="sm" className="w-full text-xs" onClick={() => navigate(`/incidents/${selectedIncident.id}`)}>
+              <ExternalLink className="h-3 w-3 mr-1.5" />
+              View Full Details
+            </Button>
+          </div>
+        </Card>
+      )}
+      </div>
     </div>
   );
 }
