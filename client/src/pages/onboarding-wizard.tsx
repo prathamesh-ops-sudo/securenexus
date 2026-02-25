@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,7 +66,25 @@ export default function OnboardingWizardPage() {
       await queryClient.invalidateQueries({ queryKey: ["/api/onboarding/wizard-status"] });
       if (data?.checkoutUrl) {
         window.location.href = data.checkoutUrl;
+        return;
       }
+      if (data?.requiresConfirmation) {
+        toast({
+          title: "Plan pending confirmation",
+          description: "Complete checkout, then return to confirm your paid plan.",
+        });
+      }
+    },
+  });
+
+  const confirmPaidPlan = useMutation({
+    mutationFn: async (plan: "pro" | "enterprise") => {
+      const res = await apiRequest("POST", "/api/onboarding/select-plan/confirm", { plan });
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/onboarding/wizard-status"] });
+      toast({ title: "Plan confirmed", description: "Paid plan has been activated." });
     },
   });
 
@@ -110,6 +128,15 @@ export default function OnboardingWizardPage() {
       navigate("/");
     },
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    const plan = params.get("plan");
+    if (checkout === "success" && (plan === "pro" || plan === "enterprise") && !confirmPaidPlan.isPending) {
+      confirmPaidPlan.mutate(plan);
+    }
+  }, []);
 
   if (isLoading) {
     return (

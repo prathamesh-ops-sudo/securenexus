@@ -63,6 +63,7 @@ const DEFAULT_WIZARD_STEPS: WizardSteps = {
 };
 
 const VALID_INVITE_ROLES = ["admin", "analyst", "read_only"];
+const ONBOARDING_WIZARD_FLAG_KEY = "onboarding_wizard_v2";
 
 function normalizeWizardSteps(input: any): WizardSteps {
   return {
@@ -112,6 +113,22 @@ async function ensureWizardProgress(userId: string) {
     currentStep: 1,
     stepsCompleted: DEFAULT_WIZARD_STEPS,
   });
+}
+
+async function isOnboardingWizardEnabled(ctx: { orgId?: string; userId?: string; role?: string }) {
+  const evaluation = await evaluateFlag(ONBOARDING_WIZARD_FLAG_KEY, ctx);
+  // Default to enabled when the flag is not created yet, so existing behavior remains stable.
+  if (evaluation.reason === "flag_not_found") return true;
+  return evaluation.enabled;
+}
+
+function planLimitsFor(plan: "free" | "pro" | "enterprise") {
+  const limitsByPlan: Record<string, any> = {
+    free: { planTier: "free", eventsPerMonth: 10000, maxConnectors: 3, aiTokensPerMonth: 5000, automationRunsPerMonth: 100, apiCallsPerMonth: 10000, storageGb: 5, softThresholdPct: 80, hardThresholdPct: 95, overageAllowed: false },
+    pro: { planTier: "professional", eventsPerMonth: 500000, maxConnectors: 50, aiTokensPerMonth: 100000, automationRunsPerMonth: 5000, apiCallsPerMonth: 250000, storageGb: 100, softThresholdPct: 80, hardThresholdPct: 95, overageAllowed: true },
+    enterprise: { planTier: "enterprise", eventsPerMonth: 5000000, maxConnectors: 500, aiTokensPerMonth: 1000000, automationRunsPerMonth: 50000, apiCallsPerMonth: 2500000, storageGb: 1000, softThresholdPct: 85, hardThresholdPct: 98, overageAllowed: true },
+  };
+  return limitsByPlan[plan];
 }
 
 async function findPendingInvitationByEmail(userEmail: string) {
@@ -4587,6 +4604,7 @@ export async function registerRoutes(
       const userId = (req as any).user?.id;
       const userEmail = (req as any).user?.email;
       if (!userId) return res.status(401).json({ error: "Not authenticated" });
+      const onboardingEnabled = await isOnboardingWizardEnabled({ userId });
 
       const memberships = await storage.getUserMemberships(userId);
       if (memberships.length > 0) {
@@ -4616,6 +4634,22 @@ export async function registerRoutes(
         }
       }
 
+      if (!onboardingEnabled) {
+        const newOrg = await storage.createOrganization({
+          name: `${userEmail ? userEmail.split("@")[0] : "User"}'s Organization`,
+          slug: `org-${Date.now()}`,
+          contactEmail: userEmail || undefined,
+        });
+        const membership = await storage.createOrgMembership({
+          orgId: newOrg.id,
+          userId,
+          role: "owner",
+          status: "active",
+          joinedAt: new Date(),
+        });
+        return res.json({ membership, organization: newOrg });
+      }
+
       return res.status(404).json({ message: "No organization membership found" });
     } catch (error) {
       console.error("Error ensuring org:", error);
@@ -4628,6 +4662,7 @@ export async function registerRoutes(
       const userId = (req as any).user?.id as string | undefined;
       const userEmail = (req as any).user?.email as string | undefined;
       if (!userId) return res.status(401).json({ message: "Not authenticated" });
+      const onboardingEnabled = await isOnboardingWizardEnabled({ userId });
 
       let activeMembership = (await storage.getUserMemberships(userId)).find(m => m.status === "active");
       let org = activeMembership ? await storage.getOrganization(activeMembership.orgId) : undefined;
@@ -4653,8 +4688,24 @@ export async function registerRoutes(
         }
       }
 
+      if (!onboardingEnabled && !activeMembership) {
+        const newOrg = await storage.createOrganization({
+          name: `${userEmail ? userEmail.split("@")[0] : "User"}'s Organization`,
+          slug: `org-${Date.now()}`,
+          contactEmail: userEmail || undefined,
+        });
+        activeMembership = await storage.createOrgMembership({
+          orgId: newOrg.id,
+          userId,
+          role: "owner",
+          status: "active",
+          joinedAt: new Date(),
+        });
+        org = newOrg;
+      }
+
       let progress = await storage.getOnboardingWizardProgressByUser(userId);
-      if (!progress && !activeMembership) {
+      if (!progress && !activeMembership && onboardingEnabled) {
         progress = await ensureWizardProgress(userId);
       }
 
@@ -4676,9 +4727,10 @@ export async function registerRoutes(
 
       const steps = progress ? normalizeWizardSteps(progress.stepsCompleted) : DEFAULT_WIZARD_STEPS;
       const pendingInvite = !activeMembership && !!userEmail ? await findPendingInvitationByEmail(userEmail) : null;
-      const shouldOnboard = !!progress && !progress.completedAt;
+      const shouldOnboard = onboardingEnabled && !!progress && !progress.completedAt;
 
       return res.json({
+        wizardEnabled: onboardingEnabled,
         shouldOnboard,
         autoAcceptedInvitation,
         hasPendingInvitation: !!pendingInvite,
@@ -4762,37 +4814,119 @@ export async function registerRoutes(
       const orgId = progress.orgId || ((await storage.getUserMemberships(userId)).find(m => m.status === "active")?.orgId);
       if (!orgId) return res.status(400).json({ message: "Create an organization first" });
 
-      const limitsByPlan: Record<string, any> = {
-        free: { planTier: "free", eventsPerMonth: 10000, maxConnectors: 3, aiTokensPerMonth: 5000, automationRunsPerMonth: 100, apiCallsPerMonth: 10000, storageGb: 5, softThresholdPct: 80, hardThresholdPct: 95, overageAllowed: false },
-        pro: { planTier: "professional", eventsPerMonth: 500000, maxConnectors: 50, aiTokensPerMonth: 100000, automationRunsPerMonth: 5000, apiCallsPerMonth: 250000, storageGb: 100, softThresholdPct: 80, hardThresholdPct: 95, overageAllowed: true },
-        enterprise: { planTier: "enterprise", eventsPerMonth: 5000000, maxConnectors: 500, aiTokensPerMonth: 1000000, automationRunsPerMonth: 50000, apiCallsPerMonth: 2500000, storageGb: 1000, softThresholdPct: 85, hardThresholdPct: 98, overageAllowed: true },
-      };
+      const steps = normalizeWizardSteps(progress.stepsCompleted);
 
-      await storage.upsertOrgPlanLimit({ orgId, ...limitsByPlan[plan] });
+      if (plan === "free") {
+        await storage.upsertOrgPlanLimit({ orgId, ...planLimitsFor("free") });
+        steps.choosePlan = true;
+        const updated = await storage.updateOnboardingWizardProgressByUser(userId, {
+          stepsCompleted: steps,
+          currentStep: deriveCurrentStep(steps),
+        });
+        return res.json({ plan, activated: true, progress: updated });
+      }
 
+      if (plan === "pro") {
+        const checkoutUrl = process.env.STRIPE_PRO_CHECKOUT_URL;
+        if (!checkoutUrl) return res.status(501).json({ message: "Stripe Pro checkout is not configured" });
+        return res.json({
+          plan,
+          checkoutUrl,
+          requiresConfirmation: true,
+          metadataHint: { userId, orgId, plan },
+        });
+      }
+
+      if (plan === "enterprise") {
+        const checkoutUrl = process.env.STRIPE_ENTERPRISE_CHECKOUT_URL;
+        if (checkoutUrl) {
+          return res.json({
+            plan,
+            checkoutUrl,
+            requiresConfirmation: true,
+            metadataHint: { userId, orgId, plan },
+          });
+        }
+        return res.json({ plan, contactSales: true, requiresConfirmation: true });
+      }
+      return res.status(400).json({ message: "Invalid plan selection" });
+    } catch (error) {
+      console.error("Failed to select plan:", error);
+      return res.status(500).json({ message: "Failed to select plan" });
+    }
+  });
+
+  app.post("/api/onboarding/select-plan/confirm", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+      const { plan } = req.body || {};
+      if (!["pro", "enterprise"].includes(plan)) {
+        return res.status(400).json({ message: "Invalid confirmation plan" });
+      }
+
+      const progress = await ensureWizardProgress(userId);
+      const orgId = progress.orgId || ((await storage.getUserMemberships(userId)).find(m => m.status === "active")?.orgId);
+      if (!orgId) return res.status(400).json({ message: "Create an organization first" });
+
+      await storage.upsertOrgPlanLimit({ orgId, ...planLimitsFor(plan) });
       const steps = normalizeWizardSteps(progress.stepsCompleted);
       steps.choosePlan = true;
       const updated = await storage.updateOnboardingWizardProgressByUser(userId, {
         stepsCompleted: steps,
         currentStep: deriveCurrentStep(steps),
       });
-
-      if (plan === "pro") {
-        const checkoutUrl = process.env.STRIPE_PRO_CHECKOUT_URL;
-        if (!checkoutUrl) return res.status(501).json({ message: "Stripe Pro checkout is not configured" });
-        return res.json({ plan, checkoutUrl, progress: updated });
-      }
-
-      if (plan === "enterprise") {
-        const checkoutUrl = process.env.STRIPE_ENTERPRISE_CHECKOUT_URL;
-        if (checkoutUrl) return res.json({ plan, checkoutUrl, progress: updated });
-        return res.json({ plan, contactSales: true, progress: updated });
-      }
-
-      return res.json({ plan, activated: true, progress: updated });
+      return res.json({ confirmed: true, plan, progress: updated });
     } catch (error) {
-      console.error("Failed to select plan:", error);
-      return res.status(500).json({ message: "Failed to select plan" });
+      console.error("Failed to confirm paid plan:", error);
+      return res.status(500).json({ message: "Failed to confirm plan" });
+    }
+  });
+
+  app.post("/api/onboarding/stripe/webhook", async (req, res) => {
+    try {
+      const secret = process.env.STRIPE_WEBHOOK_SECRET;
+      const signatureHeader = req.headers["stripe-signature"] as string | undefined;
+      if (secret && signatureHeader) {
+        const rawBodyBuf = (req as any).rawBody;
+        const rawBody = rawBodyBuf ? (Buffer.isBuffer(rawBodyBuf) ? rawBodyBuf.toString("utf8") : String(rawBodyBuf)) : JSON.stringify(req.body);
+        const parts = signatureHeader.split(",").reduce((acc: Record<string, string>, part) => {
+          const [k, v] = part.split("=");
+          if (k && v) acc[k.trim()] = v.trim();
+          return acc;
+        }, {});
+        const ts = parts.t;
+        const v1 = parts.v1;
+        if (!ts || !v1) return res.status(400).json({ message: "Invalid Stripe signature header" });
+        const expected = createHmac("sha256", secret).update(`${ts}.${rawBody}`).digest("hex");
+        if (expected !== v1) return res.status(401).json({ message: "Invalid Stripe signature" });
+      }
+
+      const event = req.body || {};
+      const eventType = event.type;
+      if (eventType === "checkout.session.completed") {
+        const session = event.data?.object || {};
+        const metadata = session.metadata || {};
+        const userId = metadata.userId;
+        const orgId = metadata.orgId;
+        const plan = metadata.plan;
+        if (userId && orgId && (plan === "pro" || plan === "enterprise")) {
+          await storage.upsertOrgPlanLimit({ orgId, ...planLimitsFor(plan) });
+          const progress = await ensureWizardProgress(userId);
+          const steps = normalizeWizardSteps(progress.stepsCompleted);
+          steps.choosePlan = true;
+          await storage.updateOnboardingWizardProgressByUser(userId, {
+            orgId,
+            stepsCompleted: steps,
+            currentStep: deriveCurrentStep(steps),
+          });
+        }
+      }
+
+      return res.status(200).json({ received: true });
+    } catch (error) {
+      console.error("Stripe onboarding webhook failure:", error);
+      return res.status(500).json({ message: "Webhook processing failed" });
     }
   });
 
