@@ -372,6 +372,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
   const [rotationDays, setRotationDays] = useState("90");
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
   const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
+  const [rotateTargetId, setRotateTargetId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: rotations, isLoading } = useQuery<SecretRotation[]>({
@@ -431,6 +432,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
 
   const handleRotateClick = useCallback((rotationId: string) => {
     if (confirmRotateId === rotationId) {
+      setRotateTargetId(rotationId);
       setShowRotate(true);
       setConfirmRotateId(null);
     } else {
@@ -517,7 +519,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRotate(false)}>Cancel</Button>
-            <Button onClick={() => rotations?.[0] && rotateMutation.mutate(rotations[0].id)} disabled={!newSecretValue || rotateMutation.isPending}>
+            <Button onClick={() => rotateTargetId && rotateMutation.mutate(rotateTargetId)} disabled={!newSecretValue || !rotateTargetId || rotateMutation.isPending}>
               {rotateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />}
               Rotate
             </Button>
@@ -543,7 +545,7 @@ function ConnectorTestResultCard({ result, connectorType }: { result: { success:
     if (!msg) return remediationMap["default"];
     const lower = msg.toLowerCase();
     if (lower.includes("auth") || lower.includes("401") || lower.includes("403") || lower.includes("key")) return remediationMap["authentication"];
-    if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("ECONNREFUSED")) return remediationMap["timeout"];
+    if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("econnrefused")) return remediationMap["timeout"];
     if (lower.includes("rate") || lower.includes("429") || lower.includes("throttl")) return remediationMap["rate_limit"];
     if (lower.includes("404") || lower.includes("not found")) return remediationMap["not_found"];
     return remediationMap["default"];
