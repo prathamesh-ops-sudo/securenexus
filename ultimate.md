@@ -18,7 +18,7 @@ Scope assumptions (based on current repo + infra conventions):
 ## 0) Cross-cutting "platform hygiene" (applies to everything)
 
 ### 0.1 Single source of truth for configuration
-- Current problem: Configuration is spread across environment variables, GitHub Actions, k8s manifests, and runtime defaults in code (examples: S3 bucket fallback in server/s3.ts; session secret fallback in server/replit_integrations/auth/replitAuth.ts; region fixed in a few places).
+- Current problem: Configuration is spread across environment variables, GitHub Actions, k8s manifests, and runtime defaults in code (examples: S3 bucket fallback in server/s3.ts; session secret fallback in server/auth/session.ts; region fixed in a few places).
 - Why it matters: Drift between environments causes production-only failures, security footguns (unsafe defaults), and makes onboarding new engineers/clients slower.
 - What to do:
   - Create a centralized configuration module that validates all required runtime settings at startup (per environment).

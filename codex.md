@@ -7,9 +7,9 @@ SecureNexus is an AI-powered Security Orchestration & Intelligence Platform buil
 - **Frontend**: React + TypeScript, Vite, TailwindCSS, shadcn/ui, wouter (routing), TanStack Query
 - **Backend**: Express.js, TypeScript
 - **Database**: PostgreSQL (Drizzle ORM)
-- **Auth**: Replit Auth (OpenID Connect)
+- **Auth**: Passport.js (Local, Google OAuth, GitHub OAuth)
 - **AI**: AWS Bedrock Converse API (Mistral Large 2 Instruct - specialized cybersecurity engine) + SageMaker endpoint support for custom fine-tuned models
-- **GitHub**: Connected via Replit GitHub connector (@octokit/rest)
+- **GitHub**: Connected via @octokit/rest
 - **Deployment**: GitHub → AWS App Runner (planned)
 
 ## Project Structure
@@ -46,8 +46,8 @@ server/
   ai.ts                      - AWS Bedrock AI integration
   db.ts                      - Database connection
   seed.ts                    - Seed data (3 incidents, 12 alerts, 10 tags, comments)
-  github.ts                  - GitHub API client via Replit connector
-  replit_integrations/auth/  - Replit Auth integration
+  github.ts                  - GitHub API client
+  auth/                      - Passport.js authentication
 
 scripts/
   push-to-github.ts          - Push codebase to GitHub repo
@@ -69,7 +69,7 @@ shared/
 - **api_keys**: id, orgId (FK), name, keyHash (SHA-256), keyPrefix, scopes[], isActive, lastUsedAt, createdBy, createdAt, revokedAt
 - **ingestion_logs**: id, orgId (FK), source, status, alertsReceived, alertsCreated, alertsDeduped, alertsFailed, errorMessage, requestId, ipAddress, processingTimeMs, receivedAt
 - **connectors**: id, orgId (FK), name, type, authType, config (jsonb), status (active/inactive/error/syncing), pollingIntervalMin, lastSyncAt, lastSyncStatus, lastSyncAlerts, lastSyncError, totalAlertsSynced, createdBy, createdAt, updatedAt
-- **users/sessions**: Managed by Replit Auth integration
+- **users/sessions**: Managed by Passport.js with PostgreSQL session store
 
 ## Enums
 - Alert Severities: critical, high, medium, low, informational

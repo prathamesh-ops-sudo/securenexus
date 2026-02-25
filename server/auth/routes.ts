@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
-import { isAuthenticated, hashPassword } from "./replitAuth";
-import { storage } from "../../storage";
+import { isAuthenticated, hashPassword } from "./session";
+import { storage } from "../storage";
 
 async function ensureOrgMembership(user: any) {
   try {
