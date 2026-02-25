@@ -1471,65 +1471,6 @@ export async function registerRoutes(
     res.json(metadata);
   });
 
-  app.get("/api/connectors", isAuthenticated, async (_req, res) => {
-    try {
-      const allConnectors = await storage.getConnectors();
-      const sanitized = allConnectors.map(c => {
-        const config = c.config as ConnectorConfig;
-        const safeConfig: any = { ...config };
-        if (safeConfig.clientSecret) safeConfig.clientSecret = "••••••••";
-        if (safeConfig.password) safeConfig.password = "••••••••";
-        if (safeConfig.apiKey) safeConfig.apiKey = "••••••••";
-        if (safeConfig.secretAccessKey) safeConfig.secretAccessKey = "••••••••";
-        if (safeConfig.token) safeConfig.token = "••••••••";
-        if (safeConfig.siteToken) safeConfig.siteToken = "••••••••";
-        return { ...c, config: safeConfig };
-      });
-      res.json(sanitized);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch connectors" });
-    }
-  });
-
-  app.get("/api/v1/connectors", isAuthenticated, async (req, res) => {
-    try {
-      const offset = Number(req.query.offset ?? 0) || 0;
-      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
-
-      const { items, total } = await storage.getConnectorsPaginated({
-        offset,
-        limit,
-      });
-
-      const sanitized = items.map(c => {
-        const config = c.config as ConnectorConfig;
-        const safeConfig: any = { ...config };
-        if (safeConfig.clientSecret) safeConfig.clientSecret = "••••••••";
-        if (safeConfig.password) safeConfig.password = "••••••••";
-        if (safeConfig.apiKey) safeConfig.apiKey = "••••••••";
-        if (safeConfig.secretAccessKey) safeConfig.secretAccessKey = "••••••••";
-        if (safeConfig.token) safeConfig.token = "••••••••";
-        if (safeConfig.siteToken) safeConfig.siteToken = "••••••••";
-        return { ...c, config: safeConfig };
-      });
-
-      return sendEnvelope(res, sanitized, {
-        meta: { offset, limit, total },
-      });
-    } catch (error: any) {
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [
-          {
-            code: "CONNECTORS_LIST_FAILED",
-            message: "Failed to fetch connectors",
-            details: error?.message,
-          },
-        ],
-      });
-    }
-  });
-
   app.get("/api/connectors/dead-letters", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.organizationId;
@@ -7881,7 +7822,19 @@ export async function registerRoutes(
         sortOrder,
       });
 
-      return sendEnvelope(res, items, {
+      const sanitized = items.map(c => {
+        const config = c.config as ConnectorConfig;
+        const safeConfig: Record<string, unknown> = { ...config };
+        if (safeConfig.clientSecret) safeConfig.clientSecret = "••••••••";
+        if (safeConfig.password) safeConfig.password = "••••••••";
+        if (safeConfig.apiKey) safeConfig.apiKey = "••••••••";
+        if (safeConfig.secretAccessKey) safeConfig.secretAccessKey = "••••••••";
+        if (safeConfig.token) safeConfig.token = "••••••••";
+        if (safeConfig.siteToken) safeConfig.siteToken = "••••••••";
+        return { ...c, config: safeConfig };
+      });
+
+      return sendEnvelope(res, sanitized, {
         meta: { offset, limit, total, search: search ?? null, type: type ?? null, status: status ?? null, sortBy: sortBy ?? "createdAt", sortOrder },
       });
     } catch (error: any) {

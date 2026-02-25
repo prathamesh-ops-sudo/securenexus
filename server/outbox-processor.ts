@@ -85,9 +85,11 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
 
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (webhook.secret) {
-      const signature = createHmac("sha256", webhook.secret).update(body).digest("hex");
+      const timestamp = String(Date.now());
+      const signedPayload = `${timestamp}.${body}`;
+      const signature = createHmac("sha256", webhook.secret).update(signedPayload).digest("hex");
       headers["X-Webhook-Signature"] = `sha256=${signature}`;
-      headers["X-Webhook-Timestamp"] = String(Date.now());
+      headers["X-Webhook-Timestamp"] = timestamp;
     }
     headers["X-Event-Id"] = event.id;
     headers["X-Event-Type"] = event.eventType;
