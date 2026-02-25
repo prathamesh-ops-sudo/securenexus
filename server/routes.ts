@@ -7385,12 +7385,11 @@ export async function registerRoutes(
       const cycleStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-      const [planLimit, alertCount, connectorList, aiFeedbackList, playbookExecList, ingestionStats] = await Promise.all([
+      const [planLimit, connectorList, aiFeedbackCount, automationRunCount, ingestionStats] = await Promise.all([
         storage.getOrgPlanLimit(orgId),
-        storage.getAlerts(orgId),
         storage.getConnectors(orgId),
-        storage.getAiFeedback(),
-        storage.getPlaybookExecutions(),
+        storage.countAiFeedbackByOrg(orgId),
+        storage.countPlaybookExecutionsByOrg(orgId),
         storage.getIngestionStats(orgId),
       ]);
 
@@ -7403,8 +7402,8 @@ export async function registerRoutes(
 
       const eventsUsed = ingestionStats.totalIngested || 0;
       const connectorsActive = connectorList.filter((c: any) => c.enabled !== false).length;
-      const aiTokensUsed = aiFeedbackList.length * 150;
-      const automationRuns = playbookExecList.length;
+      const aiTokensUsed = aiFeedbackCount * 150;
+      const automationRuns = automationRunCount;
 
       const metrics = [
         { type: "events_ingested", label: "Events Ingested", current: eventsUsed, limit: plan.eventsPerMonth, unit: "events" },
@@ -7464,7 +7463,7 @@ export async function registerRoutes(
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
-      const plan = await storage.upsertOrgPlanLimit({ orgId, ...req.body });
+      const plan = await storage.upsertOrgPlanLimit({ ...req.body, orgId });
       await storage.createAuditLog({
         orgId, userId: user?.id,
         userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
@@ -7501,18 +7500,18 @@ export async function registerRoutes(
         steps = await storage.getOnboardingProgress(orgId);
       }
 
-      const [connectors, alertsList, incidentsList, playbookExecs] = await Promise.all([
+      const [connectors, alertsList, incidentsList, playbookExecCount] = await Promise.all([
         storage.getConnectors(orgId),
         storage.getAlerts(orgId),
         storage.getIncidents(orgId),
-        storage.getPlaybookExecutions(),
+        storage.countPlaybookExecutionsByOrg(orgId),
       ]);
 
       const autoComplete: Record<string, boolean> = {
         first_connector: connectors.length > 0,
         first_alert_review: alertsList.some((a: any) => a.status !== "new"),
         first_incident: incidentsList.length > 0,
-        first_playbook: playbookExecs.length > 0,
+        first_playbook: playbookExecCount > 0,
       };
 
       for (const [key, done] of Object.entries(autoComplete)) {
