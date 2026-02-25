@@ -143,7 +143,7 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
   const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
-    <Card className="gradient-card h-full">
+    <Card className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <div className="w-1 h-4 rounded-full bg-purple-500" />
@@ -160,6 +160,15 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
             <div className="w-[150px] h-[150px] flex-shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
+                  <defs>
+                    <filter id="donutGlow">
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
                   <Pie
                     data={sorted}
                     cx="50%"
@@ -168,6 +177,7 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
                     outerRadius={70}
                     dataKey="value"
                     stroke="none"
+                    filter="url(#donutGlow)"
                   >
                     {sorted.map((entry) => (
                       <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name] || "#6b7280"} />
@@ -206,7 +216,7 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
 
 function SourceChart({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <Card className="gradient-card h-full">
+    <Card className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <div className="w-1 h-4 rounded-full bg-cyan-500" />
@@ -222,6 +232,21 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ left: 0, right: 12, top: 4, bottom: 4 }}>
+                <defs>
+                  <filter id="barGlow">
+                    <feGaussianBlur stdDeviation="2" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                  {SOURCE_COLORS.map((color, i) => (
+                    <linearGradient key={i} id={`barGrad${i}`} x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor={color} stopOpacity={0.85} />
+                      <stop offset="100%" stopColor={color} stopOpacity={1} />
+                    </linearGradient>
+                  ))}
+                </defs>
                 <XAxis type="number" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
                 <YAxis
                   type="category"
@@ -233,9 +258,9 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
                   tickLine={false}
                 />
                 <RechartsTooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" name="Alerts" radius={[0, 4, 4, 0]} barSize={16}>
+                <Bar dataKey="value" name="Alerts" radius={[0, 4, 4, 0]} barSize={16} filter="url(#barGlow)">
                   {data.map((_, i) => (
-                    <Cell key={i} fill={SOURCE_COLORS[i % SOURCE_COLORS.length]} />
+                    <Cell key={i} fill={`url(#barGrad${i % SOURCE_COLORS.length})`} />
                   ))}
                 </Bar>
               </BarChart>
@@ -254,7 +279,7 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
   }));
 
   return (
-    <Card className="gradient-card h-full">
+    <Card className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <div className="w-1 h-4 rounded-full bg-indigo-500" />
@@ -272,9 +297,17 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
               <AreaChart data={formatted} margin={{ left: -10, right: 12, top: 4, bottom: 4 }}>
                 <defs>
                   <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.45} />
+                    <stop offset="50%" stopColor="#818cf8" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
                   </linearGradient>
+                  <filter id="trendLineGlow">
+                    <feGaussianBlur stdDeviation="3" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
@@ -285,10 +318,11 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
                   dataKey="count"
                   name="Alerts"
                   stroke="#818cf8"
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   fill="url(#trendGradient)"
-                  dot={{ r: 3, fill: "#818cf8", strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: "#818cf8", strokeWidth: 2, stroke: "#fff" }}
+                  filter="url(#trendLineGlow)"
+                  dot={{ r: 3, fill: "#a78bfa", strokeWidth: 2, stroke: "#818cf8" }}
+                  activeDot={{ r: 6, fill: "#a78bfa", strokeWidth: 2, stroke: "#fff" }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -457,9 +491,17 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
               <AreaChart data={formatted} margin={{ left: -10, right: 4, top: 4, bottom: 4 }}>
                 <defs>
                   <linearGradient id="ingestionGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#a855f7" stopOpacity={0.4} />
+                    <stop offset="50%" stopColor="#818cf8" stopOpacity={0.15} />
+                    <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
                   </linearGradient>
+                  <filter id="ingestionGlow">
+                    <feGaussianBlur stdDeviation="2.5" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
@@ -469,9 +511,12 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
                   type="monotone"
                   dataKey="total"
                   name="Events"
-                  stroke="#818cf8"
-                  strokeWidth={2}
+                  stroke="#a855f7"
+                  strokeWidth={2.5}
                   fill="url(#ingestionGradient)"
+                  filter="url(#ingestionGlow)"
+                  dot={{ r: 2, fill: "#c084fc", strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: "#c084fc", strokeWidth: 2, stroke: "#fff" }}
                 />
               </AreaChart>
             </ResponsiveContainer>
