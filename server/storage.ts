@@ -3253,8 +3253,8 @@ export class DatabaseStorage implements IStorage {
     const conditions: any[] = [];
     if (params.orgId) conditions.push(eq(incidents.orgId, params.orgId));
     if (params.severity) conditions.push(eq(incidents.severity, params.severity));
-    if (params.status) conditions.push(eq(incidents.status, params.status));
     if (params.queue) conditions.push(eq(incidents.status, params.queue));
+    else if (params.status) conditions.push(eq(incidents.status, params.status));
     if (params.search) {
       const pattern = `%${params.search}%`;
       conditions.push(or(
