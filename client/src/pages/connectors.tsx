@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -373,6 +373,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
   const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
   const [rotateTargetId, setRotateTargetId] = useState<string | null>(null);
+  const revealTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const { toast } = useToast();
 
   const { data: rotations, isLoading } = useQuery<SecretRotation[]>({
@@ -420,11 +421,23 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
     return daysUntil <= 14;
   };
 
+  useEffect(() => {
+    const timers = revealTimersRef.current;
+    return () => { Object.values(timers).forEach(clearTimeout); };
+  }, []);
+
   const toggleReveal = useCallback((id: string) => {
+    if (revealTimersRef.current[id]) {
+      clearTimeout(revealTimersRef.current[id]);
+      delete revealTimersRef.current[id];
+    }
     setRevealedSecrets(prev => {
       const next = { ...prev, [id]: !prev[id] };
       if (next[id]) {
-        setTimeout(() => setRevealedSecrets(p => ({ ...p, [id]: false })), 30000);
+        revealTimersRef.current[id] = setTimeout(() => {
+          setRevealedSecrets(p => ({ ...p, [id]: false }));
+          delete revealTimersRef.current[id];
+        }, 30000);
       }
       return next;
     });
