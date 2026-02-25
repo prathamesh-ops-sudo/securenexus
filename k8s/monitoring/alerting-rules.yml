@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerting-rules
+  namespace: monitoring
+  labels:
+    app: prometheus
+    app.kubernetes.io/part-of: securenexus
+data:
+  alerting-rules.yml: |
+    groups:
+      - name: securenexus-availability
+        rules:
+          - alert: SecureNexusDown
+            expr: up{job=~"securenexus-.*"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "SecureNexus instance {{ $labels.instance }} is down"
+              description: "SecureNexus has been unreachable for more than 2 minutes."
+
+          - alert: HighErrorRate
+            expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High error rate on {{ $labels.instance }}"
+              description: "More than 5% of requests are returning 5xx errors."
+
+          - alert: HighResponseLatency
+            expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High p95 latency on {{ $labels.instance }}"
+              description: "95th percentile response latency is above 2 seconds."
+
+      - name: securenexus-resources
+        rules:
+          - alert: HighMemoryUsage
+            expr: container_memory_usage_bytes{container="securenexus"} / container_spec_memory_limit_bytes{container="securenexus"} > 0.85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage on {{ $labels.pod }}"
+              description: "Container memory usage is above 85% of limit."
+
+          - alert: HighCpuUsage
+            expr: rate(container_cpu_usage_seconds_total{container="securenexus"}[5m]) / container_spec_cpu_quota{container="securenexus"} * 100000 > 0.80
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU usage on {{ $labels.pod }}"
+              description: "Container CPU usage is above 80% of limit."
+
+          - alert: PodRestartLooping
+            expr: increase(kube_pod_container_status_restarts_total{container="securenexus"}[1h]) > 3
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.pod }} is restart-looping"
+              description: "Pod has restarted more than 3 times in the last hour."
+
+      - name: securenexus-slos
+        rules:
+          - alert: SLOAvailabilityBreach
+            expr: avg_over_time(up{job=~"securenexus-production"}[1h]) < 0.999
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "SLO availability breach - production"
+              description: "Production availability has dropped below 99.9% SLO over the last hour."
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: monitoring
+  labels:
+    app: prometheus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: gp2

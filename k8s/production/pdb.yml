@@ -1,0 +1,16 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: securenexus-pdb
+  namespace: production
+  labels:
+    app.kubernetes.io/name: securenexus
+    app.kubernetes.io/part-of: securenexus
+    app: securenexus
+    environment: production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: securenexus
+      environment: production

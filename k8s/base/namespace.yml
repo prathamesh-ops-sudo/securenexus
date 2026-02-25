@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   name: staging
   labels:
+    app.kubernetes.io/part-of: securenexus
     app: securenexus
     environment: staging
 ---
@@ -11,6 +12,7 @@ kind: Namespace
 metadata:
   name: uat
   labels:
+    app.kubernetes.io/part-of: securenexus
     app: securenexus
     environment: uat
 ---
@@ -19,6 +21,7 @@ kind: Namespace
 metadata:
   name: production
   labels:
+    app.kubernetes.io/part-of: securenexus
     app: securenexus
     environment: production
 ---
@@ -27,6 +30,7 @@ kind: Namespace
 metadata:
   name: argo-rollouts
   labels:
+    app.kubernetes.io/part-of: securenexus
     app: securenexus
 ---
 apiVersion: v1
@@ -34,4 +38,5 @@ kind: Namespace
 metadata:
   name: monitoring
   labels:
+    app.kubernetes.io/part-of: securenexus
     app: securenexus

@@ -4,10 +4,16 @@ metadata:
   name: securenexus
   namespace: uat
   labels:
+    app.kubernetes.io/name: securenexus
+    app.kubernetes.io/instance: securenexus-uat
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: securenexus
+    app.kubernetes.io/managed-by: github-actions
     app: securenexus
     environment: uat
 spec:
   replicas: 1
+  revisionHistoryLimit: 5
   selector:
     matchLabels:
       app: securenexus
@@ -17,13 +23,28 @@ spec:
       labels:
         app: securenexus
         environment: uat
+        app.kubernetes.io/name: securenexus
+        app.kubernetes.io/instance: securenexus-uat
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: securenexus
           image: ${IMAGE}
           ports:
             - containerPort: 5000
               protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           envFrom:
             - secretRef:
                 name: securenexus-secrets
@@ -38,16 +59,32 @@ spec:
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /api/ops/health
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/ops/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
           resources:
             requests:
-              cpu: 256m
-              memory: 512Mi
+              cpu: 128m
+              memory: 256Mi
             limits:
               cpu: 512m
               memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

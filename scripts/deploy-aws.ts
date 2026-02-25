@@ -55,10 +55,11 @@ const sts = new STSClient({ region: REGION });
 const ecr = new ECRClient({ region: REGION });
 
 function generatePassword(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  const bytes = require("crypto").randomBytes(32);
   let result = "";
   for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(bytes[i] % chars.length);
   }
   return result;
 }
@@ -105,11 +106,16 @@ async function createOrGetSecurityGroup(vpcId: string): Promise<string> {
       log(`Using existing security group: ${existing.SecurityGroups[0].GroupId}`);
       return existing.SecurityGroups[0].GroupId!;
     }
-  } catch {}
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName && !errName.includes("NotFound")) {
+      throw err;
+    }
+  }
 
   const sg = await ec2.send(new CreateSecurityGroupCommand({
     GroupName: sgName,
-    Description: "SecureNexus RDS security group - allows PostgreSQL from App Runner",
+    Description: "SecureNexus RDS security group - allows PostgreSQL from VPC",
     VpcId: vpcId,
   }));
   const sgId = sg.GroupId!;
@@ -121,7 +127,7 @@ async function createOrGetSecurityGroup(vpcId: string): Promise<string> {
         IpProtocol: "tcp",
         FromPort: 5432,
         ToPort: 5432,
-        IpRanges: [{ CidrIp: "0.0.0.0/0", Description: "Allow PostgreSQL access" }],
+        IpRanges: [{ CidrIp: "10.0.0.0/8", Description: "Allow PostgreSQL from VPC private range" }],
       },
     ],
   }));
@@ -172,7 +178,7 @@ async function createOrGetRdsInstance(sgId: string): Promise<string> {
     BackupRetentionPeriod: 7,
     MultiAZ: false,
     StorageEncrypted: true,
-    DeletionProtection: false,
+    DeletionProtection: true,
     Tags: [
       { Key: "Application", Value: APP_NAME },
       { Key: "Environment", Value: "production" },
@@ -220,7 +226,12 @@ async function createEcrRepo(): Promise<string> {
       log(`ECR repo already exists: ${uri}`);
       return uri;
     }
-  } catch {}
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName && !errName.includes("RepositoryNotFoundException")) {
+      throw err;
+    }
+  }
 
   const repo = await ecr.send(new CreateRepositoryCommand({
     repositoryName: ECR_REPO_NAME,
@@ -243,7 +254,12 @@ async function createAppRunnerAccessRole(): Promise<string> {
       log(`IAM role already exists: ${existing.Role.Arn}`);
       return existing.Role.Arn!;
     }
-  } catch {}
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName !== "NoSuchEntityException") {
+      throw err;
+    }
+  }
 
   log("Creating IAM role for App Runner ECR access...");
   const trustPolicy = {
@@ -283,7 +299,12 @@ async function createAppRunnerInstanceRole(): Promise<string> {
       log(`Instance role already exists: ${existing.Role.Arn}`);
       return existing.Role.Arn!;
     }
-  } catch {}
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName !== "NoSuchEntityException") {
+      throw err;
+    }
+  }
 
   log("Creating App Runner instance role...");
   const trustPolicy = {
@@ -305,9 +326,8 @@ async function createAppRunnerInstanceRole(): Promise<string> {
   }));
 
   const policies = [
-    "arn:aws:iam::aws:policy/AmazonBedrockFullAccess",
-    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
-    "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess",
+    "arn:aws:iam::aws:policy/AmazonBedrockReadOnly",
+    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
   ];
 
   for (const policyArn of policies) {
@@ -333,7 +353,9 @@ async function createOrGetVpcConnector(subnetIds: string[], sgId: string): Promi
       log(`VPC connector already exists: ${found.VpcConnectorArn}`);
       return found.VpcConnectorArn!;
     }
-  } catch {}
+  } catch (err: unknown) {
+    logError("Error listing VPC connectors", err);
+  }
 
   log("Creating VPC connector for App Runner to reach RDS...");
   const connector = await appRunner.send(new CreateVpcConnectorCommand({
@@ -367,7 +389,9 @@ async function createAppRunnerService(
       log(`Status: ${found.Status}`);
       return `https://${found.ServiceUrl}`;
     }
-  } catch {}
+  } catch (err: unknown) {
+    logError("Error listing App Runner services", err);
+  }
 
   const imageTag = "latest";
   const sourceConfig: SourceConfiguration = {
