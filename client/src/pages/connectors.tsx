@@ -782,6 +782,7 @@ export default function ConnectorsPage() {
     setFormData({});
     setConnectorName("");
     setPollingInterval("5");
+    setTouchedFields({});
   }
 
   function handleCreate() {
