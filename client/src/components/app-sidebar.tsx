@@ -1,4 +1,4 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronDown, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronDown, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText, History } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -99,10 +99,44 @@ const adminGroup: NavGroup = {
 const ADMIN_ONLY_URLS = ["/team", "/onboarding", "/settings", "/compliance"];
 const ANALYST_HIDDEN_URLS = ["/team", "/onboarding"];
 
+const ALL_NAV_ITEMS: NavItem[] = [
+  ...coreItems,
+  ...navGroups.flatMap(g => g.items),
+  ...adminGroup.items,
+];
+
+const RECENT_PAGES_KEY = "securenexus.recentPages.v1";
+const MAX_RECENT = 5;
+
+function useRecentPages(currentPath: string) {
+  const [recent, setRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_PAGES_KEY);
+      if (raw) setRecent(JSON.parse(raw));
+    } catch { setRecent([]); }
+  }, []);
+
+  useEffect(() => {
+    if (!currentPath || currentPath.includes(":")) return;
+    const match = ALL_NAV_ITEMS.find(i => i.url === currentPath);
+    if (!match) return;
+    setRecent(prev => {
+      const next = [currentPath, ...prev.filter(p => p !== currentPath)].slice(0, MAX_RECENT);
+      localStorage.setItem(RECENT_PAGES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, [currentPath]);
+
+  return recent.slice(1);
+}
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const recentPages = useRecentPages(location);
 
   useEffect(() => {
     const initial: Record<string, boolean> = {};
@@ -134,9 +168,9 @@ export function AppSidebar() {
     const isActive = item.url === "/" ? location === "/" : location.startsWith(item.url);
     return (
       <SidebarMenuItem key={item.title}>
-        <SidebarMenuButton asChild isActive={isActive}>
+        <SidebarMenuButton asChild isActive={isActive} aria-label={`Navigate to ${item.title}`}>
           <Link href={item.url}>
-            <item.icon className="h-4 w-4 shrink-0" />
+            <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="truncate">{item.title}</span>
           </Link>
         </SidebarMenuButton>
@@ -227,6 +261,29 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {recentPages.length > 0 && (
+          <>
+            <SidebarSeparator className="my-0" />
+            <SidebarGroup className="px-2 py-1">
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <History className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Recent</span>
+                    </div>
+                  </SidebarMenuItem>
+                  {recentPages.map(path => {
+                    const item = ALL_NAV_ITEMS.find(i => i.url === path);
+                    if (!item) return null;
+                    return renderItem(item);
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
 
       <SidebarSeparator />
