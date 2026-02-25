@@ -70,7 +70,8 @@ spec:
             - containerPort: 9090
           volumeMounts:
             - name: config
-              mountPath: /etc/prometheus
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
             - name: storage
               mountPath: /prometheus
             - name: alert-rules

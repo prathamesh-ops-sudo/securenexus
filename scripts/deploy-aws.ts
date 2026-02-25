@@ -55,7 +55,7 @@ const sts = new STSClient({ region: REGION });
 const ecr = new ECRClient({ region: REGION });
 
 function generatePassword(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!^&*-_=+";
   const bytes = require("crypto").randomBytes(32);
   let result = "";
   for (let i = 0; i < 32; i++) {

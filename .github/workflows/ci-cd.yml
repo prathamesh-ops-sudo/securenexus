@@ -154,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           export IMAGE=${{ needs.build-and-push.outputs.image }}
-          kubectl apply -f k8s/base/network-policy.yml || true
+          kubectl apply -f k8s/base/network-policy.yml
           envsubst < k8s/staging/rollout.yml | kubectl apply -f -
           kubectl apply -f k8s/staging/service.yml
           kubectl -n staging rollout status deployment/securenexus --timeout=300s
@@ -212,6 +212,7 @@ jobs:
         run: |
           set -euo pipefail
           export IMAGE=${{ needs.build-and-push.outputs.image }}
+          kubectl apply -f k8s/base/network-policy.yml
           envsubst < k8s/uat/rollout.yml | kubectl apply -f -
           kubectl apply -f k8s/uat/service.yml
           kubectl -n uat rollout status deployment/securenexus --timeout=300s
@@ -259,6 +260,7 @@ jobs:
         run: |
           set -euo pipefail
           export IMAGE=${{ needs.build-and-push.outputs.image }}
+          kubectl apply -f k8s/base/network-policy.yml
           kubectl apply -f k8s/production/pdb.yml
           envsubst < k8s/production/rollout.yml | kubectl apply -f -
           kubectl apply -f k8s/production/service.yml
