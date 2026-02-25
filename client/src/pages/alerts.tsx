@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight } from "lucide-react";
+import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight, X, Clock, Tag, MapPin } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -901,8 +901,8 @@ export default function AlertsPage() {
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                     </tr>
                   ))
-                ) : filtered && filtered.length > 0 ? (
-                  filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((alert) => (
+                ) : pageAlerts.length > 0 ? (
+                  pageAlerts.map((alert) => (
                     <tr
                       key={alert.id}
                       className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-muted/40" : ""}`}
@@ -956,21 +956,20 @@ export default function AlertsPage() {
                       </td>
                       <td className="px-4 py-3">
                         {(() => {
-                          const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
-                          const queueState = alert.status !== "new"
-                            ? "other"
-                            : ageMs >= 72 * 60 * 60 * 1000
-                              ? "breached"
-                              : ageMs >= 24 * 60 * 60 * 1000
-                                ? "aging"
-                                : "new";
-                          if (queueState === "other") return <span className="text-[10px] text-muted-foreground">—</span>;
-                          const style = queueState === "breached"
+                          const qs = getQueueState(alert);
+                          if (qs === "other") return <span className="text-[10px] text-muted-foreground">—</span>;
+                          const countdown = getQueueCountdown(alert);
+                          const style = qs === "breached"
                             ? "bg-red-500/10 text-red-500 border-red-500/20"
-                            : queueState === "aging"
+                            : qs === "aging"
                               ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
                               : "bg-blue-500/10 text-blue-500 border-blue-500/20";
-                          return <span className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${style}`}>{queueState}</span>;
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${style}`}>{qs}</span>
+                              {countdown && <span className="text-[9px] text-muted-foreground">{countdown}</span>}
+                            </div>
+                          );
                         })()}
                       </td>
                       <td className="px-4 py-3">
@@ -1056,6 +1055,99 @@ export default function AlertsPage() {
           )}
         </CardContent>
       </Card>
+
+      {isDetailOpen && selectedAlert && (
+        <div className="fixed top-0 right-0 h-full w-full max-w-md border-l bg-background shadow-xl z-50 flex flex-col" role="complementary" aria-label="Alert detail panel">
+          <div className="flex items-center justify-between gap-2 p-4 border-b">
+            <h3 className="text-sm font-semibold truncate">Alert Detail</h3>
+            <Button size="icon" variant="ghost" onClick={() => setIsDetailOpen(false)} aria-label="Close detail panel">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div>
+              <h4 className="text-base font-semibold">{selectedAlert.title}</h4>
+              <p className="text-xs text-muted-foreground mt-1">{selectedAlert.description}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase">Severity</span>
+                <div className="mt-0.5"><SeverityBadge severity={selectedAlert.severity} /></div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase">Status</span>
+                <div className="mt-0.5"><AlertStatusBadge status={selectedAlert.status} /></div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase">Source</span>
+                <p className="text-xs mt-0.5">{selectedAlert.source}</p>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase">Category</span>
+                <p className="text-xs mt-0.5">{selectedAlert.category?.replace(/_/g, " ") || "-"}</p>
+              </div>
+            </div>
+            {selectedAlert.mitreTactic && (
+              <div className="flex items-center gap-2">
+                <Tag className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs">{selectedAlert.mitreTactic}</span>
+                {selectedAlert.mitreTechnique && (
+                  <span className="text-xs font-mono text-muted-foreground">{selectedAlert.mitreTechnique}</span>
+                )}
+              </div>
+            )}
+            {(selectedAlert.sourceIp || selectedAlert.destIp || selectedAlert.hostname) && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-muted-foreground uppercase">Entities</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedAlert.sourceIp && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]"><MapPin className="h-2.5 w-2.5" />src: {selectedAlert.sourceIp}</span>
+                  )}
+                  {selectedAlert.destIp && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]"><MapPin className="h-2.5 w-2.5" />dst: {selectedAlert.destIp}</span>
+                  )}
+                  {selectedAlert.hostname && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">{selectedAlert.hostname}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {selectedAlert.confidenceScore != null && (
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase">Confidence</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.round(selectedAlert.confidenceScore * 100)}%` }} />
+                  </div>
+                  <span className="text-xs font-medium">{Math.round(selectedAlert.confidenceScore * 100)}%</span>
+                </div>
+              </div>
+            )}
+            {(() => {
+              const qs = getQueueState(selectedAlert);
+              const countdown = getQueueCountdown(selectedAlert);
+              if (qs === "other") return null;
+              return (
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs">Queue: <span className="uppercase font-medium">{qs}</span></span>
+                  {countdown && <span className="text-xs text-muted-foreground">{countdown}</span>}
+                </div>
+              );
+            })()}
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <Button size="sm" onClick={() => navigate('/alerts/' + selectedAlert.id)}>
+                <ExternalLink className="h-3 w-3 mr-1.5" />
+                Full Detail
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleTriageClick(selectedAlert.id)} disabled={triage.isPending}>
+                <Brain className="h-3 w-3 mr-1.5" />
+                AI Triage
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
