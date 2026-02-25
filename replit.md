@@ -10,7 +10,7 @@ SecureNexus is an AI-powered Security Orchestration & Intelligence Platform offe
 - Human-in-the-loop approach for AI features
 
 ## System Architecture
-The platform features a modern web stack: React + TypeScript frontend using Vite, TailwindCSS, and shadcn/ui, with an Express.js (TypeScript) backend. Data persistence is managed by PostgreSQL via Drizzle ORM, and authentication uses Replit Auth (OpenID Connect).
+The platform features a modern web stack: React + TypeScript frontend using Vite, TailwindCSS, and shadcn/ui, with an Express.js (TypeScript) backend. Data persistence is managed by PostgreSQL via Drizzle ORM, and authentication uses Passport.js (Local, Google OAuth, GitHub OAuth) with PostgreSQL session store.
 
 **Key Architectural Decisions and Features:**
 
@@ -48,7 +48,7 @@ The platform features a modern web stack: React + TypeScript frontend using Vite
 - **Scalability**: Engineered for SaaS deployment with planned migration to AWS App Runner.
 
 ## External Dependencies
-- **Authentication**: Replit Auth (OpenID Connect)
+- **Authentication**: Passport.js (Local, Google OAuth, GitHub OAuth)
 - **Database**: PostgreSQL
 - **Cloud AI Services**: AWS Bedrock Converse API, AWS SageMaker
 - **Object Storage**: AWS S3

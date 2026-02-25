@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated } from "./auth";
 import { resolveOrgContext, requireMinRole, requirePermission } from "./rbac";
 import { insertAlertSchema, insertIncidentSchema, insertCommentSchema, insertTagSchema, insertCompliancePolicySchema, insertDsarRequestSchema, insertCspmAccountSchema, insertEndpointAssetSchema, insertAiDeploymentConfigSchema, insertIocFeedSchema, insertIocEntrySchema, insertIocWatchlistSchema, insertIocMatchRuleSchema, insertEvidenceItemSchema, insertInvestigationHypothesisSchema, insertInvestigationTaskSchema, insertRunbookTemplateSchema, insertRunbookStepSchema, insertReportTemplateSchema, insertReportScheduleSchema, insertPolicyCheckSchema, insertComplianceControlSchema, insertComplianceControlMappingSchema, insertEvidenceLockerItemSchema, insertOutboundWebhookSchema, insertTicketSyncJobSchema, insertResponseActionApprovalSchema, insertLegalHoldSchema, insertConnectorSecretRotationSchema } from "@shared/schema";
 import { correlateAlerts, generateIncidentNarrative, triageAlert, checkModelHealth, getModelConfig, getInferenceMetrics, buildThreatIntelContext } from "./ai";

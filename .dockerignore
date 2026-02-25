@@ -4,8 +4,6 @@ dist
 .env
 *.md
 !README.md
-.replit
-replit.nix
 .config
 .cache
 attached_assets

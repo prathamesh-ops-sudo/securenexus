@@ -36,8 +36,8 @@
 | **Team Management UI** | `client/src/pages/team-management.tsx` | Members tab (list, change role, suspend, activate, remove), Invitations tab (create, cancel), Audit Trail tab |
 | **Technical Onboarding** | `client/src/pages/onboarding.tsx` | 4-step checklist: integrations, ingestion, endpoints, CSPM |
 | **Settings Page** | `client/src/pages/settings.tsx` | Profile, roles display, hardcoded plan cards (Free/Pro/Enterprise), threat intel keys, webhooks |
-| **Auth Routes** | `server/replit_integrations/auth/routes.ts` | Register, login, logout, Google OAuth, GitHub OAuth, providers endpoint |
-| **Auto-Provisioning** | `server/replit_integrations/auth/routes.ts` line 7 | `ensureOrgMembership()` — new user auto-creates org or joins first existing org |
+| **Auth Routes** | `server/auth/routes.ts` | Register, login, logout, Google OAuth, GitHub OAuth, providers endpoint |
+| **Auto-Provisioning** | `server/auth/routes.ts` line 7 | `ensureOrgMembership()` — new user auto-creates org or joins first existing org |
 | **Audit Logs** | `shared/schema.ts` line 227 | Full audit trail table with userId, action, resourceType, resourceId, details, ipAddress |
 | **API Key Auth** | `server/routes.ts` line 59 | Alternative auth via `X-API-Key` header for programmatic access |
 
@@ -243,7 +243,7 @@ export const onboardingProgress = pgTable("onboarding_progress", {
 
 ### 2.4 Auto-Provisioning Changes
 
-**Current behavior** (`server/replit_integrations/auth/routes.ts` line 7):
+**Current behavior** (`server/auth/routes.ts` line 7):
 - New user → auto-creates org with name `"{email}'s Organization"` → assigns owner role
 - No plan, no onboarding
 
@@ -715,7 +715,7 @@ DELETE /api/orgs/:orgId/domains/:domainId         → Remove domain claim
 PATCH /api/orgs/:orgId/domains/:domainId          → Update default role, auto-join toggle
 ```
 
-**Auto-join logic (modify `ensureOrgMembership` in `server/replit_integrations/auth/routes.ts`):**
+**Auto-join logic (modify `ensureOrgMembership` in `server/auth/routes.ts`):**
 
 ```
 1. User signs up with email user@aricatech.xyz
