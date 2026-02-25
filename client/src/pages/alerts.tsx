@@ -379,9 +379,9 @@ export default function AlertsPage() {
 
   const escalateFocused = useCallback(() => {
     if (!focusedAlertId) return;
-    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "escalated" }).then(() => {
+    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "triaged", assignedTo: "Tier 2" }).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      toast({ title: "Escalated" });
+      toast({ title: "Escalated", description: "Alert escalated to Tier 2" });
     });
   }, [focusedAlertId, toast]);
 

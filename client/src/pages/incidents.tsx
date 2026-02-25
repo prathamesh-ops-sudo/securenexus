@@ -419,7 +419,7 @@ export default function IncidentsPage() {
 
   const escalateFocused = useCallback(() => {
     if (!focusedIncidentId) return;
-    apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { status: "escalated" }).then(() => {
+    apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { escalated: true }).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
       toast({ title: "Escalated" });
     });
