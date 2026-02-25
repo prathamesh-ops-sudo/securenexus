@@ -1,48 +1,49 @@
-﻿# Phase 16: Payment and Billing (Stripe) Detailed Report
+﻿# Phase 16: Payment and Billing (Stripe) Detailed Implementation Report
 
-## Goal
-Implement reliable subscription billing with Stripe and enforce feature entitlements by plan.
+## Objective
+Deploy production-grade subscription billing and entitlement enforcement for SaaS monetization.
 
-## What Must Be Fixed
-- Billing lifecycle is not integrated end-to-end.
-- Plan limits and feature gates are not enforced centrally.
-- Subscription events are not synchronized via webhooks.
+## Current Baseline
+- Billing is not fully integrated with feature gating.
 
-## Required Work
-- Integrate Stripe Checkout for new subscriptions and upgrades.
-- Integrate Stripe Customer Portal for self-service billing.
-- Process webhook events idempotently and update local subscription state.
-- Enforce entitlement checks in backend middleware and frontend UX.
+## Critical Gaps
+- No complete subscription lifecycle in-app.
+- No idempotent webhook sync layer.
+- Plan limits are not centrally enforced.
 
-## Data and API Scope
-- Tables: `billing_customers`, `billing_subscriptions`, `billing_invoices`, `feature_entitlements`, `billing_events`.
-- APIs: `checkout-session`, `portal-session`, `webhook`, `subscription status`, `entitlements`.
+## Required Fixes
+- Integrate Stripe Checkout and Billing Portal.
+- Persist customer/subscription/invoice data.
+- Process Stripe webhooks with signature verification and idempotency keys.
+- Enforce feature entitlements in API middleware and UI.
 
-## Plan and Entitlement Model
-- Plans: starter, growth, enterprise.
-- Entitlements: analyst seats, connector limits, AI usage quota, premium feature toggles.
-- Support soft-limit warnings and hard-limit enforcement.
+## Data Model
+- `billing_customers`
+- `billing_subscriptions`
+- `billing_invoices`
+- `feature_entitlements`
+- `billing_events`
 
-## UI Scope
-- Billing page with plan details, renewal date, usage meters, and invoice history.
-- Upgrade/downgrade controls via Stripe-hosted flows.
+## API Plan
+- `POST /api/billing/checkout-session`
+- `POST /api/billing/portal-session`
+- `POST /api/billing/webhook`
+- `GET /api/billing/subscription`
+- `GET /api/billing/entitlements`
+
+## UI Plan
+- Billing page with plan details, usage, renew date, and invoices.
+- Upgrade/downgrade/cancel workflows.
 
 ## Security and Compliance
-- Verify Stripe webhook signatures.
-- Keep card data out of application storage.
-- Log billing state transitions for auditability.
+- No card data in application DB.
+- Mandatory webhook signature checks.
+- Audit billing state transitions.
 
 ## Testing
 - Webhook signature and idempotency tests.
-- Subscription lifecycle state transition tests.
-- Entitlement enforcement tests across protected APIs.
-
-## Rollout
-- Backfill existing organizations to default plan.
-- Enable feature gating in monitor mode first, then enforce.
-- Track payment failures and entitlement sync lag metrics.
+- Subscription state transition tests.
+- Entitlement enforcement tests.
 
 ## Definition of Done
-- Billing flow works end-to-end for subscribe/upgrade/downgrade/cancel.
-- Entitlements are consistently enforced.
-- Billing events are auditable and reliable.
+- Subscription lifecycle and feature gating work reliably in production.

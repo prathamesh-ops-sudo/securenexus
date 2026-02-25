@@ -1,39 +1,60 @@
-﻿# Phase 6: Incident Management Detailed Report
+﻿# Phase 6: Incident Management Detailed Implementation Report
 
-## Goal
-Build a complete incident lifecycle system with strict workflow rules, ownership, escalation, SLA tracking, and evidence management.
+## Objective
+Build a complete incident lifecycle system with enforceable states, ownership, SLA controls, incident evidence, and auditable operations.
 
-## What Must Be Fixed
-- Incident status changes are not fully enforced.
-- Assignment and escalation are not consistently audited.
-- Alert-to-incident bulk linking and merge/split flows are incomplete.
-- Evidence is not structured for forensic traceability.
+## Current Baseline
+- Incident CRUD exists.
+- Basic incident fields exist (status/severity/priority/assigned fields).
+- Comments and tags exist.
 
-## Required Work
-- Add transition engine with allowed state graph.
-- Add status history timeline table.
-- Add assignment/watchers model.
-- Add incident SLA policy and runtime state tracking.
-- Add merge/split endpoints with transactional safety.
-- Add evidence records with source, hash, and owner metadata.
+## Critical Gaps
+- No strict transition policy.
+- Limited ownership governance and escalation controls.
+- No durable status history stream.
+- Merge/split workflows are incomplete.
+- Evidence model is insufficient for forensic readiness.
 
-## Data and API Scope
-- New tables: `incident_status_history`, `incident_assignments`, `incident_watchers`, `incident_evidence`, `incident_sla_policy`, `incident_sla_state`.
-- New APIs: transition, assign, escalate, merge, split, history, evidence.
+## Required Fixes
+- Enforce finite-state transitions with preconditions.
+- Add assignment and watcher model.
+- Add escalation workflow with reason and target.
+- Add incident merge/split APIs with transaction safety.
+- Add evidence artifacts with hash/source metadata.
+- Add SLA policy and runtime breach tracking.
 
-## UI Scope
-- Timeline panel, SLA countdowns, ownership panel, merge/split wizards, evidence tab.
+## Data Model
+- `incident_status_history`: transition records and actor metadata.
+- `incident_assignments`: assignment events and active assignee.
+- `incident_watchers`: notification subscribers.
+- `incident_evidence`: structured artifact metadata.
+- `incident_sla_policy`: severity/priority targets.
+- `incident_sla_state`: due times and breach timestamps.
 
-## Security and Audit
-- Audit every status/assignment/escalation change.
-- Enforce tenant scoping and role checks.
+## API Plan
+- `POST /api/incidents/:id/transition`
+- `POST /api/incidents/:id/assign`
+- `POST /api/incidents/:id/watch`
+- `POST /api/incidents/:id/escalate`
+- `POST /api/incidents/:id/merge`
+- `POST /api/incidents/:id/split`
+- `GET /api/incidents/:id/history`
+- `POST /api/incidents/:id/evidence`
+
+## UI Plan
+- Timeline with transition and assignment events.
+- SLA countdown and breach badges.
+- Ownership panel.
+- Merge/split wizard.
+- Evidence tab with validation fields.
 
 ## Testing
-- Unit: transition and SLA rules.
-- Integration: merge/split and rollback behavior.
-- UI: timeline and assignment workflows.
+- Transition rule unit tests.
+- SLA calculator tests.
+- Merge/split integration tests.
+- UI tests for timeline and assignment.
 
 ## Definition of Done
-- Workflow is enforceable and auditable end-to-end.
-- SLA breach states are correct.
-- Evidence and bulk operations are stable.
+- Incident lifecycle is enforced and auditable.
+- SLA states are accurate.
+- Evidence and bulk relationship workflows are stable.

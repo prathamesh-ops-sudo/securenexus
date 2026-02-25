@@ -1,30 +1,46 @@
-﻿# Phase 13: SOAR-Lite Automation Detailed Report
+﻿# Phase 13: SOAR-Lite Automation Detailed Implementation Report
 
-## Goal
-Provide safe, approval-aware automation playbooks for repetitive SOC response actions.
+## Objective
+Implement safe workflow automation with playbooks, approvals, execution traces, and connector actions.
 
-## What Must Be Fixed
-- No robust playbook runtime, run tracking, or approval gates for high-impact actions.
+## Current Baseline
+- Playbook stubs exist.
 
-## Required Work
-- Build playbook model with triggers, steps, and conditions.
-- Build execution engine with retries, idempotency, and timeout controls.
-- Add approval gates for destructive/external actions.
+## Critical Gaps
+- No runtime engine.
+- No approval gates for risky actions.
+- No complete run-step history.
 
-## Data and API Scope
-- Tables: `playbooks`, `playbook_steps`, `playbook_runs`, `playbook_step_runs`, `playbook_approvals`.
-- APIs: playbook CRUD, validate, run, list runs, approve step.
+## Required Fixes
+- Create playbook model: triggers, steps, conditions.
+- Build execution worker with retries and idempotency.
+- Add manual approval step type.
+- Add connector abstraction for external actions.
 
-## UI Scope
-- Playbook builder, run timeline, approval inbox.
+## Data Model
+- `playbooks`
+- `playbook_steps`
+- `playbook_runs`
+- `playbook_step_runs`
+- `playbook_approvals`
 
-## Security
-- Secret-managed connector credentials.
-- Full audit of all automated actions.
+## API Plan
+- `POST /api/playbooks`
+- `PATCH /api/playbooks/:id`
+- `POST /api/playbooks/:id/validate`
+- `POST /api/playbooks/:id/run`
+- `GET /api/playbook-runs`
+- `POST /api/playbook-runs/:id/approve`
+
+## UI Plan
+- Playbook builder.
+- Execution timeline.
+- Approval inbox.
 
 ## Testing
-- Step engine tests.
-- Connector failure and retry tests.
+- Engine unit tests.
+- Connector retry/failure tests.
+- Approval path end-to-end tests.
 
 ## Definition of Done
-- Automation runs are safe, controlled, and auditable.
+- Playbooks run reliably and high-impact actions are approval-controlled.

@@ -1,28 +1,44 @@
-﻿# Phase 11: Multi-Tenant and RBAC Detailed Report
+﻿# Phase 11: Multi-Tenant and RBAC Detailed Implementation Report
 
-## Goal
-Enforce strict tenant isolation and role-based authorization across API and UI.
+## Objective
+Enforce strict tenant isolation and route-level authorization with clear role/permission governance.
 
-## What Must Be Fixed
-- Role system and route-level permission checks are incomplete.
+## Current Baseline
+- Org IDs and auth exist.
 
-## Required Work
-- Define roles: owner, admin, analyst, viewer.
+## Critical Gaps
+- Permission system is not fully formalized.
+- Role management and invites are incomplete.
+- Inconsistent route-level authorization checks.
+
+## Required Fixes
+- Define role taxonomy (`owner`, `admin`, `analyst`, `viewer`).
 - Define permission matrix per resource/action.
-- Add invite/member lifecycle and role assignment flows.
-- Add authorization middleware and scoped repository helpers.
+- Add org invite and membership lifecycle.
+- Add mandatory scoped query helpers.
 
-## Data and API Scope
-- Tables: `roles`, `permissions`, `role_permissions`, `user_roles`, `org_invites`.
-- APIs: invite/create/accept/list, role assignment, permission listing.
+## Data Model
+- `roles`
+- `permissions`
+- `role_permissions`
+- `user_roles`
+- `org_invites`
 
-## UI Scope
-- Org settings: members, invitations, roles.
-- Gate unauthorized actions in page-level controls.
+## API Plan
+- `POST /api/orgs/:orgId/invites`
+- `GET /api/orgs/:orgId/invites`
+- `POST /api/invites/:token/accept`
+- `PATCH /api/orgs/:orgId/users/:userId/roles`
+- `GET /api/orgs/:orgId/permissions`
+
+## UI Plan
+- Organization settings page for members/invites/roles.
+- Action-level gating and disabled states.
 
 ## Testing
-- Permission resolver unit tests.
-- Cross-tenant leakage integration tests.
+- Permission resolver tests.
+- Cross-tenant isolation tests.
+- Invite flow integration tests.
 
 ## Definition of Done
-- All protected endpoints enforce role permissions with zero cross-tenant leakage.
+- Every protected endpoint enforces permissions and tenant scoping.

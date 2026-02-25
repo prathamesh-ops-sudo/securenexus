@@ -1,43 +1,44 @@
-﻿# Phase 15: Advanced Features Detailed Report
+﻿# Phase 15: Advanced Features Detailed Implementation Report
 
-## Goal
-Deliver differentiating advanced capabilities that accelerate investigations and improve security signal quality.
+## Objective
+Ship advanced security intelligence capabilities that materially improve detection depth and investigation speed.
 
-## What Must Be Fixed
-- Advanced graph and path-analysis capabilities are not fully implemented.
-- Custom detection logic is not self-service for analysts.
-- Relationship context across alerts, incidents, assets, users, and IOCs is fragmented.
+## Current Baseline
+- Graph and advanced correlation areas are partially scaffolded.
 
-## Required Work
-- Build entity graph system connecting users, hosts, IPs, domains, alerts, incidents, and indicators.
-- Implement attack-path analysis and suspicious traversal scoring.
-- Add custom detection/correlation rule builder with dry-run simulation.
+## Critical Gaps
+- No full entity graph model.
+- No production attack-path analytics.
+- No analyst self-service custom rule system.
 
-## Data and API Scope
-- Tables: `entity_nodes`, `entity_edges`, `custom_detection_rules`, `rule_simulation_runs`.
-- APIs: graph read endpoints, path-analysis endpoint, rule CRUD, simulate, activate/deactivate.
+## Required Fixes
+- Build multi-entity graph pipeline.
+- Build attack-path scoring and suspicious chain visualization.
+- Build custom detection and correlation rules with simulation and safe activation.
 
-## UI Scope
-- Graph explorer with filters and neighborhood depth controls.
-- Attack-path view with risk-ranked paths.
-- Rule builder with syntax validation and simulation output.
+## Data Model
+- `entity_nodes`
+- `entity_edges`
+- `custom_detection_rules`
+- `rule_simulation_runs`
 
-## Performance and Reliability
-- Paginated graph traversal and query limits.
-- Caching for repeated graph neighborhoods.
-- Background jobs for graph refresh and edge compaction.
+## API Plan
+- `GET /api/graph/nodes`
+- `GET /api/graph/edges`
+- `GET /api/graph/path-analysis`
+- `POST /api/rules`
+- `POST /api/rules/:id/simulate`
+- `POST /api/rules/:id/activate`
 
-## Security and Governance
-- Role-based control for rule activation.
-- Audit log for rule changes and graph-derived actions.
-- Tenant isolation on graph data.
+## UI Plan
+- Graph explorer.
+- Attack path analysis view.
+- Rule builder with simulator.
 
 ## Testing
-- Graph integrity and edge consistency tests.
+- Graph integrity tests.
 - Rule parser/evaluator tests.
-- Simulation correctness and regression tests.
+- Simulation regression tests.
 
 ## Definition of Done
-- Graph and attack-path features are production-stable.
-- Custom rules can be safely simulated and deployed.
-- Advanced features are auditable and tenant-safe.
+- Advanced capabilities are stable, useful, and role-governed.

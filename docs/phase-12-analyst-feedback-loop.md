@@ -1,28 +1,40 @@
-﻿# Phase 12: Analyst Feedback Loop Detailed Report
+﻿# Phase 12: Analyst Feedback Loop Detailed Implementation Report
 
-## Goal
-Capture structured analyst feedback on AI output and convert it into measurable model quality improvements.
+## Objective
+Create a structured feedback system that captures analyst quality signals and drives AI model/process improvement.
 
-## What Must Be Fixed
-- Feedback data is not systematically collected or linked to model versions.
+## Current Baseline
+- Feedback hooks are minimal.
 
-## Required Work
-- Add feedback forms for narrative, mapping, correlation quality.
-- Track rating plus correction notes.
-- Aggregate quality metrics by model/template/time.
-- Export curated feedback for retraining.
+## Critical Gaps
+- No consistent rating schema.
+- No model-linked quality analytics.
+- No retraining dataset export process.
 
-## Data and API Scope
-- Tables: `ai_feedback`, `ai_feedback_summary`.
-- APIs: submit feedback, list feedback, summary metrics, export set.
+## Required Fixes
+- Add rating plus correction comments.
+- Tie feedback to model version and output target.
+- Build summary metrics pipeline.
+- Add export endpoint for feedback datasets.
 
-## UI Scope
-- Inline feedback controls near AI outputs.
-- Admin quality dashboard.
+## Data Model
+- `ai_feedback`
+- `ai_feedback_summary`
+
+## API Plan
+- `POST /api/ai/feedback`
+- `GET /api/ai/feedback`
+- `GET /api/ai/feedback/summary`
+- `GET /api/ai/feedback/export`
+
+## UI Plan
+- Inline feedback actions in narrative/correlation panels.
+- Quality dashboard for admins.
 
 ## Testing
-- Validation tests for feedback payloads.
-- Aggregation accuracy tests.
+- Payload validation tests.
+- Aggregation job tests.
+- Access control tests.
 
 ## Definition of Done
-- Feedback loop is operational and measurable.
+- Feedback is captured, visible, and operationally useful.

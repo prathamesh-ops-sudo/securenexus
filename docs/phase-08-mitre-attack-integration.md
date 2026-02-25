@@ -1,28 +1,46 @@
-﻿# Phase 8: MITRE ATT&CK Integration Detailed Report
+﻿# Phase 8: MITRE ATT&CK Integration Detailed Implementation Report
 
-## Goal
-Implement ATT&CK as a first-class intelligence layer with robust tactic/technique mapping and analyst override.
+## Objective
+Establish ATT&CK as a normalized, queryable domain layer with explainable mappings and analyst override governance.
 
-## What Must Be Fixed
-- MITRE mapping is field-level only, not knowledge-layer backed.
-- Technique metadata and sub-technique support are incomplete.
+## Current Baseline
+- Basic MITRE fields exist on alerts/incidents.
+- Partial dashboard-level stats exist.
 
-## Required Work
-- Create normalized ATT&CK tables and refresh pipeline.
-- Build mapping engine (rule + AI + manual override precedence).
-- Add ATT&CK matrix and heatmap analytics.
+## Critical Gaps
+- No canonical ATT&CK dataset tables.
+- Sub-techniques are not modeled robustly.
+- No override governance and confidence provenance.
 
-## Data and API Scope
-- Tables: `mitre_tactics`, `mitre_techniques`, `alert_mitre_mapping`, `incident_mitre_mapping`, `mitre_override_log`.
-- APIs: tactics, techniques, matrix, heatmap, manual override.
+## Required Fixes
+- Ingest and version ATT&CK catalog.
+- Build tactic/technique lookup APIs.
+- Add mapping precedence: manual > deterministic > AI.
+- Add matrix and heatmap analytics.
 
-## UI Scope
-- ATT&CK matrix page with filters and confidence indicators.
-- Technique detail drawer and override workflow.
+## Data Model
+- `mitre_tactics`
+- `mitre_techniques`
+- `alert_mitre_mapping`
+- `incident_mitre_mapping`
+- `mitre_override_log`
+
+## API Plan
+- `GET /api/mitre/tactics`
+- `GET /api/mitre/techniques`
+- `GET /api/mitre/matrix`
+- `GET /api/mitre/heatmap`
+- `POST /api/mitre/override`
+
+## UI Plan
+- ATT&CK matrix page.
+- Technique details drawer.
+- Manual override form with reason.
 
 ## Testing
-- Mapping precedence and confidence normalization tests.
-- ATT&CK version refresh regression tests.
+- Mapping precedence tests.
+- ATT&CK sync regression tests.
+- Aggregation accuracy tests.
 
 ## Definition of Done
-- ATT&CK mapping is explainable, queryable, and auditable.
+- ATT&CK mappings are complete, explainable, and auditable.

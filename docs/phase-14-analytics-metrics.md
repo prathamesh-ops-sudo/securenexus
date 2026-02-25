@@ -1,25 +1,39 @@
-﻿# Phase 14: Analytics and Metrics Detailed Report
+﻿# Phase 14: Analytics and Metrics Detailed Implementation Report
 
-## Goal
-Deliver advanced SOC KPIs and trend analytics with drilldown into underlying records.
+## Objective
+Provide advanced SOC KPIs and trend intelligence with consistent formulas and record-level drilldowns.
 
-## What Must Be Fixed
-- Current analytics lacks full KPI coverage and segmented historical views.
+## Current Baseline
+- Basic dashboard analytics exist.
 
-## Required Work
-- Define and compute KPI set: MTTD, MTTA, MTTR, dwell time, reopen rate, false positive rate, SLA breach rate.
-- Add metric snapshot pipeline and dashboard drilldowns.
+## Critical Gaps
+- KPI coverage is limited.
+- Historical segmentation and drilldown depth are limited.
 
-## Data and API Scope
-- Tables: `metric_definitions`, `metric_snapshots`.
-- APIs: KPI overview, trends, segmentation, drilldown.
+## Required Fixes
+- Define KPI formulas (MTTD, MTTA, MTTR, dwell time, reopen rate, false positive rate, SLA breach rate).
+- Build metrics snapshot pipeline.
+- Build segmented trend endpoints and drilldown queries.
 
-## UI Scope
-- Analytics workspace with configurable widgets and period-over-period deltas.
+## Data Model
+- `metric_definitions`
+- `metric_snapshots`
+
+## API Plan
+- `GET /api/metrics/kpis`
+- `GET /api/metrics/trends`
+- `GET /api/metrics/segments`
+- `GET /api/metrics/drilldown`
+
+## UI Plan
+- KPI board with period deltas.
+- Trend charts with filter controls.
+- Drilldown drawers.
 
 ## Testing
-- Formula unit tests.
+- Formula correctness tests.
 - Time-window boundary tests.
+- Drilldown query tests.
 
 ## Definition of Done
-- KPIs are accurate, queryable, and actionable.
+- KPI outputs are trusted and actionable for operations and leadership.

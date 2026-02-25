@@ -1,30 +1,44 @@
-﻿# Phase 10: Reporting and Export Detailed Report
+﻿# Phase 10: Reporting and Export Detailed Implementation Report
 
-## Goal
-Deliver scheduled and on-demand SOC reporting with CSV/JSON/PDF outputs.
+## Objective
+Provide operational and executive reporting with on-demand and scheduled exports in CSV, JSON, and PDF.
 
-## What Must Be Fixed
-- Export routes are incomplete.
-- No template-based report generation or scheduling.
+## Current Baseline
+- Route placeholders exist.
 
-## Required Work
-- Create report templates for incidents, SLA, MITRE, connector health, analyst productivity.
-- Add asynchronous report runner and run history.
-- Add scheduled delivery (email/S3).
+## Critical Gaps
+- No report templates or run history.
+- No schedule engine.
+- No signed artifact delivery model.
 
-## Data and API Scope
-- Tables: `reports`, `report_runs`, `report_schedules`.
-- APIs: create/update/list report, run report, download artifact, schedule report.
+## Required Fixes
+- Build report templates.
+- Build async report runner.
+- Build schedule and delivery support.
+- Add export governance controls and redaction policy.
 
-## UI Scope
-- Report builder, run history, schedule manager.
+## Data Model
+- `reports`
+- `report_runs`
+- `report_schedules`
 
-## Security
-- Signed expiring download URLs.
-- Tenant-safe query enforcement.
+## API Plan
+- `POST /api/reports`
+- `GET /api/reports`
+- `POST /api/reports/:id/run`
+- `GET /api/reports/runs/:runId`
+- `GET /api/reports/runs/:runId/download`
+- `POST /api/reports/:id/schedule`
+
+## UI Plan
+- Report catalog and builder.
+- Run status and history.
+- Schedule manager.
 
 ## Testing
-- Format conformance tests for CSV/JSON/PDF.
+- Export format tests.
+- Permission and tenant scope tests.
+- Scheduler reliability tests.
 
 ## Definition of Done
-- Reports are reliable, permission-safe, and production usable.
+- Reports are accurate, downloadable, schedulable, and permission-safe.
