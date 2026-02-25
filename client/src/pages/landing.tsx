@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Zap, Brain, Eye, ArrowRight, Lock, Activity, BarChart3, Globe, Layers, Shield, ShieldCheck, Radar, Flame, Cloud, Search, AlertTriangle, Database } from "lucide-react";
 import { FaGoogle, FaGithub } from "react-icons/fa";
 import {
@@ -85,11 +85,7 @@ export default function LandingPage() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [providers, setProviders] = useState<{ google: boolean; github: boolean }>({ google: false, github: false });
-
-  useEffect(() => {
-    fetch("/api/auth/providers").then(r => r.json()).then(d => setProviders({ google: !!d.google, github: !!d.github })).catch(() => {});
-  }, []);
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,34 +116,33 @@ export default function LandingPage() {
                   {authError.message}
                 </div>
               )}
-              {(providers.google || providers.github) && (
-                <div className="space-y-2 mb-4">
-                  {providers.google && (
-                    <Button
-                      variant="outline"
-                      className="w-full h-10 gap-2 text-sm font-medium hover:bg-muted/50 transition-all"
-                      onClick={() => { window.location.href = "/api/auth/google"; }}
-                    >
-                      <FaGoogle className="h-4 w-4 text-[#4285F4]" />
-                      Continue with Google
-                    </Button>
-                  )}
-                  {providers.github && (
-                    <Button
-                      variant="outline"
-                      className="w-full h-10 gap-2 text-sm font-medium hover:bg-muted/50 transition-all"
-                      onClick={() => { window.location.href = "/api/auth/github"; }}
-                    >
-                      <FaGithub className="h-4 w-4" />
-                      Continue with GitHub
-                    </Button>
-                  )}
-                  <div className="relative my-3">
-                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-                    <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">or continue with email</span></div>
+              <div className="space-y-2 mb-4">
+                {oauthError && (
+                  <div className="mb-2 p-2.5 rounded-md bg-amber-500/10 text-amber-500 text-xs">
+                    {oauthError}
                   </div>
+                )}
+                <Button
+                  variant="outline"
+                  className="w-full h-10 gap-2 text-sm font-medium hover:bg-muted/50 transition-all"
+                  onClick={() => { setOauthError(null); window.location.href = "/api/auth/google"; }}
+                >
+                  <FaGoogle className="h-4 w-4 text-[#4285F4]" />
+                  Continue with Google
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full h-10 gap-2 text-sm font-medium hover:bg-muted/50 transition-all"
+                  onClick={() => { setOauthError(null); window.location.href = "/api/auth/github"; }}
+                >
+                  <FaGithub className="h-4 w-4" />
+                  Continue with GitHub
+                </Button>
+                <div className="relative my-3">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+                  <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">or continue with email</span></div>
                 </div>
-              )}
+              </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 {authMode === "register" && (
                   <div className="grid grid-cols-2 gap-3">
