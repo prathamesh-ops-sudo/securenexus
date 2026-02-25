@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { startReportScheduler } from "./report-scheduler";
 import { sliMiddleware, startSliCollection } from "./sli-middleware";
 import { startJobWorker } from "./job-queue";
+import { startSloAlerting } from "./slo-alerting";
 
 const app = express();
 const httpServer = createServer(app);
@@ -120,6 +121,7 @@ app.use((req, res, next) => {
       startReportScheduler();
       startJobWorker();
       startSliCollection();
+      startSloAlerting();
     },
   );
 })();

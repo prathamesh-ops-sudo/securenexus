@@ -20,13 +20,17 @@ function getServiceFromPath(path: string): string {
 
 export function sliMiddleware(req: any, res: any, next: any): void {
   const start = Date.now();
-  const originalEnd = res.end;
-  
-  res.end = function(...args: any[]) {
+
+  res.on("finish", () => {
     const latency = Date.now() - start;
-    const service = getServiceFromPath(req.path);
-    const key = `${service}:${req.method}`;
-    
+
+    const routePath = (req.route && typeof req.route.path === "string") ? req.route.path : undefined;
+    const baseUrl = typeof req.baseUrl === "string" ? req.baseUrl : "";
+    const endpoint = routePath ? `${baseUrl}${routePath}` : req.path;
+
+    const service = getServiceFromPath(endpoint);
+    const key = `${service}::${req.method}::${endpoint}`;
+
     if (!buckets.has(key)) {
       buckets.set(key, { latencies: [], errors: 0, total: 0 });
     }
@@ -34,7 +38,10 @@ export function sliMiddleware(req: any, res: any, next: any): void {
     bucket.latencies.push(latency);
     bucket.total++;
     if (res.statusCode >= 500) bucket.errors++;
-    
+  });
+
+  const originalEnd = res.end;
+  res.end = function(...args: any[]) {
     return originalEnd.apply(this, args);
   };
   
@@ -54,8 +61,8 @@ async function flushMetrics(): Promise<void> {
   
   for (const [key, bucket] of Array.from(buckets.entries())) {
     if (bucket.total === 0) continue;
-    const [service, method] = key.split(":");
-    const labels = { method };
+    const [service, method, endpoint] = key.split("::");
+    const labels = { method, endpoint };
     
     entries.push({ service, metric: "latency_p50", value: percentile(bucket.latencies, 50), labels });
     entries.push({ service, metric: "latency_p95", value: percentile(bucket.latencies, 95), labels });
@@ -102,6 +109,7 @@ export async function evaluateSlos(): Promise<Array<{
   sloId: string;
   service: string;
   metric: string;
+  endpoint: string;
   target: number;
   actual: number;
   breached: boolean;
@@ -112,6 +120,7 @@ export async function evaluateSlos(): Promise<Array<{
     sloId: string;
     service: string;
     metric: string;
+    endpoint: string;
     target: number;
     actual: number;
     breached: boolean;
@@ -122,13 +131,20 @@ export async function evaluateSlos(): Promise<Array<{
   
   for (const slo of targets) {
     const windowStart = new Date(now.getTime() - slo.windowMinutes * 60 * 1000);
-    const metrics = await storage.getSliMetrics(slo.service, slo.metric, windowStart, now);
+    const metrics = await storage.getSliMetrics(
+      slo.service,
+      slo.metric,
+      windowStart,
+      now,
+      slo.endpoint && slo.endpoint !== "*" ? { endpoint: slo.endpoint } : undefined,
+    );
     
     if (metrics.length === 0) {
       results.push({
         sloId: slo.id,
         service: slo.service,
         metric: slo.metric,
+        endpoint: slo.endpoint,
         target: slo.target,
         actual: -1,
         breached: false,
@@ -144,6 +160,7 @@ export async function evaluateSlos(): Promise<Array<{
       sloId: slo.id,
       service: slo.service,
       metric: slo.metric,
+      endpoint: slo.endpoint,
       target: slo.target,
       actual: Math.round(avg * 100) / 100,
       breached,

@@ -1945,6 +1945,7 @@ export const sloTargets = pgTable("slo_targets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   service: text("service").notNull(),
   metric: text("metric").notNull(),
+  endpoint: text("endpoint").notNull().default("*"),
   target: real("target").notNull(),
   operator: text("operator").notNull().default("gte"),
   windowMinutes: integer("window_minutes").notNull().default(60),
@@ -1953,7 +1954,7 @@ export const sloTargets = pgTable("slo_targets", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  uniqueIndex("idx_slo_targets_service_metric").on(table.service, table.metric),
+  uniqueIndex("idx_slo_targets_service_metric_endpoint").on(table.service, table.metric, table.endpoint),
 ]);
 
 export const drRunbooks = pgTable("dr_runbooks", {
@@ -2202,6 +2203,33 @@ export type OnboardingProgressItem = typeof onboardingProgress.$inferSelect;
 export type InsertOnboardingProgress = z.infer<typeof insertOnboardingProgressSchema>;
 export type WorkspaceTemplate = typeof workspaceTemplates.$inferSelect;
 export type InsertWorkspaceTemplate = z.infer<typeof insertWorkspaceTemplateSchema>;
+
+// ============================
+// Feature Flags
+// ============================
+
+export const featureFlags = pgTable("feature_flags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  enabled: boolean("enabled").default(false),
+  rolloutPct: integer("rollout_pct").default(100),
+  targetOrgs: text("target_orgs").array().default(sql`ARRAY[]::text[]`),
+  targetRoles: text("target_roles").array().default(sql`ARRAY[]::text[]`),
+  metadata: jsonb("metadata").default({}),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_feature_flags_key").on(table.key),
+  index("idx_feature_flags_enabled").on(table.enabled),
+]);
+
+export const insertFeatureFlagSchema = createInsertSchema(featureFlags).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type FeatureFlag = typeof featureFlags.$inferSelect;
+export type InsertFeatureFlag = z.infer<typeof insertFeatureFlagSchema>;
 
 // ============================
 // Outbox / Event Replay
