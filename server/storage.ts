@@ -175,6 +175,7 @@ export interface IStorage {
 
   createAiFeedback(feedback: InsertAiFeedback): Promise<AiFeedback>;
   getAiFeedback(resourceType?: string, resourceId?: string): Promise<AiFeedback[]>;
+  countAiFeedbackByOrg(orgId: string): Promise<number>;
 
   getPlaybooks(): Promise<Playbook[]>;
   getPlaybook(id: string): Promise<Playbook | undefined>;
@@ -183,6 +184,7 @@ export interface IStorage {
   deletePlaybook(id: string): Promise<boolean>;
 
   getPlaybookExecutions(playbookId?: string, limit?: number): Promise<PlaybookExecution[]>;
+  countPlaybookExecutionsByOrg(orgId: string): Promise<number>;
   getPlaybookExecution(id: string): Promise<PlaybookExecution | undefined>;
   createPlaybookExecution(execution: InsertPlaybookExecution): Promise<PlaybookExecution>;
   updatePlaybookExecution(id: string, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined>;
@@ -1039,6 +1041,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(aiFeedback).where(condition).orderBy(desc(aiFeedback.createdAt));
   }
 
+  async countAiFeedbackByOrg(orgId: string): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` }).from(aiFeedback).where(eq(aiFeedback.orgId, orgId));
+    return Number(result?.count ?? 0);
+  }
+
   async getPlaybooks(): Promise<Playbook[]> {
     return db.select().from(playbooks).orderBy(desc(playbooks.updatedAt));
   }
@@ -1068,6 +1075,14 @@ export class DatabaseStorage implements IStorage {
       return db.select().from(playbookExecutions).where(eq(playbookExecutions.playbookId, playbookId)).orderBy(desc(playbookExecutions.createdAt)).limit(limit);
     }
     return db.select().from(playbookExecutions).orderBy(desc(playbookExecutions.createdAt)).limit(limit);
+  }
+
+  async countPlaybookExecutionsByOrg(orgId: string): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` })
+      .from(playbookExecutions)
+      .innerJoin(playbooks, eq(playbookExecutions.playbookId, playbooks.id))
+      .where(eq(playbooks.orgId, orgId));
+    return Number(result?.count ?? 0);
   }
 
   async getPlaybookExecution(id: string): Promise<PlaybookExecution | undefined> {
