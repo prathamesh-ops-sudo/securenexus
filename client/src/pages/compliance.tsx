@@ -283,7 +283,7 @@ function PoliciesTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
-            <Scale className="h-4 w-4 text-muted-foreground" />
+            <Scale className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             Data Governance Policy
           </CardTitle>
         </CardHeader>
@@ -326,7 +326,7 @@ function PoliciesTab() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
                 <div className="flex items-center gap-2">
-                  <EyeOff className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <EyeOff className="h-4 w-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
                   <div>
                     <div className="text-sm font-medium">PII Masking</div>
                     <div className="text-xs text-muted-foreground">Mask personally identifiable information</div>
@@ -340,7 +340,7 @@ function PoliciesTab() {
               </div>
               <div className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
                 <div className="flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
                   <div>
                     <div className="text-sm font-medium">Pseudonymize Exports</div>
                     <div className="text-xs text-muted-foreground">Replace identifiers in exported data</div>
@@ -2114,7 +2114,7 @@ function LegalHoldsTab() {
 
 export default function CompliancePage() {
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-compliance">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Compliance & Governance" data-testid="page-compliance">
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
           <span className="gradient-text-red">Compliance & Governance</span>
@@ -2128,35 +2128,35 @@ export default function CompliancePage() {
       <Tabs defaultValue="policies" data-testid="tabs-compliance">
         <TabsList className="flex-wrap" data-testid="tabs-list">
           <TabsTrigger value="policies" data-testid="tab-policies">
-            <Scale className="h-3.5 w-3.5 mr-1.5" />
+            <Scale className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Policies
           </TabsTrigger>
           <TabsTrigger value="dsar" data-testid="tab-dsar">
-            <Users className="h-3.5 w-3.5 mr-1.5" />
+            <Users className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             DSAR
           </TabsTrigger>
           <TabsTrigger value="legal-holds" data-testid="tab-legal-holds">
-            <Gavel className="h-3.5 w-3.5 mr-1.5" />
+            <Gavel className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Legal Holds
           </TabsTrigger>
           <TabsTrigger value="reports" data-testid="tab-reports">
-            <FileText className="h-3.5 w-3.5 mr-1.5" />
+            <FileText className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Reports
           </TabsTrigger>
           <TabsTrigger value="audit-integrity" data-testid="tab-audit-integrity">
-            <Hash className="h-3.5 w-3.5 mr-1.5" />
+            <Hash className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Audit Integrity
           </TabsTrigger>
           <TabsTrigger value="retention" data-testid="tab-retention">
-            <Clock className="h-3.5 w-3.5 mr-1.5" />
+            <Clock className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Retention
           </TabsTrigger>
           <TabsTrigger value="controls" data-testid="tab-controls">
-            <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+            <ShieldCheck className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Controls
           </TabsTrigger>
           <TabsTrigger value="evidence-locker" data-testid="tab-evidence-locker">
-            <Lock className="h-3.5 w-3.5 mr-1.5" />
+            <Lock className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Evidence Locker
           </TabsTrigger>
         </TabsList>

@@ -837,8 +837,8 @@ export default function ConnectorsPage() {
           <p className="text-sm text-muted-foreground">Pull-based integrations that actively fetch alerts from your security tools</p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} data-testid="button-add-connector">
-          <Plus className="h-4 w-4 mr-2" />
+        <Button onClick={() => setShowCreateDialog(true)} aria-label="Add new connector" data-testid="button-add-connector">
+          <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
           Add Connector
         </Button>
       </div>
@@ -847,7 +847,7 @@ export default function ConnectorsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Connectors</CardTitle>
-            <Plug className="h-4 w-4 text-muted-foreground" />
+            <Plug className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-connectors">{existingConnectors?.length || 0}</div>
@@ -856,7 +856,7 @@ export default function ConnectorsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            <CheckCircle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-active-count">{activeCount}</div>
@@ -865,7 +865,7 @@ export default function ConnectorsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Errors</CardTitle>
-            <XCircle className="h-4 w-4 text-muted-foreground" />
+            <XCircle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-error-count">{errorCount}</div>
@@ -874,7 +874,7 @@ export default function ConnectorsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Alerts Synced</CardTitle>
-            <Zap className="h-4 w-4 text-muted-foreground" />
+            <Zap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-synced">{totalSynced}</div>
@@ -907,14 +907,28 @@ export default function ConnectorsPage() {
             </CardHeader>
             <CardContent>
               {connectorsLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <div className="space-y-3 py-6" role="status" aria-label="Loading connectors">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-0">
+                      <Skeleton className="h-4 w-4 rounded" />
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-4 w-12" />
+                    </div>
+                  ))}
+                  <span className="sr-only">Loading connectors...</span>
                 </div>
               ) : !existingConnectors?.length ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <Unplug className="h-10 w-10 mb-3" />
-                  <p className="text-sm">No connectors configured yet</p>
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" role="status" aria-label="No connectors">
+                  <Unplug className="h-10 w-10 mb-3" aria-hidden="true" />
+                  <p className="text-sm font-medium">No connectors configured yet</p>
                   <p className="text-xs mt-1">Add a connector to start pulling alerts from your security tools</p>
+                  <Button className="mt-4" size="sm" onClick={() => setShowCreateDialog(true)} aria-label="Add your first connector">
+                    <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                    Add First Connector
+                  </Button>
                 </div>
               ) : (
                 <Table>
@@ -1006,27 +1020,30 @@ export default function ConnectorsPage() {
                                   variant="ghost"
                                   onClick={() => healthCheckMutation.mutate(connector.id)}
                                   disabled={healthCheckingId === connector.id}
-                                  data-testid={`button-health-check-${connector.id}`}
-                                >
-                                  {healthCheckingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <HeartPulse className="h-4 w-4" />}
+                                                aria-label="Health check"
+                                                data-testid={`button-health-check-${connector.id}`}
+                                              >
+                                                {healthCheckingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <HeartPulse className="h-4 w-4" aria-hidden="true" />}
                                 </Button>
                                 <Button
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => testMutation.mutate(connector.id)}
                                   disabled={testingId === connector.id}
-                                  data-testid={`button-test-${connector.id}`}
-                                >
-                                  {testingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube className="h-4 w-4" />}
+                                                aria-label="Test connection"
+                                                data-testid={`button-test-${connector.id}`}
+                                              >
+                                                {testingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTube className="h-4 w-4" aria-hidden="true" />}
                                 </Button>
                                 <Button
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => syncMutation.mutate(connector.id)}
                                   disabled={syncingId === connector.id}
-                                  data-testid={`button-sync-${connector.id}`}
-                                >
-                                  {syncingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                                aria-label="Sync now"
+                                                data-testid={`button-sync-${connector.id}`}
+                                              >
+                                                {syncingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
                                 </Button>
                                 <Button
                                   size="icon"
@@ -1047,9 +1064,10 @@ export default function ConnectorsPage() {
                                       deleteMutation.mutate(connector.id);
                                     }
                                   }}
-                                  data-testid={`button-delete-${connector.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
+                                                aria-label="Delete connector"
+                                                data-testid={`button-delete-${connector.id}`}
+                                              >
+                                                <Trash2 className="h-4 w-4" aria-hidden="true" />
                                 </Button>
                               </div>
                             </TableCell>

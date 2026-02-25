@@ -190,7 +190,7 @@ export function AppSidebar() {
         <SidebarMenuItem>
           <CollapsibleTrigger asChild>
             <SidebarMenuButton className="w-full" data-active={hasActive || undefined}>
-              <group.icon className="h-4 w-4 shrink-0" />
+              <group.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="truncate font-medium">{group.label}</span>
               <ChevronDown className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
             </SidebarMenuButton>
@@ -226,7 +226,7 @@ export function AppSidebar() {
             <span className="text-[10px] text-sidebar-foreground/50 font-medium">System Online</span>
           </div>
           <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 ml-auto gradient-badge glow-red-subtle">
-            <Zap className="h-2.5 w-2.5 mr-0.5" />
+            <Zap className="h-2.5 w-2.5 mr-0.5" aria-hidden="true" />
             PRO
           </Badge>
         </div>
@@ -304,7 +304,7 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
               <a href="/api/logout">
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4" aria-hidden="true" />
                 <span>Log out</span>
               </a>
             </SidebarMenuButton>

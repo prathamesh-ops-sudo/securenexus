@@ -497,7 +497,7 @@ export default function ThreatIntelPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-threat-intel">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Threat Intelligence" data-testid="page-threat-intel">
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
           <span className="gradient-text-red">Threat Intelligence</span>
@@ -539,7 +539,7 @@ export default function ThreatIntelPage() {
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <div className="flex-shrink-0 mt-0.5">
-                        <Zap className="h-4 w-4 text-muted-foreground" />
+                        <Zap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                       </div>
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -588,7 +588,7 @@ export default function ThreatIntelPage() {
           <Card data-testid="section-osint-feeds">
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
               <div className="flex items-center gap-2 flex-wrap">
-                <Rss className="h-4 w-4 text-muted-foreground" />
+                <Rss className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <CardTitle className="text-sm font-medium">Public OSINT Feeds</CardTitle>
               </div>
               <Button

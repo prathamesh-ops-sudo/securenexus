@@ -286,11 +286,11 @@ export default function AIEnginePage() {
     : "—";
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="AI Correlation Engine">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
-            <Brain className="h-6 w-6 text-primary" />
+            <Brain className="h-6 w-6 text-primary" aria-hidden="true" />
             <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">AI Correlation Engine</span></h1>
           </div>
           <div className="text-sm text-muted-foreground mt-1">
@@ -310,9 +310,9 @@ export default function AIEnginePage() {
             data-testid="badge-health-status"
           >
             {health.status === "healthy" ? (
-              <CheckCircle2 className="h-3 w-3 mr-1" />
+              <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
             ) : (
-              <XCircle className="h-3 w-3 mr-1" />
+              <XCircle className="h-3 w-3 mr-1" aria-hidden="true" />
             )}
             {health.status}
           </Badge>
@@ -325,7 +325,7 @@ export default function AIEnginePage() {
           <CardContent className="p-4 relative">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Alerts Pending</div>
-              <AlertTriangle className="h-3.5 w-3.5 text-primary/60" />
+              <AlertTriangle className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             </div>
             <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-alerts-pending-count">
               {alertsLoading ? <Skeleton className="h-7 w-10" /> : pendingAlertsCount}
@@ -337,7 +337,7 @@ export default function AIEnginePage() {
           <CardContent className="p-4 relative">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">AI Analyses Run</div>
-              <BarChart3 className="h-3.5 w-3.5 text-primary/60" />
+              <BarChart3 className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             </div>
             <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-analyses-count">—</div>
           </CardContent>
@@ -347,7 +347,7 @@ export default function AIEnginePage() {
           <CardContent className="p-4 relative">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Confidence</div>
-              <Target className="h-3.5 w-3.5 text-primary/60" />
+              <Target className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             </div>
             <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-avg-confidence">—</div>
           </CardContent>
@@ -357,7 +357,7 @@ export default function AIEnginePage() {
           <CardContent className="p-4 relative">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Model</div>
-              <Cpu className="h-3.5 w-3.5 text-primary/60" />
+              <Cpu className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             </div>
             <div className="text-sm font-bold mt-1 truncate" data-testid="text-model-short">
               {configLoading ? <Skeleton className="h-5 w-20" /> : shortModelName}
@@ -369,7 +369,7 @@ export default function AIEnginePage() {
       <Card data-testid="card-ai-health">
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
           <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             <CardTitle className="text-sm font-medium">AI Engine Health</CardTitle>
           </div>
           <Button
