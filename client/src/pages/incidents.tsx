@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FileWarning, Search, Download, Settings } from "lucide-react";
+import { FileWarning, Search, Download, Settings, ArrowUpRight, UserPlus, Bookmark, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { useState, useMemo } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
@@ -37,6 +38,13 @@ interface QueuesResponse {
   unassigned: Incident[];
   escalated: Incident[];
   aging: Incident[];
+}
+
+interface SavedView {
+  name: string;
+  search: string;
+  status: string;
+  queue: QueueTab;
 }
 
 function getSlaStatus(incident: Incident): { label: string; variant: "destructive" | "default" } | null {
@@ -245,11 +253,30 @@ function SlaPolicyDialog() {
 
 export default function IncidentsPage() {
   const [, navigate] = useLocation();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [queueTab, setQueueTab] = useState<QueueTab>("all");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>("investigating");
+  const [bulkAssignee, setBulkAssignee] = useState("");
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [savedViewName, setSavedViewName] = useState("");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("incidents.savedViews.v1");
+      if (raw) setSavedViews(JSON.parse(raw));
+    } catch {
+      setSavedViews([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("incidents.savedViews.v1", JSON.stringify(savedViews));
+  }, [savedViews]);
 
   const { data: incidents, isLoading } = useQuery<Incident[]>({
     queryKey: ["/api/incidents"],
@@ -258,6 +285,22 @@ export default function IncidentsPage() {
   const { data: queues, isLoading: queuesLoading } = useQuery<QueuesResponse>({
     queryKey: ["/api/incidents/queues"],
     enabled: queueTab !== "all",
+  });
+
+  const bulkUpdate = useMutation({
+    mutationFn: async (payload: { status?: string; assignedTo?: string; escalated?: boolean; priority?: number }) => {
+      const res = await apiRequest("POST", "/api/incidents/bulk-update", { incidentIds: selectedIds, ...payload });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents/queues"] });
+      toast({ title: "Bulk update complete", description: `Updated ${data.updatedCount || 0} incident(s)` });
+      setSelectedIds([]);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Bulk update failed", description: error.message, variant: "destructive" });
+    },
   });
 
   const activeIncidents = useMemo(() => {
@@ -297,6 +340,20 @@ export default function IncidentsPage() {
   }, [activeIncidents, search, statusFilter]);
 
   const currentLoading = queueTab === "all" ? isLoading : queuesLoading;
+  const allPageIds = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((i) => i.id);
+  const allSelected = allPageIds.length > 0 && allPageIds.every((id) => selectedIds.includes(id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !allPageIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...allPageIds])));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
@@ -316,7 +373,7 @@ export default function IncidentsPage() {
         </Dialog>
       </div>
 
-      <Tabs value={queueTab} onValueChange={(v) => { setQueueTab(v as QueueTab); setStatusFilter("all"); }}>
+      <Tabs value={queueTab} onValueChange={(v) => { setQueueTab(v as QueueTab); setStatusFilter("all"); setSelectedIds([]); }}>
         <TabsList>
           <TabsTrigger value="all" data-testid="tab-queue-all">All Incidents</TabsTrigger>
           <TabsTrigger value="unassigned" data-testid="tab-queue-unassigned">Unassigned</TabsTrigger>
@@ -342,7 +399,7 @@ export default function IncidentsPage() {
         ))}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -356,7 +413,77 @@ export default function IncidentsPage() {
         <Button variant="outline" size="icon" data-testid="button-export-incidents" onClick={() => window.open('/api/export/incidents', '_blank')}>
           <Download className="h-4 w-4" />
         </Button>
+        <Input placeholder="View name" value={savedViewName} onChange={(e) => setSavedViewName(e.target.value)} className="w-36" />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!savedViewName.trim()}
+          onClick={() => {
+            const entry: SavedView = { name: savedViewName.trim(), search, status: statusFilter, queue: queueTab };
+            setSavedViews((prev) => [entry, ...prev.filter((v) => v.name !== entry.name)].slice(0, 8));
+            setSavedViewName("");
+            toast({ title: "View saved" });
+          }}
+          data-testid="button-save-view"
+        >
+          <Bookmark className="h-3.5 w-3.5 mr-1.5" />
+          Save View
+        </Button>
       </div>
+
+      {savedViews.length > 0 && (
+        <div className="flex flex-wrap gap-2" data-testid="section-saved-views">
+          {savedViews.map((v) => (
+            <div key={v.name} className="flex items-center gap-1">
+              <Button size="sm" variant="secondary" onClick={() => {
+                setSearch(v.search);
+                setStatusFilter(v.status);
+                setQueueTab(v.queue);
+              }} data-testid={`saved-view-${v.name}`}>
+                {v.name}
+              </Button>
+              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSavedViews((prev) => prev.filter((x) => x.name !== v.name))}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedIds.length > 0 && (
+        <Card data-testid="section-bulk-actions">
+          <CardContent className="pt-4 flex items-center flex-wrap gap-2">
+            <Badge variant="outline">{selectedIds.length} selected</Badge>
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="w-44" data-testid="select-bulk-status"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="investigating">Investigating</SelectItem>
+                <SelectItem value="contained">Contained</SelectItem>
+                <SelectItem value="resolved">Resolved</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending} data-testid="button-bulk-status">
+              Apply Status
+            </Button>
+            <div className="flex items-center gap-1">
+              <Input placeholder="Assignee" value={bulkAssignee} onChange={(e) => setBulkAssignee(e.target.value)} className="w-32 h-8 text-sm" data-testid="input-bulk-assignee" />
+              <Button size="sm" variant="outline" onClick={() => { if (bulkAssignee.trim()) bulkUpdate.mutate({ assignedTo: bulkAssignee.trim() }); }} disabled={bulkUpdate.isPending || !bulkAssignee.trim()} data-testid="button-bulk-assign">
+                <UserPlus className="h-3 w-3 mr-1" />
+                Assign
+              </Button>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ escalated: true })} disabled={bulkUpdate.isPending} data-testid="button-bulk-escalate">
+              <ArrowUpRight className="h-3 w-3 mr-1" />
+              Escalate
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])} data-testid="button-clear-selection">
+              Clear
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -364,6 +491,14 @@ export default function IncidentsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b text-left">
+                  <th className="px-4 py-3 w-10">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all incidents on this page"
+                      data-testid="checkbox-select-all"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Incident</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
                   <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
@@ -378,6 +513,7 @@ export default function IncidentsPage() {
                 {currentLoading ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i} className="border-b last:border-0">
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-4" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
@@ -391,14 +527,22 @@ export default function IncidentsPage() {
                 ) : filtered.length > 0 ? (
                   filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((incident) => {
                     const slaStatus = getSlaStatus(incident);
+                    const isSelected = selectedIds.includes(incident.id);
                     return (
                       <tr
                         key={incident.id}
-                        className="border-b last:border-0 hover-elevate cursor-pointer"
-                        onClick={() => navigate(`/incidents/${incident.id}`)}
+                        className={`border-b last:border-0 hover-elevate cursor-pointer ${isSelected ? "bg-primary/5" : ""}`}
                         data-testid={`row-incident-${incident.id}`}
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(incident.id)}
+                            aria-label={`Select incident ${incident.title}`}
+                            data-testid={`checkbox-incident-${incident.id}`}
+                          />
+                        </td>
+                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <div className="flex items-center gap-2">
                             <FileWarning className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                             <div>
@@ -407,16 +551,16 @@ export default function IncidentsPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <SeverityBadge severity={incident.severity} />
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <IncidentStatusBadge status={incident.status} />
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <PriorityBadge priority={incident.priority ?? 3} />
                         </td>
-                        <td className="px-4 py-3" data-testid={`badge-sla-${incident.id}`}>
+                        <td className="px-4 py-3" onClick={() => navigate(`/incidents/${incident.id}`)} data-testid={`badge-sla-${incident.id}`}>
                           {slaStatus ? (
                             <Badge
                               variant={slaStatus.variant}
@@ -428,13 +572,13 @@ export default function IncidentsPage() {
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 hidden md:table-cell">
+                        <td className="px-4 py-3 hidden md:table-cell" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <span className="text-xs text-muted-foreground">{incident.assignedTo || "-"}</span>
                         </td>
-                        <td className="px-4 py-3 hidden lg:table-cell">
+                        <td className="px-4 py-3 hidden lg:table-cell" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <span className="text-xs text-muted-foreground">{incident.alertCount ?? 0}</span>
                         </td>
-                        <td className="px-4 py-3 hidden lg:table-cell">
+                        <td className="px-4 py-3 hidden lg:table-cell" onClick={() => navigate(`/incidents/${incident.id}`)}>
                           <span className="text-xs text-muted-foreground">{formatRelativeTime(incident.updatedAt)}</span>
                         </td>
                       </tr>
@@ -442,7 +586,7 @@ export default function IncidentsPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
                       <FileWarning className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
                       <p>No incidents found</p>
                     </td>
