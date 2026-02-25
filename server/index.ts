@@ -7,6 +7,7 @@ import { sliMiddleware, startSliCollection } from "./sli-middleware";
 import { startJobWorker } from "./job-queue";
 import { startSloAlerting } from "./slo-alerting";
 import { replyInternal } from "./api-response";
+import { config } from "./config";
 
 const app = express();
 const httpServer = createServer(app);
@@ -80,7 +81,7 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    if (process.env.NODE_ENV !== "production") {
+    if (config.nodeEnv === "development" || config.nodeEnv === "test") {
       console.error("Internal Server Error:", err);
     } else {
       console.error(`Error ${status}: ${message}`);
@@ -92,25 +93,25 @@ app.use((req, res, next) => {
 
     return replyInternal(
       res,
-      process.env.NODE_ENV === "production" ? "Internal Server Error" : message,
+      config.nodeEnv === "development" || config.nodeEnv === "test" ? message : "Internal Server Error",
     );
   });
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
+  if (config.nodeEnv === "development" || config.nodeEnv === "test") {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
+  } else {
+    serveStatic(app);
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = config.port;
   httpServer.listen(
     {
       port,
