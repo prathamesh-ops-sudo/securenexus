@@ -2202,3 +2202,45 @@ export type OnboardingProgressItem = typeof onboardingProgress.$inferSelect;
 export type InsertOnboardingProgress = z.infer<typeof insertOnboardingProgressSchema>;
 export type WorkspaceTemplate = typeof workspaceTemplates.$inferSelect;
 export type InsertWorkspaceTemplate = z.infer<typeof insertWorkspaceTemplateSchema>;
+
+// ============================
+// Outbox / Event Replay
+// ============================
+
+export const OUTBOX_EVENT_STATUSES = ["pending", "dispatched", "failed", "replayed"] as const;
+export const OUTBOX_EVENT_TYPES = [
+  "alert.created", "alert.updated", "alert.correlated", "alert.closed",
+  "incident.created", "incident.updated", "incident.closed", "incident.escalated",
+  "connector.synced", "connector.failed",
+  "response_action.executed", "response_action.failed",
+  "scan.completed", "policy.violation",
+  "enrichment.completed", "report.generated",
+] as const;
+
+export const outboxEvents = pgTable("outbox_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  eventType: text("event_type").notNull(),
+  aggregateType: text("aggregate_type").notNull(),
+  aggregateId: varchar("aggregate_id").notNull(),
+  payload: jsonb("payload").notNull(),
+  status: text("status").notNull().default("pending"),
+  fingerprint: text("fingerprint").notNull(),
+  dispatchedAt: timestamp("dispatched_at"),
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(5),
+  lastError: text("last_error"),
+  nextRetryAt: timestamp("next_retry_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_outbox_status_next_retry").on(table.status, table.nextRetryAt),
+  index("idx_outbox_org").on(table.orgId),
+  index("idx_outbox_aggregate").on(table.aggregateType, table.aggregateId),
+  index("idx_outbox_fingerprint").on(table.fingerprint),
+  index("idx_outbox_event_type").on(table.eventType),
+]);
+
+export const insertOutboxEventSchema = createInsertSchema(outboxEvents).omit({ id: true, createdAt: true, dispatchedAt: true });
+
+export type OutboxEvent = typeof outboxEvents.$inferSelect;
+export type InsertOutboxEvent = z.infer<typeof insertOutboxEventSchema>;

@@ -1,6 +1,32 @@
 import { storage } from "./storage";
 import { db } from "./db";
 
+const DEAD_LETTER_MAX_ATTEMPTS = 3;
+const JOB_DEDUP_WINDOW_MS = 60 * 1000;
+const recentJobFingerprints = new Map<string, number>();
+
+function buildJobFingerprint(type: string, orgId: string, payload: any): string {
+  const { createHash } = require("crypto");
+  const data = JSON.stringify({ type, orgId, payload });
+  return createHash("md5").update(data).digest("hex").slice(0, 16);
+}
+
+function isJobDuplicate(type: string, orgId: string, payload: any): boolean {
+  const fp = buildJobFingerprint(type, orgId, payload);
+  const lastSeen = recentJobFingerprints.get(fp);
+  if (lastSeen && Date.now() - lastSeen < JOB_DEDUP_WINDOW_MS) {
+    return true;
+  }
+  recentJobFingerprints.set(fp, Date.now());
+  if (recentJobFingerprints.size > 500) {
+    const now = Date.now();
+    for (const [key, ts] of recentJobFingerprints) {
+      if (now - ts > JOB_DEDUP_WINDOW_MS) recentJobFingerprints.delete(key);
+    }
+  }
+  return false;
+}
+
 const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   connector_sync: async (job) => {
     try {
@@ -195,6 +221,10 @@ export function getWorkerStatus(): { running: boolean; activeJobs: number; pollI
 }
 
 export async function enqueueJob(type: string, orgId: string, payload: any, priority?: number): Promise<any> {
+  if (isJobDuplicate(type, orgId, payload)) {
+    console.log(`[JobWorker] Dedup: skipping duplicate job ${type} for org ${orgId}`);
+    return null;
+  }
   return storage.createJob({
     orgId,
     type,
@@ -203,6 +233,34 @@ export async function enqueueJob(type: string, orgId: string, payload: any, prio
     priority: priority || 0,
     runAt: new Date(),
     attempts: 0,
-    maxAttempts: 3,
+    maxAttempts: DEAD_LETTER_MAX_ATTEMPTS,
+  });
+}
+
+export async function scheduleJob(type: string, orgId: string, payload: any, runAt: Date, priority?: number): Promise<any> {
+  return storage.createJob({
+    orgId,
+    type,
+    status: "pending",
+    payload,
+    priority: priority || 0,
+    runAt,
+    attempts: 0,
+    maxAttempts: DEAD_LETTER_MAX_ATTEMPTS,
+  });
+}
+
+export async function getDeadLetterJobs(): Promise<any[]> {
+  return storage.getJobs(undefined, "failed", undefined, 100);
+}
+
+export async function retryDeadLetterJob(jobId: string): Promise<any> {
+  const job = await storage.getJob(jobId);
+  if (!job || job.status !== "failed") return null;
+  return storage.updateJob(jobId, {
+    status: "pending",
+    attempts: 0,
+    lastError: null,
+    runAt: new Date(),
   });
 }
