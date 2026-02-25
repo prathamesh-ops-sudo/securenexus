@@ -172,6 +172,31 @@ async function dispatchWebhookEvent(orgId: string, event: string, payload: any) 
   }
 }
 
+async function publishOutboxEvent(
+  orgId: string,
+  eventType: string,
+  aggregateType: string,
+  aggregateId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const fingerprint = createEventFingerprint(eventType, aggregateType, aggregateId, payload);
+    await storage.createOutboxEvent({
+      orgId,
+      eventType,
+      aggregateType,
+      aggregateId,
+      payload,
+      status: "pending",
+      fingerprint,
+      attempts: 0,
+      maxAttempts: 5,
+    });
+  } catch (err) {
+    console.error(`[Outbox] Failed to publish ${eventType} for ${aggregateType}/${aggregateId}:`, err);
+  }
+}
+
 function idempotencyCheck(req: Request, res: Response, next: NextFunction) {
   const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
   if (!idempotencyKey) return next();
@@ -399,6 +424,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid alert data", errors: parsed.error.flatten() });
       }
       const alert = await storage.createAlert(parsed.data);
+      publishOutboxEvent(alert.orgId || "default", "alert.created", "alert", alert.id, {
+        title: alert.title, severity: alert.severity, source: alert.source, status: alert.status,
+      });
+      cacheInvalidate("dashboard:");
       res.status(201).json(alert);
     } catch (error) {
       console.error("Error creating alert:", error);
@@ -414,6 +443,10 @@ export async function registerRoutes(
       }
       const alert = await storage.updateAlert(p(req.params.id), parsed.data);
       if (!alert) return res.status(404).json({ message: "Alert not found" });
+      publishOutboxEvent(alert.orgId || "default", "alert.updated", "alert", alert.id, {
+        changes: Object.keys(parsed.data),
+      });
+      cacheInvalidate("dashboard:");
       res.json(alert);
     } catch (error) {
       res.status(500).json({ message: "Failed to update alert" });
@@ -426,6 +459,12 @@ export async function registerRoutes(
       if (!status) return res.status(400).json({ message: "Status required" });
       const alert = await storage.updateAlertStatus(p(req.params.id), status, incidentId);
       if (!alert) return res.status(404).json({ message: "Alert not found" });
+      const closedStatuses = ["resolved", "closed", "false_positive"];
+      const outboxEventType = closedStatuses.includes(status) ? "alert.closed" : "alert.updated";
+      publishOutboxEvent(alert.orgId || "default", outboxEventType, "alert", alert.id, {
+        status, previousStatus: req.body.previousStatus || null,
+      });
+      cacheInvalidate("dashboard:");
       res.json(alert);
     } catch (error) {
       res.status(500).json({ message: "Failed to update alert status" });
@@ -605,6 +644,10 @@ export async function registerRoutes(
         },
       });
       dispatchWebhookEvent(incident.orgId || "default", "incident.created", incident);
+      publishOutboxEvent(incident.orgId || "default", "incident.created", "incident", incident.id, {
+        title: incident.title, severity: incident.severity, status: incident.status, priority: incident.priority,
+      });
+      cacheInvalidate("dashboard:");
       res.status(201).json(incident);
     } catch (error) {
       console.error("Error creating incident:", error);
@@ -697,6 +740,18 @@ export async function registerRoutes(
       });
 
       dispatchWebhookEvent(incident.orgId || "default", "incident.updated", incident);
+
+      const closedStatuses = ["resolved", "closed"];
+      let incidentOutboxType = "incident.updated";
+      if (parsed.data.status && closedStatuses.includes(parsed.data.status)) {
+        incidentOutboxType = "incident.closed";
+      } else if (parsed.data.escalated === true && !existingIncident.escalated) {
+        incidentOutboxType = "incident.escalated";
+      }
+      publishOutboxEvent(incident.orgId || "default", incidentOutboxType, "incident", incident.id, {
+        changes: Object.keys(parsed.data), status: incident.status, severity: incident.severity,
+      });
+      cacheInvalidate("dashboard:");
       res.json(incident);
     } catch (error) {
       res.status(500).json({ message: "Failed to update incident" });
@@ -1196,6 +1251,12 @@ export async function registerRoutes(
           },
         });
 
+        publishOutboxEvent(orgId || "default", "alert.created", "alert", alert.id, {
+          title: alert.title, severity: alert.severity, source: alert.source, category: alert.category,
+        });
+        cacheInvalidate("dashboard:");
+        cacheInvalidate("ingestion:");
+
         if (correlationResult) {
           broadcastEvent({
             type: "correlation:found",
@@ -1205,6 +1266,9 @@ export async function registerRoutes(
               confidence: correlationResult.confidence,
               alertId: alert.id,
             },
+          });
+          publishOutboxEvent(orgId || "default", "alert.correlated", "alert", alert.id, {
+            clusterId: correlationResult.clusterId, confidence: correlationResult.confidence,
           });
         }
       }
@@ -1517,6 +1581,9 @@ export async function registerRoutes(
         resourceType: "connector",
         resourceId: connector.id,
         details: { type, name },
+      });
+      publishOutboxEvent(connector.orgId || "default", "connector.synced", "connector", connector.id, {
+        type, name,
       });
       res.status(201).json(connector);
     } catch (error: any) {
