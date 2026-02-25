@@ -4,7 +4,7 @@ import {
   Shield, FileText, Users, CheckCircle2, XCircle, AlertTriangle,
   Loader2, Download, Play, Clock, Hash, Mail, Calendar,
   Lock, Eye, EyeOff, Database, RefreshCw, Plus, ChevronRight,
-  ScrollText, Scale, ShieldCheck, Trash2, Upload
+  ScrollText, Scale, ShieldCheck, Trash2, Upload, Gavel, Ban,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1895,6 +1895,223 @@ function EvidenceLockerTab() {
   );
 }
 
+interface LegalHold {
+  id: string;
+  orgId: string | null;
+  name: string;
+  description: string | null;
+  holdType: string;
+  tableScope: string[];
+  filterCriteria: any;
+  reason: string | null;
+  caseReference: string | null;
+  isActive: boolean;
+  activatedByName: string | null;
+  deactivatedBy: string | null;
+  deactivatedAt: string | null;
+  activatedAt: string;
+  createdAt: string;
+}
+
+function LegalHoldsTab() {
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newReason, setNewReason] = useState("");
+  const [newCaseRef, setNewCaseRef] = useState("");
+  const [newHoldType, setNewHoldType] = useState("full");
+  const [newTableScope, setNewTableScope] = useState(["alerts", "incidents", "audit_logs"]);
+  const { toast } = useToast();
+
+  const { data: holds, isLoading } = useQuery<LegalHold[]>({
+    queryKey: ["/api/legal-holds"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/legal-holds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: newName, description: newDescription, reason: newReason,
+          caseReference: newCaseRef, holdType: newHoldType, tableScope: newTableScope,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create legal hold");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/legal-holds"] });
+      setShowCreate(false);
+      setNewName(""); setNewDescription(""); setNewReason(""); setNewCaseRef("");
+      toast({ title: "Legal hold created" });
+    },
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/legal-holds/${id}/deactivate`, {
+        method: "POST", credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to deactivate");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/legal-holds"] });
+      toast({ title: "Legal hold deactivated" });
+    },
+  });
+
+  const toggleScope = (table: string) => {
+    setNewTableScope(prev =>
+      prev.includes(table) ? prev.filter(t => t !== table) : [...prev, table]
+    );
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  const activeHolds = (holds || []).filter(h => h.isActive);
+  const inactiveHolds = (holds || []).filter(h => !h.isActive);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Gavel className="h-4 w-4 text-muted-foreground" />
+            Legal Holds
+            {activeHolds.length > 0 && (
+              <Badge variant="default" className="border-yellow-500/30 text-yellow-400 ml-2">
+                {activeHolds.length} Active
+              </Badge>
+            )}
+          </CardTitle>
+          <Button size="sm" onClick={() => setShowCreate(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />New Hold
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {!holds?.length ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Gavel className="h-10 w-10 mb-3" />
+              <p className="text-sm">No legal holds configured</p>
+              <p className="text-xs mt-1">Legal holds prevent data from being deleted by retention policies</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activeHolds.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Active Holds</h4>
+                  <div className="space-y-2">
+                    {activeHolds.map(hold => (
+                      <div key={hold.id} className="border rounded-md p-3 bg-yellow-500/5 border-yellow-500/20">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{hold.name}</span>
+                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">{hold.holdType}</Badge>
+                            </div>
+                            {hold.description && <p className="text-xs text-muted-foreground mt-1">{hold.description}</p>}
+                            <div className="flex gap-2 mt-1 flex-wrap">
+                              {(hold.tableScope || []).map(t => (
+                                <Badge key={t} variant="secondary" className="text-[10px]"><Database className="h-2.5 w-2.5 mr-1" />{t}</Badge>
+                              ))}
+                            </div>
+                            <div className="flex gap-3 mt-1.5 text-xs text-muted-foreground">
+                              {hold.reason && <span>Reason: {hold.reason}</span>}
+                              {hold.caseReference && <span>Case: {hold.caseReference}</span>}
+                              <span>Activated: {formatDateTime(hold.activatedAt)}</span>
+                              {hold.activatedByName && <span>By: {hold.activatedByName}</span>}
+                            </div>
+                          </div>
+                          <Button size="sm" variant="outline" className="text-red-400 h-7 px-2" onClick={() => deactivateMutation.mutate(hold.id)} disabled={deactivateMutation.isPending}>
+                            <Ban className="h-3 w-3 mr-1" />Deactivate
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {inactiveHolds.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Inactive Holds</h4>
+                  <div className="space-y-2">
+                    {inactiveHolds.map(hold => (
+                      <div key={hold.id} className="border rounded-md p-3 opacity-60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium line-through">{hold.name}</span>
+                          <Badge variant="secondary" className="text-[10px]">Deactivated</Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Deactivated: {formatDateTime(hold.deactivatedAt)} | Originally for: {(hold.tableScope || []).join(", ")}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create Legal Hold</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Name</Label>
+              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. SEC Investigation Q1 2026" />
+            </div>
+            <div>
+              <Label className="text-xs">Description</Label>
+              <Input value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Brief description of the hold" />
+            </div>
+            <div>
+              <Label className="text-xs">Hold Type</Label>
+              <Select value={newHoldType} onValueChange={setNewHoldType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">Full (all data)</SelectItem>
+                  <SelectItem value="partial">Partial (scoped to tables)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Table Scope</Label>
+              <div className="flex gap-2 flex-wrap mt-1">
+                {["alerts", "incidents", "audit_logs", "entities", "ioc_entries"].map(table => (
+                  <Button key={table} size="sm" variant={newTableScope.includes(table) ? "default" : "outline"}
+                    className="h-7 text-[10px]" onClick={() => toggleScope(table)}>
+                    {table}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Reason</Label>
+              <Input value={newReason} onChange={e => setNewReason(e.target.value)} placeholder="Legal or regulatory reason" />
+            </div>
+            <div>
+              <Label className="text-xs">Case Reference</Label>
+              <Input value={newCaseRef} onChange={e => setNewCaseRef(e.target.value)} placeholder="e.g. CASE-2026-001" />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <Button onClick={() => createMutation.mutate()} disabled={!newName || createMutation.isPending}>
+              {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Activate Hold
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export default function CompliancePage() {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-compliance">
@@ -1903,7 +2120,7 @@ export default function CompliancePage() {
           <span className="gradient-text-red">Compliance & Governance</span>
         </h1>
         <p className="text-sm text-muted-foreground mt-1" data-testid="text-page-description">
-          Data governance, privacy controls, and regulatory compliance management
+          Data governance, privacy controls, legal holds, and regulatory compliance management
         </p>
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
@@ -1917,6 +2134,10 @@ export default function CompliancePage() {
           <TabsTrigger value="dsar" data-testid="tab-dsar">
             <Users className="h-3.5 w-3.5 mr-1.5" />
             DSAR
+          </TabsTrigger>
+          <TabsTrigger value="legal-holds" data-testid="tab-legal-holds">
+            <Gavel className="h-3.5 w-3.5 mr-1.5" />
+            Legal Holds
           </TabsTrigger>
           <TabsTrigger value="reports" data-testid="tab-reports">
             <FileText className="h-3.5 w-3.5 mr-1.5" />
@@ -1945,6 +2166,9 @@ export default function CompliancePage() {
         </TabsContent>
         <TabsContent value="dsar">
           <DsarTab />
+        </TabsContent>
+        <TabsContent value="legal-holds">
+          <LegalHoldsTab />
         </TabsContent>
         <TabsContent value="reports">
           <ReportsTab />

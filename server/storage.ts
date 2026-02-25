@@ -74,6 +74,10 @@ import {
   type SliMetric, type InsertSliMetric, sliMetrics,
   type SloTarget, type InsertSloTarget, sloTargets,
   type DrRunbook, type InsertDrRunbook, drRunbooks,
+  type TicketSyncJob, type InsertTicketSyncJob, ticketSyncJobs,
+  type ResponseActionApproval, type InsertResponseActionApproval, responseActionApprovals,
+  type LegalHold, type InsertLegalHold, legalHolds,
+  type ConnectorSecretRotation, type InsertConnectorSecretRotation, connectorSecretRotations,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte } from "drizzle-orm";
@@ -2834,6 +2838,112 @@ export class DatabaseStorage implements IStorage {
   async deleteDrRunbook(id: string): Promise<boolean> {
     const result = await db.delete(drRunbooks).where(eq(drRunbooks.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getTicketSyncJobs(orgId?: string, integrationId?: string): Promise<TicketSyncJob[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(ticketSyncJobs.orgId, orgId));
+    if (integrationId) conditions.push(eq(ticketSyncJobs.integrationId, integrationId));
+    return db.select().from(ticketSyncJobs)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(ticketSyncJobs.createdAt));
+  }
+
+  async getTicketSyncJob(id: string): Promise<TicketSyncJob | undefined> {
+    const [job] = await db.select().from(ticketSyncJobs).where(eq(ticketSyncJobs.id, id));
+    return job;
+  }
+
+  async createTicketSyncJob(job: InsertTicketSyncJob): Promise<TicketSyncJob> {
+    const [created] = await db.insert(ticketSyncJobs).values(job).returning();
+    return created;
+  }
+
+  async updateTicketSyncJob(id: string, data: Partial<TicketSyncJob>): Promise<TicketSyncJob | undefined> {
+    const [updated] = await db.update(ticketSyncJobs).set({ ...data, updatedAt: new Date() }).where(eq(ticketSyncJobs.id, id)).returning();
+    return updated;
+  }
+
+  async deleteTicketSyncJob(id: string): Promise<boolean> {
+    const result = await db.delete(ticketSyncJobs).where(eq(ticketSyncJobs.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getResponseActionApprovals(orgId?: string, status?: string): Promise<ResponseActionApproval[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(responseActionApprovals.orgId, orgId));
+    if (status) conditions.push(eq(responseActionApprovals.status, status));
+    return db.select().from(responseActionApprovals)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(responseActionApprovals.requestedAt));
+  }
+
+  async getResponseActionApproval(id: string): Promise<ResponseActionApproval | undefined> {
+    const [approval] = await db.select().from(responseActionApprovals).where(eq(responseActionApprovals.id, id));
+    return approval;
+  }
+
+  async createResponseActionApproval(approval: InsertResponseActionApproval): Promise<ResponseActionApproval> {
+    const [created] = await db.insert(responseActionApprovals).values(approval).returning();
+    return created;
+  }
+
+  async updateResponseActionApproval(id: string, data: Partial<ResponseActionApproval>): Promise<ResponseActionApproval | undefined> {
+    const [updated] = await db.update(responseActionApprovals).set(data).where(eq(responseActionApprovals.id, id)).returning();
+    return updated;
+  }
+
+  async getLegalHolds(orgId?: string): Promise<LegalHold[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(legalHolds.orgId, orgId));
+    return db.select().from(legalHolds)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(legalHolds.createdAt));
+  }
+
+  async getLegalHold(id: string): Promise<LegalHold | undefined> {
+    const [hold] = await db.select().from(legalHolds).where(eq(legalHolds.id, id));
+    return hold;
+  }
+
+  async createLegalHold(hold: InsertLegalHold): Promise<LegalHold> {
+    const [created] = await db.insert(legalHolds).values(hold).returning();
+    return created;
+  }
+
+  async updateLegalHold(id: string, data: Partial<LegalHold>): Promise<LegalHold | undefined> {
+    const [updated] = await db.update(legalHolds).set(data).where(eq(legalHolds.id, id)).returning();
+    return updated;
+  }
+
+  async getConnectorSecretRotations(connectorId?: string, orgId?: string): Promise<ConnectorSecretRotation[]> {
+    const conditions = [];
+    if (connectorId) conditions.push(eq(connectorSecretRotations.connectorId, connectorId));
+    if (orgId) conditions.push(eq(connectorSecretRotations.orgId, orgId));
+    return db.select().from(connectorSecretRotations)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(connectorSecretRotations.createdAt));
+  }
+
+  async createConnectorSecretRotation(rotation: InsertConnectorSecretRotation): Promise<ConnectorSecretRotation> {
+    const [created] = await db.insert(connectorSecretRotations).values(rotation).returning();
+    return created;
+  }
+
+  async updateConnectorSecretRotation(id: string, data: Partial<ConnectorSecretRotation>): Promise<ConnectorSecretRotation | undefined> {
+    const [updated] = await db.update(connectorSecretRotations).set(data).where(eq(connectorSecretRotations.id, id)).returning();
+    return updated;
+  }
+
+  async getExpiringSecretRotations(daysAhead: number): Promise<ConnectorSecretRotation[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + daysAhead);
+    return db.select().from(connectorSecretRotations)
+      .where(and(
+        eq(connectorSecretRotations.status, "current"),
+        lte(connectorSecretRotations.nextRotationDue, cutoff)
+      ))
+      .orderBy(asc(connectorSecretRotations.nextRotationDue));
   }
 }
 

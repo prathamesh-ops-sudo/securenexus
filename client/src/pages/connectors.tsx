@@ -60,6 +60,9 @@ import {
   Skull,
   ChevronDown,
   ChevronRight,
+  KeyRound,
+  RotateCcw,
+  Play,
 } from "lucide-react";
 import type { ConnectorJobRun, ConnectorHealthCheck } from "@shared/schema";
 
@@ -345,6 +348,136 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+interface SecretRotation {
+  id: string;
+  connectorId: string;
+  orgId: string | null;
+  secretField: string;
+  lastRotatedAt: string | null;
+  nextRotationDue: string | null;
+  rotationIntervalDays: number;
+  status: string;
+  rotatedByName: string | null;
+  createdAt: string;
+}
+
+function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) {
+  const [showRotate, setShowRotate] = useState(false);
+  const [newSecretField, setNewSecretField] = useState("apiKey");
+  const [newSecretValue, setNewSecretValue] = useState("");
+  const [rotationDays, setRotationDays] = useState("90");
+  const { toast } = useToast();
+
+  const { data: rotations, isLoading } = useQuery<SecretRotation[]>({
+    queryKey: [`/api/connectors/${connectorId}/secret-rotations`],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/connectors/${connectorId}/secret-rotations`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ secretField: newSecretField, rotationIntervalDays: parseInt(rotationDays) }),
+      });
+      if (!res.ok) throw new Error("Failed to create rotation schedule");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/connectors/${connectorId}/secret-rotations`] });
+      toast({ title: "Rotation schedule created" });
+    },
+  });
+
+  const rotateMutation = useMutation({
+    mutationFn: async (rotationId: string) => {
+      const res = await fetch(`/api/connectors/${connectorId}/secret-rotations/${rotationId}/rotate`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ newSecretValue }),
+      });
+      if (!res.ok) throw new Error("Failed to rotate secret");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/connectors/${connectorId}/secret-rotations`] });
+      setShowRotate(false);
+      setNewSecretValue("");
+      toast({ title: "Secret rotated successfully" });
+    },
+  });
+
+  const isExpiringSoon = (dueDate: string | null) => {
+    if (!dueDate) return false;
+    const due = new Date(dueDate);
+    const now = new Date();
+    const daysUntil = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    return daysUntil <= 14;
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-3 mt-3 border-t pt-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-semibold flex items-center gap-1.5">
+          <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+          Secret Rotation
+        </h4>
+        <div className="flex gap-1">
+          <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
+            <Plus className="h-3 w-3 mr-1" />{createMutation.isPending ? "Adding..." : "Add Schedule"}
+          </Button>
+        </div>
+      </div>
+
+      {!rotations?.length ? (
+        <p className="text-xs text-muted-foreground">No secret rotation schedules configured.</p>
+      ) : (
+        <div className="space-y-2">
+          {rotations.map(r => (
+            <div key={r.id} className={`flex items-center justify-between p-2 rounded border text-xs ${isExpiringSoon(r.nextRotationDue) ? "border-yellow-500/30 bg-yellow-500/5" : ""}`}>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">{r.secretField}</Badge>
+                <span className="text-muted-foreground">Every {r.rotationIntervalDays}d</span>
+                {r.lastRotatedAt && (
+                  <span className="text-muted-foreground">Last: {new Date(r.lastRotatedAt).toLocaleDateString()}</span>
+                )}
+                {r.nextRotationDue && (
+                  <span className={isExpiringSoon(r.nextRotationDue) ? "text-yellow-400 font-medium" : "text-muted-foreground"}>
+                    Due: {new Date(r.nextRotationDue).toLocaleDateString()}
+                    {isExpiringSoon(r.nextRotationDue) && " (soon)"}
+                  </span>
+                )}
+                {r.rotatedByName && <span className="text-muted-foreground">by {r.rotatedByName}</span>}
+              </div>
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => setShowRotate(true)}>
+                <RotateCcw className="h-3 w-3 mr-1" />Rotate
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showRotate} onOpenChange={setShowRotate}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Rotate Secret</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">New Secret Value</Label>
+              <Input type="password" value={newSecretValue} onChange={e => setNewSecretValue(e.target.value)} placeholder="Enter new secret value" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRotate(false)}>Cancel</Button>
+            <Button onClick={() => rotations?.[0] && rotateMutation.mutate(rotations[0].id)} disabled={!newSecretValue || rotateMutation.isPending}>
+              {rotateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />}
+              Rotate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -804,6 +937,7 @@ export default function ConnectorsPage() {
                             <TableRow key={`${connector.id}-detail`}>
                               <TableCell colSpan={8} className="p-0">
                                 <ConnectorObservabilityPanel connector={connector} />
+                                <ConnectorSecretRotationPanel connectorId={connector.id} />
                               </TableCell>
                             </TableRow>
                           )}
