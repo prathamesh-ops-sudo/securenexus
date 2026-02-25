@@ -78,6 +78,10 @@ import {
   type ResponseActionApproval, type InsertResponseActionApproval, responseActionApprovals,
   type LegalHold, type InsertLegalHold, legalHolds,
   type ConnectorSecretRotation, type InsertConnectorSecretRotation, connectorSecretRotations,
+  type OrgPlanLimit, type InsertOrgPlanLimit, orgPlanLimits,
+  type UsageMeterSnapshot, type InsertUsageMeterSnapshot, usageMeterSnapshots,
+  type OnboardingProgressItem, type InsertOnboardingProgress, onboardingProgress,
+  type WorkspaceTemplate, type InsertWorkspaceTemplate, workspaceTemplates,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte } from "drizzle-orm";
@@ -540,6 +544,25 @@ export interface IStorage {
   createDrRunbook(runbook: InsertDrRunbook): Promise<DrRunbook>;
   updateDrRunbook(id: string, data: Partial<DrRunbook>): Promise<DrRunbook | undefined>;
   deleteDrRunbook(id: string): Promise<boolean>;
+
+  // Plan Limits
+  getOrgPlanLimit(orgId: string): Promise<OrgPlanLimit | undefined>;
+  upsertOrgPlanLimit(data: InsertOrgPlanLimit): Promise<OrgPlanLimit>;
+  updateOrgPlanLimit(orgId: string, data: Partial<OrgPlanLimit>): Promise<OrgPlanLimit | undefined>;
+
+  // Usage Metering
+  getUsageMeterSnapshots(orgId: string, metricType?: string): Promise<UsageMeterSnapshot[]>;
+  createUsageMeterSnapshot(data: InsertUsageMeterSnapshot): Promise<UsageMeterSnapshot>;
+
+  // Onboarding Progress
+  getOnboardingProgress(orgId: string): Promise<OnboardingProgressItem[]>;
+  upsertOnboardingStep(data: InsertOnboardingProgress): Promise<OnboardingProgressItem>;
+  completeOnboardingStep(orgId: string, stepKey: string, completedBy?: string): Promise<OnboardingProgressItem | undefined>;
+
+  // Workspace Templates
+  getWorkspaceTemplates(): Promise<WorkspaceTemplate[]>;
+  getWorkspaceTemplate(id: string): Promise<WorkspaceTemplate | undefined>;
+  createWorkspaceTemplate(template: InsertWorkspaceTemplate): Promise<WorkspaceTemplate>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2944,6 +2967,78 @@ export class DatabaseStorage implements IStorage {
         lte(connectorSecretRotations.nextRotationDue, cutoff)
       ))
       .orderBy(asc(connectorSecretRotations.nextRotationDue));
+  }
+
+  async getOrgPlanLimit(orgId: string): Promise<OrgPlanLimit | undefined> {
+    const [plan] = await db.select().from(orgPlanLimits).where(eq(orgPlanLimits.orgId, orgId));
+    return plan;
+  }
+
+  async upsertOrgPlanLimit(data: InsertOrgPlanLimit): Promise<OrgPlanLimit> {
+    const [result] = await db.insert(orgPlanLimits).values(data)
+      .onConflictDoUpdate({
+        target: [orgPlanLimits.orgId],
+        set: { ...data, updatedAt: new Date() },
+      })
+      .returning();
+    return result;
+  }
+
+  async updateOrgPlanLimit(orgId: string, data: Partial<OrgPlanLimit>): Promise<OrgPlanLimit | undefined> {
+    const [updated] = await db.update(orgPlanLimits).set({ ...data, updatedAt: new Date() }).where(eq(orgPlanLimits.orgId, orgId)).returning();
+    return updated;
+  }
+
+  async getUsageMeterSnapshots(orgId: string, metricType?: string): Promise<UsageMeterSnapshot[]> {
+    const conditions = [eq(usageMeterSnapshots.orgId, orgId)];
+    if (metricType) conditions.push(eq(usageMeterSnapshots.metricType, metricType));
+    return db.select().from(usageMeterSnapshots)
+      .where(and(...conditions))
+      .orderBy(desc(usageMeterSnapshots.snapshotAt))
+      .limit(100);
+  }
+
+  async createUsageMeterSnapshot(data: InsertUsageMeterSnapshot): Promise<UsageMeterSnapshot> {
+    const [created] = await db.insert(usageMeterSnapshots).values(data).returning();
+    return created;
+  }
+
+  async getOnboardingProgress(orgId: string): Promise<OnboardingProgressItem[]> {
+    return db.select().from(onboardingProgress)
+      .where(eq(onboardingProgress.orgId, orgId))
+      .orderBy(asc(onboardingProgress.sortOrder));
+  }
+
+  async upsertOnboardingStep(data: InsertOnboardingProgress): Promise<OnboardingProgressItem> {
+    const [result] = await db.insert(onboardingProgress).values(data)
+      .onConflictDoUpdate({
+        target: [onboardingProgress.orgId, onboardingProgress.stepKey],
+        set: { stepLabel: data.stepLabel, stepDescription: data.stepDescription, targetUrl: data.targetUrl, sortOrder: data.sortOrder },
+      })
+      .returning();
+    return result;
+  }
+
+  async completeOnboardingStep(orgId: string, stepKey: string, completedBy?: string): Promise<OnboardingProgressItem | undefined> {
+    const [updated] = await db.update(onboardingProgress)
+      .set({ isCompleted: true, completedAt: new Date(), completedBy: completedBy || null })
+      .where(and(eq(onboardingProgress.orgId, orgId), eq(onboardingProgress.stepKey, stepKey)))
+      .returning();
+    return updated;
+  }
+
+  async getWorkspaceTemplates(): Promise<WorkspaceTemplate[]> {
+    return db.select().from(workspaceTemplates).orderBy(asc(workspaceTemplates.name));
+  }
+
+  async getWorkspaceTemplate(id: string): Promise<WorkspaceTemplate | undefined> {
+    const [template] = await db.select().from(workspaceTemplates).where(eq(workspaceTemplates.id, id));
+    return template;
+  }
+
+  async createWorkspaceTemplate(template: InsertWorkspaceTemplate): Promise<WorkspaceTemplate> {
+    const [created] = await db.insert(workspaceTemplates).values(template).returning();
+    return created;
   }
 }
 

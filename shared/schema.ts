@@ -2109,3 +2109,96 @@ export type LegalHold = typeof legalHolds.$inferSelect;
 export type InsertLegalHold = z.infer<typeof insertLegalHoldSchema>;
 export type ConnectorSecretRotation = typeof connectorSecretRotations.$inferSelect;
 export type InsertConnectorSecretRotation = z.infer<typeof insertConnectorSecretRotationSchema>;
+
+// ============================
+// Commercial / Operations
+// ============================
+
+export const PLAN_TIERS = ["free", "starter", "professional", "enterprise"] as const;
+export const USAGE_METRIC_TYPES = ["events_ingested", "connectors_active", "ai_tokens_used", "automation_runs", "api_calls", "storage_bytes"] as const;
+
+export const orgPlanLimits = pgTable("org_plan_limits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  planTier: text("plan_tier").notNull().default("free"),
+  eventsPerMonth: integer("events_per_month").notNull().default(10000),
+  maxConnectors: integer("max_connectors").notNull().default(3),
+  aiTokensPerMonth: integer("ai_tokens_per_month").notNull().default(5000),
+  automationRunsPerMonth: integer("automation_runs_per_month").notNull().default(100),
+  apiCallsPerMonth: integer("api_calls_per_month").notNull().default(10000),
+  storageGb: integer("storage_gb").notNull().default(5),
+  softThresholdPct: integer("soft_threshold_pct").notNull().default(80),
+  hardThresholdPct: integer("hard_threshold_pct").notNull().default(95),
+  overageAllowed: boolean("overage_allowed").default(false),
+  billingCycleStart: timestamp("billing_cycle_start").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_org_plan_unique").on(table.orgId),
+]);
+
+export const usageMeterSnapshots = pgTable("usage_meter_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  metricType: text("metric_type").notNull(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  currentValue: integer("current_value").notNull().default(0),
+  limitValue: integer("limit_value"),
+  pctUsed: real("pct_used").default(0),
+  metadata: jsonb("metadata").default({}),
+  snapshotAt: timestamp("snapshot_at").defaultNow(),
+}, (table) => [
+  index("idx_usage_meter_org").on(table.orgId),
+  index("idx_usage_meter_type").on(table.metricType),
+  index("idx_usage_meter_period").on(table.periodStart, table.periodEnd),
+]);
+
+export const onboardingProgress = pgTable("onboarding_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  stepKey: text("step_key").notNull(),
+  stepLabel: text("step_label").notNull(),
+  stepDescription: text("step_description"),
+  category: text("category").notNull().default("setup"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isCompleted: boolean("is_completed").default(false),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by"),
+  targetUrl: text("target_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_onboarding_org_step").on(table.orgId, table.stepKey),
+  index("idx_onboarding_org").on(table.orgId),
+]);
+
+export const workspaceTemplates = pgTable("workspace_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  description: text("description"),
+  category: text("category").notNull().default("general"),
+  icon: text("icon"),
+  isDefault: boolean("is_default").default(false),
+  config: jsonb("config").notNull().default({}),
+  connectorsConfig: jsonb("connectors_config").default([]),
+  playbooksConfig: jsonb("playbooks_config").default([]),
+  notificationConfig: jsonb("notification_config").default([]),
+  complianceConfig: jsonb("compliance_config").default({}),
+  dashboardLayout: jsonb("dashboard_layout").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOrgPlanLimitsSchema = createInsertSchema(orgPlanLimits).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUsageMeterSnapshotSchema = createInsertSchema(usageMeterSnapshots).omit({ id: true, snapshotAt: true });
+export const insertOnboardingProgressSchema = createInsertSchema(onboardingProgress).omit({ id: true, createdAt: true });
+export const insertWorkspaceTemplateSchema = createInsertSchema(workspaceTemplates).omit({ id: true, createdAt: true });
+
+export type OrgPlanLimit = typeof orgPlanLimits.$inferSelect;
+export type InsertOrgPlanLimit = z.infer<typeof insertOrgPlanLimitsSchema>;
+export type UsageMeterSnapshot = typeof usageMeterSnapshots.$inferSelect;
+export type InsertUsageMeterSnapshot = z.infer<typeof insertUsageMeterSnapshotSchema>;
+export type OnboardingProgressItem = typeof onboardingProgress.$inferSelect;
+export type InsertOnboardingProgress = z.infer<typeof insertOnboardingProgressSchema>;
+export type WorkspaceTemplate = typeof workspaceTemplates.$inferSelect;
+export type InsertWorkspaceTemplate = z.infer<typeof insertWorkspaceTemplateSchema>;

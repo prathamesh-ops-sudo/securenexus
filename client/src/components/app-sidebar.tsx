@@ -1,4 +1,4 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronDown, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText, History } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronDown, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText, History, CreditCard } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -90,6 +90,7 @@ const adminGroup: NavGroup = {
   items: [
     { title: "Onboarding", url: "/onboarding", icon: Activity },
     { title: "Team Management", url: "/team", icon: Users },
+    { title: "Usage & Billing", url: "/usage-billing", icon: CreditCard },
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Settings", url: "/settings", icon: Settings },

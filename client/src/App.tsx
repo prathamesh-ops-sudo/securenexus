@@ -40,8 +40,11 @@ import TeamManagementPage from "@/pages/team-management";
 import ReportsPage from "@/pages/reports";
 import OperationsPage from "@/pages/operations";
 import OnboardingPage from "@/pages/onboarding";
+import UsageBillingPage from "@/pages/usage-billing";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
+import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface EventStreamContextType {
@@ -87,6 +90,7 @@ function AuthenticatedApp() {
           <div className="noise-overlay" />
           <AppSidebar />
           <div className="flex flex-col flex-1 min-w-0 relative z-10">
+            <PlanLimitBanner />
             <header className="flex items-center justify-between gap-4 px-3 py-2 border-b border-border/50 sticky top-0 z-40 glass-strong gradient-bg-red-subtle">
               <div className="flex items-center gap-2">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
@@ -127,12 +131,14 @@ function AuthenticatedApp() {
                 <Route path="/reports" component={ReportsPage} />
                 <Route path="/operations" component={OperationsPage} />
                 <Route path="/onboarding" component={OnboardingPage} />
+                <Route path="/usage-billing" component={UsageBillingPage} />
                 <Route component={NotFound} />
               </Switch>
             </main>
           </div>
         </div>
         <CommandPalette />
+        <OnboardingChecklist />
       </SidebarProvider>
     </EventStreamContext.Provider>
   );
