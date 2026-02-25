@@ -1999,3 +1999,113 @@ export type SloTarget = typeof sloTargets.$inferSelect;
 export type InsertSloTarget = z.infer<typeof insertSloTargetsSchema>;
 export type DrRunbook = typeof drRunbooks.$inferSelect;
 export type InsertDrRunbook = z.infer<typeof insertDrRunbooksSchema>;
+
+export const TICKET_SYNC_STATUSES = ["pending", "syncing", "synced", "error"] as const;
+export const TICKET_SYNC_DIRECTIONS = ["outbound", "inbound", "bidirectional"] as const;
+
+export const ticketSyncJobs = pgTable("ticket_sync_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  integrationId: varchar("integration_id").notNull().references(() => integrationConfigs.id, { onDelete: "cascade" }),
+  incidentId: varchar("incident_id").references(() => incidents.id),
+  externalTicketId: text("external_ticket_id"),
+  externalTicketUrl: text("external_ticket_url"),
+  direction: text("direction").notNull().default("bidirectional"),
+  syncStatus: text("sync_status").notNull().default("pending"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastSyncError: text("last_sync_error"),
+  fieldMapping: jsonb("field_mapping").default({}),
+  statusMapping: jsonb("status_mapping").default({}),
+  commentsMirrored: integer("comments_mirrored").default(0),
+  statusSyncs: integer("status_syncs").default(0),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ticket_sync_org").on(table.orgId),
+  index("idx_ticket_sync_integration").on(table.integrationId),
+  index("idx_ticket_sync_incident").on(table.incidentId),
+]);
+
+export const RESPONSE_APPROVAL_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
+
+export const responseActionApprovals = pgTable("response_action_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  actionType: text("action_type").notNull(),
+  targetType: text("target_type"),
+  targetValue: text("target_value"),
+  incidentId: varchar("incident_id").references(() => incidents.id),
+  requestPayload: jsonb("request_payload"),
+  dryRunResult: jsonb("dry_run_result"),
+  status: text("status").notNull().default("pending"),
+  requiredApprovers: integer("required_approvers").notNull().default(1),
+  currentApprovals: integer("current_approvals").default(0),
+  approvers: jsonb("approvers").default([]),
+  requestedBy: varchar("requested_by"),
+  requestedByName: text("requested_by_name"),
+  decidedBy: varchar("decided_by"),
+  decidedByName: text("decided_by_name"),
+  decisionNote: text("decision_note"),
+  expiresAt: timestamp("expires_at"),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  decidedAt: timestamp("decided_at"),
+}, (table) => [
+  index("idx_resp_approval_org").on(table.orgId),
+  index("idx_resp_approval_status").on(table.status),
+  index("idx_resp_approval_incident").on(table.incidentId),
+]);
+
+export const legalHolds = pgTable("legal_holds", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  name: text("name").notNull(),
+  description: text("description"),
+  holdType: text("hold_type").notNull().default("full"),
+  tableScope: text("table_scope").array().default(sql`ARRAY['alerts','incidents','audit_logs']`),
+  filterCriteria: jsonb("filter_criteria").default({}),
+  reason: text("reason"),
+  caseReference: text("case_reference"),
+  isActive: boolean("is_active").default(true),
+  activatedBy: varchar("activated_by"),
+  activatedByName: text("activated_by_name"),
+  deactivatedBy: varchar("deactivated_by"),
+  deactivatedAt: timestamp("deactivated_at"),
+  activatedAt: timestamp("activated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_legal_holds_org").on(table.orgId),
+  index("idx_legal_holds_active").on(table.isActive),
+]);
+
+export const connectorSecretRotations = pgTable("connector_secret_rotations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  connectorId: varchar("connector_id").notNull().references(() => connectors.id, { onDelete: "cascade" }),
+  orgId: varchar("org_id"),
+  secretField: text("secret_field").notNull(),
+  lastRotatedAt: timestamp("last_rotated_at"),
+  nextRotationDue: timestamp("next_rotation_due"),
+  rotationIntervalDays: integer("rotation_interval_days").default(90),
+  status: text("status").notNull().default("current"),
+  rotatedBy: varchar("rotated_by"),
+  rotatedByName: text("rotated_by_name"),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_secret_rotation_connector").on(table.connectorId),
+  index("idx_secret_rotation_due").on(table.nextRotationDue),
+]);
+
+export const insertTicketSyncJobSchema = createInsertSchema(ticketSyncJobs).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertResponseActionApprovalSchema = createInsertSchema(responseActionApprovals).omit({ id: true, requestedAt: true, decidedAt: true });
+export const insertLegalHoldSchema = createInsertSchema(legalHolds).omit({ id: true, createdAt: true, activatedAt: true });
+export const insertConnectorSecretRotationSchema = createInsertSchema(connectorSecretRotations).omit({ id: true, createdAt: true });
+
+export type TicketSyncJob = typeof ticketSyncJobs.$inferSelect;
+export type InsertTicketSyncJob = z.infer<typeof insertTicketSyncJobSchema>;
+export type ResponseActionApproval = typeof responseActionApprovals.$inferSelect;
+export type InsertResponseActionApproval = z.infer<typeof insertResponseActionApprovalSchema>;
+export type LegalHold = typeof legalHolds.$inferSelect;
+export type InsertLegalHold = z.infer<typeof insertLegalHoldSchema>;
+export type ConnectorSecretRotation = typeof connectorSecretRotations.$inferSelect;
+export type InsertConnectorSecretRotation = z.infer<typeof insertConnectorSecretRotationSchema>;

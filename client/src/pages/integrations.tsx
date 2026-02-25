@@ -3,7 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plug, Bell, Shield, Plus, Trash2, Pencil, TestTube, RefreshCw,
   Loader2, CheckCircle, XCircle, AlertTriangle, Clock, Zap,
-  Mail, MessageSquare, Webhook, Star,
+  Mail, MessageSquare, Webhook, Star, ArrowLeftRight, ShieldCheck,
+  Play, Eye, ThumbsUp, ThumbsDown, Link2, RotateCcw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -812,15 +813,472 @@ function ResponseActionsTab() {
   );
 }
 
+interface TicketSyncJob {
+  id: string;
+  orgId: string | null;
+  integrationId: string;
+  incidentId: string | null;
+  externalTicketId: string | null;
+  externalTicketUrl: string | null;
+  direction: string;
+  syncStatus: string;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+  fieldMapping: any;
+  statusMapping: any;
+  commentsMirrored: number;
+  statusSyncs: number;
+  createdAt: string;
+}
+
+interface ResponseApproval {
+  id: string;
+  orgId: string | null;
+  actionType: string;
+  targetType: string | null;
+  targetValue: string | null;
+  incidentId: string | null;
+  requestPayload: any;
+  dryRunResult: any;
+  status: string;
+  requiredApprovers: number;
+  currentApprovals: number;
+  approvers: any[];
+  requestedByName: string | null;
+  decidedByName: string | null;
+  decisionNote: string | null;
+  expiresAt: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+}
+
+function TicketSyncTab() {
+  const [showCreate, setShowCreate] = useState(false);
+  const [newIntegrationId, setNewIntegrationId] = useState("");
+  const [newIncidentId, setNewIncidentId] = useState("");
+  const [newDirection, setNewDirection] = useState("bidirectional");
+
+  const { data: syncJobs, isLoading } = useQuery<TicketSyncJob[]>({
+    queryKey: ["/api/ticket-sync"],
+  });
+
+  const { data: integrations } = useQuery<IntegrationConfig[]>({
+    queryKey: ["/api/integrations"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/ticket-sync", {
+        integrationId: newIntegrationId,
+        incidentId: newIncidentId || undefined,
+        direction: newDirection,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ticket-sync"] });
+      setShowCreate(false);
+      setNewIntegrationId("");
+      setNewIncidentId("");
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("POST", `/api/ticket-sync/${id}/sync`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/ticket-sync"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/ticket-sync/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/ticket-sync"] }),
+  });
+
+  const syncStatusBadge = (status: string) => {
+    switch (status) {
+      case "synced": return <Badge variant="default" className="border-green-500/30 text-green-400"><CheckCircle className="h-3 w-3 mr-1" />Synced</Badge>;
+      case "syncing": return <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Syncing</Badge>;
+      case "error": return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Error</Badge>;
+      default: return <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+    }
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  const jiraSnIntegrations = (integrations || []).filter(i => i.type === "jira" || i.type === "servicenow");
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
+            Bi-Directional Ticket Sync
+          </CardTitle>
+          <Button size="sm" onClick={() => setShowCreate(true)} disabled={jiraSnIntegrations.length === 0}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />New Sync
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {jiraSnIntegrations.length === 0 && (
+            <div className="text-xs text-muted-foreground mb-3 p-2 bg-muted/30 rounded">
+              Add a Jira or ServiceNow integration first to enable ticket sync.
+            </div>
+          )}
+          {!syncJobs?.length ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <ArrowLeftRight className="h-10 w-10 mb-3" />
+              <p className="text-sm">No ticket sync jobs configured</p>
+              <p className="text-xs mt-1">Create a sync to mirror statuses and comments between SecureNexus and your ticketing system</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Integration</TableHead>
+                    <TableHead className="text-xs">Direction</TableHead>
+                    <TableHead className="text-xs">External Ticket</TableHead>
+                    <TableHead className="text-xs">Status</TableHead>
+                    <TableHead className="text-xs">Comments</TableHead>
+                    <TableHead className="text-xs">Status Syncs</TableHead>
+                    <TableHead className="text-xs">Last Synced</TableHead>
+                    <TableHead className="text-xs">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {syncJobs.map((job) => (
+                    <TableRow key={job.id}>
+                      <TableCell>
+                        <span className="text-xs font-mono">{job.integrationId.slice(0, 8)}...</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+                          {job.direction === "bidirectional" ? "Bi-directional" : job.direction === "outbound" ? "Outbound" : "Inbound"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {job.externalTicketUrl ? (
+                          <a href={job.externalTicketUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline flex items-center gap-1">
+                            <Link2 className="h-3 w-3" />{job.externalTicketId || "View"}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{job.externalTicketId || "Not linked"}</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{syncStatusBadge(job.syncStatus)}</TableCell>
+                      <TableCell><span className="text-xs">{job.commentsMirrored}</span></TableCell>
+                      <TableCell><span className="text-xs">{job.statusSyncs}</span></TableCell>
+                      <TableCell><span className="text-xs text-muted-foreground">{formatDateTime(job.lastSyncedAt)}</span></TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => syncMutation.mutate(job.id)} disabled={syncMutation.isPending}>
+                            <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-red-400" onClick={() => deleteMutation.mutate(job.id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create Ticket Sync</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Integration</Label>
+              <Select value={newIntegrationId} onValueChange={setNewIntegrationId}>
+                <SelectTrigger><SelectValue placeholder="Select integration" /></SelectTrigger>
+                <SelectContent>
+                  {jiraSnIntegrations.map(i => (
+                    <SelectItem key={i.id} value={i.id}>{i.name} ({i.type})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Direction</Label>
+              <Select value={newDirection} onValueChange={setNewDirection}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bidirectional">Bi-directional</SelectItem>
+                  <SelectItem value="outbound">Outbound only</SelectItem>
+                  <SelectItem value="inbound">Inbound only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Incident ID (optional)</Label>
+              <Input value={newIncidentId} onChange={e => setNewIncidentId(e.target.value)} placeholder="Link to specific incident" />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <Button onClick={() => createMutation.mutate()} disabled={!newIntegrationId || createMutation.isPending}>
+              {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ResponseApprovalsTab() {
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [showCreate, setShowCreate] = useState(false);
+  const [showDryRun, setShowDryRun] = useState(false);
+  const [dryRunResult, setDryRunResult] = useState<any>(null);
+  const [newActionType, setNewActionType] = useState("block_ip");
+  const [newTargetType, setNewTargetType] = useState("ip");
+  const [newTargetValue, setNewTargetValue] = useState("");
+
+  const { data: approvals, isLoading } = useQuery<ResponseApproval[]>({
+    queryKey: ["/api/response-approvals", statusFilter],
+    queryFn: async () => {
+      const res = await fetch(`/api/response-approvals?status=${statusFilter}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/response-approvals", {
+      actionType: newActionType, targetType: newTargetType, targetValue: newTargetValue,
+      requiredApprovers: 1,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/response-approvals"] });
+      setShowCreate(false);
+      setNewTargetValue("");
+    },
+  });
+
+  const decideMutation = useMutation({
+    mutationFn: async ({ id, decision, note }: { id: string; decision: string; note?: string }) =>
+      apiRequest("POST", `/api/response-approvals/${id}/decide`, { decision, note }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/response-approvals"] }),
+  });
+
+  const dryRunMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/response-actions/dry-run", {
+        actionType: newActionType, target: { targetType: newTargetType, targetValue: newTargetValue },
+      });
+      return res.json();
+    },
+    onSuccess: (data) => { setDryRunResult(data); setShowDryRun(true); },
+  });
+
+  const approvalStatusBadge = (status: string) => {
+    switch (status) {
+      case "approved": return <Badge variant="default" className="border-green-500/30 text-green-400"><ThumbsUp className="h-3 w-3 mr-1" />Approved</Badge>;
+      case "rejected": return <Badge variant="destructive"><ThumbsDown className="h-3 w-3 mr-1" />Rejected</Badge>;
+      case "expired": return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Expired</Badge>;
+      default: return <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/30 text-yellow-400"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+    }
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            Response Action Approvals
+          </CardTitle>
+          <div className="flex gap-2">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="expired">Expired</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />Request Approval
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!approvals?.length ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <ShieldCheck className="h-10 w-10 mb-3" />
+              <p className="text-sm">No {statusFilter} approval requests</p>
+              <p className="text-xs mt-1">High-impact response actions require approval before execution</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Action</TableHead>
+                    <TableHead className="text-xs">Target</TableHead>
+                    <TableHead className="text-xs">Requested By</TableHead>
+                    <TableHead className="text-xs">Status</TableHead>
+                    <TableHead className="text-xs">Approvals</TableHead>
+                    <TableHead className="text-xs">Expires</TableHead>
+                    <TableHead className="text-xs">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {approvals.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell>
+                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">{a.actionType.replace(/_/g, " ")}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">{a.targetValue || "N/A"}
+                          {a.targetType && <span className="text-xs text-muted-foreground ml-1">({a.targetType})</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell><span className="text-xs">{a.requestedByName || "Unknown"}</span></TableCell>
+                      <TableCell>{approvalStatusBadge(a.status)}</TableCell>
+                      <TableCell><span className="text-xs">{a.currentApprovals}/{a.requiredApprovers}</span></TableCell>
+                      <TableCell><span className="text-xs text-muted-foreground">{a.expiresAt ? formatDateTime(a.expiresAt) : "Never"}</span></TableCell>
+                      <TableCell>
+                        {a.status === "pending" ? (
+                          <div className="flex gap-1">
+                            {a.dryRunResult && (
+                              <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => { setDryRunResult(a.dryRunResult); setShowDryRun(true); }}>
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-green-400" onClick={() => decideMutation.mutate({ id: a.id, decision: "approved" })}>
+                              <ThumbsUp className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-red-400" onClick={() => decideMutation.mutate({ id: a.id, decision: "rejected" })}>
+                              <ThumbsDown className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{a.decidedByName || "-"}</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Request Response Action Approval</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Action Type</Label>
+              <Select value={newActionType} onValueChange={setNewActionType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="block_ip">Block IP</SelectItem>
+                  <SelectItem value="isolate_endpoint">Isolate Endpoint</SelectItem>
+                  <SelectItem value="disable_user">Disable User</SelectItem>
+                  <SelectItem value="quarantine_file">Quarantine File</SelectItem>
+                  <SelectItem value="create_jira_ticket">Create Jira Ticket</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Target Type</Label>
+              <Select value={newTargetType} onValueChange={setNewTargetType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ip">IP Address</SelectItem>
+                  <SelectItem value="hostname">Hostname</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="file">File Hash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Target Value</Label>
+              <Input value={newTargetValue} onChange={e => setNewTargetValue(e.target.value)} placeholder="e.g. 192.168.1.100" />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => dryRunMutation.mutate()} disabled={!newTargetValue || dryRunMutation.isPending}>
+              {dryRunMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Play className="h-4 w-4 mr-1" />}
+              Dry Run
+            </Button>
+            <Button onClick={() => createMutation.mutate()} disabled={!newTargetValue || createMutation.isPending}>
+              {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Request Approval
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDryRun} onOpenChange={setShowDryRun}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Dry Run Simulation Result</DialogTitle></DialogHeader>
+          {dryRunResult && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-muted/30 p-2 rounded">
+                  <span className="text-muted-foreground">Action:</span>
+                  <p className="font-medium">{(dryRunResult.actionType || "").replace(/_/g, " ")}</p>
+                </div>
+                <div className="bg-muted/30 p-2 rounded">
+                  <span className="text-muted-foreground">Reversible:</span>
+                  <p className="font-medium">{dryRunResult.reversible ? "Yes" : "No"}</p>
+                </div>
+                <div className="bg-muted/30 p-2 rounded col-span-2">
+                  <span className="text-muted-foreground">Estimated Impact:</span>
+                  <p className="font-medium">{dryRunResult.estimatedImpact}</p>
+                </div>
+                {dryRunResult.affectedResources && (
+                  <div className="bg-muted/30 p-2 rounded col-span-2">
+                    <span className="text-muted-foreground">Affected Resources:</span>
+                    {(dryRunResult.affectedResources as any[]).map((r: any, i: number) => (
+                      <p key={i} className="font-medium">{r.type}: {r.value}</p>
+                    ))}
+                  </div>
+                )}
+                {dryRunResult.requiresApproval !== undefined && (
+                  <div className="bg-muted/30 p-2 rounded">
+                    <span className="text-muted-foreground">Requires Approval:</span>
+                    <p className="font-medium">{dryRunResult.requiresApproval ? "Yes" : "No"}</p>
+                  </div>
+                )}
+                <div className="bg-muted/30 p-2 rounded">
+                  <span className="text-muted-foreground">Duration:</span>
+                  <p className="font-medium">{dryRunResult.estimatedDuration || "N/A"}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Close</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export default function IntegrationsPage() {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-integrations">
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
-          <span className="gradient-text-red">Integrations & Notifications</span>
+          <span className="gradient-text-red">Integrations & Response</span>
         </h1>
         <p className="text-sm text-muted-foreground mt-1" data-testid="text-page-description">
-          Configure external integrations, notification channels, and view response actions
+          Configure integrations, ticket sync, notification channels, response actions, and approvals
         </p>
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
@@ -831,6 +1289,10 @@ export default function IntegrationsPage() {
             <Plug className="h-3.5 w-3.5 mr-1.5" />
             Integrations
           </TabsTrigger>
+          <TabsTrigger value="ticket-sync" data-testid="tab-ticket-sync">
+            <ArrowLeftRight className="h-3.5 w-3.5 mr-1.5" />
+            Ticket Sync
+          </TabsTrigger>
           <TabsTrigger value="channels" data-testid="tab-channels">
             <Bell className="h-3.5 w-3.5 mr-1.5" />
             Notification Channels
@@ -839,16 +1301,26 @@ export default function IntegrationsPage() {
             <Zap className="h-3.5 w-3.5 mr-1.5" />
             Response Actions
           </TabsTrigger>
+          <TabsTrigger value="approvals" data-testid="tab-approvals">
+            <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+            Approvals
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="integrations">
           <IntegrationsTab />
+        </TabsContent>
+        <TabsContent value="ticket-sync">
+          <TicketSyncTab />
         </TabsContent>
         <TabsContent value="channels">
           <NotificationChannelsTab />
         </TabsContent>
         <TabsContent value="response-actions">
           <ResponseActionsTab />
+        </TabsContent>
+        <TabsContent value="approvals">
+          <ResponseApprovalsTab />
         </TabsContent>
       </Tabs>
     </div>
