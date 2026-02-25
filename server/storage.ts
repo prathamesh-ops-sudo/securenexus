@@ -82,9 +82,10 @@ import {
   type UsageMeterSnapshot, type InsertUsageMeterSnapshot, usageMeterSnapshots,
   type OnboardingProgressItem, type InsertOnboardingProgress, onboardingProgress,
   type WorkspaceTemplate, type InsertWorkspaceTemplate, workspaceTemplates,
+  type OutboxEvent, type InsertOutboxEvent, outboxEvents,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte } from "drizzle-orm";
+import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
 import { createHash } from "crypto";
 
 export interface IStorage {
@@ -565,6 +566,57 @@ export interface IStorage {
   getWorkspaceTemplates(): Promise<WorkspaceTemplate[]>;
   getWorkspaceTemplate(id: string): Promise<WorkspaceTemplate | undefined>;
   createWorkspaceTemplate(template: InsertWorkspaceTemplate): Promise<WorkspaceTemplate>;
+
+  // Outbox Events
+  createOutboxEvent(event: InsertOutboxEvent): Promise<OutboxEvent>;
+  getPendingOutboxEvents(batchSize: number): Promise<OutboxEvent[]>;
+  updateOutboxEvent(id: string, data: Partial<OutboxEvent>): Promise<OutboxEvent | undefined>;
+  getOutboxEvents(orgId?: string, status?: string, limit?: number, offset?: number): Promise<{ items: OutboxEvent[]; total: number }>;
+  replayOutboxEvent(id: string): Promise<OutboxEvent | undefined>;
+  cleanupDispatchedOutboxEvents(olderThanDays: number): Promise<number>;
+
+  // Enhanced Pagination
+  getAlertsPaginatedWithSort(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+    severity?: string;
+    status?: string;
+    source?: string;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: Alert[]; total: number }>;
+  getIncidentsPaginatedWithSort(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+    severity?: string;
+    status?: string;
+    queue?: string;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: Incident[]; total: number }>;
+  getAuditLogsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    action?: string;
+    userId?: string;
+    resourceType?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: AuditLog[]; total: number }>;
+  getConnectorsPaginatedWithSort(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+    type?: string;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: Connector[]; total: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3054,6 +3106,232 @@ export class DatabaseStorage implements IStorage {
   async createWorkspaceTemplate(template: InsertWorkspaceTemplate): Promise<WorkspaceTemplate> {
     const [created] = await db.insert(workspaceTemplates).values(template).returning();
     return created;
+  }
+
+  // ============================
+  // Outbox Events
+  // ============================
+
+  async createOutboxEvent(event: InsertOutboxEvent): Promise<OutboxEvent> {
+    const [created] = await db.insert(outboxEvents).values(event).returning();
+    return created;
+  }
+
+  async getPendingOutboxEvents(batchSize: number): Promise<OutboxEvent[]> {
+    return db.select().from(outboxEvents)
+      .where(and(
+        eq(outboxEvents.status, "pending"),
+        or(
+          isNull(outboxEvents.nextRetryAt),
+          lte(outboxEvents.nextRetryAt, new Date()),
+        ),
+      ))
+      .orderBy(asc(outboxEvents.createdAt))
+      .limit(batchSize);
+  }
+
+  async updateOutboxEvent(id: string, data: Partial<OutboxEvent>): Promise<OutboxEvent | undefined> {
+    const [updated] = await db.update(outboxEvents).set(data).where(eq(outboxEvents.id, id)).returning();
+    return updated;
+  }
+
+  async getOutboxEvents(orgId?: string, status?: string, limitVal?: number, offsetVal?: number): Promise<{ items: OutboxEvent[]; total: number }> {
+    const conditions: any[] = [];
+    if (orgId) conditions.push(eq(outboxEvents.orgId, orgId));
+    if (status) conditions.push(eq(outboxEvents.status, status));
+    const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const totalQuery = db.select({ total: count() }).from(outboxEvents);
+    const itemsQuery = db.select().from(outboxEvents)
+      .orderBy(desc(outboxEvents.createdAt))
+      .limit(limitVal || 50)
+      .offset(offsetVal || 0);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+    return { items, total: Number(totalRow?.total ?? 0) };
+  }
+
+  async replayOutboxEvent(id: string): Promise<OutboxEvent | undefined> {
+    const [updated] = await db.update(outboxEvents).set({
+      status: "pending",
+      attempts: 0,
+      lastError: null,
+      nextRetryAt: null,
+    }).where(and(
+      eq(outboxEvents.id, id),
+      or(eq(outboxEvents.status, "failed"), eq(outboxEvents.status, "dispatched")),
+    )).returning();
+    return updated;
+  }
+
+  async cleanupDispatchedOutboxEvents(olderThanDays: number): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+    const result = await db.delete(outboxEvents).where(and(
+      eq(outboxEvents.status, "dispatched"),
+      lte(outboxEvents.createdAt, cutoff),
+    )).returning();
+    return result.length;
+  }
+
+  // ============================
+  // Enhanced Pagination with Filter/Sort
+  // ============================
+
+  async getAlertsPaginatedWithSort(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+    severity?: string;
+    status?: string;
+    source?: string;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: Alert[]; total: number }> {
+    const conditions: any[] = [];
+    if (params.orgId) conditions.push(eq(alerts.orgId, params.orgId));
+    if (params.severity) conditions.push(eq(alerts.severity, params.severity));
+    if (params.status) conditions.push(eq(alerts.status, params.status));
+    if (params.source) conditions.push(eq(alerts.source, params.source));
+    if (params.search) {
+      const pattern = `%${params.search}%`;
+      conditions.push(or(
+        ilike(alerts.title, pattern),
+        ilike(alerts.description, pattern),
+        ilike(alerts.hostname, pattern),
+        ilike(alerts.sourceIp, pattern),
+      ));
+    }
+    const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const ALERT_SORT_COLUMNS: Record<string, any> = {
+      createdAt: alerts.createdAt,
+      detectedAt: alerts.detectedAt,
+      severity: alerts.severity,
+      status: alerts.status,
+      title: alerts.title,
+      source: alerts.source,
+    };
+    const sortColumn = ALERT_SORT_COLUMNS[params.sortBy || "createdAt"] || alerts.createdAt;
+    const orderFn = params.sortOrder === "asc" ? asc : desc;
+
+    const totalQuery = db.select({ total: count() }).from(alerts);
+    const itemsQuery = db.select().from(alerts).orderBy(orderFn(sortColumn)).limit(params.limit).offset(params.offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+    return { items, total: Number(totalRow?.total ?? 0) };
+  }
+
+  async getIncidentsPaginatedWithSort(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+    severity?: string;
+    status?: string;
+    queue?: string;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: Incident[]; total: number }> {
+    const conditions: any[] = [];
+    if (params.orgId) conditions.push(eq(incidents.orgId, params.orgId));
+    if (params.severity) conditions.push(eq(incidents.severity, params.severity));
+    if (params.status) conditions.push(eq(incidents.status, params.status));
+    if (params.queue) conditions.push(eq(incidents.queueState, params.queue as any));
+    if (params.search) {
+      const pattern = `%${params.search}%`;
+      conditions.push(or(
+        ilike(incidents.title, pattern),
+        ilike(incidents.description, pattern),
+      ));
+    }
+    const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const INCIDENT_SORT_COLUMNS: Record<string, any> = {
+      createdAt: incidents.createdAt,
+      updatedAt: incidents.updatedAt,
+      severity: incidents.severity,
+      status: incidents.status,
+      title: incidents.title,
+    };
+    const sortColumn = INCIDENT_SORT_COLUMNS[params.sortBy || "createdAt"] || incidents.createdAt;
+    const orderFn = params.sortOrder === "asc" ? asc : desc;
+
+    const totalQuery = db.select({ total: count() }).from(incidents);
+    const itemsQuery = db.select().from(incidents).orderBy(orderFn(sortColumn)).limit(params.limit).offset(params.offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+    return { items, total: Number(totalRow?.total ?? 0) };
+  }
+
+  async getAuditLogsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    action?: string;
+    userId?: string;
+    resourceType?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: AuditLog[]; total: number }> {
+    const conditions: any[] = [];
+    if (params.orgId) conditions.push(eq(auditLogs.orgId, params.orgId));
+    if (params.action) conditions.push(eq(auditLogs.action, params.action));
+    if (params.userId) conditions.push(eq(auditLogs.userId, params.userId));
+    if (params.resourceType) conditions.push(eq(auditLogs.resourceType, params.resourceType));
+    const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const orderFn = params.sortOrder === "asc" ? asc : desc;
+
+    const totalQuery = db.select({ total: count() }).from(auditLogs);
+    const itemsQuery = db.select().from(auditLogs).orderBy(orderFn(auditLogs.timestamp)).limit(params.limit).offset(params.offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+    return { items, total: Number(totalRow?.total ?? 0) };
+  }
+
+  async getConnectorsPaginatedWithSort(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+    search?: string;
+    type?: string;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }): Promise<{ items: Connector[]; total: number }> {
+    const conditions: any[] = [];
+    if (params.orgId) conditions.push(eq(connectors.orgId, params.orgId));
+    if (params.type) conditions.push(eq(connectors.type, params.type));
+    if (params.status) conditions.push(eq(connectors.status, params.status as any));
+    if (params.search) {
+      const pattern = `%${params.search}%`;
+      conditions.push(or(
+        ilike(connectors.name, pattern),
+        ilike(connectors.type, pattern),
+      ));
+    }
+    const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const CONNECTOR_SORT_COLUMNS: Record<string, any> = {
+      createdAt: connectors.createdAt,
+      name: connectors.name,
+      type: connectors.type,
+      status: connectors.status,
+      lastSyncAt: connectors.lastSyncAt,
+    };
+    const sortColumn = CONNECTOR_SORT_COLUMNS[params.sortBy || "createdAt"] || connectors.createdAt;
+    const orderFn = params.sortOrder === "asc" ? asc : desc;
+
+    const totalQuery = db.select({ total: count() }).from(connectors);
+    const itemsQuery = db.select().from(connectors).orderBy(orderFn(sortColumn)).limit(params.limit).offset(params.offset);
+
+    const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
+    const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+    return { items, total: Number(totalRow?.total ?? 0) };
   }
 }
 
