@@ -1,5 +1,7 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as GitHubStrategy } from "passport-github2";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
@@ -74,6 +76,70 @@ export async function setupAuth(app: Express) {
       }
     )
   );
+
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    const googleCallbackURL = process.env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback";
+    passport.use(
+      new GoogleStrategy(
+        {
+          clientID: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          callbackURL: googleCallbackURL,
+        },
+        async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
+          try {
+            const email = profile.emails?.[0]?.value;
+            if (!email) return done(null, false, { message: "No email from Google" });
+            let user = await authStorage.getUserByEmail(email);
+            if (!user) {
+              user = await authStorage.upsertUser({
+                email,
+                firstName: profile.name?.givenName || null,
+                lastName: profile.name?.familyName || null,
+                profileImageUrl: profile.photos?.[0]?.value || null,
+              });
+            }
+            return done(null, user);
+          } catch (err) {
+            return done(err);
+          }
+        }
+      )
+    );
+    console.log("[Auth] Google OAuth strategy configured");
+  }
+
+  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+    const githubCallbackURL = process.env.GITHUB_CALLBACK_URL || "/api/auth/github/callback";
+    passport.use(
+      new GitHubStrategy(
+        {
+          clientID: process.env.GITHUB_CLIENT_ID,
+          clientSecret: process.env.GITHUB_CLIENT_SECRET,
+          callbackURL: githubCallbackURL,
+          scope: ["user:email"],
+        },
+        async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
+          try {
+            const email = profile.emails?.[0]?.value || `${profile.username}@github.local`;
+            let user = await authStorage.getUserByEmail(email);
+            if (!user) {
+              user = await authStorage.upsertUser({
+                email,
+                firstName: profile.displayName?.split(" ")[0] || profile.username || null,
+                lastName: profile.displayName?.split(" ").slice(1).join(" ") || null,
+                profileImageUrl: profile.photos?.[0]?.value || null,
+              });
+            }
+            return done(null, user);
+          } catch (err) {
+            return done(err);
+          }
+        }
+      )
+    );
+    console.log("[Auth] GitHub OAuth strategy configured");
+  }
 
   passport.serializeUser((user: any, cb) => cb(null, user.id));
   passport.deserializeUser(async (id: string, cb) => {

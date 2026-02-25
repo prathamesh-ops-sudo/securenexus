@@ -118,4 +118,47 @@ export function registerAuthRoutes(app: Express): void {
       });
     });
   });
+
+  app.get("/api/auth/google", (req, res, next) => {
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(501).json({ message: "Google login not configured" });
+    }
+    passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
+  });
+
+  app.get("/api/auth/google/callback",
+    (req, res, next) => {
+      passport.authenticate("google", { failureRedirect: "/?error=google_auth_failed" })(req, res, next);
+    },
+    async (req: any, res) => {
+      if (req.user) await ensureOrgMembership(req.user);
+      res.redirect("/");
+    }
+  );
+
+  app.get("/api/auth/github", (req, res, next) => {
+    if (!process.env.GITHUB_CLIENT_ID) {
+      return res.status(501).json({ message: "GitHub login not configured" });
+    }
+    passport.authenticate("github", { scope: ["user:email"] })(req, res, next);
+  });
+
+  app.get("/api/auth/github/callback",
+    (req, res, next) => {
+      passport.authenticate("github", { failureRedirect: "/?error=github_auth_failed" })(req, res, next);
+    },
+    async (req: any, res) => {
+      if (req.user) await ensureOrgMembership(req.user);
+      res.redirect("/");
+    }
+  );
+
+  app.get("/api/auth/providers", (_req, res) => {
+    res.json({
+      email: true,
+      google: !!process.env.GOOGLE_CLIENT_ID,
+      github: !!process.env.GITHUB_CLIENT_ID,
+      cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || null,
+    });
+  });
 }
