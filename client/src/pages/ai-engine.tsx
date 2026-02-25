@@ -6,6 +6,7 @@ import {
   Brain, Zap, Shield, Target, Activity, Crosshair, AlertTriangle,
   CheckCircle2, XCircle, Loader2, Sparkles, Network, Users, Server, MapPin,
   Search, ChevronsUpDown, BarChart3, Cpu, TrendingUp, TrendingDown, ThumbsUp, ThumbsDown,
+  Eye, MessageSquare, RotateCcw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +141,10 @@ export default function AIEnginePage() {
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [alertPickerOpen, setAlertPickerOpen] = useState(false);
   const [driftDays, setDriftDays] = useState("30");
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackOutcome, setFeedbackOutcome] = useState<"approve" | "reject" | "correct" | null>(null);
+  const [showExplainability, setShowExplainability] = useState(true);
 
   const { data: config, isLoading: configLoading } = useQuery<AIConfig>({
     queryKey: ["/api/ai/config"],
@@ -242,9 +247,35 @@ export default function AIEnginePage() {
     );
   };
 
+  const submitFeedback = useMutation({
+    mutationFn: async (payload: { rating: number; outcome: string; comment: string }) => {
+      const res = await apiRequest("POST", "/api/ai/feedback", {
+        resourceType: "triage",
+        resourceId: triageAlertId,
+        rating: payload.rating,
+        feedbackType: payload.outcome,
+        comment: payload.comment,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Feedback submitted", description: "Your feedback helps improve AI accuracy" });
+      setFeedbackRating(null);
+      setFeedbackComment("");
+      setFeedbackOutcome(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/feedback/metrics"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Feedback failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleRunTriage = () => {
     if (!triageAlertId) return;
     setTriageResult(null);
+    setFeedbackRating(null);
+    setFeedbackComment("");
+    setFeedbackOutcome(null);
     triage.mutate(triageAlertId);
   };
 
@@ -898,6 +929,173 @@ export default function AIEnginePage() {
                   <p className="text-xs text-muted-foreground" data-testid="text-containment">{triageResult.containmentAdvice}</p>
                 </div>
               </div>
+
+              <Card className="border-primary/20 bg-primary/5" data-testid="card-explainability">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-4 w-4 text-primary" />
+                      <CardTitle className="text-sm font-medium">AI Explainability</CardTitle>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowExplainability(!showExplainability)}
+                      data-testid="button-toggle-explainability"
+                    >
+                      {showExplainability ? "Hide" : "Show"}
+                    </Button>
+                  </div>
+                  <CardDescription className="text-xs">Signals and confidence rationale behind this AI decision</CardDescription>
+                </CardHeader>
+                {showExplainability && (
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2" data-testid="explainability-signals">
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Decision Signals</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                            <span className="text-xs">Severity Assessment</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium">{triageResult.severity}</span>
+                            <Badge variant="outline" className="text-[10px]">P{triageResult.priority}</Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-orange-500" />
+                            <span className="text-xs">False Positive Analysis</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium tabular-nums">{Math.round(triageResult.falsePositiveLikelihood * 100)}% likely FP</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500" />
+                            <span className="text-xs">MITRE ATT&CK Mapping</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {triageResult.mitreTactic && <Badge variant="secondary" className="text-[10px]">{triageResult.mitreTactic}</Badge>}
+                            {triageResult.mitreTechnique && <Badge variant="outline" className="text-[10px] font-mono">{triageResult.mitreTechnique}</Badge>}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-purple-500" />
+                            <span className="text-xs">Kill Chain Position</span>
+                          </div>
+                          <span className="text-xs font-medium">{triageResult.killChainPhase}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="text-xs">Threat Category</span>
+                          </div>
+                          <span className="text-xs font-medium">{triageResult.category}</span>
+                        </div>
+                        {triageResult.escalationRequired && (
+                          <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                              <span className="text-xs">Escalation Flag</span>
+                            </div>
+                            <Badge variant="destructive" className="text-[10px]">Required</Badge>
+                          </div>
+                        )}
+                        {triageResult.relatedIocs && triageResult.relatedIocs.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-cyan-500" />
+                              <span className="text-xs">IOC Correlation</span>
+                            </div>
+                            <span className="text-xs font-medium">{triageResult.relatedIocs.length} IOC(s) linked</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div data-testid="explainability-rationale">
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Confidence Rationale</div>
+                      <p className="text-xs text-muted-foreground">{triageResult.reasoning}</p>
+                      {triageResult.falsePositiveReasoning && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">FP reasoning: {triageResult.falsePositiveReasoning}</p>
+                      )}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+
+              <Card className="border-amber-500/20" data-testid="card-ai-feedback">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-amber-500" />
+                    <CardTitle className="text-sm font-medium">AI Feedback</CardTitle>
+                  </div>
+                  <CardDescription className="text-xs">Rate this triage result to improve future accuracy</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2" data-testid="feedback-actions">
+                    <Button
+                      size="sm"
+                      variant={feedbackOutcome === "approve" ? "default" : "outline"}
+                      onClick={() => { setFeedbackOutcome("approve"); setFeedbackRating(5); }}
+                      className={feedbackOutcome === "approve" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                      data-testid="button-feedback-approve"
+                    >
+                      <ThumbsUp className="h-3 w-3 mr-1.5" />
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={feedbackOutcome === "reject" ? "default" : "outline"}
+                      onClick={() => { setFeedbackOutcome("reject"); setFeedbackRating(1); }}
+                      className={feedbackOutcome === "reject" ? "bg-red-600 hover:bg-red-700" : ""}
+                      data-testid="button-feedback-reject"
+                    >
+                      <ThumbsDown className="h-3 w-3 mr-1.5" />
+                      Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={feedbackOutcome === "correct" ? "default" : "outline"}
+                      onClick={() => { setFeedbackOutcome("correct"); setFeedbackRating(3); }}
+                      className={feedbackOutcome === "correct" ? "bg-amber-600 hover:bg-amber-700" : ""}
+                      data-testid="button-feedback-correct"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1.5" />
+                      Correct
+                    </Button>
+                  </div>
+                  {feedbackOutcome && (
+                    <div className="space-y-2" data-testid="feedback-form">
+                      <textarea
+                        className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        rows={2}
+                        placeholder={feedbackOutcome === "correct" ? "Describe the correct outcome..." : "Optional comment..."}
+                        value={feedbackComment}
+                        onChange={(e) => setFeedbackComment(e.target.value)}
+                        data-testid="input-feedback-comment"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (feedbackRating !== null && feedbackOutcome) {
+                            submitFeedback.mutate({ rating: feedbackRating, outcome: feedbackOutcome, comment: feedbackComment });
+                          }
+                        }}
+                        disabled={submitFeedback.isPending || !feedbackOutcome}
+                        data-testid="button-submit-feedback"
+                      >
+                        {submitFeedback.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1.5" />}
+                        Submit Feedback
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </CardContent>

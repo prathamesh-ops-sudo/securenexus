@@ -1,7 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Shield, Search, Globe, Server, ExternalLink, Database, RefreshCw, CheckCircle2, XCircle, Zap, Network, Rss, Loader2, Clock, ChevronDown, Plus, Trash2, Eye, AlertTriangle, Filter, Upload, Settings2, List, BookOpen, Play } from "lucide-react";
+import { Shield, Search, Globe, Server, ExternalLink, Database, RefreshCw, CheckCircle2, XCircle, Zap, Network, Rss, Loader2, Clock, ChevronDown, Plus, Trash2, Eye, AlertTriangle, Filter, Upload, Settings2, List, BookOpen, Play, Bell, BellRing } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1272,7 +1272,7 @@ export default function ThreatIntelPage() {
           ) : iocWatchlists && iocWatchlists.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="grid-watchlists">
               {iocWatchlists.map((wl: any, idx: number) => (
-                <Card key={wl.id || idx} data-testid={`card-watchlist-${idx}`}>
+                <Card key={wl.id || idx} data-testid={`card-watchlist-${idx}`} className={wl.updatedAt && (Date.now() - new Date(wl.updatedAt).getTime()) < 86400000 ? "border-primary/30" : ""}>
                   <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span
@@ -1282,15 +1282,28 @@ export default function ThreatIntelPage() {
                       <CardTitle className="text-sm font-medium" data-testid={`text-watchlist-name-${idx}`}>
                         {wl.name}
                       </CardTitle>
+                      {wl.updatedAt && (Date.now() - new Date(wl.updatedAt).getTime()) < 86400000 && (
+                        <Badge variant="secondary" className="text-[10px] gap-1 bg-primary/10 text-primary" data-testid={`badge-watchlist-recent-${idx}`}>
+                          <BellRing className="h-2.5 w-2.5" />
+                          Updated
+                        </Badge>
+                      )}
                     </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => deleteWatchlistMutation.mutate(wl.id)}
-                      data-testid={`button-delete-watchlist-${idx}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {wl.notificationsEnabled !== false && (
+                        <div className="flex items-center gap-0.5" data-testid={`watchlist-notify-${idx}`}>
+                          <Bell className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteWatchlistMutation.mutate(wl.id)}
+                        data-testid={`button-delete-watchlist-${idx}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
                     <p className="text-xs text-muted-foreground" data-testid={`text-watchlist-desc-${idx}`}>
@@ -1306,7 +1319,21 @@ export default function ThreatIntelPage() {
                           Auto-Match
                         </Badge>
                       )}
+                      {wl.updatedAt && (
+                        <span className="text-[10px] text-muted-foreground" data-testid={`text-watchlist-updated-${idx}`}>
+                          <Clock className="h-2.5 w-2.5 inline mr-0.5" />
+                          {formatRelativeTimestamp(wl.updatedAt)}
+                        </span>
+                      )}
                     </div>
+                    {(wl.matchCount ?? 0) > 0 && (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <Badge variant="destructive" className="text-[10px] gap-1" data-testid={`badge-watchlist-matches-${idx}`}>
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          {wl.matchCount} match{wl.matchCount === 1 ? "" : "es"} detected
+                        </Badge>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}

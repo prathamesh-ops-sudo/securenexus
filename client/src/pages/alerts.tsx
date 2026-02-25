@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight, X, Clock, Tag, MapPin } from "lucide-react";
+import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight, X, Clock, Tag, MapPin, UserPlus, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +71,7 @@ export default function AlertsPage() {
   const [ruleEnabled, setRuleEnabled] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>("triaged");
+  const [bulkAssignee, setBulkAssignee] = useState("");
   const [savedViews, setSavedViews] = useState<Array<{ name: string; search: string; severity: string; showSuppressed: boolean }>>([]);
   const [savedViewName, setSavedViewName] = useState("");
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
@@ -250,7 +251,7 @@ export default function AlertsPage() {
   });
 
   const bulkUpdate = useMutation({
-    mutationFn: async (payload: { status?: string; suppressed?: boolean }) => {
+    mutationFn: async (payload: { status?: string; suppressed?: boolean; assignedTo?: string }) => {
       const res = await apiRequest("POST", "/api/alerts/bulk-update", { alertIds: selectedIds, ...payload });
       return res.json();
     },
@@ -516,6 +517,17 @@ export default function AlertsPage() {
               </SelectContent>
             </Select>
             <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending}>Apply Status</Button>
+            <div className="flex items-center gap-1">
+              <Input placeholder="Assignee" value={bulkAssignee} onChange={(e) => setBulkAssignee(e.target.value)} className="w-32 h-8 text-sm" />
+              <Button size="sm" variant="outline" onClick={() => { if (bulkAssignee.trim()) bulkUpdate.mutate({ assignedTo: bulkAssignee.trim() }); }} disabled={bulkUpdate.isPending || !bulkAssignee.trim()}>
+                <UserPlus className="h-3 w-3 mr-1" />
+                Assign
+              </Button>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ status: "escalated" })} disabled={bulkUpdate.isPending}>
+              <ArrowUpRight className="h-3 w-3 mr-1" />
+              Escalate
+            </Button>
             <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: true })} disabled={bulkUpdate.isPending}>Suppress</Button>
             <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: false })} disabled={bulkUpdate.isPending}>Unsuppress</Button>
             <span className="text-xs text-muted-foreground">Shortcuts: J/K focus rows, Enter open detail, Esc close detail, T set selected to triaged.</span>
