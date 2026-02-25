@@ -6,6 +6,7 @@ import { startReportScheduler } from "./report-scheduler";
 import { sliMiddleware, startSliCollection } from "./sli-middleware";
 import { startJobWorker } from "./job-queue";
 import { startSloAlerting } from "./slo-alerting";
+import { replyInternal } from "./api-response";
 
 const app = express();
 const httpServer = createServer(app);
@@ -89,10 +90,10 @@ app.use((req, res, next) => {
       return next(err);
     }
 
-    return res.status(status).json({
-      error: true,
-      message: process.env.NODE_ENV === "production" ? "Internal Server Error" : message,
-    });
+    return replyInternal(
+      res,
+      process.env.NODE_ENV === "production" ? "Internal Server Error" : message,
+    );
   });
 
   // importantly only setup vite in development and after

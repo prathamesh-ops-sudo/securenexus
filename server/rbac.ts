@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { ROLE_PERMISSIONS } from "@shared/schema";
+import {
+  replyUnauthenticated,
+  replyForbidden,
+  ERROR_CODES,
+} from "./api-response";
 
 const ROLE_HIERARCHY: Record<string, number> = {
   owner: 4,
@@ -12,7 +17,7 @@ const ROLE_HIERARCHY: Record<string, number> = {
 export async function resolveOrgContext(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
   if (!user?.id) {
-    return res.status(401).json({ error: "Authentication required" });
+    return replyUnauthenticated(res);
   }
 
   const userId = user.id;
@@ -32,7 +37,7 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
   if (requestedOrgId) {
     membership = activeMemberships.find(m => m.orgId === requestedOrgId);
     if (!membership) {
-      return res.status(403).json({ error: "You do not have access to this organization" });
+      return replyForbidden(res, "You do not have access to this organization", ERROR_CODES.ORG_ACCESS_DENIED);
     }
   } else {
     membership = activeMemberships[0];
@@ -48,10 +53,10 @@ export function requireOrgRole(...allowedRoles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const role = (req as any).orgRole;
     if (!role) {
-      return res.status(403).json({ error: "No organization membership found" });
+      return replyForbidden(res, "No organization membership found", ERROR_CODES.ORG_MEMBERSHIP_REQUIRED);
     }
     if (!allowedRoles.includes(role)) {
-      return res.status(403).json({ error: `Requires one of: ${allowedRoles.join(", ")}` });
+      return replyForbidden(res, `Requires one of: ${allowedRoles.join(", ")}`);
     }
     next();
   };
@@ -61,12 +66,12 @@ export function requireMinRole(minRole: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const role = (req as any).orgRole;
     if (!role) {
-      return res.status(403).json({ error: "No organization membership found" });
+      return replyForbidden(res, "No organization membership found", ERROR_CODES.ORG_MEMBERSHIP_REQUIRED);
     }
     const userLevel = ROLE_HIERARCHY[role] || 0;
     const requiredLevel = ROLE_HIERARCHY[minRole] || 0;
     if (userLevel < requiredLevel) {
-      return res.status(403).json({ error: `Requires at least ${minRole} role` });
+      return replyForbidden(res, `Requires at least ${minRole} role`);
     }
     next();
   };
@@ -76,11 +81,11 @@ export function requirePermission(scope: string, action: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const role = (req as any).orgRole;
     if (!role) {
-      return res.status(403).json({ error: "No organization membership found" });
+      return replyForbidden(res, "No organization membership found", ERROR_CODES.ORG_MEMBERSHIP_REQUIRED);
     }
     const rolePerms = ROLE_PERMISSIONS[role];
     if (!rolePerms || !rolePerms[scope] || !rolePerms[scope].includes(action)) {
-      return res.status(403).json({ error: `Insufficient permissions: requires ${scope}:${action}` });
+      return replyForbidden(res, `Insufficient permissions: requires ${scope}:${action}`, ERROR_CODES.PERMISSION_DENIED);
     }
     next();
   };

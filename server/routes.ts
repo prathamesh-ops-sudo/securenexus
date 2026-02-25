@@ -32,6 +32,15 @@ import { evaluateAndAlert, getBreachHistory, seedDefaultSloTargets } from "./slo
 import { evaluateFlag, evaluateAllFlags } from "./feature-flags";
 import { runConnectorContractTests, runAutomationIntegrationTests, runAllContractTests } from "./integration-tests";
 import { buildOpenApiSpec, generateTypedClient, registerOpenApiRoutes } from "./openapi";
+import {
+  reply,
+  replyError,
+  replyUnauthenticated,
+  replyForbidden,
+  replyRateLimit,
+  ERROR_CODES,
+  type ApiMeta,
+} from "./api-response";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -42,14 +51,17 @@ function sendEnvelope(
   data: any,
   options?: {
     status?: number;
-    meta?: Record<string, any>;
+    meta?: ApiMeta;
     errors?: { code: string; message: string; details?: any }[] | null;
   }
 ) {
   const status = options?.status ?? 200;
-  const meta = options?.meta ?? {};
+  const meta: ApiMeta = options?.meta ?? {};
   const errors = options?.errors ?? null;
-  return res.status(status).json({ data, meta, errors });
+  if (errors && errors.length > 0) {
+    return replyError(res, status, errors, meta);
+  }
+  return reply(res, data, meta, status);
 }
 
 function hashApiKey(key: string): string {
@@ -66,15 +78,15 @@ function generateApiKey(): { key: string; prefix: string; hash: string } {
 async function apiKeyAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers["x-api-key"] || req.headers.authorization?.replace("Bearer ", "");
   if (!header || typeof header !== "string") {
-    return res.status(401).json({ error: "Missing API key. Provide X-API-Key header." });
+    return replyUnauthenticated(res, "Missing API key. Provide X-API-Key header.", ERROR_CODES.API_KEY_MISSING);
   }
   const hash = hashApiKey(header);
   const apiKey = await storage.getApiKeyByHash(hash);
   if (!apiKey) {
-    return res.status(401).json({ error: "Invalid API key." });
+    return replyUnauthenticated(res, "Invalid API key.", ERROR_CODES.API_KEY_INVALID);
   }
   if (!apiKey.isActive) {
-    return res.status(403).json({ error: "API key has been revoked." });
+    return replyForbidden(res, "API key has been revoked.", ERROR_CODES.API_KEY_REVOKED);
   }
   storage.updateApiKeyLastUsed(apiKey.id).catch(() => {});
   (req as any).apiKey = apiKey;
@@ -91,10 +103,11 @@ function verifyWebhookSignature(req: Request, res: Response, next: NextFunction)
   }
 
   if (!signature) {
-    return res.status(401).json({
-      error: "Missing X-Webhook-Signature header. Required when webhook secret is configured.",
-      code: "SIGNATURE_MISSING",
-    });
+    return replyUnauthenticated(
+      res,
+      "Missing X-Webhook-Signature header. Required when webhook secret is configured.",
+      ERROR_CODES.WEBHOOK_SIG_MISSING,
+    );
   }
 
   try {
@@ -106,36 +119,28 @@ function verifyWebhookSignature(req: Request, res: Response, next: NextFunction)
     const sig = signature.startsWith("sha256=") ? signature.slice(7) : signature;
 
     if (!/^[a-f0-9]+$/i.test(sig) || sig.length !== expected.length) {
-      return res.status(401).json({
-        error: "Invalid webhook signature.",
-        code: "SIGNATURE_INVALID",
-      });
+      return replyUnauthenticated(res, "Invalid webhook signature.", ERROR_CODES.WEBHOOK_SIG_INVALID);
     }
 
     if (!timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expected, "hex"))) {
-      return res.status(401).json({
-        error: "Invalid webhook signature.",
-        code: "SIGNATURE_INVALID",
-      });
+      return replyUnauthenticated(res, "Invalid webhook signature.", ERROR_CODES.WEBHOOK_SIG_INVALID);
     }
 
     if (timestamp) {
       const ts = parseInt(timestamp, 10);
       const age = Math.abs(Date.now() - ts);
       if (age > 5 * 60 * 1000) {
-        return res.status(401).json({
-          error: "Webhook timestamp too old. Replay protection triggered.",
-          code: "TIMESTAMP_EXPIRED",
-        });
+        return replyUnauthenticated(
+          res,
+          "Webhook timestamp too old. Replay protection triggered.",
+          ERROR_CODES.WEBHOOK_TS_EXPIRED,
+        );
       }
     }
 
     next();
   } catch {
-    return res.status(401).json({
-      error: "Invalid webhook signature.",
-      code: "SIGNATURE_INVALID",
-    });
+    return replyUnauthenticated(res, "Invalid webhook signature.", ERROR_CODES.WEBHOOK_SIG_INVALID);
   }
 }
 
@@ -249,7 +254,7 @@ export async function registerRoutes(
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: "Too many requests, please try again later." },
+    handler: (_req, res) => replyRateLimit(res),
     skip: (req) => req.path === "/ops/health" || req.path === "/health",
   });
 
@@ -258,7 +263,7 @@ export async function registerRoutes(
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: "Too many requests, please try again later." },
+    handler: (_req, res) => replyRateLimit(res),
   });
 
   const ingestionLimiter = rateLimit({
@@ -266,7 +271,8 @@ export async function registerRoutes(
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: "Ingestion rate limit exceeded. Try again shortly." },
+    handler: (_req, res) =>
+      replyRateLimit(res, "Ingestion rate limit exceeded. Try again shortly.", ERROR_CODES.INGESTION_RATE_LIMITED),
   });
 
   app.use("/api/", generalLimiter);
