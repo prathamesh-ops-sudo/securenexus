@@ -1,0 +1,21 @@
+# SecureNexus Code Owners
+# These owners will be automatically requested for review on PRs
+
+# Global owner
+* @prathamesh-ops-sudo
+
+# Infrastructure
+k8s/ @prathamesh-ops-sudo
+.github/workflows/ @prathamesh-ops-sudo
+Dockerfile @prathamesh-ops-sudo
+scripts/ @prathamesh-ops-sudo
+
+# Backend
+server/ @prathamesh-ops-sudo
+
+# Frontend
+client/ @prathamesh-ops-sudo
+
+# Database schema
+shared/ @prathamesh-ops-sudo
+drizzle.config.ts @prathamesh-ops-sudo

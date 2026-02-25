@@ -49,7 +49,8 @@ spec:
             periodSeconds: 5
       volumes:
         - name: grafana-storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: grafana-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -59,7 +60,7 @@ metadata:
   labels:
     app: grafana
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: grafana
   ports:
@@ -67,3 +68,18 @@ spec:
       targetPort: 3000
       protocol: TCP
       name: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: monitoring
+  labels:
+    app: grafana
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: gp2

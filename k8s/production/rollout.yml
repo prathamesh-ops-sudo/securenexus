@@ -4,11 +4,16 @@ metadata:
   name: securenexus
   namespace: production
   labels:
+    app.kubernetes.io/name: securenexus
+    app.kubernetes.io/instance: securenexus-production
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: securenexus
+    app.kubernetes.io/managed-by: github-actions
     app: securenexus
     environment: production
 spec:
   replicas: 2
-  revisionHistoryLimit: 3
+  revisionHistoryLimit: 5
   selector:
     matchLabels:
       app: securenexus
@@ -19,29 +24,47 @@ spec:
       stableService: securenexus-stable
       steps:
         - setWeight: 20
-        - pause: { duration: 60s }
+        - pause: { duration: 120s }
         - setWeight: 50
-        - pause: { duration: 60s }
+        - pause: { duration: 120s }
         - setWeight: 80
-        - pause: { duration: 30s }
+        - pause: { duration: 60s }
       canaryMetadata:
         labels:
           role: canary
       stableMetadata:
         labels:
           role: stable
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: securenexus
         environment: production
+        app.kubernetes.io/name: securenexus
+        app.kubernetes.io/instance: securenexus-production
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
       containers:
         - name: securenexus
           image: ${IMAGE}
           ports:
             - containerPort: 5000
               protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           envFrom:
             - secretRef:
                 name: securenexus-secrets
@@ -56,16 +79,32 @@ spec:
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /api/ops/health
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/ops/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
           resources:
             requests:
               cpu: 256m
               memory: 512Mi
             limits:
               cpu: "1"
-              memory: 2Gi
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

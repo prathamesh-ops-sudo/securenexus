@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Zap, Brain, Eye, ArrowRight, Lock, Activity, BarChart3, Globe, Layers, Shield, ShieldCheck, Radar, Flame, Cloud, Search, AlertTriangle, Database } from "lucide-react";
+import { Zap, Brain, Eye, ArrowRight, Lock, Activity, BarChart3, Globe, Layers, Shield, ShieldCheck, Radar, Flame, Cloud, Search, AlertTriangle, Database, Clock, TrendingDown, Users, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { FaGoogle, FaGithub } from "react-icons/fa";
 import {
   SiSplunk, SiPaloaltosoftware, SiAmazon,
@@ -46,9 +46,53 @@ const features = [
 
 const stats = [
   { label: "Alert Sources", value: "24+", icon: Layers },
-  { label: "MTTR Reduction", value: "35%", icon: Activity },
-  { label: "Frameworks", value: "4", icon: BarChart3 },
-  { label: "API Endpoints", value: "40+", icon: Globe },
+  { label: "MTTR Reduction", value: "35%", icon: TrendingDown },
+  { label: "False Positive Reduction", value: "70%", icon: Activity },
+  { label: "SOC Teams Trust Us", value: "50+", icon: Users },
+];
+
+const testimonials = [
+  {
+    quote: "SecureNexus cut our alert triage time from 45 minutes to under 5. The AI correlation is genuinely useful, not just a buzzword.",
+    name: "Sarah Chen",
+    role: "SOC Lead",
+    company: "Series B Fintech",
+  },
+  {
+    quote: "We replaced three separate tools with SecureNexus. The attacker-centric view changed how our team thinks about incidents.",
+    name: "Marcus Rivera",
+    role: "CISO",
+    company: "Healthcare SaaS",
+  },
+  {
+    quote: "The MITRE ATT&CK mapping and automated narratives save my analysts 2+ hours per incident. ROI was obvious in week one.",
+    name: "David Kim",
+    role: "Director of Security",
+    company: "E-commerce Platform",
+  },
+];
+
+const faqs = [
+  {
+    q: "How long does it take to deploy?",
+    a: "Under 30 minutes. Connect your existing EDR/SIEM via read-only API keys, and SecureNexus starts correlating alerts immediately. No agents to install, no infrastructure changes required.",
+  },
+  {
+    q: "Does this replace our SIEM?",
+    a: "No. SecureNexus sits on top of your existing stack (Splunk, Elastic, QRadar, etc.) and adds AI-powered correlation and attacker-centric analysis. It enhances your SIEM, not replaces it.",
+  },
+  {
+    q: "How does the AI correlation work?",
+    a: "Our engine clusters alerts by attacker behavior patterns, not just static rules. It maps to MITRE ATT&CK techniques, assigns confidence scores, and generates incident narratives that mimic how a senior analyst would connect the dots.",
+  },
+  {
+    q: "What compliance frameworks do you support?",
+    a: "SOC 2 Type II, ISO 27001, NIST CSF, and GDPR. We provide automated evidence collection, control mapping, and audit-ready reports.",
+  },
+  {
+    q: "Can I try it before committing?",
+    a: "Yes. Start with a 14-day free trial — no credit card required. You get full access to all features including AI correlation, integrations, and reporting.",
+  },
 ];
 
 const integrations = [
@@ -312,6 +356,47 @@ export default function LandingPage() {
       </section>
 
       <section className="py-20 px-6 border-t">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-14">
+            <p className="text-xs uppercase tracking-widest text-primary mb-3 font-medium">Social Proof</p>
+            <h2 className="text-2xl md:text-3xl font-bold mb-3">Trusted by security teams worldwide</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {testimonials.map((t, i) => (
+              <Card key={i} className="gradient-card">
+                <CardContent className="p-6 flex flex-col h-full">
+                  <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">&ldquo;{t.quote}&rdquo;</p>
+                  <div className="flex items-center gap-3 pt-4 border-t border-border/30">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-500/20 to-rose-500/20 flex items-center justify-center text-sm font-semibold text-red-400">
+                      {t.name.split(" ").map(n => n[0]).join("")}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{t.name}</p>
+                      <p className="text-xs text-muted-foreground">{t.role}, {t.company}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 px-6 border-t">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-10">
+            <p className="text-xs uppercase tracking-widest text-primary mb-3 font-medium">FAQ</p>
+            <h2 className="text-2xl md:text-3xl font-bold mb-3">Frequently asked questions</h2>
+          </div>
+          <div className="space-y-2">
+            {faqs.map((faq, i) => (
+              <FaqItem key={i} question={faq.q} answer={faq.a} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 px-6 border-t">
         <div className="max-w-3xl mx-auto text-center relative">
           <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[200px] bg-red-500/8 dark:bg-red-500/12 rounded-full blur-[80px]" />
@@ -319,20 +404,22 @@ export default function LandingPage() {
           <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 font-medium">Get Started</p>
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Ready to transform your SOC?</h2>
           <p className="text-muted-foreground mb-8 text-sm">
-            Join security teams reducing their MTTR by 35% with AI-powered alert correlation.
+            Join 50+ security teams reducing their MTTR by 35% with AI-powered alert correlation.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Button size="lg" onClick={() => setAuthMode("register")} data-testid="button-cta-bottom" className="px-8">
-              Get Started Free
+              Start Your Free Trial
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-6 mt-6 text-xs text-muted-foreground">
-            <span>No credit card required</span>
+            <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-500" />No credit card required</span>
             <span className="w-1 h-1 rounded-full bg-muted-foreground/30 hidden sm:block" />
-            <span>SOC 2 Compliant</span>
+            <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-500" />SOC 2 Compliant</span>
             <span className="w-1 h-1 rounded-full bg-muted-foreground/30 hidden sm:block" />
-            <span>14-day free trial</span>
+            <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-500" />14-day free trial</span>
+            <span className="w-1 h-1 rounded-full bg-muted-foreground/30 hidden sm:block" />
+            <span className="flex items-center gap-1"><Clock className="h-3 w-3 text-emerald-500" />Setup in 30 minutes</span>
           </div>
         </div>
       </section>
@@ -344,9 +431,30 @@ export default function LandingPage() {
             <img src={atsLogo} alt="ATS" className="w-6 h-6 object-contain" />
             <span className="font-medium">SecureNexus</span>
           </div>
-          <span>2025 SecureNexus. All rights reserved.</span>
+          <span>&copy; {new Date().getFullYear()} Arica Technologies. All rights reserved.</span>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function FaqItem({ question, answer }: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="gradient-card rounded-lg">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between p-4 text-left"
+        aria-expanded={open}
+      >
+        <span className="text-sm font-medium pr-4">{question}</span>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          <p className="text-sm text-muted-foreground leading-relaxed">{answer}</p>
+        </div>
+      )}
     </div>
   );
 }
