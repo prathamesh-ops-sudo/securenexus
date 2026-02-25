@@ -5,23 +5,20 @@ import { entities } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
 import { getEnrichmentForEntity } from "./threat-enrichment";
 import { getCachedOsintIndicators } from "./osint-feeds";
+import { config as appConfig } from "./config";
 
-const AWS_REGION = process.env.AWS_REGION || "us-east-1";
+const awsCredentials = appConfig.aws.accessKeyId && appConfig.aws.secretAccessKey
+  ? { accessKeyId: appConfig.aws.accessKeyId, secretAccessKey: appConfig.aws.secretAccessKey }
+  : undefined;
 
 const bedrockClient = new BedrockRuntimeClient({
-  region: AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
+  region: appConfig.aws.region,
+  ...(awsCredentials ? { credentials: awsCredentials } : {}),
 });
 
 const sagemakerClient = new SageMakerRuntimeClient({
-  region: AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
+  region: appConfig.aws.region,
+  ...(awsCredentials ? { credentials: awsCredentials } : {}),
 });
 
 type ModelBackend = "bedrock" | "sagemaker";
@@ -36,21 +33,21 @@ interface ModelConfig {
 }
 
 const MODEL_CONFIG: ModelConfig = {
-  backend: (process.env.AI_BACKEND as ModelBackend) || "bedrock",
-  modelId: process.env.AI_MODEL_ID || "mistral.mistral-large-2402-v1:0",
-  sagemakerEndpoint: process.env.SAGEMAKER_ENDPOINT,
-  maxTokens: parseInt(process.env.AI_MAX_TOKENS || "4096"),
-  temperature: parseFloat(process.env.AI_TEMPERATURE || "0.1"),
-  topP: parseFloat(process.env.AI_TOP_P || "0.9"),
+  backend: appConfig.ai.backend,
+  modelId: appConfig.ai.modelId,
+  sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+  maxTokens: appConfig.ai.maxTokens,
+  temperature: appConfig.ai.temperature,
+  topP: appConfig.ai.topP,
 };
 
 const TRIAGE_MODEL_CONFIG: ModelConfig = {
-  backend: (process.env.AI_BACKEND as ModelBackend) || "bedrock",
-  modelId: process.env.AI_TRIAGE_MODEL_ID || "mistral.mistral-large-2402-v1:0",
-  sagemakerEndpoint: process.env.SAGEMAKER_TRIAGE_ENDPOINT,
-  maxTokens: parseInt(process.env.AI_TRIAGE_MAX_TOKENS || "2048"),
-  temperature: parseFloat(process.env.AI_TRIAGE_TEMPERATURE || "0.05"),
-  topP: parseFloat(process.env.AI_TOP_P || "0.9"),
+  backend: appConfig.ai.backend,
+  modelId: appConfig.ai.triage.modelId,
+  sagemakerEndpoint: appConfig.ai.triage.sagemakerEndpoint,
+  maxTokens: appConfig.ai.triage.maxTokens,
+  temperature: appConfig.ai.triage.temperature,
+  topP: appConfig.ai.topP,
 };
 
 type InferenceTier = "triage" | "narrative" | "correlation";
@@ -126,7 +123,7 @@ async function invokeBedrock(systemPrompt: string, userMessage: string, maxToken
       throw new Error("AWS credentials are invalid or lack Bedrock access. Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY have bedrock:InvokeModel permission.");
     }
     if (error.name === "ResourceNotFoundException" || error.name === "ModelNotReadyException" || error.name === "ValidationException") {
-      throw new Error(`Model ${MODEL_CONFIG.modelId} is not available in region ${AWS_REGION}. Enable it in the AWS Bedrock console under Model Access.`);
+      throw new Error(`Model ${MODEL_CONFIG.modelId} is not available in region ${appConfig.aws.region}. Enable it in the AWS Bedrock console under Model Access.`);
     }
     if (error.name === "ThrottlingException") {
       throw new Error("Rate limit exceeded on AWS Bedrock. Retry after a brief delay.");
@@ -236,7 +233,7 @@ async function invokeBedrockWithConfig(systemPrompt: string, userMessage: string
       throw new Error("AWS credentials are invalid or lack Bedrock access. Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY have bedrock:InvokeModel permission.");
     }
     if (error.name === "ResourceNotFoundException" || error.name === "ModelNotReadyException" || error.name === "ValidationException") {
-      throw new Error(`Model ${config.modelId} is not available in region ${AWS_REGION}. Enable it in the AWS Bedrock console under Model Access.`);
+      throw new Error(`Model ${config.modelId} is not available in region ${appConfig.aws.region}. Enable it in the AWS Bedrock console under Model Access.`);
     }
     if (error.name === "ThrottlingException") {
       throw new Error("Rate limit exceeded on AWS Bedrock. Retry after a brief delay.");
@@ -826,7 +823,7 @@ export async function checkModelHealth(): Promise<{
       status: "healthy",
       backend: MODEL_CONFIG.backend,
       model: MODEL_CONFIG.modelId,
-      region: AWS_REGION,
+      region: appConfig.aws.region,
       latencyMs: latency,
     };
   } catch (error: any) {
@@ -834,7 +831,7 @@ export async function checkModelHealth(): Promise<{
       status: "unhealthy",
       backend: MODEL_CONFIG.backend,
       model: MODEL_CONFIG.modelId,
-      region: AWS_REGION,
+      region: appConfig.aws.region,
       latencyMs: Date.now() - start,
       error: error.message,
     };
@@ -851,7 +848,7 @@ export function getModelConfig(): {
   return {
     backend: MODEL_CONFIG.backend,
     model: MODEL_CONFIG.modelId,
-    region: AWS_REGION,
+    region: appConfig.aws.region,
     temperature: MODEL_CONFIG.temperature,
     maxTokens: MODEL_CONFIG.maxTokens,
   };

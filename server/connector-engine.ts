@@ -1,6 +1,7 @@
 import { type Connector, type InsertAlert, type ConnectorJobRun, type InsertConnectorJobRun } from "@shared/schema";
 import { normalizeAlert, toInsertAlert, SOURCE_KEYS } from "./normalizer";
 import { storage } from "./storage";
+import { config as appConfig } from "./config";
 
 export interface ConnectorConfig {
   baseUrl: string;
@@ -249,8 +250,8 @@ async function fetchGuardDuty(config: ConnectorConfig, since?: Date): Promise<an
   const client = new GuardDutyClient({
     region: config.region || "us-east-1",
     credentials: {
-      accessKeyId: config.accessKeyId || process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY!,
+      accessKeyId: config.accessKeyId || appConfig.aws.accessKeyId || "",
+      secretAccessKey: config.secretAccessKey || appConfig.aws.secretAccessKey || "",
     },
   });
   const detectorsRes = await client.send(new ListDetectorsCommand({}));
@@ -1488,8 +1489,8 @@ export async function testConnector(type: string, config: ConnectorConfig): Prom
         const client = new GuardDutyClient({
           region: config.region || "us-east-1",
           credentials: {
-            accessKeyId: config.accessKeyId || process.env.AWS_ACCESS_KEY_ID!,
-            secretAccessKey: config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY!,
+            accessKeyId: config.accessKeyId || appConfig.aws.accessKeyId || "",
+            secretAccessKey: config.secretAccessKey || appConfig.aws.secretAccessKey || "",
           },
         });
         const res = await client.send(new ListDetectorsCommand({}));

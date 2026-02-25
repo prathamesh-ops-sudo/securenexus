@@ -3,6 +3,7 @@ import passport from "passport";
 import { authStorage } from "./storage";
 import { isAuthenticated, hashPassword } from "./session";
 import { storage } from "../storage";
+import { config } from "../config";
 
 async function ensureOrgMembership(user: any) {
   try {
@@ -120,7 +121,7 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   app.get("/api/auth/google", (req, res, next) => {
-    if (!process.env.GOOGLE_CLIENT_ID) {
+    if (!config.oauth.google.clientId) {
       return res.status(501).json({ message: "Google login not configured" });
     }
     passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
@@ -137,7 +138,7 @@ export function registerAuthRoutes(app: Express): void {
   );
 
   app.get("/api/auth/github", (req, res, next) => {
-    if (!process.env.GITHUB_CLIENT_ID) {
+    if (!config.oauth.github.clientId) {
       return res.status(501).json({ message: "GitHub login not configured" });
     }
     passport.authenticate("github", { scope: ["user:email"] })(req, res, next);
@@ -156,9 +157,9 @@ export function registerAuthRoutes(app: Express): void {
   app.get("/api/auth/providers", (_req, res) => {
     res.json({
       email: true,
-      google: !!process.env.GOOGLE_CLIENT_ID,
-      github: !!process.env.GITHUB_CLIENT_ID,
-      cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || null,
+      google: !!config.oauth.google.clientId,
+      github: !!config.oauth.github.clientId,
+      cognitoUserPoolId: config.oauth.cognitoUserPoolId || null,
     });
   });
 }
