@@ -59,7 +59,9 @@ function loadRecentRecords(): RecentRecord[] {
   try {
     const raw = localStorage.getItem(RECENT_RECORDS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch (_parseErr) {
+    console.warn("Failed to parse recent records from localStorage", _parseErr);
+  }
   return [];
 }
 

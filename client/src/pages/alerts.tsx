@@ -373,6 +373,8 @@ export default function AlertsPage() {
       apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { assignedTo: name.trim() }).then(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
         toast({ title: "Assigned", description: `Alert assigned to ${name.trim()}` });
+      }).catch((err: Error) => {
+        toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
       });
     }
   }, [focusedAlertId, toast]);
@@ -382,6 +384,8 @@ export default function AlertsPage() {
     apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "triaged", assignedTo: "Tier 2" }).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
       toast({ title: "Escalated", description: "Alert escalated to Tier 2" });
+    }).catch((err: Error) => {
+      toast({ title: "Escalation failed", description: err.message, variant: "destructive" });
     });
   }, [focusedAlertId, toast]);
 
@@ -390,6 +394,8 @@ export default function AlertsPage() {
     apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "resolved" }).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
       toast({ title: "Resolved" });
+    }).catch((err: Error) => {
+      toast({ title: "Resolve failed", description: err.message, variant: "destructive" });
     });
   }, [focusedAlertId, toast]);
 

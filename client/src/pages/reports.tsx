@@ -256,7 +256,7 @@ export default function ReportsPage() {
               {schedules.map((s: any) => {
                 const tplName = templates?.find((t: any) => t.id === s.templateId)?.name || "Unknown Template";
                 let deliveryTargets: any[] = [];
-                try { deliveryTargets = s.deliveryTargets ? JSON.parse(s.deliveryTargets) : []; } catch {}
+                try { deliveryTargets = s.deliveryTargets ? JSON.parse(s.deliveryTargets) : []; } catch (_parseErr) { console.warn("Failed to parse delivery targets", _parseErr); }
                 return (
                   <Card key={s.id} data-testid={`card-schedule-${s.id}`}>
                     <CardContent className="py-4">

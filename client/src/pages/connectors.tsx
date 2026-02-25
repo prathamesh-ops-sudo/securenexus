@@ -385,7 +385,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
     mutationFn: async () => {
       const res = await fetch(`/api/connectors/${connectorId}/secret-rotations`, {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ secretField: newSecretField, rotationIntervalDays: parseInt(rotationDays) }),
+        body: JSON.stringify({ secretField: newSecretField, rotationIntervalDays: parseInt(rotationDays, 10) }),
       });
       if (!res.ok) throw new Error("Failed to create rotation schedule");
       return res.json();
@@ -817,7 +817,7 @@ export default function ConnectorsPage() {
       type: selectedType,
       authType: meta.authType,
       config,
-      pollingIntervalMin: parseInt(pollingInterval) || 5,
+      pollingIntervalMin: parseInt(pollingInterval, 10) || 5,
     });
   }
 
