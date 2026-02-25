@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(ls:*)",
+      "Bash(tail:*)",
+      "Bash(cd /c/Users/prath/OneDrive/Desktop/securenexus && node_modules/.bin/tsc --noEmit 2>&1)"
+    ]
+  }
+}

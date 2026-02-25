@@ -48,6 +48,15 @@ export const ORG_ROLES = ["owner", "admin", "analyst", "read_only"] as const;
 export const MEMBERSHIP_STATUSES = ["active", "suspended", "invited"] as const;
 export const PERMISSION_SCOPES = ["incidents", "connectors", "api_keys", "response_actions", "settings", "team"] as const;
 export const PERMISSION_ACTIONS = ["read", "write", "admin"] as const;
+export const TEAM_MEMBERSHIP_ROLES = ["lead", "member"] as const;
+export const SAVED_VIEW_RESOURCE_TYPES = ["alerts", "incidents", "entities", "connectors"] as const;
+export const SAVED_VIEW_VISIBILITIES = ["private", "team", "org"] as const;
+export const SUPPRESSION_MATCHER_OPS = ["eq", "neq", "contains", "not_contains", "regex", "in", "not_in"] as const;
+export const APPROVAL_SUBJECT_TYPES = ["response_action", "playbook"] as const;
+export const APPROVAL_DECISIONS = ["approved", "rejected", "abstained"] as const;
+export const CONNECTOR_RETRY_STRATEGIES = ["exponential", "linear", "fixed"] as const;
+export const AUDIT_VERIFICATION_STATUSES = ["running", "completed", "failed"] as const;
+export const AUDIT_VERIFICATION_TRIGGERS = ["scheduled", "manual", "system"] as const;
 
 export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
   owner: {
@@ -177,7 +186,23 @@ export const incidents = pgTable("incidents", {
   resolveDueAt: timestamp("resolve_due_at"),
   ackAt: timestamp("ack_at"),
   slaBreached: boolean("sla_breached").default(false),
+  // comma-separated list of breached milestone names, e.g. "ack,contain"
   slaBreachType: text("sla_breach_type"),
+  // total number of SLA milestones breached (0–3: ack / contain / resolve)
+  slaBreachCount: integer("sla_breach_count").notNull().default(0),
+  // per-milestone breach timestamps (set by the SLO alerting job the moment it detects a breach)
+  ackBreachedAt: timestamp("ack_breached_at"),
+  containBreachedAt: timestamp("contain_breached_at"),
+  resolveBreachedAt: timestamp("resolve_breached_at"),
+  // timestamp when the first breach-alert notification was dispatched
+  slaNotifiedAt: timestamp("sla_notified_at"),
+  // SLA clock pause/resume support (e.g. waiting for external party response)
+  slaPausedAt: timestamp("sla_paused_at"),
+  slaResumedAt: timestamp("sla_resumed_at"),
+  // accumulated pause time in minutes; SLA deadline calculators must add this offset
+  slaTotalPausedMinutes: integer("sla_total_paused_minutes").notNull().default(0),
+  // Mean Time To Resolve in minutes, computed and stored when the incident is resolved/closed
+  mttrMinutes: integer("mttr_minutes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -186,6 +211,7 @@ export const incidents = pgTable("incidents", {
   index("idx_incidents_severity").on(table.severity),
   index("idx_incidents_org_created").on(table.orgId, table.createdAt),
   index("idx_incidents_assigned").on(table.assignedTo),
+  index("idx_incidents_sla_breached").on(table.orgId, table.slaBreached),
 ]);
 
 export const incidentComments = pgTable("incident_comments", {
@@ -240,6 +266,52 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_audit_logs_org_seq").on(table.orgId, table.sequenceNum),
+]);
+
+/**
+ * Records the results of background tamper-evidence validation jobs.
+ *
+ * Each run validates a contiguous range of audit_log sequence numbers for
+ * an org, re-computing each entry's hash and confirming the hash chain
+ * is intact.  Findings are stored so security engineers can review past
+ * verifications without re-running them.
+ *
+ * Triggered by: the scheduled nightly job, a manual admin action, or the
+ * system after a suspicious audit-log query.
+ */
+export const auditVerificationRuns = pgTable("audit_verification_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  // matches AUDIT_VERIFICATION_STATUSES
+  status: text("status").notNull().default("running"),
+  // inclusive sequence-number range that was validated
+  rangeStart: integer("range_start").notNull(),
+  rangeEnd: integer("range_end").notNull(),
+  recordsChecked: integer("records_checked").notNull().default(0),
+  // true = every hash in the range matched and no gaps were found
+  chainValid: boolean("chain_valid"),
+  // sequenceNum of the first hash mismatch, null when chain is valid
+  firstBreakAt: integer("first_break_at"),
+  // count of records whose recomputed hash did not match entryHash
+  tamperedCount: integer("tampered_count").notNull().default(0),
+  // jsonb array of { sequenceNum, storedHash, expectedHash } for each tampered record
+  tamperedRecords: jsonb("tampered_records"),
+  // integer array of sequenceNums that were expected but missing (gaps in the chain)
+  missingSequences: integer("missing_sequences").array(),
+  // matches AUDIT_VERIFICATION_TRIGGERS
+  triggeredBy: text("triggered_by").notNull().default("scheduled"),
+  triggeredByUserId: varchar("triggered_by_user_id"),
+  triggeredByUserName: text("triggered_by_user_name"),
+  // wall-clock time the verification job ran for
+  verificationDurationMs: integer("verification_duration_ms"),
+  // timestamp when the verification completed (null while still running)
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_audit_verif_org").on(table.orgId),
+  index("idx_audit_verif_org_created").on(table.orgId, table.createdAt),
+  index("idx_audit_verif_chain_valid").on(table.orgId, table.chainValid),
+  index("idx_audit_verif_status").on(table.status),
 ]);
 
 export const apiKeys = pgTable("api_keys", {
@@ -945,6 +1017,9 @@ export type Incident = typeof incidents.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrgSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export const insertAuditVerificationRunSchema = createInsertSchema(auditVerificationRuns).omit({ id: true, createdAt: true, verifiedAt: true });
+export type AuditVerificationRun = typeof auditVerificationRuns.$inferSelect;
+export type InsertAuditVerificationRun = z.infer<typeof insertAuditVerificationRunSchema>;
 export type IncidentComment = typeof incidentComments.$inferSelect;
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type Tag = typeof tags.$inferSelect;
@@ -1115,6 +1190,8 @@ export const organizationMemberships = pgTable("organization_memberships", {
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   userId: varchar("user_id").notNull(),
   role: text("role").notNull().default("analyst"),
+  // customRoleId references a custom org-defined role; null = use the system role above
+  customRoleId: varchar("custom_role_id").references(() => orgRoles.id, { onDelete: "set null" }),
   status: text("status").notNull().default("active"),
   invitedBy: varchar("invited_by"),
   invitedEmail: text("invited_email"),
@@ -1142,6 +1219,136 @@ export const orgInvitations = pgTable("org_invitations", {
   index("idx_invitation_org").on(table.orgId),
   index("idx_invitation_email").on(table.email),
   index("idx_invitation_token").on(table.token),
+]);
+
+// ============================
+// Explicit RBAC: Custom Roles, Role Permissions, Teams
+// ============================
+
+/**
+ * Org-defined custom roles.  System roles (owner/admin/analyst/read_only) are
+ * represented here with isSystem=true so that role_permissions rows can point
+ * to them.  Custom roles set isSystem=false and may inherit from a base system
+ * role via baseRole for additive grants.
+ */
+export const orgRoles = pgTable("org_roles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  // true for the four built-in roles seeded per org; false for custom ones
+  isSystem: boolean("is_system").notNull().default(false),
+  // which ORG_ROLES constant this inherits from (null for fully custom)
+  baseRole: text("base_role"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_org_roles_org_name").on(table.orgId, table.name),
+  index("idx_org_roles_org").on(table.orgId),
+  index("idx_org_roles_system").on(table.isSystem),
+]);
+
+/**
+ * Fine-grained permission rows for a role.  Each row grants a single
+ * (scope, action) pair.  The full effective permission set for a member
+ * is the union of their role's rows plus any rows on custom roles they
+ * carry via organizationMemberships.customRoleId.
+ */
+export const orgRolePermissions = pgTable("org_role_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roleId: varchar("role_id").notNull().references(() => orgRoles.id, { onDelete: "cascade" }),
+  // matches PERMISSION_SCOPES constant
+  scope: text("scope").notNull(),
+  // matches PERMISSION_ACTIONS constant
+  action: text("action").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_role_perms_role_scope_action").on(table.roleId, table.scope, table.action),
+  index("idx_role_perms_role").on(table.roleId),
+]);
+
+/**
+ * Logical teams within an org (e.g. "Tier-1 SOC", "Cloud Security").
+ * Teams can be used to scope savedViews and to assign incidents/alerts
+ * in bulk.
+ */
+export const orgTeams = pgTable("org_teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").default("#6366f1"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_org_teams_org_name").on(table.orgId, table.name),
+  index("idx_org_teams_org").on(table.orgId),
+]);
+
+/**
+ * Maps users to teams.  A user can be "lead" or "member" within a team.
+ * Team leads can manage team-scoped savedViews and see team-assigned work.
+ */
+export const orgTeamMemberships = pgTable("org_team_memberships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamId: varchar("team_id").notNull().references(() => orgTeams.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull(),
+  // matches TEAM_MEMBERSHIP_ROLES constant: "lead" | "member"
+  role: text("role").notNull().default("member"),
+  addedBy: varchar("added_by"),
+  addedAt: timestamp("added_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_team_memberships_team_user").on(table.teamId, table.userId),
+  index("idx_team_memberships_team").on(table.teamId),
+  index("idx_team_memberships_user").on(table.userId),
+]);
+
+// ============================
+// Saved Views
+// ============================
+
+/**
+ * Persisted filter / column / sort presets per resource list page.
+ * visibility controls sharing:
+ *   "private" – only the owning userId can see it
+ *   "team"    – all members of teamId can see it (teamId required)
+ *   "org"     – every member of the org can see it (analyst role+)
+ *
+ * The filters column stores a serialized filter state specific to the
+ * resourceType page (e.g. {severity: ["critical"], status: ["new"]}).
+ * The columns column stores an ordered list of visible column keys.
+ */
+export const savedViews = pgTable("saved_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  // userId of the creator / owner – required even for org-visible views
+  userId: varchar("user_id").notNull(),
+  // set when visibility = "team"
+  teamId: varchar("team_id").references(() => orgTeams.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  // matches SAVED_VIEW_RESOURCE_TYPES: "alerts" | "incidents" | "entities" | "connectors"
+  resourceType: text("resource_type").notNull(),
+  // serialised filter state: shape depends on resourceType
+  filters: jsonb("filters").notNull().default({}),
+  // ordered list of visible column keys; null = use page default
+  columns: text("columns").array(),
+  sortField: text("sort_field"),
+  // "asc" | "desc"
+  sortDir: text("sort_dir").default("desc"),
+  // at most one default view per (userId, resourceType)
+  isDefault: boolean("is_default").notNull().default(false),
+  // matches SAVED_VIEW_VISIBILITIES: "private" | "team" | "org"
+  visibility: text("visibility").notNull().default("private"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_saved_views_org").on(table.orgId),
+  index("idx_saved_views_user").on(table.userId),
+  index("idx_saved_views_team").on(table.teamId),
+  index("idx_saved_views_resource").on(table.orgId, table.resourceType),
+  index("idx_saved_views_visibility").on(table.orgId, table.visibility),
 ]);
 
 export const IOC_FEED_TYPES = ["misp", "stix", "taxii", "otx", "virustotal", "csv", "custom"] as const;
@@ -1398,11 +1605,26 @@ export type InsertAiDeploymentConfig = z.infer<typeof insertAiDeploymentConfigSc
 
 export const insertOrganizationMembershipSchema = createInsertSchema(organizationMemberships).omit({ id: true, createdAt: true });
 export const insertOrgInvitationSchema = createInsertSchema(orgInvitations).omit({ id: true, createdAt: true });
+export const insertOrgRoleSchema = createInsertSchema(orgRoles).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertOrgRolePermissionSchema = createInsertSchema(orgRolePermissions).omit({ id: true, createdAt: true });
+export const insertOrgTeamSchema = createInsertSchema(orgTeams).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertOrgTeamMembershipSchema = createInsertSchema(orgTeamMemberships).omit({ id: true, addedAt: true });
+export const insertSavedViewSchema = createInsertSchema(savedViews).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type OrganizationMembership = typeof organizationMemberships.$inferSelect;
 export type InsertOrganizationMembership = z.infer<typeof insertOrganizationMembershipSchema>;
 export type OrgInvitation = typeof orgInvitations.$inferSelect;
 export type InsertOrgInvitation = z.infer<typeof insertOrgInvitationSchema>;
+export type OrgRole = typeof orgRoles.$inferSelect;
+export type InsertOrgRole = z.infer<typeof insertOrgRoleSchema>;
+export type OrgRolePermission = typeof orgRolePermissions.$inferSelect;
+export type InsertOrgRolePermission = z.infer<typeof insertOrgRolePermissionSchema>;
+export type OrgTeam = typeof orgTeams.$inferSelect;
+export type InsertOrgTeam = z.infer<typeof insertOrgTeamSchema>;
+export type OrgTeamMembership = typeof orgTeamMemberships.$inferSelect;
+export type InsertOrgTeamMembership = z.infer<typeof insertOrgTeamMembershipSchema>;
+export type SavedView = typeof savedViews.$inferSelect;
+export type InsertSavedView = z.infer<typeof insertSavedViewSchema>;
 
 export const REPORT_TYPES = ["soc_kpi", "incidents", "attack_coverage", "connector_health", "executive_summary", "compliance"] as const;
 export const REPORT_FORMATS = ["pdf", "csv", "json"] as const;
@@ -1496,8 +1718,20 @@ export const suppressionRules = pgTable("suppression_rules", {
   orgId: varchar("org_id").references(() => organizations.id),
   name: text("name").notNull(),
   description: text("description"),
+  // Primary scope field (SUPPRESSION_SCOPES): coarse dimension to match on
   scope: text("scope").notNull(),
+  // Simple scalar value for the scope (retained for backwards compat)
   scopeValue: text("scope_value").notNull(),
+  /**
+   * Optional complex matcher – an array of condition objects evaluated with
+   * AND logic.  Each element shape:
+   *   { field: string, op: SUPPRESSION_MATCHER_OPS[number], value: string | string[] }
+   * Example: [{field:"title",op:"regex",value:"^test"},{field:"source",op:"eq",value:"Wazuh SIEM"}]
+   * When null the rule falls back to the simple scope/scopeValue check.
+   */
+  matcher: jsonb("matcher"),
+  // Explicit business reason this rule exists (e.g. "Approved by CISO 2025-03-01, ticket SNX-4421")
+  reason: text("reason"),
   source: text("source"),
   severity: text("severity"),
   category: text("category"),
@@ -1505,12 +1739,17 @@ export const suppressionRules = pgTable("suppression_rules", {
   expiresAt: timestamp("expires_at"),
   matchCount: integer("match_count").default(0),
   lastMatchAt: timestamp("last_match_at"),
+  // Immutable creator
   createdBy: varchar("created_by"),
+  // Mutable current responsible owner (may differ from creator after reassignment)
+  ownedBy: varchar("owned_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_suppression_rules_org").on(table.orgId),
   index("idx_suppression_rules_enabled").on(table.enabled),
+  index("idx_suppression_rules_expires").on(table.expiresAt),
+  index("idx_suppression_rules_owner").on(table.ownedBy),
 ]);
 
 export const alertDedupClusters = pgTable("alert_dedup_clusters", {
@@ -1588,6 +1827,33 @@ export const connectorJobRuns = pgTable("connector_job_runs", {
   httpStatus: integer("http_status"),
   throttled: boolean("throttled").default(false),
   isDeadLetter: boolean("is_dead_letter").default(false),
+  // ── Retry scheduling ────────────────────────────────────────────────
+  // matches CONNECTOR_RETRY_STRATEGIES: "exponential" | "linear" | "fixed"
+  retryStrategy: text("retry_strategy").default("exponential"),
+  // computed wait in seconds before the next attempt is scheduled
+  backoffSeconds: integer("backoff_seconds"),
+  // absolute timestamp when the next retry should be picked up by the worker
+  nextRetryAt: timestamp("next_retry_at"),
+  // ── Checkpoint / resume ─────────────────────────────────────────────
+  /**
+   * Opaque mid-run cursor saved at regular intervals so a retry can
+   * resume from the last known-good position instead of re-fetching
+   * from the beginning.  Shape is connector-specific, e.g.:
+   *   CrowdStrike: { offset: number, filter: string }
+   *   Splunk:      { lastEventTime: string, sessionKey: string }
+   *   GuardDuty:   { nextToken: string }
+   */
+  checkpointData: jsonb("checkpoint_data"),
+  // when checkpointData was last written
+  checkpointAt: timestamp("checkpoint_at"),
+  // convenience scalar: the opaque pagination/cursor token from the last
+  // successful page fetch (redundant with checkpointData for simple connectors)
+  paginationCursor: text("pagination_cursor"),
+  // ── Fetch window ────────────────────────────────────────────────────
+  // time range that was (or is being) fetched in this run; used for
+  // gap detection and audit when the same window is retried
+  fetchWindowStart: timestamp("fetch_window_start"),
+  fetchWindowEnd: timestamp("fetch_window_end"),
   startedAt: timestamp("started_at").defaultNow(),
   completedAt: timestamp("completed_at"),
 }, (table) => [
@@ -1595,6 +1861,7 @@ export const connectorJobRuns = pgTable("connector_job_runs", {
   index("idx_connector_job_runs_status").on(table.status),
   index("idx_connector_job_runs_dead_letter").on(table.isDeadLetter),
   index("idx_connector_job_runs_started").on(table.startedAt),
+  index("idx_connector_job_runs_next_retry").on(table.nextRetryAt),
 ]);
 
 export const connectorHealthChecks = pgTable("connector_health_checks", {
@@ -2057,6 +2324,42 @@ export const responseActionApprovals = pgTable("response_action_approvals", {
   index("idx_resp_approval_incident").on(table.incidentId),
 ]);
 
+/**
+ * Individual per-approver decision records for multi-approver workflows.
+ *
+ * Both response-action approvals and playbook gate approvals are represented
+ * via the (approvalSubjectType, approvalSubjectId) polymorphic key so that
+ * one table covers all approval types.
+ *
+ * This supplements the aggregate counters on responseActionApprovals and
+ * playbookApprovals with a full immutable vote log: who decided what, when,
+ * and why.  These rows must never be deleted; use the audit trail for forensics.
+ */
+export const approvalDecisionRecords = pgTable("approval_decision_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  // matches APPROVAL_SUBJECT_TYPES: "response_action" | "playbook"
+  approvalSubjectType: text("approval_subject_type").notNull(),
+  // FK to responseActionApprovals.id or playbookApprovals.id depending on approvalSubjectType
+  approvalSubjectId: varchar("approval_subject_id").notNull(),
+  // matches APPROVAL_DECISIONS: "approved" | "rejected" | "abstained"
+  decision: text("decision").notNull(),
+  // free-text justification the approver provided with their decision
+  reason: text("reason"),
+  approverUserId: varchar("approver_user_id").notNull(),
+  approverUserName: text("approver_user_name"),
+  // role the approver held at the time of the decision (snapshot for audit)
+  approverRole: text("approver_role"),
+  // IP from which the decision was submitted
+  ipAddress: text("ip_address"),
+  decidedAt: timestamp("decided_at").defaultNow(),
+}, (table) => [
+  index("idx_approval_decisions_subject").on(table.approvalSubjectType, table.approvalSubjectId),
+  index("idx_approval_decisions_approver").on(table.approverUserId),
+  index("idx_approval_decisions_org").on(table.orgId),
+  index("idx_approval_decisions_decided").on(table.decidedAt),
+]);
+
 export const legalHolds = pgTable("legal_holds", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id"),
@@ -2099,6 +2402,7 @@ export const connectorSecretRotations = pgTable("connector_secret_rotations", {
 
 export const insertTicketSyncJobSchema = createInsertSchema(ticketSyncJobs).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertResponseActionApprovalSchema = createInsertSchema(responseActionApprovals).omit({ id: true, requestedAt: true, decidedAt: true });
+export const insertApprovalDecisionRecordSchema = createInsertSchema(approvalDecisionRecords).omit({ id: true, decidedAt: true });
 export const insertLegalHoldSchema = createInsertSchema(legalHolds).omit({ id: true, createdAt: true, activatedAt: true });
 export const insertConnectorSecretRotationSchema = createInsertSchema(connectorSecretRotations).omit({ id: true, createdAt: true });
 
@@ -2106,6 +2410,8 @@ export type TicketSyncJob = typeof ticketSyncJobs.$inferSelect;
 export type InsertTicketSyncJob = z.infer<typeof insertTicketSyncJobSchema>;
 export type ResponseActionApproval = typeof responseActionApprovals.$inferSelect;
 export type InsertResponseActionApproval = z.infer<typeof insertResponseActionApprovalSchema>;
+export type ApprovalDecisionRecord = typeof approvalDecisionRecords.$inferSelect;
+export type InsertApprovalDecisionRecord = z.infer<typeof insertApprovalDecisionRecordSchema>;
 export type LegalHold = typeof legalHolds.$inferSelect;
 export type InsertLegalHold = z.infer<typeof insertLegalHoldSchema>;
 export type ConnectorSecretRotation = typeof connectorSecretRotations.$inferSelect;
@@ -2272,3 +2578,46 @@ export const insertOutboxEventSchema = createInsertSchema(outboxEvents).omit({ i
 
 export type OutboxEvent = typeof outboxEvents.$inferSelect;
 export type InsertOutboxEvent = z.infer<typeof insertOutboxEventSchema>;
+
+// ============================
+// Relations for RBAC + Saved Views tables
+// (placed here — after all table declarations — to satisfy TS temporal dead zone)
+// ============================
+
+export const orgRolesRelations = relations(orgRoles, ({ one, many }) => ({
+  organization: one(organizations, { fields: [orgRoles.orgId], references: [organizations.id] }),
+  permissions: many(orgRolePermissions),
+  memberships: many(organizationMemberships),
+}));
+
+export const orgRolePermissionsRelations = relations(orgRolePermissions, ({ one }) => ({
+  role: one(orgRoles, { fields: [orgRolePermissions.roleId], references: [orgRoles.id] }),
+}));
+
+export const orgTeamsRelations = relations(orgTeams, ({ one, many }) => ({
+  organization: one(organizations, { fields: [orgTeams.orgId], references: [organizations.id] }),
+  teamMemberships: many(orgTeamMemberships),
+  savedViews: many(savedViews),
+}));
+
+export const orgTeamMembershipsRelations = relations(orgTeamMemberships, ({ one }) => ({
+  team: one(orgTeams, { fields: [orgTeamMemberships.teamId], references: [orgTeams.id] }),
+}));
+
+export const organizationMembershipsRelations = relations(organizationMemberships, ({ one }) => ({
+  organization: one(organizations, { fields: [organizationMemberships.orgId], references: [organizations.id] }),
+  customRole: one(orgRoles, { fields: [organizationMemberships.customRoleId], references: [orgRoles.id] }),
+}));
+
+export const savedViewsRelations = relations(savedViews, ({ one }) => ({
+  organization: one(organizations, { fields: [savedViews.orgId], references: [organizations.id] }),
+  team: one(orgTeams, { fields: [savedViews.teamId], references: [orgTeams.id] }),
+}));
+
+export const auditVerificationRunsRelations = relations(auditVerificationRuns, ({ one }) => ({
+  organization: one(organizations, { fields: [auditVerificationRuns.orgId], references: [organizations.id] }),
+}));
+
+export const approvalDecisionRecordsRelations = relations(approvalDecisionRecords, ({ one }) => ({
+  organization: one(organizations, { fields: [approvalDecisionRecords.orgId], references: [organizations.id] }),
+}));
