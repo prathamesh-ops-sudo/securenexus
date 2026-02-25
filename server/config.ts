@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const nodeEnvSchema = z.enum(["development", "production", "test"]).default("development");
+const nodeEnvSchema = z.enum(["development", "staging", "uat", "production", "test"]).default("development");
 const aiBackendSchema = z.enum(["bedrock", "sagemaker"]).default("bedrock");
 
 const configSchema = z.object({
@@ -129,7 +129,7 @@ export const config = loadConfig();
  * │ SESSION_SECRET           │ Yes      │ Session encryption key       │
  * │ S3_BUCKET_NAME           │ Yes      │ AWS S3 bucket for uploads    │
  * │ PORT                     │ No       │ Server port (default 5000)   │
- * │ NODE_ENV                 │ No       │ development | production     │
+ * │ NODE_ENV                 │ No       │ development|staging|uat|prod │
  * │ FORCE_HTTPS              │ No       │ Set "true" for secure cookie │
  * │ AWS_REGION               │ No       │ AWS region (default us-east-1│
  * │ AWS_ACCESS_KEY_ID        │ No*      │ AWS key (use IRSA on EKS)    │
