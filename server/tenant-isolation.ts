@@ -34,6 +34,7 @@ export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free")
   const existing = tenantConfigs.get(orgId);
   if (existing) {
     if (existing.planTier !== plan) {
+      const previousPlan = existing.planTier;
       const newDefaults = PLAN_ISOLATION_DEFAULTS[plan];
       existing.planTier = plan;
       existing.connectionPoolSize = newDefaults.connectionPoolSize;
@@ -41,7 +42,7 @@ export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free")
       existing.isolationLevel = newDefaults.isolationLevel;
       existing.resourceGroup = plan === "enterprise" ? "dedicated" : "shared";
       existing.lastAssessedAt = new Date().toISOString();
-      log.info("Tenant config updated due to plan change", { orgId, oldPlan: existing.planTier, newPlan: plan });
+      log.info("Tenant config updated due to plan change", { orgId, oldPlan: previousPlan, newPlan: plan });
     }
     return existing;
   }
