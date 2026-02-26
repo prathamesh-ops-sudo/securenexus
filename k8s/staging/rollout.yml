@@ -26,7 +26,8 @@ spec:
         app.kubernetes.io/name: securenexus
         app.kubernetes.io/instance: securenexus-staging
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: securenexus
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001

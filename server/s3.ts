@@ -1,15 +1,11 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "./config";
+import { getAwsClientConfig } from "./aws-credentials";
 
 const BUCKET_NAME = config.aws.s3BucketName;
 
-const s3Client = new S3Client({
-  region: config.aws.region,
-  ...(config.aws.accessKeyId && config.aws.secretAccessKey
-    ? { credentials: { accessKeyId: config.aws.accessKeyId, secretAccessKey: config.aws.secretAccessKey } }
-    : {}),
-});
+const s3Client = new S3Client(getAwsClientConfig());
 
 export async function uploadFile(key: string, body: Buffer | string, contentType: string) {
   const command = new PutObjectCommand({

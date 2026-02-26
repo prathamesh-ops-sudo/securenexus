@@ -189,9 +189,11 @@ export const config = loadConfig();
  * │ GITHUB_TOKEN             │ No       │ GitHub API token             │
  * └──────────────────────────┴──────────┴──────────────────────────────┘
  *
- * *  AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are only needed when
- *    NOT running on EKS with IRSA (IAM Roles for Service Accounts).
- *    On EKS the SDK picks up credentials from the pod's service account.
+ * *  AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are DEPRECATED for EKS.
+ *    Use IRSA (IAM Roles for Service Accounts) instead. The SDK
+ *    automatically picks up credentials from the pod's service account
+ *    via the default credential chain. Static keys are only needed
+ *    for local development outside AWS.
  *
  * ** SAGEMAKER_ENDPOINT / SAGEMAKER_TRIAGE_ENDPOINT are required only
  *    when AI_BACKEND is set to "sagemaker".

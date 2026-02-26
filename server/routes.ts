@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./auth";
-import { resolveOrgContext, requireMinRole, requirePermission } from "./rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole, requirePermission } from "./rbac";
 import { insertAlertSchema, insertIncidentSchema, insertCommentSchema, insertTagSchema, insertCompliancePolicySchema, insertDsarRequestSchema, insertCspmAccountSchema, insertEndpointAssetSchema, insertAiDeploymentConfigSchema, insertIocFeedSchema, insertIocEntrySchema, insertIocWatchlistSchema, insertIocMatchRuleSchema, insertEvidenceItemSchema, insertInvestigationHypothesisSchema, insertInvestigationTaskSchema, insertRunbookTemplateSchema, insertRunbookStepSchema, insertReportTemplateSchema, insertReportScheduleSchema, insertPolicyCheckSchema, insertComplianceControlSchema, insertComplianceControlMappingSchema, insertEvidenceLockerItemSchema, insertOutboundWebhookSchema, insertTicketSyncJobSchema, insertResponseActionApprovalSchema, insertLegalHoldSchema, insertConnectorSecretRotationSchema } from "@shared/schema";
 import { correlateAlerts, generateIncidentNarrative, triageAlert, checkModelHealth, getModelConfig, getInferenceMetrics, buildThreatIntelContext } from "./ai";
 import { normalizeAlert, toInsertAlert, SOURCE_KEYS } from "./normalizer";
@@ -435,7 +435,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.post("/api/alerts", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const parsed = insertAlertSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -453,7 +453,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
+  app.patch("/api/alerts/:id", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
     try {
       const parsed = insertAlertSchema.partial().safeParse(req.body);
       if (!parsed.success) {
@@ -471,7 +471,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id/status", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
+  app.patch("/api/alerts/:id/status", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
     try {
       const { status, incidentId } = req.body;
       if (!status) return res.status(400).json({ message: "Status required" });
@@ -489,7 +489,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts/bulk-update", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.post("/api/alerts/bulk-update", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const { alertIds, status, suppressed, assignedTo } = req.body || {};
       const orgId = (req as any).user?.orgId;
@@ -637,7 +637,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const parsed = insertIncidentSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -667,7 +667,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/incidents/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
+  app.patch("/api/incidents/:id", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
     try {
       const parsed = insertIncidentSchema.partial().safeParse(req.body);
       if (!parsed.success) {
@@ -770,7 +770,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/incidents/bulk-update", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.post("/api/incidents/bulk-update", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("incidents", "write"), async (req, res) => {
     try {
       const { incidentIds, status, assignedTo, escalated, priority } = req.body || {};
       const orgId = (req as any).user?.orgId;
@@ -1113,7 +1113,7 @@ export async function registerRoutes(
   });
 
   // Versioned API key governance (v1) - scopes and policies metadata
-  app.get("/api/v1/api-keys/scopes", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/api-keys/scopes", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     // These templates can be evolved over time and surfaced in UI as presets
     const templates = [
       {
@@ -1139,7 +1139,7 @@ export async function registerRoutes(
     return sendEnvelope(res, templates);
   });
 
-  app.get("/api/v1/api-keys/policies", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/api-keys/policies", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     const policies = {
       defaultRotationDays: 90,
       maxLifetimeDays: 365,
@@ -1150,7 +1150,7 @@ export async function registerRoutes(
     return sendEnvelope(res, policies);
   });
 
-  app.post("/api/api-keys", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "write"), validateBody(bodySchemas.apiKeyCreate), async (req, res) => {
+  app.post("/api/api-keys", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("api_keys", "write"), validateBody(bodySchemas.apiKeyCreate), async (req, res) => {
     try {
       const { name, scopes } = (req as any).validatedBody;
       const orgId = getOrgId(req);
@@ -1185,7 +1185,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/api-keys/:id", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "admin"), validatePathId("id"), async (req, res) => {
+  app.delete("/api/api-keys/:id", isAuthenticated, resolveOrgContext, requireOrgId, requirePermission("api_keys", "admin"), validatePathId("id"), async (req, res) => {
     try {
       const revoked = await storage.revokeApiKey(p(req.params.id));
       if (!revoked) return res.status(404).json({ message: "API key not found" });
@@ -3521,7 +3521,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/compliance/retention/run", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/compliance/retention/run", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const user = (req as any).user;
       const orgId = user?.orgId;
@@ -4468,7 +4468,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/ai-deployment/config", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.put("/api/ai-deployment/config", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const parsed = insertAiDeploymentConfigSchema.safeParse({ ...req.body, orgId });
@@ -4558,7 +4558,7 @@ export async function registerRoutes(
   });
 
   // List org members
-  app.get("/api/orgs/:orgId/members", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/orgs/:orgId/members", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const userOrgId = (req as any).orgId;
@@ -4571,7 +4571,7 @@ export async function registerRoutes(
   });
 
   // Update member role
-  app.patch("/api/orgs/:orgId/members/:memberId/role", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.patch("/api/orgs/:orgId/members/:memberId/role", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const memberId = p(req.params.memberId);
@@ -4613,7 +4613,7 @@ export async function registerRoutes(
   });
 
   // Suspend member
-  app.post("/api/orgs/:orgId/members/:memberId/suspend", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/orgs/:orgId/members/:memberId/suspend", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const memberId = p(req.params.memberId);
@@ -4643,7 +4643,7 @@ export async function registerRoutes(
   });
 
   // Activate (unsuspend) member
-  app.post("/api/orgs/:orgId/members/:memberId/activate", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/orgs/:orgId/members/:memberId/activate", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const memberId = p(req.params.memberId);
@@ -4670,7 +4670,7 @@ export async function registerRoutes(
   });
 
   // Remove member
-  app.delete("/api/orgs/:orgId/members/:memberId", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.delete("/api/orgs/:orgId/members/:memberId", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const memberId = p(req.params.memberId);
@@ -4700,7 +4700,7 @@ export async function registerRoutes(
   });
 
   // Create invitation
-  app.post("/api/orgs/:orgId/invitations", isAuthenticated, resolveOrgContext, requireMinRole("admin"), validatePathId("orgId"), validateBody(bodySchemas.invitationCreate), async (req, res) => {
+  app.post("/api/orgs/:orgId/invitations", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), validatePathId("orgId"), validateBody(bodySchemas.invitationCreate), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const userOrgId = (req as any).orgId;
@@ -4735,7 +4735,7 @@ export async function registerRoutes(
   });
 
   // List invitations
-  app.get("/api/orgs/:orgId/invitations", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/orgs/:orgId/invitations", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const userOrgId = (req as any).orgId;
@@ -4748,7 +4748,7 @@ export async function registerRoutes(
   });
 
   // Cancel invitation
-  app.delete("/api/orgs/:orgId/invitations/:invitationId", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.delete("/api/orgs/:orgId/invitations/:invitationId", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const invitationId = p(req.params.invitationId);
@@ -6569,7 +6569,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/ops/slo-targets", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.get("/api/ops/slo-targets", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const targets = await storage.getSloTargets();
       res.json(targets);
@@ -6578,7 +6578,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ops/slo-targets", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/ops/slo-targets", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const target = await storage.createSloTarget(req.body);
       res.status(201).json(target);
@@ -6587,7 +6587,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.patch("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const updated = await storage.updateSloTarget(p(req.params.id), req.body);
       if (!updated) return res.status(404).json({ message: "SLO target not found" });
@@ -6597,7 +6597,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.delete("/api/ops/slo-targets/:id", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const deleted = await storage.deleteSloTarget(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "SLO target not found" });
@@ -6855,7 +6855,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/slo/targets", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/slo/targets", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { service, metric, endpoint, target, operator, windowMinutes, alertOnBreach, description } = req.body;
       if (!service || !metric || target === undefined) {
@@ -6871,7 +6871,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/v1/slo/targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.patch("/api/v1/slo/targets/:id", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const updated = await storage.updateSloTarget(p(req.params.id), req.body);
       if (!updated) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "SLO target not found" }] });
@@ -6881,7 +6881,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/v1/slo/targets/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.delete("/api/v1/slo/targets/:id", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const deleted = await storage.deleteSloTarget(p(req.params.id));
       if (!deleted) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "SLO target not found" }] });
@@ -6911,7 +6911,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/slo/seed", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.post("/api/v1/slo/seed", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       const seeded = await seedDefaultSloTargets();
       return sendEnvelope(res, { seeded }, { status: 201 });
@@ -6932,7 +6932,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/feature-flags", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/feature-flags", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { key, name, description, enabled, rolloutPct, targetOrgs, targetRoles, metadata } = req.body;
       if (!key || !name) {
@@ -6964,7 +6964,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/v1/feature-flags/:key", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.patch("/api/v1/feature-flags/:key", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const updated = await storage.updateFeatureFlag(p(req.params.key), req.body);
       if (!updated) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }] });
@@ -6974,7 +6974,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/v1/feature-flags/:key", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.delete("/api/v1/feature-flags/:key", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const deleted = await storage.deleteFeatureFlag(p(req.params.key));
       if (!deleted) return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }] });
@@ -7021,7 +7021,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/dr/run-drill", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/dr/run-drill", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { runbookId, dryRun } = req.body;
       if (!runbookId) {
@@ -7061,7 +7061,7 @@ export async function registerRoutes(
   // ============================
   // Integration / Contract Test v1 Endpoints
   // ============================
-  app.post("/api/v1/tests/connectors/:type", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/tests/connectors/:type", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const connectorType = p(req.params.type);
       const results = await runConnectorContractTests(connectorType);
@@ -7071,7 +7071,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/tests/automation/:playbookId", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/tests/automation/:playbookId", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const playbookId = p(req.params.playbookId);
       const results = await runAutomationIntegrationTests(playbookId);
@@ -7081,7 +7081,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/tests/all", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.post("/api/v1/tests/all", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       const results = await runAllContractTests();
       const totalTests = results.reduce((sum, s) => sum + s.total, 0);
@@ -7095,7 +7095,7 @@ export async function registerRoutes(
   // ============================
   // Ticket Sync (Bi-directional Jira/ServiceNow)
   // ============================
-  app.get("/api/ticket-sync", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/ticket-sync", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const integrationId = req.query.integrationId as string | undefined;
@@ -7112,7 +7112,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch ticket sync job" }); }
   });
 
-  app.post("/api/ticket-sync", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/ticket-sync", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7133,7 +7133,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create ticket sync job" }); }
   });
 
-  app.post("/api/ticket-sync/:id/sync", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/ticket-sync/:id/sync", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const job = await storage.getTicketSyncJob(p(req.params.id));
       if (!job) return res.status(404).json({ message: "Ticket sync job not found" });
@@ -7168,7 +7168,7 @@ export async function registerRoutes(
   // ============================
   // Response Action Approvals (with dry-run simulation)
   // ============================
-  app.get("/api/response-approvals", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/response-approvals", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const status = req.query.status as string | undefined;
@@ -7185,7 +7185,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch approval" }); }
   });
 
-  app.post("/api/response-approvals", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/response-approvals", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7297,7 +7297,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch secret rotations" }); }
   });
 
-  app.post("/api/connectors/:id/secret-rotations", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/connectors/:id/secret-rotations", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7325,7 +7325,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create secret rotation" }); }
   });
 
-  app.post("/api/connectors/:id/secret-rotations/:rotationId/rotate", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/connectors/:id/secret-rotations/:rotationId/rotate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7360,7 +7360,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to rotate secret" }); }
   });
 
-  app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const daysAhead = parseInt(req.query.days as string, 10) || 30;
       const expiring = await storage.getExpiringSecretRotations(daysAhead);
@@ -7371,7 +7371,7 @@ export async function registerRoutes(
   // ============================
   // Legal Holds (data retention exceptions)
   // ============================
-  app.get("/api/legal-holds", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/legal-holds", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const holds = await storage.getLegalHolds(orgId);
@@ -7387,7 +7387,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch legal hold" }); }
   });
 
-  app.post("/api/legal-holds", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/legal-holds", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7410,7 +7410,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create legal hold" }); }
   });
 
-  app.patch("/api/legal-holds/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.patch("/api/legal-holds/:id", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const user = (req as any).user;
       const hold = await storage.getLegalHold(p(req.params.id));
@@ -7420,7 +7420,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to update legal hold" }); }
   });
 
-  app.post("/api/legal-holds/:id/deactivate", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/legal-holds/:id/deactivate", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7444,7 +7444,7 @@ export async function registerRoutes(
   // ============================
   // Webhook Severity Threshold Config
   // ============================
-  app.patch("/api/notification-channels/:id/severity-threshold", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.patch("/api/notification-channels/:id/severity-threshold", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const channel = await storage.getNotificationChannel(p(req.params.id));
       if (!channel) return res.status(404).json({ message: "Channel not found" });
@@ -7460,7 +7460,7 @@ export async function registerRoutes(
   // ============================
   // Response Action Dry-Run Simulation
   // ============================
-  app.post("/api/response-actions/dry-run", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/response-actions/dry-run", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const user = (req as any).user;
       const orgId = (req as any).orgId;
@@ -7496,7 +7496,7 @@ export async function registerRoutes(
   // ============================
   // Connector Job Run Replay
   // ============================
-  app.post("/api/connectors/:id/jobs/:jobId/replay", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/connectors/:id/jobs/:jobId/replay", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7533,7 +7533,7 @@ export async function registerRoutes(
   // ============================
   // Usage Metering Dashboard
   // ============================
-  app.get("/api/usage-metering", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/usage-metering", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const now = new Date();
@@ -7586,7 +7586,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch usage metering" }); }
   });
 
-  app.get("/api/usage-metering/history", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/usage-metering/history", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const metricType = req.query.metricType as string | undefined;
@@ -7598,7 +7598,7 @@ export async function registerRoutes(
   // ============================
   // Plan Limits Management
   // ============================
-  app.get("/api/plan-limits", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/plan-limits", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const plan = await storage.getOrgPlanLimit(orgId);
@@ -7614,7 +7614,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch plan limits" }); }
   });
 
-  app.put("/api/plan-limits", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.put("/api/plan-limits", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7632,7 +7632,7 @@ export async function registerRoutes(
   // ============================
   // Onboarding Checklist
   // ============================
-  app.get("/api/onboarding-checklist", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/onboarding-checklist", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       let steps = await storage.getOnboardingProgress(orgId);
@@ -7689,7 +7689,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch onboarding checklist" }); }
   });
 
-  app.post("/api/onboarding-checklist/:stepKey/complete", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/onboarding-checklist/:stepKey/complete", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7699,7 +7699,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to complete onboarding step" }); }
   });
 
-  app.post("/api/onboarding-checklist/dismiss", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/onboarding-checklist/dismiss", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const steps = await storage.getOnboardingProgress(orgId);
@@ -7801,7 +7801,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch template" }); }
   });
 
-  app.post("/api/workspace-templates/:id/apply", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/workspace-templates/:id/apply", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).orgId;
       const user = (req as any).user;
@@ -7935,7 +7935,7 @@ export async function registerRoutes(
   // Outbox / Event Replay Endpoints
   // ============================
 
-  app.get("/api/v1/outbox/events", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.get("/api/v1/outbox/events", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
@@ -7951,7 +7951,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/outbox/replay/:id", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/outbox/replay/:id", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const eventId = p(req.params.id);
       const replayed = await storage.replayOutboxEvent(eventId);
@@ -7978,7 +7978,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/outbox/replay-batch", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/outbox/replay-batch", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { eventIds } = req.body;
       if (!Array.isArray(eventIds) || eventIds.length === 0) {
@@ -8003,7 +8003,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/outbox/status", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/outbox/status", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       const processorStatus = getOutboxProcessorStatus();
       return sendEnvelope(res, processorStatus);
@@ -8019,7 +8019,7 @@ export async function registerRoutes(
   // Cache Management Endpoints
   // ============================
 
-  app.get("/api/v1/cache/stats", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/cache/stats", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       return sendEnvelope(res, cacheStats());
     } catch (error: any) {
@@ -8030,7 +8030,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/cache/invalidate", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/cache/invalidate", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { pattern } = req.body;
       if (!pattern || typeof pattern !== "string") {
@@ -8053,7 +8053,7 @@ export async function registerRoutes(
   // Dead Letter Queue Endpoints
   // ============================
 
-  app.get("/api/v1/jobs/dead-letter", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/jobs/dead-letter", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       const deadLetterJobs = await getDeadLetterJobs();
       return sendEnvelope(res, deadLetterJobs, { meta: { total: deadLetterJobs.length } });
@@ -8065,7 +8065,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/jobs/dead-letter/:id/retry", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/jobs/dead-letter/:id/retry", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const jobId = p(req.params.id);
       const retried = await retryDeadLetterJob(jobId);
@@ -8084,7 +8084,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/v1/jobs/schedule", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/v1/jobs/schedule", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { type, payload, runAt, priority } = req.body;
       if (!type || !runAt) {
@@ -8104,7 +8104,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/monitoring/db-performance", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/monitoring/db-performance", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       const [indexHitRates, tableScanStats, unusedIndexes, cacheHitRatio, slowQueries] = await Promise.all([
         getIndexHitRates(),
@@ -8131,7 +8131,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/monitoring/index-stats", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/monitoring/index-stats", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       const [indexHitRates, unusedIndexes] = await Promise.all([
         getIndexHitRates(),
@@ -8146,7 +8146,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/monitoring/slow-queries", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/monitoring/slow-queries", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       return sendEnvelope(res, { recentSlowQueries: getRecentSlowQueries() });
     } catch (error: any) {
@@ -8157,7 +8157,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/connectors/sync-stats", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+  app.get("/api/v1/connectors/sync-stats", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (_req, res) => {
     try {
       return sendEnvelope(res, getProviderSyncStats());
     } catch (error: any) {
@@ -8168,7 +8168,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/v1/connectors/concurrency", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.put("/api/v1/connectors/concurrency", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const { provider, maxConcurrency } = req.body;
       if (!provider || typeof provider !== "string") {
