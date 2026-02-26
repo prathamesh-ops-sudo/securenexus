@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import type { Request, Response, NextFunction } from "express";
-import { config } from "./config";
 import { AsyncLocalStorage } from "async_hooks";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
@@ -32,7 +31,7 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 const MIN_LEVEL: LogLevel =
-  config.nodeEnv === "development" || config.nodeEnv === "test"
+  process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test"
     ? "debug"
     : "info";
 
