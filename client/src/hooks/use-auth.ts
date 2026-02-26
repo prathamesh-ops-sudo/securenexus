@@ -1,16 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
-
-function extractEnvelopeError(body: unknown, fallback: string): string {
-  if (typeof body === "object" && body !== null) {
-    const envelope = body as { errors?: { message?: string }[] | null; message?: string };
-    if (Array.isArray(envelope.errors) && envelope.errors.length > 0 && envelope.errors[0].message) {
-      return envelope.errors[0].message;
-    }
-    if (envelope.message) return envelope.message;
-  }
-  return fallback;
-}
+import { extractApiError } from "../lib/queryClient";
 
 async function fetchUser(): Promise<User | null> {
   const response = await fetch("/api/auth/user", {
@@ -26,7 +16,7 @@ async function fetchUser(): Promise<User | null> {
   }
 
   const body = await response.json();
-  return body.data !== undefined ? body.data : body;
+  return body.data ?? null;
 }
 
 async function loginFn(data: { email: string; password: string }): Promise<User> {
@@ -38,10 +28,10 @@ async function loginFn(data: { email: string; password: string }): Promise<User>
   });
   if (!response.ok) {
     const err = await response.json().catch(() => null);
-    throw new Error(extractEnvelopeError(err, "Login failed"));
+    throw new Error(extractApiError(err, "Login failed"));
   }
   const body = await response.json();
-  return body.data !== undefined ? body.data : body;
+  return body.data;
 }
 
 async function registerFn(data: {
@@ -58,10 +48,10 @@ async function registerFn(data: {
   });
   if (!response.ok) {
     const err = await response.json().catch(() => null);
-    throw new Error(extractEnvelopeError(err, "Registration failed"));
+    throw new Error(extractApiError(err, "Registration failed"));
   }
   const body = await response.json();
-  return body.data !== undefined ? body.data : body;
+  return body.data;
 }
 
 async function logoutFn(): Promise<void> {

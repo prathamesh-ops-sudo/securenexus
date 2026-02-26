@@ -333,7 +333,8 @@ export default function IncidentDetailPage() {
     mutationFn: async () => {
       const res = await fetch(`/api/incidents/${params.id}/evidence-export`, { credentials: "include" });
       if (!res.ok) throw new Error("Export failed");
-      const data = await res.json();
+      const body = await res.json();
+      const data = body.data ?? body;
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

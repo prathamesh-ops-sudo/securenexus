@@ -10,6 +10,7 @@ import { storage } from "../storage";
 import { config } from "../config";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import { replyUnauthenticated } from "../api-response";
 
 const scryptAsync = promisify(scrypt);
 
@@ -160,5 +161,5 @@ export const isAuthenticated: RequestHandler = (req, res, next) => {
   if (req.isAuthenticated()) {
     return next();
   }
-  res.status(401).json({ message: "Unauthorized" });
+  replyUnauthenticated(res);
 };

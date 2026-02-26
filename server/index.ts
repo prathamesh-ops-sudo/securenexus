@@ -7,6 +7,7 @@ import { sliMiddleware, startSliCollection } from "./sli-middleware";
 import { startJobWorker } from "./job-queue";
 import { startSloAlerting } from "./slo-alerting";
 import { replyInternal } from "./api-response";
+import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middleware";
 import { config } from "./config";
 
 const app = express();
@@ -32,6 +33,12 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 
 app.use(sliMiddleware);
+
+// Standardised API response envelope – wraps every res.json() for /api/* paths
+// into { data, meta, errors } and adds RFC 8594 deprecation headers to
+// un-versioned legacy endpoints.
+app.use(envelopeMiddleware);
+app.use(autoDeprecationMiddleware);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
