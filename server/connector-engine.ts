@@ -1903,10 +1903,6 @@ export async function syncConnectorWithRetry(
     lastErrorMessage = syncResult.errors[0] || "Unknown error";
     const { errorType, throttled, httpStatus } = classifyError(lastErrorMessage);
 
-    if (throttled) {
-      applyProviderBackoff(connector.type);
-    }
-
     if (currentAttempt >= maxAttempts) {
       const latencyMs = Date.now() - startTime;
       const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
@@ -1940,6 +1936,8 @@ export async function syncConnectorWithRetry(
       nextRetryAt,
       retryStrategy: "exponential",
     });
+
+    await new Promise((resolve) => setTimeout(resolve, backoffSeconds * 1000));
 
     currentAttempt++;
   }
