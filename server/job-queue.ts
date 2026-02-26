@@ -304,25 +304,6 @@ export function stopJobWorker(): void {
   logger.child("job-queue").info(`Stopped worker ${workerId}`);
 }
 
-async function updateJobWithLeaseGuard(
-  jobId: string,
-  status: string,
-  extraSets: string,
-): Promise<boolean> {
-  const result = await db.execute(sql`
-    UPDATE job_queue
-    SET status = ${status},
-        locked_by = NULL,
-        locked_until = NULL
-    WHERE id = ${jobId} AND locked_by = ${workerId}
-  `);
-  if ((result as any).rowCount === 0) {
-    logger.child("job-queue").warn(`Lease lost for job ${jobId} — skipping state update to ${status}`);
-    return false;
-  }
-  return true;
-}
-
 async function processJob(job: any): Promise<void> {
   const handler = JOB_HANDLERS[job.type];
   if (!handler) {
