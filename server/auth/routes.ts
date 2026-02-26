@@ -47,15 +47,23 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
     });
     return true;
   } catch (err) {
-    logger.child("auth").error("Failed to ensure org membership — user may lack org context", { userId: user.id, email: user.email, error: String(err) });
-    storage.createAuditLog({
+    logger.child("auth").error("Failed to ensure org membership — user may lack org context", {
       userId: user.id,
-      userName: user.email || "unknown",
-      action: "org_membership_provision_failed",
-      resourceType: "user",
-      resourceId: user.id,
-      details: { error: String(err) },
-    }).catch((auditErr) => logger.child("auth").warn("Failed to audit org membership failure", { error: String(auditErr) }));
+      email: user.email,
+      error: String(err),
+    });
+    storage
+      .createAuditLog({
+        userId: user.id,
+        userName: user.email || "unknown",
+        action: "org_membership_provision_failed",
+        resourceType: "user",
+        resourceId: user.id,
+        details: { error: String(err) },
+      })
+      .catch((auditErr) =>
+        logger.child("auth").warn("Failed to audit org membership failure", { error: String(auditErr) }),
+      );
     return false;
   }
 }
@@ -68,7 +76,11 @@ export function registerAuthRoutes(app: Express): void {
         return replyNotFound(res, "User not found");
       }
       const { passwordHash, ...safeUser } = user;
-      return reply(res, safeUser);
+      return reply(res, {
+        ...safeUser,
+        orgId: req.user.orgId ?? null,
+        role: req.user.orgRole ?? null,
+      });
     } catch (error) {
       logger.child("routes").error("Error fetching user", { error: String(error) });
       return replyInternal(res, "Failed to fetch user");
@@ -110,21 +122,18 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate(
-      "local",
-      (err: any, user: any, info: any) => {
-        if (err) return next(err);
-        if (!user) {
-          return replyUnauthenticated(res, info?.message || "Invalid credentials");
-        }
-        req.login(user, async (loginErr) => {
-          if (loginErr) return next(loginErr);
-          await ensureOrgMembership(user);
-          const { passwordHash, ...safeUser } = user;
-          return reply(res, safeUser);
-        });
+    passport.authenticate("local", (err: any, user: any, info: any) => {
+      if (err) return next(err);
+      if (!user) {
+        return replyUnauthenticated(res, info?.message || "Invalid credentials");
       }
-    )(req, res, next);
+      req.login(user, async (loginErr) => {
+        if (loginErr) return next(loginErr);
+        await ensureOrgMembership(user);
+        const { passwordHash, ...safeUser } = user;
+        return reply(res, safeUser);
+      });
+    })(req, res, next);
   });
 
   app.post("/api/logout", (req, res) => {
@@ -150,14 +159,15 @@ export function registerAuthRoutes(app: Express): void {
     passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
   });
 
-  app.get("/api/auth/google/callback",
+  app.get(
+    "/api/auth/google/callback",
     (req, res, next) => {
       passport.authenticate("google", { failureRedirect: "/?error=google_auth_failed" })(req, res, next);
     },
     async (req: any, res) => {
       if (req.user) await ensureOrgMembership(req.user);
       res.redirect("/");
-    }
+    },
   );
 
   app.get("/api/auth/github", (req, res, next) => {
@@ -167,14 +177,15 @@ export function registerAuthRoutes(app: Express): void {
     passport.authenticate("github", { scope: ["user:email"] })(req, res, next);
   });
 
-  app.get("/api/auth/github/callback",
+  app.get(
+    "/api/auth/github/callback",
     (req, res, next) => {
       passport.authenticate("github", { failureRedirect: "/?error=github_auth_failed" })(req, res, next);
     },
     async (req: any, res) => {
       if (req.user) await ensureOrgMembership(req.user);
       res.redirect("/");
-    }
+    },
   );
 
   app.get("/api/auth/providers", (_req, res) => {

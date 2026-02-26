@@ -34,7 +34,7 @@ const GUIDED_STEPS: GuidedStep[] = [
     description: "Confirm that alerts and events are flowing into the platform from your connected sources.",
     icon: ArrowDownToLine,
     targetUrl: "/ingestion",
-    checkEndpoint: "/api/stats",
+    checkEndpoint: "/api/dashboard/stats",
     completedField: "hasIngestion",
   },
   {
@@ -61,32 +61,27 @@ const GUIDED_DISMISSED_KEY = "securenexus.guidedWorkflow.dismissed";
 const GUIDED_COMPLETED_KEY = "securenexus.guidedWorkflow.completed";
 
 function useGuidedProgress() {
-  const { data: connectors } = useQuery<{ data?: unknown[] }>({
+  const { data: connectors } = useQuery<unknown[]>({
     queryKey: ["/api/connectors"],
-    select: (d) => d,
   });
 
-  const { data: stats } = useQuery<{ data?: { totalAlerts?: number } }>({
-    queryKey: ["/api/stats"],
-    select: (d) => d,
+  const { data: stats } = useQuery<{ totalAlerts?: number }>({
+    queryKey: ["/api/dashboard/stats"],
   });
 
-  const { data: incidents } = useQuery<{ data?: unknown[] }>({
+  const { data: incidents } = useQuery<unknown[]>({
     queryKey: ["/api/incidents"],
-    select: (d) => d,
   });
 
-  const { data: playbooks } = useQuery<{ data?: unknown[] }>({
+  const { data: playbooks } = useQuery<unknown[]>({
     queryKey: ["/api/playbooks"],
-    select: (d) => d,
   });
 
   const completedMap: Record<string, boolean> = {
-    hasConnectors: Array.isArray(connectors?.data) && connectors.data.length > 0,
-    hasIngestion:
-      (stats?.data?.totalAlerts ?? 0) > 0 || (Array.isArray(stats?.data) && (stats.data as unknown[]).length > 0),
-    hasIncidents: Array.isArray(incidents?.data) && incidents.data.length > 0,
-    hasPlaybooks: Array.isArray(playbooks?.data) && playbooks.data.length > 0,
+    hasConnectors: Array.isArray(connectors) && connectors.length > 0,
+    hasIngestion: (stats?.totalAlerts ?? 0) > 0,
+    hasIncidents: Array.isArray(incidents) && incidents.length > 0,
+    hasPlaybooks: Array.isArray(playbooks) && playbooks.length > 0,
   };
 
   return completedMap;
