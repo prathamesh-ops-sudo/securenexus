@@ -25,7 +25,8 @@ import { canRollback, createRollbackRecord, executeRollback, getAvailableRollbac
 import { runCspmScan } from "./cspm-scanner";
 import { seedEndpointAssets, generateTelemetry, calculateEndpointRisk } from "./endpoint-telemetry";
 import { calculatePostureScore } from "./posture-engine";
-import { cacheGetWithStats, cacheSet, cacheInvalidate, buildCacheKey, cacheStats, CACHE_TTL } from "./query-cache";
+import { cacheGetWithStats, cacheSet, cacheInvalidate, buildCacheKey, cacheStats, cacheGetOrLoad, CACHE_TTL } from "./query-cache";
+import { getProviderSyncStats, setProviderConcurrency, syncConnectorsBatch } from "./connector-engine";
 import { startOutboxProcessor, stopOutboxProcessor, createEventFingerprint, getOutboxProcessorStatus } from "./outbox-processor";
 import { scheduleJob, getDeadLetterJobs, retryDeadLetterJob } from "./job-queue";
 import { evaluateAndAlert, getBreachHistory, seedDefaultSloTargets } from "./slo-alerting";
@@ -300,14 +301,7 @@ export async function registerRoutes(
     try {
       const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:stats", { orgId });
-      const { data: cached, hit } = cacheGetWithStats<any>(cacheKey);
-      if (hit) {
-        res.set("X-Cache", "HIT");
-        return res.json(cached);
-      }
-      const stats = await storage.getDashboardStats(orgId);
-      cacheSet(cacheKey, stats, CACHE_TTL.DASHBOARD_STATS);
-      res.set("X-Cache", "MISS");
+      const stats = await cacheGetOrLoad(cacheKey, () => storage.getDashboardStats(orgId), CACHE_TTL.DASHBOARD_STATS);
       res.json(stats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch stats" });
@@ -318,14 +312,7 @@ export async function registerRoutes(
     try {
       const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:analytics", { orgId });
-      const { data: cached, hit } = cacheGetWithStats<any>(cacheKey);
-      if (hit) {
-        res.set("X-Cache", "HIT");
-        return res.json(cached);
-      }
-      const analytics = await storage.getDashboardAnalytics(orgId);
-      cacheSet(cacheKey, analytics, CACHE_TTL.DASHBOARD_ANALYTICS);
-      res.set("X-Cache", "MISS");
+      const analytics = await cacheGetOrLoad(cacheKey, () => storage.getDashboardAnalytics(orgId), CACHE_TTL.DASHBOARD_ANALYTICS);
       res.json(analytics);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch analytics" });
@@ -1454,14 +1441,7 @@ export async function registerRoutes(
     try {
       const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("ingestion:stats", { orgId });
-      const { data: cached, hit } = cacheGetWithStats<any>(cacheKey);
-      if (hit) {
-        res.set("X-Cache", "HIT");
-        return res.json(cached);
-      }
-      const stats = await storage.getIngestionStats(orgId);
-      cacheSet(cacheKey, stats, CACHE_TTL.INGESTION_STATS);
-      res.set("X-Cache", "MISS");
+      const stats = await cacheGetOrLoad(cacheKey, () => storage.getIngestionStats(orgId), CACHE_TTL.INGESTION_STATS);
       res.json(stats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch ingestion stats" });
@@ -1651,25 +1631,28 @@ export async function registerRoutes(
       if (!connector) return res.status(404).json({ message: "Connector not found" });
 
       await storage.updateConnector(connector.id, { status: "syncing" } as any);
-      
-      // Use the new syncConnectorWithRetry function
-      const jobRun = await syncConnectorWithRetry(connector);
 
-      // Get the sync result to process alerts
+      const jobRun = await syncConnectorWithRetry(connector);
       const syncResult = await syncConnector(connector);
 
       let created = 0;
       let deduped = 0;
       let failed = syncResult.alertsFailed;
+      const UPSERT_BATCH = 50;
 
-      for (const alertData of syncResult.rawAlerts) {
-        try {
-          const { alert: savedAlert, isNew } = await storage.upsertAlert(alertData as any);
-          if (isNew) created++;
-          else deduped++;
-        } catch (err: any) {
-          failed++;
-          syncResult.errors.push(`DB insert failed: ${err.message}`);
+      for (let i = 0; i < syncResult.rawAlerts.length; i += UPSERT_BATCH) {
+        const batch = syncResult.rawAlerts.slice(i, i + UPSERT_BATCH);
+        const results = await Promise.allSettled(
+          batch.map((alertData) => storage.upsertAlert(alertData as any)),
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            if (r.value.isNew) created++;
+            else deduped++;
+          } else {
+            failed++;
+            syncResult.errors.push(`DB insert failed: ${r.reason?.message ?? "unknown"}`);
+          }
         }
       }
 
@@ -1705,6 +1688,9 @@ export async function registerRoutes(
         resourceId: connector.id,
         details: { type: connector.type, received: syncResult.alertsReceived, created, deduped, failed, jobRunId: jobRun.id },
       });
+
+      cacheInvalidate("dashboard:");
+      cacheInvalidate("ingestion:");
 
       res.json({
         success: syncStatus !== "error",
@@ -8185,6 +8171,43 @@ export async function registerRoutes(
       return sendEnvelope(res, null, {
         status: 500,
         errors: [{ code: "SLOW_QUERIES_FAILED", message: "Failed to fetch slow queries", details: error?.message }],
+      });
+    }
+  });
+
+  app.get("/api/v1/connectors/sync-stats", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      return sendEnvelope(res, getProviderSyncStats());
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "SYNC_STATS_FAILED", message: "Failed to fetch provider sync stats", details: error?.message }],
+      });
+    }
+  });
+
+  app.put("/api/v1/connectors/concurrency", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const { provider, maxConcurrency } = req.body;
+      if (!provider || typeof provider !== "string") {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_REQUEST", message: "provider string is required" }],
+        });
+      }
+      const limit = Number(maxConcurrency);
+      if (!Number.isFinite(limit) || limit < 1 || limit > 20) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_REQUEST", message: "maxConcurrency must be between 1 and 20" }],
+        });
+      }
+      setProviderConcurrency(provider, limit);
+      return sendEnvelope(res, { provider, maxConcurrency: limit });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "CONCURRENCY_UPDATE_FAILED", message: "Failed to update provider concurrency", details: error?.message }],
       });
     }
   });
