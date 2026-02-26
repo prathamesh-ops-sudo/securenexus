@@ -342,7 +342,7 @@ export async function registerRoutes(
         return res.json(results.slice(offset, offset + limit));
       }
       const allAlerts = await storage.getAlerts();
-      const sorted = sortOrder === "asc" ? allAlerts : [...allAlerts].reverse();
+      const sorted = sortOrder === "asc" ? [...allAlerts].reverse() : allAlerts;
       res.json(sorted.slice(offset, offset + limit));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch alerts" });
@@ -578,7 +578,7 @@ export async function registerRoutes(
     try {
       const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
       const allIncidents = await storage.getIncidents();
-      const sorted = sortOrder === "asc" ? allIncidents : [...allIncidents].reverse();
+      const sorted = sortOrder === "asc" ? [...allIncidents].reverse() : allIncidents;
       res.json(sorted.slice(offset, offset + limit));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch incidents" });
