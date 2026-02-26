@@ -72,43 +72,43 @@ const features = [
     icon: Brain,
     title: "Cut triage time by 90%",
     description: "AI clusters alerts by attacker behavior and generates incident narratives automatically. What took 45 minutes now takes under 5.",
-    gradient: "from-red-500/20 to-rose-500/20",
-    iconColor: "text-red-400",
+    gradient: "from-cyan-500/20 to-blue-500/20",
+    iconColor: "text-cyan-400",
   },
   {
     icon: Eye,
     title: "See the full attack story",
     description: "Map campaigns to MITRE ATT&CK techniques with confidence scores. Stop chasing individual alerts and start tracking adversaries.",
-    gradient: "from-orange-500/20 to-amber-500/20",
-    iconColor: "text-orange-400",
+    gradient: "from-violet-500/20 to-indigo-500/20",
+    iconColor: "text-violet-400",
   },
   {
     icon: TrendingDown,
     title: "Eliminate 70% of false positives",
     description: "Behavioral correlation separates real threats from noise. Your team stops wasting hours on alerts that don\'t matter.",
-    gradient: "from-amber-500/20 to-orange-500/20",
-    iconColor: "text-amber-400",
+    gradient: "from-blue-500/20 to-cyan-500/20",
+    iconColor: "text-blue-400",
   },
   {
     icon: Lock,
     title: "Deploy without disruption",
     description: "Read-only API connectors to your existing stack. No rip-and-replace, no new agents, no infrastructure changes. Live in 30 minutes.",
-    gradient: "from-emerald-500/20 to-teal-500/20",
+    gradient: "from-emerald-500/20 to-cyan-500/20",
     iconColor: "text-emerald-400",
   },
   {
     icon: BarChart3,
     title: "Prove compliance in minutes",
     description: "Automated evidence collection for SOC 2, ISO 27001, NIST CSF, and GDPR. Generate audit-ready reports instead of building them manually.",
-    gradient: "from-blue-500/20 to-indigo-500/20",
-    iconColor: "text-blue-400",
+    gradient: "from-purple-500/20 to-violet-500/20",
+    iconColor: "text-purple-400",
   },
   {
     icon: Lightbulb,
     title: "Make every analyst a senior",
     description: "AI-generated investigation guides and response playbooks give junior analysts the decision-making capability of a 10-year veteran.",
-    gradient: "from-violet-500/20 to-purple-500/20",
-    iconColor: "text-violet-400",
+    gradient: "from-indigo-500/20 to-blue-500/20",
+    iconColor: "text-indigo-400",
   },
 ];
 
@@ -348,14 +348,14 @@ export default function LandingPage() {
         </div>
 
         <div className="max-w-4xl mx-auto text-center relative z-10">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full gradient-badge text-xs font-medium mb-8 tracking-wide animate-fade-in glow-red-subtle">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full gradient-badge text-xs font-medium mb-8 tracking-wide animate-fade-in glow-cyan-subtle">
             <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             AI-Powered Security Operations
           </div>
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6 leading-[1.1] animate-fade-in-up">
             Stop chasing alerts.
             <br />
-            <span className="bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 bg-clip-text text-transparent">Start stopping attackers.</span>
+            <span className="gradient-text-hero">Start stopping attackers.</span>
           </h1>
           <p className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed animate-fade-in-up">
             SecureNexus uses AI to correlate thousands of alerts into actionable incidents, cutting triage time by 90% and false positives by 70%.
@@ -393,7 +393,7 @@ export default function LandingPage() {
       <section className="py-20 px-6 border-t border-border/30">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
-            <p className="text-xs uppercase tracking-widest text-red-400 mb-3 font-medium">The problem</p>
+            <p className="text-xs uppercase tracking-widest text-cyan-400 mb-3 font-medium">The problem</p>
             <h2 className="text-2xl md:text-3xl font-bold mb-3">Your SOC is drowning in noise</h2>
             <p className="text-muted-foreground max-w-xl mx-auto text-sm">
               Security teams spend more time managing tools than stopping threats. The result: burnout, missed attacks, and wasted budget.
@@ -403,7 +403,7 @@ export default function LandingPage() {
             {painPoints.map((point) => (
               <Card key={point.label} className="gradient-card border-border/30">
                 <CardContent className="p-6 text-center">
-                  <point.icon className="h-6 w-6 text-red-400/70 mx-auto mb-3" />
+                  <point.icon className="h-6 w-6 text-cyan-400/70 mx-auto mb-3" />
                   <div className="text-3xl font-bold tracking-tight mb-0.5">{point.stat}</div>
                   <div className="text-xs font-medium text-primary mb-2">{point.label}</div>
                   <p className="text-xs text-muted-foreground leading-relaxed">{point.description}</p>
@@ -508,7 +508,7 @@ export default function LandingPage() {
                 <CardContent className="p-6 flex flex-col h-full">
                   <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">&ldquo;{t.quote}&rdquo;</p>
                   <div className="flex items-center gap-3 pt-4 border-t border-border/30">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-500/20 to-rose-500/20 flex items-center justify-center text-sm font-semibold text-red-400">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center text-sm font-semibold text-cyan-400">
                       {t.name.split(" ").map(n => n[0]).join("")}
                     </div>
                     <div>
@@ -540,7 +540,7 @@ export default function LandingPage() {
       <section className="py-20 px-6 border-t border-border/30">
         <div className="max-w-3xl mx-auto text-center relative">
           <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[200px] bg-red-500/8 dark:bg-red-500/12 rounded-full blur-[80px]" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[200px] bg-cyan-500/8 dark:bg-cyan-500/12 rounded-full blur-[80px]" />
           </div>
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Ready to transform your SOC?</h2>
           <p className="text-muted-foreground mb-8 text-sm max-w-lg mx-auto">
