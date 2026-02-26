@@ -222,10 +222,4 @@ export function initializeScalingState(): void {
     });
   }
 
-  process.on("SIGTERM", () => {
-    gracefulShutdown("SIGTERM").catch((err) => log.error("SIGTERM shutdown error", { error: String(err) }));
-  });
-  process.on("SIGINT", () => {
-    gracefulShutdown("SIGINT").catch((err) => log.error("SIGINT shutdown error", { error: String(err) }));
-  });
 }

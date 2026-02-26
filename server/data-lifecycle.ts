@@ -265,7 +265,30 @@ export async function rehydrateFromColdStorage(
       return result;
     }
 
-    result.rehydrated = records.length;
+    const tableName = validateTableName(dataType);
+    let insertedCount = 0;
+    for (let i = 0; i < records.length; i += BATCH_SIZE) {
+      const batch = records.slice(i, i + BATCH_SIZE);
+      try {
+        const columns = Object.keys(batch[0]);
+        const values = batch.map((row: Record<string, unknown>) =>
+          `(${columns.map((col) => {
+            const val = row[col];
+            if (val === null || val === undefined) return "NULL";
+            if (typeof val === "number" || typeof val === "boolean") return String(val);
+            return `'${String(val).replace(/'/g, "''")}'`;
+          }).join(", ")})`
+        ).join(", ");
+        await db.execute(
+          sql.raw(`INSERT INTO ${tableName} (${columns.map((c) => `"${c}"`).join(", ")}) VALUES ${values} ON CONFLICT (id) DO NOTHING`)
+        );
+        insertedCount += batch.length;
+      } catch (insertErr) {
+        result.errors.push(`Failed to insert batch starting at index ${i}: ${String(insertErr)}`);
+      }
+    }
+
+    result.rehydrated = insertedCount;
     result.manifests = [manifest];
 
     log.info("Cold storage rehydration complete", {
@@ -273,6 +296,7 @@ export async function rehydrateFromColdStorage(
       dataType,
       batchId,
       records: records.length,
+      inserted: insertedCount,
     });
   } catch (err) {
     const msg = `Rehydration failed for ${orgId}/${dataType}/${batchId}: ${String(err)}`;
@@ -309,8 +333,14 @@ export async function hasLegalHold(orgId: string): Promise<boolean> {
       sql`SELECT id FROM legal_holds WHERE org_id = ${orgId} AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`
     );
     return ((result as any).rows || []).length > 0;
-  } catch {
-    return false;
+  } catch (err) {
+    const errMsg = String(err);
+    if (errMsg.includes('relation "legal_holds" does not exist') || errMsg.includes("does not exist")) {
+      log.debug("legal_holds table does not exist — no holds enforced");
+      return false;
+    }
+    log.error("Failed to check legal holds — treating as held for safety", { orgId, error: errMsg });
+    return true;
   }
 }
 
