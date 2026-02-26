@@ -57,6 +57,31 @@ const REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /AKIA[A-Z0-9]{16}/g, replacement: "AKIA[REDACTED]" },
 ];
 
+const SENSITIVE_KEYS = new Set([
+  "password", "secret", "token", "authorization", "cookie",
+  "apikey", "api_key", "x-api-key", "webhooksecret", "sessionsecret",
+  "databaseurl", "database_url", "accesskeyid", "secretaccesskey",
+  "clientsecret", "clientid", "refreshtoken", "privatekey", "private_key",
+  "credentials", "connectionstring", "connection_string",
+]);
+
+function redactDeep(obj: unknown, depth: number = 0): unknown {
+  if (depth > 8) return "[DEPTH_LIMIT]";
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === "string") return redact(obj);
+  if (typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(item => redactDeep(item, depth + 1));
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+      result[key] = "[REDACTED]";
+    } else {
+      result[key] = redactDeep(value, depth + 1);
+    }
+  }
+  return result;
+}
+
 function redact(input: string): string {
   let result = input;
   for (const { pattern, replacement } of REDACT_PATTERNS) {
@@ -75,7 +100,8 @@ export function currentContext(): LogContext {
 function emit(level: LogLevel, source: string, message: string, extra?: Record<string, unknown>): void {
   if (LEVEL_PRIORITY[level] < LEVEL_PRIORITY[MIN_LEVEL]) return;
 
-  const ctx = { ...currentContext(), ...extra };
+  const rawCtx = { ...currentContext(), ...extra };
+  const ctx = redactDeep(rawCtx) as LogContext;
 
   const entry: LogEntry = {
     timestamp: new Date().toISOString(),
