@@ -24,6 +24,7 @@ import { registerOnboardingRoutes } from "./onboarding";
 import { registerEventsRoutes } from "./events";
 import { registerFilesRoutes } from "./files";
 import { registerLifecycleRoutes } from "./lifecycle";
+import { registerTenantIsolationRoutes } from "./tenant-isolation";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -52,4 +53,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerWebhooksRoutes(app);
   registerFilesRoutes(app);
   registerLifecycleRoutes(app);
+  registerTenantIsolationRoutes(app);
 }

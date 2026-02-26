@@ -14,6 +14,8 @@ import { logger, correlationMiddleware, requestLogger } from "./logger";
 import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
 import { initializeScalingState, gracefulShutdown } from "./scaling-state";
 import { startRetentionScheduler } from "./retention-scheduler";
+import { initializeTenantIsolation } from "./tenant-isolation";
+import { initializeTenantThrottle } from "./tenant-throttle";
 
 const app = express();
 const httpServer = createServer(app);
@@ -107,6 +109,8 @@ export function log(message: string, source = "express") {
     () => {
       logger.child("express").info(`serving on port ${port}`);
       initializeScalingState();
+      initializeTenantIsolation();
+      initializeTenantThrottle();
       startReportScheduler();
       startRetentionScheduler();
       startJobWorker();
