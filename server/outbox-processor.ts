@@ -71,7 +71,11 @@ async function processPendingEvents(): Promise<void> {
 }
 
 async function dispatchOutboxEvent(event: any): Promise<void> {
-  const orgId = event.orgId || "default";
+  const orgId = event.orgId;
+  if (!orgId) {
+    logger.child("outbox-processor").warn(`Event ${event.id} missing orgId — skipping webhook dispatch`);
+    return;
+  }
   const webhooks = await storage.getActiveWebhooksByEvent(orgId, event.eventType);
 
   for (const webhook of webhooks) {

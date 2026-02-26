@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { ApiEnvelope, ApiMeta } from "./api-response";
 import { ERROR_CODES } from "./api-response";
+import { currentContext } from "./logger";
 
 // ─── Shape detection ─────────────────────────────────────────────────────────
 // Returns true when the body already conforms to { data, meta, errors }.
@@ -63,6 +64,9 @@ export function envelopeMiddleware(req: Request, res: Response, next: NextFuncti
 
     const status = res.statusCode;
 
+    const requestId = currentContext().requestId ?? (res.getHeader("x-request-id") as string | undefined);
+    const baseMeta: ApiMeta = requestId ? { requestId } : {};
+
     // Error responses (4xx / 5xx)
     if (status >= 400) {
       const message = (typeof body === "object" && body !== null && !Array.isArray(body))
@@ -78,15 +82,14 @@ export function envelopeMiddleware(req: Request, res: Response, next: NextFuncti
 
       const envelope: ApiEnvelope<null> = {
         data: null,
-        meta: {},
+        meta: baseMeta,
         errors: [{ code, message, ...(details ? { details } : {}) }],
       };
       return originalJson(envelope);
     }
 
     // Success responses – wrap data.
-    const meta: ApiMeta = {};
-    const envelope: ApiEnvelope = { data: body ?? null, meta, errors: null };
+    const envelope: ApiEnvelope = { data: body ?? null, meta: baseMeta, errors: null };
     return originalJson(envelope);
   } as any;
 

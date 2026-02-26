@@ -47,6 +47,14 @@ function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
 }
 
+function getOrgId(req: Request): string {
+  const orgId = (req as any).orgId || (req as any).user?.orgId;
+  if (!orgId || typeof orgId !== "string") {
+    throw new Error("ORG_CONTEXT_MISSING");
+  }
+  return orgId;
+}
+
 function sendEnvelope(
   res: Response,
   data: any,
@@ -145,7 +153,8 @@ function verifyWebhookSignature(req: Request, res: Response, next: NextFunction)
   }
 }
 
-async function dispatchWebhookEvent(orgId: string, event: string, payload: any) {
+async function dispatchWebhookEvent(orgId: string | null, event: string, payload: any) {
+  if (!orgId) return;
   try {
     const webhooks = await storage.getActiveWebhooksByEvent(orgId, event);
     for (const webhook of webhooks) {
@@ -186,12 +195,13 @@ async function dispatchWebhookEvent(orgId: string, event: string, payload: any) 
 }
 
 async function publishOutboxEvent(
-  orgId: string,
+  orgId: string | null,
   eventType: string,
   aggregateType: string,
   aggregateId: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
+  if (!orgId) return;
   try {
     const fingerprint = createEventFingerprint(eventType, aggregateType, aggregateId, payload);
     await storage.createOutboxEvent({
@@ -214,7 +224,7 @@ function idempotencyCheck(req: Request, res: Response, next: NextFunction) {
   const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
   if (!idempotencyKey) return next();
 
-  const orgId = (req as any).orgId || (req as any).user?.orgId || "default";
+  const orgId = getOrgId(req);
   const endpoint = req.originalUrl;
 
   storage.getIdempotencyKey(orgId, idempotencyKey, endpoint).then((existing) => {
@@ -284,7 +294,7 @@ export async function registerRoutes(
   // Dashboard (with query-level caching)
   app.get("/api/dashboard/stats", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:stats", { orgId });
       const { data: cached, hit } = cacheGetWithStats<any>(cacheKey);
       if (hit) {
@@ -302,7 +312,7 @@ export async function registerRoutes(
 
   app.get("/api/dashboard/analytics", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:analytics", { orgId });
       const { data: cached, hit } = cacheGetWithStats<any>(cacheKey);
       if (hit) {
@@ -336,7 +346,7 @@ export async function registerRoutes(
   // Onboarding status (v1) - summarizes whether key assets are configured for this org
   app.get("/api/v1/onboarding/status", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
 
       const [integrations, ingestionStats, endpoints, cspmAccounts] = await Promise.all([
         storage.getIntegrationConfigs(orgId),
@@ -439,7 +449,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid alert data", errors: parsed.error.flatten() });
       }
       const alert = await storage.createAlert(parsed.data);
-      publishOutboxEvent(alert.orgId || "default", "alert.created", "alert", alert.id, {
+      publishOutboxEvent(alert.orgId, "alert.created", "alert", alert.id, {
         title: alert.title, severity: alert.severity, source: alert.source, status: alert.status,
       });
       cacheInvalidate("dashboard:");
@@ -458,7 +468,7 @@ export async function registerRoutes(
       }
       const alert = await storage.updateAlert(p(req.params.id), parsed.data);
       if (!alert) return res.status(404).json({ message: "Alert not found" });
-      publishOutboxEvent(alert.orgId || "default", "alert.updated", "alert", alert.id, {
+      publishOutboxEvent(alert.orgId, "alert.updated", "alert", alert.id, {
         changes: Object.keys(parsed.data),
       });
       cacheInvalidate("dashboard:");
@@ -476,7 +486,7 @@ export async function registerRoutes(
       if (!alert) return res.status(404).json({ message: "Alert not found" });
       const closedStatuses = ["resolved", "closed", "false_positive"];
       const outboxEventType = closedStatuses.includes(status) ? "alert.closed" : "alert.updated";
-      publishOutboxEvent(alert.orgId || "default", outboxEventType, "alert", alert.id, {
+      publishOutboxEvent(alert.orgId, outboxEventType, "alert", alert.id, {
         status, previousStatus: req.body.previousStatus || null,
       });
       cacheInvalidate("dashboard:");
@@ -658,8 +668,8 @@ export async function registerRoutes(
           priority: incident.priority,
         },
       });
-      dispatchWebhookEvent(incident.orgId || "default", "incident.created", incident);
-      publishOutboxEvent(incident.orgId || "default", "incident.created", "incident", incident.id, {
+      dispatchWebhookEvent(incident.orgId, "incident.created", incident);
+      publishOutboxEvent(incident.orgId, "incident.created", "incident", incident.id, {
         title: incident.title, severity: incident.severity, status: incident.status, priority: incident.priority,
       });
       cacheInvalidate("dashboard:");
@@ -754,7 +764,7 @@ export async function registerRoutes(
         },
       });
 
-      dispatchWebhookEvent(incident.orgId || "default", "incident.updated", incident);
+      dispatchWebhookEvent(incident.orgId, "incident.updated", incident);
 
       const closedStatuses = ["resolved", "closed"];
       let incidentOutboxType = "incident.updated";
@@ -763,7 +773,7 @@ export async function registerRoutes(
       } else if (parsed.data.escalated === true && !existingIncident.escalated) {
         incidentOutboxType = "incident.escalated";
       }
-      publishOutboxEvent(incident.orgId || "default", incidentOutboxType, "incident", incident.id, {
+      publishOutboxEvent(incident.orgId, incidentOutboxType, "incident", incident.id, {
         changes: Object.keys(parsed.data), status: incident.status, severity: incident.severity,
       });
       cacheInvalidate("dashboard:");
@@ -1264,7 +1274,7 @@ export async function registerRoutes(
           },
         });
 
-        publishOutboxEvent(orgId || "default", "alert.created", "alert", alert.id, {
+        publishOutboxEvent(orgId, "alert.created", "alert", alert.id, {
           title: alert.title, severity: alert.severity, source: alert.source, category: alert.category,
         });
         cacheInvalidate("dashboard:");
@@ -1280,7 +1290,7 @@ export async function registerRoutes(
               alertId: alert.id,
             },
           });
-          publishOutboxEvent(orgId || "default", "alert.correlated", "alert", alert.id, {
+          publishOutboxEvent(orgId, "alert.correlated", "alert", alert.id, {
             clusterId: correlationResult.clusterId, confidence: correlationResult.confidence,
           });
         }
@@ -1433,7 +1443,7 @@ export async function registerRoutes(
 
   app.get("/api/ingestion/stats", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("ingestion:stats", { orgId });
       const { data: cached, hit } = cacheGetWithStats<any>(cacheKey);
       if (hit) {
@@ -1541,7 +1551,7 @@ export async function registerRoutes(
         resourceId: connector.id,
         details: { type, name },
       });
-      publishOutboxEvent(connector.orgId || "default", "connector.synced", "connector", connector.id, {
+      publishOutboxEvent(connector.orgId, "connector.synced", "connector", connector.id, {
         type, name,
       });
       res.status(201).json(connector);
@@ -4080,7 +4090,7 @@ export async function registerRoutes(
       if (!incident) return res.status(404).json({ message: "Incident not found" });
       const allAlerts = await storage.getAlerts(orgId);
       const incidentAlerts = allAlerts.filter(a => a.incidentId === incId);
-      const matches = await evaluatePolicies({ incident, alerts: incidentAlerts, orgId: orgId || "default", confidenceScore: req.body.confidenceScore });
+      const matches = await evaluatePolicies({ incident, alerts: incidentAlerts, orgId: orgId, confidenceScore: req.body.confidenceScore });
       res.json(matches);
     } catch (error) { res.status(500).json({ message: "Failed to evaluate policies" }); }
   });
@@ -4140,7 +4150,7 @@ export async function registerRoutes(
       const { originalActionId, actionType, target } = req.body;
       if (!actionType || !target) return res.status(400).json({ message: "actionType and target required" });
       if (!canRollback(actionType)) return res.status(400).json({ message: `Cannot rollback action: ${actionType}` });
-      const rollback = await createRollbackRecord(orgId || "default", originalActionId, actionType, target);
+      const rollback = await createRollbackRecord(orgId, originalActionId, actionType, target);
       res.status(201).json(rollback);
     } catch (error) { logger.child("routes").error("Create rollback error", { error: String(error) }); res.status(500).json({ message: "Failed to create rollback" }); }
   });
@@ -4163,7 +4173,7 @@ export async function registerRoutes(
   app.post("/api/files/upload", isAuthenticated, upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file provided" });
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const key = `orgs/${orgId}/uploads/${Date.now()}-${req.file.originalname}`;
       const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
       res.status(201).json(result);
@@ -4175,7 +4185,7 @@ export async function registerRoutes(
 
   app.get("/api/files", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const subPrefix = req.query.prefix as string | undefined;
       const prefix = `orgs/${orgId}/${subPrefix || ""}`;
       const files = await listFiles(prefix);
@@ -4187,7 +4197,7 @@ export async function registerRoutes(
 
   app.get("/api/files/download", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const key = req.query.key as string;
       if (!key) return res.status(400).json({ message: "key query param required" });
       if (!key.startsWith(`orgs/${orgId}/`)) return res.status(403).json({ message: "Access denied" });
@@ -4200,7 +4210,7 @@ export async function registerRoutes(
 
   app.delete("/api/files/remove", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const key = req.query.key as string;
       if (!key) return res.status(400).json({ message: "key query param required" });
       if (!key.startsWith(`orgs/${orgId}/`)) return res.status(403).json({ message: "Access denied" });
@@ -4214,7 +4224,7 @@ export async function registerRoutes(
   // ── CSPM Routes ──
   app.get("/api/cspm/accounts", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const accounts = await storage.getCspmAccounts(orgId);
       res.json(accounts);
     } catch (error) {
@@ -4224,7 +4234,7 @@ export async function registerRoutes(
 
   app.post("/api/cspm/accounts", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const body = { ...req.body, orgId };
       const parsed = insertCspmAccountSchema.safeParse(body);
       if (!parsed.success) {
@@ -4239,7 +4249,7 @@ export async function registerRoutes(
 
   app.patch("/api/cspm/accounts/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const existing = await storage.getCspmAccount(p(req.params.id));
       if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
       const account = await storage.updateCspmAccount(p(req.params.id), req.body);
@@ -4252,7 +4262,7 @@ export async function registerRoutes(
 
   app.delete("/api/cspm/accounts/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const existing = await storage.getCspmAccount(p(req.params.id));
       if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
       const deleted = await storage.deleteCspmAccount(p(req.params.id));
@@ -4265,7 +4275,7 @@ export async function registerRoutes(
 
   app.get("/api/cspm/scans", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const accountId = req.query.accountId as string | undefined;
       const scans = await storage.getCspmScans(orgId, accountId);
       res.json(scans);
@@ -4276,7 +4286,7 @@ export async function registerRoutes(
 
   app.post("/api/cspm/scans/:accountId", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const account = await storage.getCspmAccount(p(req.params.accountId));
       if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
       runCspmScan(orgId, p(req.params.accountId)).catch(err => logger.child("routes").error("CSPM scan error", { error: String(err) }));
@@ -4288,7 +4298,7 @@ export async function registerRoutes(
 
   app.get("/api/cspm/findings", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const scanId = req.query.scanId as string | undefined;
       const severity = req.query.severity as string | undefined;
       const findings = await storage.getCspmFindings(orgId, scanId, severity);
@@ -4300,7 +4310,7 @@ export async function registerRoutes(
 
   app.patch("/api/cspm/findings/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const findings = await storage.getCspmFindings(orgId);
       const existing = findings.find(f => f.id === p(req.params.id));
       if (!existing) return res.status(404).json({ message: "CSPM finding not found" });
@@ -4315,7 +4325,7 @@ export async function registerRoutes(
   // ── Endpoint Telemetry Routes ──
   app.get("/api/endpoints", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const assets = await storage.getEndpointAssets(orgId);
       res.json(assets);
     } catch (error) {
@@ -4325,7 +4335,7 @@ export async function registerRoutes(
 
   app.get("/api/endpoints/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const asset = await storage.getEndpointAsset(p(req.params.id));
       if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
       res.json(asset);
@@ -4336,7 +4346,7 @@ export async function registerRoutes(
 
   app.post("/api/endpoints/seed", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const assets = await seedEndpointAssets(orgId);
       res.status(201).json(assets);
     } catch (error) {
@@ -4346,7 +4356,7 @@ export async function registerRoutes(
 
   app.post("/api/endpoints", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const body = { ...req.body, orgId };
       const parsed = insertEndpointAssetSchema.safeParse(body);
       if (!parsed.success) {
@@ -4361,7 +4371,7 @@ export async function registerRoutes(
 
   app.patch("/api/endpoints/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const existing = await storage.getEndpointAsset(p(req.params.id));
       if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
       const asset = await storage.updateEndpointAsset(p(req.params.id), req.body);
@@ -4374,7 +4384,7 @@ export async function registerRoutes(
 
   app.delete("/api/endpoints/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const existing = await storage.getEndpointAsset(p(req.params.id));
       if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
       const deleted = await storage.deleteEndpointAsset(p(req.params.id));
@@ -4387,7 +4397,7 @@ export async function registerRoutes(
 
   app.get("/api/endpoints/:id/telemetry", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const asset = await storage.getEndpointAsset(p(req.params.id));
       if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
       const telemetry = await storage.getEndpointTelemetry(p(req.params.id));
@@ -4399,7 +4409,7 @@ export async function registerRoutes(
 
   app.post("/api/endpoints/:id/telemetry", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const asset = await storage.getEndpointAsset(p(req.params.id));
       if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
       const telemetry = await generateTelemetry(orgId, p(req.params.id));
@@ -4411,7 +4421,7 @@ export async function registerRoutes(
 
   app.post("/api/endpoints/:id/risk", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const asset = await storage.getEndpointAsset(p(req.params.id));
       if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
       const riskScore = await calculateEndpointRisk(p(req.params.id));
@@ -4424,7 +4434,7 @@ export async function registerRoutes(
   // ── Posture Score Routes ──
   app.get("/api/posture/scores", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const scores = await storage.getPostureScores(orgId);
       res.json(scores);
     } catch (error) {
@@ -4434,7 +4444,7 @@ export async function registerRoutes(
 
   app.post("/api/posture/calculate", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const score = await calculatePostureScore(orgId);
       res.status(201).json(score);
     } catch (error) {
@@ -4444,7 +4454,7 @@ export async function registerRoutes(
 
   app.get("/api/posture/latest", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const score = await storage.getLatestPostureScore(orgId);
       if (!score) return res.status(404).json({ message: "No posture score found" });
       res.json(score);
@@ -4456,7 +4466,7 @@ export async function registerRoutes(
   // ── AI Deployment Config Routes ──
   app.get("/api/ai-deployment/config", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const config = await storage.getAiDeploymentConfig(orgId);
       if (!config) return res.status(404).json({ message: "AI deployment config not found" });
       res.json(config);
@@ -4467,7 +4477,7 @@ export async function registerRoutes(
 
   app.put("/api/ai-deployment/config", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const parsed = insertAiDeploymentConfigSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid AI deployment config data", errors: parsed.error.flatten() });
@@ -5913,7 +5923,7 @@ export async function registerRoutes(
   // Policy Checks (CSPM policy-as-code)
   app.get("/api/policy-checks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const checks = await storage.getPolicyChecks(orgId);
       res.json(checks);
     } catch (error) {
@@ -5923,7 +5933,7 @@ export async function registerRoutes(
 
   app.post("/api/policy-checks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const parsed = insertPolicyCheckSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid policy check data", errors: parsed.error.flatten() });
@@ -5957,7 +5967,7 @@ export async function registerRoutes(
 
   app.post("/api/policy-checks/:id/run", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const check = await storage.getPolicyCheck(p(req.params.id));
       if (!check) return res.status(404).json({ message: "Policy check not found" });
       const findings = await storage.getCspmFindings(orgId);
@@ -5983,7 +5993,7 @@ export async function registerRoutes(
 
   app.get("/api/policy-results", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const policyCheckId = req.query.policyCheckId as string | undefined;
       const results = await storage.getPolicyResults(orgId, policyCheckId);
       res.json(results);
@@ -6084,7 +6094,7 @@ export async function registerRoutes(
 
   app.get("/api/compliance-control-mappings", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const controlId = req.query.controlId as string | undefined;
       const mappings = await storage.getComplianceControlMappings(orgId, controlId);
       res.json(mappings);
@@ -6095,7 +6105,7 @@ export async function registerRoutes(
 
   app.post("/api/compliance-control-mappings", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const parsed = insertComplianceControlMappingSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid mapping data", errors: parsed.error.flatten() });
@@ -6130,7 +6140,7 @@ export async function registerRoutes(
   // Evidence Locker
   app.get("/api/evidence-locker", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const framework = req.query.framework as string | undefined;
       const artifactType = req.query.artifactType as string | undefined;
       const items = await storage.getEvidenceLockerItems(orgId, framework, artifactType);
@@ -6142,7 +6152,7 @@ export async function registerRoutes(
 
   app.post("/api/evidence-locker", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const parsed = insertEvidenceLockerItemSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid evidence locker item data", errors: parsed.error.flatten() });
@@ -6177,7 +6187,7 @@ export async function registerRoutes(
   // Outbound Webhooks
   app.get("/api/outbound-webhooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const webhooks = await storage.getOutboundWebhooks(orgId);
       res.json(webhooks);
     } catch (error) {
@@ -6187,7 +6197,7 @@ export async function registerRoutes(
 
   app.post("/api/outbound-webhooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const parsed = insertOutboundWebhookSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid webhook data", errors: parsed.error.flatten() });
@@ -6267,7 +6277,7 @@ export async function registerRoutes(
   // Versioned outbound webhooks API (v1 envelope)
   app.get("/api/v1/webhooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const webhooks = await storage.getOutboundWebhooks(orgId);
       return sendEnvelope(res, webhooks);
     } catch (error: any) {
@@ -6286,7 +6296,7 @@ export async function registerRoutes(
 
   app.post("/api/v1/webhooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const parsed = insertOutboundWebhookSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return sendEnvelope(res, null, {
@@ -6390,7 +6400,7 @@ export async function registerRoutes(
   // === Alert Archive (Cold Storage) ===
   app.get("/api/alerts/archive", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const limit = parseInt(req.query.limit as string, 10) || 100;
       const offset = parseInt(req.query.offset as string, 10) || 0;
       const [items, count] = await Promise.all([
@@ -6405,7 +6415,7 @@ export async function registerRoutes(
 
   app.post("/api/alerts/archive", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const { alertIds, reason } = req.body;
       if (!alertIds || !Array.isArray(alertIds) || alertIds.length === 0) {
         return res.status(400).json({ message: "alertIds array required" });
@@ -6432,7 +6442,7 @@ export async function registerRoutes(
 
   app.delete("/api/alerts/archive", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const beforeDate = req.query.beforeDate as string;
       if (!beforeDate) {
         return res.status(400).json({ message: "beforeDate query param required" });
@@ -6469,7 +6479,7 @@ export async function registerRoutes(
 
   app.post("/api/ops/jobs", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const { type, payload, priority, runAt } = req.body;
       if (!type) return res.status(400).json({ message: "type is required" });
       const job = await storage.createJob({
@@ -6612,7 +6622,7 @@ export async function registerRoutes(
   // === Disaster Recovery Runbooks ===
   app.get("/api/ops/dr-runbooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const runbooks = await storage.getDrRunbooks(orgId);
       res.json(runbooks);
     } catch (error) {
@@ -6632,7 +6642,7 @@ export async function registerRoutes(
 
   app.post("/api/ops/dr-runbooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const runbook = await storage.createDrRunbook({ ...req.body, orgId });
       res.status(201).json(runbook);
     } catch (error) {
@@ -6678,7 +6688,7 @@ export async function registerRoutes(
 
   app.post("/api/ops/dr-runbooks/seed", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const defaults = [
         {
           orgId,
@@ -6768,7 +6778,7 @@ export async function registerRoutes(
   // === Dashboard Metrics Cache ===
   app.get("/api/ops/metrics-cache", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const metricType = req.query.metricType as string || "stats";
       const cached = await storage.getCachedMetrics(orgId, metricType);
       res.json(cached || { cached: false });
@@ -6779,7 +6789,7 @@ export async function registerRoutes(
 
   app.post("/api/ops/metrics-cache/refresh", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const stats = await storage.getDashboardStats(orgId);
       const analytics = await storage.getDashboardAnalytics(orgId);
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min TTL
@@ -6796,7 +6806,7 @@ export async function registerRoutes(
   // === Alert Daily Stats ===
   app.get("/api/ops/alert-daily-stats", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const days = parseInt(req.query.days as string, 10) || 30;
       const endDate = new Date().toISOString().split("T")[0];
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
@@ -6989,7 +6999,7 @@ export async function registerRoutes(
   // ============================
   app.get("/api/v1/dr/runbooks", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const runbooks = await storage.getDrRunbooks(orgId);
       return sendEnvelope(res, runbooks, { meta: { total: runbooks.length } });
     } catch (error: any) {
@@ -8072,7 +8082,7 @@ export async function registerRoutes(
           errors: [{ code: "INVALID_REQUEST", message: "type and runAt are required" }],
         });
       }
-      const orgId = (req as any).user?.orgId || "default";
+      const orgId = getOrgId(req);
       const scheduledJob = await scheduleJob(type, orgId, payload || {}, new Date(runAt), priority);
       return sendEnvelope(res, scheduledJob, { status: 201 });
     } catch (error: any) {

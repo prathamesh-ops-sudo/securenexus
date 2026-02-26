@@ -62,7 +62,11 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   },
   cache_refresh: async (job) => {
     try {
-      const orgId = job.payload?.orgId || "default";
+      const orgId = job.payload?.orgId;
+      if (!orgId) {
+        logger.child("job-queue").warn(`Job ${job.id} missing orgId in payload — skipping`);
+        return { refreshed: false, error: "Missing orgId in job payload" };
+      }
       const stats = await storage.getDashboardStats(orgId);
       const analytics = await storage.getDashboardAnalytics(orgId);
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
@@ -75,7 +79,11 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   },
   archive_alerts: async (job) => {
     try {
-      const orgId = job.payload?.orgId || "default";
+      const orgId = job.payload?.orgId;
+      if (!orgId) {
+        logger.child("job-queue").warn(`Job ${job.id} missing orgId in payload — skipping`);
+        return { refreshed: false, error: "Missing orgId in job payload" };
+      }
       const beforeDate = job.payload?.beforeDate ? new Date(job.payload.beforeDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const reason = job.payload?.reason || "cold_storage";
       const { sql } = await import("drizzle-orm");
@@ -92,7 +100,11 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   },
   daily_stats_rollup: async (job) => {
     try {
-      const orgId = job.payload?.orgId || "default";
+      const orgId = job.payload?.orgId;
+      if (!orgId) {
+        logger.child("job-queue").warn(`Job ${job.id} missing orgId in payload — skipping`);
+        return { refreshed: false, error: "Missing orgId in job payload" };
+      }
       const date = job.payload?.date || new Date().toISOString().split("T")[0];
       const { sql } = await import("drizzle-orm");
       const result = await db.execute(sql`
