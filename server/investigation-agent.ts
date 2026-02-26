@@ -29,7 +29,7 @@ export async function runInvestigation(runId: string): Promise<void> {
     }
 
     const steps = await storage.getInvestigationSteps(runId);
-    const orgId = run.orgId || undefined;
+    const orgId = run.orgId ?? undefined;
 
     const step1 = steps.find(s => s.stepType === "gather_alerts");
     if (step1) {

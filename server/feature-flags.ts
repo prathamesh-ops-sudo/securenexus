@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import type { Request, Response, NextFunction } from "express";
+import { logger } from "./logger";
 
 interface FlagEvaluationContext {
   orgId?: string;
@@ -53,7 +54,12 @@ export async function evaluateFlag(key: string, ctx: FlagEvaluationContext): Pro
     return { key, enabled: false, reason: "rollout_excluded" };
   }
 
-  const hash = deterministicHash(key, ctx.orgId || ctx.userId || "anonymous");
+  const identifier = ctx.orgId ?? ctx.userId;
+  if (!identifier) {
+    logger.child("feature-flags").warn("Flag rollout evaluated without orgId or userId", { key });
+    return { key, enabled: false, reason: "rollout_excluded" };
+  }
+  const hash = deterministicHash(key, identifier);
   const bucket = hash % 100;
   if (bucket < rolloutPct) {
     return { key, enabled: true, reason: "rollout_included" };
