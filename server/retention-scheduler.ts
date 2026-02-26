@@ -2,21 +2,22 @@ import { db } from "./db";
 import { compliancePolicies } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
+import { logger } from "./logger";
 
 export function startRetentionScheduler(): void {
   setTimeout(() => {
     runRetentionCleanup().catch((err) => {
-      console.error("Retention cleanup error on startup:", err);
+      logger.child("retention-scheduler").error("Retention cleanup error on startup", { error: String(err) });
     });
   }, 60 * 1000);
 
   setInterval(() => {
     runRetentionCleanup().catch((err) => {
-      console.error("Retention cleanup error:", err);
+      logger.child("retention-scheduler").error("Retention cleanup error", { error: String(err) });
     });
   }, 24 * 60 * 60 * 1000);
 
-  console.log("[RetentionScheduler] Started - runs every 24 hours");
+  logger.child("retention-scheduler").info("Started - runs every 24 hours");
 }
 
 export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDeleted: number; incidentsDeleted: number; auditLogsDeleted: number }[]> {
@@ -41,7 +42,7 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
           await storage.archiveAlerts(orgId, alertIds, "retention");
           alertsDeleted = alertIds.length;
         } catch (archiveErr) {
-          console.error("Failed to archive alerts, falling back to delete:", archiveErr);
+          logger.child("retention-scheduler").error("Failed to archive alerts, falling back to delete", { error: String(archiveErr) });
           const alertResult = await db.execute(sql`DELETE FROM alerts WHERE org_id = ${orgId} AND created_at < ${cutoff}`);
           alertsDeleted = Number(alertResult.rowCount) || 0;
         }
@@ -89,14 +90,14 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
         details: { alertsDeleted, incidentsDeleted, auditLogsDeleted, totalDeleted },
       });
     } catch (e) {
-      console.error("Failed to create audit log for retention cleanup:", e);
+      logger.child("retention-scheduler").error("Failed to create audit log for retention cleanup", { error: String(e) });
     }
 
     results.push({ orgId, alertsDeleted, incidentsDeleted, auditLogsDeleted });
   }
 
   if (results.length > 0) {
-    console.log("[RetentionScheduler] Cleanup complete:", JSON.stringify(results));
+    logger.child("retention-scheduler").info("Cleanup complete", { results });
   }
 
   return results;

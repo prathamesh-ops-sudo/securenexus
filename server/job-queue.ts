@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { db } from "./db";
+import { logger } from "./logger";
 
 const DEAD_LETTER_MAX_ATTEMPTS = 3;
 const JOB_DEDUP_WINDOW_MS = 60 * 1000;
@@ -146,7 +147,7 @@ export function startJobWorker(): void {
   if (workerRunning) return;
   workerRunning = true;
 
-  console.log("[JobWorker] Started - polling every 5s");
+  logger.child("job-queue").info("Started - polling every 5s");
 
   workerInterval = setInterval(async () => {
     if (activeJobs >= MAX_CONCURRENT) return;
@@ -158,7 +159,7 @@ export function startJobWorker(): void {
       activeJobs++;
       processJob(job).finally(() => { activeJobs--; });
     } catch (err) {
-      console.error("[JobWorker] Poll error:", err);
+      logger.child("job-queue").error("Poll error:", { error: String(err) });
     }
   }, POLL_INTERVAL_MS);
 }
@@ -169,7 +170,7 @@ export function stopJobWorker(): void {
     clearInterval(workerInterval);
     workerInterval = null;
   }
-  console.log("[JobWorker] Stopped");
+  logger.child("job-queue").info("Stopped");
 }
 
 async function processJob(job: any): Promise<void> {
@@ -184,14 +185,14 @@ async function processJob(job: any): Promise<void> {
   }
 
   try {
-    console.log(`[JobWorker] Processing job ${job.id} (${job.type})`);
+    logger.child("job-queue").info(`Processing job ${job.id} (${job.type})`);
     const result = await handler(job);
     await storage.updateJob(job.id, {
       status: "completed",
       result,
       completedAt: new Date(),
     });
-    console.log(`[JobWorker] Completed job ${job.id}`);
+    logger.child("job-queue").info(`Completed job ${job.id}`);
   } catch (err: any) {
     const attempts = (job.attempts || 0);
     const maxAttempts = job.maxAttempts || 3;
@@ -202,7 +203,7 @@ async function processJob(job: any): Promise<void> {
         lastError: err.message || String(err),
         completedAt: new Date(),
       });
-      console.error(`[JobWorker] Job ${job.id} failed permanently after ${attempts} attempts`);
+      logger.child("job-queue").error(`[JobWorker] Job ${job.id} failed permanently after ${attempts} attempts`);
     } else {
       const backoffMs = Math.min(60000, 1000 * Math.pow(2, attempts));
       const runAt = new Date(Date.now() + backoffMs);
@@ -211,7 +212,7 @@ async function processJob(job: any): Promise<void> {
         lastError: err.message || String(err),
         runAt,
       });
-      console.warn(`[JobWorker] Job ${job.id} failed, retrying at ${runAt.toISOString()}`);
+      logger.child("job-queue").warn(`Job ${job.id} failed, retrying at ${runAt.toISOString()}`);
     }
   }
 }
@@ -222,7 +223,7 @@ export function getWorkerStatus(): { running: boolean; activeJobs: number; pollI
 
 export async function enqueueJob(type: string, orgId: string, payload: any, priority?: number): Promise<any> {
   if (isJobDuplicate(type, orgId, payload)) {
-    console.log(`[JobWorker] Dedup: skipping duplicate job ${type} for org ${orgId}`);
+    logger.child("job-queue").info(`Dedup: skipping duplicate job ${type} for org ${orgId}`);
     return null;
   }
   return storage.createJob({

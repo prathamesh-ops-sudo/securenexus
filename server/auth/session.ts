@@ -11,6 +11,7 @@ import { config } from "../config";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { replyUnauthenticated } from "../api-response";
+import { logger } from "../logger";
 
 const scryptAsync = promisify(scrypt);
 
@@ -107,7 +108,7 @@ export async function setupAuth(app: Express) {
         }
       )
     );
-    console.log("[Auth] Google OAuth strategy configured");
+    logger.child("auth-session").info("Google OAuth strategy configured");
   }
 
   if (config.oauth.github.clientId && config.oauth.github.clientSecret) {
@@ -138,7 +139,7 @@ export async function setupAuth(app: Express) {
         }
       )
     );
-    console.log("[Auth] GitHub OAuth strategy configured");
+    logger.child("auth-session").info("GitHub OAuth strategy configured");
   }
 
   passport.serializeUser((user: any, cb) => cb(null, user.id));

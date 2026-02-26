@@ -1,12 +1,13 @@
 import { storage } from "./storage";
 import { generateReportData, formatAsCSV } from "./report-engine";
 import { uploadFile } from "./s3";
+import { logger } from "./logger";
 
 const SCHEDULER_INTERVAL_MS = 60 * 60 * 1000;
 let schedulerTimer: NodeJS.Timeout | null = null;
 
 export function startReportScheduler() {
-  console.log("[ReportScheduler] Started - checks every hour");
+  logger.child("report-scheduler").info("Started - checks every hour");
   schedulerTimer = setInterval(checkDueSchedules, SCHEDULER_INTERVAL_MS);
   setTimeout(checkDueSchedules, 10000);
 }
@@ -25,11 +26,11 @@ async function checkDueSchedules() {
       try {
         await executeScheduledReport(schedule);
       } catch (err) {
-        console.error(`[ReportScheduler] Failed to execute schedule ${schedule.id}:`, err);
+        logger.child("report-scheduler").error(`Failed to execute schedule ${schedule.id}:`, { error: String(err) });
       }
     }
   } catch (err) {
-    console.error("[ReportScheduler] Error checking schedules:", err);
+    logger.child("report-scheduler").error("Error checking schedules:", { error: String(err) });
   }
 }
 
@@ -64,7 +65,7 @@ async function executeScheduledReport(schedule: any) {
           const result = await uploadFile(s3Key, content, contentType);
           outputLocation = `s3://${result.bucket}/${result.key}`;
         } catch (err: any) {
-          console.log(`[ReportScheduler] S3 delivery for schedule ${schedule.id}: ${err.message}`);
+          logger.child("report-scheduler").info(`S3 delivery for schedule ${schedule.id}: ${err.message}`);
           outputLocation = `local://${s3Key}`;
         }
       } else if (target.type === "webhook" && target.url) {
@@ -74,13 +75,13 @@ async function executeScheduledReport(schedule: any) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ report: data, scheduleName: schedule.name, template: template.name }),
           });
-          console.log(`[ReportScheduler] Webhook delivered for schedule ${schedule.id} to ${target.url}`);
+          logger.child("report-scheduler").info(`Webhook delivered for schedule ${schedule.id} to ${target.url}`);
         } catch (err: any) {
-          console.log(`[ReportScheduler] Webhook delivery failed for schedule ${schedule.id}: ${err.message}`);
+          logger.child("report-scheduler").info(`Webhook delivery failed for schedule ${schedule.id}: ${err.message}`);
         }
       } else if (target.type === "email" && target.address) {
-        console.log(`[ReportScheduler] Email delivery simulated for schedule ${schedule.id} to ${target.address}`);
-        console.log(`[ReportScheduler] Subject: ${template.name} - ${new Date().toLocaleDateString()}`);
+        logger.child("report-scheduler").info(`Email delivery simulated for schedule ${schedule.id} to ${target.address}`);
+        logger.child("report-scheduler").info(`Subject: ${template.name} - ${new Date().toLocaleDateString()}`);
       }
     }
 
@@ -96,7 +97,7 @@ async function executeScheduledReport(schedule: any) {
     const nextRun = calculateNextRunTime(schedule.cadence);
     await storage.updateReportSchedule(schedule.id, { lastRunAt: new Date(), nextRunAt: nextRun });
 
-    console.log(`[ReportScheduler] Completed report run ${run.id} for schedule ${schedule.id}`);
+    logger.child("report-scheduler").info(`Completed report run ${run.id} for schedule ${schedule.id}`);
   } catch (err: any) {
     await storage.updateReportRun(run.id, {
       status: "failed",

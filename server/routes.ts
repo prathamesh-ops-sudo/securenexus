@@ -41,6 +41,7 @@ import {
   ERROR_CODES,
   type ApiMeta,
 } from "./api-response";
+import { logger } from "./logger";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -88,7 +89,7 @@ async function apiKeyAuth(req: Request, res: Response, next: NextFunction) {
   if (!apiKey.isActive) {
     return replyForbidden(res, "API key has been revoked.", ERROR_CODES.API_KEY_REVOKED);
   }
-  storage.updateApiKeyLastUsed(apiKey.id).catch((err) => console.warn("Failed to update API key last used:", err));
+  storage.updateApiKeyLastUsed(apiKey.id).catch((err) => logger.child("routes").warn("Failed to update API key last used", { error: String(err) }));
   (req as any).apiKey = apiKey;
   (req as any).orgId = apiKey.orgId;
   next();
@@ -176,11 +177,11 @@ async function dispatchWebhookEvent(orgId: string, event: string, payload: any) 
           responseStatus: statusCode,
           responseBody: responseBody.slice(0, 2000),
           success,
-        }).catch((err) => console.warn("Failed to log outbound webhook:", err));
-      })().catch((err) => console.warn("Webhook dispatch error:", err));
+        }).catch((err) => logger.child("webhook").warn("Failed to log outbound webhook", { error: String(err) }));
+      })().catch((err) => logger.child("webhook").warn("Webhook dispatch error", { error: String(err) }));
     }
   } catch (err) {
-    console.warn("dispatchWebhookEvent error:", err);
+    logger.child("webhook").warn("dispatchWebhookEvent error", { error: String(err) });
   }
 }
 
@@ -205,7 +206,7 @@ async function publishOutboxEvent(
       maxAttempts: 5,
     });
   } catch (err) {
-    console.error(`[Outbox] Failed to publish ${eventType} for ${aggregateType}/${aggregateId}:`, err);
+    logger.child("outbox").error(`Failed to publish ${eventType} for ${aggregateType}/${aggregateId}`, { error: String(err) });
   }
 }
 
@@ -444,7 +445,7 @@ export async function registerRoutes(
       cacheInvalidate("dashboard:");
       res.status(201).json(alert);
     } catch (error) {
-      console.error("Error creating alert:", error);
+      logger.child("routes").error("Error creating alert", { error: String(error) });
       res.status(500).json({ message: "Failed to create alert" });
     }
   });
@@ -521,7 +522,7 @@ export async function registerRoutes(
 
       res.json({ updatedCount });
     } catch (error) {
-      console.error("Bulk alert update failed:", error);
+      logger.child("routes").error("Bulk alert update failed", { error: String(error) });
       res.status(500).json({ message: "Failed to bulk update alerts" });
     }
   });
@@ -664,7 +665,7 @@ export async function registerRoutes(
       cacheInvalidate("dashboard:");
       res.status(201).json(incident);
     } catch (error) {
-      console.error("Error creating incident:", error);
+      logger.child("routes").error("Error creating incident", { error: String(error) });
       res.status(500).json({ message: "Failed to create incident" });
     }
   });
@@ -813,7 +814,7 @@ export async function registerRoutes(
 
       res.json({ updatedCount });
     } catch (error) {
-      console.error("Bulk incident update failed:", error);
+      logger.child("routes").error("Bulk incident update failed", { error: String(error) });
       res.status(500).json({ message: "Failed to bulk update incidents" });
     }
   });
@@ -932,7 +933,7 @@ export async function registerRoutes(
       const health = await checkModelHealth();
       res.json(health);
     } catch (error: any) {
-      console.error("Route error:", error);
+      logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ status: "error", message: "An internal error occurred. Please try again." });
     }
   });
@@ -969,7 +970,7 @@ export async function registerRoutes(
       });
       res.json(result);
     } catch (error: any) {
-      console.error("AI correlation error:", error);
+      logger.child("ai").error("AI correlation error", { error: String(error) });
       res.status(500).json({ message: "AI correlation failed. Please try again." });
     }
   });
@@ -1010,7 +1011,7 @@ export async function registerRoutes(
       });
       res.json(result);
     } catch (error: any) {
-      console.error("AI narrative error:", error);
+      logger.child("ai").error("AI narrative error", { error: String(error) });
       res.status(500).json({ message: "AI narrative generation failed. Please try again." });
     }
   });
@@ -1038,7 +1039,7 @@ export async function registerRoutes(
       });
       res.json(result);
     } catch (error: any) {
-      console.error("AI triage error:", error);
+      logger.child("ai").error("AI triage error", { error: String(error) });
       res.status(500).json({ message: "AI triage failed. Please try again." });
     }
   });
@@ -1085,7 +1086,7 @@ export async function registerRoutes(
       });
       res.json(incident);
     } catch (error: any) {
-      console.error("Apply correlation error:", error);
+      logger.child("routes").error("Apply correlation error", { error: String(error) });
       res.status(500).json({ message: "Failed to apply correlation. Please try again." });
     }
   });
@@ -1182,7 +1183,7 @@ export async function registerRoutes(
         message: "Store this key securely. It will not be shown again.",
       });
     } catch (error) {
-      console.error("Error creating API key:", error);
+      logger.child("routes").error("Error creating API key", { error: String(error) });
       res.status(500).json({ message: "Failed to create API key" });
     }
   });
@@ -1236,7 +1237,7 @@ export async function registerRoutes(
           entityCount = linkedEntities.length;
           correlationResult = await correlateAlert(alert);
         } catch (err) {
-          console.warn("Entity/correlation processing warning:", err);
+          logger.child("routes").warn("Entity/correlation processing warning", { error: String(err) });
         }
       }
 
@@ -1294,7 +1295,7 @@ export async function registerRoutes(
         correlation: correlationResult ? { clusterId: correlationResult.clusterId, confidence: correlationResult.confidence } : null,
       });
     } catch (error: any) {
-      console.error(`Ingestion error [${source}]:`, error);
+      logger.child("ingestion").error(`Ingestion error [${source}]`, { error: String(error) });
       await storage.createIngestionLog({
         orgId, source, status: "failed",
         alertsReceived: 1, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 1,
@@ -1338,7 +1339,7 @@ export async function registerRoutes(
               await resolveAndLinkEntities(alert);
               await correlateAlert(alert);
             } catch (err) {
-              console.warn("Bulk ingestion entity/correlation warning:", err);
+              logger.child("ingestion").warn("Bulk ingestion entity/correlation warning", { error: String(err) });
             }
             broadcastEvent({
               type: "alert:created",
@@ -1379,7 +1380,7 @@ export async function registerRoutes(
         results,
       });
     } catch (error: any) {
-      console.error(`Bulk ingestion error [${source}]:`, error);
+      logger.child("ingestion").error(`Bulk ingestion error [${source}]`, { error: String(error) });
       await storage.createIngestionLog({
         orgId, source, status: "failed",
         alertsReceived: 0, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 0,
@@ -1545,7 +1546,7 @@ export async function registerRoutes(
       });
       res.status(201).json(connector);
     } catch (error: any) {
-      console.error("Route error:", error);
+      logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ message: "Failed to create connector. Please try again." });
     }
   });
@@ -1572,7 +1573,7 @@ export async function registerRoutes(
       const updated = await storage.updateConnector(p(req.params.id), updateData);
       res.json(updated);
     } catch (error: any) {
-      console.error("Route error:", error);
+      logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ message: "Failed to update connector. Please try again." });
     }
   });
@@ -1604,7 +1605,7 @@ export async function registerRoutes(
       const result = await testConnector(connector.type, config);
       res.json(result);
     } catch (error: any) {
-      console.error("Route error:", error);
+      logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ success: false, message: "Connector test failed." });
     }
   });
@@ -1618,7 +1619,7 @@ export async function registerRoutes(
       const result = await testConnector(type, config);
       res.json(result);
     } catch (error: any) {
-      console.error("Route error:", error);
+      logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ success: false, message: "Connector test failed." });
     }
   });
@@ -1704,7 +1705,7 @@ export async function registerRoutes(
         });
         await storage.updateConnector(connector.id, { status: "error" } as any);
       }
-      console.error("Route error:", error);
+      logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ success: false, message: "Sync failed. Please try again." });
     }
   });
@@ -2012,7 +2013,7 @@ export async function registerRoutes(
       const updatedExecution = await storage.getPlaybookExecution(executionId);
       res.json(updatedExecution || execution);
     } catch (error) {
-      console.error("Playbook execution error:", error);
+      logger.child("routes").error("Playbook execution error", { error: String(error) });
       res.status(500).json({ message: "Failed to execute playbook" });
     }
   });
@@ -2139,7 +2140,7 @@ export async function registerRoutes(
 
       res.json(updatedApproval);
     } catch (error) {
-      console.error("Approval decision error:", error);
+      logger.child("routes").error("Approval decision error", { error: String(error) });
       res.status(500).json({ message: "Failed to process approval decision" });
     }
   });
@@ -2233,7 +2234,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (error) {
-      console.error("Resume execution error:", error);
+      logger.child("routes").error("Resume execution error", { error: String(error) });
       res.status(500).json({ message: "Failed to resume execution" });
     }
   });
@@ -2271,7 +2272,7 @@ export async function registerRoutes(
 
       res.json({ message: `Created ${rollbacks.length} rollback records`, rollbacks });
     } catch (error) {
-      console.error("Rollback creation error:", error);
+      logger.child("routes").error("Rollback creation error", { error: String(error) });
       res.status(500).json({ message: "Failed to create rollback records" });
     }
   });
@@ -2401,7 +2402,7 @@ export async function registerRoutes(
       if (!title || !severity) return res.status(400).json({ message: "Title and severity are required" });
       const result = await promoteClusterToIncident(p(req.params.id), title, severity);
       res.json(result);
-    } catch (error) { console.error("Promote cluster error:", error); res.status(500).json({ message: "Failed to promote cluster" }); }
+    } catch (error) { logger.child("routes").error("Promote cluster error", { error: String(error) }); res.status(500).json({ message: "Failed to promote cluster" }); }
   });
 
   app.get("/api/entities/:id/aliases", isAuthenticated, async (req, res) => {
@@ -2426,7 +2427,7 @@ export async function registerRoutes(
       if (!targetId || !sourceId) return res.status(400).json({ message: "targetId and sourceId required" });
       const merged = await mergeEntities(targetId, sourceId);
       res.json(merged);
-    } catch (error) { console.error("Merge entities error:", error); res.status(500).json({ message: "Failed to merge entities" }); }
+    } catch (error) { logger.child("routes").error("Merge entities error", { error: String(error) }); res.status(500).json({ message: "Failed to merge entities" }); }
   });
 
   app.patch("/api/entities/:id/metadata", isAuthenticated, async (req, res) => {
@@ -2459,7 +2460,7 @@ export async function registerRoutes(
       const results = await runGraphCorrelation(orgId);
       res.json({ scanned: true, attackPaths: results.attackPaths.length, campaigns: results.campaignsCreated, results });
     } catch (error: any) {
-      console.error("Graph correlation error:", error);
+      logger.child("routes").error("Graph correlation error", { error: String(error) });
       res.status(500).json({ message: "Failed to run graph correlation scan" });
     }
   });
@@ -2574,7 +2575,7 @@ export async function registerRoutes(
         apiKey: config.apiKey ? `****${config.apiKey.slice(-4)}` : null,
       });
     } catch (error) {
-      console.error("Error saving threat intel config:", error);
+      logger.child("routes").error("Error saving threat intel config", { error: String(error) });
       res.status(500).json({ message: "Failed to save threat intel config" });
     }
   });
@@ -2649,7 +2650,7 @@ export async function registerRoutes(
 
       res.json({ success, message, testedAt: new Date().toISOString() });
     } catch (error) {
-      console.error("Error testing threat intel config:", error);
+      logger.child("routes").error("Error testing threat intel config", { error: String(error) });
       res.status(500).json({ success: false, message: "Failed to test API key" });
     }
   });
@@ -2701,7 +2702,7 @@ export async function registerRoutes(
         enrichedAt: new Date().toISOString(),
       });
     } catch (error) {
-      console.error("Manual enrichment error:", error);
+      logger.child("routes").error("Manual enrichment error", { error: String(error) });
       res.status(500).json({ message: "Failed to enrich entity" });
     }
   });
@@ -2856,7 +2857,7 @@ export async function registerRoutes(
       }
       res.json(result);
     } catch (error) {
-      console.error("Feed ingestion error:", error);
+      logger.child("routes").error("Feed ingestion error", { error: String(error) });
       res.status(500).json({ message: "Failed to ingest feed" });
     }
   });
@@ -3100,7 +3101,7 @@ export async function registerRoutes(
       await matchAlertAgainstRules(alert, user?.orgId);
       res.json(result);
     } catch (error) {
-      console.error("IOC matching error:", error);
+      logger.child("routes").error("IOC matching error", { error: String(error) });
       res.status(500).json({ message: "Failed to match alert against IOCs" });
     }
   });
@@ -3306,7 +3307,7 @@ export async function registerRoutes(
 
       res.json({ request: { ...request, status: "fulfilled", fulfilledAt: new Date(), resultSummary: summary }, summary });
     } catch (error) {
-      console.error("DSAR fulfill error:", error);
+      logger.child("routes").error("DSAR fulfill error", { error: String(error) });
       res.status(500).json({ message: "Failed to fulfill DSAR request" });
     }
   });
@@ -3421,7 +3422,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: `Unknown report type: ${reportType}` });
       }
     } catch (error) {
-      console.error("Compliance report error:", error);
+      logger.child("routes").error("Compliance report error", { error: String(error) });
       res.status(500).json({ message: "Failed to generate compliance report" });
     }
   });
@@ -3525,7 +3526,7 @@ export async function registerRoutes(
       });
       res.json({ success: true, results: orgResult || { message: "No retention policy configured for this organization" } });
     } catch (error) {
-      console.error("Retention cleanup error:", error);
+      logger.child("routes").error("Retention cleanup error", { error: String(error) });
       res.status(500).json({ message: "Failed to run retention cleanup" });
     }
   });
@@ -3755,7 +3756,7 @@ export async function registerRoutes(
       });
       res.json(result);
     } catch (error) {
-      console.error("Response action error:", error);
+      logger.child("routes").error("Response action error", { error: String(error) });
       res.status(500).json({ message: "Failed to execute response action" });
     }
   });
@@ -3792,7 +3793,7 @@ export async function registerRoutes(
       });
       res.json(result);
     } catch (error) {
-      console.error("Push to ticketing error:", error);
+      logger.child("routes").error("Push to ticketing error", { error: String(error) });
       res.status(500).json({ message: "Failed to push incident to ticketing system" });
     }
   });
@@ -3817,7 +3818,7 @@ export async function registerRoutes(
       }, context);
       res.json(result);
     } catch (error) {
-      console.error("Notification error:", error);
+      logger.child("routes").error("Notification error", { error: String(error) });
       res.status(500).json({ message: "Failed to send notification" });
     }
   });
@@ -3921,7 +3922,7 @@ export async function registerRoutes(
       });
       res.json(result);
     } catch (error: any) {
-      console.error("Predictive analysis error:", error);
+      logger.child("routes").error("Predictive analysis error", { error: String(error) });
       res.status(500).json({ message: "Failed to run predictive analysis" });
     }
   });
@@ -4067,7 +4068,7 @@ export async function registerRoutes(
         created.push(p);
       }
       res.status(201).json(created);
-    } catch (error) { console.error("Seed policies error:", error); res.status(500).json({ message: "Failed to seed policies" }); }
+    } catch (error) { logger.child("routes").error("Seed policies error", { error: String(error) }); res.status(500).json({ message: "Failed to seed policies" }); }
   });
 
   // Evaluate policies for an incident
@@ -4119,7 +4120,7 @@ export async function registerRoutes(
         status: "queued",
       });
       // Start investigation async
-      runInvestigation(run.id).catch(err => console.error("Investigation error:", err));
+      runInvestigation(run.id).catch(err => logger.child("routes").error("Investigation error", { error: String(err) }));
       res.status(201).json(run);
     } catch (error) { res.status(500).json({ message: "Failed to start investigation" }); }
   });
@@ -4141,7 +4142,7 @@ export async function registerRoutes(
       if (!canRollback(actionType)) return res.status(400).json({ message: `Cannot rollback action: ${actionType}` });
       const rollback = await createRollbackRecord(orgId || "default", originalActionId, actionType, target);
       res.status(201).json(rollback);
-    } catch (error) { console.error("Create rollback error:", error); res.status(500).json({ message: "Failed to create rollback" }); }
+    } catch (error) { logger.child("routes").error("Create rollback error", { error: String(error) }); res.status(500).json({ message: "Failed to create rollback" }); }
   });
 
   app.post("/api/autonomous/rollbacks/:id/execute", isAuthenticated, async (req, res) => {
@@ -4167,7 +4168,7 @@ export async function registerRoutes(
       const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
       res.status(201).json(result);
     } catch (error) {
-      console.error("File upload error:", error);
+      logger.child("routes").error("File upload error", { error: String(error) });
       res.status(500).json({ message: "Failed to upload file" });
     }
   });
@@ -4278,7 +4279,7 @@ export async function registerRoutes(
       const orgId = (req as any).user?.orgId || "default";
       const account = await storage.getCspmAccount(p(req.params.accountId));
       if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
-      runCspmScan(orgId, p(req.params.accountId)).catch(err => console.error("CSPM scan error:", err));
+      runCspmScan(orgId, p(req.params.accountId)).catch(err => logger.child("routes").error("CSPM scan error", { error: String(err) }));
       res.json({ message: "Scan started" });
     } catch (error) {
       res.status(500).json({ message: "Failed to start CSPM scan" });
@@ -4548,7 +4549,7 @@ export async function registerRoutes(
       });
       return res.json({ membership, organization: newOrg });
     } catch (error) {
-      console.error("Error ensuring org:", error);
+      logger.child("routes").error("Error ensuring org", { error: String(error) });
       res.status(500).json({ message: "Failed to ensure organization membership" });
     }
   });
@@ -5319,7 +5320,7 @@ export async function registerRoutes(
 
       res.status(201).json({ message: `Seeded ${created.length} runbook templates`, templates: created });
     } catch (error) {
-      console.error("Error seeding runbook templates:", error);
+      logger.child("routes").error("Error seeding runbook templates", { error: String(error) });
       res.status(500).json({ message: "Failed to seed runbook templates" });
     }
   });
@@ -7252,7 +7253,7 @@ export async function registerRoutes(
           const payload = typeof approval.requestPayload === "object" ? approval.requestPayload as Record<string, any> : {};
           await dispatchAction(approval.actionType, payload, context);
         } catch (execErr) {
-          console.error("Auto-execute after approval failed:", execErr);
+          logger.child("routes").error("Auto-execute after approval failed", { error: String(execErr) });
         }
       }
 

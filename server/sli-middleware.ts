@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { logger } from "./logger";
 
 interface MetricBucket {
   latencies: number[];
@@ -86,16 +87,16 @@ async function flushMetrics(): Promise<void> {
       recordedAt: now,
     })));
   } catch (err) {
-    console.error("[SLI] Failed to flush metrics:", err);
+    logger.child("sli-middleware").error("Failed to flush metrics:", { error: String(err) });
   }
 }
 
 export function startSliCollection(): void {
   if (flushTimer) return;
   flushTimer = setInterval(() => {
-    flushMetrics().catch(err => console.error("[SLI] Flush error:", err));
+    flushMetrics().catch(err => logger.child("sli-middleware").error("Flush error:", { error: String(err) }));
   }, FLUSH_INTERVAL_MS);
-  console.log("[SLI] Metrics collection started - flushing every 60s");
+  logger.child("sli-middleware").info("Metrics collection started - flushing every 60s");
 }
 
 export function stopSliCollection(): void {

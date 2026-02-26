@@ -14,6 +14,7 @@ import {
   replyNotImplemented,
   ERROR_CODES,
 } from "../api-response";
+import { logger } from "../logger";
 
 async function ensureOrgMembership(user: any) {
   try {
@@ -45,7 +46,7 @@ async function ensureOrgMembership(user: any) {
       joinedAt: new Date(),
     });
   } catch (err) {
-    console.error("Error ensuring org membership:", err);
+    logger.child("routes").error("Error ensuring org membership", { error: String(err) });
   }
 }
 
@@ -59,7 +60,7 @@ export function registerAuthRoutes(app: Express): void {
       const { passwordHash, ...safeUser } = user;
       return reply(res, safeUser);
     } catch (error) {
-      console.error("Error fetching user:", error);
+      logger.child("routes").error("Error fetching user", { error: String(error) });
       return replyInternal(res, "Failed to fetch user");
     }
   });
@@ -93,7 +94,7 @@ export function registerAuthRoutes(app: Express): void {
         return reply(res, safeUser, {}, 201);
       });
     } catch (error) {
-      console.error("Error registering user:", error);
+      logger.child("routes").error("Error registering user", { error: String(error) });
       return replyInternal(res, "Registration failed");
     }
   });

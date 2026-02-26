@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { iocEntries, iocMatches, iocMatchRules, alerts, type Alert, type IocEntry, type IocMatchRule } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import { logger } from "./logger";
 
 export interface MatchResult {
   totalMatches: number;
@@ -82,7 +83,7 @@ export async function matchAlertAgainstIOCs(alert: Alert, orgId?: string): Promi
         }
       }
     } catch (e) {
-      console.error(`IOC match error for type ${iocType}:`, e);
+      logger.child("ioc-matcher").error(`IOC match error for type ${iocType}`, { error: String(e) });
     }
   }
 
@@ -157,7 +158,7 @@ export async function matchAlertAgainstRules(alert: Alert, orgId?: string): Prom
       }
     }
   } catch (e) {
-    console.error("Rule-based matching error:", e);
+    logger.child("ioc-matcher").error("Rule-based matching error", { error: String(e) });
   }
 }
 

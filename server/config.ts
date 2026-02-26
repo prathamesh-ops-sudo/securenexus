@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "./logger";
 
 const nodeEnvSchema = z.enum(["development", "staging", "uat", "production", "test"]).default("development");
 const aiBackendSchema = z.enum(["bedrock", "sagemaker"]).default("bedrock");
@@ -108,9 +109,7 @@ function loadConfig(): AppConfig {
     const errors = result.error.issues.map(
       (issue) => `  - ${issue.path.join(".")}: ${issue.message}`
     );
-    console.error(
-      `\n[Config] Fatal: invalid configuration.\n${errors.join("\n")}\n`
-    );
+    logger.child("config").error(`\n[Config] Fatal: invalid configuration.\n${errors.join("\n")}\n`);
     process.exit(1);
   }
 

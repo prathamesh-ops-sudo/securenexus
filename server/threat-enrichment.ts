@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { entities, threatIntelConfigs } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import { logger } from "./logger";
 
 const ENRICHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -52,7 +53,7 @@ export async function getOrgApiKey(orgId: string, provider: string): Promise<str
     );
     if (config?.apiKey) return config.apiKey;
   } catch (err) {
-    console.warn(`Failed to fetch org API key for ${provider}:`, err);
+    logger.child("threat-enrichment").warn(`Failed to fetch org API key for ${provider}`, { error: String(err) });
   }
   const envVar = PROVIDER_ENV_MAP[provider];
   return envVar ? getApiKey(envVar) : undefined;
@@ -81,7 +82,7 @@ export async function getProviderStatuses(orgId?: string): Promise<ProviderStatu
           enabled = config.enabled ?? configured;
         }
       } catch (err) {
-        console.warn("Failed to load threat intel config for org:", err);
+        logger.child("threat-enrichment").warn("Failed to load threat intel config for org", { error: String(err) });
       }
     }
 
@@ -107,7 +108,7 @@ async function enrichWithAbuseIPDB(entityType: string, value: string, orgId?: st
     });
 
     if (!resp.ok) {
-      console.warn(`AbuseIPDB API error: ${resp.status}`);
+      logger.child("threat-enrichment").warn(`AbuseIPDB API error: ${resp.status}`);
       return null;
     }
 
@@ -150,7 +151,7 @@ async function enrichWithAbuseIPDB(entityType: string, value: string, orgId?: st
       enrichedAt: new Date().toISOString(),
     };
   } catch (err) {
-    console.warn("AbuseIPDB enrichment error:", err);
+    logger.child("threat-enrichment").warn("AbuseIPDB enrichment error", { error: String(err) });
     return null;
   }
 }
@@ -175,7 +176,7 @@ async function enrichWithVirusTotal(entityType: string, value: string, orgId?: s
     });
 
     if (!resp.ok) {
-      console.warn(`VirusTotal API error: ${resp.status}`);
+      logger.child("threat-enrichment").warn(`VirusTotal API error: ${resp.status}`);
       return null;
     }
 
@@ -222,7 +223,7 @@ async function enrichWithVirusTotal(entityType: string, value: string, orgId?: s
       enrichedAt: new Date().toISOString(),
     };
   } catch (err) {
-    console.warn("VirusTotal enrichment error:", err);
+    logger.child("threat-enrichment").warn("VirusTotal enrichment error", { error: String(err) });
     return null;
   }
 }
@@ -247,7 +248,7 @@ async function enrichWithOTX(entityType: string, value: string, orgId?: string):
     });
 
     if (!resp.ok) {
-      console.warn(`OTX API error: ${resp.status}`);
+      logger.child("threat-enrichment").warn(`OTX API error: ${resp.status}`);
       return null;
     }
 
@@ -289,7 +290,7 @@ async function enrichWithOTX(entityType: string, value: string, orgId?: string):
       enrichedAt: new Date().toISOString(),
     };
   } catch (err) {
-    console.warn("OTX enrichment error:", err);
+    logger.child("threat-enrichment").warn("OTX enrichment error", { error: String(err) });
     return null;
   }
 }
@@ -358,7 +359,7 @@ export async function enrichEntityBackground(entityId: string): Promise<void> {
     try {
       await enrichEntity(entityId, false);
     } catch (err) {
-      console.warn(`Background enrichment failed for entity ${entityId}:`, err);
+      logger.child("threat-enrichment").warn(`Background enrichment failed for entity ${entityId}`, { error: String(err) });
     }
   });
 }

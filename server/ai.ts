@@ -6,6 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 import { getEnrichmentForEntity } from "./threat-enrichment";
 import { getCachedOsintIndicators } from "./osint-feeds";
 import { config as appConfig } from "./config";
+import { logger } from "./logger";
 
 const awsCredentials = appConfig.aws.accessKeyId && appConfig.aws.secretAccessKey
   ? { accessKeyId: appConfig.aws.accessKeyId, secretAccessKey: appConfig.aws.secretAccessKey }
@@ -128,7 +129,7 @@ async function invokeBedrock(systemPrompt: string, userMessage: string, maxToken
     if (error.name === "ThrottlingException") {
       throw new Error("Rate limit exceeded on AWS Bedrock. Retry after a brief delay.");
     }
-    console.error("Bedrock Converse error:", error.name, error.message);
+    logger.child("ai").error("Bedrock Converse error", { errorName: error.name, error: error.message });
     throw new Error(`AI analysis failed: ${error.message}`);
   }
 }
@@ -177,7 +178,7 @@ async function invokeSageMaker(systemPrompt: string, userMessage: string, maxTok
     if (error.name === "ValidationError") {
       throw new Error(`SageMaker endpoint ${endpoint} not found or not in service.`);
     }
-    console.error("SageMaker invocation error:", error.name, error.message);
+    logger.child("ai").error("SageMaker invocation error", { errorName: error.name, error: error.message });
     throw new Error(`AI analysis failed (SageMaker): ${error.message}`);
   }
 }
@@ -238,7 +239,7 @@ async function invokeBedrockWithConfig(systemPrompt: string, userMessage: string
     if (error.name === "ThrottlingException") {
       throw new Error("Rate limit exceeded on AWS Bedrock. Retry after a brief delay.");
     }
-    console.error("Bedrock Converse error:", error.name, error.message);
+    logger.child("ai").error("Bedrock Converse error", { errorName: error.name, error: error.message });
     throw new Error(`AI analysis failed: ${error.message}`);
   }
 }
@@ -287,7 +288,7 @@ async function invokeSageMakerWithConfig(systemPrompt: string, userMessage: stri
     if (error.name === "ValidationError") {
       throw new Error(`SageMaker endpoint ${endpoint} not found or not in service.`);
     }
-    console.error("SageMaker invocation error:", error.name, error.message);
+    logger.child("ai").error("SageMaker invocation error", { errorName: error.name, error: error.message });
     throw new Error(`AI analysis failed (SageMaker): ${error.message}`);
   }
 }
@@ -463,7 +464,7 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
         }
       }
     } catch (err) {
-      console.warn("Failed to fetch entity enrichment for threat intel context:", err);
+      logger.child("ai").warn("Failed to fetch entity enrichment for threat intel context", { error: String(err) });
     }
 
     try {
@@ -492,7 +493,7 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
         }
       }
     } catch (err) {
-      console.warn("Failed to check OSINT feeds for threat intel context:", err);
+      logger.child("ai").warn("Failed to check OSINT feeds for threat intel context", { error: String(err) });
     }
 
     result.enrichmentResults = result.enrichmentResults.slice(0, 20);
@@ -512,7 +513,7 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
       result.summary = `${parts.join(", ")}. ${confidence} confidence of genuine threat activity.`;
     }
   } catch (err) {
-    console.warn("Failed to build threat intel context:", err);
+    logger.child("ai").warn("Failed to build threat intel context", { error: String(err) });
   }
 
   return result;

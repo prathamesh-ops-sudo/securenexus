@@ -6,6 +6,7 @@ import {
   endpointTelemetry, ingestionLogs,
 } from "@shared/schema";
 import { count } from "drizzle-orm";
+import { logger } from "./logger";
 
 export async function seedDatabase() {
   const [existing] = await db.select({ count: count() }).from(organizations);
@@ -281,5 +282,5 @@ export async function seedDatabase() {
     await db.insert(ingestionLogs).values(entry);
   }
 
-  console.log("Database seeded: org, 3 incidents, 12 alerts, 10 tags, 4 connectors, 3 integrations, 10 endpoints, 2 CSPM accounts, 5 findings, 6 ingestion logs");
+  logger.child("seed").info("Database seeded: org, 3 incidents, 12 alerts, 10 tags, 4 connectors, 3 integrations, 10 endpoints, 2 CSPM accounts, 5 findings, 6 ingestion logs");
 }

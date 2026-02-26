@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { entities, entityAliases, alertEntities, alerts, type Alert, type Entity, type EntityAlias, type InsertEntity } from "@shared/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
+import { logger } from "./logger";
 
 export interface ExtractedEntity {
   type: string;
@@ -120,7 +121,7 @@ export async function resolveAndLinkEntities(alert: Alert): Promise<Entity[]> {
         const { enrichEntityBackground } = await import("./threat-enrichment");
         enrichEntityBackground(entity.id);
       } catch (err) {
-        console.warn("Background enrichment trigger failed:", err);
+        logger.child("entity-resolver").warn("Background enrichment trigger failed", { error: String(err) });
       }
     }
 

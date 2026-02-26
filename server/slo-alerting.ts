@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { evaluateSlos } from "./sli-middleware";
+import { logger } from "./logger";
 
 interface SloBreachRecord {
   sloId: string;
@@ -111,7 +112,7 @@ export async function evaluateAndAlert(): Promise<{
     breaches.push(breach);
 
     if (shouldNotify(evaluation.sloId)) {
-      console.warn(`[SLO-Alert] ${severity.toUpperCase()}: ${breach.message}`);
+      logger.child("slo-alerting").warn(`${severity.toUpperCase()}: ${breach.message}`);
     }
   }
 
@@ -168,14 +169,14 @@ export function startSloAlerting(): void {
   if (sloAlertTimer) return;
 
   seedDefaultSloTargets().then(seeded => {
-    if (seeded > 0) console.log(`[SLO-Alert] Seeded ${seeded} default SLO targets`);
-  }).catch(err => console.error("[SLO-Alert] Failed to seed defaults:", err));
+    if (seeded > 0) logger.child("slo-alerting").info(`Seeded ${seeded} default SLO targets`);
+  }).catch(err => logger.child("slo-alerting").error("Failed to seed defaults:", { error: String(err) }));
 
   sloAlertTimer = setInterval(() => {
-    evaluateAndAlert().catch(err => console.error("[SLO-Alert] Evaluation error:", err));
+    evaluateAndAlert().catch(err => logger.child("slo-alerting").error("Evaluation error:", { error: String(err) }));
   }, SLO_EVALUATION_INTERVAL_MS);
 
-  console.log("[SLO-Alert] Alerting started - evaluating every 60s");
+  logger.child("slo-alerting").info("Alerting started - evaluating every 60s");
 }
 
 export function stopSloAlerting(): void {
