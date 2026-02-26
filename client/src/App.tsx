@@ -43,7 +43,6 @@ import OnboardingPage from "@/pages/onboarding";
 import UsageBillingPage from "@/pages/usage-billing";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
-import { GlobalQuickCreate } from "@/components/global-quick-create";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -139,7 +138,6 @@ function AuthenticatedApp() {
           </div>
         </div>
         <CommandPalette />
-        <GlobalQuickCreate />
         <OnboardingChecklist />
       </SidebarProvider>
     </EventStreamContext.Provider>
