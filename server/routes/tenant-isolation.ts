@@ -88,7 +88,8 @@ export function registerTenantIsolationRoutes(app: Express): void {
       if (maxConnectionsPerOrg !== undefined) updates.maxConnectionsPerOrg = maxConnectionsPerOrg;
       if (resourceGroup !== undefined && typeof resourceGroup === "string") updates.resourceGroup = resourceGroup;
 
-      const config = setTenantIsolationConfig(orgId, updates as any);
+      const plan = await detectOrgPlan(orgId);
+      const config = setTenantIsolationConfig(orgId, updates as any, plan);
 
       await storage.createAuditLog({
         orgId,
@@ -120,7 +121,8 @@ export function registerTenantIsolationRoutes(app: Express): void {
   app.post("/api/tenant-isolation/provision-schema", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      const result = await provisionDedicatedSchema(orgId);
+      const plan = await detectOrgPlan(orgId);
+      const result = await provisionDedicatedSchema(orgId, plan);
       res.json(result);
     } catch (error) {
       log.error("Failed to provision dedicated schema", { error: String(error) });
@@ -143,6 +145,7 @@ export function registerTenantIsolationRoutes(app: Express): void {
         return replyBadRequest(res, "port must be a valid port number (1-65535)");
       }
 
+      const plan = await detectOrgPlan(orgId);
       const config = registerDedicatedInstance(orgId, {
         instanceIdentifier,
         endpoint,
@@ -150,7 +153,7 @@ export function registerTenantIsolationRoutes(app: Express): void {
         status: "available",
         instanceClass: instanceClass || "db.r6g.large",
         allocatedStorageGb: allocatedStorageGb || 100,
-      });
+      }, plan);
 
       await storage.createAuditLog({
         orgId,
