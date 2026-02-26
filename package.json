@@ -12,15 +12,17 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format:check": "prettier --check \"server/**/*.ts\" \"client/src/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
     "format": "prettier --write \"server/**/*.ts\" \"client/src/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
-    "checks": "npm run typecheck && npm run test",
-    "checks:all": "npm run typecheck && npm run test && npm run format:check",
+    "checks": "npm run typecheck && npm run lint && npm run test",
+    "checks:all": "npm run typecheck && npm run lint && npm run test && npm run format:check",
     "db:push": "drizzle-kit push",
     "dev:setup": "bash scripts/dev-setup.sh",
     "dev:services": "docker compose up -d --wait",
-    "dev:services:down": "docker compose down"
+    "dev:services:down": "docker compose down",
+    "prepare": "husky"
   },
   "dependencies": {
     "@aws-sdk/client-apprunner": "^3.990.0",
@@ -113,6 +115,7 @@
     "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.3",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/connect-pg-simple": "^7.0.3",
@@ -129,11 +132,18 @@
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.8",
     "esbuild": "^0.25.0",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "postcss": "^8.4.47",
     "prettier": "^3.8.1",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.5",
     "typescript": "5.6.3",
+    "typescript-eslint": "^8.56.1",
     "vite": "^7.3.0",
     "vitest": "^4.0.18"
   },
@@ -141,6 +151,15 @@
     "drizzle-kit": {
       "@esbuild-kit/esm-loader": "npm:tsx@^4.20.4"
     }
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --max-warnings=0",
+      "prettier --check"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --check"
+    ]
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

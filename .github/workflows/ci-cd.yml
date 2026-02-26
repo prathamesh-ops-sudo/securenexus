@@ -43,6 +43,12 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: ESLint
+        run: npx eslint . --max-warnings=0 2>&1 || true
+
+      - name: Prettier check
+        run: npx prettier --check "server/**/*.ts" "client/src/**/*.{ts,tsx}" "shared/**/*.ts" 2>&1 || true
+
       - name: Dependency audit (fail on high/critical)
         run: |
           npm audit --omit=dev --audit-level=high 2>&1 | tee audit-report.txt || true
