@@ -19,6 +19,7 @@ export const ERROR_CODES = {
   ORG_MEMBERSHIP_REQUIRED:  "ORG_MEMBERSHIP_REQUIRED",
 
   // Client errors
+  BAD_REQUEST:              "BAD_REQUEST",
   NOT_FOUND:                "NOT_FOUND",
   CONFLICT:                 "CONFLICT",
   VALIDATION_ERROR:         "VALIDATION_ERROR",
@@ -99,6 +100,14 @@ export function replyForbidden(
   return replyError(res, 403, [{ code, message }]);
 }
 
+export function replyBadRequest(
+  res: Response,
+  message: string,
+  code: ErrorCode | string = ERROR_CODES.BAD_REQUEST,
+): Response {
+  return replyError(res, 400, [{ code, message }]);
+}
+
 export function replyNotFound(
   res: Response,
   message = "Resource not found",
@@ -146,6 +155,14 @@ export function replyNotImplemented(
   message = "Not implemented",
 ): Response {
   return replyError(res, 501, [{ code: ERROR_CODES.NOT_IMPLEMENTED, message }]);
+}
+
+export function replyUpstream(
+  res: Response,
+  message: string,
+  details?: unknown,
+): Response {
+  return replyError(res, 502, [{ code: ERROR_CODES.UPSTREAM_ERROR, message, details }]);
 }
 
 // ─── Deprecation helpers (RFC 8594) ──────────────────────────────────────────

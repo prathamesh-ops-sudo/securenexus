@@ -157,7 +157,7 @@ export default function AttackGraphPage() {
   const scanMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/correlation/graph-scan", {});
-      return await res.json();
+      return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/attack-paths"] });
