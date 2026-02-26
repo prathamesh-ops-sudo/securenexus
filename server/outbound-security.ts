@@ -70,7 +70,8 @@ export function validateWebhookUrl(url: string): WebhookUrlValidationResult {
     }
   }
 
-  if (hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe80")) {
+  const bareHostname = hostname.replace(/^\[|\]$/g, "");
+  if (bareHostname.startsWith("fc") || bareHostname.startsWith("fd") || bareHostname.startsWith("fe80")) {
     return { valid: false, reason: "IPv6 link-local and private addresses are not allowed" };
   }
 
@@ -272,6 +273,10 @@ export async function secureOutboundFetch(
 
 export function resetCircuitBreaker(webhookId: string): void {
   circuitBreakers.delete(webhookId);
+}
+
+export function resetRateLimiter(webhookId: string): void {
+  rateBuckets.delete(webhookId);
 }
 
 export function getOutboundSecurityStats(): {

@@ -19,6 +19,7 @@ import {
   recordDeliverySuccess,
   recordDeliveryFailure,
   resetCircuitBreaker,
+  resetRateLimiter,
   isWebhookRateLimited,
   redactDeliveryLog,
   getCircuitBreakerStatus,
@@ -29,6 +30,7 @@ describe("Webhook Delivery Tests", () => {
   beforeEach(() => {
     resetCircuitBreaker("test-webhook");
     resetCircuitBreaker("wh-rate");
+    resetRateLimiter("wh-rate");
   });
 
   describe("validateWebhookUrl — SSRF protection", () => {
@@ -170,12 +172,24 @@ describe("Webhook Delivery Tests", () => {
       expect(result.valid).toBe(false);
     });
 
-    it("rejects IPv6 private address (fd00 in INTERNAL_HOSTNAMES or detected)", () => {
+    it("rejects IPv6 private address with brackets", () => {
+      const result = validateWebhookUrl("http://[fd00::1]/hook");
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("IPv6");
+    });
+
+    it("rejects IPv6 link-local with brackets", () => {
+      const result = validateWebhookUrl("http://[fe80::1]/hook");
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("IPv6");
+    });
+
+    it("rejects IPv6 private address without brackets", () => {
       const result = validateWebhookUrl("http://fd00::1/hook");
       expect(result.valid).toBe(false);
     });
 
-    it("rejects IPv6 link-local (fe80 in INTERNAL_HOSTNAMES or detected)", () => {
+    it("rejects IPv6 link-local without brackets", () => {
       const result = validateWebhookUrl("http://fe80::1/hook");
       expect(result.valid).toBe(false);
     });
@@ -286,6 +300,8 @@ describe("Webhook Delivery Tests", () => {
 
       resetCircuitBreaker("wh-A");
       resetCircuitBreaker("wh-B");
+      resetRateLimiter("wh-A");
+      resetRateLimiter("wh-B");
     });
   });
 
