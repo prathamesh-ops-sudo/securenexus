@@ -209,11 +209,11 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-3 pb-2">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-md bg-gradient-to-br from-red-600/20 to-red-500/5 border border-red-500/20">
+          <div className="relative flex items-center justify-center w-8 h-8 rounded-md bg-gradient-to-br from-cyan-600/20 to-cyan-500/5 border border-cyan-500/20">
             <img src={atsLogo} alt="ATS" className="w-6 h-6 object-contain" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-bold tracking-tight gradient-text-red">SecureNexus</span>
+            <span className="text-sm font-bold tracking-tight gradient-text-brand">SecureNexus</span>
             <span className="text-[10px] text-sidebar-foreground/40 leading-none font-medium">AI Security Platform</span>
           </div>
         </Link>
@@ -225,7 +225,7 @@ export function AppSidebar() {
             </span>
             <span className="text-[10px] text-sidebar-foreground/50 font-medium">System Online</span>
           </div>
-          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 ml-auto gradient-badge glow-red-subtle">
+          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 ml-auto gradient-badge glow-cyan-subtle">
             <Zap className="h-2.5 w-2.5 mr-0.5" aria-hidden="true" />
             PRO
           </Badge>
@@ -293,7 +293,7 @@ export function AppSidebar() {
         <div className="flex items-center gap-2.5 px-1 mb-1.5">
           <Avatar className="h-7 w-7 border border-sidebar-border">
             <AvatarImage src={user?.profileImageUrl || ""} />
-            <AvatarFallback className="text-[10px] font-semibold bg-red-500/15 text-red-400">{initials}</AvatarFallback>
+            <AvatarFallback className="text-[10px] font-semibold bg-cyan-500/15 text-cyan-400">{initials}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium truncate">{user?.firstName || "User"} {user?.lastName || ""}</p>
