@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { createHash, createHmac } from "crypto";
 import { logger } from "./logger";
+import { validateWebhookUrl, isCircuitOpen, isWebhookRateLimited, recordDeliverySuccess, recordDeliveryFailure, secureOutboundFetch, redactDeliveryLog } from "./outbound-security";
 
 const POLL_INTERVAL_MS = 3000;
 const BATCH_SIZE = 10;
@@ -79,6 +80,24 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
   const webhooks = await storage.getActiveWebhooksByEvent(orgId, event.eventType);
 
   for (const webhook of webhooks) {
+    const urlCheck = validateWebhookUrl(webhook.url);
+    if (!urlCheck.valid) {
+      logger.child("outbox-processor").warn("SSRF blocked: webhook URL rejected", { webhookId: webhook.id, reason: urlCheck.reason });
+      await storage.createOutboundWebhookLog({
+        webhookId: webhook.id, event: event.eventType, payload: redactDeliveryLog(event.payload) as Record<string, unknown>,
+        responseStatus: 0, responseBody: `Blocked: ${urlCheck.reason}`, success: false,
+      }).catch(() => {});
+      continue;
+    }
+    if (isCircuitOpen(webhook.id)) {
+      logger.child("outbox-processor").warn("Circuit breaker open — skipping", { webhookId: webhook.id });
+      continue;
+    }
+    if (isWebhookRateLimited(webhook.id)) {
+      logger.child("outbox-processor").warn("Rate limited — skipping", { webhookId: webhook.id });
+      continue;
+    }
+
     const body = JSON.stringify({
       eventId: event.id,
       eventType: event.eventType,
@@ -99,17 +118,18 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
     headers["X-Event-Id"] = event.id;
     headers["X-Event-Type"] = event.eventType;
 
-    const timeoutMs = webhook.timeoutMs || 10000;
-    const resp = await fetch(webhook.url, {
-      method: "POST",
-      headers,
-      body,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Webhook ${webhook.id} returned ${resp.status}`);
+    const result = await secureOutboundFetch(webhook.url, { method: "POST", headers, body });
+    if (result.success) {
+      recordDeliverySuccess(webhook.id);
+    } else {
+      recordDeliveryFailure(webhook.id);
+      throw new Error(`Webhook ${webhook.id} delivery failed: ${result.error || `HTTP ${result.statusCode}`}`);
     }
+
+    await storage.createOutboundWebhookLog({
+      webhookId: webhook.id, event: event.eventType, payload: redactDeliveryLog(event.payload) as Record<string, unknown>,
+      responseStatus: result.statusCode, responseBody: result.responseBody.slice(0, 2000), success: result.success,
+    }).catch(() => {});
   }
 }
 
