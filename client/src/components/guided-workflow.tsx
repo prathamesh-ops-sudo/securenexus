@@ -2,17 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  Plug,
-  ArrowDownToLine,
-  FileWarning,
-  Workflow,
-  CheckCircle2,
-  Circle,
-  ArrowRight,
-  X,
-  Sparkles,
-} from "lucide-react";
+import { Plug, ArrowDownToLine, FileWarning, Workflow, CheckCircle2, ArrowRight, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
