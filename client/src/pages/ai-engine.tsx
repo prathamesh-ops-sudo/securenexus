@@ -181,8 +181,7 @@ export default function AIEnginePage() {
     data: health,
     isLoading: healthLoading,
     refetch: refetchHealth,
-    isError: _healthError,
-    refetch: _refetchHealthData,
+    isError: healthError,
   } = useQuery<AIHealth>({
     queryKey: ["/api/ai/health"],
   });
@@ -346,7 +345,14 @@ export default function AIEnginePage() {
           </div>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        {health && (
+        {healthLoading ? (
+          <Skeleton className="h-6 w-24" />
+        ) : healthError ? (
+          <Button variant="outline" size="sm" onClick={() => refetchHealth()}>
+            <AlertTriangle className="h-3 w-3 mr-1 text-destructive" aria-hidden="true" />
+            Retry Health
+          </Button>
+        ) : health ? (
           <Badge variant={health.status === "healthy" ? "default" : "destructive"} data-testid="badge-health-status">
             {health.status === "healthy" ? (
               <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
@@ -355,7 +361,7 @@ export default function AIEnginePage() {
             )}
             {health.status}
           </Badge>
-        )}
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="section-hero-stats">
