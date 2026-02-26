@@ -799,7 +799,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAuditLog(log: Partial<AuditLog>): Promise<AuditLog> {
-    const orgId = log.orgId || "system";
+    const orgId = log.orgId ?? null;
     const lastSeq = await this.getLatestAuditLogSequence(orgId);
     const sequenceNum = lastSeq ? lastSeq.sequenceNum + 1 : 1;
     const prevHash = lastSeq ? lastSeq.entryHash : "genesis";
@@ -1375,11 +1375,12 @@ export class DatabaseStorage implements IStorage {
     return oldest;
   }
 
-  async getLatestAuditLogSequence(orgId: string): Promise<{ sequenceNum: number; entryHash: string } | null> {
+  async getLatestAuditLogSequence(orgId: string | null): Promise<{ sequenceNum: number; entryHash: string } | null> {
+    const condition = orgId ? eq(auditLogs.orgId, orgId) : isNull(auditLogs.orgId);
     const [result] = await db.select({
       sequenceNum: auditLogs.sequenceNum,
       entryHash: auditLogs.entryHash,
-    }).from(auditLogs).where(eq(auditLogs.orgId, orgId)).orderBy(desc(auditLogs.sequenceNum)).limit(1);
+    }).from(auditLogs).where(condition).orderBy(desc(auditLogs.sequenceNum)).limit(1);
     if (!result || result.sequenceNum === null || result.entryHash === null) return null;
     return { sequenceNum: result.sequenceNum, entryHash: result.entryHash };
   }

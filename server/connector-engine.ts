@@ -362,7 +362,8 @@ async function fetchFortiGate(config: ConnectorConfig, since?: Date): Promise<an
 }
 
 async function fetchCarbonBlack(config: ConnectorConfig, since?: Date): Promise<any[]> {
-  const orgKey = config.orgKey || config.clientId || "default";
+  const orgKey = config.orgKey || config.clientId;
+  if (!orgKey) throw new Error("Carbon Black requires orgKey or clientId in connector config");
   const headers: Record<string, string> = {
     "X-Auth-Token": config.apiKey!,
     "Content-Type": "application/json",
@@ -1533,7 +1534,8 @@ export async function testConnector(type: string, config: ConnectorConfig): Prom
         break;
       }
       case "carbonblack": {
-        const orgKey = config.orgKey || config.clientId || "default";
+        const orgKey = config.orgKey || config.clientId;
+        if (!orgKey) throw new Error("Carbon Black requires orgKey or clientId in connector config");
         const res = await httpRequest(`${config.baseUrl}/api/alerts/v7/orgs/${orgKey}/alerts/_search`, {
           method: "POST",
           headers: { "X-Auth-Token": config.apiKey!, "Content-Type": "application/json" },

@@ -54,7 +54,7 @@ async function executeScheduledReport(schedule: any) {
     const contentType = template.format === "csv" ? "text/csv" : "application/json";
     const ext = template.format === "csv" ? "csv" : "json";
 
-    const s3Key = `reports/${schedule.orgId || "global"}/${template.reportType}_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+    const s3Key = `reports/${schedule.orgId ?? "_global"}/${template.reportType}_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
 
     const targets = schedule.deliveryTargets ? JSON.parse(schedule.deliveryTargets) : [];
     let outputLocation = "";
@@ -124,7 +124,7 @@ export async function runReportOnDemand(templateId: string, orgId?: string, crea
   if (!template) throw new Error("Template not found");
 
   const run = await storage.createReportRun({
-    orgId: orgId || template.orgId || null,
+    orgId: orgId ?? template.orgId ?? null,
     templateId: template.id,
     status: "running",
     format: template.format || "csv",
@@ -133,7 +133,7 @@ export async function runReportOnDemand(templateId: string, orgId?: string, crea
 
   try {
     await storage.updateReportRun(run.id, { startedAt: new Date() });
-    const data = await generateReportData(template.reportType, orgId || template.orgId || undefined);
+    const data = await generateReportData(template.reportType, orgId ?? template.orgId ?? undefined);
     const content = template.format === "csv" ? formatAsCSV(data) : JSON.stringify(data, null, 2);
 
     await storage.updateReportRun(run.id, {

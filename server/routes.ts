@@ -1165,14 +1165,15 @@ export async function registerRoutes(
 
   app.post("/api/api-keys", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "write"), async (req, res) => {
     try {
-      const { name, orgId, scopes } = req.body;
+      const { name, scopes } = req.body;
+      const orgId = getOrgId(req);
       if (!name) return res.status(400).json({ message: "Key name is required" });
       const { key, prefix, hash } = generateApiKey();
       const apiKey = await storage.createApiKey({
         name,
         keyHash: hash,
         keyPrefix: prefix,
-        orgId: orgId || null,
+        orgId,
         scopes: scopes || ["ingest"],
         isActive: true,
         createdBy: (req as any).user?.id || null,
@@ -1262,7 +1263,7 @@ export async function registerRoutes(
       if (isNew) {
         broadcastEvent({
           type: "alert:created",
-          orgId: orgId || null,
+          orgId,
           data: {
             alertId: alert.id,
             title: alert.title,
@@ -1283,7 +1284,7 @@ export async function registerRoutes(
         if (correlationResult) {
           broadcastEvent({
             type: "correlation:found",
-            orgId: orgId || null,
+            orgId,
             data: {
               clusterId: correlationResult.clusterId,
               confidence: correlationResult.confidence,
@@ -2263,7 +2264,7 @@ export async function registerRoutes(
         return res.json({ message: "No rollback-eligible actions found", rollbacks: [] });
       }
 
-      const orgId = user?.orgId || "system";
+      const orgId = getOrgId(req);
       const rollbacks = [];
       for (const action of rollbackEligible) {
         const target = action.details?.target || action.details?.hostname || action.details?.ip || action.nodeId || "unknown";
@@ -2281,7 +2282,8 @@ export async function registerRoutes(
       });
 
       res.json({ message: `Created ${rollbacks.length} rollback records`, rollbacks });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       logger.child("routes").error("Rollback creation error", { error: String(error) });
       res.status(500).json({ message: "Failed to create rollback records" });
     }
@@ -2514,8 +2516,7 @@ export async function registerRoutes(
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
-    const user = (req as any).user;
-    const orgId = user?.orgId || null;
+    const orgId = (req as any).user?.orgId ?? null;
     const clientId = eventBus.generateClientId();
 
     eventBus.addClient({
@@ -2538,8 +2539,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/events/status", isAuthenticated, (req: Request, res: Response) => {
-    const user = (req as any).user;
-    const orgId = user?.orgId || null;
+    const orgId = (req as any).user?.orgId ?? null;
     res.json({
       connected: eventBus.getClientCount(),
       orgClients: orgId ? eventBus.getOrgClientCount(orgId) : 0,
@@ -2806,16 +2806,18 @@ export async function registerRoutes(
   app.post("/api/ioc-feeds", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      const parsed = insertIocFeedSchema.safeParse({ ...req.body, orgId: user?.orgId || null });
+      const orgId = getOrgId(req);
+      const parsed = insertIocFeedSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid feed data", errors: parsed.error.flatten() });
       }
       if (parsed.data.url && !validateFeedUrl(parsed.data.url)) {
         return res.status(400).json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
       }
-      const feed = await storage.createIocFeed({ ...parsed.data, orgId: user?.orgId || null });
+      const feed = await storage.createIocFeed({ ...parsed.data, orgId });
       res.status(201).json(feed);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC feed" });
     }
   });
@@ -2904,13 +2906,15 @@ export async function registerRoutes(
   app.post("/api/ioc-entries", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      const parsed = insertIocEntrySchema.safeParse({ ...req.body, orgId: user?.orgId || null });
+      const orgId = getOrgId(req);
+      const parsed = insertIocEntrySchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid IOC entry data", errors: parsed.error.flatten() });
       }
-      const entry = await storage.createIocEntry({ ...parsed.data, orgId: user?.orgId || null });
+      const entry = await storage.createIocEntry({ ...parsed.data, orgId });
       res.status(201).json(entry);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC entry" });
     }
   });
@@ -2968,13 +2972,15 @@ export async function registerRoutes(
     try {
       const user = (req as any).user;
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const parsed = insertIocWatchlistSchema.safeParse({ ...req.body, orgId: user?.orgId || null, createdBy: userName });
+      const orgId = getOrgId(req);
+      const parsed = insertIocWatchlistSchema.safeParse({ ...req.body, orgId, createdBy: userName });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid watchlist data", errors: parsed.error.flatten() });
       }
-      const watchlist = await storage.createIocWatchlist({ ...parsed.data, orgId: user?.orgId || null, createdBy: userName });
+      const watchlist = await storage.createIocWatchlist({ ...parsed.data, orgId, createdBy: userName });
       res.status(201).json(watchlist);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create watchlist" });
     }
   });
@@ -3050,13 +3056,15 @@ export async function registerRoutes(
   app.post("/api/ioc-match-rules", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      const parsed = insertIocMatchRuleSchema.safeParse({ ...req.body, orgId: user?.orgId || null });
+      const orgId = getOrgId(req);
+      const parsed = insertIocMatchRuleSchema.safeParse({ ...req.body, orgId });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid match rule data", errors: parsed.error.flatten() });
       }
-      const rule = await storage.createIocMatchRule({ ...parsed.data, orgId: user?.orgId || null });
+      const rule = await storage.createIocMatchRule({ ...parsed.data, orgId });
       res.status(201).json(rule);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create match rule" });
     }
   });
@@ -4846,10 +4854,11 @@ export async function registerRoutes(
       if (!incident) return res.status(404).json({ message: "Incident not found" });
       if (incident.orgId && user?.orgId && incident.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+      const orgId = getOrgId(req);
       const parsed = insertEvidenceItemSchema.safeParse({
         ...req.body,
         incidentId: p(req.params.incidentId),
-        orgId: user?.orgId || null,
+        orgId,
         createdBy: user?.id || null,
         createdByName: userName,
       });
@@ -4903,10 +4912,11 @@ export async function registerRoutes(
       if (!incident) return res.status(404).json({ message: "Incident not found" });
       if (incident.orgId && user?.orgId && incident.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+      const orgId = getOrgId(req);
       const parsed = insertInvestigationHypothesisSchema.safeParse({
         ...req.body,
         incidentId: p(req.params.incidentId),
-        orgId: user?.orgId || null,
+        orgId,
         createdBy: user?.id || null,
         createdByName: userName,
       });
@@ -4915,7 +4925,8 @@ export async function registerRoutes(
       }
       const hypothesis = await storage.createHypothesis(parsed.data);
       res.status(201).json(hypothesis);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create hypothesis" });
     }
   });
@@ -4981,10 +4992,11 @@ export async function registerRoutes(
       if (!incident) return res.status(404).json({ message: "Incident not found" });
       if (incident.orgId && user?.orgId && incident.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+      const orgId = getOrgId(req);
       const parsed = insertInvestigationTaskSchema.safeParse({
         ...req.body,
         incidentId: p(req.params.incidentId),
-        orgId: user?.orgId || null,
+        orgId,
         createdBy: user?.id || null,
         createdByName: userName,
       });
@@ -4993,7 +5005,8 @@ export async function registerRoutes(
       }
       const task = await storage.createInvestigationTask(parsed.data);
       res.status(201).json(task);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create task" });
     }
   });
@@ -5066,16 +5079,18 @@ export async function registerRoutes(
   app.post("/api/runbook-templates", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
+      const orgId = getOrgId(req);
       const parsed = insertRunbookTemplateSchema.safeParse({
         ...req.body,
-        orgId: user?.orgId || null,
+        orgId,
       });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid runbook template data", errors: parsed.error.flatten() });
       }
       const template = await storage.createRunbookTemplate(parsed.data);
       res.status(201).json(template);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create runbook template" });
     }
   });
@@ -5354,10 +5369,16 @@ export async function registerRoutes(
   });
 
   app.post("/api/report-templates", isAuthenticated, async (req, res) => {
-    const user = req.user as any;
-    const data = insertReportTemplateSchema.parse({ ...req.body, orgId: user?.orgId || null, createdBy: user?.id || null });
-    const template = await storage.createReportTemplate(data);
-    res.status(201).json(template);
+    try {
+      const user = req.user as any;
+      const orgId = getOrgId(req);
+      const data = insertReportTemplateSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
+      const template = await storage.createReportTemplate(data);
+      res.status(201).json(template);
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to create report template" });
+    }
   });
 
   app.patch("/api/report-templates/:id", isAuthenticated, async (req, res) => {
@@ -5394,17 +5415,23 @@ export async function registerRoutes(
   });
 
   app.post("/api/report-schedules", isAuthenticated, async (req, res) => {
-    const user = req.user as any;
-    const cadence = req.body.cadence || "weekly";
-    const nextRunAt = calculateNextRunFromCadence(cadence);
-    const data = insertReportScheduleSchema.parse({ ...req.body, orgId: user?.orgId || null, createdBy: user?.id || null });
-    const template = await storage.getReportTemplate(data.templateId);
-    if (!template) return res.status(404).json({ message: "Template not found" });
-    if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Template access denied" });
-    const schedule = await storage.createReportSchedule(data);
-    await storage.updateReportSchedule(schedule.id, { nextRunAt });
-    const updated = await storage.getReportSchedule(schedule.id);
-    res.status(201).json(updated);
+    try {
+      const user = req.user as any;
+      const cadence = req.body.cadence || "weekly";
+      const nextRunAt = calculateNextRunFromCadence(cadence);
+      const orgId = getOrgId(req);
+      const data = insertReportScheduleSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
+      const template = await storage.getReportTemplate(data.templateId);
+      if (!template) return res.status(404).json({ message: "Template not found" });
+      if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Template access denied" });
+      const schedule = await storage.createReportSchedule(data);
+      await storage.updateReportSchedule(schedule.id, { nextRunAt });
+      const updated = await storage.getReportSchedule(schedule.id);
+      res.status(201).json(updated);
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to create report schedule" });
+    }
   });
 
   app.patch("/api/report-schedules/:id", isAuthenticated, async (req, res) => {
@@ -5491,25 +5518,31 @@ export async function registerRoutes(
   });
 
   app.post("/api/report-templates/seed", isAuthenticated, async (req, res) => {
-    const user = req.user as any;
-    const existing = await storage.getReportTemplates(user?.orgId);
-    if (existing.some(t => t.isBuiltIn)) {
-      return res.json({ message: "Built-in templates already exist", count: existing.filter(t => t.isBuiltIn).length });
+    try {
+      const user = req.user as any;
+      const orgId = getOrgId(req);
+      const allTemplates = await storage.getReportTemplates(undefined);
+      if (allTemplates.some(t => t.isBuiltIn && t.orgId === orgId)) {
+        return res.json({ message: "Built-in templates already exist for this org", count: allTemplates.filter(t => t.isBuiltIn && t.orgId === orgId).length });
+      }
+      const builtIns = [
+        { name: "Weekly SOC KPI Report", description: "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution", reportType: "soc_kpi", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Incident Summary Report", description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics", reportType: "incidents", format: "csv", dashboardRole: "analyst", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "MITRE ATT&CK Coverage Report", description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework", reportType: "attack_coverage", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Connector Health Report", description: "Status and performance metrics for all configured data connectors", reportType: "connector_health", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Executive Security Brief", description: "High-level security posture summary for executive leadership including risk trends and key metrics", reportType: "executive_summary", format: "json", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Compliance Status Report", description: "Compliance framework coverage, data retention status, and DSAR request tracking", reportType: "compliance", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+      ];
+      const created = [];
+      for (const t of builtIns) {
+        const template = await storage.createReportTemplate(t as any);
+        created.push(template);
+      }
+      res.status(201).json({ message: "Built-in templates created", count: created.length, templates: created });
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to seed report templates" });
     }
-    const builtIns = [
-      { name: "Weekly SOC KPI Report", description: "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution", reportType: "soc_kpi", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId: user?.orgId || null, createdBy: user?.id || null },
-      { name: "Incident Summary Report", description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics", reportType: "incidents", format: "csv", dashboardRole: "analyst", isBuiltIn: true, orgId: user?.orgId || null, createdBy: user?.id || null },
-      { name: "MITRE ATT&CK Coverage Report", description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework", reportType: "attack_coverage", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId: user?.orgId || null, createdBy: user?.id || null },
-      { name: "Connector Health Report", description: "Status and performance metrics for all configured data connectors", reportType: "connector_health", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId: user?.orgId || null, createdBy: user?.id || null },
-      { name: "Executive Security Brief", description: "High-level security posture summary for executive leadership including risk trends and key metrics", reportType: "executive_summary", format: "json", dashboardRole: "ciso", isBuiltIn: true, orgId: user?.orgId || null, createdBy: user?.id || null },
-      { name: "Compliance Status Report", description: "Compliance framework coverage, data retention status, and DSAR request tracking", reportType: "compliance", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId: user?.orgId || null, createdBy: user?.id || null },
-    ];
-    const created = [];
-    for (const t of builtIns) {
-      const template = await storage.createReportTemplate(t as any);
-      created.push(template);
-    }
-    res.status(201).json({ message: "Built-in templates created", count: created.length, templates: created });
   });
 
   app.get("/api/dashboard/:role", isAuthenticated, async (req, res) => {
