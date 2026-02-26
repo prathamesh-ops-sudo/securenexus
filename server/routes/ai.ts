@@ -4,7 +4,7 @@ import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validateQuery } from "../request-validator";
 import { insertAiDeploymentConfigSchema } from "@shared/schema";
-import { buildThreatIntelContext, checkModelHealth, correlateAlerts, generateIncidentNarrative, getInferenceMetrics, getModelConfig, triageAlert } from "../ai";
+import { buildThreatIntelContext, checkModelHealth, correlateAlerts, generateIncidentNarrative, getInferenceMetrics, getModelConfig, triageAlert, getPromptCatalogSummary, getAllRegisteredPrompts, getPromptAuditLog, getPromptVersionHistory, getAiOrgUsage, getAllAiOrgUsage, setAiOrgBudget, clearModelCache } from "../ai";
 
 export function registerAiRoutes(app: Express): void {
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
@@ -238,6 +238,102 @@ export function registerAiRoutes(app: Express): void {
         requiresAnalystApproval: true,
       });
     } catch (error) { res.status(500).json({ message: "Failed to generate playbook proposal" }); }
+  });
+
+  // ── AI Platform Introspection Routes (3.5) ──
+
+  app.get("/api/ai/budget/usage", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      res.json(getAiOrgUsage(orgId));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch AI budget usage" });
+    }
+  });
+
+  app.get("/api/ai/budget/usage/all", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      res.json(getAllAiOrgUsage());
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch all AI budget usage" });
+    }
+  });
+
+  app.put("/api/ai/budget", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { dailyBudgetUsd, dailyInvocationCap } = req.body;
+      if (typeof dailyBudgetUsd !== "number" || dailyBudgetUsd <= 0 || dailyBudgetUsd > 10000) {
+        return res.status(400).json({ message: "dailyBudgetUsd must be a number between 0 and 10000" });
+      }
+      if (typeof dailyInvocationCap !== "number" || dailyInvocationCap <= 0 || dailyInvocationCap > 100000) {
+        return res.status(400).json({ message: "dailyInvocationCap must be a number between 0 and 100000" });
+      }
+      setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
+      res.json({ orgId, dailyBudgetUsd, dailyInvocationCap, updated: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update AI budget" });
+    }
+  });
+
+  app.get("/api/ai/prompts", isAuthenticated, async (_req, res) => {
+    try {
+      const prompts = getAllRegisteredPrompts();
+      const summary = getPromptCatalogSummary();
+      res.json({ prompts, summary });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch prompt catalog" });
+    }
+  });
+
+  app.get("/api/ai/prompts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const prompts = getAllRegisteredPrompts();
+      const prompt = prompts.find(pt => pt.id === p(req.params.id));
+      if (!prompt) return res.status(404).json({ message: "Prompt not found" });
+      res.json(prompt);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch prompt" });
+    }
+  });
+
+  app.get("/api/ai/prompts/:id/history", isAuthenticated, async (req, res) => {
+    try {
+      const history = getPromptVersionHistory(p(req.params.id));
+      if (history.length === 0) return res.status(404).json({ message: "No version history found for prompt" });
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch prompt version history" });
+    }
+  });
+
+  app.get("/api/ai/prompts/:id/audit", isAuthenticated, async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
+      const auditEntries = getPromptAuditLog(p(req.params.id), limit);
+      res.json(auditEntries);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch prompt audit log" });
+    }
+  });
+
+  app.get("/api/ai/audit", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "100"), 10) || 100, 1), 500);
+      const auditEntries = getPromptAuditLog(undefined, limit);
+      res.json(auditEntries);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch AI audit log" });
+    }
+  });
+
+  app.post("/api/ai/cache/clear", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      clearModelCache();
+      res.json({ cleared: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to clear model cache" });
+    }
   });
 
   // ── AI Deployment Config Routes ──
