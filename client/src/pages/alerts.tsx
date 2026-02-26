@@ -1,6 +1,32 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Search, Brain, Loader2, Sparkles, CheckCircle2, XCircle, Download, ShieldOff, Eye, EyeOff, Layers, SlidersHorizontal, Plus, Trash2, ExternalLink, PanelRight, X, Clock, Tag, MapPin, UserPlus, ArrowUpRight, Activity, User } from "lucide-react";
+import {
+  AlertTriangle,
+  Search,
+  Brain,
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  Download,
+  ShieldOff,
+  Eye,
+  EyeOff,
+  Layers,
+  SlidersHorizontal,
+  Plus,
+  Trash2,
+  ExternalLink,
+  PanelRight,
+  X,
+  Clock,
+  Tag,
+  MapPin,
+  UserPlus,
+  ArrowUpRight,
+  Activity,
+  User,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +35,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
@@ -39,7 +65,11 @@ function MiniTimeline({ alert }: { alert: Alert }) {
   );
 }
 
-function FilterChips({ filters, onRemove, onClearAll }: {
+function FilterChips({
+  filters,
+  onRemove,
+  onClearAll,
+}: {
   filters: { key: string; label: string; value: string }[];
   onRemove: (key: string) => void;
   onClearAll: () => void;
@@ -49,9 +79,19 @@ function FilterChips({ filters, onRemove, onClearAll }: {
     <div className="flex items-center gap-2 flex-wrap">
       <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Active Filters:</span>
       {filters.map((f) => (
-        <Badge key={f.key} variant="secondary" className="text-[10px] pl-2 pr-1 py-0.5 gap-1 cursor-pointer hover:bg-destructive/10 transition-colors">
+        <Badge
+          key={f.key}
+          variant="secondary"
+          className="text-[10px] pl-2 pr-1 py-0.5 gap-1 cursor-pointer hover:bg-destructive/10 transition-colors"
+        >
           <span className="text-muted-foreground">{f.label}:</span> {f.value}
-          <button onClick={(e) => { e.stopPropagation(); onRemove(f.key); }} className="ml-0.5 rounded-full hover:bg-muted p-0.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(f.key);
+            }}
+            className="ml-0.5 rounded-full hover:bg-muted p-0.5"
+          >
             <X className="h-2.5 w-2.5" />
           </button>
         </Badge>
@@ -92,7 +132,17 @@ interface TriageResult {
   relatedIocs: string[];
 }
 
-const SCOPE_OPTIONS = ["source", "category", "severity", "title_regex", "entity", "source_ip", "dest_ip", "hostname", "domain"] as const;
+const SCOPE_OPTIONS = [
+  "source",
+  "category",
+  "severity",
+  "title_regex",
+  "entity",
+  "source_ip",
+  "dest_ip",
+  "hostname",
+  "domain",
+] as const;
 
 export default function AlertsPage() {
   const [, navigate] = useLocation();
@@ -119,7 +169,9 @@ export default function AlertsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>("triaged");
   const [bulkAssignee, setBulkAssignee] = useState("");
-  const [savedViews, setSavedViews] = useState<Array<{ name: string; search: string; severity: string; showSuppressed: boolean }>>([]);
+  const [savedViews, setSavedViews] = useState<
+    Array<{ name: string; search: string; severity: string; showSuppressed: boolean }>
+  >([]);
   const [savedViewName, setSavedViewName] = useState("");
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -141,7 +193,12 @@ export default function AlertsPage() {
     localStorage.setItem("alerts.savedViews.v1", JSON.stringify(savedViews));
   }, [savedViews]);
 
-  const { data: alerts, isLoading } = useQuery<Alert[]>({
+  const {
+    data: alerts,
+    isLoading,
+    isError: alertsError,
+    refetch: refetchAlerts,
+  } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
   });
 
@@ -157,7 +214,10 @@ export default function AlertsPage() {
     },
     onSuccess: (data) => {
       setCorrelationResult(data);
-      toast({ title: "AI Correlation Complete", description: `Found ${data.correlatedGroups.length} correlated group(s)` });
+      toast({
+        title: "AI Correlation Complete",
+        description: `Found ${data.correlatedGroups.length} correlated group(s)`,
+      });
     },
     onError: (error: any) => {
       toast({ title: "AI Correlation Failed", description: error.message, variant: "destructive" });
@@ -269,8 +329,22 @@ export default function AlertsPage() {
   });
 
   const updateConfidence = useMutation({
-    mutationFn: async ({ alertId, confidenceScore, confidenceSource, confidenceNotes }: { alertId: string; confidenceScore: number; confidenceSource: string; confidenceNotes: string }) => {
-      const res = await apiRequest("PATCH", `/api/alerts/${alertId}/confidence`, { confidenceScore: confidenceScore / 100, confidenceSource, confidenceNotes });
+    mutationFn: async ({
+      alertId,
+      confidenceScore,
+      confidenceSource,
+      confidenceNotes,
+    }: {
+      alertId: string;
+      confidenceScore: number;
+      confidenceSource: string;
+      confidenceNotes: string;
+    }) => {
+      const res = await apiRequest("PATCH", `/api/alerts/${alertId}/confidence`, {
+        confidenceScore: confidenceScore / 100,
+        confidenceSource,
+        confidenceNotes,
+      });
       return res.json();
     },
     onSuccess: () => {
@@ -320,7 +394,7 @@ export default function AlertsPage() {
     return "new";
   };
 
-  const getQueueLabel = (state: "new" | "aging" | "breached" | "other") => {
+  const _getQueueLabel = (state: "new" | "aging" | "breached" | "other") => {
     if (state === "other") return "N/A";
     return state;
   };
@@ -338,7 +412,8 @@ export default function AlertsPage() {
   };
 
   const filtered = alerts?.filter((alert) => {
-    const matchesSearch = !search ||
+    const matchesSearch =
+      !search ||
       alert.title.toLowerCase().includes(search.toLowerCase()) ||
       alert.source.toLowerCase().includes(search.toLowerCase()) ||
       alert.description?.toLowerCase().includes(search.toLowerCase());
@@ -371,33 +446,39 @@ export default function AlertsPage() {
     if (!focusedAlertId) return;
     const name = prompt("Assign to:");
     if (name && name.trim()) {
-      apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { assignedTo: name.trim() }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-        toast({ title: "Assigned", description: `Alert assigned to ${name.trim()}` });
-      }).catch((err: Error) => {
-        toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
-      });
+      apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { assignedTo: name.trim() })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+          toast({ title: "Assigned", description: `Alert assigned to ${name.trim()}` });
+        })
+        .catch((err: Error) => {
+          toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
+        });
     }
   }, [focusedAlertId, toast]);
 
   const escalateFocused = useCallback(() => {
     if (!focusedAlertId) return;
-    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "triaged", assignedTo: "Tier 2" }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      toast({ title: "Escalated", description: "Alert escalated to Tier 2" });
-    }).catch((err: Error) => {
-      toast({ title: "Escalation failed", description: err.message, variant: "destructive" });
-    });
+    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "triaged", assignedTo: "Tier 2" })
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        toast({ title: "Escalated", description: "Alert escalated to Tier 2" });
+      })
+      .catch((err: Error) => {
+        toast({ title: "Escalation failed", description: err.message, variant: "destructive" });
+      });
   }, [focusedAlertId, toast]);
 
   const resolveFocused = useCallback(() => {
     if (!focusedAlertId) return;
-    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "resolved" }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      toast({ title: "Resolved" });
-    }).catch((err: Error) => {
-      toast({ title: "Resolve failed", description: err.message, variant: "destructive" });
-    });
+    apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "resolved" })
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        toast({ title: "Resolved" });
+      })
+      .catch((err: Error) => {
+        toast({ title: "Resolve failed", description: err.message, variant: "destructive" });
+      });
   }, [focusedAlertId, toast]);
 
   const activeFilters = useMemo(() => {
@@ -432,7 +513,8 @@ export default function AlertsPage() {
         target?.tagName === "TEXTAREA" ||
         target?.tagName === "SELECT" ||
         target?.isContentEditable
-      ) return;
+      )
+        return;
       const idx = filtered.findIndex((a) => a.id === focusedAlertId);
       if (e.key.toLowerCase() === "j") {
         e.preventDefault();
@@ -477,13 +559,10 @@ export default function AlertsPage() {
   }, [filtered, focusedAlertId, selectedIds, bulkUpdate, page, assignFocused, escalateFocused, resolveFocused]);
 
   const selectedAlert = useMemo(
-    () => (alerts && focusedAlertId ? alerts.find((alert) => alert.id === focusedAlertId) ?? null : null),
+    () => (alerts && focusedAlertId ? (alerts.find((alert) => alert.id === focusedAlertId) ?? null) : null),
     [alerts, focusedAlertId],
   );
-  const pageAlerts = useMemo(
-    () => filtered?.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) ?? [],
-    [filtered, page],
-  );
+  const pageAlerts = useMemo(() => filtered?.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) ?? [], [filtered, page]);
 
   const handleTriageClick = (alertId: string) => {
     setSelectedAlertForTriage(alertId);
@@ -495,7 +574,9 @@ export default function AlertsPage() {
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Alerts Management">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Alerts</span></h1>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+            <span className="gradient-text-red">Alerts</span>
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">All security alerts from integrated tools</p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
@@ -510,11 +591,7 @@ export default function AlertsPage() {
             <ShieldOff className="h-4 w-4 mr-2" aria-hidden="true" />
             Suppression Rules
           </Button>
-          <Button
-            onClick={() => correlate.mutate()}
-            disabled={correlate.isPending}
-            data-testid="button-ai-correlate"
-          >
+          <Button onClick={() => correlate.mutate()} disabled={correlate.isPending} data-testid="button-ai-correlate">
             {correlate.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
             ) : (
@@ -527,7 +604,10 @@ export default function AlertsPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             placeholder="Search alerts..."
             value={search}
@@ -536,7 +616,12 @@ export default function AlertsPage() {
             data-testid="input-search-alerts"
           />
         </div>
-        <Button variant="outline" size="icon" data-testid="button-export-alerts" onClick={() => window.open('/api/export/alerts', '_blank')}>
+        <Button
+          variant="outline"
+          size="icon"
+          data-testid="button-export-alerts"
+          onClick={() => window.open("/api/export/alerts", "_blank")}
+        >
           <Download className="h-4 w-4" />
         </Button>
         <Button
@@ -554,9 +639,7 @@ export default function AlertsPage() {
               key={sev}
               onClick={() => setSeverityFilter(sev)}
               className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                severityFilter === sev
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover-elevate"
+                severityFilter === sev ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
               }`}
               data-testid={`filter-${sev}`}
             >
@@ -571,22 +654,32 @@ export default function AlertsPage() {
               onClick={() => setQueueFilter(state)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${queueFilter === state ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"}`}
             >
-              {state === "all" ? "Queue: All" : state === "new" ? "Queue: New" : state === "aging" ? "Queue: Aging" : "Queue: Breached"}
+              {state === "all"
+                ? "Queue: All"
+                : state === "new"
+                  ? "Queue: New"
+                  : state === "aging"
+                    ? "Queue: Aging"
+                    : "Queue: Breached"}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Switch
-            checked={showSuppressed}
-            onCheckedChange={setShowSuppressed}
-            data-testid="toggle-show-suppressed"
-          />
-          <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer" onClick={() => setShowSuppressed(!showSuppressed)}>
+          <Switch checked={showSuppressed} onCheckedChange={setShowSuppressed} data-testid="toggle-show-suppressed" />
+          <label
+            className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer"
+            onClick={() => setShowSuppressed(!showSuppressed)}
+          >
             {showSuppressed ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
             Show Suppressed
           </label>
         </div>
-        <Input placeholder="View name" value={savedViewName} onChange={(e) => setSavedViewName(e.target.value)} className="w-36" />
+        <Input
+          placeholder="View name"
+          value={savedViewName}
+          onChange={(e) => setSavedViewName(e.target.value)}
+          className="w-36"
+        />
         <Button
           variant="outline"
           size="sm"
@@ -614,11 +707,16 @@ export default function AlertsPage() {
       {savedViews.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {savedViews.map((v) => (
-            <Button key={v.name} size="sm" variant="secondary" onClick={() => {
-              setSearch(v.search);
-              setSeverityFilter(v.severity);
-              setShowSuppressed(v.showSuppressed);
-            }}>
+            <Button
+              key={v.name}
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setSearch(v.search);
+                setSeverityFilter(v.severity);
+                setShowSuppressed(v.showSuppressed);
+              }}
+            >
               {v.name}
             </Button>
           ))}
@@ -632,7 +730,9 @@ export default function AlertsPage() {
           <CardContent className="pt-4 flex items-center flex-wrap gap-2">
             <Badge variant="outline">{selectedIds.length} selected</Badge>
             <Select value={bulkStatus} onValueChange={setBulkStatus}>
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="new">New</SelectItem>
                 <SelectItem value="triaged">Triaged</SelectItem>
@@ -641,21 +741,56 @@ export default function AlertsPage() {
                 <SelectItem value="false_positive">False Positive</SelectItem>
               </SelectContent>
             </Select>
-            <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending}>Apply Status</Button>
+            <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending}>
+              Apply Status
+            </Button>
             <div className="flex items-center gap-1">
-              <Input placeholder="Assignee" value={bulkAssignee} onChange={(e) => setBulkAssignee(e.target.value)} className="w-32 h-8 text-sm" />
-              <Button size="sm" variant="outline" onClick={() => { if (bulkAssignee.trim()) bulkUpdate.mutate({ assignedTo: bulkAssignee.trim() }); }} disabled={bulkUpdate.isPending || !bulkAssignee.trim()}>
+              <Input
+                placeholder="Assignee"
+                value={bulkAssignee}
+                onChange={(e) => setBulkAssignee(e.target.value)}
+                className="w-32 h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (bulkAssignee.trim()) bulkUpdate.mutate({ assignedTo: bulkAssignee.trim() });
+                }}
+                disabled={bulkUpdate.isPending || !bulkAssignee.trim()}
+              >
                 <UserPlus className="h-3 w-3 mr-1" />
                 Assign
               </Button>
             </div>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ status: "escalated" })} disabled={bulkUpdate.isPending}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => bulkUpdate.mutate({ status: "escalated" })}
+              disabled={bulkUpdate.isPending}
+            >
               <ArrowUpRight className="h-3 w-3 mr-1" />
               Escalate
             </Button>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: true })} disabled={bulkUpdate.isPending}>Suppress</Button>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdate.mutate({ suppressed: false })} disabled={bulkUpdate.isPending}>Unsuppress</Button>
-            <span className="text-xs text-muted-foreground">Keys: J/K nav, Enter open, Esc close, T triage, A assign, E escalate, R resolve</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => bulkUpdate.mutate({ suppressed: true })}
+              disabled={bulkUpdate.isPending}
+            >
+              Suppress
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => bulkUpdate.mutate({ suppressed: false })}
+              disabled={bulkUpdate.isPending}
+            >
+              Unsuppress
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Keys: J/K nav, Enter open, Esc close, T triage, A assign, E escalate, R resolve
+            </span>
           </CardContent>
         </Card>
       )}
@@ -678,11 +813,7 @@ export default function AlertsPage() {
                   <Plus className="h-3 w-3 mr-1" />
                   Create Rule
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowSuppressionRules(false)}
-                >
+                <Button size="sm" variant="ghost" onClick={() => setShowSuppressionRules(false)}>
                   <XCircle className="h-4 w-4" />
                 </Button>
               </div>
@@ -705,7 +836,9 @@ export default function AlertsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {SCOPE_OPTIONS.map((s) => (
-                        <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>
+                        <SelectItem key={s} value={s}>
+                          {s.replace(/_/g, " ")}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -741,11 +874,7 @@ export default function AlertsPage() {
                     data-testid="input-rule-expires"
                   />
                   <div className="flex items-center gap-2">
-                    <Switch
-                      checked={ruleEnabled}
-                      onCheckedChange={setRuleEnabled}
-                      data-testid="toggle-rule-enabled"
-                    />
+                    <Switch checked={ruleEnabled} onCheckedChange={setRuleEnabled} data-testid="toggle-rule-enabled" />
                     <span className="text-xs text-muted-foreground">Enabled</span>
                   </div>
                 </div>
@@ -762,11 +891,16 @@ export default function AlertsPage() {
             )}
             {rulesLoading ? (
               <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
               </div>
             ) : suppressionRules && suppressionRules.length > 0 ? (
               suppressionRules.map((rule) => (
-                <div key={rule.id} className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30 flex-wrap">
+                <div
+                  key={rule.id}
+                  className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30 flex-wrap"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
                       {rule.name}
@@ -815,7 +949,9 @@ export default function AlertsPage() {
                 <XCircle className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-1" data-testid="text-correlation-assessment">{correlationResult.overallAssessment}</p>
+            <p className="text-xs text-muted-foreground mt-1" data-testid="text-correlation-assessment">
+              {correlationResult.overallAssessment}
+            </p>
           </CardHeader>
           <CardContent className="space-y-3">
             {correlationResult.correlatedGroups.map((group, i) => (
@@ -833,7 +969,9 @@ export default function AlertsPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] text-muted-foreground">{group.alertIds.length} alerts</span>
                   {group.mitreTactics.map((t, j) => (
-                    <span key={j} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">{t}</span>
+                    <span key={j} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">
+                      {t}
+                    </span>
                   ))}
                 </div>
                 <Button
@@ -853,7 +991,9 @@ export default function AlertsPage() {
               </div>
             ))}
             {correlationResult.uncorrelatedAlertIds.length > 0 && (
-              <p className="text-xs text-muted-foreground">{correlationResult.uncorrelatedAlertIds.length} alert(s) did not correlate to any group</p>
+              <p className="text-xs text-muted-foreground">
+                {correlationResult.uncorrelatedAlertIds.length} alert(s) did not correlate to any group
+              </p>
             )}
           </CardContent>
         </Card>
@@ -870,7 +1010,10 @@ export default function AlertsPage() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => { setSelectedAlertForTriage(null); setTriageResult(null); }}
+                onClick={() => {
+                  setSelectedAlertForTriage(null);
+                  setTriageResult(null);
+                }}
                 data-testid="button-dismiss-triage"
               >
                 <XCircle className="h-4 w-4" />
@@ -905,22 +1048,36 @@ export default function AlertsPage() {
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase mb-1">Recommended Action</div>
-                  <div className="text-sm text-primary font-medium" data-testid="text-triage-action">{triageResult.recommendedAction}</div>
+                  <div className="text-sm text-primary font-medium" data-testid="text-triage-action">
+                    {triageResult.recommendedAction}
+                  </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase mb-1">Reasoning</div>
-                  <div className="text-xs text-muted-foreground" data-testid="text-triage-reasoning">{triageResult.reasoning}</div>
+                  <div className="text-xs text-muted-foreground" data-testid="text-triage-reasoning">
+                    {triageResult.reasoning}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {triageResult.mitreTactic && <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">{triageResult.mitreTactic}</span>}
-                  {triageResult.mitreTechnique && <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">{triageResult.mitreTechnique}</span>}
+                  {triageResult.mitreTactic && (
+                    <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">
+                      {triageResult.mitreTactic}
+                    </span>
+                  )}
+                  {triageResult.mitreTechnique && (
+                    <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
+                      {triageResult.mitreTechnique}
+                    </span>
+                  )}
                 </div>
                 {triageResult.relatedIocs && triageResult.relatedIocs.length > 0 && (
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase mb-1">IOCs</div>
                     <div className="flex flex-wrap gap-1">
                       {triageResult.relatedIocs.map((ioc, i) => (
-                        <span key={i} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">{ioc}</span>
+                        <span key={i} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
+                          {ioc}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -939,11 +1096,7 @@ export default function AlertsPage() {
                 <SlidersHorizontal className="h-4 w-4 text-primary" />
                 Calibrate Confidence
               </CardTitle>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setCalibratingAlertId(null)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => setCalibratingAlertId(null)}>
                 <XCircle className="h-4 w-4" />
               </Button>
             </div>
@@ -986,7 +1139,14 @@ export default function AlertsPage() {
               </div>
               <Button
                 size="sm"
-                onClick={() => updateConfidence.mutate({ alertId: calibratingAlertId, confidenceScore: calibrateScore, confidenceSource: calibrateSource, confidenceNotes: calibrateNotes })}
+                onClick={() =>
+                  updateConfidence.mutate({
+                    alertId: calibratingAlertId,
+                    confidenceScore: calibrateScore,
+                    confidenceSource: calibrateSource,
+                    confidenceNotes: calibrateNotes,
+                  })
+                }
                 disabled={updateConfidence.isPending}
                 data-testid="button-save-confidence"
               >
@@ -999,329 +1159,447 @@ export default function AlertsPage() {
       )}
 
       <ResizablePanelGroup direction="horizontal" className="rounded-lg">
-      <ResizablePanel defaultSize={isDetailOpen && selectedAlert ? 60 : 100} minSize={35}>
-      <Card className="h-full transition-all duration-200">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b text-left">
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
-                    <Checkbox
-                      checked={filtered && filtered.length > 0 && filtered.every((a) => selectedIds.includes(a.id))}
-                      onCheckedChange={(checked) => {
-                        if (!filtered) return;
-                        setSelectedIds(checked ? filtered.map((a) => a.id) : []);
-                      }}
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Alert</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">Source</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Category</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">MITRE Tactic</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Queue</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-4" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
-                      <td className="px-4 py-3 hidden md:table-cell"><Skeleton className="h-4 w-24" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                      <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-20" /></td>
-                      <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-28" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                    </tr>
-                  ))
-                ) : pageAlerts.length > 0 ? (
-                  pageAlerts.map((alert) => (
-                    <tr
-                      key={alert.id}
-                      className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}
-                      onClick={() => { setFocusedAlertId(alert.id); setIsDetailOpen(true); }}
-                      data-testid={`row-alert-${alert.id}`}
-                    >
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+        <ResizablePanel defaultSize={isDetailOpen && selectedAlert ? 60 : 100} minSize={35}>
+          <Card className="h-full transition-all duration-200">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
                         <Checkbox
-                          checked={selectedIds.includes(alert.id)}
+                          checked={filtered && filtered.length > 0 && filtered.every((a) => selectedIds.includes(a.id))}
                           onCheckedChange={(checked) => {
-                            setSelectedIds((prev) => checked ? (prev.includes(alert.id) ? prev : [...prev, alert.id]) : prev.filter((id) => id !== alert.id));
+                            if (!filtered) return;
+                            setSelectedIds(checked ? filtered.map((a) => a.id) : []);
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" aria-hidden="true" />
-                          <div>
-                            <div className={`text-sm font-medium ${alert.suppressed ? "line-through text-muted-foreground" : ""}`}>{alert.title}</div>
-                            <div className="text-xs text-muted-foreground truncate max-w-[300px]">{alert.description}</div>
-                            <MiniTimeline alert={alert} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span className="text-xs text-muted-foreground">{alert.source}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <SeverityBadge severity={alert.severity} />
-                          {alert.confidenceScore != null && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              {Math.round(alert.confidenceScore * 100)}%
-                            </Badge>
-                          )}
-                          {alert.dedupClusterId && (
-                            <Badge variant="outline" className="text-[10px]">
-                              <Layers className="h-2.5 w-2.5 mr-0.5" />
-                              Dup
-                            </Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 hidden lg:table-cell">
-                        <span className="text-xs text-muted-foreground">{alert.category?.replace(/_/g, " ") || "-"}</span>
-                      </td>
-                      <td className="px-4 py-3 hidden lg:table-cell">
-                        <span className="text-xs text-muted-foreground">{alert.mitreTactic || "-"}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <AlertStatusBadge status={alert.status} />
-                      </td>
-                      <td className="px-4 py-3">
-                        {(() => {
-                          const qs = getQueueState(alert);
-                          if (qs === "other") return <span className="text-[10px] text-muted-foreground">—</span>;
-                          const countdown = getQueueCountdown(alert);
-                          const style = qs === "breached"
-                            ? "bg-red-500/10 text-red-500 border-red-500/20"
-                            : qs === "aging"
-                              ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
-                              : "bg-blue-500/10 text-blue-500 border-blue-500/20";
-                          return (
-                            <div className="flex flex-col gap-0.5">
-                              <span className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${style}`}>{qs}</span>
-                              {countdown && <span className="text-[9px] text-muted-foreground">{countdown}</span>}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleTriageClick(alert.id)}
-                            disabled={triage.isPending && selectedAlertForTriage === alert.id}
-                            aria-label="AI triage this alert"
-                            data-testid={`button-triage-${alert.id}`}
-                          >
-                            {triage.isPending && selectedAlertForTriage === alert.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Brain className="h-3 w-3" />
-                            )}
-                          </Button>
-                          {alert.suppressed ? (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => unsuppressAlert.mutate(alert.id)}
-                              disabled={unsuppressAlert.isPending}
-                              aria-label="Unsuppress this alert"
-                              data-testid={`button-unsuppress-${alert.id}`}
-                            >
-                              <Eye className="h-3 w-3" aria-hidden="true" />
-                            </Button>
-                          ) : (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => suppressAlert.mutate(alert.id)}
-                              disabled={suppressAlert.isPending}
-                              aria-label="Suppress this alert"
-                              data-testid={`button-suppress-${alert.id}`}
-                            >
-                              <ShieldOff className="h-3 w-3" aria-hidden="true" />
-                            </Button>
-                          )}
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => {
-                              setCalibratingAlertId(alert.id);
-                              setCalibrateScore(alert.confidenceScore != null ? Math.round(alert.confidenceScore * 100) : 50);
-                              setCalibrateSource(alert.confidenceSource || "analyst");
-                              setCalibrateNotes(alert.confidenceNotes || "");
-                            }}
-                            data-testid={`button-calibrate-${alert.id}`}
-                          >
-                            <SlidersHorizontal className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </td>
+                      </th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Alert</th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">
+                        Source
+                      </th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">
+                        Category
+                      </th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">
+                        MITRE Tactic
+                      </th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Queue</th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Actions</th>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                      <div role="status" aria-label="No alerts found">
-                        <AlertTriangle className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" aria-hidden="true" />
-                        <p className="font-medium">No alerts found</p>
-                        <p className="text-xs mt-1">Try adjusting your filters or search criteria</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {filtered && filtered.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between px-4 py-3 border-t">
-              <span className="text-xs text-muted-foreground">
-                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)} aria-label="Previous page">
-                  <ChevronLeft className="h-3 w-3" aria-hidden="true" />
-                </Button>
-                <span className="text-xs px-2" aria-live="polite">{page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}</span>
-                <Button variant="outline" size="icon" className="h-7 w-7" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(p => p + 1)} aria-label="Next page">
-                  <ChevronRight className="h-3 w-3" aria-hidden="true" />
-                </Button>
+                  </thead>
+                  <tbody>
+                    {isLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="px-4 py-3">
+                            <Skeleton className="h-4 w-4" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Skeleton className="h-4 w-48" />
+                          </td>
+                          <td className="px-4 py-3 hidden md:table-cell">
+                            <Skeleton className="h-4 w-24" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Skeleton className="h-4 w-16" />
+                          </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <Skeleton className="h-4 w-20" />
+                          </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <Skeleton className="h-4 w-28" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Skeleton className="h-4 w-16" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Skeleton className="h-4 w-16" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Skeleton className="h-4 w-16" />
+                          </td>
+                        </tr>
+                      ))
+                    ) : alertsError ? (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-12 text-center">
+                          <div role="alert" className="flex flex-col items-center gap-3">
+                            <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20">
+                              <AlertTriangle className="h-6 w-6 text-destructive" />
+                            </div>
+                            <p className="text-sm font-medium">Failed to load alerts</p>
+                            <p className="text-xs text-muted-foreground">
+                              An error occurred while fetching alert data.
+                            </p>
+                            <Button variant="outline" size="sm" onClick={() => refetchAlerts()}>
+                              <Activity className="h-3.5 w-3.5 mr-1.5" />
+                              Try Again
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : pageAlerts.length > 0 ? (
+                      pageAlerts.map((alert) => (
+                        <tr
+                          key={alert.id}
+                          className={`border-b last:border-0 hover-elevate cursor-pointer ${alert.suppressed ? "opacity-50" : ""} ${focusedAlertId === alert.id ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}
+                          onClick={() => {
+                            setFocusedAlertId(alert.id);
+                            setIsDetailOpen(true);
+                          }}
+                          data-testid={`row-alert-${alert.id}`}
+                        >
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIds.includes(alert.id)}
+                              onCheckedChange={(checked) => {
+                                setSelectedIds((prev) =>
+                                  checked
+                                    ? prev.includes(alert.id)
+                                      ? prev
+                                      : [...prev, alert.id]
+                                    : prev.filter((id) => id !== alert.id),
+                                );
+                              }}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <AlertTriangle
+                                className="h-3 w-3 text-muted-foreground flex-shrink-0"
+                                aria-hidden="true"
+                              />
+                              <div>
+                                <div
+                                  className={`text-sm font-medium ${alert.suppressed ? "line-through text-muted-foreground" : ""}`}
+                                >
+                                  {alert.title}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate max-w-[300px]">
+                                  {alert.description}
+                                </div>
+                                <MiniTimeline alert={alert} />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 hidden md:table-cell">
+                            <span className="text-xs text-muted-foreground">{alert.source}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <SeverityBadge severity={alert.severity} />
+                              {alert.confidenceScore != null && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  {Math.round(alert.confidenceScore * 100)}%
+                                </Badge>
+                              )}
+                              {alert.dedupClusterId && (
+                                <Badge variant="outline" className="text-[10px]">
+                                  <Layers className="h-2.5 w-2.5 mr-0.5" />
+                                  Dup
+                                </Badge>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <span className="text-xs text-muted-foreground">
+                              {alert.category?.replace(/_/g, " ") || "-"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <span className="text-xs text-muted-foreground">{alert.mitreTactic || "-"}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <AlertStatusBadge status={alert.status} />
+                          </td>
+                          <td className="px-4 py-3">
+                            {(() => {
+                              const qs = getQueueState(alert);
+                              if (qs === "other") return <span className="text-[10px] text-muted-foreground">—</span>;
+                              const countdown = getQueueCountdown(alert);
+                              const style =
+                                qs === "breached"
+                                  ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                  : qs === "aging"
+                                    ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                                    : "bg-blue-500/10 text-blue-500 border-blue-500/20";
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  <span
+                                    className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${style}`}
+                                  >
+                                    {qs}
+                                  </span>
+                                  {countdown && <span className="text-[9px] text-muted-foreground">{countdown}</span>}
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleTriageClick(alert.id)}
+                                disabled={triage.isPending && selectedAlertForTriage === alert.id}
+                                aria-label="AI triage this alert"
+                                data-testid={`button-triage-${alert.id}`}
+                              >
+                                {triage.isPending && selectedAlertForTriage === alert.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Brain className="h-3 w-3" />
+                                )}
+                              </Button>
+                              {alert.suppressed ? (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => unsuppressAlert.mutate(alert.id)}
+                                  disabled={unsuppressAlert.isPending}
+                                  aria-label="Unsuppress this alert"
+                                  data-testid={`button-unsuppress-${alert.id}`}
+                                >
+                                  <Eye className="h-3 w-3" aria-hidden="true" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => suppressAlert.mutate(alert.id)}
+                                  disabled={suppressAlert.isPending}
+                                  aria-label="Suppress this alert"
+                                  data-testid={`button-suppress-${alert.id}`}
+                                >
+                                  <ShieldOff className="h-3 w-3" aria-hidden="true" />
+                                </Button>
+                              )}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setCalibratingAlertId(alert.id);
+                                  setCalibrateScore(
+                                    alert.confidenceScore != null ? Math.round(alert.confidenceScore * 100) : 50,
+                                  );
+                                  setCalibrateSource(alert.confidenceSource || "analyst");
+                                  setCalibrateNotes(alert.confidenceNotes || "");
+                                }}
+                                data-testid={`button-calibrate-${alert.id}`}
+                              >
+                                <SlidersHorizontal className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                          <div role="status" aria-label="No alerts found">
+                            <AlertTriangle
+                              className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50"
+                              aria-hidden="true"
+                            />
+                            <p className="font-medium">No alerts found</p>
+                            <p className="text-xs mt-1">Try adjusting your filters or search criteria</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      </ResizablePanel>
-
-      {isDetailOpen && selectedAlert && (
-        <>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={40} minSize={20}>
-        <Card className="flex flex-col h-full max-h-[calc(100vh-12rem)]">
-          <div className="flex items-center justify-between gap-2 p-4 border-b">
-            <h3 className="text-sm font-semibold truncate">Alert Detail</h3>
-            <Button size="icon" variant="ghost" onClick={() => setIsDetailOpen(false)} aria-label="Close detail panel">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div>
-              <h4 className="text-base font-semibold">{selectedAlert.title}</h4>
-              <p className="text-xs text-muted-foreground mt-1">{selectedAlert.description}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[10px] text-muted-foreground uppercase">Severity</span>
-                <div className="mt-0.5"><SeverityBadge severity={selectedAlert.severity} /></div>
-              </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground uppercase">Status</span>
-                <div className="mt-0.5"><AlertStatusBadge status={selectedAlert.status} /></div>
-              </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground uppercase">Source</span>
-                <p className="text-xs mt-0.5">{selectedAlert.source}</p>
-              </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground uppercase">Category</span>
-                <p className="text-xs mt-0.5">{selectedAlert.category?.replace(/_/g, " ") || "-"}</p>
-              </div>
-            </div>
-            {selectedAlert.assignedTo && (
-              <div className="flex items-center gap-2">
-                <User className="h-3 w-3 text-muted-foreground" />
-                <span className="text-xs">Assigned to: <span className="font-medium">{selectedAlert.assignedTo}</span></span>
-              </div>
-            )}
-            {selectedAlert.mitreTactic && (
-              <div className="flex items-center gap-2">
-                <Tag className="h-3 w-3 text-muted-foreground" />
-                <span className="text-xs">{selectedAlert.mitreTactic}</span>
-                {selectedAlert.mitreTechnique && (
-                  <span className="text-xs font-mono text-muted-foreground">{selectedAlert.mitreTechnique}</span>
-                )}
-              </div>
-            )}
-            {(selectedAlert.sourceIp || selectedAlert.destIp || selectedAlert.hostname) && (
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-muted-foreground uppercase">Entities</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedAlert.sourceIp && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]"><MapPin className="h-2.5 w-2.5" />src: {selectedAlert.sourceIp}</span>
-                  )}
-                  {selectedAlert.destIp && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]"><MapPin className="h-2.5 w-2.5" />dst: {selectedAlert.destIp}</span>
-                  )}
-                  {selectedAlert.hostname && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">{selectedAlert.hostname}</span>
-                  )}
-                </div>
-              </div>
-            )}
-            {selectedAlert.confidenceScore != null && (
-              <div>
-                <span className="text-[10px] text-muted-foreground uppercase">Confidence</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.round(selectedAlert.confidenceScore * 100)}%` }} />
+              {filtered && filtered.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-4 py-3 border-t">
+                  <span className="text-xs text-muted-foreground">
+                    Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of{" "}
+                    {filtered.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => p - 1)}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="h-3 w-3" aria-hidden="true" />
+                    </Button>
+                    <span className="text-xs px-2" aria-live="polite">
+                      {page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={(page + 1) * PAGE_SIZE >= filtered.length}
+                      onClick={() => setPage((p) => p + 1)}
+                      aria-label="Next page"
+                    >
+                      <ChevronRight className="h-3 w-3" aria-hidden="true" />
+                    </Button>
                   </div>
-                  <span className="text-xs font-medium">{Math.round(selectedAlert.confidenceScore * 100)}%</span>
                 </div>
-              </div>
-            )}
-            {(() => {
-              const qs = getQueueState(selectedAlert);
-              const countdown = getQueueCountdown(selectedAlert);
-              if (qs === "other") return null;
-              return (
-                <div className="flex items-center gap-2">
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs">Queue: <span className="uppercase font-medium">{qs}</span></span>
-                  {countdown && <span className="text-xs text-muted-foreground">{countdown}</span>}
-                </div>
-              );
-            })()}
-            <div className="space-y-2 pt-2 border-t">
-              <div className="text-[10px] text-muted-foreground uppercase">Quick Actions</div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button size="sm" variant="outline" onClick={assignFocused}>
-                  <UserPlus className="h-3 w-3 mr-1" />
-                  Assign (A)
-                </Button>
-                <Button size="sm" variant="outline" onClick={escalateFocused}>
-                  <ArrowUpRight className="h-3 w-3 mr-1" />
-                  Escalate (E)
-                </Button>
-                <Button size="sm" variant="outline" onClick={resolveFocused}>
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Resolve (R)
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" onClick={() => navigate('/alerts/' + selectedAlert.id)}>
-                  <ExternalLink className="h-3 w-3 mr-1.5" />
-                  Full Detail
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => handleTriageClick(selectedAlert.id)} disabled={triage.isPending}>
-                  <Brain className="h-3 w-3 mr-1.5" />
-                  AI Triage
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
         </ResizablePanel>
-        </>
-      )}
+
+        {isDetailOpen && selectedAlert && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={40} minSize={20}>
+              <Card className="flex flex-col h-full max-h-[calc(100vh-12rem)]">
+                <div className="flex items-center justify-between gap-2 p-4 border-b">
+                  <h3 className="text-sm font-semibold truncate">Alert Detail</h3>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setIsDetailOpen(false)}
+                    aria-label="Close detail panel"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  <div>
+                    <h4 className="text-base font-semibold">{selectedAlert.title}</h4>
+                    <p className="text-xs text-muted-foreground mt-1">{selectedAlert.description}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase">Severity</span>
+                      <div className="mt-0.5">
+                        <SeverityBadge severity={selectedAlert.severity} />
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase">Status</span>
+                      <div className="mt-0.5">
+                        <AlertStatusBadge status={selectedAlert.status} />
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase">Source</span>
+                      <p className="text-xs mt-0.5">{selectedAlert.source}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase">Category</span>
+                      <p className="text-xs mt-0.5">{selectedAlert.category?.replace(/_/g, " ") || "-"}</p>
+                    </div>
+                  </div>
+                  {selectedAlert.assignedTo && (
+                    <div className="flex items-center gap-2">
+                      <User className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs">
+                        Assigned to: <span className="font-medium">{selectedAlert.assignedTo}</span>
+                      </span>
+                    </div>
+                  )}
+                  {selectedAlert.mitreTactic && (
+                    <div className="flex items-center gap-2">
+                      <Tag className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs">{selectedAlert.mitreTactic}</span>
+                      {selectedAlert.mitreTechnique && (
+                        <span className="text-xs font-mono text-muted-foreground">{selectedAlert.mitreTechnique}</span>
+                      )}
+                    </div>
+                  )}
+                  {(selectedAlert.sourceIp || selectedAlert.destIp || selectedAlert.hostname) && (
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase">Entities</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAlert.sourceIp && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
+                            <MapPin className="h-2.5 w-2.5" />
+                            src: {selectedAlert.sourceIp}
+                          </span>
+                        )}
+                        {selectedAlert.destIp && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
+                            <MapPin className="h-2.5 w-2.5" />
+                            dst: {selectedAlert.destIp}
+                          </span>
+                        )}
+                        {selectedAlert.hostname && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
+                            {selectedAlert.hostname}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {selectedAlert.confidenceScore != null && (
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase">Confidence</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full"
+                            style={{ width: `${Math.round(selectedAlert.confidenceScore * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium">{Math.round(selectedAlert.confidenceScore * 100)}%</span>
+                      </div>
+                    </div>
+                  )}
+                  {(() => {
+                    const qs = getQueueState(selectedAlert);
+                    const countdown = getQueueCountdown(selectedAlert);
+                    if (qs === "other") return null;
+                    return (
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs">
+                          Queue: <span className="uppercase font-medium">{qs}</span>
+                        </span>
+                        {countdown && <span className="text-xs text-muted-foreground">{countdown}</span>}
+                      </div>
+                    );
+                  })()}
+                  <div className="space-y-2 pt-2 border-t">
+                    <div className="text-[10px] text-muted-foreground uppercase">Quick Actions</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button size="sm" variant="outline" onClick={assignFocused}>
+                        <UserPlus className="h-3 w-3 mr-1" />
+                        Assign (A)
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={escalateFocused}>
+                        <ArrowUpRight className="h-3 w-3 mr-1" />
+                        Escalate (E)
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={resolveFocused}>
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Resolve (R)
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={() => navigate("/alerts/" + selectedAlert.id)}>
+                        <ExternalLink className="h-3 w-3 mr-1.5" />
+                        Full Detail
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleTriageClick(selectedAlert.id)}
+                        disabled={triage.isPending}
+                      >
+                        <Brain className="h-3 w-3 mr-1.5" />
+                        AI Triage
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </div>
   );

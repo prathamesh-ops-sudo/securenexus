@@ -10,15 +10,28 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  Monitor, Cpu, HardDrive, Shield, Activity, Wifi, AlertTriangle,
-  RefreshCw, Database, Plus, Eye, ChevronRight
+  Monitor,
+  Cpu,
+  HardDrive,
+  Shield,
+  Activity,
+  Wifi,
+  AlertTriangle,
+  RefreshCw,
+  Database,
+  Plus,
+  Eye,
+  ChevronRight,
 } from "lucide-react";
 import type { EndpointAsset, EndpointTelemetry } from "@shared/schema";
 
 function formatTimestamp(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleString("en-US", {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -41,7 +54,12 @@ function riskBarColor(score: number) {
   return "bg-green-500";
 }
 
-function StatCard({ title, value, icon: Icon, loading }: {
+function StatCard({
+  title,
+  value,
+  icon: Icon,
+  loading,
+}: {
   title: string;
   value: string | number;
   icon: typeof Monitor;
@@ -60,7 +78,9 @@ function StatCard({ title, value, icon: Icon, loading }: {
         {loading ? (
           <Skeleton className="h-7 w-16" />
         ) : (
-          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${testId}`}>{value}</div>
+          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${testId}`}>
+            {value}
+          </div>
         )}
       </CardContent>
     </Card>
@@ -68,7 +88,7 @@ function StatCard({ title, value, icon: Icon, loading }: {
 }
 
 function parseTelemetryMetric(telemetry: EndpointTelemetry[], metricType: string) {
-  const entry = telemetry.find(t => t.metricType === metricType);
+  const entry = telemetry.find((t) => t.metricType === metricType);
   if (!entry) return null;
   try {
     if (typeof entry.metricValue === "string") return JSON.parse(entry.metricValue);
@@ -79,9 +99,14 @@ function parseTelemetryMetric(telemetry: EndpointTelemetry[], metricType: string
 }
 
 function AssetDetailView({ assetId, assets }: { assetId: string; assets: EndpointAsset[] }) {
-  const asset = assets.find(a => a.id === assetId);
+  const asset = assets.find((a) => a.id === assetId);
 
-  const { data: telemetry, isLoading: telemetryLoading } = useQuery<EndpointTelemetry[]>({
+  const {
+    data: telemetry,
+    isLoading: telemetryLoading,
+    isError: _telemetryError,
+    refetch: _refetchTelemetry,
+  } = useQuery<EndpointTelemetry[]>({
     queryKey: ["/api/endpoints", assetId, "telemetry"],
     enabled: !!assetId,
   });
@@ -120,19 +145,27 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <div>
               <span className="text-xs text-muted-foreground">OS</span>
-              <p className="font-medium" data-testid="text-asset-os">{asset.os} {asset.osVersion || ""}</p>
+              <p className="font-medium" data-testid="text-asset-os">
+                {asset.os} {asset.osVersion || ""}
+              </p>
             </div>
             <div>
               <span className="text-xs text-muted-foreground">Agent Version</span>
-              <p className="font-medium" data-testid="text-asset-agent">{asset.agentVersion || "N/A"}</p>
+              <p className="font-medium" data-testid="text-asset-agent">
+                {asset.agentVersion || "N/A"}
+              </p>
             </div>
             <div>
               <span className="text-xs text-muted-foreground">IP Address</span>
-              <p className="font-mono text-sm" data-testid="text-asset-ip">{asset.ipAddress || "N/A"}</p>
+              <p className="font-mono text-sm" data-testid="text-asset-ip">
+                {asset.ipAddress || "N/A"}
+              </p>
             </div>
             <div>
               <span className="text-xs text-muted-foreground">MAC Address</span>
-              <p className="font-mono text-sm" data-testid="text-asset-mac">{asset.macAddress || "N/A"}</p>
+              <p className="font-mono text-sm" data-testid="text-asset-mac">
+                {asset.macAddress || "N/A"}
+              </p>
             </div>
             <div>
               <span className="text-xs text-muted-foreground">Status</span>
@@ -149,7 +182,10 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           <div>
             <div className="flex items-center justify-between gap-2 mb-1">
               <span className="text-xs text-muted-foreground">Risk Score</span>
-              <span className={`text-lg font-bold tabular-nums ${riskScore > 60 ? "text-red-500" : riskScore > 30 ? "text-yellow-500" : "text-green-500"}`} data-testid="value-asset-risk">
+              <span
+                className={`text-lg font-bold tabular-nums ${riskScore > 60 ? "text-red-500" : riskScore > 30 ? "text-yellow-500" : "text-green-500"}`}
+                data-testid="value-asset-risk"
+              >
                 {riskScore}
               </span>
             </div>
@@ -167,7 +203,9 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {Array.from({ length: 8 }).map((_, i) => (
             <Card key={i}>
-              <CardContent className="p-4"><Skeleton className="h-24 w-full" /></CardContent>
+              <CardContent className="p-4">
+                <Skeleton className="h-24 w-full" />
+              </CardContent>
             </Card>
           ))}
         </div>
@@ -184,8 +222,12 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {cpu && (
             <Card data-testid="card-telemetry-cpu">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">CPU Usage</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><Cpu className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  CPU Usage
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="text-2xl font-bold tabular-nums">{cpu.usage ?? cpu.percent ?? 0}%</div>
@@ -198,8 +240,12 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {memory && (
             <Card data-testid="card-telemetry-memory">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Memory Usage</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><Activity className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Memory Usage
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="text-2xl font-bold tabular-nums">{memory.usage ?? memory.percent ?? 0}%</div>
@@ -212,8 +258,12 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {disk && (
             <Card data-testid="card-telemetry-disk">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Disk Usage</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><HardDrive className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Disk Usage
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="text-2xl font-bold tabular-nums">{disk.usage ?? disk.percent ?? 0}%</div>
@@ -226,12 +276,16 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {processes && (
             <Card data-testid="card-telemetry-processes">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Process Count</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><Monitor className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Process Count
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tabular-nums">{processes.total ?? 0}</div>
-                {(processes.suspicious != null && processes.suspicious > 0) && (
+                {processes.suspicious != null && processes.suspicious > 0 && (
                   <p className="text-xs text-red-500 font-medium mt-1">{processes.suspicious} suspicious</p>
                 )}
               </CardContent>
@@ -241,14 +295,22 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {av && (
             <Card data-testid="card-telemetry-antivirus">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">AV Status</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><Shield className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  AV Status
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent className="space-y-1">
                 {av.engine && <p className="text-sm font-medium">{av.engine}</p>}
-                {av.lastScan && <p className="text-xs text-muted-foreground">Last scan: {formatTimestamp(av.lastScan)}</p>}
+                {av.lastScan && (
+                  <p className="text-xs text-muted-foreground">Last scan: {formatTimestamp(av.lastScan)}</p>
+                )}
                 {av.definitionsStatus && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${av.definitionsStatus === "current" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"}`}>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${av.definitionsStatus === "current" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"}`}
+                  >
                     Definitions: {av.definitionsStatus}
                   </span>
                 )}
@@ -259,15 +321,23 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {patches && (
             <Card data-testid="card-telemetry-patches">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Patch Level</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><Database className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Patch Level
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <Database className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent className="space-y-1">
                 <div className="flex items-center gap-4 text-sm">
-                  <span>Installed: <span className="font-medium">{patches.installed ?? 0}</span></span>
-                  <span>Pending: <span className="font-medium">{patches.pending ?? 0}</span></span>
+                  <span>
+                    Installed: <span className="font-medium">{patches.installed ?? 0}</span>
+                  </span>
+                  <span>
+                    Pending: <span className="font-medium">{patches.pending ?? 0}</span>
+                  </span>
                 </div>
-                {(patches.criticalPending != null && patches.criticalPending > 0) && (
+                {patches.criticalPending != null && patches.criticalPending > 0 && (
                   <p className="text-xs text-red-500 font-medium">{patches.criticalPending} critical pending</p>
                 )}
               </CardContent>
@@ -277,13 +347,19 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {network && (
             <Card data-testid="card-telemetry-network">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Network Connections</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><Wifi className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Network Connections
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-4 text-sm">
-                  <span>Active: <span className="font-bold">{network.active ?? 0}</span></span>
-                  {(network.suspicious != null && network.suspicious > 0) && (
+                  <span>
+                    Active: <span className="font-bold">{network.active ?? 0}</span>
+                  </span>
+                  {network.suspicious != null && network.suspicious > 0 && (
                     <span className="text-red-500 font-medium">{network.suspicious} suspicious</span>
                   )}
                 </div>
@@ -294,14 +370,22 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           {suspiciousProcs && (
             <Card data-testid="card-telemetry-suspicious">
               <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Suspicious Processes</CardTitle>
-                <div className="p-1.5 rounded-md bg-muted/50"><AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" /></div>
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Suspicious Processes
+                </CardTitle>
+                <div className="p-1.5 rounded-md bg-muted/50">
+                  <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
               </CardHeader>
               <CardContent>
                 {Array.isArray(suspiciousProcs) && suspiciousProcs.length > 0 ? (
                   <ul className="space-y-1">
                     {suspiciousProcs.map((proc: any, i: number) => (
-                      <li key={i} className="text-xs flex items-start gap-1.5" data-testid={`text-suspicious-proc-${i}`}>
+                      <li
+                        key={i}
+                        className="text-xs flex items-start gap-1.5"
+                        data-testid={`text-suspicious-proc-${i}`}
+                      >
                         <ChevronRight className="h-3 w-3 mt-0.5 flex-shrink-0 text-red-500" />
                         <span>
                           <span className="font-medium text-red-500">{proc.name || "unknown"}</span>
@@ -313,25 +397,37 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
                   </ul>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    {Array.isArray(suspiciousProcs) ? "No suspicious processes" : (suspiciousProcs.list && Array.isArray(suspiciousProcs.list) ? (
-                      suspiciousProcs.list.length === 0 ? "No suspicious processes" : ""
-                    ) : "No data")}
+                    {Array.isArray(suspiciousProcs)
+                      ? "No suspicious processes"
+                      : suspiciousProcs.list && Array.isArray(suspiciousProcs.list)
+                        ? suspiciousProcs.list.length === 0
+                          ? "No suspicious processes"
+                          : ""
+                        : "No data"}
                   </p>
                 )}
-                {suspiciousProcs && !Array.isArray(suspiciousProcs) && suspiciousProcs.list && Array.isArray(suspiciousProcs.list) && suspiciousProcs.list.length > 0 && (
-                  <ul className="space-y-1">
-                    {suspiciousProcs.list.map((proc: any, i: number) => (
-                      <li key={i} className="text-xs flex items-start gap-1.5" data-testid={`text-suspicious-proc-${i}`}>
-                        <ChevronRight className="h-3 w-3 mt-0.5 flex-shrink-0 text-red-500" />
-                        <span>
-                          <span className="font-medium text-red-500">{proc.name || "unknown"}</span>
-                          {proc.pid && <span className="text-muted-foreground"> (PID: {proc.pid})</span>}
-                          {proc.user && <span className="text-muted-foreground"> - {proc.user}</span>}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {suspiciousProcs &&
+                  !Array.isArray(suspiciousProcs) &&
+                  suspiciousProcs.list &&
+                  Array.isArray(suspiciousProcs.list) &&
+                  suspiciousProcs.list.length > 0 && (
+                    <ul className="space-y-1">
+                      {suspiciousProcs.list.map((proc: any, i: number) => (
+                        <li
+                          key={i}
+                          className="text-xs flex items-start gap-1.5"
+                          data-testid={`text-suspicious-proc-${i}`}
+                        >
+                          <ChevronRight className="h-3 w-3 mt-0.5 flex-shrink-0 text-red-500" />
+                          <span>
+                            <span className="font-medium text-red-500">{proc.name || "unknown"}</span>
+                            {proc.pid && <span className="text-muted-foreground"> (PID: {proc.pid})</span>}
+                            {proc.user && <span className="text-muted-foreground"> - {proc.user}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
               </CardContent>
             </Card>
           )}
@@ -346,7 +442,12 @@ export default function EndpointTelemetryPage() {
   const [activeTab, setActiveTab] = useState("inventory");
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
 
-  const { data: endpoints, isLoading } = useQuery<EndpointAsset[]>({
+  const {
+    data: endpoints,
+    isLoading,
+    isError: endpointsError,
+    refetch: refetchEndpoints,
+  } = useQuery<EndpointAsset[]>({
     queryKey: ["/api/endpoints"],
   });
 
@@ -390,9 +491,10 @@ export default function EndpointTelemetryPage() {
   });
 
   const totalEndpoints = endpoints?.length ?? 0;
-  const onlineCount = endpoints?.filter(e => e.agentStatus === "online").length ?? 0;
-  const offlineDegradedCount = endpoints?.filter(e => e.agentStatus === "offline" || e.agentStatus === "degraded").length ?? 0;
-  const highRiskCount = endpoints?.filter(e => (e.riskScore ?? 0) > 60).length ?? 0;
+  const onlineCount = endpoints?.filter((e) => e.agentStatus === "online").length ?? 0;
+  const offlineDegradedCount =
+    endpoints?.filter((e) => e.agentStatus === "offline" || e.agentStatus === "degraded").length ?? 0;
+  const highRiskCount = endpoints?.filter((e) => (e.riskScore ?? 0) > 60).length ?? 0;
 
   if (isLoading) {
     return (
@@ -404,18 +506,39 @@ export default function EndpointTelemetryPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
-              <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
-              <CardContent><Skeleton className="h-7 w-16" /></CardContent>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-7 w-16" />
+              </CardContent>
             </Card>
           ))}
         </div>
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
-              <CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent>
+              <CardContent className="p-4">
+                <Skeleton className="h-16 w-full" />
+              </CardContent>
             </Card>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (endpointsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load endpoint inventory</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchEndpoints()}>
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -498,7 +621,9 @@ export default function EndpointTelemetryPage() {
                     if (Array.isArray(asset.tags)) return asset.tags;
                     if (typeof asset.tags === "string") return JSON.parse(asset.tags);
                     return [];
-                  } catch { return []; }
+                  } catch {
+                    return [];
+                  }
                 })();
 
                 return (
@@ -506,7 +631,10 @@ export default function EndpointTelemetryPage() {
                     <CardContent className="p-4">
                       <div className="flex items-start gap-3 flex-wrap">
                         <div className="flex items-center gap-2 flex-shrink-0 pt-1">
-                          <span className={`h-2.5 w-2.5 rounded-full ${statusDot(asset.agentStatus)}`} data-testid={`status-dot-${asset.id}`} />
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${statusDot(asset.agentStatus)}`}
+                            data-testid={`status-dot-${asset.id}`}
+                          />
                         </div>
                         <div className="min-w-0 flex-1 space-y-2">
                           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -515,15 +643,16 @@ export default function EndpointTelemetryPage() {
                                 <span className="text-sm font-semibold" data-testid={`text-hostname-${asset.id}`}>
                                   {asset.hostname}
                                 </span>
-                                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">
+                                <Badge
+                                  variant="outline"
+                                  className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                                >
                                   {asset.os}
                                 </Badge>
                               </div>
                               <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                                 {asset.osVersion && (
-                                  <span data-testid={`text-os-version-${asset.id}`}>
-                                    v{asset.osVersion}
-                                  </span>
+                                  <span data-testid={`text-os-version-${asset.id}`}>v{asset.osVersion}</span>
                                 )}
                                 {asset.agentVersion && (
                                   <span data-testid={`text-agent-version-${asset.id}`}>
@@ -541,7 +670,10 @@ export default function EndpointTelemetryPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border tabular-nums ${riskBadgeColor(risk)}`} data-testid={`badge-risk-${asset.id}`}>
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border tabular-nums ${riskBadgeColor(risk)}`}
+                                data-testid={`badge-risk-${asset.id}`}
+                              >
                                 Risk: {risk}
                               </span>
                             </div>
@@ -549,7 +681,12 @@ export default function EndpointTelemetryPage() {
                           {tags.length > 0 && (
                             <div className="flex flex-wrap gap-1">
                               {tags.map((tag, ti) => (
-                                <Badge key={ti} variant="secondary" className="text-[10px]" data-testid={`badge-tag-${asset.id}-${ti}`}>
+                                <Badge
+                                  key={ti}
+                                  variant="secondary"
+                                  className="text-[10px]"
+                                  data-testid={`badge-tag-${asset.id}-${ti}`}
+                                >
                                   {tag}
                                 </Badge>
                               ))}
@@ -605,10 +742,7 @@ export default function EndpointTelemetryPage() {
               <CardTitle className="text-sm font-medium">Select Asset</CardTitle>
             </CardHeader>
             <CardContent>
-              <Select
-                value={selectedAssetId ?? ""}
-                onValueChange={(val) => setSelectedAssetId(val)}
-              >
+              <Select value={selectedAssetId ?? ""} onValueChange={(val) => setSelectedAssetId(val)}>
                 <SelectTrigger className="w-full max-w-sm" data-testid="select-asset">
                   <SelectValue placeholder="Choose an endpoint..." />
                 </SelectTrigger>
@@ -630,7 +764,9 @@ export default function EndpointTelemetryPage() {
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Monitor className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium text-muted-foreground">No asset selected</p>
-                <p className="text-xs text-muted-foreground mt-1">Select an endpoint from the dropdown above or click "View Detail" from the inventory</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Select an endpoint from the dropdown above or click "View Detail" from the inventory
+                </p>
               </CardContent>
             </Card>
           )}

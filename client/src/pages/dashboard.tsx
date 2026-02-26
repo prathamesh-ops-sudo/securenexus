@@ -1,21 +1,47 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Shield, AlertTriangle, FileWarning, CheckCircle2, Zap, ArrowUpRight,
-  Clock, Target, Plug, Activity, TrendingUp, Crosshair, RefreshCw, Bell,
-  Eye, EyeOff, Pin, GripVertical, LayoutDashboard, Save, RotateCcw,
-  TrendingDown, ArrowDown, ArrowUp, Minus, ExternalLink
+  Shield,
+  AlertTriangle,
+  FileWarning,
+  CheckCircle2,
+  Zap,
+  ArrowUpRight,
+  Target,
+  Plug,
+  Activity,
+  TrendingUp,
+  Crosshair,
+  RefreshCw,
+  Bell,
+  Eye,
+  EyeOff,
+  Pin,
+  LayoutDashboard,
+  RotateCcw,
+  ArrowDown,
+  ArrowUp,
+  Minus,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link } from "wouter";
 import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  AreaChart,
+  Area,
 } from "recharts";
 
 type WidgetId = "severity" | "sources" | "trend" | "mitre" | "categories" | "connectors" | "ingestion" | "whatChanged";
@@ -47,7 +73,11 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
 
 const LAYOUT_PRESETS: LayoutPreset[] = [
   { name: "SOC Analyst", key: "soc", widgets: ["severity", "trend", "mitre", "sources", "whatChanged", "connectors"] },
-  { name: "Enterprise", key: "enterprise", widgets: ["severity", "sources", "trend", "categories", "connectors", "ingestion", "whatChanged", "mitre"] },
+  {
+    name: "Enterprise",
+    key: "enterprise",
+    widgets: ["severity", "sources", "trend", "categories", "connectors", "ingestion", "whatChanged", "mitre"],
+  },
   { name: "Cloud-first", key: "cloud", widgets: ["connectors", "ingestion", "trend", "severity", "whatChanged"] },
 ];
 
@@ -74,14 +104,19 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const SOURCE_COLORS = [
-  "#06b6d4", "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b",
-  "#e11d48", "#14b8a6", "#f43f5e", "#d946ef", "#84cc16",
+  "#06b6d4",
+  "#3b82f6",
+  "#10b981",
+  "#8b5cf6",
+  "#f59e0b",
+  "#e11d48",
+  "#14b8a6",
+  "#f43f5e",
+  "#d946ef",
+  "#84cc16",
 ];
 
-const TACTIC_COLORS = [
-  "#f97316", "#3b82f6", "#eab308", "#8b5cf6", "#10b981",
-  "#ef4444", "#06b6d4", "#ec4899",
-];
+const TACTIC_COLORS = ["#f97316", "#3b82f6", "#eab308", "#8b5cf6", "#10b981", "#ef4444", "#06b6d4", "#ec4899"];
 
 function StatCardSkeleton() {
   return (
@@ -99,7 +134,17 @@ function StatCardSkeleton() {
   );
 }
 
-function StatCard({ title, value, icon: Icon, subtitle, subtitleColor, loading, href, iconColor, badge }: {
+function StatCard({
+  title,
+  value,
+  icon: Icon,
+  subtitle,
+  subtitleColor,
+  loading,
+  href,
+  iconColor,
+  badge,
+}: {
   title: string;
   value: number | string;
   icon: React.ElementType;
@@ -158,7 +203,14 @@ type AnalyticsData = {
   alertTrend: { date: string; count: number }[];
   mttrHours: number | null;
   topMitreTactics: { name: string; value: number }[];
-  connectorHealth: { name: string; type: string; status: string; lastSyncAt: string | null; lastSyncAlerts: number; lastSyncError: string | null }[];
+  connectorHealth: {
+    name: string;
+    type: string;
+    status: string;
+    lastSyncAt: string | null;
+    lastSyncAlerts: number;
+    lastSyncError: string | null;
+  }[];
   ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
 };
 
@@ -189,9 +241,10 @@ function PieTooltip({ active, payload }: any) {
 
 function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
   const ordered = ["critical", "high", "medium", "low", "informational"];
-  const sorted = ordered
-    .map(s => data.find(d => d.name === s))
-    .filter(Boolean) as { name: string; value: number }[];
+  const sorted = ordered.map((s) => data.find((d) => d.name === s)).filter(Boolean) as {
+    name: string;
+    value: number;
+  }[];
   const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
@@ -204,8 +257,15 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
       </CardHeader>
       <CardContent>
         {sorted.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground" role="status" aria-label="No severity data">
-            <div className="text-center"><AlertTriangle className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No severity data available</span></div>
+          <div
+            className="flex items-center justify-center h-[200px] text-sm text-muted-foreground"
+            role="status"
+            aria-label="No severity data"
+          >
+            <div className="text-center">
+              <AlertTriangle className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" />
+              <span>No severity data available</span>
+            </div>
           </div>
         ) : (
           <div className="flex items-center gap-6">
@@ -254,7 +314,10 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
                     <span className="capitalize">{entry.name}</span>
                   </div>
                   <span className="font-semibold tabular-nums">
-                    {entry.value} <span className="text-muted-foreground font-normal">({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)</span>
+                    {entry.value}{" "}
+                    <span className="text-muted-foreground font-normal">
+                      ({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)
+                    </span>
                   </span>
                 </div>
               ))}
@@ -277,8 +340,15 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground" role="status" aria-label="No source data">
-            <div className="text-center"><Activity className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No source data available</span></div>
+          <div
+            className="flex items-center justify-center h-[200px] text-sm text-muted-foreground"
+            role="status"
+            aria-label="No source data"
+          >
+            <div className="text-center">
+              <Activity className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" />
+              <span>No source data available</span>
+            </div>
           </div>
         ) : (
           <div className="h-[200px]">
@@ -299,7 +369,13 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
                     </linearGradient>
                   ))}
                 </defs>
-                <XAxis type="number" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 10 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <YAxis
                   type="category"
                   dataKey="name"
@@ -325,7 +401,7 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
 }
 
 function TrendChart({ data }: { data: { date: string; count: number }[] }) {
-  const formatted = data.map(d => ({
+  const formatted = data.map((d) => ({
     ...d,
     label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   }));
@@ -340,8 +416,15 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
       </CardHeader>
       <CardContent>
         {formatted.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground" role="status" aria-label="No trend data">
-            <div className="text-center"><TrendingUp className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No trend data available</span></div>
+          <div
+            className="flex items-center justify-center h-[200px] text-sm text-muted-foreground"
+            role="status"
+            aria-label="No trend data"
+          >
+            <div className="text-center">
+              <TrendingUp className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" />
+              <span>No trend data available</span>
+            </div>
           </div>
         ) : (
           <div className="h-[200px]">
@@ -362,8 +445,20 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
                   </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} axisLine={false} tickLine={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  allowDecimals={false}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <RechartsTooltip content={<CustomTooltip />} />
                 <Area
                   type="monotone"
@@ -386,7 +481,7 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
 }
 
 function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] }) {
-  const maxVal = Math.max(...data.map(d => d.value), 1);
+  const maxVal = Math.max(...data.map((d) => d.value), 1);
   return (
     <Card className="gradient-card h-full">
       <CardHeader className="pb-2">
@@ -397,8 +492,15 @@ function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] 
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground" role="status" aria-label="No MITRE data">
-            <div className="text-center"><Crosshair className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" /><span>No MITRE data available</span></div>
+          <div
+            className="flex items-center justify-center h-[160px] text-sm text-muted-foreground"
+            role="status"
+            aria-label="No MITRE data"
+          >
+            <div className="text-center">
+              <Crosshair className="h-6 w-6 mx-auto mb-2 opacity-50" aria-hidden="true" />
+              <span>No MITRE data available</span>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -485,7 +587,9 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
           <Plug className="h-4 w-4 text-muted-foreground" />
           <CardTitle className="text-sm font-semibold">Connector Health</CardTitle>
         </div>
-        <Link href="/connectors" className="text-xs text-primary hover:underline font-medium">Manage</Link>
+        <Link href="/connectors" className="text-xs text-primary hover:underline font-medium">
+          Manage
+        </Link>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
@@ -517,7 +621,7 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
 }
 
 function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) {
-  const formatted = data.map(d => ({
+  const formatted = data.map((d) => ({
     ...d,
     total: d.created + d.deduped + d.failed,
     label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -530,7 +634,9 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
           <Activity className="h-4 w-4 text-muted-foreground" />
           <CardTitle className="text-sm font-semibold">Ingestion Rate</CardTitle>
         </div>
-        <Link href="/ingestion" className="text-xs text-primary hover:underline font-medium">Details</Link>
+        <Link href="/ingestion" className="text-xs text-primary hover:underline font-medium">
+          Details
+        </Link>
       </CardHeader>
       <CardContent>
         {formatted.length === 0 ? (
@@ -556,8 +662,20 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
                   </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} axisLine={false} tickLine={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  allowDecimals={false}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <RechartsTooltip content={<CustomTooltip />} />
                 <Area
                   type="monotone"
@@ -579,19 +697,48 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
   );
 }
 
-function AnomalyBanners({ stats }: { stats: { totalAlerts: number; openIncidents: number; criticalAlerts: number; resolvedIncidents: number; newAlertsToday: number; escalatedIncidents: number } | undefined }) {
+function AnomalyBanners({
+  stats,
+}: {
+  stats:
+    | {
+        totalAlerts: number;
+        openIncidents: number;
+        criticalAlerts: number;
+        resolvedIncidents: number;
+        newAlertsToday: number;
+        escalatedIncidents: number;
+      }
+    | undefined;
+}) {
   const banners: { message: string; severity: "critical" | "warning" | "info"; href: string }[] = [];
   if ((stats?.criticalAlerts ?? 0) >= 5) {
-    banners.push({ message: `${stats?.criticalAlerts} critical alerts detected — immediate triage recommended`, severity: "critical", href: "/alerts?severity=critical" });
+    banners.push({
+      message: `${stats?.criticalAlerts} critical alerts detected — immediate triage recommended`,
+      severity: "critical",
+      href: "/alerts?severity=critical",
+    });
   }
   if ((stats?.escalatedIncidents ?? 0) >= 3) {
-    banners.push({ message: `${stats?.escalatedIncidents} incidents escalated to Tier 2 — review queue`, severity: "warning", href: "/incidents" });
+    banners.push({
+      message: `${stats?.escalatedIncidents} incidents escalated to Tier 2 — review queue`,
+      severity: "warning",
+      href: "/incidents",
+    });
   }
   if ((stats?.newAlertsToday ?? 0) > 50) {
-    banners.push({ message: `Unusual spike: ${stats?.newAlertsToday} new alerts today (above normal baseline)`, severity: "warning", href: "/alerts" });
+    banners.push({
+      message: `Unusual spike: ${stats?.newAlertsToday} new alerts today (above normal baseline)`,
+      severity: "warning",
+      href: "/alerts",
+    });
   }
   if ((stats?.openIncidents ?? 0) >= 10) {
-    banners.push({ message: `${stats?.openIncidents} open incidents — consider prioritizing resolution`, severity: "info", href: "/incidents?status=open" });
+    banners.push({
+      message: `${stats?.openIncidents} open incidents — consider prioritizing resolution`,
+      severity: "info",
+      href: "/incidents?status=open",
+    });
   }
   if (banners.length === 0) return null;
   const severityStyles = {
@@ -603,7 +750,9 @@ function AnomalyBanners({ stats }: { stats: { totalAlerts: number; openIncidents
     <div className="space-y-2">
       {banners.map((b, i) => (
         <Link key={i} href={b.href}>
-          <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity ${severityStyles[b.severity]}`}>
+          <div
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity ${severityStyles[b.severity]}`}
+          >
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
             <span className="text-xs font-medium flex-1">{b.message}</span>
             <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
@@ -614,7 +763,20 @@ function AnomalyBanners({ stats }: { stats: { totalAlerts: number; openIncidents
   );
 }
 
-function WhatChangedWidget({ stats }: { stats: { totalAlerts: number; openIncidents: number; criticalAlerts: number; resolvedIncidents: number; newAlertsToday: number; escalatedIncidents: number } | undefined }) {
+function WhatChangedWidget({
+  stats,
+}: {
+  stats:
+    | {
+        totalAlerts: number;
+        openIncidents: number;
+        criticalAlerts: number;
+        resolvedIncidents: number;
+        newAlertsToday: number;
+        escalatedIncidents: number;
+      }
+    | undefined;
+}) {
   const metrics = useMemo(() => {
     if (!stats) return [];
     return [
@@ -636,7 +798,9 @@ function WhatChangedWidget({ stats }: { stats: { totalAlerts: number; openIncide
       </CardHeader>
       <CardContent>
         {!stats ? (
-          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">No data available</div>
+          <div className="flex items-center justify-center h-[160px] text-sm text-muted-foreground">
+            No data available
+          </div>
         ) : (
           <div className="space-y-3">
             {metrics.map((m) => {
@@ -650,8 +814,16 @@ function WhatChangedWidget({ stats }: { stats: { totalAlerts: number; openIncide
                     <span className="text-xs">{m.label}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold tabular-nums">{m.value}</span>
-                      <div className={`flex items-center gap-0.5 text-[10px] font-medium ${isUp ? "text-red-400" : isDown ? "text-emerald-400" : "text-muted-foreground"}`}>
-                        {isUp ? <ArrowUp className="h-3 w-3" /> : isDown ? <ArrowDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+                      <div
+                        className={`flex items-center gap-0.5 text-[10px] font-medium ${isUp ? "text-red-400" : isDown ? "text-emerald-400" : "text-muted-foreground"}`}
+                      >
+                        {isUp ? (
+                          <ArrowUp className="h-3 w-3" />
+                        ) : isDown ? (
+                          <ArrowDown className="h-3 w-3" />
+                        ) : (
+                          <Minus className="h-3 w-3" />
+                        )}
                         <span>{Math.abs(pct)}%</span>
                       </div>
                     </div>
@@ -666,7 +838,13 @@ function WhatChangedWidget({ stats }: { stats: { totalAlerts: number; openIncide
   );
 }
 
-function WidgetCustomizer({ widgets, onToggle, onPin, onApplyPreset, onReset }: {
+function WidgetCustomizer({
+  widgets,
+  onToggle,
+  onPin,
+  onApplyPreset,
+  onReset,
+}: {
   widgets: WidgetConfig[];
   onToggle: (id: WidgetId) => void;
   onPin: (id: WidgetId) => void;
@@ -678,7 +856,13 @@ function WidgetCustomizer({ widgets, onToggle, onPin, onApplyPreset, onReset }: 
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Presets:</span>
         {LAYOUT_PRESETS.map((p) => (
-          <Button key={p.key} size="sm" variant="outline" className="text-[10px] h-6 px-2" onClick={() => onApplyPreset(p)}>
+          <Button
+            key={p.key}
+            size="sm"
+            variant="outline"
+            className="text-[10px] h-6 px-2"
+            onClick={() => onApplyPreset(p)}
+          >
             <LayoutDashboard className="h-3 w-3 mr-1" />
             {p.name}
           </Button>
@@ -690,28 +874,30 @@ function WidgetCustomizer({ widgets, onToggle, onPin, onApplyPreset, onReset }: 
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Widgets:</span>
-        {widgets.sort((a, b) => a.order - b.order).map((w) => (
-          <div key={w.id} className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant={w.visible ? "secondary" : "outline"}
-              className={`text-[10px] h-6 px-2 ${!w.visible ? "opacity-50" : ""}`}
-              onClick={() => onToggle(w.id)}
-            >
-              {w.visible ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
-              {w.label}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className={`h-6 w-6 p-0 ${w.pinned ? "text-amber-400" : "text-muted-foreground/40"}`}
-              onClick={() => onPin(w.id)}
-              title={w.pinned ? "Unpin" : "Pin to top"}
-            >
-              <Pin className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
+        {widgets
+          .sort((a, b) => a.order - b.order)
+          .map((w) => (
+            <div key={w.id} className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant={w.visible ? "secondary" : "outline"}
+                className={`text-[10px] h-6 px-2 ${!w.visible ? "opacity-50" : ""}`}
+                onClick={() => onToggle(w.id)}
+              >
+                {w.visible ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
+                {w.label}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className={`h-6 w-6 p-0 ${w.pinned ? "text-amber-400" : "text-muted-foreground/40"}`}
+                onClick={() => onPin(w.id)}
+                title={w.pinned ? "Unpin" : "Pin to top"}
+              >
+                <Pin className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
       </div>
     </div>
   );
@@ -725,7 +911,13 @@ export default function Dashboard() {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig[]>(loadWidgetConfig);
 
-  const { data: stats, isLoading: statsLoading, dataUpdatedAt: statsUpdatedAt, refetch: refetchStats } = useQuery<{
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+    dataUpdatedAt: statsUpdatedAt,
+    refetch: refetchStats,
+  } = useQuery<{
     totalAlerts: number;
     openIncidents: number;
     criticalAlerts: number;
@@ -737,7 +929,13 @@ export default function Dashboard() {
     refetchInterval: timeRange === "live" ? 5000 : 30000,
   });
 
-  const { data: analytics, isLoading: analyticsLoading, dataUpdatedAt: analyticsUpdatedAt, refetch: refetchAnalytics } = useQuery<AnalyticsData>({
+  const {
+    data: analytics,
+    isLoading: analyticsLoading,
+    isError: analyticsError,
+    dataUpdatedAt: analyticsUpdatedAt,
+    refetch: refetchAnalytics,
+  } = useQuery<AnalyticsData>({
     queryKey: ["/api/dashboard/analytics"],
     refetchInterval: timeRange === "live" ? 5000 : 30000,
   });
@@ -757,24 +955,24 @@ export default function Dashboard() {
   }, [refetchStats, refetchAnalytics]);
 
   const toggleWidget = useCallback((id: WidgetId) => {
-    setWidgetConfig(prev => {
-      const updated = prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w);
+    setWidgetConfig((prev) => {
+      const updated = prev.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w));
       saveWidgetConfig(updated);
       return updated;
     });
   }, []);
 
   const pinWidget = useCallback((id: WidgetId) => {
-    setWidgetConfig(prev => {
-      const updated = prev.map(w => w.id === id ? { ...w, pinned: !w.pinned } : w);
+    setWidgetConfig((prev) => {
+      const updated = prev.map((w) => (w.id === id ? { ...w, pinned: !w.pinned } : w));
       saveWidgetConfig(updated);
       return updated;
     });
   }, []);
 
   const applyPreset = useCallback((preset: LayoutPreset) => {
-    setWidgetConfig(prev => {
-      const updated = prev.map(w => ({
+    setWidgetConfig((prev) => {
+      const updated = prev.map((w) => ({
         ...w,
         visible: preset.widgets.includes(w.id),
         order: preset.widgets.indexOf(w.id) >= 0 ? preset.widgets.indexOf(w.id) : w.order + 100,
@@ -789,30 +987,34 @@ export default function Dashboard() {
     saveWidgetConfig(DEFAULT_WIDGETS);
   }, []);
 
-  const isWidgetVisible = useCallback((id: WidgetId) => {
-    return widgetConfig.find(w => w.id === id)?.visible ?? true;
-  }, [widgetConfig]);
+  const isWidgetVisible = useCallback(
+    (id: WidgetId) => {
+      return widgetConfig.find((w) => w.id === id)?.visible ?? true;
+    },
+    [widgetConfig],
+  );
 
   const visibleChartWidgets = useMemo(() => {
     const chartIds: WidgetId[] = ["severity", "sources", "trend"];
-    return chartIds.filter(id => isWidgetVisible(id));
+    return chartIds.filter((id) => isWidgetVisible(id));
   }, [isWidgetVisible]);
 
   const visibleBottomWidgets = useMemo(() => {
     const bottomIds: WidgetId[] = ["mitre", "categories", "connectors", "ingestion", "whatChanged"];
-    return bottomIds.filter(id => isWidgetVisible(id));
+    return bottomIds.filter((id) => isWidgetVisible(id));
   }, [isWidgetVisible]);
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]" role="main" aria-label="Security Operations Dashboard">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
-
         <AnomalyBanners stats={stats} />
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Security Operations Center</h1>
-            <p className="text-sm text-muted-foreground mt-1">Real-time threat monitoring and operational intelligence</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Real-time threat monitoring and operational intelligence
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
@@ -820,7 +1022,10 @@ export default function Dashboard() {
                 size="sm"
                 variant={timeRange === "24h" ? "secondary" : "ghost"}
                 className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "24h" ? "shadow-sm" : "hover:bg-muted/50"}`}
-                onClick={() => { setTimeRange("24h"); handleRefresh(); }}
+                onClick={() => {
+                  setTimeRange("24h");
+                  handleRefresh();
+                }}
               >
                 Last 24h
               </Button>
@@ -828,10 +1033,18 @@ export default function Dashboard() {
                 size="sm"
                 variant={timeRange === "live" ? "secondary" : "ghost"}
                 className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "live" ? "shadow-sm" : "hover:bg-muted/50"}`}
-                onClick={() => { setTimeRange("live"); handleRefresh(); }}
+                onClick={() => {
+                  setTimeRange("live");
+                  handleRefresh();
+                }}
               >
                 <span className={`${timeRange === "live" ? "flex items-center gap-1.5" : ""}`}>
-                  {timeRange === "live" && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" /></span>}
+                  {timeRange === "live" && (
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                    </span>
+                  )}
                   Live
                 </span>
               </Button>
@@ -844,7 +1057,10 @@ export default function Dashboard() {
               aria-label="Refresh dashboard data"
               title="Refresh data"
             >
-              <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+              <RefreshCw
+                className={`h-4 w-4 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
             </Button>
             <Button
               size="icon"
@@ -885,7 +1101,10 @@ export default function Dashboard() {
                         <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer border-b border-border/50">
                           <div className="flex items-center gap-2">
                             <span className="flex h-2 w-2 rounded-full bg-red-500" />
-                            <span className="text-xs font-medium">{stats?.criticalAlerts} critical alert{(stats?.criticalAlerts ?? 0) > 1 ? "s" : ""} need attention</span>
+                            <span className="text-xs font-medium">
+                              {stats?.criticalAlerts} critical alert{(stats?.criticalAlerts ?? 0) > 1 ? "s" : ""} need
+                              attention
+                            </span>
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to view critical alerts</p>
                         </div>
@@ -896,7 +1115,9 @@ export default function Dashboard() {
                         <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer border-b border-border/50">
                           <div className="flex items-center gap-2">
                             <span className="flex h-2 w-2 rounded-full bg-orange-500" />
-                            <span className="text-xs font-medium">{stats?.openIncidents} open incident{(stats?.openIncidents ?? 0) > 1 ? "s" : ""}</span>
+                            <span className="text-xs font-medium">
+                              {stats?.openIncidents} open incident{(stats?.openIncidents ?? 0) > 1 ? "s" : ""}
+                            </span>
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to investigate</p>
                         </div>
@@ -907,13 +1128,15 @@ export default function Dashboard() {
                         <div className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer">
                           <div className="flex items-center gap-2">
                             <span className="flex h-2 w-2 rounded-full bg-amber-500" />
-                            <span className="text-xs font-medium">{stats?.escalatedIncidents} escalated for Tier 2</span>
+                            <span className="text-xs font-medium">
+                              {stats?.escalatedIncidents} escalated for Tier 2
+                            </span>
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-1 ml-4">Click to review</p>
                         </div>
                       </Link>
                     ) : null}
-                    {!(stats?.criticalAlerts) && !(stats?.openIncidents) && !(stats?.escalatedIncidents) && (
+                    {!stats?.criticalAlerts && !stats?.openIncidents && !stats?.escalatedIncidents && (
                       <div className="px-3 py-6 text-center">
                         <CheckCircle2 className="h-5 w-5 mx-auto text-emerald-500 mb-1.5" />
                         <p className="text-xs text-muted-foreground">All clear — no new notifications</p>
@@ -921,7 +1144,9 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div className="px-3 py-2 border-t border-border bg-muted/20 text-center">
-                    <span className="text-[10px] text-muted-foreground">Updated {lastUpdated.toLocaleTimeString()}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Updated {lastUpdated.toLocaleTimeString()}
+                    </span>
                   </div>
                 </div>
               )}
@@ -946,6 +1171,19 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {statsLoading ? (
             Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
+          ) : statsError ? (
+            <Card className="col-span-full gradient-card">
+              <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+                <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                  <AlertTriangle className="h-6 w-6 text-destructive" />
+                </div>
+                <p className="text-sm font-medium">Failed to load dashboard stats</p>
+                <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchStats()}>
+                  Try Again
+                </Button>
+              </div>
+            </Card>
           ) : (
             <>
               <StatCard
@@ -1007,9 +1245,28 @@ export default function Dashboard() {
         </div>
 
         {visibleChartWidgets.length > 0 && (
-          <div className={`grid grid-cols-1 ${visibleChartWidgets.length === 2 ? "lg:grid-cols-2" : visibleChartWidgets.length >= 3 ? "lg:grid-cols-3" : ""} gap-4`}>
+          <div
+            className={`grid grid-cols-1 ${visibleChartWidgets.length === 2 ? "lg:grid-cols-2" : visibleChartWidgets.length >= 3 ? "lg:grid-cols-3" : ""} gap-4`}
+          >
             {analyticsLoading ? (
-              visibleChartWidgets.map((_, i) => <Card key={i} className="gradient-card"><ChartSkeleton /></Card>)
+              visibleChartWidgets.map((_, i) => (
+                <Card key={i} className="gradient-card">
+                  <ChartSkeleton />
+                </Card>
+              ))
+            ) : analyticsError ? (
+              <Card className="gradient-card col-span-full">
+                <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+                  <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                    <AlertTriangle className="h-6 w-6 text-destructive" />
+                  </div>
+                  <p className="text-sm font-medium">Failed to load chart data</p>
+                  <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching analytics.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAnalytics()}>
+                    Try Again
+                  </Button>
+                </div>
+              </Card>
             ) : analytics ? (
               <>
                 {isWidgetVisible("severity") && <SeverityChart data={analytics.severityDistribution} />}
@@ -1018,7 +1275,11 @@ export default function Dashboard() {
               </>
             ) : (
               <Card className="gradient-card col-span-3">
-                <div className="flex flex-col items-center justify-center h-[240px] text-sm text-muted-foreground" role="status" aria-label="No analytics data">
+                <div
+                  className="flex flex-col items-center justify-center h-[240px] text-sm text-muted-foreground"
+                  role="status"
+                  aria-label="No analytics data"
+                >
                   <Activity className="h-8 w-8 mb-3 opacity-50" aria-hidden="true" />
                   <p>No analytics data available</p>
                   <p className="text-xs mt-1">Connect a data source to start seeing analytics</p>
@@ -1029,9 +1290,15 @@ export default function Dashboard() {
         )}
 
         {visibleBottomWidgets.length > 0 && (
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${visibleBottomWidgets.length >= 4 ? "lg:grid-cols-4" : visibleBottomWidgets.length === 3 ? "lg:grid-cols-3" : visibleBottomWidgets.length === 2 ? "lg:grid-cols-2" : ""} gap-4`}>
+          <div
+            className={`grid grid-cols-1 md:grid-cols-2 ${visibleBottomWidgets.length >= 4 ? "lg:grid-cols-4" : visibleBottomWidgets.length === 3 ? "lg:grid-cols-3" : visibleBottomWidgets.length === 2 ? "lg:grid-cols-2" : ""} gap-4`}
+          >
             {analyticsLoading ? (
-              visibleBottomWidgets.map((_, i) => <Card key={i} className="gradient-card"><ChartSkeleton /></Card>)
+              visibleBottomWidgets.map((_, i) => (
+                <Card key={i} className="gradient-card">
+                  <ChartSkeleton />
+                </Card>
+              ))
             ) : analytics ? (
               <>
                 {isWidgetVisible("mitre") && <MitreTacticsWidget data={analytics.topMitreTactics} />}
@@ -1043,7 +1310,6 @@ export default function Dashboard() {
             ) : null}
           </div>
         )}
-
       </div>
 
       <footer className="border-t border-border/40 py-3 px-6 text-center">

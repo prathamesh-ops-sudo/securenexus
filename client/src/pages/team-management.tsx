@@ -1,31 +1,38 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Users, Shield, UserPlus, Clock, Mail, Loader2,
-  MoreHorizontal, UserX, UserCheck, Trash2, ScrollText,
-  Crown, ShieldCheck, Eye, AlertTriangle,
+  Users,
+  Shield,
+  UserPlus,
+  Mail,
+  Loader2,
+  MoreHorizontal,
+  UserX,
+  UserCheck,
+  Trash2,
+  ScrollText,
+  Crown,
+  ShieldCheck,
+  Eye,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
-} from "@/components/ui/dialog";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 
 const ROLE_COLORS: Record<string, string> = {
   owner: "border-red-500/30 text-red-400",
@@ -52,15 +59,20 @@ const ASSIGNABLE_ROLES = ["admin", "analyst", "read_only"];
 function formatDate(date: string | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
 function formatDateTime(date: string | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -75,7 +87,7 @@ function useOrgContext() {
     },
   });
 
-  const { data, isLoading: queryLoading } = useQuery<any>({
+  const { data, isLoading: _queryLoading } = useQuery<any>({
     queryKey: ["org-context"],
     enabled: false,
   });
@@ -103,7 +115,12 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [newRole, setNewRole] = useState("");
 
-  const { data: members, isLoading } = useQuery<any[]>({
+  const {
+    data: members,
+    isLoading,
+    isError: membersError,
+    refetch: refetchMembers,
+  } = useQuery<any[]>({
     queryKey: ["/api/orgs", orgId, "members"],
     enabled: !!orgId,
   });
@@ -185,6 +202,21 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     );
   }
 
+  if (membersError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load team members</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchMembers()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <>
       <Card>
@@ -227,12 +259,18 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                                   : member.email || "Unknown"}
                               </div>
                               {member.user?.email && (
-                                <div className="text-xs text-muted-foreground" data-testid={`text-member-email-${member.id}`}>
+                                <div
+                                  className="text-xs text-muted-foreground"
+                                  data-testid={`text-member-email-${member.id}`}
+                                >
                                   {member.user.email}
                                 </div>
                               )}
                               {!member.user?.email && member.email && (
-                                <div className="text-xs text-muted-foreground" data-testid={`text-member-email-${member.id}`}>
+                                <div
+                                  className="text-xs text-muted-foreground"
+                                  data-testid={`text-member-email-${member.id}`}
+                                >
                                   {member.email}
                                 </div>
                               )}
@@ -333,7 +371,10 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="text-sm text-muted-foreground">
-              Changing role for <span className="font-medium text-foreground">{selectedMember?.user?.email || selectedMember?.email || "member"}</span>
+              Changing role for{" "}
+              <span className="font-medium text-foreground">
+                {selectedMember?.user?.email || selectedMember?.email || "member"}
+              </span>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">New Role</label>
@@ -353,7 +394,9 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" data-testid="button-cancel-role-change">Cancel</Button>
+              <Button variant="outline" data-testid="button-cancel-role-change">
+                Cancel
+              </Button>
             </DialogClose>
             <Button
               onClick={() => selectedMember && changeRole.mutate({ memberId: selectedMember.id, role: newRole })}
@@ -467,7 +510,9 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Mail className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="text-sm" data-testid={`text-invite-email-${inv.id}`}>{inv.email}</span>
+                        <span className="text-sm" data-testid={`text-invite-email-${inv.id}`}>
+                          {inv.email}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -554,7 +599,9 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" data-testid="button-cancel-invite">Cancel</Button>
+              <Button variant="outline" data-testid="button-cancel-invite">
+                Cancel
+              </Button>
             </DialogClose>
             <Button
               onClick={() => createInvitation.mutate()}
@@ -581,9 +628,8 @@ function AuditTrailTab({ orgId }: { orgId: string }) {
     enabled: !!orgId,
   });
 
-  const filteredLogs = auditLogs?.filter(
-    (log: any) => log.resourceType === "membership" || log.resourceType === "invitation"
-  ) || [];
+  const filteredLogs =
+    auditLogs?.filter((log: any) => log.resourceType === "membership" || log.resourceType === "invitation") || [];
 
   if (isLoading) {
     return (
@@ -640,7 +686,11 @@ function AuditTrailTab({ orgId }: { orgId: string }) {
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground" data-testid={`text-audit-details-${log.id}`}>
-                        {log.details ? (typeof log.details === "string" ? log.details : JSON.stringify(log.details)) : "—"}
+                        {log.details
+                          ? typeof log.details === "string"
+                            ? log.details
+                            : JSON.stringify(log.details)
+                          : "—"}
                       </span>
                     </TableCell>
                     <TableCell>

@@ -72,7 +72,12 @@ export default function AuditLogPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
-  const { data: logs, isLoading } = useQuery<AuditLog[]>({
+  const {
+    data: logs,
+    isLoading,
+    isError: logsError,
+    refetch: refetchLogs,
+  } = useQuery<AuditLog[]>({
     queryKey: ["/api/audit-logs"],
   });
 
@@ -94,9 +99,7 @@ export default function AuditLogPage() {
     if (!logs) return [];
     return logs
       .filter((log) => {
-        const matchesCategory =
-          categoryFilter === "all" ||
-          ACTION_TO_CATEGORY[log.action] === categoryFilter;
+        const matchesCategory = categoryFilter === "all" || ACTION_TO_CATEGORY[log.action] === categoryFilter;
         const matchesSearch =
           !search ||
           (log.userName && log.userName.toLowerCase().includes(search.toLowerCase())) ||
@@ -119,7 +122,9 @@ export default function AuditLogPage() {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Audit Log</span></h1>
+        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+          <span className="gradient-text-red">Audit Log</span>
+        </h1>
         <p className="text-sm text-muted-foreground mt-1">All platform activities and changes</p>
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
@@ -130,9 +135,7 @@ export default function AuditLogPage() {
             key={category}
             onClick={() => setCategoryFilter(category)}
             className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-              categoryFilter === category
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover-elevate"
+              categoryFilter === category ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
             }`}
             data-testid={`filter-${category}`}
           >
@@ -184,15 +187,32 @@ export default function AuditLogPage() {
                 </div>
               ))}
             </div>
+          ) : logsError ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+              <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                <AlertTriangle className="h-6 w-6 text-destructive" />
+              </div>
+              <p className="text-sm font-medium">Failed to load audit logs</p>
+              <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchLogs()}>
+                Try Again
+              </Button>
+            </div>
           ) : filtered && filtered.length > 0 ? (
             <div className="space-y-0">
               {filtered.map((log) => {
                 const Icon = ACTION_ICONS[log.action] || Activity;
                 const label = ACTION_LABELS[log.action] || log.action;
-                const details = log.details ? (typeof log.details === "string" ? JSON.parse(log.details) : log.details) as Record<string, any> : null;
+                const details = log.details
+                  ? ((typeof log.details === "string" ? JSON.parse(log.details) : log.details) as Record<string, any>)
+                  : null;
 
                 return (
-                  <div key={log.id} className="flex items-start gap-3 p-4 border-b last:border-0" data-testid={`log-${log.id}`}>
+                  <div
+                    key={log.id}
+                    className="flex items-start gap-3 p-4 border-b last:border-0"
+                    data-testid={`log-${log.id}`}
+                  >
                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted flex-shrink-0 mt-0.5">
                       <Icon className="h-3 w-3 text-muted-foreground" />
                     </div>
@@ -200,7 +220,9 @@ export default function AuditLogPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{label}</span>
                         {log.resourceType && (
-                          <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">{log.resourceType}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
+                            {log.resourceType}
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
@@ -210,16 +232,18 @@ export default function AuditLogPage() {
                             {log.userName}
                           </span>
                         )}
-                        {log.createdAt && (
-                          <span>{new Date(log.createdAt).toLocaleString()}</span>
-                        )}
+                        {log.createdAt && <span>{new Date(log.createdAt).toLocaleString()}</span>}
                       </div>
                       {details && (
                         <div className="mt-1.5 text-xs text-muted-foreground/80">
                           {details.reason && <span>{details.reason}</span>}
                           {details.action && <span>{details.action}</span>}
                           {details.newStatus && <span>Status changed to: {details.newStatus}</span>}
-                          {details.alertsCorrelated && <span>{details.alertsCorrelated} alerts correlated via {details.method}</span>}
+                          {details.alertsCorrelated && (
+                            <span>
+                              {details.alertsCorrelated} alerts correlated via {details.method}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>

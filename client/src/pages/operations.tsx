@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,22 +8,35 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Activity, Server, Target, BookOpen, Archive, Play, Trash2, Plus,
-  RefreshCw, CheckCircle2, XCircle, Clock, AlertTriangle, Loader2,
-  Settings, Gauge, Shield, Database,
+  Server,
+  Target,
+  BookOpen,
+  Archive,
+  Play,
+  Trash2,
+  Plus,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  Loader2,
+  Gauge,
+  Database,
 } from "lucide-react";
 
 function formatTimestamp(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleString("en-US", {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -93,15 +106,30 @@ function WorkerQueueTab() {
   const [payload, setPayload] = useState("");
   const [priority, setPriority] = useState("0");
 
-  const { data: workerStatus, isLoading: workerLoading } = useQuery<any>({
+  const {
+    data: workerStatus,
+    isLoading: workerLoading,
+    isError: workerError,
+    refetch: refetchWorker,
+  } = useQuery<any>({
     queryKey: ["/api/ops/worker/status"],
   });
 
-  const { data: jobStats, isLoading: statsLoading } = useQuery<any>({
+  const {
+    data: jobStats,
+    isLoading: statsLoading,
+    isError: statsError,
+    refetch: _refetchStats,
+  } = useQuery<any>({
     queryKey: ["/api/ops/jobs/stats"],
   });
 
-  const { data: jobs, isLoading: jobsLoading } = useQuery<any[]>({
+  const {
+    data: jobs,
+    isLoading: jobsLoading,
+    isError: jobsError,
+    refetch: _refetchJobs,
+  } = useQuery<any[]>({
     queryKey: ["/api/ops/jobs"],
   });
 
@@ -160,12 +188,35 @@ function WorkerQueueTab() {
       <div className="space-y-3" data-testid="worker-queue-loading">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}><CardContent className="p-3"><Skeleton className="h-12 w-full" /></CardContent></Card>
+            <Card key={i}>
+              <CardContent className="p-3">
+                <Skeleton className="h-12 w-full" />
+              </CardContent>
+            </Card>
           ))}
         </div>
         {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}><CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent></Card>
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
         ))}
+      </div>
+    );
+  }
+
+  if (workerError || statsError || jobsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load worker queue data</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchWorker()}>
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -190,7 +241,9 @@ function WorkerQueueTab() {
                 <div className="text-sm font-semibold">Worker Status</div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1">
-                    <span className={`inline-block w-2 h-2 rounded-full ${workerStatus?.running ? "bg-green-500" : "bg-red-500"}`} />
+                    <span
+                      className={`inline-block w-2 h-2 rounded-full ${workerStatus?.running ? "bg-green-500" : "bg-red-500"}`}
+                    />
                     {workerStatus?.running ? "Running" : "Stopped"}
                   </span>
                   <span>Active Jobs: {workerStatus?.activeJobs ?? 0}</span>
@@ -218,7 +271,9 @@ function WorkerQueueTab() {
                       </SelectTrigger>
                       <SelectContent>
                         {JOB_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -271,7 +326,10 @@ function WorkerQueueTab() {
                   <stat.icon className={`h-4 w-4 ${stat.color}`} />
                   <span className="text-xs text-muted-foreground">{stat.label}</span>
                 </div>
-                <span className="text-lg font-bold tabular-nums" data-testid={`value-${stat.label.toLowerCase()}-count`}>
+                <span
+                  className="text-lg font-bold tabular-nums"
+                  data-testid={`value-${stat.label.toLowerCase()}-count`}
+                >
                   {stat.value}
                 </span>
               </div>
@@ -297,11 +355,16 @@ function WorkerQueueTab() {
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold">{job.type}</span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${jobStatusStyle(job.status)}`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${jobStatusStyle(job.status)}`}
+                      >
                         {job.status}
                       </span>
                       {job.priority != null && job.priority !== 0 && (
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                        >
                           Priority: {job.priority}
                         </Badge>
                       )}
@@ -311,17 +374,11 @@ function WorkerQueueTab() {
                         <Clock className="h-3 w-3" />
                         Created: {formatTimestamp(job.createdAt)}
                       </span>
-                      {job.startedAt && (
-                        <span>Started: {formatTimestamp(job.startedAt)}</span>
-                      )}
-                      {job.completedAt && (
-                        <span>Completed: {formatTimestamp(job.completedAt)}</span>
-                      )}
+                      {job.startedAt && <span>Started: {formatTimestamp(job.startedAt)}</span>}
+                      {job.completedAt && <span>Completed: {formatTimestamp(job.completedAt)}</span>}
                     </div>
                     {job.errorMessage && (
-                      <div className="text-xs text-red-500 bg-red-500/5 rounded p-2">
-                        {job.errorMessage}
-                      </div>
+                      <div className="text-xs text-red-500 bg-red-500/5 rounded p-2">{job.errorMessage}</div>
                     )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -357,7 +414,12 @@ function SLODashboardTab() {
   const [windowMinutes, setWindowMinutes] = useState("60");
   const [description, setDescription] = useState("");
 
-  const { data: sloRaw, isLoading } = useQuery<any>({
+  const {
+    data: sloRaw,
+    isLoading,
+    isError: _sloError,
+    refetch: _refetchSlo,
+  } = useQuery<any>({
     queryKey: ["/api/ops/slo"],
   });
 
@@ -438,7 +500,11 @@ function SLODashboardTab() {
     return (
       <div className="space-y-3" data-testid="slo-loading">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
+          </Card>
         ))}
       </div>
     );
@@ -461,7 +527,11 @@ function SLODashboardTab() {
             disabled={seedMutation.isPending}
             data-testid="button-seed-slos"
           >
-            {seedMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Database className="h-4 w-4 mr-2" />}
+            {seedMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4 mr-2" />
+            )}
             Seed Default SLOs
           </Button>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -478,16 +548,33 @@ function SLODashboardTab() {
               <div className="space-y-4 pt-2">
                 <div className="space-y-2">
                   <Label>Service</Label>
-                  <Input value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g. api" data-testid="input-slo-service" />
+                  <Input
+                    value={service}
+                    onChange={(e) => setService(e.target.value)}
+                    placeholder="e.g. api"
+                    data-testid="input-slo-service"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Metric</Label>
-                  <Input value={metric} onChange={(e) => setMetric(e.target.value)} placeholder="e.g. availability" data-testid="input-slo-metric" />
+                  <Input
+                    value={metric}
+                    onChange={(e) => setMetric(e.target.value)}
+                    placeholder="e.g. availability"
+                    data-testid="input-slo-metric"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Target Value</Label>
-                    <Input type="number" step="0.01" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} placeholder="99.9" data-testid="input-slo-target" />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={targetValue}
+                      onChange={(e) => setTargetValue(e.target.value)}
+                      placeholder="99.9"
+                      data-testid="input-slo-target"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Operator</Label>
@@ -496,21 +583,32 @@ function SLODashboardTab() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value=">=">{">="}  (at least)</SelectItem>
+                        <SelectItem value=">=">{">="} (at least)</SelectItem>
                         <SelectItem value="<=">{"<="} (at most)</SelectItem>
-                        <SelectItem value=">">{">"}  (greater than)</SelectItem>
-                        <SelectItem value="<">{"<"}  (less than)</SelectItem>
+                        <SelectItem value=">">{">"} (greater than)</SelectItem>
+                        <SelectItem value="<">{"<"} (less than)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Window (minutes)</Label>
-                  <Input type="number" value={windowMinutes} onChange={(e) => setWindowMinutes(e.target.value)} placeholder="60" data-testid="input-slo-window" />
+                  <Input
+                    type="number"
+                    value={windowMinutes}
+                    onChange={(e) => setWindowMinutes(e.target.value)}
+                    placeholder="60"
+                    data-testid="input-slo-window"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Description</Label>
-                  <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe this SLO target..." data-testid="input-slo-description" />
+                  <Textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Describe this SLO target..."
+                    data-testid="input-slo-description"
+                  />
                 </div>
                 <Button
                   className="w-full"
@@ -518,7 +616,11 @@ function SLODashboardTab() {
                   disabled={createMutation.isPending || !service.trim() || !metric.trim() || !targetValue.trim()}
                   data-testid="button-submit-slo"
                 >
-                  {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                  {createMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
                   Create SLO Target
                 </Button>
               </div>
@@ -546,20 +648,31 @@ function SLODashboardTab() {
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold">{slo.service}</span>
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                        >
                           {slo.metric}
                         </Badge>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${sloStatusStyle(breached)}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${sloStatusStyle(breached)}`}
+                        >
                           {breached === null ? "No Data" : breached ? "Breached" : "Met"}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                         <span>
-                          Target: <span className="font-medium text-foreground">{slo.operator} {slo.targetValue}</span>
+                          Target:{" "}
+                          <span className="font-medium text-foreground">
+                            {slo.operator} {slo.targetValue}
+                          </span>
                         </span>
                         {slo.actual != null && (
                           <span>
-                            Actual: <span className={`font-medium ${breached ? "text-red-500" : "text-green-500"}`}>{typeof slo.actual === "number" ? slo.actual.toFixed(2) : slo.actual}</span>
+                            Actual:{" "}
+                            <span className={`font-medium ${breached ? "text-red-500" : "text-green-500"}`}>
+                              {typeof slo.actual === "number" ? slo.actual.toFixed(2) : slo.actual}
+                            </span>
                           </span>
                         )}
                         <span className="flex items-center gap-1">
@@ -567,9 +680,7 @@ function SLODashboardTab() {
                           {slo.windowMinutes}m window
                         </span>
                       </div>
-                      {slo.description && (
-                        <p className="text-xs text-muted-foreground">{slo.description}</p>
-                      )}
+                      {slo.description && <p className="text-xs text-muted-foreground">{slo.description}</p>}
                     </div>
                     <Button
                       size="icon"
@@ -608,7 +719,12 @@ function DRRunbooksTab() {
   const [testResult, setTestResult] = useState("pass");
   const [testNotes, setTestNotes] = useState("");
 
-  const { data: runbooks, isLoading } = useQuery<any[]>({
+  const {
+    data: runbooks,
+    isLoading,
+    isError: _runbooksError,
+    refetch: _refetchRunbooks,
+  } = useQuery<any[]>({
     queryKey: ["/api/ops/dr-runbooks"],
   });
 
@@ -682,7 +798,10 @@ function DRRunbooksTab() {
       try {
         parsedSteps = JSON.parse(steps);
       } catch {
-        parsedSteps = steps.split("\n").filter(Boolean).map((s, i) => ({ step: i + 1, action: s.trim() }));
+        parsedSteps = steps
+          .split("\n")
+          .filter(Boolean)
+          .map((s, i) => ({ step: i + 1, action: s.trim() }));
       }
     }
     createMutation.mutate({
@@ -709,7 +828,11 @@ function DRRunbooksTab() {
     return (
       <div className="space-y-3" data-testid="runbooks-loading">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}><CardContent className="p-4"><Skeleton className="h-24 w-full" /></CardContent></Card>
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-24 w-full" />
+            </CardContent>
+          </Card>
         ))}
       </div>
     );
@@ -732,7 +855,11 @@ function DRRunbooksTab() {
             disabled={seedMutation.isPending}
             data-testid="button-seed-runbooks"
           >
-            {seedMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Database className="h-4 w-4 mr-2" />}
+            {seedMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4 mr-2" />
+            )}
             Seed Default Runbooks
           </Button>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -749,11 +876,21 @@ function DRRunbooksTab() {
               <div className="space-y-4 pt-2 max-h-[60vh] overflow-y-auto">
                 <div className="space-y-2">
                   <Label>Title</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Runbook title" data-testid="input-runbook-title" />
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Runbook title"
+                    data-testid="input-runbook-title"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Description</Label>
-                  <Textarea value={rbDescription} onChange={(e) => setRbDescription(e.target.value)} placeholder="Describe the runbook..." data-testid="input-runbook-description" />
+                  <Textarea
+                    value={rbDescription}
+                    onChange={(e) => setRbDescription(e.target.value)}
+                    placeholder="Describe the runbook..."
+                    data-testid="input-runbook-description"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Category</Label>
@@ -772,21 +909,43 @@ function DRRunbooksTab() {
                 </div>
                 <div className="space-y-2">
                   <Label>Steps (JSON array or one per line)</Label>
-                  <Textarea value={steps} onChange={(e) => setSteps(e.target.value)} placeholder='[{"step": 1, "action": "..."}]' data-testid="input-runbook-steps" />
+                  <Textarea
+                    value={steps}
+                    onChange={(e) => setSteps(e.target.value)}
+                    placeholder='[{"step": 1, "action": "..."}]'
+                    data-testid="input-runbook-steps"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>RTO (minutes)</Label>
-                    <Input type="number" value={rtoMinutes} onChange={(e) => setRtoMinutes(e.target.value)} placeholder="30" data-testid="input-runbook-rto" />
+                    <Input
+                      type="number"
+                      value={rtoMinutes}
+                      onChange={(e) => setRtoMinutes(e.target.value)}
+                      placeholder="30"
+                      data-testid="input-runbook-rto"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>RPO (minutes)</Label>
-                    <Input type="number" value={rpoMinutes} onChange={(e) => setRpoMinutes(e.target.value)} placeholder="15" data-testid="input-runbook-rpo" />
+                    <Input
+                      type="number"
+                      value={rpoMinutes}
+                      onChange={(e) => setRpoMinutes(e.target.value)}
+                      placeholder="15"
+                      data-testid="input-runbook-rpo"
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Owner</Label>
-                  <Input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Team or person" data-testid="input-runbook-owner" />
+                  <Input
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value)}
+                    placeholder="Team or person"
+                    data-testid="input-runbook-owner"
+                  />
                 </div>
                 <Button
                   className="w-full"
@@ -794,7 +953,11 @@ function DRRunbooksTab() {
                   disabled={createMutation.isPending || !title.trim()}
                   data-testid="button-submit-runbook"
                 >
-                  {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                  {createMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
                   Create Runbook
                 </Button>
               </div>
@@ -819,7 +982,9 @@ function DRRunbooksTab() {
                 if (Array.isArray(rb.steps)) return rb.steps;
                 if (typeof rb.steps === "string") return JSON.parse(rb.steps);
                 return [];
-              } catch { return []; }
+              } catch {
+                return [];
+              }
             })();
             const isExpanded = expandedSteps.has(rb.id);
 
@@ -830,22 +995,36 @@ function DRRunbooksTab() {
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold">{rb.title}</span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${drCategoryStyle(rb.category)}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${drCategoryStyle(rb.category)}`}
+                        >
                           {rb.category?.replace(/_/g, " ")}
                         </span>
                         {rb.lastTestResult && (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${testResultStyle(rb.lastTestResult)}`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${testResultStyle(rb.lastTestResult)}`}
+                          >
                             {rb.lastTestResult}
                           </span>
                         )}
                       </div>
-                      {rb.description && (
-                        <p className="text-xs text-muted-foreground">{rb.description}</p>
-                      )}
+                      {rb.description && <p className="text-xs text-muted-foreground">{rb.description}</p>}
                       <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                        {rb.rtoMinutes != null && <span>RTO: <span className="font-medium text-foreground">{rb.rtoMinutes}m</span></span>}
-                        {rb.rpoMinutes != null && <span>RPO: <span className="font-medium text-foreground">{rb.rpoMinutes}m</span></span>}
-                        {rb.owner && <span>Owner: <span className="font-medium text-foreground">{rb.owner}</span></span>}
+                        {rb.rtoMinutes != null && (
+                          <span>
+                            RTO: <span className="font-medium text-foreground">{rb.rtoMinutes}m</span>
+                          </span>
+                        )}
+                        {rb.rpoMinutes != null && (
+                          <span>
+                            RPO: <span className="font-medium text-foreground">{rb.rpoMinutes}m</span>
+                          </span>
+                        )}
+                        {rb.owner && (
+                          <span>
+                            Owner: <span className="font-medium text-foreground">{rb.owner}</span>
+                          </span>
+                        )}
                         {rb.lastTestedAt && (
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
@@ -867,7 +1046,8 @@ function DRRunbooksTab() {
                             <div className="mt-2 space-y-1 pl-2 border-l-2 border-border">
                               {stepsArr.map((step: any, si: number) => (
                                 <div key={si} className="text-xs text-muted-foreground">
-                                  <span className="font-medium text-foreground">{step.step || si + 1}.</span> {step.action || step.description || JSON.stringify(step)}
+                                  <span className="font-medium text-foreground">{step.step || si + 1}.</span>{" "}
+                                  {step.action || step.description || JSON.stringify(step)}
                                 </div>
                               ))}
                             </div>
@@ -876,13 +1056,18 @@ function DRRunbooksTab() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <Dialog open={testOpen === rb.id} onOpenChange={(open) => { setTestOpen(open ? rb.id : null); if (!open) { setTestResult("pass"); setTestNotes(""); } }}>
+                      <Dialog
+                        open={testOpen === rb.id}
+                        onOpenChange={(open) => {
+                          setTestOpen(open ? rb.id : null);
+                          if (!open) {
+                            setTestResult("pass");
+                            setTestNotes("");
+                          }
+                        }}
+                      >
                         <DialogTrigger asChild>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            data-testid={`button-test-runbook-${rb.id}`}
-                          >
+                          <Button size="icon" variant="ghost" data-testid={`button-test-runbook-${rb.id}`}>
                             <Play className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
@@ -891,7 +1076,9 @@ function DRRunbooksTab() {
                             <DialogTitle>Record Test Drill</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-4 pt-2">
-                            <p className="text-sm text-muted-foreground">Recording test for: <span className="font-medium text-foreground">{rb.title}</span></p>
+                            <p className="text-sm text-muted-foreground">
+                              Recording test for: <span className="font-medium text-foreground">{rb.title}</span>
+                            </p>
                             <div className="space-y-2">
                               <Label>Result</Label>
                               <Select value={testResult} onValueChange={setTestResult}>
@@ -907,7 +1094,12 @@ function DRRunbooksTab() {
                             </div>
                             <div className="space-y-2">
                               <Label>Notes</Label>
-                              <Textarea value={testNotes} onChange={(e) => setTestNotes(e.target.value)} placeholder="Test observations..." data-testid="input-test-notes" />
+                              <Textarea
+                                value={testNotes}
+                                onChange={(e) => setTestNotes(e.target.value)}
+                                placeholder="Test observations..."
+                                data-testid="input-test-notes"
+                              />
                             </div>
                             <Button
                               className="w-full"
@@ -915,7 +1107,11 @@ function DRRunbooksTab() {
                               disabled={testMutation.isPending}
                               data-testid="button-submit-test"
                             >
-                              {testMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                              {testMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4 mr-2" />
+                              )}
                               Record Result
                             </Button>
                           </div>
@@ -947,7 +1143,12 @@ function AlertArchiveTab() {
   const [offset, setOffset] = useState(0);
   const limit = 20;
 
-  const { data: archiveData, isLoading } = useQuery<any>({
+  const {
+    data: archiveData,
+    isLoading,
+    isError: _archiveError,
+    refetch: _refetchArchive,
+  } = useQuery<any>({
     queryKey: ["/api/alerts/archive", offset, limit],
     queryFn: async () => {
       const res = await fetch(`/api/alerts/archive?offset=${offset}&limit=${limit}`, { credentials: "include" });
@@ -976,7 +1177,11 @@ function AlertArchiveTab() {
     return (
       <div className="space-y-3" data-testid="archive-loading">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}><CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent></Card>
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
         ))}
       </div>
     );
@@ -988,7 +1193,11 @@ function AlertArchiveTab() {
         <div className="flex items-center gap-2 flex-wrap">
           <Archive className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-lg font-semibold">Alert Archive</h2>
-          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]" data-testid="text-archive-count">
+          <Badge
+            variant="outline"
+            className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+            data-testid="text-archive-count"
+          >
             {totalCount}
           </Badge>
         </div>
@@ -1011,15 +1220,23 @@ function AlertArchiveTab() {
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold">{alert.title || alert.name || `Alert #${alert.id}`}</span>
+                        <span className="text-sm font-semibold">
+                          {alert.title || alert.name || `Alert #${alert.id}`}
+                        </span>
                         {alert.severity && (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(alert.severity)}`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(alert.severity)}`}
+                          >
                             {alert.severity}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                        {alert.source && <span>Source: <span className="font-medium text-foreground">{alert.source}</span></span>}
+                        {alert.source && (
+                          <span>
+                            Source: <span className="font-medium text-foreground">{alert.source}</span>
+                          </span>
+                        )}
                         {alert.archivedAt && (
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
@@ -1027,7 +1244,9 @@ function AlertArchiveTab() {
                           </span>
                         )}
                         {alert.archiveReason && (
-                          <span>Reason: <span className="font-medium text-foreground">{alert.archiveReason}</span></span>
+                          <span>
+                            Reason: <span className="font-medium text-foreground">{alert.archiveReason}</span>
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1038,7 +1257,11 @@ function AlertArchiveTab() {
                       disabled={restoreMutation.isPending}
                       data-testid={`button-restore-alert-${alert.id}`}
                     >
-                      {restoreMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                      {restoreMutation.isPending ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                      )}
                       Restore
                     </Button>
                   </div>
@@ -1087,20 +1310,34 @@ export default function OperationsPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Operations Center</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-page-title">
+            Operations Center
+          </h1>
           <p className="text-sm text-muted-foreground">Worker queue, SLOs, disaster recovery, and data management</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`inline-block w-2.5 h-2.5 rounded-full ${workerStatus?.running ? "bg-green-500" : "bg-red-500"}`} />
-          <span className="text-xs text-muted-foreground">{workerStatus?.running ? "System Healthy" : "System Degraded"}</span>
+          <span
+            className={`inline-block w-2.5 h-2.5 rounded-full ${workerStatus?.running ? "bg-green-500" : "bg-red-500"}`}
+          />
+          <span className="text-xs text-muted-foreground">
+            {workerStatus?.running ? "System Healthy" : "System Degraded"}
+          </span>
         </div>
       </div>
       <Tabs defaultValue="worker-queue">
         <TabsList>
-          <TabsTrigger value="worker-queue" data-testid="tab-worker-queue">Worker Queue</TabsTrigger>
-          <TabsTrigger value="slo-dashboard" data-testid="tab-slo-dashboard">SLO Dashboard</TabsTrigger>
-          <TabsTrigger value="dr-runbooks" data-testid="tab-dr-runbooks">DR Runbooks</TabsTrigger>
-          <TabsTrigger value="alert-archive" data-testid="tab-alert-archive">Alert Archive</TabsTrigger>
+          <TabsTrigger value="worker-queue" data-testid="tab-worker-queue">
+            Worker Queue
+          </TabsTrigger>
+          <TabsTrigger value="slo-dashboard" data-testid="tab-slo-dashboard">
+            SLO Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="dr-runbooks" data-testid="tab-dr-runbooks">
+            DR Runbooks
+          </TabsTrigger>
+          <TabsTrigger value="alert-archive" data-testid="tab-alert-archive">
+            Alert Archive
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="worker-queue">
           <WorkerQueueTab />

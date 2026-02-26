@@ -7,8 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SeverityBadge, formatTimestamp } from "@/components/security-badges";
 import {
-  Crosshair, ArrowRight, Target, Shield, Activity, Clock, Zap,
-  Layers, Radio, Download, Bug, HardDrive, Wifi, Flag, AlertTriangle,
+  Crosshair,
+  ArrowRight,
+  Target,
+  Shield,
+  Activity,
+  Clock,
+  Zap,
+  Layers,
+  Download,
+  Bug,
+  HardDrive,
+  Wifi,
+  Flag,
+  AlertTriangle,
 } from "lucide-react";
 import type { Alert, Incident } from "@shared/schema";
 
@@ -17,9 +29,17 @@ const KILL_CHAIN_STAGES = [
   { name: "Weaponization", icon: Zap, tactics: ["credential_access", "discovery"] as string[] },
   { name: "Delivery", icon: Download, tactics: ["initial_access"] as string[] },
   { name: "Exploitation", icon: Bug, tactics: ["execution", "exploitation"] as string[] },
-  { name: "Installation", icon: HardDrive, tactics: ["persistence", "privilege_escalation", "defense_evasion"] as string[] },
+  {
+    name: "Installation",
+    icon: HardDrive,
+    tactics: ["persistence", "privilege_escalation", "defense_evasion"] as string[],
+  },
   { name: "Command & Control", icon: Wifi, tactics: ["command_and_control"] as string[] },
-  { name: "Actions on Objectives", icon: Flag, tactics: ["collection", "exfiltration", "impact", "lateral_movement"] as string[] },
+  {
+    name: "Actions on Objectives",
+    icon: Flag,
+    tactics: ["collection", "exfiltration", "impact", "lateral_movement"] as string[],
+  },
 ];
 
 const SEVERITY_ORDER: Record<string, number> = {
@@ -31,11 +51,11 @@ const SEVERITY_ORDER: Record<string, number> = {
 };
 
 const STAGE_COLORS: Record<string, string> = {
-  "Reconnaissance": "bg-blue-500",
-  "Weaponization": "bg-purple-500",
-  "Delivery": "bg-orange-500",
-  "Exploitation": "bg-red-500",
-  "Installation": "bg-rose-500",
+  Reconnaissance: "bg-blue-500",
+  Weaponization: "bg-purple-500",
+  Delivery: "bg-orange-500",
+  Exploitation: "bg-red-500",
+  Installation: "bg-rose-500",
   "Command & Control": "bg-pink-500",
   "Actions on Objectives": "bg-red-600",
 };
@@ -70,7 +90,12 @@ function getIntensityClass(count: number, maxCount: number): string {
   return "bg-red-500/8 border-red-500/20";
 }
 
-function StatCard({ title, value, icon: Icon, loading }: {
+function StatCard({
+  title,
+  value,
+  icon: Icon,
+  loading,
+}: {
   title: string;
   value: string | number;
   icon: any;
@@ -89,7 +114,9 @@ function StatCard({ title, value, icon: Icon, loading }: {
         {loading ? (
           <Skeleton className="h-7 w-16" />
         ) : (
-          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${testId}`}>{value}</div>
+          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${testId}`}>
+            {value}
+          </div>
         )}
       </CardContent>
     </Card>
@@ -99,17 +126,32 @@ function StatCard({ title, value, icon: Icon, loading }: {
 export default function KillChainPage() {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
-  const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
+  const {
+    data: alerts,
+    isLoading: alertsLoading,
+    isError: alertsError,
+    refetch: refetchAlerts,
+  } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
   });
 
-  const { data: incidents, isLoading: incidentsLoading } = useQuery<Incident[]>({
+  const {
+    data: incidents,
+    isLoading: incidentsLoading,
+    isError: incidentsError,
+    refetch: refetchIncidents,
+  } = useQuery<Incident[]>({
     queryKey: ["/api/incidents"],
   });
 
   const isLoading = alertsLoading || incidentsLoading;
 
-  const { mappedItems, stageData, maxCount, allItems } = useMemo(() => {
+  const {
+    mappedItems,
+    stageData,
+    maxCount,
+    allItems: _allItems,
+  } = useMemo(() => {
     const items: MappedItem[] = [];
     const stages = new Map<string, MappedItem[]>();
 
@@ -216,7 +258,8 @@ export default function KillChainPage() {
       if (lateStages.includes(name)) phaseCounts.late += list.length;
     }
     let dominantPhase = "N/A";
-    if (phaseCounts.early >= phaseCounts.mid && phaseCounts.early >= phaseCounts.late && phaseCounts.early > 0) dominantPhase = "Early (Recon)";
+    if (phaseCounts.early >= phaseCounts.mid && phaseCounts.early >= phaseCounts.late && phaseCounts.early > 0)
+      dominantPhase = "Early (Recon)";
     else if (phaseCounts.mid >= phaseCounts.late && phaseCounts.mid > 0) dominantPhase = "Mid (Exploit)";
     else if (phaseCounts.late > 0) dominantPhase = "Late (Actions)";
 
@@ -263,11 +306,38 @@ export default function KillChainPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
-              <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
-              <CardContent><Skeleton className="h-7 w-16" /></CardContent>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-7 w-16" />
+              </CardContent>
             </Card>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (alertsError || incidentsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load kill chain data</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchAlerts();
+            refetchIncidents();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -298,7 +368,9 @@ export default function KillChainPage() {
             <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="empty-state">
               <AlertTriangle className="h-10 w-10 text-muted-foreground mb-3" />
               <p className="text-sm font-medium text-muted-foreground">No kill chain data available</p>
-              <p className="text-xs text-muted-foreground mt-1">Alerts with MITRE tactic mappings will populate the kill chain</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Alerts with MITRE tactic mappings will populate the kill chain
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto -mx-4 px-4 pb-2" data-testid="timeline-scroll-container">
@@ -325,30 +397,35 @@ export default function KillChainPage() {
                       >
                         <div className="flex items-center gap-2 mb-2">
                           <div className={`p-1 rounded-md ${isActive ? "bg-red-500/15" : "bg-muted/50"}`}>
-                            <StageIcon className={`h-3.5 w-3.5 ${isActive ? "text-red-500" : "text-muted-foreground"}`} />
+                            <StageIcon
+                              className={`h-3.5 w-3.5 ${isActive ? "text-red-500" : "text-muted-foreground"}`}
+                            />
                           </div>
                           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                             {idx + 1}
                           </span>
                         </div>
                         <div className="text-xs font-medium mb-1 leading-tight">{stage.name}</div>
-                        <div className="text-lg font-bold tabular-nums" data-testid={`count-${stage.name.toLowerCase().replace(/\s+/g, "-")}`}>
+                        <div
+                          className="text-lg font-bold tabular-nums"
+                          data-testid={`count-${stage.name.toLowerCase().replace(/\s+/g, "-")}`}
+                        >
                           {count}
                         </div>
-                        <div className="text-[10px] text-muted-foreground mb-1.5">
-                          {count === 1 ? "item" : "items"}
-                        </div>
+                        <div className="text-[10px] text-muted-foreground mb-1.5">{count === 1 ? "item" : "items"}</div>
                         {isActive && (
                           <div className="flex flex-wrap gap-0.5 mt-1">
-                            {Object.entries(severityCounts).slice(0, 3).map(([sev, c]) => (
-                              <span
-                                key={sev}
-                                className="text-[9px] px-1 py-0 rounded bg-muted/50 text-muted-foreground"
-                                data-testid={`severity-count-${stage.name.toLowerCase().replace(/\s+/g, "-")}-${sev}`}
-                              >
-                                {sev.slice(0, 4)} {c}
-                              </span>
-                            ))}
+                            {Object.entries(severityCounts)
+                              .slice(0, 3)
+                              .map(([sev, c]) => (
+                                <span
+                                  key={sev}
+                                  className="text-[9px] px-1 py-0 rounded bg-muted/50 text-muted-foreground"
+                                  data-testid={`severity-count-${stage.name.toLowerCase().replace(/\s+/g, "-")}-${sev}`}
+                                >
+                                  {sev.slice(0, 4)} {c}
+                                </span>
+                              ))}
                           </div>
                         )}
                       </button>
@@ -393,9 +470,7 @@ export default function KillChainPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium truncate">{item.title}</div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {item.source && (
-                          <span className="text-[10px] text-muted-foreground">{item.source}</span>
-                        )}
+                        {item.source && <span className="text-[10px] text-muted-foreground">{item.source}</span>}
                         <span className="text-[10px] text-muted-foreground">{item.mitreTactic.replace(/_/g, " ")}</span>
                       </div>
                     </div>
@@ -435,8 +510,14 @@ export default function KillChainPage() {
               {chronologicalItems.slice(0, 50).map((item, idx) => {
                 const stageColor = STAGE_COLORS[item.stage] || "bg-muted";
                 return (
-                  <div key={`${item.type}-${item.id}-${idx}`} className="relative pb-4" data-testid={`timeline-item-${idx}`}>
-                    <div className={`absolute left-[-17px] top-1 w-2.5 h-2.5 rounded-full border-2 border-background ${stageColor}`} />
+                  <div
+                    key={`${item.type}-${item.id}-${idx}`}
+                    className="relative pb-4"
+                    data-testid={`timeline-item-${idx}`}
+                  >
+                    <div
+                      className={`absolute left-[-17px] top-1 w-2.5 h-2.5 rounded-full border-2 border-background ${stageColor}`}
+                    />
                     <Link
                       href={item.type === "alert" ? `/alerts/${item.id}` : `/incidents/${item.id}`}
                       className="block p-3 rounded-md hover-elevate cursor-pointer"
@@ -445,7 +526,11 @@ export default function KillChainPage() {
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <Badge variant="secondary" className="text-[10px]" data-testid={`timeline-stage-badge-${idx}`}>
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px]"
+                              data-testid={`timeline-stage-badge-${idx}`}
+                            >
                               {item.stage}
                             </Badge>
                             <SeverityBadge severity={item.severity} />

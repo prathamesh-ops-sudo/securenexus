@@ -2,9 +2,18 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
-  Network, Search, User, Server, Globe, Hash, Mail, Link2, Terminal, Shield,
-  AlertTriangle, ArrowRight, Filter, Eye, ChevronDown, ChevronRight,
-  Loader2, Zap, Activity,
+  Network,
+  Search,
+  User,
+  Server,
+  Globe,
+  Hash,
+  Mail,
+  Link2,
+  Terminal,
+  Shield,
+  AlertTriangle,
+  Activity,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,10 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatRelativeTime } from "@/components/security-badges";
 import type { Entity } from "@shared/schema";
 
@@ -45,21 +51,72 @@ interface EntityRelationship {
   relationship: string;
 }
 
-const ENTITY_TYPE_CONFIG: Record<string, {
-  icon: typeof User;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-  label: string;
-}> = {
-  user: { icon: User, color: "text-blue-400", bgColor: "bg-blue-500/10", borderColor: "border-blue-500/20", label: "User" },
-  host: { icon: Server, color: "text-emerald-400", bgColor: "bg-emerald-500/10", borderColor: "border-emerald-500/20", label: "Host" },
-  ip: { icon: Globe, color: "text-purple-400", bgColor: "bg-purple-500/10", borderColor: "border-purple-500/20", label: "IP Address" },
-  domain: { icon: Globe, color: "text-cyan-400", bgColor: "bg-cyan-500/10", borderColor: "border-cyan-500/20", label: "Domain" },
-  file_hash: { icon: Hash, color: "text-orange-400", bgColor: "bg-orange-500/10", borderColor: "border-orange-500/20", label: "File Hash" },
-  email: { icon: Mail, color: "text-pink-400", bgColor: "bg-pink-500/10", borderColor: "border-pink-500/20", label: "Email" },
-  url: { icon: Link2, color: "text-yellow-400", bgColor: "bg-yellow-500/10", borderColor: "border-yellow-500/20", label: "URL" },
-  process: { icon: Terminal, color: "text-red-400", bgColor: "bg-red-500/10", borderColor: "border-red-500/20", label: "Process" },
+const ENTITY_TYPE_CONFIG: Record<
+  string,
+  {
+    icon: typeof User;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+    label: string;
+  }
+> = {
+  user: {
+    icon: User,
+    color: "text-blue-400",
+    bgColor: "bg-blue-500/10",
+    borderColor: "border-blue-500/20",
+    label: "User",
+  },
+  host: {
+    icon: Server,
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-500/10",
+    borderColor: "border-emerald-500/20",
+    label: "Host",
+  },
+  ip: {
+    icon: Globe,
+    color: "text-purple-400",
+    bgColor: "bg-purple-500/10",
+    borderColor: "border-purple-500/20",
+    label: "IP Address",
+  },
+  domain: {
+    icon: Globe,
+    color: "text-cyan-400",
+    bgColor: "bg-cyan-500/10",
+    borderColor: "border-cyan-500/20",
+    label: "Domain",
+  },
+  file_hash: {
+    icon: Hash,
+    color: "text-orange-400",
+    bgColor: "bg-orange-500/10",
+    borderColor: "border-orange-500/20",
+    label: "File Hash",
+  },
+  email: {
+    icon: Mail,
+    color: "text-pink-400",
+    bgColor: "bg-pink-500/10",
+    borderColor: "border-pink-500/20",
+    label: "Email",
+  },
+  url: {
+    icon: Link2,
+    color: "text-yellow-400",
+    bgColor: "bg-yellow-500/10",
+    borderColor: "border-yellow-500/20",
+    label: "URL",
+  },
+  process: {
+    icon: Terminal,
+    color: "text-red-400",
+    bgColor: "bg-red-500/10",
+    borderColor: "border-red-500/20",
+    label: "Process",
+  },
 };
 
 const RELATIONSHIP_LABELS: Record<string, string> = {
@@ -177,7 +234,11 @@ function EntityGraphStats({ graph }: { graph: EntityGraph }) {
   );
 }
 
-function EntityCard({ entity, onSelect, isSelected }: {
+function EntityCard({
+  entity,
+  onSelect,
+  isSelected,
+}: {
   entity: GraphNode;
   onSelect: (id: string) => void;
   isSelected: boolean;
@@ -201,7 +262,10 @@ function EntityCard({ entity, onSelect, isSelected }: {
               <span className="text-sm font-mono font-medium truncate" data-testid={`entity-value-${entity.id}`}>
                 {entity.displayName || entity.value}
               </span>
-              <Badge variant="outline" className={`text-[9px] shrink-0 ${config.bgColor} ${config.color} border ${config.borderColor}`}>
+              <Badge
+                variant="outline"
+                className={`text-[9px] shrink-0 ${config.bgColor} ${config.color} border ${config.borderColor}`}
+              >
                 {config.label}
               </Badge>
             </div>
@@ -210,17 +274,11 @@ function EntityCard({ entity, onSelect, isSelected }: {
             )}
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <div className="flex items-center gap-1.5">
-                <span className={`text-xs font-semibold ${getRiskColor(risk)}`}>
-                  {(risk * 100).toFixed(0)}%
-                </span>
+                <span className={`text-xs font-semibold ${getRiskColor(risk)}`}>{(risk * 100).toFixed(0)}%</span>
                 <Progress value={risk * 100} className="h-1 w-12" />
               </div>
-              <span className="text-[10px] text-muted-foreground">
-                {entity.alertCount || 0} alerts
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {entity.connections || 0} links
-              </span>
+              <span className="text-[10px] text-muted-foreground">{entity.alertCount || 0} alerts</span>
+              <span className="text-[10px] text-muted-foreground">{entity.connections || 0} links</span>
             </div>
           </div>
         </div>
@@ -230,12 +288,22 @@ function EntityCard({ entity, onSelect, isSelected }: {
 }
 
 function EntityDetailPanel({ entityId }: { entityId: string }) {
-  const { data: entity, isLoading: entityLoading } = useQuery<Entity>({
+  const {
+    data: entity,
+    isLoading: entityLoading,
+    isError: _entityError,
+    refetch: _refetchEntity,
+  } = useQuery<Entity>({
     queryKey: ["/api/entities", entityId],
     enabled: !!entityId,
   });
 
-  const { data: relationships, isLoading: relLoading } = useQuery<EntityRelationship[]>({
+  const {
+    data: relationships,
+    isLoading: relLoading,
+    isError: _relError,
+    refetch: _refetchRelationships,
+  } = useQuery<EntityRelationship[]>({
     queryKey: ["/api/entities", entityId, "relationships"],
     enabled: !!entityId,
   });
@@ -329,9 +397,14 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
           <CardContent>
             <div className="space-y-1.5">
               {aliases.map((alias) => (
-                <div key={alias.id} className="flex items-center justify-between gap-2 text-xs p-1.5 rounded bg-muted/20">
+                <div
+                  key={alias.id}
+                  className="flex items-center justify-between gap-2 text-xs p-1.5 rounded bg-muted/20"
+                >
                   <span className="font-mono truncate">{alias.aliasValue}</span>
-                  <Badge variant="outline" className="text-[9px] shrink-0">{alias.aliasType}</Badge>
+                  <Badge variant="outline" className="text-[9px] shrink-0">
+                    {alias.aliasType}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -347,7 +420,7 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
           <CardContent>
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {relationships.slice(0, 20).map((rel) => {
-                const relConfig = ENTITY_TYPE_CONFIG[rel.relatedEntityType] || ENTITY_TYPE_CONFIG.ip;
+                const _relConfig = ENTITY_TYPE_CONFIG[rel.relatedEntityType] || ENTITY_TYPE_CONFIG.ip;
                 return (
                   <div
                     key={rel.relatedEntityId}
@@ -380,11 +453,19 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
                   <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-muted/20 hover-elevate cursor-pointer">
                     <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="truncate flex-1">{alert.title}</span>
-                    <span className={`text-[9px] font-medium uppercase ${
-                      alert.severity === "critical" ? "text-red-400" :
-                      alert.severity === "high" ? "text-orange-400" :
-                      alert.severity === "medium" ? "text-yellow-400" : "text-emerald-400"
-                    }`}>{alert.severity}</span>
+                    <span
+                      className={`text-[9px] font-medium uppercase ${
+                        alert.severity === "critical"
+                          ? "text-red-400"
+                          : alert.severity === "high"
+                            ? "text-orange-400"
+                            : alert.severity === "medium"
+                              ? "text-yellow-400"
+                              : "text-emerald-400"
+                      }`}
+                    >
+                      {alert.severity}
+                    </span>
                   </div>
                 </Link>
               ))}
@@ -396,7 +477,11 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
   );
 }
 
-function VisualGraph({ graph, selectedId, onSelectEntity }: {
+function VisualGraph({
+  graph,
+  selectedId,
+  onSelectEntity,
+}: {
   graph: EntityGraph;
   selectedId: string | null;
   onSelectEntity: (id: string) => void;
@@ -473,8 +558,10 @@ function VisualGraph({ graph, selectedId, onSelectEntity }: {
             return (
               <line
                 key={`edge-${i}`}
-                x1={from.x} y1={from.y}
-                x2={to.x} y2={to.y}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
                 stroke={isHighlighted ? "hsl(var(--destructive))" : "hsl(var(--border))"}
                 strokeWidth={isHighlighted ? 1.5 : 0.5 + Math.min(edge.weight, 3) * 0.3}
                 opacity={selectedId ? (isHighlighted ? 0.8 : 0.15) : 0.3}
@@ -492,10 +579,13 @@ function VisualGraph({ graph, selectedId, onSelectEntity }: {
 
             const fillColor = risk >= 0.8 ? "#ef4444" : risk >= 0.6 ? "#f97316" : risk >= 0.4 ? "#eab308" : "#22c55e";
 
-            const connectedToSelected = selectedId && graph.edges.some(
-              e => (e.source === selectedId && e.target === node.id) ||
-                   (e.target === selectedId && e.source === node.id)
-            );
+            const connectedToSelected =
+              selectedId &&
+              graph.edges.some(
+                (e) =>
+                  (e.source === selectedId && e.target === node.id) ||
+                  (e.target === selectedId && e.source === node.id),
+              );
 
             const dimmed = selectedId && !isSelected && !connectedToSelected;
 
@@ -508,14 +598,18 @@ function VisualGraph({ graph, selectedId, onSelectEntity }: {
                 data-testid={`graph-node-${node.id}`}
               >
                 <circle
-                  cx={pos.x} cy={pos.y} r={radius + 3}
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={radius + 3}
                   fill={fillColor}
                   opacity={isSelected ? 0.3 : 0.1}
                   filter={isSelected ? "url(#glow)" : undefined}
                   className="smooth-all"
                 />
                 <circle
-                  cx={pos.x} cy={pos.y} r={radius}
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={radius}
                   fill={fillColor}
                   opacity={isSelected ? 1 : 0.7}
                   stroke={isSelected ? "#fff" : "none"}
@@ -523,7 +617,8 @@ function VisualGraph({ graph, selectedId, onSelectEntity }: {
                   className="smooth-all"
                 />
                 <text
-                  x={pos.x} y={pos.y + radius + 12}
+                  x={pos.x}
+                  y={pos.y + radius + 12}
                   textAnchor="middle"
                   className="fill-foreground"
                   fontSize={9}
@@ -557,35 +652,33 @@ export default function EntityGraphPage() {
 
     if (search) {
       const q = search.toLowerCase();
-      nodes = nodes.filter(n =>
-        n.value.toLowerCase().includes(q) ||
-        (n.displayName || "").toLowerCase().includes(q)
-      );
+      nodes = nodes.filter((n) => n.value.toLowerCase().includes(q) || (n.displayName || "").toLowerCase().includes(q));
     }
 
     if (typeFilter !== "all") {
-      nodes = nodes.filter(n => n.type === typeFilter);
+      nodes = nodes.filter((n) => n.type === typeFilter);
     }
 
-    if (riskFilter === "critical") nodes = nodes.filter(n => (n.riskScore || 0) >= 0.8);
-    else if (riskFilter === "high") nodes = nodes.filter(n => (n.riskScore || 0) >= 0.6 && (n.riskScore || 0) < 0.8);
-    else if (riskFilter === "medium") nodes = nodes.filter(n => (n.riskScore || 0) >= 0.4 && (n.riskScore || 0) < 0.6);
-    else if (riskFilter === "low") nodes = nodes.filter(n => (n.riskScore || 0) < 0.4);
+    if (riskFilter === "critical") nodes = nodes.filter((n) => (n.riskScore || 0) >= 0.8);
+    else if (riskFilter === "high") nodes = nodes.filter((n) => (n.riskScore || 0) >= 0.6 && (n.riskScore || 0) < 0.8);
+    else if (riskFilter === "medium")
+      nodes = nodes.filter((n) => (n.riskScore || 0) >= 0.4 && (n.riskScore || 0) < 0.6);
+    else if (riskFilter === "low") nodes = nodes.filter((n) => (n.riskScore || 0) < 0.4);
 
     return nodes;
   }, [graph, search, typeFilter, riskFilter]);
 
   const filteredGraph = useMemo((): EntityGraph => {
     if (!graph) return { nodes: [], edges: [] };
-    const nodeIds = new Set(filteredNodes.map(n => n.id));
+    const nodeIds = new Set(filteredNodes.map((n) => n.id));
     return {
       nodes: filteredNodes,
-      edges: graph.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target)),
+      edges: graph.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)),
     };
   }, [graph, filteredNodes]);
 
   const handleSelectEntity = useCallback((id: string) => {
-    setSelectedEntityId(prev => prev === id ? null : id);
+    setSelectedEntityId((prev) => (prev === id ? null : id));
   }, []);
 
   if (isLoading) {
@@ -593,14 +686,31 @@ export default function EntityGraphPage() {
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
         </div>
         <Skeleton className="h-96" />
       </div>
     );
   }
 
-  const entityTypes = Array.from(new Set(graph?.nodes.map(n => n.type) || []));
+  if (!graph && !isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load entity graph</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  const entityTypes = Array.from(new Set(graph?.nodes.map((n) => n.type) || []));
 
   return (
     <div className="p-6 space-y-4 animate-fade-in" data-testid="entity-graph-page">
@@ -610,9 +720,7 @@ export default function EntityGraphPage() {
             <Network className="h-5 w-5 text-red-400" />
             <span className="gradient-text-red">Entity Graph</span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Identity resolution and entity relationship mapping
-          </p>
+          <p className="text-sm text-muted-foreground mt-0.5">Identity resolution and entity relationship mapping</p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
         <div className="flex items-center gap-2">
@@ -656,8 +764,10 @@ export default function EntityGraphPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
-            {entityTypes.map(t => (
-              <SelectItem key={t} value={t}>{ENTITY_TYPE_CONFIG[t]?.label || t}</SelectItem>
+            {entityTypes.map((t) => (
+              <SelectItem key={t} value={t}>
+                {ENTITY_TYPE_CONFIG[t]?.label || t}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -682,13 +792,9 @@ export default function EntityGraphPage() {
         <div className="flex-1 min-w-0">
           {viewMode === "graph" ? (
             <div className="space-y-3">
-              <VisualGraph
-                graph={filteredGraph}
-                selectedId={selectedEntityId}
-                onSelectEntity={handleSelectEntity}
-              />
+              <VisualGraph graph={filteredGraph} selectedId={selectedEntityId} onSelectEntity={handleSelectEntity} />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {filteredNodes.slice(0, 30).map(node => (
+                {filteredNodes.slice(0, 30).map((node) => (
                   <EntityCard
                     key={node.id}
                     entity={node}
@@ -713,7 +819,7 @@ export default function EntityGraphPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredNodes.map(node => {
+                    {filteredNodes.map((node) => {
                       const risk = node.riskScore || 0;
                       return (
                         <TableRow
