@@ -1,15 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  TrendingDown, Clock, Shield, Activity, BarChart3, Target, Download,
-} from "lucide-react";
+import { TrendingDown, Clock, Shield, Activity, BarChart3, Target, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  AreaChart,
+  Area,
 } from "recharts";
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -21,8 +27,16 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const SOURCE_COLORS = [
-  "#6366f1", "#ec4899", "#14b8a6", "#f59e0b", "#ef4444",
-  "#8b5cf6", "#10b981", "#f43f5e", "#06b6d4", "#84cc16",
+  "#6366f1",
+  "#ec4899",
+  "#14b8a6",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#10b981",
+  "#f43f5e",
+  "#06b6d4",
+  "#84cc16",
 ];
 
 type AnalyticsData = {
@@ -33,7 +47,14 @@ type AnalyticsData = {
   alertTrend: { date: string; count: number }[];
   mttrHours: number | null;
   topMitreTactics: { name: string; value: number }[];
-  connectorHealth: { name: string; type: string; status: string; lastSyncAt: string | null; lastSyncAlerts: number; lastSyncError: string | null }[];
+  connectorHealth: {
+    name: string;
+    type: string;
+    status: string;
+    lastSyncAt: string | null;
+    lastSyncAlerts: number;
+    lastSyncError: string | null;
+  }[];
   ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
 };
 
@@ -62,7 +83,14 @@ function PieTooltip({ active, payload }: any) {
   );
 }
 
-function MetricCard({ title, value, icon: Icon, subtitle, loading, accent }: {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+  subtitle,
+  loading,
+  accent,
+}: {
   title: string;
   value: string | number;
   icon: any;
@@ -83,9 +111,15 @@ function MetricCard({ title, value, icon: Icon, subtitle, loading, accent }: {
         {loading ? (
           <Skeleton className="h-7 w-20" data-testid={`skeleton-${testId}`} />
         ) : (
-          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${testId}`}>{value}</div>
+          <div className="text-2xl font-bold tabular-nums" data-testid={`value-${testId}`}>
+            {value}
+          </div>
         )}
-        {subtitle && <p className="text-[11px] text-muted-foreground mt-1" data-testid={`subtitle-${testId}`}>{subtitle}</p>}
+        {subtitle && (
+          <p className="text-[11px] text-muted-foreground mt-1" data-testid={`subtitle-${testId}`}>
+            {subtitle}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -101,7 +135,7 @@ function ChartSkeleton() {
 }
 
 function AlertVolumeTrendChart({ data }: { data: { date: string; count: number }[] }) {
-  const formatted = data.map(d => ({
+  const formatted = data.map((d) => ({
     ...d,
     label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   }));
@@ -143,9 +177,10 @@ function AlertVolumeTrendChart({ data }: { data: { date: string; count: number }
 
 function SeverityDistributionChart({ data }: { data: { name: string; value: number }[] }) {
   const ordered = ["critical", "high", "medium", "low", "informational"];
-  const sorted = ordered
-    .map(s => data.find(d => d.name === s))
-    .filter(Boolean) as { name: string; value: number }[];
+  const sorted = ordered.map((s) => data.find((d) => d.name === s)).filter(Boolean) as {
+    name: string;
+    value: number;
+  }[];
   const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
@@ -158,15 +193,7 @@ function SeverityDistributionChart({ data }: { data: { name: string; value: numb
           <div className="w-[140px] h-[180px] flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={sorted}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={40}
-                  outerRadius={65}
-                  dataKey="value"
-                  stroke="none"
-                >
+                <Pie data={sorted} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" stroke="none">
                   {sorted.map((entry) => (
                     <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name] || "#6b7280"} />
                   ))}
@@ -177,7 +204,11 @@ function SeverityDistributionChart({ data }: { data: { name: string; value: numb
           </div>
           <div className="flex-1 space-y-1.5">
             {sorted.map((entry) => (
-              <div key={entry.name} className="flex items-center justify-between text-xs" data-testid={`severity-item-${entry.name}`}>
+              <div
+                key={entry.name}
+                className="flex items-center justify-between text-xs"
+                data-testid={`severity-item-${entry.name}`}
+              >
                 <div className="flex items-center gap-2">
                   <div
                     className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
@@ -186,7 +217,10 @@ function SeverityDistributionChart({ data }: { data: { name: string; value: numb
                   <span className="capitalize text-muted-foreground">{entry.name}</span>
                 </div>
                 <span className="font-medium tabular-nums">
-                  {entry.value} <span className="text-muted-foreground">({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)</span>
+                  {entry.value}{" "}
+                  <span className="text-muted-foreground">
+                    ({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)
+                  </span>
                 </span>
               </div>
             ))}
@@ -238,15 +272,7 @@ function SourceDistributionChart({ data }: { data: { name: string; value: number
           <div className="w-[140px] h-[180px] flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={data}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={40}
-                  outerRadius={65}
-                  dataKey="value"
-                  stroke="none"
-                >
+                <Pie data={data} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" stroke="none">
                   {data.map((_, i) => (
                     <Cell key={i} fill={SOURCE_COLORS[i % SOURCE_COLORS.length]} />
                   ))}
@@ -257,7 +283,11 @@ function SourceDistributionChart({ data }: { data: { name: string; value: number
           </div>
           <div className="flex-1 space-y-1.5">
             {data.map((entry, i) => (
-              <div key={entry.name} className="flex items-center justify-between text-xs" data-testid={`source-item-${i}`}>
+              <div
+                key={entry.name}
+                className="flex items-center justify-between text-xs"
+                data-testid={`source-item-${i}`}
+              >
                 <div className="flex items-center gap-2">
                   <div
                     className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
@@ -286,13 +316,22 @@ function MitreTacticsChart({ data }: { data: { name: string; value: number }[] }
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-8" data-testid="text-no-mitre-data">No MITRE data available</p>
+          <p className="text-xs text-muted-foreground text-center py-8" data-testid="text-no-mitre-data">
+            No MITRE data available
+          </p>
         ) : (
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ left: 0, right: 12, top: 4, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="name" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" angle={-30} textAnchor="end" height={60} />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  angle={-30}
+                  textAnchor="end"
+                  height={60}
+                />
                 <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
                 <RechartsTooltip content={<CustomTooltip />} />
                 <Bar dataKey="value" name="Alerts" radius={[4, 4, 0, 0]}>
@@ -310,7 +349,7 @@ function MitreTacticsChart({ data }: { data: { name: string; value: number }[] }
 }
 
 function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) {
-  const formatted = data.map(d => ({
+  const formatted = data.map((d) => ({
     ...d,
     label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   }));
@@ -325,7 +364,9 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
       </CardHeader>
       <CardContent>
         {formatted.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-8" data-testid="text-no-ingestion-data">No ingestion data</p>
+          <p className="text-xs text-muted-foreground text-center py-8" data-testid="text-no-ingestion-data">
+            No ingestion data
+          </p>
         ) : (
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -347,24 +388,41 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
 }
 
 export default function Analytics() {
-  const { data: analytics, isLoading } = useQuery<AnalyticsData>({
+  const {
+    data: analytics,
+    isLoading,
+    isError: analyticsError,
+    refetch: refetchAnalytics,
+  } = useQuery<AnalyticsData>({
     queryKey: ["/api/dashboard/analytics"],
     refetchInterval: 30000,
   });
 
   const totalAlerts = analytics?.severityDistribution?.reduce((s, d) => s + d.value, 0) ?? 0;
-  const resolvedCount = analytics?.statusDistribution?.find(s => s.name === "resolved")?.value ?? 0;
+  const resolvedCount = analytics?.statusDistribution?.find((s) => s.name === "resolved")?.value ?? 0;
   const resolutionRate = totalAlerts > 0 ? Math.round((resolvedCount / totalAlerts) * 100) : 0;
 
   const mttrDisplay = analytics?.mttrHours != null ? `${analytics.mttrHours}h` : "N/A";
   const mttdDisplay = analytics?.mttrHours != null ? `${Math.max(1, Math.round(analytics.mttrHours * 0.3))}h` : "N/A";
-  const slaCompliance = totalAlerts > 0 ? Math.min(100, Math.round(((resolvedCount + (analytics?.statusDistribution?.find(s => s.name === "triaged")?.value ?? 0)) / totalAlerts) * 100)) : 100;
+  const slaCompliance =
+    totalAlerts > 0
+      ? Math.min(
+          100,
+          Math.round(
+            ((resolvedCount + (analytics?.statusDistribution?.find((s) => s.name === "triaged")?.value ?? 0)) /
+              totalAlerts) *
+              100,
+          ),
+        )
+      : 100;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto" data-testid="page-analytics">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-analytics-title"><span className="gradient-text-red">Security Analytics</span></h1>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-analytics-title">
+            <span className="gradient-text-red">Security Analytics</span>
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">Comprehensive security metrics and intelligence</p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
@@ -416,11 +474,32 @@ export default function Analytics() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-charts">
         {isLoading ? (
           <>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
+            <Card>
+              <ChartSkeleton />
+            </Card>
+            <Card>
+              <ChartSkeleton />
+            </Card>
+            <Card>
+              <ChartSkeleton />
+            </Card>
+            <Card>
+              <ChartSkeleton />
+            </Card>
           </>
+        ) : analyticsError ? (
+          <Card className="col-span-full">
+            <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+              <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                <Shield className="h-6 w-6 text-destructive" />
+              </div>
+              <p className="text-sm font-medium">Failed to load analytics</p>
+              <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching chart data.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAnalytics()}>
+                Try Again
+              </Button>
+            </div>
+          </Card>
         ) : analytics ? (
           <>
             <AlertVolumeTrendChart data={analytics.alertTrend} />
@@ -428,16 +507,28 @@ export default function Analytics() {
             <CategoryBreakdownChart data={analytics.categoryDistribution} />
             <SourceDistributionChart data={analytics.sourceDistribution} />
           </>
-        ) : null}
+        ) : (
+          <Card className="col-span-full">
+            <div className="flex flex-col items-center justify-center py-12 text-center" role="status">
+              <BarChart3 className="h-8 w-8 text-muted-foreground/50 mb-3" />
+              <p className="text-sm font-medium">No analytics data</p>
+              <p className="text-xs text-muted-foreground mt-1">Connect a data source to start seeing analytics</p>
+            </div>
+          </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-bottom">
         {isLoading ? (
           <>
-            <Card><ChartSkeleton /></Card>
-            <Card><ChartSkeleton /></Card>
+            <Card>
+              <ChartSkeleton />
+            </Card>
+            <Card>
+              <ChartSkeleton />
+            </Card>
           </>
-        ) : analytics ? (
+        ) : analyticsError ? null : analytics ? (
           <>
             <MitreTacticsChart data={analytics.topMitreTactics} />
             <IngestionRateChart data={analytics.ingestionRate} />

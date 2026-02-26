@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,21 +17,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Plus,
   Trash2,
@@ -63,7 +50,6 @@ import {
   ChevronRight,
   KeyRound,
   RotateCcw,
-  Play,
 } from "lucide-react";
 import type { ConnectorJobRun, ConnectorHealthCheck } from "@shared/schema";
 
@@ -104,7 +90,15 @@ interface ConnectorMetrics {
 }
 
 const ICON_MAP: Record<string, any> = {
-  Shield, Database, Cloud, Eye, Flame, Radar, ShieldCheck, CloudLightning, Zap,
+  Shield,
+  Database,
+  Cloud,
+  Eye,
+  Flame,
+  Radar,
+  ShieldCheck,
+  CloudLightning,
+  Zap,
 };
 
 function getIcon(name: string) {
@@ -114,26 +108,66 @@ function getIcon(name: string) {
 function statusBadge(status: string) {
   switch (status) {
     case "active":
-      return <Badge variant="default" data-testid="badge-status-active"><CheckCircle className="h-3 w-3 mr-1" />Active</Badge>;
+      return (
+        <Badge variant="default" data-testid="badge-status-active">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Active
+        </Badge>
+      );
     case "error":
-      return <Badge variant="destructive" data-testid="badge-status-error"><XCircle className="h-3 w-3 mr-1" />Error</Badge>;
+      return (
+        <Badge variant="destructive" data-testid="badge-status-error">
+          <XCircle className="h-3 w-3 mr-1" />
+          Error
+        </Badge>
+      );
     case "syncing":
-      return <Badge variant="secondary" data-testid="badge-status-syncing"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Syncing</Badge>;
+      return (
+        <Badge variant="secondary" data-testid="badge-status-syncing">
+          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+          Syncing
+        </Badge>
+      );
     case "inactive":
-      return <Badge variant="outline" data-testid="badge-status-inactive"><Unplug className="h-3 w-3 mr-1" />Inactive</Badge>;
+      return (
+        <Badge variant="outline" data-testid="badge-status-inactive">
+          <Unplug className="h-3 w-3 mr-1" />
+          Inactive
+        </Badge>
+      );
     default:
-      return <Badge variant="outline" data-testid="badge-status-unknown"><AlertTriangle className="h-3 w-3 mr-1" />Unknown</Badge>;
+      return (
+        <Badge variant="outline" data-testid="badge-status-unknown">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Unknown
+        </Badge>
+      );
   }
 }
 
 function jobStatusBadge(status: string) {
   switch (status) {
     case "success":
-      return <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" />Success</Badge>;
+      return (
+        <Badge variant="default">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Success
+        </Badge>
+      );
     case "failed":
-      return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      return (
+        <Badge variant="destructive">
+          <XCircle className="h-3 w-3 mr-1" />
+          Failed
+        </Badge>
+      );
     case "running":
-      return <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</Badge>;
+      return (
+        <Badge variant="secondary">
+          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+          Running
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -142,9 +176,19 @@ function jobStatusBadge(status: string) {
 function healthStatusBadge(status: string) {
   switch (status) {
     case "healthy":
-      return <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" />Healthy</Badge>;
+      return (
+        <Badge variant="default">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Healthy
+        </Badge>
+      );
     case "unhealthy":
-      return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Unhealthy</Badge>;
+      return (
+        <Badge variant="destructive">
+          <XCircle className="h-3 w-3 mr-1" />
+          Unhealthy
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -265,9 +309,7 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : (
               <div className="flex items-center gap-4 flex-wrap">
-                <div data-testid={`text-health-status-${connector.id}`}>
-                  {healthStatusBadge(latestHealth.status)}
-                </div>
+                <div data-testid={`text-health-status-${connector.id}`}>{healthStatusBadge(latestHealth.status)}</div>
                 <span className="text-sm text-muted-foreground">
                   Latency: <span className="font-mono">{latestHealth.latencyMs}ms</span>
                 </span>
@@ -317,16 +359,20 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {jobs.map(job => (
+                  {jobs.map((job) => (
                     <TableRow key={job.id} data-testid={`row-job-${job.id}`}>
                       <TableCell>{jobStatusBadge(job.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {job.startedAt ? new Date(job.startedAt).toLocaleString() : "-"}
                       </TableCell>
-                      <TableCell className="text-sm font-mono">{job.latencyMs != null ? `${job.latencyMs}ms` : "-"}</TableCell>
+                      <TableCell className="text-sm font-mono">
+                        {job.latencyMs != null ? `${job.latencyMs}ms` : "-"}
+                      </TableCell>
                       <TableCell className="text-sm">{job.alertsReceived ?? 0}</TableCell>
                       <TableCell className="text-sm">{job.alertsCreated ?? 0}</TableCell>
-                      <TableCell className="text-sm text-destructive max-w-xs truncate">{job.errorMessage || "-"}</TableCell>
+                      <TableCell className="text-sm text-destructive max-w-xs truncate">
+                        {job.errorMessage || "-"}
+                      </TableCell>
                       <TableCell>
                         {job.throttled ? (
                           <Badge variant="secondary">Throttled</Badge>
@@ -336,7 +382,10 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
                       </TableCell>
                       <TableCell>
                         {job.isDeadLetter ? (
-                          <Badge variant="destructive" data-testid="badge-dead-letter"><Skull className="h-3 w-3 mr-1" />Dead Letter</Badge>
+                          <Badge variant="destructive" data-testid="badge-dead-letter">
+                            <Skull className="h-3 w-3 mr-1" />
+                            Dead Letter
+                          </Badge>
                         ) : (
                           <span className="text-sm text-muted-foreground">-</span>
                         )}
@@ -368,9 +417,9 @@ interface SecretRotation {
 
 function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) {
   const [showRotate, setShowRotate] = useState(false);
-  const [newSecretField, setNewSecretField] = useState("apiKey");
+  const [newSecretField, _setNewSecretField] = useState("apiKey");
   const [newSecretValue, setNewSecretValue] = useState("");
-  const [rotationDays, setRotationDays] = useState("90");
+  const [rotationDays, _setRotationDays] = useState("90");
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
   const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
   const [rotateTargetId, setRotateTargetId] = useState<string | null>(null);
@@ -384,7 +433,9 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/connectors/${connectorId}/secret-rotations`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ secretField: newSecretField, rotationIntervalDays: parseInt(rotationDays, 10) }),
       });
       if (!res.ok) throw new Error("Failed to create rotation schedule");
@@ -399,7 +450,9 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
   const rotateMutation = useMutation({
     mutationFn: async (rotationId: string) => {
       const res = await fetch(`/api/connectors/${connectorId}/secret-rotations/${rotationId}/rotate`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ newSecretValue }),
       });
       if (!res.ok) throw new Error("Failed to rotate secret");
@@ -424,7 +477,9 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
 
   useEffect(() => {
     const timers = revealTimersRef.current;
-    return () => { Object.values(timers).forEach(clearTimeout); };
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
   }, []);
 
   const toggleReveal = useCallback((id: string) => {
@@ -432,11 +487,11 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
       clearTimeout(revealTimersRef.current[id]);
       delete revealTimersRef.current[id];
     }
-    setRevealedSecrets(prev => {
+    setRevealedSecrets((prev) => {
       const next = { ...prev, [id]: !prev[id] };
       if (next[id]) {
         revealTimersRef.current[id] = setTimeout(() => {
-          setRevealedSecrets(p => ({ ...p, [id]: false }));
+          setRevealedSecrets((p) => ({ ...p, [id]: false }));
           delete revealTimersRef.current[id];
         }, 30000);
       }
@@ -444,18 +499,26 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
     });
   }, []);
 
-  const handleRotateClick = useCallback((rotationId: string) => {
-    if (confirmRotateId === rotationId) {
-      setRotateTargetId(rotationId);
-      setShowRotate(true);
-      setConfirmRotateId(null);
-    } else {
-      setConfirmRotateId(rotationId);
-      setTimeout(() => setConfirmRotateId(null), 5000);
-    }
-  }, [confirmRotateId]);
+  const handleRotateClick = useCallback(
+    (rotationId: string) => {
+      if (confirmRotateId === rotationId) {
+        setRotateTargetId(rotationId);
+        setShowRotate(true);
+        setConfirmRotateId(null);
+      } else {
+        setConfirmRotateId(rotationId);
+        setTimeout(() => setConfirmRotateId(null), 5000);
+      }
+    },
+    [confirmRotateId],
+  );
 
-  if (isLoading) return <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+  if (isLoading)
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
 
   return (
     <div className="space-y-3 mt-3 border-t pt-3">
@@ -465,8 +528,15 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
           Secret Rotation
         </h4>
         <div className="flex gap-1">
-          <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
-            <Plus className="h-3 w-3 mr-1" />{createMutation.isPending ? "Adding..." : "Add Schedule"}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[10px]"
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            {createMutation.isPending ? "Adding..." : "Add Schedule"}
           </Button>
         </div>
       </div>
@@ -475,10 +545,15 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
         <p className="text-xs text-muted-foreground">No secret rotation schedules configured.</p>
       ) : (
         <div className="space-y-2">
-          {rotations.map(r => (
-            <div key={r.id} className={`flex items-center justify-between p-2 rounded border text-xs ${isExpiringSoon(r.nextRotationDue) ? "border-yellow-500/30 bg-yellow-500/5" : ""}`}>
+          {rotations.map((r) => (
+            <div
+              key={r.id}
+              className={`flex items-center justify-between p-2 rounded border text-xs ${isExpiringSoon(r.nextRotationDue) ? "border-yellow-500/30 bg-yellow-500/5" : ""}`}
+            >
               <div className="flex items-center gap-3">
-                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">{r.secretField}</Badge>
+                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+                  {r.secretField}
+                </Badge>
                 <button
                   onClick={() => toggleReveal(r.id)}
                   className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -494,7 +569,11 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
                   <span className="text-muted-foreground">Last: {new Date(r.lastRotatedAt).toLocaleDateString()}</span>
                 )}
                 {r.nextRotationDue && (
-                  <span className={isExpiringSoon(r.nextRotationDue) ? "text-yellow-400 font-medium" : "text-muted-foreground"}>
+                  <span
+                    className={
+                      isExpiringSoon(r.nextRotationDue) ? "text-yellow-400 font-medium" : "text-muted-foreground"
+                    }
+                  >
                     Due: {new Date(r.nextRotationDue).toLocaleDateString()}
                     {isExpiringSoon(r.nextRotationDue) && " (soon)"}
                   </span>
@@ -517,24 +596,43 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
 
       <Dialog open={showRotate} onOpenChange={setShowRotate}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Rotate Secret</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Rotate Secret</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div className="flex items-center gap-2 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
               <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0" />
-              <p className="text-xs text-amber-300">Rotating a secret will immediately update the connector configuration. Ensure the new value is valid before proceeding.</p>
+              <p className="text-xs text-amber-300">
+                Rotating a secret will immediately update the connector configuration. Ensure the new value is valid
+                before proceeding.
+              </p>
             </div>
             <div>
               <Label className="text-xs">New Secret Value</Label>
-              <Input type="password" value={newSecretValue} onChange={e => setNewSecretValue(e.target.value)} placeholder="Enter new secret value" />
+              <Input
+                type="password"
+                value={newSecretValue}
+                onChange={(e) => setNewSecretValue(e.target.value)}
+                placeholder="Enter new secret value"
+              />
               {newSecretValue && newSecretValue.length < 8 && (
                 <p className="text-xs text-amber-400 mt-1">Secret values should be at least 8 characters</p>
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRotate(false)}>Cancel</Button>
-            <Button onClick={() => rotateTargetId && rotateMutation.mutate(rotateTargetId)} disabled={!newSecretValue || !rotateTargetId || rotateMutation.isPending}>
-              {rotateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />}
+            <Button variant="outline" onClick={() => setShowRotate(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => rotateTargetId && rotateMutation.mutate(rotateTargetId)}
+              disabled={!newSecretValue || !rotateTargetId || rotateMutation.isPending}
+            >
+              {rotateMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <RotateCcw className="h-4 w-4 mr-1" />
+              )}
               Rotate
             </Button>
           </DialogFooter>
@@ -544,30 +642,58 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
   );
 }
 
-function ConnectorTestResultCard({ result, connectorType }: { result: { success: boolean; latencyMs?: number; message?: string } | null; connectorType: string }) {
+function ConnectorTestResultCard({
+  result,
+  connectorType,
+}: {
+  result: { success: boolean; latencyMs?: number; message?: string } | null;
+  connectorType: string;
+}) {
   if (!result) return null;
 
   const remediationMap: Record<string, string[]> = {
-    "authentication": ["Verify your API key or credentials are correct", "Check if the key has expired or been revoked", "Ensure the key has the required permissions/scopes"],
-    "timeout": ["Check if the service endpoint is reachable from your network", "Verify there are no firewall rules blocking the connection", "Try increasing the polling interval"],
-    "rate_limit": ["Reduce the polling frequency", "Check your API rate limit quota", "Consider upgrading your API plan"],
-    "not_found": ["Verify the API endpoint URL is correct", "Check if the service has been moved or deprecated", "Confirm the base URL matches the documentation"],
-    "default": ["Check the connector configuration settings", "Verify network connectivity to the service", "Review the service's status page for outages"],
+    authentication: [
+      "Verify your API key or credentials are correct",
+      "Check if the key has expired or been revoked",
+      "Ensure the key has the required permissions/scopes",
+    ],
+    timeout: [
+      "Check if the service endpoint is reachable from your network",
+      "Verify there are no firewall rules blocking the connection",
+      "Try increasing the polling interval",
+    ],
+    rate_limit: ["Reduce the polling frequency", "Check your API rate limit quota", "Consider upgrading your API plan"],
+    not_found: [
+      "Verify the API endpoint URL is correct",
+      "Check if the service has been moved or deprecated",
+      "Confirm the base URL matches the documentation",
+    ],
+    default: [
+      "Check the connector configuration settings",
+      "Verify network connectivity to the service",
+      "Review the service's status page for outages",
+    ],
   };
 
   const getRemediation = (msg: string | undefined): string[] => {
     if (!msg) return remediationMap["default"];
     const lower = msg.toLowerCase();
-    if (lower.includes("auth") || lower.includes("401") || lower.includes("403") || lower.includes("key")) return remediationMap["authentication"];
-    if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("econnrefused")) return remediationMap["timeout"];
-    if (lower.includes("rate") || lower.includes("429") || lower.includes("throttl")) return remediationMap["rate_limit"];
+    if (lower.includes("auth") || lower.includes("401") || lower.includes("403") || lower.includes("key"))
+      return remediationMap["authentication"];
+    if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("econnrefused"))
+      return remediationMap["timeout"];
+    if (lower.includes("rate") || lower.includes("429") || lower.includes("throttl"))
+      return remediationMap["rate_limit"];
     if (lower.includes("404") || lower.includes("not found")) return remediationMap["not_found"];
     return remediationMap["default"];
   };
 
   if (result.success) {
     return (
-      <div className="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5" data-testid="test-result-card-success">
+      <div
+        className="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5"
+        data-testid="test-result-card-success"
+      >
         <div className="flex items-center gap-2">
           <CheckCircle className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-medium text-emerald-400">Connection Successful</span>
@@ -577,23 +703,32 @@ function ConnectorTestResultCard({ result, connectorType }: { result: { success:
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-1.5">The {connectorType} connector is configured correctly and responding.</p>
+        <p className="text-xs text-muted-foreground mt-1.5">
+          The {connectorType} connector is configured correctly and responding.
+        </p>
       </div>
     );
   }
 
   const steps = getRemediation(result.message);
   return (
-    <div className="mt-3 p-3 rounded-lg border border-destructive/30 bg-destructive/5" data-testid="test-result-card-failure">
+    <div
+      className="mt-3 p-3 rounded-lg border border-destructive/30 bg-destructive/5"
+      data-testid="test-result-card-failure"
+    >
       <div className="flex items-center gap-2">
         <XCircle className="h-4 w-4 text-destructive" />
         <span className="text-sm font-medium text-destructive">Connection Failed</span>
       </div>
-      {result.message && <p className="text-xs text-muted-foreground mt-1.5 font-mono bg-muted/30 p-2 rounded">{result.message}</p>}
+      {result.message && (
+        <p className="text-xs text-muted-foreground mt-1.5 font-mono bg-muted/30 p-2 rounded">{result.message}</p>
+      )}
       <div className="mt-2">
         <p className="text-xs font-medium mb-1">Remediation Steps:</p>
         <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          {steps.map((step, i) => <li key={i}>{step}</li>)}
+          {steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
         </ol>
       </div>
     </div>
@@ -605,10 +740,13 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
     queryKey: ["/api/connectors/dead-letters"],
   });
 
-  const connectorNameMap = connectors.reduce((acc, c) => {
-    acc[c.id] = c.name;
-    return acc;
-  }, {} as Record<string, string>);
+  const connectorNameMap = connectors.reduce(
+    (acc, c) => {
+      acc[c.id] = c.name;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
 
   return (
     <Card>
@@ -638,14 +776,16 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {deadLetters.map(dl => (
+              {deadLetters.map((dl) => (
                 <TableRow key={dl.id} data-testid={`row-dead-letter-${dl.id}`}>
                   <TableCell className="font-medium">{connectorNameMap[dl.connectorId] || dl.connectorId}</TableCell>
                   <TableCell className="text-sm text-destructive max-w-md truncate">{dl.errorMessage || "-"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {dl.startedAt ? new Date(dl.startedAt).toLocaleString() : "-"}
                   </TableCell>
-                  <TableCell className="text-sm font-mono">{dl.attempt}/{dl.maxAttempts}</TableCell>
+                  <TableCell className="text-sm font-mono">
+                    {dl.attempt}/{dl.maxAttempts}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -665,7 +805,9 @@ export default function ConnectorsPage() {
   const [pollingInterval, setPollingInterval] = useState("5");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs?: number; message?: string }>>({});
+  const [testResults, setTestResults] = useState<
+    Record<string, { success: boolean; latencyMs?: number; message?: string }>
+  >({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
   const [healthCheckingId, setHealthCheckingId] = useState<string | null>(null);
   const [expandedConnectorId, setExpandedConnectorId] = useState<string | null>(null);
@@ -675,7 +817,12 @@ export default function ConnectorsPage() {
     queryKey: ["/api/connectors/types"],
   });
 
-  const { data: existingConnectors, isLoading: connectorsLoading } = useQuery<ConnectorItem[]>({
+  const {
+    data: existingConnectors,
+    isLoading: connectorsLoading,
+    isError: connectorsError,
+    refetch: refetchConnectors,
+  } = useQuery<ConnectorItem[]>({
     queryKey: ["/api/connectors"],
   });
 
@@ -720,7 +867,7 @@ export default function ConnectorsPage() {
     },
     onSuccess: ({ id, data }: { id: string; data: { success: boolean; latencyMs?: number; message?: string } }) => {
       setTestingId(null);
-      setTestResults(prev => ({ ...prev, [id]: data }));
+      setTestResults((prev) => ({ ...prev, [id]: data }));
       if (data.success) {
         toast({ title: "Connection successful", description: `Latency: ${data.latencyMs}ms` });
       } else {
@@ -801,15 +948,19 @@ export default function ConnectorsPage() {
 
   function handleCreate() {
     if (!selectedType || !connectorName) return;
-    const meta = connectorTypes?.find(t => t.type === selectedType);
+    const meta = connectorTypes?.find((t) => t.type === selectedType);
     if (!meta) return;
     const config: Record<string, string> = {};
     for (const field of [...meta.requiredFields, ...meta.optionalFields]) {
       if (formData[field.key]) config[field.key] = formData[field.key];
     }
-    const missingRequired = meta.requiredFields.filter(f => !config[f.key]);
+    const missingRequired = meta.requiredFields.filter((f) => !config[f.key]);
     if (missingRequired.length > 0) {
-      toast({ title: "Missing required fields", description: missingRequired.map(f => f.label).join(", "), variant: "destructive" });
+      toast({
+        title: "Missing required fields",
+        description: missingRequired.map((f) => f.label).join(", "),
+        variant: "destructive",
+      });
       return;
     }
     createMutation.mutate({
@@ -821,24 +972,32 @@ export default function ConnectorsPage() {
     });
   }
 
-  const selectedMeta = connectorTypes?.find(t => t.type === selectedType);
-  const activeCount = existingConnectors?.filter(c => c.status === "active").length || 0;
-  const errorCount = existingConnectors?.filter(c => c.status === "error").length || 0;
+  const selectedMeta = connectorTypes?.find((t) => t.type === selectedType);
+  const activeCount = existingConnectors?.filter((c) => c.status === "active").length || 0;
+  const errorCount = existingConnectors?.filter((c) => c.status === "error").length || 0;
   const totalSynced = existingConnectors?.reduce((sum, c) => sum + (c.totalAlertsSynced || 0), 0) || 0;
 
   const deadLetterConnectorIds = new Set(
-    deadLetters?.filter(dl => dl.isDeadLetter).map(dl => dl.connectorId) || []
+    deadLetters?.filter((dl) => dl.isDeadLetter).map((dl) => dl.connectorId) || [],
   );
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Connectors</span></h1>
-          <p className="text-sm text-muted-foreground">Pull-based integrations that actively fetch alerts from your security tools</p>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+            <span className="gradient-text-red">Connectors</span>
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Pull-based integrations that actively fetch alerts from your security tools
+          </p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} aria-label="Add new connector" data-testid="button-add-connector">
+        <Button
+          onClick={() => setShowCreateDialog(true)}
+          aria-label="Add new connector"
+          data-testid="button-add-connector"
+        >
           <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
           Add Connector
         </Button>
@@ -851,7 +1010,9 @@ export default function ConnectorsPage() {
             <Plug className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-connectors">{existingConnectors?.length || 0}</div>
+            <div className="text-2xl font-bold" data-testid="text-total-connectors">
+              {existingConnectors?.length || 0}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -860,7 +1021,9 @@ export default function ConnectorsPage() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-active-count">{activeCount}</div>
+            <div className="text-2xl font-bold" data-testid="text-active-count">
+              {activeCount}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -869,7 +1032,9 @@ export default function ConnectorsPage() {
             <XCircle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-error-count">{errorCount}</div>
+            <div className="text-2xl font-bold" data-testid="text-error-count">
+              {errorCount}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -878,7 +1043,9 @@ export default function ConnectorsPage() {
             <Zap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-synced">{totalSynced}</div>
+            <div className="text-2xl font-bold" data-testid="text-total-synced">
+              {totalSynced}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -921,12 +1088,32 @@ export default function ConnectorsPage() {
                   ))}
                   <span className="sr-only">Loading connectors...</span>
                 </div>
+              ) : connectorsError ? (
+                <div className="flex flex-col items-center justify-center py-12" role="alert">
+                  <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                    <XCircle className="h-6 w-6 text-destructive" />
+                  </div>
+                  <p className="text-sm font-medium">Failed to load connectors</p>
+                  <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching connector data.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchConnectors()}>
+                    Try Again
+                  </Button>
+                </div>
               ) : !existingConnectors?.length ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" role="status" aria-label="No connectors">
+                <div
+                  className="flex flex-col items-center justify-center py-12 text-muted-foreground"
+                  role="status"
+                  aria-label="No connectors"
+                >
                   <Unplug className="h-10 w-10 mb-3" aria-hidden="true" />
                   <p className="text-sm font-medium">No connectors configured yet</p>
                   <p className="text-xs mt-1">Add a connector to start pulling alerts from your security tools</p>
-                  <Button className="mt-4" size="sm" onClick={() => setShowCreateDialog(true)} aria-label="Add your first connector">
+                  <Button
+                    className="mt-4"
+                    size="sm"
+                    onClick={() => setShowCreateDialog(true)}
+                    aria-label="Add your first connector"
+                  >
                     <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
                     Add First Connector
                   </Button>
@@ -946,8 +1133,8 @@ export default function ConnectorsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {existingConnectors.map(connector => {
-                      const meta = connectorTypes?.find(t => t.type === connector.type);
+                    {existingConnectors.map((connector) => {
+                      const meta = connectorTypes?.find((t) => t.type === connector.type);
                       const IconComp = getIcon(meta?.icon || "");
                       const isExpanded = expandedConnectorId === connector.id;
                       const hasDeadLetters = deadLetterConnectorIds.has(connector.id);
@@ -960,22 +1147,31 @@ export default function ConnectorsPage() {
                             onClick={() => setExpandedConnectorId(isExpanded ? null : connector.id)}
                           >
                             <TableCell>
-                              {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              )}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <IconComp className="h-4 w-4 text-muted-foreground" />
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-medium" data-testid={`text-connector-name-${connector.id}`}>{connector.name}</span>
+                                    <span className="font-medium" data-testid={`text-connector-name-${connector.id}`}>
+                                      {connector.name}
+                                    </span>
                                     {hasDeadLetters && (
                                       <Badge variant="destructive" data-testid="badge-dead-letter">
-                                        <Skull className="h-3 w-3 mr-1" />DLQ
+                                        <Skull className="h-3 w-3 mr-1" />
+                                        DLQ
                                       </Badge>
                                     )}
                                   </div>
                                   {connector.lastSyncError && connector.status === "error" && (
-                                    <p className="text-xs text-destructive mt-0.5 max-w-xs truncate">{connector.lastSyncError}</p>
+                                    <p className="text-xs text-destructive mt-0.5 max-w-xs truncate">
+                                      {connector.lastSyncError}
+                                    </p>
                                   )}
                                 </div>
                               </div>
@@ -990,7 +1186,7 @@ export default function ConnectorsPage() {
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center text-primary hover:underline"
                                     data-testid={`link-table-docs-${connector.id}`}
-                                    onClick={e => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
                                   >
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
@@ -1009,42 +1205,58 @@ export default function ConnectorsPage() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm font-mono" data-testid={`text-synced-${connector.id}`}>{connector.totalAlertsSynced || 0}</span>
+                              <span className="text-sm font-mono" data-testid={`text-synced-${connector.id}`}>
+                                {connector.totalAlertsSynced || 0}
+                              </span>
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm text-muted-foreground">{connector.pollingIntervalMin || 5}m</span>
+                              <span className="text-sm text-muted-foreground">
+                                {connector.pollingIntervalMin || 5}m
+                              </span>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                                 <Button
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => healthCheckMutation.mutate(connector.id)}
                                   disabled={healthCheckingId === connector.id}
-                                                aria-label="Health check"
-                                                data-testid={`button-health-check-${connector.id}`}
-                                              >
-                                                {healthCheckingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <HeartPulse className="h-4 w-4" aria-hidden="true" />}
+                                  aria-label="Health check"
+                                  data-testid={`button-health-check-${connector.id}`}
+                                >
+                                  {healthCheckingId === connector.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <HeartPulse className="h-4 w-4" aria-hidden="true" />
+                                  )}
                                 </Button>
                                 <Button
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => testMutation.mutate(connector.id)}
                                   disabled={testingId === connector.id}
-                                                aria-label="Test connection"
-                                                data-testid={`button-test-${connector.id}`}
-                                              >
-                                                {testingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTube className="h-4 w-4" aria-hidden="true" />}
+                                  aria-label="Test connection"
+                                  data-testid={`button-test-${connector.id}`}
+                                >
+                                  {testingId === connector.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <TestTube className="h-4 w-4" aria-hidden="true" />
+                                  )}
                                 </Button>
                                 <Button
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => syncMutation.mutate(connector.id)}
                                   disabled={syncingId === connector.id}
-                                                aria-label="Sync now"
-                                                data-testid={`button-sync-${connector.id}`}
-                                              >
-                                                {syncingId === connector.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                                  aria-label="Sync now"
+                                  data-testid={`button-sync-${connector.id}`}
+                                >
+                                  {syncingId === connector.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                  )}
                                 </Button>
                                 <Button
                                   size="icon"
@@ -1055,7 +1267,11 @@ export default function ConnectorsPage() {
                                   }}
                                   data-testid={`button-toggle-${connector.id}`}
                                 >
-                                  {connector.status === "inactive" ? <Plug className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
+                                  {connector.status === "inactive" ? (
+                                    <Plug className="h-4 w-4" />
+                                  ) : (
+                                    <Settings2 className="h-4 w-4" />
+                                  )}
                                 </Button>
                                 <Button
                                   size="icon"
@@ -1065,10 +1281,10 @@ export default function ConnectorsPage() {
                                       deleteMutation.mutate(connector.id);
                                     }
                                   }}
-                                                aria-label="Delete connector"
-                                                data-testid={`button-delete-${connector.id}`}
-                                              >
-                                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                  aria-label="Delete connector"
+                                  data-testid={`button-delete-${connector.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden="true" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -1078,7 +1294,10 @@ export default function ConnectorsPage() {
                               <TableCell colSpan={8} className="p-0">
                                 {testResults[connector.id] && (
                                   <div className="px-4 pt-3">
-                                    <ConnectorTestResultCard result={testResults[connector.id]} connectorType={meta?.name || connector.type} />
+                                    <ConnectorTestResultCard
+                                      result={testResults[connector.id]}
+                                      connectorType={meta?.name || connector.type}
+                                    />
                                   </div>
                                 )}
                                 <ConnectorObservabilityPanel connector={connector} />
@@ -1103,9 +1322,9 @@ export default function ConnectorsPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {connectorTypes.map(ct => {
+                  {connectorTypes.map((ct) => {
                     const IconComp = getIcon(ct.icon);
-                    const isConnected = existingConnectors?.some(c => c.type === ct.type);
+                    const isConnected = existingConnectors?.some((c) => c.type === ct.type);
                     return (
                       <Card key={ct.type} className={isConnected ? "border-primary/30" : ""}>
                         <CardContent className="p-4">
@@ -1115,8 +1334,14 @@ export default function ConnectorsPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-sm" data-testid={`text-type-name-${ct.type}`}>{ct.name}</span>
-                                {isConnected && <Badge variant="secondary" className="text-[10px]">Connected</Badge>}
+                                <span className="font-medium text-sm" data-testid={`text-type-name-${ct.type}`}>
+                                  {ct.name}
+                                </span>
+                                {isConnected && (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    Connected
+                                  </Badge>
+                                )}
                               </div>
                               <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ct.description}</p>
                               {ct.docsUrl && (
@@ -1149,7 +1374,13 @@ export default function ConnectorsPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showCreateDialog} onOpenChange={(open) => { if (!open) resetForm(); setShowCreateDialog(open); }}>
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          if (!open) resetForm();
+          setShowCreateDialog(open);
+        }}
+      >
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Connector</DialogTitle>
@@ -1162,18 +1393,24 @@ export default function ConnectorsPage() {
                 id="connector-name"
                 placeholder="e.g. Production CrowdStrike"
                 value={connectorName}
-                onChange={e => setConnectorName(e.target.value)}
+                onChange={(e) => setConnectorName(e.target.value)}
                 data-testid="input-connector-name"
               />
             </div>
             <div className="space-y-2">
               <Label>Source Type</Label>
-              <Select value={selectedType} onValueChange={(val) => { setSelectedType(val); setFormData({}); }}>
+              <Select
+                value={selectedType}
+                onValueChange={(val) => {
+                  setSelectedType(val);
+                  setFormData({});
+                }}
+              >
                 <SelectTrigger data-testid="select-connector-type">
                   <SelectValue placeholder="Select a security tool..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {connectorTypes?.map(ct => (
+                  {connectorTypes?.map((ct) => (
                     <SelectItem key={ct.type} value={ct.type} data-testid={`option-type-${ct.type}`}>
                       {ct.name}
                     </SelectItem>
@@ -1204,7 +1441,7 @@ export default function ConnectorsPage() {
                     </a>
                   </div>
                 )}
-                {selectedMeta.requiredFields.map(field => {
+                {selectedMeta.requiredFields.map((field) => {
                   const val = formData[field.key] || "";
                   const isTouched = touchedFields[field.key];
                   const isEmpty = !val.trim();
@@ -1212,23 +1449,27 @@ export default function ConnectorsPage() {
                   const urlInvalid = isUrl && val.trim() && !/^https?:\/\/.+/.test(val.trim());
                   return (
                     <div key={field.key} className="space-y-2">
-                      <Label htmlFor={`field-${field.key}`}>{field.label} <span className="text-destructive">*</span></Label>
+                      <Label htmlFor={`field-${field.key}`}>
+                        {field.label} <span className="text-destructive">*</span>
+                      </Label>
                       <Input
                         id={`field-${field.key}`}
                         type={field.type === "password" ? "password" : "text"}
                         placeholder={field.placeholder}
                         value={val}
-                        onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-                        onBlur={() => setTouchedFields(prev => ({ ...prev, [field.key]: true }))}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                        onBlur={() => setTouchedFields((prev) => ({ ...prev, [field.key]: true }))}
                         className={isTouched && isEmpty ? "border-destructive" : urlInvalid ? "border-amber-500" : ""}
                         data-testid={`input-${field.key}`}
                       />
                       {isTouched && isEmpty && <p className="text-xs text-destructive">{field.label} is required</p>}
-                      {urlInvalid && <p className="text-xs text-amber-400">URL should start with http:// or https://</p>}
+                      {urlInvalid && (
+                        <p className="text-xs text-amber-400">URL should start with http:// or https://</p>
+                      )}
                     </div>
                   );
                 })}
-                {selectedMeta.optionalFields.map(field => {
+                {selectedMeta.optionalFields.map((field) => {
                   const val = formData[field.key] || "";
                   const isUrl = field.key.toLowerCase().includes("url") || field.key.toLowerCase().includes("endpoint");
                   const urlInvalid = isUrl && val.trim() && !/^https?:\/\/.+/.test(val.trim());
@@ -1240,11 +1481,13 @@ export default function ConnectorsPage() {
                         type={field.type === "password" ? "password" : "text"}
                         placeholder={field.placeholder}
                         value={val}
-                        onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         className={urlInvalid ? "border-amber-500" : ""}
                         data-testid={`input-${field.key}`}
                       />
-                      {urlInvalid && <p className="text-xs text-amber-400">URL should start with http:// or https://</p>}
+                      {urlInvalid && (
+                        <p className="text-xs text-amber-400">URL should start with http:// or https://</p>
+                      )}
                     </div>
                   );
                 })}
@@ -1256,7 +1499,7 @@ export default function ConnectorsPage() {
                     min="1"
                     max="1440"
                     value={pollingInterval}
-                    onChange={e => setPollingInterval(e.target.value)}
+                    onChange={(e) => setPollingInterval(e.target.value)}
                     data-testid="input-polling-interval"
                   />
                 </div>
@@ -1264,15 +1507,31 @@ export default function ConnectorsPage() {
             )}
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { resetForm(); setShowCreateDialog(false); }} data-testid="button-cancel-create">
+            <Button
+              variant="outline"
+              onClick={() => {
+                resetForm();
+                setShowCreateDialog(false);
+              }}
+              data-testid="button-cancel-create"
+            >
               Cancel
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!selectedType || !connectorName || createMutation.isPending || (selectedMeta ? selectedMeta.requiredFields.some(f => !formData[f.key]?.trim()) : false)}
+              disabled={
+                !selectedType ||
+                !connectorName ||
+                createMutation.isPending ||
+                (selectedMeta ? selectedMeta.requiredFields.some((f) => !formData[f.key]?.trim()) : false)
+              }
               data-testid="button-confirm-create"
             >
-              {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+              {createMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
               Create Connector
             </Button>
           </DialogFooter>

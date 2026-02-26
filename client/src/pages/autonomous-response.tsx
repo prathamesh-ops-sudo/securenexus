@@ -10,14 +10,28 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  Bot, Shield, RotateCcw, Play, Pause, Check, X, AlertTriangle,
-  Clock, Zap, Eye, Loader2, Trash2, ChevronDown, ChevronRight
+  Bot,
+  Shield,
+  RotateCcw,
+  Play,
+  Pause,
+  Check,
+  Clock,
+  Zap,
+  Eye,
+  Loader2,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 function formatTimestamp(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleString("en-US", {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -70,7 +84,12 @@ function PoliciesTab() {
   const [globalCooldown, setGlobalCooldown] = useState("30");
   const [globalRatePerHour, setGlobalRatePerHour] = useState("10");
 
-  const { data: policies, isLoading } = useQuery<any[]>({
+  const {
+    data: policies,
+    isLoading,
+    isError: _policiesError,
+    refetch: _refetchPolicies,
+  } = useQuery<any[]>({
     queryKey: ["/api/autonomous/policies"],
   });
 
@@ -118,12 +137,14 @@ function PoliciesTab() {
     mutationFn: async () => {
       const list = Array.isArray(policies) ? policies : [];
       const targets = list.filter((p) => p.status === "active");
-      await Promise.all(targets.map((policy) =>
-        apiRequest("PATCH", `/api/autonomous/policies/${policy.id}`, {
-          cooldownMinutes: Number(globalCooldown) || 0,
-          maxActionsPerHour: Number(globalRatePerHour) || 0,
-        })
-      ));
+      await Promise.all(
+        targets.map((policy) =>
+          apiRequest("PATCH", `/api/autonomous/policies/${policy.id}`, {
+            cooldownMinutes: Number(globalCooldown) || 0,
+            maxActionsPerHour: Number(globalRatePerHour) || 0,
+          }),
+        ),
+      );
       return targets.length;
     },
     onSuccess: (count) => {
@@ -140,7 +161,9 @@ function PoliciesTab() {
       <div className="space-y-3" data-testid="policies-loading">
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -196,24 +219,30 @@ function PoliciesTab() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Shield className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No policies configured</p>
-            <p className="text-xs text-muted-foreground mt-1">Seed default policies to get started with autonomous response</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Seed default policies to get started with autonomous response
+            </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
           {policies.map((policy: any, idx: number) => {
-            const conditions = (() => {
+            const _conditions = (() => {
               try {
                 if (typeof policy.conditions === "string") return JSON.parse(policy.conditions);
                 return policy.conditions || {};
-              } catch { return {}; }
+              } catch {
+                return {};
+              }
             })();
             const actions = (() => {
               try {
                 if (Array.isArray(policy.actions)) return policy.actions;
                 if (typeof policy.actions === "string") return JSON.parse(policy.actions);
                 return [];
-              } catch { return []; }
+              } catch {
+                return [];
+              }
             })();
 
             return (
@@ -225,19 +254,26 @@ function PoliciesTab() {
                         <span className="text-sm font-semibold" data-testid={`text-policy-name-${policy.id || idx}`}>
                           {policy.name || "Unnamed Policy"}
                         </span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${policyStatusBadge(policy.status)}`} data-testid={`badge-policy-status-${policy.id || idx}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${policyStatusBadge(policy.status)}`}
+                          data-testid={`badge-policy-status-${policy.id || idx}`}
+                        >
                           {policy.status || "unknown"}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                         {policy.triggerType && (
                           <span data-testid={`text-trigger-type-${policy.id || idx}`}>
-                            Trigger: <span className="font-medium text-foreground">{formatType(policy.triggerType)}</span>
+                            Trigger:{" "}
+                            <span className="font-medium text-foreground">{formatType(policy.triggerType)}</span>
                           </span>
                         )}
                         {policy.confidenceThreshold != null && (
                           <span data-testid={`text-confidence-${policy.id || idx}`}>
-                            Confidence: <span className="font-medium text-foreground">{Math.round(policy.confidenceThreshold * 100)}%</span>
+                            Confidence:{" "}
+                            <span className="font-medium text-foreground">
+                              {Math.round(policy.confidenceThreshold * 100)}%
+                            </span>
                           </span>
                         )}
                         {policy.severityFilter && (
@@ -265,7 +301,12 @@ function PoliciesTab() {
                       {actions.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {actions.map((action: string, ai: number) => (
-                            <Badge key={ai} variant="secondary" className="text-[10px]" data-testid={`badge-action-${policy.id || idx}-${ai}`}>
+                            <Badge
+                              key={ai}
+                              variant="secondary"
+                              className="text-[10px]"
+                              data-testid={`badge-action-${policy.id || idx}-${ai}`}
+                            >
                               {typeof action === "string" ? action : JSON.stringify(action)}
                             </Badge>
                           ))}
@@ -280,11 +321,7 @@ function PoliciesTab() {
                         disabled={toggleMutation.isPending}
                         data-testid={`button-toggle-policy-${policy.id || idx}`}
                       >
-                        {policy.status === "active" ? (
-                          <Pause className="h-4 w-4" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
+                        {policy.status === "active" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                       </Button>
                       <Button
                         size="icon"
@@ -308,12 +345,23 @@ function PoliciesTab() {
 }
 
 function ActionTimelineTab() {
-  const { data: actions, isLoading } = useQuery<any[]>({
+  const {
+    data: actions,
+    isLoading,
+    isError: _actionsError,
+    refetch: _refetchActions,
+  } = useQuery<any[]>({
     queryKey: ["/api/response-actions"],
   });
 
   if (isLoading) {
-    return <Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>;
+    return (
+      <Card>
+        <CardContent className="p-4">
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -321,10 +369,16 @@ function ActionTimelineTab() {
       <div className="flex items-center gap-2">
         <Clock className="h-5 w-5 text-muted-foreground" />
         <h2 className="text-lg font-semibold">Action Audit Timeline</h2>
-        <Badge variant="outline" className="text-[10px]">{actions?.length ?? 0}</Badge>
+        <Badge variant="outline" className="text-[10px]">
+          {actions?.length ?? 0}
+        </Badge>
       </div>
       {!actions || actions.length === 0 ? (
-        <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">No response actions recorded yet.</CardContent></Card>
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No response actions recorded yet.
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-2">
           {actions.slice(0, 50).map((action, idx) => (
@@ -332,16 +386,26 @@ function ActionTimelineTab() {
               <CardContent className="p-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <span className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${runStatusBadge(action.status || "queued")}`}>
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${runStatusBadge(action.status || "queued")}`}
+                    >
                       {action.status || "queued"}
                     </span>
                     <span className="text-sm font-medium">{formatType(action.actionType || "unknown")}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{formatTimestamp(action.executedAt || action.createdAt)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatTimestamp(action.executedAt || action.createdAt)}
+                  </span>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Target: <span className="text-foreground font-medium">{action.targetValue || action.target || "n/a"}</span>
-                  {action.incidentId ? <span> · Incident: <span className="text-foreground font-medium">{action.incidentId}</span></span> : null}
+                  Target:{" "}
+                  <span className="text-foreground font-medium">{action.targetValue || action.target || "n/a"}</span>
+                  {action.incidentId ? (
+                    <span>
+                      {" "}
+                      · Incident: <span className="text-foreground font-medium">{action.incidentId}</span>
+                    </span>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
@@ -389,7 +453,9 @@ function InvestigationsTab() {
       <div className="space-y-3" data-testid="investigations-loading">
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -418,7 +484,11 @@ function InvestigationsTab() {
               </SelectTrigger>
               <SelectContent>
                 {incidents?.map((incident: any) => (
-                  <SelectItem key={incident.id} value={String(incident.id)} data-testid={`option-incident-${incident.id}`}>
+                  <SelectItem
+                    key={incident.id}
+                    value={String(incident.id)}
+                    data-testid={`option-incident-${incident.id}`}
+                  >
                     #{incident.id} - {incident.title || incident.name || `Incident ${incident.id}`}
                   </SelectItem>
                 ))}
@@ -445,7 +515,9 @@ function InvestigationsTab() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Eye className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No investigations yet</p>
-            <p className="text-xs text-muted-foreground mt-1">Select an incident above to start an AI-powered investigation</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Select an incident above to start an AI-powered investigation
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -479,7 +551,10 @@ function InvestigationsTab() {
                         <span className="text-sm font-semibold" data-testid={`text-investigation-id-${run.id || idx}`}>
                           Investigation #{run.id}
                         </span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${runStatusBadge(run.status)}`} data-testid={`badge-investigation-status-${run.id || idx}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${runStatusBadge(run.status)}`}
+                          data-testid={`badge-investigation-status-${run.id || idx}`}
+                        >
                           {run.status || "unknown"}
                         </span>
                       </div>
@@ -496,7 +571,10 @@ function InvestigationsTab() {
                         )}
                         {run.confidenceScore != null && (
                           <span data-testid={`text-confidence-score-${run.id || idx}`}>
-                            Confidence: <span className="font-medium text-foreground">{Math.round(run.confidenceScore * 100)}%</span>
+                            Confidence:{" "}
+                            <span className="font-medium text-foreground">
+                              {Math.round(run.confidenceScore * 100)}%
+                            </span>
                           </span>
                         )}
                         {run.durationMs != null && (
@@ -506,9 +584,7 @@ function InvestigationsTab() {
                           </span>
                         )}
                         {run.createdAt && (
-                          <span data-testid={`text-created-${run.id || idx}`}>
-                            {formatTimestamp(run.createdAt)}
-                          </span>
+                          <span data-testid={`text-created-${run.id || idx}`}>{formatTimestamp(run.createdAt)}</span>
                         )}
                       </div>
                     </div>
@@ -522,7 +598,10 @@ function InvestigationsTab() {
                   </div>
 
                   {isExpanded && steps.length > 0 && (
-                    <div className="mt-4 ml-6 border-l border-border pl-4 space-y-3" data-testid={`timeline-${run.id || idx}`}>
+                    <div
+                      className="mt-4 ml-6 border-l border-border pl-4 space-y-3"
+                      data-testid={`timeline-${run.id || idx}`}
+                    >
                       {steps.map((step: any, si: number) => (
                         <div key={si} className="flex items-start gap-3" data-testid={`step-${run.id || idx}-${si}`}>
                           <div className="p-1.5 rounded-md bg-muted/50 flex-shrink-0 mt-0.5">
@@ -530,10 +609,16 @@ function InvestigationsTab() {
                           </div>
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium" data-testid={`text-step-title-${run.id || idx}-${si}`}>
+                              <span
+                                className="text-sm font-medium"
+                                data-testid={`text-step-title-${run.id || idx}-${si}`}
+                              >
                                 {step.title || formatType(step.type || step.stepType || "Step")}
                               </span>
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${runStatusBadge(step.status || "completed")}`} data-testid={`badge-step-status-${run.id || idx}-${si}`}>
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${runStatusBadge(step.status || "completed")}`}
+                                data-testid={`badge-step-status-${run.id || idx}-${si}`}
+                              >
                                 {step.status || "completed"}
                               </span>
                               {step.durationMs != null && (
@@ -544,7 +629,10 @@ function InvestigationsTab() {
                               )}
                             </div>
                             {step.result && (
-                              <p className="text-xs text-muted-foreground" data-testid={`text-step-result-${run.id || idx}-${si}`}>
+                              <p
+                                className="text-xs text-muted-foreground"
+                                data-testid={`text-step-result-${run.id || idx}-${si}`}
+                              >
                                 {typeof step.result === "string" ? step.result : JSON.stringify(step.result)}
                               </p>
                             )}
@@ -555,7 +643,10 @@ function InvestigationsTab() {
                   )}
 
                   {isExpanded && steps.length === 0 && (
-                    <div className="mt-4 ml-6 text-xs text-muted-foreground" data-testid={`empty-steps-${run.id || idx}`}>
+                    <div
+                      className="mt-4 ml-6 text-xs text-muted-foreground"
+                      data-testid={`empty-steps-${run.id || idx}`}
+                    >
                       No steps recorded for this investigation.
                     </div>
                   )}
@@ -611,7 +702,9 @@ function RollbacksTab() {
       <div className="space-y-3" data-testid="rollbacks-loading">
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -654,7 +747,9 @@ function RollbacksTab() {
               data-testid="input-rollback-target"
             />
             <Button
-              onClick={() => newActionType && newTarget && createMutation.mutate({ actionType: newActionType, target: newTarget })}
+              onClick={() =>
+                newActionType && newTarget && createMutation.mutate({ actionType: newActionType, target: newTarget })
+              }
               disabled={!newActionType || !newTarget || createMutation.isPending}
               data-testid="button-create-rollback"
             >
@@ -674,7 +769,9 @@ function RollbacksTab() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <RotateCcw className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No rollback records</p>
-            <p className="text-xs text-muted-foreground mt-1">Rollback records will appear here when autonomous actions are taken</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Rollback records will appear here when autonomous actions are taken
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -686,10 +783,16 @@ function RollbacksTab() {
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <RotateCcw className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      <span className="text-sm font-semibold" data-testid={`text-rollback-action-${rollback.id || idx}`}>
+                      <span
+                        className="text-sm font-semibold"
+                        data-testid={`text-rollback-action-${rollback.id || idx}`}
+                      >
                         {formatType(rollback.actionType || "Unknown Action")}
                       </span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${rollbackStatusBadge(rollback.status)}`} data-testid={`badge-rollback-status-${rollback.id || idx}`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${rollbackStatusBadge(rollback.status)}`}
+                        data-testid={`badge-rollback-status-${rollback.id || idx}`}
+                      >
                         {rollback.status || "unknown"}
                       </span>
                     </div>
@@ -700,7 +803,10 @@ function RollbacksTab() {
                         </span>
                       )}
                       {rollback.createdAt && (
-                        <span className="flex items-center gap-1" data-testid={`text-rollback-created-${rollback.id || idx}`}>
+                        <span
+                          className="flex items-center gap-1"
+                          data-testid={`text-rollback-created-${rollback.id || idx}`}
+                        >
                           <Clock className="h-3 w-3" />
                           {formatTimestamp(rollback.createdAt)}
                         </span>
@@ -754,7 +860,10 @@ export default function AutonomousResponsePage() {
         </div>
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-muted-foreground" />
-          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase tracking-wider">
+          <Badge
+            variant="outline"
+            className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase tracking-wider"
+          >
             Phase 9
           </Badge>
         </div>

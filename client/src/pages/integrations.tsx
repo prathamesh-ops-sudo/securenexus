@@ -1,10 +1,28 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Plug, Bell, Shield, Plus, Trash2, Pencil, TestTube, RefreshCw,
-  Loader2, CheckCircle, XCircle, AlertTriangle, Clock, Zap,
-  Mail, MessageSquare, Webhook, Star, ArrowLeftRight, ShieldCheck,
-  Play, Eye, ThumbsUp, ThumbsDown, Link2, RotateCcw,
+  Plug,
+  Bell,
+  Shield,
+  Plus,
+  Trash2,
+  Pencil,
+  TestTube,
+  RefreshCw,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Clock,
+  Zap,
+  Star,
+  ArrowLeftRight,
+  ShieldCheck,
+  Play,
+  Eye,
+  ThumbsUp,
+  ThumbsDown,
+  Link2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,15 +31,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
-} from "@/components/ui/dialog";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -91,8 +103,11 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type: string; 
 function formatDateTime(date: string | Date | null | undefined): string {
   if (!date) return "Never";
   return new Date(date).toLocaleString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -107,7 +122,10 @@ function typeBadge(type: string) {
     webhook: "border-orange-500/30 text-orange-400",
   };
   return (
-    <Badge variant="outline" className={`no-default-hover-elevate no-default-active-elevate text-[10px] uppercase ${colors[type] || ""}`}>
+    <Badge
+      variant="outline"
+      className={`no-default-hover-elevate no-default-active-elevate text-[10px] uppercase ${colors[type] || ""}`}
+    >
       {type}
     </Badge>
   );
@@ -116,17 +134,38 @@ function typeBadge(type: string) {
 function statusBadge(status: string) {
   switch (status) {
     case "active":
-      return <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" />Active</Badge>;
+      return (
+        <Badge variant="default">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Active
+        </Badge>
+      );
     case "error":
-      return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Error</Badge>;
+      return (
+        <Badge variant="destructive">
+          <XCircle className="h-3 w-3 mr-1" />
+          Error
+        </Badge>
+      );
     case "inactive":
-      return <Badge variant="outline"><AlertTriangle className="h-3 w-3 mr-1" />Inactive</Badge>;
+      return (
+        <Badge variant="outline">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Inactive
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
 }
 
-function IntegrationTestResultCard({ result, integrationType }: { result: { success: boolean; message?: string } | null; integrationType: string }) {
+function IntegrationTestResultCard({
+  result,
+  integrationType,
+}: {
+  result: { success: boolean; message?: string } | null;
+  integrationType: string;
+}) {
   if (!result) return null;
   if (result.success) {
     return (
@@ -135,31 +174,68 @@ function IntegrationTestResultCard({ result, integrationType }: { result: { succ
           <CheckCircle className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-medium text-emerald-400">Connection Successful</span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">{result.message || `${integrationType} integration is responding correctly.`}</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {result.message || `${integrationType} integration is responding correctly.`}
+        </p>
       </div>
     );
   }
   const remediationSteps: Record<string, string[]> = {
-    jira: ["Verify the Base URL includes https:// and your domain", "Check the API token hasn't expired", "Ensure the email matches the token owner"],
-    servicenow: ["Confirm the Instance URL is correct", "Verify username and password credentials", "Check instance is not in maintenance mode"],
-    slack: ["Verify the Webhook URL is a valid Slack incoming webhook", "Check the channel exists and bot has access", "Regenerate the webhook if it was revoked"],
-    teams: ["Verify the Webhook URL is a valid Teams connector URL", "Check the connector hasn't been removed from the channel"],
-    pagerduty: ["Verify the Routing Key is correct", "Check the Service ID matches an active service", "Ensure the integration key hasn't been rotated"],
-    email: ["Verify SMTP host and port are correct", "Check SMTP credentials and authentication method", "Ensure the SMTP server allows connections from your IP"],
-    webhook: ["Verify the URL is reachable from the server", "Check the signing secret matches", "Ensure the endpoint accepts the configured HTTP method"],
+    jira: [
+      "Verify the Base URL includes https:// and your domain",
+      "Check the API token hasn't expired",
+      "Ensure the email matches the token owner",
+    ],
+    servicenow: [
+      "Confirm the Instance URL is correct",
+      "Verify username and password credentials",
+      "Check instance is not in maintenance mode",
+    ],
+    slack: [
+      "Verify the Webhook URL is a valid Slack incoming webhook",
+      "Check the channel exists and bot has access",
+      "Regenerate the webhook if it was revoked",
+    ],
+    teams: [
+      "Verify the Webhook URL is a valid Teams connector URL",
+      "Check the connector hasn't been removed from the channel",
+    ],
+    pagerduty: [
+      "Verify the Routing Key is correct",
+      "Check the Service ID matches an active service",
+      "Ensure the integration key hasn't been rotated",
+    ],
+    email: [
+      "Verify SMTP host and port are correct",
+      "Check SMTP credentials and authentication method",
+      "Ensure the SMTP server allows connections from your IP",
+    ],
+    webhook: [
+      "Verify the URL is reachable from the server",
+      "Check the signing secret matches",
+      "Ensure the endpoint accepts the configured HTTP method",
+    ],
   };
-  const steps = remediationSteps[integrationType] || ["Check the integration configuration", "Verify network connectivity", "Review the service status page"];
+  const steps = remediationSteps[integrationType] || [
+    "Check the integration configuration",
+    "Verify network connectivity",
+    "Review the service status page",
+  ];
   return (
     <div className="mt-2 p-3 rounded-lg border border-destructive/30 bg-destructive/5">
       <div className="flex items-center gap-2">
         <XCircle className="h-4 w-4 text-destructive" />
         <span className="text-sm font-medium text-destructive">Connection Failed</span>
       </div>
-      {result.message && <p className="text-xs text-muted-foreground mt-1 font-mono bg-muted/30 p-2 rounded">{result.message}</p>}
+      {result.message && (
+        <p className="text-xs text-muted-foreground mt-1 font-mono bg-muted/30 p-2 rounded">{result.message}</p>
+      )}
       <div className="mt-2">
         <p className="text-xs font-medium mb-1">Remediation Steps:</p>
         <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          {steps.map((step, i) => <li key={i}>{step}</li>)}
+          {steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
         </ol>
       </div>
     </div>
@@ -177,7 +253,12 @@ function IntegrationsTab() {
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string }>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
-  const { data: integrations, isLoading } = useQuery<IntegrationConfig[]>({
+  const {
+    data: integrations,
+    isLoading,
+    isError: integrationsError,
+    refetch: refetchIntegrations,
+  } = useQuery<IntegrationConfig[]>({
     queryKey: ["/api/integrations"],
   });
 
@@ -232,7 +313,7 @@ function IntegrationsTab() {
     },
     onSuccess: ({ id, data }: { id: string; data: { success: boolean; message?: string } }) => {
       setTestingId(null);
-      setTestResults(prev => ({ ...prev, [id]: data }));
+      setTestResults((prev) => ({ ...prev, [id]: data }));
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
       if (data.success) {
         toast({ title: "Connection successful", description: data.message || "Integration is working." });
@@ -281,7 +362,7 @@ function IntegrationsTab() {
     }
   }
 
-  const fields = formType ? (CONFIG_FIELDS[formType] || []) : [];
+  const fields = formType ? CONFIG_FIELDS[formType] || [] : [];
 
   if (isLoading) {
     return (
@@ -296,6 +377,28 @@ function IntegrationsTab() {
           </div>
         ))}
         <span className="sr-only">Loading integrations...</span>
+      </div>
+    );
+  }
+
+  if (integrationsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load integrations</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchIntegrations();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -315,7 +418,11 @@ function IntegrationsTab() {
         </CardHeader>
         <CardContent>
           {!integrations?.length ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" role="status" aria-label="No integrations">
+            <div
+              className="flex flex-col items-center justify-center py-12 text-muted-foreground"
+              role="status"
+              aria-label="No integrations"
+            >
               <Plug className="h-10 w-10 mb-3" aria-hidden="true" />
               <p className="text-sm font-medium">No integrations configured yet</p>
               <p className="text-xs mt-1">Add an integration to connect with external tools</p>
@@ -341,18 +448,24 @@ function IntegrationsTab() {
                     <TableRow key={item.id} data-testid={`row-integration-${item.id}`}>
                       <TableCell>
                         <div>
-                          <span className="text-sm font-medium" data-testid={`text-integration-name-${item.id}`}>{item.name}</span>
-                          <IntegrationTestResultCard result={testResults[item.id] || null} integrationType={item.type} />
+                          <span className="text-sm font-medium" data-testid={`text-integration-name-${item.id}`}>
+                            {item.name}
+                          </span>
+                          <IntegrationTestResultCard
+                            result={testResults[item.id] || null}
+                            integrationType={item.type}
+                          />
                         </div>
                       </TableCell>
-                      <TableCell data-testid={`badge-integration-type-${item.id}`}>
-                        {typeBadge(item.type)}
-                      </TableCell>
+                      <TableCell data-testid={`badge-integration-type-${item.id}`}>{typeBadge(item.type)}</TableCell>
                       <TableCell data-testid={`badge-integration-status-${item.id}`}>
                         {statusBadge(item.status)}
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground" data-testid={`text-integration-tested-${item.id}`}>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-integration-tested-${item.id}`}
+                        >
                           {formatDateTime(item.lastTestedAt)}
                         </span>
                       </TableCell>
@@ -365,7 +478,11 @@ function IntegrationsTab() {
                             disabled={testingId === item.id}
                             data-testid={`button-test-integration-${item.id}`}
                           >
-                            {testingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTube className="h-4 w-4" aria-hidden="true" />}
+                            {testingId === item.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <TestTube className="h-4 w-4" aria-hidden="true" />
+                            )}
                           </Button>
                           <Button
                             size="icon"
@@ -398,7 +515,13 @@ function IntegrationsTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={showDialog} onOpenChange={(open) => { if (!open) closeDialog(); else setShowDialog(true); }}>
+      <Dialog
+        open={showDialog}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+          else setShowDialog(true);
+        }}
+      >
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Integration" : "Add Integration"}</DialogTitle>
@@ -416,7 +539,13 @@ function IntegrationsTab() {
             </div>
             <div className="space-y-2">
               <Label>Type</Label>
-              <Select value={formType} onValueChange={(val) => { setFormType(val); if (!editingItem) setFormConfig({}); }}>
+              <Select
+                value={formType}
+                onValueChange={(val) => {
+                  setFormType(val);
+                  if (!editingItem) setFormConfig({});
+                }}
+              >
                 <SelectTrigger data-testid="select-integration-type">
                   <SelectValue placeholder="Select integration type..." />
                 </SelectTrigger>
@@ -445,27 +574,33 @@ function IntegrationsTab() {
                     placeholder={field.placeholder}
                     value={val}
                     onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                    onBlur={() => setTouchedFields(prev => ({ ...prev, [field.key]: true }))}
+                    onBlur={() => setTouchedFields((prev) => ({ ...prev, [field.key]: true }))}
                     className={urlInvalid ? "border-amber-500" : emailInvalid ? "border-amber-500" : ""}
                     data-testid={`input-integration-${field.key}`}
                   />
                   {urlInvalid && <p className="text-xs text-amber-400">URL should start with http:// or https://</p>}
                   {emailInvalid && <p className="text-xs text-amber-400">Please enter a valid email address</p>}
-                  {isTouched && !val.trim() && <p className="text-xs text-muted-foreground">This field is recommended for the integration to work</p>}
+                  {isTouched && !val.trim() && (
+                    <p className="text-xs text-muted-foreground">
+                      This field is recommended for the integration to work
+                    </p>
+                  )}
                 </div>
               );
             })}
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" data-testid="button-cancel-integration">Cancel</Button>
+              <Button variant="outline" data-testid="button-cancel-integration">
+                Cancel
+              </Button>
             </DialogClose>
             <Button
               onClick={handleSubmit}
               disabled={!formName || !formType || createMutation.isPending || updateMutation.isPending}
               data-testid="button-submit-integration"
             >
-              {(createMutation.isPending || updateMutation.isPending) ? (
+              {createMutation.isPending || updateMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <Plus className="h-4 w-4 mr-2" />
@@ -489,7 +624,12 @@ function NotificationChannelsTab() {
   const [formIsDefault, setFormIsDefault] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
 
-  const { data: channels, isLoading } = useQuery<NotificationChannel[]>({
+  const {
+    data: channels,
+    isLoading,
+    isError: _channelsError,
+    refetch: _refetchChannels,
+  } = useQuery<NotificationChannel[]>({
     queryKey: ["/api/notification-channels"],
   });
 
@@ -551,9 +691,7 @@ function NotificationChannelsTab() {
   }
 
   function toggleEvent(event: string) {
-    setFormEvents((prev) =>
-      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]
-    );
+    setFormEvents((prev) => (prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]));
   }
 
   function handleSubmit() {
@@ -571,7 +709,7 @@ function NotificationChannelsTab() {
     });
   }
 
-  const channelFields = formType ? (CONFIG_FIELDS[formType] || []) : [];
+  const channelFields = formType ? CONFIG_FIELDS[formType] || [] : [];
 
   if (isLoading) {
     return (
@@ -618,23 +756,26 @@ function NotificationChannelsTab() {
                   {channels.map((ch) => (
                     <TableRow key={ch.id} data-testid={`row-channel-${ch.id}`}>
                       <TableCell>
-                        <span className="text-sm font-medium" data-testid={`text-channel-name-${ch.id}`}>{ch.name}</span>
+                        <span className="text-sm font-medium" data-testid={`text-channel-name-${ch.id}`}>
+                          {ch.name}
+                        </span>
                       </TableCell>
-                      <TableCell data-testid={`badge-channel-type-${ch.id}`}>
-                        {typeBadge(ch.type)}
-                      </TableCell>
+                      <TableCell data-testid={`badge-channel-type-${ch.id}`}>{typeBadge(ch.type)}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {(ch.events || []).map((ev) => (
-                            <Badge key={ev} variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]" data-testid={`badge-channel-event-${ch.id}-${ev}`}>
+                            <Badge
+                              key={ev}
+                              variant="outline"
+                              className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                              data-testid={`badge-channel-event-${ch.id}-${ev}`}
+                            >
                               {ev.replace(/_/g, " ")}
                             </Badge>
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell data-testid={`badge-channel-status-${ch.id}`}>
-                        {statusBadge(ch.status)}
-                      </TableCell>
+                      <TableCell data-testid={`badge-channel-status-${ch.id}`}>{statusBadge(ch.status)}</TableCell>
                       <TableCell>
                         {ch.isDefault && (
                           <Star className="h-4 w-4 text-yellow-400" data-testid={`icon-channel-default-${ch.id}`} />
@@ -649,7 +790,11 @@ function NotificationChannelsTab() {
                             disabled={testingId === ch.id}
                             data-testid={`button-test-channel-${ch.id}`}
                           >
-                            {testingId === ch.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube className="h-4 w-4" />}
+                            {testingId === ch.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <TestTube className="h-4 w-4" />
+                            )}
                           </Button>
                           <Button
                             size="icon"
@@ -674,7 +819,13 @@ function NotificationChannelsTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={showDialog} onOpenChange={(open) => { if (!open) closeDialog(); else setShowDialog(true); }}>
+      <Dialog
+        open={showDialog}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+          else setShowDialog(true);
+        }}
+      >
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Notification Channel</DialogTitle>
@@ -692,7 +843,13 @@ function NotificationChannelsTab() {
             </div>
             <div className="space-y-2">
               <Label>Type</Label>
-              <Select value={formType} onValueChange={(val) => { setFormType(val); setFormConfig({}); }}>
+              <Select
+                value={formType}
+                onValueChange={(val) => {
+                  setFormType(val);
+                  setFormConfig({});
+                }}
+              >
                 <SelectTrigger data-testid="select-channel-type">
                   <SelectValue placeholder="Select channel type..." />
                 </SelectTrigger>
@@ -750,16 +907,14 @@ function NotificationChannelsTab() {
                   <div className="text-xs text-muted-foreground">Use as default notification target</div>
                 </div>
               </div>
-              <Switch
-                checked={formIsDefault}
-                onCheckedChange={setFormIsDefault}
-                data-testid="switch-channel-default"
-              />
+              <Switch checked={formIsDefault} onCheckedChange={setFormIsDefault} data-testid="switch-channel-default" />
             </div>
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" data-testid="button-cancel-channel">Cancel</Button>
+              <Button variant="outline" data-testid="button-cancel-channel">
+                Cancel
+              </Button>
             </DialogClose>
             <Button
               onClick={handleSubmit}
@@ -781,22 +936,54 @@ function NotificationChannelsTab() {
 }
 
 function ResponseActionsTab() {
-  const { data: actions, isLoading, refetch } = useQuery<ResponseAction[]>({
+  const {
+    data: actions,
+    isLoading,
+    refetch,
+  } = useQuery<ResponseAction[]>({
     queryKey: ["/api/response-actions"],
   });
 
   const actionStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge variant="default" className="border-green-500/30 text-green-400"><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>;
+        return (
+          <Badge variant="default" className="border-green-500/30 text-green-400">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Completed
+          </Badge>
+        );
       case "simulated":
-        return <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/30 text-yellow-400"><AlertTriangle className="h-3 w-3 mr-1" />Simulated</Badge>;
+        return (
+          <Badge
+            variant="outline"
+            className="no-default-hover-elevate no-default-active-elevate border-yellow-500/30 text-yellow-400"
+          >
+            <AlertTriangle className="h-3 w-3 mr-1" />
+            Simulated
+          </Badge>
+        );
       case "failed":
-        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+        return (
+          <Badge variant="destructive">
+            <XCircle className="h-3 w-3 mr-1" />
+            Failed
+          </Badge>
+        );
       case "pending":
-        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+        return (
+          <Badge variant="secondary">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
       case "executing":
-        return <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Executing</Badge>;
+        return (
+          <Badge variant="secondary">
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            Executing
+          </Badge>
+        );
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -818,12 +1005,7 @@ function ResponseActionsTab() {
             <Zap className="h-4 w-4 text-muted-foreground" />
             Response Actions Log
           </CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => refetch()}
-            data-testid="button-refresh-actions"
-          >
+          <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="button-refresh-actions">
             <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
             Refresh
           </Button>
@@ -852,7 +1034,10 @@ function ResponseActionsTab() {
                   {actions.map((action) => (
                     <TableRow key={action.id} data-testid={`row-action-${action.id}`}>
                       <TableCell data-testid={`badge-action-type-${action.id}`}>
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                        >
                           {action.actionType.replace(/_/g, " ")}
                         </Badge>
                       </TableCell>
@@ -865,7 +1050,10 @@ function ResponseActionsTab() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs font-mono text-muted-foreground" data-testid={`text-action-incident-${action.id}`}>
+                        <span
+                          className="text-xs font-mono text-muted-foreground"
+                          data-testid={`text-action-incident-${action.id}`}
+                        >
                           {action.incidentId ? action.incidentId.slice(0, 8) + "..." : "N/A"}
                         </span>
                       </TableCell>
@@ -873,7 +1061,10 @@ function ResponseActionsTab() {
                         {actionStatusBadge(action.status)}
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground" data-testid={`text-action-executor-${action.id}`}>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-action-executor-${action.id}`}
+                        >
                           {action.executedBy || "System"}
                         </span>
                       </TableCell>
@@ -975,16 +1166,45 @@ function TicketSyncTab() {
 
   const syncStatusBadge = (status: string) => {
     switch (status) {
-      case "synced": return <Badge variant="default" className="border-green-500/30 text-green-400"><CheckCircle className="h-3 w-3 mr-1" />Synced</Badge>;
-      case "syncing": return <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Syncing</Badge>;
-      case "error": return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Error</Badge>;
-      default: return <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+      case "synced":
+        return (
+          <Badge variant="default" className="border-green-500/30 text-green-400">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Synced
+          </Badge>
+        );
+      case "syncing":
+        return (
+          <Badge variant="secondary">
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            Syncing
+          </Badge>
+        );
+      case "error":
+        return (
+          <Badge variant="destructive">
+            <XCircle className="h-3 w-3 mr-1" />
+            Error
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
     }
   };
 
-  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (isLoading)
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
 
-  const jiraSnIntegrations = (integrations || []).filter(i => i.type === "jira" || i.type === "servicenow");
+  const jiraSnIntegrations = (integrations || []).filter((i) => i.type === "jira" || i.type === "servicenow");
 
   return (
     <div className="space-y-4">
@@ -995,7 +1215,8 @@ function TicketSyncTab() {
             Bi-Directional Ticket Sync
           </CardTitle>
           <Button size="sm" onClick={() => setShowCreate(true)} disabled={jiraSnIntegrations.length === 0}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />New Sync
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New Sync
           </Button>
         </CardHeader>
         <CardContent>
@@ -1008,7 +1229,9 @@ function TicketSyncTab() {
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <ArrowLeftRight className="h-10 w-10 mb-3" />
               <p className="text-sm">No ticket sync jobs configured</p>
-              <p className="text-xs mt-1">Create a sync to mirror statuses and comments between SecureNexus and your ticketing system</p>
+              <p className="text-xs mt-1">
+                Create a sync to mirror statuses and comments between SecureNexus and your ticketing system
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto border rounded-md">
@@ -1032,29 +1255,59 @@ function TicketSyncTab() {
                         <span className="text-xs font-mono">{job.integrationId.slice(0, 8)}...</span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
-                          {job.direction === "bidirectional" ? "Bi-directional" : job.direction === "outbound" ? "Outbound" : "Inbound"}
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                        >
+                          {job.direction === "bidirectional"
+                            ? "Bi-directional"
+                            : job.direction === "outbound"
+                              ? "Outbound"
+                              : "Inbound"}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         {job.externalTicketUrl ? (
-                          <a href={job.externalTicketUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline flex items-center gap-1">
-                            <Link2 className="h-3 w-3" />{job.externalTicketId || "View"}
+                          <a
+                            href={job.externalTicketUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:underline flex items-center gap-1"
+                          >
+                            <Link2 className="h-3 w-3" />
+                            {job.externalTicketId || "View"}
                           </a>
                         ) : (
                           <span className="text-xs text-muted-foreground">{job.externalTicketId || "Not linked"}</span>
                         )}
                       </TableCell>
                       <TableCell>{syncStatusBadge(job.syncStatus)}</TableCell>
-                      <TableCell><span className="text-xs">{job.commentsMirrored}</span></TableCell>
-                      <TableCell><span className="text-xs">{job.statusSyncs}</span></TableCell>
-                      <TableCell><span className="text-xs text-muted-foreground">{formatDateTime(job.lastSyncedAt)}</span></TableCell>
+                      <TableCell>
+                        <span className="text-xs">{job.commentsMirrored}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs">{job.statusSyncs}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">{formatDateTime(job.lastSyncedAt)}</span>
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => syncMutation.mutate(job.id)} disabled={syncMutation.isPending}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2"
+                            onClick={() => syncMutation.mutate(job.id)}
+                            disabled={syncMutation.isPending}
+                          >
                             <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
                           </Button>
-                          <Button size="sm" variant="outline" className="h-7 px-2 text-red-400" onClick={() => deleteMutation.mutate(job.id)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-red-400"
+                            onClick={() => deleteMutation.mutate(job.id)}
+                          >
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
@@ -1070,15 +1323,21 @@ function TicketSyncTab() {
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Create Ticket Sync</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Create Ticket Sync</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Integration</Label>
               <Select value={newIntegrationId} onValueChange={setNewIntegrationId}>
-                <SelectTrigger><SelectValue placeholder="Select integration" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select integration" />
+                </SelectTrigger>
                 <SelectContent>
-                  {jiraSnIntegrations.map(i => (
-                    <SelectItem key={i.id} value={i.id}>{i.name} ({i.type})</SelectItem>
+                  {jiraSnIntegrations.map((i) => (
+                    <SelectItem key={i.id} value={i.id}>
+                      {i.name} ({i.type})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1086,7 +1345,9 @@ function TicketSyncTab() {
             <div>
               <Label className="text-xs">Direction</Label>
               <Select value={newDirection} onValueChange={setNewDirection}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="bidirectional">Bi-directional</SelectItem>
                   <SelectItem value="outbound">Outbound only</SelectItem>
@@ -1096,11 +1357,17 @@ function TicketSyncTab() {
             </div>
             <div>
               <Label className="text-xs">Incident ID (optional)</Label>
-              <Input value={newIncidentId} onChange={e => setNewIncidentId(e.target.value)} placeholder="Link to specific incident" />
+              <Input
+                value={newIncidentId}
+                onChange={(e) => setNewIncidentId(e.target.value)}
+                placeholder="Link to specific incident"
+              />
             </div>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
             <Button onClick={() => createMutation.mutate()} disabled={!newIntegrationId || createMutation.isPending}>
               {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               Create
@@ -1131,10 +1398,13 @@ function ResponseApprovalsTab() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/response-approvals", {
-      actionType: newActionType, targetType: newTargetType, targetValue: newTargetValue,
-      requiredApprovers: 1,
-    }),
+    mutationFn: async () =>
+      apiRequest("POST", "/api/response-approvals", {
+        actionType: newActionType,
+        targetType: newTargetType,
+        targetValue: newTargetValue,
+        requiredApprovers: 1,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/response-approvals"] });
       setShowCreate(false);
@@ -1151,23 +1421,59 @@ function ResponseApprovalsTab() {
   const dryRunMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/response-actions/dry-run", {
-        actionType: newActionType, target: { targetType: newTargetType, targetValue: newTargetValue },
+        actionType: newActionType,
+        target: { targetType: newTargetType, targetValue: newTargetValue },
       });
       return res.json();
     },
-    onSuccess: (data) => { setDryRunResult(data); setShowDryRun(true); },
+    onSuccess: (data) => {
+      setDryRunResult(data);
+      setShowDryRun(true);
+    },
   });
 
   const approvalStatusBadge = (status: string) => {
     switch (status) {
-      case "approved": return <Badge variant="default" className="border-green-500/30 text-green-400"><ThumbsUp className="h-3 w-3 mr-1" />Approved</Badge>;
-      case "rejected": return <Badge variant="destructive"><ThumbsDown className="h-3 w-3 mr-1" />Rejected</Badge>;
-      case "expired": return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Expired</Badge>;
-      default: return <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/30 text-yellow-400"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+      case "approved":
+        return (
+          <Badge variant="default" className="border-green-500/30 text-green-400">
+            <ThumbsUp className="h-3 w-3 mr-1" />
+            Approved
+          </Badge>
+        );
+      case "rejected":
+        return (
+          <Badge variant="destructive">
+            <ThumbsDown className="h-3 w-3 mr-1" />
+            Rejected
+          </Badge>
+        );
+      case "expired":
+        return (
+          <Badge variant="secondary">
+            <Clock className="h-3 w-3 mr-1" />
+            Expired
+          </Badge>
+        );
+      default:
+        return (
+          <Badge
+            variant="outline"
+            className="no-default-hover-elevate no-default-active-elevate border-yellow-500/30 text-yellow-400"
+          >
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
     }
   };
 
-  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (isLoading)
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
 
   return (
     <div className="space-y-4">
@@ -1179,7 +1485,9 @@ function ResponseApprovalsTab() {
           </CardTitle>
           <div className="flex gap-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-32 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
@@ -1188,7 +1496,8 @@ function ResponseApprovalsTab() {
               </SelectContent>
             </Select>
             <Button size="sm" onClick={() => setShowCreate(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1.5" />Request Approval
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Request Approval
             </Button>
           </div>
         </CardHeader>
@@ -1217,29 +1526,63 @@ function ResponseApprovalsTab() {
                   {approvals.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell>
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">{a.actionType.replace(/_/g, " ")}</Badge>
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                        >
+                          {a.actionType.replace(/_/g, " ")}
+                        </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm">{a.targetValue || "N/A"}
+                        <div className="text-sm">
+                          {a.targetValue || "N/A"}
                           {a.targetType && <span className="text-xs text-muted-foreground ml-1">({a.targetType})</span>}
                         </div>
                       </TableCell>
-                      <TableCell><span className="text-xs">{a.requestedByName || "Unknown"}</span></TableCell>
+                      <TableCell>
+                        <span className="text-xs">{a.requestedByName || "Unknown"}</span>
+                      </TableCell>
                       <TableCell>{approvalStatusBadge(a.status)}</TableCell>
-                      <TableCell><span className="text-xs">{a.currentApprovals}/{a.requiredApprovers}</span></TableCell>
-                      <TableCell><span className="text-xs text-muted-foreground">{a.expiresAt ? formatDateTime(a.expiresAt) : "Never"}</span></TableCell>
+                      <TableCell>
+                        <span className="text-xs">
+                          {a.currentApprovals}/{a.requiredApprovers}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {a.expiresAt ? formatDateTime(a.expiresAt) : "Never"}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         {a.status === "pending" ? (
                           <div className="flex gap-1">
                             {a.dryRunResult && (
-                              <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => { setDryRunResult(a.dryRunResult); setShowDryRun(true); }}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                onClick={() => {
+                                  setDryRunResult(a.dryRunResult);
+                                  setShowDryRun(true);
+                                }}
+                              >
                                 <Eye className="h-3 w-3" />
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" className="h-7 px-2 text-green-400" onClick={() => decideMutation.mutate({ id: a.id, decision: "approved" })}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-green-400"
+                              onClick={() => decideMutation.mutate({ id: a.id, decision: "approved" })}
+                            >
                               <ThumbsUp className="h-3 w-3" />
                             </Button>
-                            <Button size="sm" variant="outline" className="h-7 px-2 text-red-400" onClick={() => decideMutation.mutate({ id: a.id, decision: "rejected" })}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-red-400"
+                              onClick={() => decideMutation.mutate({ id: a.id, decision: "rejected" })}
+                            >
                               <ThumbsDown className="h-3 w-3" />
                             </Button>
                           </div>
@@ -1258,12 +1601,16 @@ function ResponseApprovalsTab() {
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Request Response Action Approval</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Request Response Action Approval</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Action Type</Label>
               <Select value={newActionType} onValueChange={setNewActionType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="block_ip">Block IP</SelectItem>
                   <SelectItem value="isolate_endpoint">Isolate Endpoint</SelectItem>
@@ -1276,7 +1623,9 @@ function ResponseApprovalsTab() {
             <div>
               <Label className="text-xs">Target Type</Label>
               <Select value={newTargetType} onValueChange={setNewTargetType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ip">IP Address</SelectItem>
                   <SelectItem value="hostname">Hostname</SelectItem>
@@ -1287,12 +1636,24 @@ function ResponseApprovalsTab() {
             </div>
             <div>
               <Label className="text-xs">Target Value</Label>
-              <Input value={newTargetValue} onChange={e => setNewTargetValue(e.target.value)} placeholder="e.g. 192.168.1.100" />
+              <Input
+                value={newTargetValue}
+                onChange={(e) => setNewTargetValue(e.target.value)}
+                placeholder="e.g. 192.168.1.100"
+              />
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => dryRunMutation.mutate()} disabled={!newTargetValue || dryRunMutation.isPending}>
-              {dryRunMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Play className="h-4 w-4 mr-1" />}
+            <Button
+              variant="outline"
+              onClick={() => dryRunMutation.mutate()}
+              disabled={!newTargetValue || dryRunMutation.isPending}
+            >
+              {dryRunMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Play className="h-4 w-4 mr-1" />
+              )}
               Dry Run
             </Button>
             <Button onClick={() => createMutation.mutate()} disabled={!newTargetValue || createMutation.isPending}>
@@ -1305,7 +1666,9 @@ function ResponseApprovalsTab() {
 
       <Dialog open={showDryRun} onOpenChange={setShowDryRun}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Dry Run Simulation Result</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Dry Run Simulation Result</DialogTitle>
+          </DialogHeader>
           {dryRunResult && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1325,7 +1688,9 @@ function ResponseApprovalsTab() {
                   <div className="bg-muted/30 p-2 rounded col-span-2">
                     <span className="text-muted-foreground">Affected Resources:</span>
                     {(dryRunResult.affectedResources as any[]).map((r: any, i: number) => (
-                      <p key={i} className="font-medium">{r.type}: {r.value}</p>
+                      <p key={i} className="font-medium">
+                        {r.type}: {r.value}
+                      </p>
                     ))}
                   </div>
                 )}
@@ -1343,7 +1708,9 @@ function ResponseApprovalsTab() {
             </div>
           )}
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Close</Button></DialogClose>
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1353,7 +1720,12 @@ function ResponseApprovalsTab() {
 
 export default function IntegrationsPage() {
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Integrations & Response" data-testid="page-integrations">
+    <div
+      className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto"
+      role="main"
+      aria-label="Integrations & Response"
+      data-testid="page-integrations"
+    >
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
           <span className="gradient-text-red">Integrations & Response</span>

@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,15 +8,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Cloud, Shield, AlertTriangle, RefreshCw, Plus, Trash2, Play,
-  CheckCircle2, XCircle, Clock, Pencil, Loader2, FileCheck,
+  Cloud,
+  Shield,
+  AlertTriangle,
+  RefreshCw,
+  Plus,
+  Trash2,
+  Play,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Pencil,
+  Loader2,
+  FileCheck,
 } from "lucide-react";
 import { SiAmazonwebservices, SiGooglecloud } from "react-icons/si";
 
@@ -54,7 +63,10 @@ interface PolicyResult {
 function formatTimestamp(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleString("en-US", {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -108,7 +120,12 @@ function CloudAccountsTab() {
   const [displayName, setDisplayName] = useState("");
   const [regions, setRegions] = useState("");
 
-  const { data: accounts, isLoading } = useQuery<any[]>({
+  const {
+    data: accounts,
+    isLoading,
+    isError: accountsError,
+    refetch: refetchAccounts,
+  } = useQuery<any[]>({
     queryKey: ["/api/cspm/accounts"],
   });
 
@@ -163,7 +180,11 @@ function CloudAccountsTab() {
       cloudProvider: provider,
       accountId: accountId.trim(),
       displayName: displayName.trim(),
-      regions: regions.trim().split(",").map((r: string) => r.trim()).filter(Boolean),
+      regions: regions
+        .trim()
+        .split(",")
+        .map((r: string) => r.trim())
+        .filter(Boolean),
     });
   }
 
@@ -172,9 +193,33 @@ function CloudAccountsTab() {
       <div className="space-y-3" data-testid="accounts-loading">
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
           </Card>
         ))}
+      </div>
+    );
+  }
+
+  if (accountsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load cloud accounts</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchAccounts();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -267,7 +312,9 @@ function CloudAccountsTab() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Cloud className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No cloud accounts connected</p>
-            <p className="text-xs text-muted-foreground mt-1">Add a cloud account to start scanning for security misconfigurations</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Add a cloud account to start scanning for security misconfigurations
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -277,9 +324,15 @@ function CloudAccountsTab() {
             const regionList = (() => {
               try {
                 if (Array.isArray(account.regions)) return account.regions;
-                if (typeof account.regions === "string") return account.regions.split(",").map((r: string) => r.trim()).filter(Boolean);
+                if (typeof account.regions === "string")
+                  return account.regions
+                    .split(",")
+                    .map((r: string) => r.trim())
+                    .filter(Boolean);
                 return [];
-              } catch { return []; }
+              } catch {
+                return [];
+              }
             })();
 
             return (
@@ -292,13 +345,22 @@ function CloudAccountsTab() {
                       </div>
                       <div className="min-w-0 flex-1 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold" data-testid={`text-account-name-${account.id || idx}`}>
+                          <span
+                            className="text-sm font-semibold"
+                            data-testid={`text-account-name-${account.id || idx}`}
+                          >
                             {account.displayName || account.accountId}
                           </span>
-                          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">
+                          <Badge
+                            variant="outline"
+                            className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                          >
                             {PROVIDER_LABELS[account.cloudProvider] || account.cloudProvider}
                           </Badge>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${accountStatusStyle(account.status || "active")}`} data-testid={`badge-account-status-${account.id || idx}`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${accountStatusStyle(account.status || "active")}`}
+                            data-testid={`badge-account-status-${account.id || idx}`}
+                          >
                             {account.status || "active"}
                           </span>
                         </div>
@@ -307,7 +369,10 @@ function CloudAccountsTab() {
                             ID: <span className="font-mono font-medium text-foreground">{account.accountId}</span>
                           </span>
                           {account.lastScanAt && (
-                            <span className="flex items-center gap-1" data-testid={`text-last-scan-${account.id || idx}`}>
+                            <span
+                              className="flex items-center gap-1"
+                              data-testid={`text-last-scan-${account.id || idx}`}
+                            >
                               <Clock className="h-3 w-3" />
                               Last Scan: {formatTimestamp(account.lastScanAt)}
                             </span>
@@ -316,7 +381,12 @@ function CloudAccountsTab() {
                         {regionList.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {regionList.map((region: string, ri: number) => (
-                              <Badge key={ri} variant="secondary" className="text-[10px]" data-testid={`badge-region-${account.id || idx}-${ri}`}>
+                              <Badge
+                                key={ri}
+                                variant="secondary"
+                                className="text-[10px]"
+                                data-testid={`badge-region-${account.id || idx}-${ri}`}
+                              >
                                 {region}
                               </Badge>
                             ))}
@@ -334,11 +404,7 @@ function CloudAccountsTab() {
                       >
                         <Play className="h-4 w-4" />
                       </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        data-testid={`button-edit-account-${account.id || idx}`}
-                      >
+                      <Button size="icon" variant="ghost" data-testid={`button-edit-account-${account.id || idx}`}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
@@ -363,7 +429,12 @@ function CloudAccountsTab() {
 }
 
 function ScanHistoryTab() {
-  const { data: scans, isLoading } = useQuery<any[]>({
+  const {
+    data: scans,
+    isLoading,
+    isError: _scansError,
+    refetch: _refetchScans,
+  } = useQuery<any[]>({
     queryKey: ["/api/cspm/scans"],
   });
 
@@ -372,7 +443,9 @@ function ScanHistoryTab() {
       <div className="space-y-3" data-testid="scans-loading">
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -408,7 +481,10 @@ function ScanHistoryTab() {
                       <span className="text-sm font-semibold" data-testid={`text-scan-account-${scan.id || idx}`}>
                         {scan.accountName || scan.accountId || `Scan #${scan.id}`}
                       </span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${scanStatusStyle(scan.status)}`} data-testid={`badge-scan-status-${scan.id || idx}`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${scanStatusStyle(scan.status)}`}
+                        data-testid={`badge-scan-status-${scan.id || idx}`}
+                      >
                         {scan.status || "unknown"}
                       </span>
                     </div>
@@ -492,13 +568,17 @@ function FindingsTab() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Card key={i}>
-              <CardContent className="p-3"><Skeleton className="h-10 w-full" /></CardContent>
+              <CardContent className="p-3">
+                <Skeleton className="h-10 w-full" />
+              </CardContent>
             </Card>
           ))}
         </div>
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -535,7 +615,9 @@ function FindingsTab() {
           <Card key={sev} data-testid={`stat-${sev}`}>
             <CardContent className="p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(sev)}`}>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(sev)}`}
+                >
                   {sev}
                 </span>
                 <span className="text-lg font-bold tabular-nums" data-testid={`value-${sev}-count`}>
@@ -553,14 +635,17 @@ function FindingsTab() {
             <Shield className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No findings</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {severityFilter !== "all" ? "No findings match the selected severity filter" : "Run a cloud scan to detect security findings"}
+              {severityFilter !== "all"
+                ? "No findings match the selected severity filter"
+                : "Run a cloud scan to detect security findings"}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
           {findings.map((finding: any, idx: number) => {
-            const nextStatus = finding.status === "open" ? "resolved" : finding.status === "resolved" ? "suppressed" : "open";
+            const nextStatus =
+              finding.status === "open" ? "resolved" : finding.status === "resolved" ? "suppressed" : "open";
 
             return (
               <Card key={finding.id || idx} data-testid={`card-finding-${finding.id || idx}`}>
@@ -568,14 +653,20 @@ function FindingsTab() {
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(finding.severity)}`} data-testid={`badge-severity-${finding.id || idx}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(finding.severity)}`}
+                          data-testid={`badge-severity-${finding.id || idx}`}
+                        >
                           {finding.severity || "unknown"}
                         </span>
                         <span className="text-sm font-semibold" data-testid={`text-rule-name-${finding.id || idx}`}>
                           {finding.ruleName || finding.ruleId || "Unknown Rule"}
                         </span>
                         {finding.status && (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${finding.status === "open" ? "bg-red-500/10 text-red-500 border-red-500/20" : finding.status === "resolved" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-muted text-muted-foreground border-muted"}`} data-testid={`badge-finding-status-${finding.id || idx}`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${finding.status === "open" ? "bg-red-500/10 text-red-500 border-red-500/20" : finding.status === "resolved" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-muted text-muted-foreground border-muted"}`}
+                            data-testid={`badge-finding-status-${finding.id || idx}`}
+                          >
                             {finding.status}
                           </span>
                         )}
@@ -729,13 +820,16 @@ function PolicyChecksTab() {
       resourceType: policyResourceType.trim() || null,
       severity: policySeverity,
       remediation: policyRemediation.trim() || null,
-      complianceFrameworks: policyFrameworks.split(",").map((f: string) => f.trim()).filter(Boolean),
+      complianceFrameworks: policyFrameworks
+        .split(",")
+        .map((f: string) => f.trim())
+        .filter(Boolean),
       ruleLogic,
     });
   }
 
   const filteredResults = (policyResults || []).filter((r: PolicyResult) =>
-    resultFilter === "all" ? true : r.policyCheckId === resultFilter
+    resultFilter === "all" ? true : r.policyCheckId === resultFilter,
   );
 
   if (isLoading) {
@@ -743,7 +837,9 @@ function PolicyChecksTab() {
       <div className="space-y-3" data-testid="policy-checks-loading">
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -857,7 +953,9 @@ function PolicyChecksTab() {
                     id="policyRuleLogic"
                     value={policyRuleLogic}
                     onChange={(e) => setPolicyRuleLogic(e.target.value)}
-                    placeholder={'{\n  "condition": "AND",\n  "rules": [\n    {\n      "field": "publicAccess",\n      "operator": "equals",\n      "value": false\n    }\n  ]\n}'}
+                    placeholder={
+                      '{\n  "condition": "AND",\n  "rules": [\n    {\n      "field": "publicAccess",\n      "operator": "equals",\n      "value": false\n    }\n  ]\n}'
+                    }
                     className="font-mono text-sm min-h-[120px]"
                     data-testid="textarea-policy-rule-logic"
                   />
@@ -885,7 +983,9 @@ function PolicyChecksTab() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileCheck className="h-10 w-10 text-muted-foreground mb-3" />
               <p className="text-sm font-medium text-muted-foreground">No policy checks configured</p>
-              <p className="text-xs text-muted-foreground mt-1">Create a policy check to start evaluating cloud resources</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Create a policy check to start evaluating cloud resources
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -902,23 +1002,38 @@ function PolicyChecksTab() {
                         </div>
                         <div className="min-w-0 flex-1 space-y-2">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-semibold" data-testid={`text-policy-name-${policy.id || idx}`}>
+                            <span
+                              className="text-sm font-semibold"
+                              data-testid={`text-policy-name-${policy.id || idx}`}
+                            >
                               {policy.name}
                             </span>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(policy.severity)}`} data-testid={`badge-policy-severity-${policy.id || idx}`}>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(policy.severity)}`}
+                              data-testid={`badge-policy-severity-${policy.id || idx}`}
+                            >
                               {policy.severity}
                             </span>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${policy.status === "active" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-muted text-muted-foreground border-muted"}`} data-testid={`badge-policy-status-${policy.id || idx}`}>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${policy.status === "active" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-muted text-muted-foreground border-muted"}`}
+                              data-testid={`badge-policy-status-${policy.id || idx}`}
+                            >
                               {policy.status}
                             </span>
                             {policy.cloudProvider && (
-                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase">
+                              <Badge
+                                variant="outline"
+                                className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                              >
                                 {PROVIDER_LABELS[policy.cloudProvider] || policy.cloudProvider}
                               </Badge>
                             )}
                           </div>
                           {policy.description && (
-                            <p className="text-xs text-muted-foreground" data-testid={`text-policy-description-${policy.id || idx}`}>
+                            <p
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-policy-description-${policy.id || idx}`}
+                            >
                               {policy.description}
                             </p>
                           )}
@@ -929,7 +1044,10 @@ function PolicyChecksTab() {
                               </span>
                             )}
                             {policy.lastRunAt && (
-                              <span className="flex items-center gap-1" data-testid={`text-policy-last-run-${policy.id || idx}`}>
+                              <span
+                                className="flex items-center gap-1"
+                                data-testid={`text-policy-last-run-${policy.id || idx}`}
+                              >
                                 <Clock className="h-3 w-3" />
                                 Last Run: {formatTimestamp(policy.lastRunAt)}
                               </span>
@@ -938,7 +1056,12 @@ function PolicyChecksTab() {
                           {policy.complianceFrameworks && policy.complianceFrameworks.length > 0 && (
                             <div className="flex flex-wrap gap-1">
                               {policy.complianceFrameworks.map((fw: string, fi: number) => (
-                                <Badge key={fi} variant="secondary" className="text-[10px]" data-testid={`badge-policy-framework-${policy.id || idx}-${fi}`}>
+                                <Badge
+                                  key={fi}
+                                  variant="secondary"
+                                  className="text-[10px]"
+                                  data-testid={`badge-policy-framework-${policy.id || idx}-${fi}`}
+                                >
                                   {fw}
                                 </Badge>
                               ))}
@@ -960,11 +1083,7 @@ function PolicyChecksTab() {
                             <Play className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          data-testid={`button-edit-policy-${policy.id || idx}`}
-                        >
+                        <Button size="icon" variant="ghost" data-testid={`button-edit-policy-${policy.id || idx}`}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
@@ -1002,7 +1121,9 @@ function PolicyChecksTab() {
             <SelectContent>
               <SelectItem value="all">All Policies</SelectItem>
               {(policyChecks || []).map((p: PolicyCheck) => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1012,7 +1133,9 @@ function PolicyChecksTab() {
           <div className="space-y-3" data-testid="policy-results-loading">
             {Array.from({ length: 3 }).map((_, i) => (
               <Card key={i}>
-                <CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent>
+                <CardContent className="p-4">
+                  <Skeleton className="h-16 w-full" />
+                </CardContent>
               </Card>
             ))}
           </div>
@@ -1027,17 +1150,25 @@ function PolicyChecksTab() {
         ) : (
           <div className="space-y-2">
             {filteredResults.map((result: PolicyResult, idx: number) => {
-              const policyName = (policyChecks || []).find((p: PolicyCheck) => p.id === result.policyCheckId)?.name || result.policyCheckId;
+              const policyName =
+                (policyChecks || []).find((p: PolicyCheck) => p.id === result.policyCheckId)?.name ||
+                result.policyCheckId;
               return (
                 <Card key={result.id || idx} data-testid={`card-result-${result.id || idx}`}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${result.status === "pass" ? "bg-green-500/10 text-green-500 border-green-500/20" : result.status === "fail" ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground border-muted"}`} data-testid={`badge-result-status-${result.id || idx}`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${result.status === "pass" ? "bg-green-500/10 text-green-500 border-green-500/20" : result.status === "fail" ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground border-muted"}`}
+                            data-testid={`badge-result-status-${result.id || idx}`}
+                          >
                             {result.status}
                           </span>
-                          <span className="text-sm font-semibold" data-testid={`text-result-policy-${result.id || idx}`}>
+                          <span
+                            className="text-sm font-semibold"
+                            data-testid={`text-result-policy-${result.id || idx}`}
+                          >
                             {policyName}
                           </span>
                         </div>
@@ -1055,7 +1186,10 @@ function PolicyChecksTab() {
                               Region: <span className="font-medium text-foreground">{result.resourceRegion}</span>
                             </span>
                           )}
-                          <span className="flex items-center gap-1" data-testid={`text-result-evaluated-${result.id || idx}`}>
+                          <span
+                            className="flex items-center gap-1"
+                            data-testid={`text-result-evaluated-${result.id || idx}`}
+                          >
                             <Clock className="h-3 w-3" />
                             {formatTimestamp(result.evaluatedAt)}
                           </span>

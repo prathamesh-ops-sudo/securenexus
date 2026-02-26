@@ -1,10 +1,28 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Shield, FileText, Users, CheckCircle2, XCircle, AlertTriangle,
-  Loader2, Download, Play, Clock, Hash, Mail, Calendar,
-  Lock, Eye, EyeOff, Database, RefreshCw, Plus, ChevronRight,
-  ScrollText, Scale, ShieldCheck, Trash2, Upload, Gavel, Ban,
+  Shield,
+  FileText,
+  Users,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Loader2,
+  Download,
+  Clock,
+  Hash,
+  Lock,
+  EyeOff,
+  Database,
+  RefreshCw,
+  Plus,
+  ScrollText,
+  Scale,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  Gavel,
+  Ban,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,15 +31,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -200,21 +220,31 @@ const REQUEST_TYPES = ["access", "erasure", "portability", "rectification"];
 function formatDate(date: string | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
 function formatDateTime(date: string | null | undefined): string {
   if (!date) return "Never";
   return new Date(date).toLocaleString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
 function PoliciesTab() {
   const { toast } = useToast();
-  const { data: policy, isLoading } = useQuery<CompliancePolicy>({
+  const {
+    data: policy,
+    isLoading,
+    isError: policyError,
+    refetch: refetchPolicy,
+  } = useQuery<CompliancePolicy>({
     queryKey: ["/api/compliance/policy"],
   });
 
@@ -266,15 +296,28 @@ function PoliciesTab() {
   });
 
   const toggleFramework = (fw: string) => {
-    setFrameworks((prev) =>
-      prev.includes(fw) ? prev.filter((f) => f !== fw) : [...prev, fw]
-    );
+    setFrameworks((prev) => (prev.includes(fw) ? prev.filter((f) => f !== fw) : [...prev, fw]));
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (policyError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load compliance policy</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPolicy()}>
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -333,11 +376,7 @@ function PoliciesTab() {
                     <div className="text-xs text-muted-foreground">Mask personally identifiable information</div>
                   </div>
                 </div>
-                <Switch
-                  checked={piiMasking}
-                  onCheckedChange={setPiiMasking}
-                  data-testid="switch-pii-masking"
-                />
+                <Switch checked={piiMasking} onCheckedChange={setPiiMasking} data-testid="switch-pii-masking" />
               </div>
               <div className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
                 <div className="flex items-center gap-2">
@@ -347,17 +386,15 @@ function PoliciesTab() {
                     <div className="text-xs text-muted-foreground">Replace identifiers in exported data</div>
                   </div>
                 </div>
-                <Switch
-                  checked={pseudonymize}
-                  onCheckedChange={setPseudonymize}
-                  data-testid="switch-pseudonymize"
-                />
+                <Switch checked={pseudonymize} onCheckedChange={setPseudonymize} data-testid="switch-pseudonymize" />
               </div>
             </div>
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Compliance Frameworks</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Compliance Frameworks
+            </h3>
             <div className="flex flex-wrap gap-2">
               {FRAMEWORKS.map((fw) => (
                 <Badge
@@ -383,7 +420,9 @@ function PoliciesTab() {
                 </SelectTrigger>
                 <SelectContent>
                   {PROCESSING_BASES.map((b) => (
-                    <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+                    <SelectItem key={b.value} value={b.value}>
+                      {b.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -451,7 +490,12 @@ function DsarTab() {
   const [statusUpdateId, setStatusUpdateId] = useState<string | null>(null);
   const [statusUpdateValue, setStatusUpdateValue] = useState("in_progress");
 
-  const { data: dsarRequests, isLoading } = useQuery<DsarRequest[]>({
+  const {
+    data: dsarRequests,
+    isLoading,
+    isError: _dsarError,
+    refetch: _refetchDsar,
+  } = useQuery<DsarRequest[]>({
     queryKey: ["/api/compliance/dsar"],
   });
 
@@ -561,7 +605,9 @@ function DsarTab() {
                     </SelectTrigger>
                     <SelectContent>
                       {REQUEST_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+                        <SelectItem key={t} value={t}>
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -601,7 +647,9 @@ function DsarTab() {
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                  <Button variant="outline" data-testid="button-cancel-dsar">Cancel</Button>
+                  <Button variant="outline" data-testid="button-cancel-dsar">
+                    Cancel
+                  </Button>
                 </DialogClose>
                 <Button
                   onClick={() => createDsar.mutate()}
@@ -643,10 +691,16 @@ function DsarTab() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs" data-testid={`text-dsar-email-${req.id}`}>{req.requestorEmail}</span>
+                        <span className="text-xs" data-testid={`text-dsar-email-${req.id}`}>
+                          {req.requestorEmail}
+                        </span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase" data-testid={`badge-dsar-type-${req.id}`}>
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                          data-testid={`badge-dsar-type-${req.id}`}
+                        >
                           {req.requestType}
                         </Badge>
                       </TableCell>
@@ -689,7 +743,10 @@ function DsarTab() {
                               {statusUpdateId === req.id ? (
                                 <div className="flex items-center gap-1 flex-wrap">
                                   <Select value={statusUpdateValue} onValueChange={setStatusUpdateValue}>
-                                    <SelectTrigger className="text-xs w-28" data-testid={`select-status-update-${req.id}`}>
+                                    <SelectTrigger
+                                      className="text-xs w-28"
+                                      data-testid={`select-status-update-${req.id}`}
+                                    >
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -716,7 +773,10 @@ function DsarTab() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => { setStatusUpdateId(req.id); setStatusUpdateValue(req.status); }}
+                                  onClick={() => {
+                                    setStatusUpdateId(req.id);
+                                    setStatusUpdateValue(req.status);
+                                  }}
                                   data-testid={`button-update-status-${req.id}`}
                                 >
                                   <RefreshCw className="h-3 w-3" />
@@ -736,7 +796,9 @@ function DsarTab() {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8">
                       <Users className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                      <p className="text-sm text-muted-foreground" data-testid="text-no-dsar">No DSAR requests found</p>
+                      <p className="text-sm text-muted-foreground" data-testid="text-no-dsar">
+                        No DSAR requests found
+                      </p>
                     </TableCell>
                   </TableRow>
                 )}
@@ -848,7 +910,10 @@ function ReportsTab() {
             </Button>
           </CardHeader>
           <CardContent>
-            <pre className="text-xs bg-muted/30 rounded-md p-4 overflow-auto max-h-96 whitespace-pre-wrap" data-testid="text-report-data">
+            <pre
+              className="text-xs bg-muted/30 rounded-md p-4 overflow-auto max-h-96 whitespace-pre-wrap"
+              data-testid="text-report-data"
+            >
               {JSON.stringify(reportData, null, 2)}
             </pre>
           </CardContent>
@@ -949,7 +1014,10 @@ function AuditIntegrityTab() {
                   <XCircle className="h-8 w-8 text-red-500 flex-shrink-0" />
                 )}
                 <div>
-                  <div className={`text-sm font-semibold ${verifyResult.verified ? "text-green-400" : "text-red-400"}`} data-testid="text-verify-status">
+                  <div
+                    className={`text-sm font-semibold ${verifyResult.verified ? "text-green-400" : "text-red-400"}`}
+                    data-testid="text-verify-status"
+                  >
                     {verifyResult.verified ? "Audit Chain Verified" : "Integrity Issues Detected"}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5" data-testid="text-verify-details">
@@ -1014,7 +1082,10 @@ function AuditIntegrityTab() {
               )}
               <div>
                 <div className="text-xs text-muted-foreground">Chain Status</div>
-                <div className={`text-sm font-semibold ${verifyResult ? (verifyResult.verified ? "text-green-400" : "text-red-400") : ""}`} data-testid="text-chain-status">
+                <div
+                  className={`text-sm font-semibold ${verifyResult ? (verifyResult.verified ? "text-green-400" : "text-red-400") : ""}`}
+                  data-testid="text-chain-status"
+                >
                   {verifyResult ? (verifyResult.verified ? "Valid" : "Compromised") : "Not Verified"}
                 </div>
               </div>
@@ -1036,7 +1107,7 @@ function RetentionTab() {
 
   const [retentionData, setRetentionData] = useState<RetentionReport | null>(null);
 
-  const fetchRetention = useQuery<RetentionReport>({
+  const _fetchRetention = useQuery<RetentionReport>({
     queryKey: ["/api/compliance/report/retention_status"],
     enabled: false,
   });
@@ -1125,22 +1196,33 @@ function RetentionTab() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {retentionItems.map((item) => (
-              <div key={item.label} className="p-4 rounded-md bg-muted/30 space-y-2" data-testid={`retention-card-${item.label.toLowerCase().replace(/\s/g, "-")}`}>
+              <div
+                key={item.label}
+                className="p-4 rounded-md bg-muted/30 space-y-2"
+                data-testid={`retention-card-${item.label.toLowerCase().replace(/\s/g, "-")}`}
+              >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-sm font-medium">{item.label}</span>
-                  {item.withinPolicy !== undefined && (
-                    item.withinPolicy ? (
-                      <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] border-green-500/30 text-green-400" data-testid={`badge-retention-status-${item.label.toLowerCase()}`}>
+                  {item.withinPolicy !== undefined &&
+                    (item.withinPolicy ? (
+                      <Badge
+                        variant="outline"
+                        className="no-default-hover-elevate no-default-active-elevate text-[10px] border-green-500/30 text-green-400"
+                        data-testid={`badge-retention-status-${item.label.toLowerCase()}`}
+                      >
                         <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
                         Compliant
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px] border-red-500/30 text-red-400" data-testid={`badge-retention-status-${item.label.toLowerCase()}`}>
+                      <Badge
+                        variant="outline"
+                        className="no-default-hover-elevate no-default-active-elevate text-[10px] border-red-500/30 text-red-400"
+                        data-testid={`badge-retention-status-${item.label.toLowerCase()}`}
+                      >
                         <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
                         Non-compliant
                       </Badge>
-                    )
-                  )}
+                    ))}
                 </div>
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>Retention: {item.days} days</div>
@@ -1176,12 +1258,14 @@ function RetentionTab() {
                   <DialogTitle>Confirm Retention Cleanup</DialogTitle>
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground py-4">
-                  This will permanently delete records that exceed the configured retention periods.
-                  This action cannot be undone. Are you sure you want to proceed?
+                  This will permanently delete records that exceed the configured retention periods. This action cannot
+                  be undone. Are you sure you want to proceed?
                 </p>
                 <DialogFooter>
                   <DialogClose asChild>
-                    <Button variant="outline" data-testid="button-cancel-retention">Cancel</Button>
+                    <Button variant="outline" data-testid="button-cancel-retention">
+                      Cancel
+                    </Button>
                   </DialogClose>
                   <Button
                     variant="destructive"
@@ -1216,23 +1300,35 @@ function ControlsTab() {
   const [mappingStatus, setMappingStatus] = useState("not_assessed");
   const [mappingEvidenceNotes, setMappingEvidenceNotes] = useState("");
 
-  const controlsQueryKey = frameworkFilter === "all"
-    ? ["/api/compliance-controls"]
-    : ["/api/compliance-controls", { framework: frameworkFilter }];
+  const controlsQueryKey =
+    frameworkFilter === "all"
+      ? ["/api/compliance-controls"]
+      : ["/api/compliance-controls", { framework: frameworkFilter }];
 
-  const { data: controls, isLoading: controlsLoading } = useQuery<ComplianceControl[]>({
+  const {
+    data: controls,
+    isLoading: controlsLoading,
+    isError: _controlsError,
+    refetch: _refetchControls,
+  } = useQuery<ComplianceControl[]>({
     queryKey: controlsQueryKey,
     queryFn: async () => {
-      const url = frameworkFilter === "all"
-        ? "/api/compliance-controls"
-        : `/api/compliance-controls?framework=${frameworkFilter}`;
+      const url =
+        frameworkFilter === "all"
+          ? "/api/compliance-controls"
+          : `/api/compliance-controls?framework=${frameworkFilter}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch controls");
       return res.json();
     },
   });
 
-  const { data: mappings, isLoading: mappingsLoading } = useQuery<ComplianceControlMapping[]>({
+  const {
+    data: mappings,
+    isLoading: mappingsLoading,
+    isError: _mappingsError,
+    refetch: _refetchMappings,
+  } = useQuery<ComplianceControlMapping[]>({
     queryKey: ["/api/compliance-control-mappings"],
   });
 
@@ -1334,7 +1430,11 @@ function ControlsTab() {
             </div>
           ) : (
             Object.entries(groupedControls).map(([category, categoryControls]) => (
-              <div key={category} className="space-y-2" data-testid={`control-group-${category.toLowerCase().replace(/\s/g, "-")}`}>
+              <div
+                key={category}
+                className="space-y-2"
+                data-testid={`control-group-${category.toLowerCase().replace(/\s/g, "-")}`}
+              >
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</h3>
                 <div className="overflow-x-auto border rounded-md">
                   <Table>
@@ -1359,13 +1459,20 @@ function ControlsTab() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <span className="text-xs font-mono" data-testid={`text-control-id-${ctrl.id}`}>{ctrl.controlId}</span>
+                            <span className="text-xs font-mono" data-testid={`text-control-id-${ctrl.id}`}>
+                              {ctrl.controlId}
+                            </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm" data-testid={`text-control-title-${ctrl.id}`}>{ctrl.title}</span>
+                            <span className="text-sm" data-testid={`text-control-title-${ctrl.id}`}>
+                              {ctrl.title}
+                            </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-xs text-muted-foreground" data-testid={`text-control-desc-${ctrl.id}`}>
+                            <span
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-control-desc-${ctrl.id}`}
+                            >
                               {ctrl.description || "—"}
                             </span>
                           </TableCell>
@@ -1457,7 +1564,9 @@ function ControlsTab() {
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                  <Button variant="outline" data-testid="button-cancel-mapping">Cancel</Button>
+                  <Button variant="outline" data-testid="button-cancel-mapping">
+                    Cancel
+                  </Button>
                 </DialogClose>
                 <Button
                   onClick={() => createMapping.mutate()}
@@ -1515,12 +1624,18 @@ function ControlsTab() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground" data-testid={`text-mapping-evidence-${mapping.id}`}>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-mapping-evidence-${mapping.id}`}
+                        >
                           {mapping.evidenceNotes || "—"}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground" data-testid={`text-mapping-assessed-${mapping.id}`}>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-mapping-assessed-${mapping.id}`}
+                        >
                           {formatDateTime(mapping.lastAssessedAt)}
                         </span>
                       </TableCell>
@@ -1563,7 +1678,12 @@ function EvidenceLockerTab() {
 
   const evidenceQueryKey = ["/api/evidence-locker", { framework: frameworkFilter, artifactType: artifactTypeFilter }];
 
-  const { data: evidenceItems, isLoading } = useQuery<EvidenceLockerItem[]>({
+  const {
+    data: evidenceItems,
+    isLoading,
+    isError: _evidenceError,
+    refetch: _refetchEvidence,
+  } = useQuery<EvidenceLockerItem[]>({
     queryKey: evidenceQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -1578,7 +1698,10 @@ function EvidenceLockerTab() {
 
   const createEvidence = useMutation({
     mutationFn: async () => {
-      const tags = newTags.split(",").map((t) => t.trim()).filter(Boolean);
+      const tags = newTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
       await apiRequest("POST", "/api/evidence-locker", {
         title: newTitle,
         description: newDescription || null,
@@ -1679,7 +1802,9 @@ function EvidenceLockerTab() {
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(ARTIFACT_TYPE_LABELS).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1738,7 +1863,9 @@ function EvidenceLockerTab() {
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                  <Button variant="outline" data-testid="button-cancel-evidence">Cancel</Button>
+                  <Button variant="outline" data-testid="button-cancel-evidence">
+                    Cancel
+                  </Button>
                 </DialogClose>
                 <Button
                   onClick={() => createEvidence.mutate()}
@@ -1782,7 +1909,9 @@ function EvidenceLockerTab() {
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
                   {Object.entries(ARTIFACT_TYPE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1796,9 +1925,13 @@ function EvidenceLockerTab() {
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1 min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate" data-testid={`text-evidence-title-${item.id}`}>{item.title}</div>
+                        <div className="text-sm font-medium truncate" data-testid={`text-evidence-title-${item.id}`}>
+                          {item.title}
+                        </div>
                         {item.description && (
-                          <div className="text-xs text-muted-foreground" data-testid={`text-evidence-desc-${item.id}`}>{item.description}</div>
+                          <div className="text-xs text-muted-foreground" data-testid={`text-evidence-desc-${item.id}`}>
+                            {item.description}
+                          </div>
                         )}
                       </div>
                       <Button
@@ -1846,35 +1979,29 @@ function EvidenceLockerTab() {
                           Control: <span className="font-mono">{item.controlId}</span>
                         </div>
                       )}
-                      <div data-testid={`text-evidence-size-${item.id}`}>
-                        Size: {formatFileSize(item.fileSize)}
-                      </div>
+                      <div data-testid={`text-evidence-size-${item.id}`}>Size: {formatFileSize(item.fileSize)}</div>
                       {item.checksum && (
                         <div className="truncate" data-testid={`text-evidence-checksum-${item.id}`}>
                           Checksum: <span className="font-mono">{item.checksum.slice(0, 12)}...</span>
                         </div>
                       )}
-                      <div data-testid={`text-evidence-retention-${item.id}`}>
-                        Retention: {item.retentionDays} days
-                      </div>
+                      <div data-testid={`text-evidence-retention-${item.id}`}>Retention: {item.retentionDays} days</div>
                       {item.expiresAt && (
-                        <div data-testid={`text-evidence-expiry-${item.id}`}>
-                          Expires: {formatDate(item.expiresAt)}
-                        </div>
+                        <div data-testid={`text-evidence-expiry-${item.id}`}>Expires: {formatDate(item.expiresAt)}</div>
                       )}
                       {item.uploadedByName && (
-                        <div data-testid={`text-evidence-uploader-${item.id}`}>
-                          By: {item.uploadedByName}
-                        </div>
+                        <div data-testid={`text-evidence-uploader-${item.id}`}>By: {item.uploadedByName}</div>
                       )}
-                      <div data-testid={`text-evidence-created-${item.id}`}>
-                        Created: {formatDate(item.createdAt)}
-                      </div>
+                      <div data-testid={`text-evidence-created-${item.id}`}>Created: {formatDate(item.createdAt)}</div>
                     </div>
                     {item.tags && item.tags.length > 0 && (
                       <div className="flex items-center gap-1 flex-wrap" data-testid={`tags-evidence-${item.id}`}>
                         {item.tags.map((tag) => (
-                          <Badge key={tag} variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+                          <Badge
+                            key={tag}
+                            variant="outline"
+                            className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                          >
                             {tag}
                           </Badge>
                         ))}
@@ -1924,7 +2051,12 @@ function LegalHoldsTab() {
   const [newTableScope, setNewTableScope] = useState(["alerts", "incidents", "audit_logs"]);
   const { toast } = useToast();
 
-  const { data: holds, isLoading } = useQuery<LegalHold[]>({
+  const {
+    data: holds,
+    isLoading,
+    isError: _holdsError,
+    refetch: _refetchHolds,
+  } = useQuery<LegalHold[]>({
     queryKey: ["/api/legal-holds"],
   });
 
@@ -1935,8 +2067,12 @@ function LegalHoldsTab() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          name: newName, description: newDescription, reason: newReason,
-          caseReference: newCaseRef, holdType: newHoldType, tableScope: newTableScope,
+          name: newName,
+          description: newDescription,
+          reason: newReason,
+          caseReference: newCaseRef,
+          holdType: newHoldType,
+          tableScope: newTableScope,
         }),
       });
       if (!res.ok) throw new Error("Failed to create legal hold");
@@ -1945,7 +2081,10 @@ function LegalHoldsTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/legal-holds"] });
       setShowCreate(false);
-      setNewName(""); setNewDescription(""); setNewReason(""); setNewCaseRef("");
+      setNewName("");
+      setNewDescription("");
+      setNewReason("");
+      setNewCaseRef("");
       toast({ title: "Legal hold created" });
     },
   });
@@ -1953,7 +2092,8 @@ function LegalHoldsTab() {
   const deactivateMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/legal-holds/${id}/deactivate`, {
-        method: "POST", credentials: "include",
+        method: "POST",
+        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to deactivate");
       return res.json();
@@ -1965,15 +2105,18 @@ function LegalHoldsTab() {
   });
 
   const toggleScope = (table: string) => {
-    setNewTableScope(prev =>
-      prev.includes(table) ? prev.filter(t => t !== table) : [...prev, table]
-    );
+    setNewTableScope((prev) => (prev.includes(table) ? prev.filter((t) => t !== table) : [...prev, table]));
   };
 
-  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (isLoading)
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
 
-  const activeHolds = (holds || []).filter(h => h.isActive);
-  const inactiveHolds = (holds || []).filter(h => !h.isActive);
+  const activeHolds = (holds || []).filter((h) => h.isActive);
+  const inactiveHolds = (holds || []).filter((h) => !h.isActive);
 
   return (
     <div className="space-y-4">
@@ -1989,7 +2132,8 @@ function LegalHoldsTab() {
             )}
           </CardTitle>
           <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />New Hold
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New Hold
           </Button>
         </CardHeader>
         <CardContent>
@@ -2003,20 +2147,32 @@ function LegalHoldsTab() {
             <div className="space-y-3">
               {activeHolds.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Active Holds</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                    Active Holds
+                  </h4>
                   <div className="space-y-2">
-                    {activeHolds.map(hold => (
+                    {activeHolds.map((hold) => (
                       <div key={hold.id} className="border rounded-md p-3 bg-yellow-500/5 border-yellow-500/20">
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium">{hold.name}</span>
-                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">{hold.holdType}</Badge>
+                              <Badge
+                                variant="outline"
+                                className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                              >
+                                {hold.holdType}
+                              </Badge>
                             </div>
-                            {hold.description && <p className="text-xs text-muted-foreground mt-1">{hold.description}</p>}
+                            {hold.description && (
+                              <p className="text-xs text-muted-foreground mt-1">{hold.description}</p>
+                            )}
                             <div className="flex gap-2 mt-1 flex-wrap">
-                              {(hold.tableScope || []).map(t => (
-                                <Badge key={t} variant="secondary" className="text-[10px]"><Database className="h-2.5 w-2.5 mr-1" />{t}</Badge>
+                              {(hold.tableScope || []).map((t) => (
+                                <Badge key={t} variant="secondary" className="text-[10px]">
+                                  <Database className="h-2.5 w-2.5 mr-1" />
+                                  {t}
+                                </Badge>
                               ))}
                             </div>
                             <div className="flex gap-3 mt-1.5 text-xs text-muted-foreground">
@@ -2026,8 +2182,15 @@ function LegalHoldsTab() {
                               {hold.activatedByName && <span>By: {hold.activatedByName}</span>}
                             </div>
                           </div>
-                          <Button size="sm" variant="outline" className="text-red-400 h-7 px-2" onClick={() => deactivateMutation.mutate(hold.id)} disabled={deactivateMutation.isPending}>
-                            <Ban className="h-3 w-3 mr-1" />Deactivate
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-400 h-7 px-2"
+                            onClick={() => deactivateMutation.mutate(hold.id)}
+                            disabled={deactivateMutation.isPending}
+                          >
+                            <Ban className="h-3 w-3 mr-1" />
+                            Deactivate
                           </Button>
                         </div>
                       </div>
@@ -2037,16 +2200,21 @@ function LegalHoldsTab() {
               )}
               {inactiveHolds.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Inactive Holds</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                    Inactive Holds
+                  </h4>
                   <div className="space-y-2">
-                    {inactiveHolds.map(hold => (
+                    {inactiveHolds.map((hold) => (
                       <div key={hold.id} className="border rounded-md p-3 opacity-60">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium line-through">{hold.name}</span>
-                          <Badge variant="secondary" className="text-[10px]">Deactivated</Badge>
+                          <Badge variant="secondary" className="text-[10px]">
+                            Deactivated
+                          </Badge>
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
-                          Deactivated: {formatDateTime(hold.deactivatedAt)} | Originally for: {(hold.tableScope || []).join(", ")}
+                          Deactivated: {formatDateTime(hold.deactivatedAt)} | Originally for:{" "}
+                          {(hold.tableScope || []).join(", ")}
                         </div>
                       </div>
                     ))}
@@ -2060,20 +2228,32 @@ function LegalHoldsTab() {
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Create Legal Hold</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Create Legal Hold</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Name</Label>
-              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. SEC Investigation Q1 2026" />
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. SEC Investigation Q1 2026"
+              />
             </div>
             <div>
               <Label className="text-xs">Description</Label>
-              <Input value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Brief description of the hold" />
+              <Input
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Brief description of the hold"
+              />
             </div>
             <div>
               <Label className="text-xs">Hold Type</Label>
               <Select value={newHoldType} onValueChange={setNewHoldType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="full">Full (all data)</SelectItem>
                   <SelectItem value="partial">Partial (scoped to tables)</SelectItem>
@@ -2083,9 +2263,14 @@ function LegalHoldsTab() {
             <div>
               <Label className="text-xs">Table Scope</Label>
               <div className="flex gap-2 flex-wrap mt-1">
-                {["alerts", "incidents", "audit_logs", "entities", "ioc_entries"].map(table => (
-                  <Button key={table} size="sm" variant={newTableScope.includes(table) ? "default" : "outline"}
-                    className="h-7 text-[10px]" onClick={() => toggleScope(table)}>
+                {["alerts", "incidents", "audit_logs", "entities", "ioc_entries"].map((table) => (
+                  <Button
+                    key={table}
+                    size="sm"
+                    variant={newTableScope.includes(table) ? "default" : "outline"}
+                    className="h-7 text-[10px]"
+                    onClick={() => toggleScope(table)}
+                  >
                     {table}
                   </Button>
                 ))}
@@ -2093,15 +2278,25 @@ function LegalHoldsTab() {
             </div>
             <div>
               <Label className="text-xs">Reason</Label>
-              <Input value={newReason} onChange={e => setNewReason(e.target.value)} placeholder="Legal or regulatory reason" />
+              <Input
+                value={newReason}
+                onChange={(e) => setNewReason(e.target.value)}
+                placeholder="Legal or regulatory reason"
+              />
             </div>
             <div>
               <Label className="text-xs">Case Reference</Label>
-              <Input value={newCaseRef} onChange={e => setNewCaseRef(e.target.value)} placeholder="e.g. CASE-2026-001" />
+              <Input
+                value={newCaseRef}
+                onChange={(e) => setNewCaseRef(e.target.value)}
+                placeholder="e.g. CASE-2026-001"
+              />
             </div>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
             <Button onClick={() => createMutation.mutate()} disabled={!newName || createMutation.isPending}>
               {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               Activate Hold
@@ -2115,7 +2310,12 @@ function LegalHoldsTab() {
 
 export default function CompliancePage() {
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Compliance & Governance" data-testid="page-compliance">
+    <div
+      className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto"
+      role="main"
+      aria-label="Compliance & Governance"
+      data-testid="page-compliance"
+    >
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
           <span className="gradient-text-red">Compliance & Governance</span>

@@ -1,5 +1,27 @@
 import { useState } from "react";
-import { Brain, Activity, Key, Globe, ArrowUpRight, Crown, Users, Shield, Zap, BarChart3, RefreshCw, Trash2, Loader2, Check, X, Webhook, ExternalLink, Send, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import {
+  Brain,
+  Activity,
+  Key,
+  Globe,
+  ArrowUpRight,
+  Crown,
+  Users,
+  Shield,
+  Zap,
+  RefreshCw,
+  Trash2,
+  Loader2,
+  Check,
+  X,
+  Webhook,
+  ExternalLink,
+  Send,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  AlertTriangle,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,14 +39,48 @@ import { useToast } from "@/hooks/use-toast";
 
 const ROLES = [
   { name: "Admin", description: "Full access to all features, settings, and user management", color: "text-red-400" },
-  { name: "Analyst", description: "Can view/edit alerts, incidents, run AI analysis, manage connectors", color: "text-yellow-400" },
+  {
+    name: "Analyst",
+    description: "Can view/edit alerts, incidents, run AI analysis, manage connectors",
+    color: "text-yellow-400",
+  },
   { name: "Viewer", description: "Read-only access to dashboards, alerts, and incidents", color: "text-blue-400" },
 ];
 
 const PLANS = [
-  { name: "Free", price: "$0", period: "/month", alerts: "100", connectors: "2", users: "1", ai: false, soar: false, current: false },
-  { name: "Pro", price: "$49", period: "/month", alerts: "10,000", connectors: "10", users: "5", ai: true, soar: false, current: true },
-  { name: "Enterprise", price: "$199", period: "/month", alerts: "Unlimited", connectors: "Unlimited", users: "Unlimited", ai: true, soar: true, current: false },
+  {
+    name: "Free",
+    price: "$0",
+    period: "/month",
+    alerts: "100",
+    connectors: "2",
+    users: "1",
+    ai: false,
+    soar: false,
+    current: false,
+  },
+  {
+    name: "Pro",
+    price: "$49",
+    period: "/month",
+    alerts: "10,000",
+    connectors: "10",
+    users: "5",
+    ai: true,
+    soar: false,
+    current: true,
+  },
+  {
+    name: "Enterprise",
+    price: "$199",
+    period: "/month",
+    alerts: "Unlimited",
+    connectors: "Unlimited",
+    users: "Unlimited",
+    ai: true,
+    soar: true,
+    current: false,
+  },
 ];
 
 const THREAT_INTEL_PROVIDERS = [
@@ -80,11 +136,19 @@ export default function SettingsPage() {
   const [webhookForm, setWebhookForm] = useState({ name: "", url: "", secret: "", events: [] as string[] });
   const [expandedWebhookId, setExpandedWebhookId] = useState<string | null>(null);
 
-  const { data: stats } = useQuery<any>({
+  const {
+    data: stats,
+    isError: statsError,
+    refetch: refetchStats,
+  } = useQuery<any>({
     queryKey: ["/api/dashboard/stats"],
   });
 
-  const { data: apiKeys } = useQuery<any[]>({
+  const {
+    data: apiKeys,
+    isError: apiKeysError,
+    refetch: refetchApiKeys,
+  } = useQuery<any[]>({
     queryKey: ["/api/api-keys"],
   });
 
@@ -106,7 +170,11 @@ export default function SettingsPage() {
       toast({ title: "API key saved", description: `${variables.provider} key configured successfully.` });
     },
     onError: (error: any) => {
-      toast({ title: "Failed to save key", description: error.message || "An error occurred.", variant: "destructive" });
+      toast({
+        title: "Failed to save key",
+        description: error.message || "An error occurred.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -133,11 +201,20 @@ export default function SettingsPage() {
       toast({ title: "API key removed", description: `${provider} key deleted successfully.` });
     },
     onError: (error: any) => {
-      toast({ title: "Failed to delete key", description: error.message || "An error occurred.", variant: "destructive" });
+      toast({
+        title: "Failed to delete key",
+        description: error.message || "An error occurred.",
+        variant: "destructive",
+      });
     },
   });
 
-  const { data: webhooks, isLoading: webhooksLoading } = useQuery<OutboundWebhook[]>({
+  const {
+    data: webhooks,
+    isLoading: webhooksLoading,
+    isError: webhooksError,
+    refetch: refetchWebhooks,
+  } = useQuery<OutboundWebhook[]>({
     queryKey: ["/api/outbound-webhooks"],
   });
 
@@ -162,7 +239,11 @@ export default function SettingsPage() {
       toast({ title: "Webhook created", description: "Outbound webhook configured successfully." });
     },
     onError: (error: any) => {
-      toast({ title: "Failed to create webhook", description: error.message || "An error occurred.", variant: "destructive" });
+      toast({
+        title: "Failed to create webhook",
+        description: error.message || "An error occurred.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -187,7 +268,11 @@ export default function SettingsPage() {
       toast({ title: "Webhook deleted", description: "Outbound webhook removed." });
     },
     onError: (error: any) => {
-      toast({ title: "Failed to delete webhook", description: error.message || "An error occurred.", variant: "destructive" });
+      toast({
+        title: "Failed to delete webhook",
+        description: error.message || "An error occurred.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -198,20 +283,42 @@ export default function SettingsPage() {
     }));
   };
 
-  const truncateUrl = (url: string, maxLen = 40) =>
-    url.length > maxLen ? url.substring(0, maxLen) + "..." : url;
+  const truncateUrl = (url: string, maxLen = 40) => (url.length > maxLen ? url.substring(0, maxLen) + "..." : url);
 
-  const getConfigForProvider = (provider: string) =>
-    threatIntelConfigs?.find((c: any) => c.provider === provider);
+  const getConfigForProvider = (provider: string) => threatIntelConfigs?.find((c: any) => c.provider === provider);
 
-  const initials = user
-    ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U"
-    : "U";
+  const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
+
+  if (statsError || apiKeysError || webhooksError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load settings</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchStats();
+            refetchApiKeys();
+            refetchWebhooks();
+          }}
+        >
+          Try Again
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Settings</span></h1>
+        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+          <span className="gradient-text-red">Settings</span>
+        </h1>
         <p className="text-sm text-muted-foreground mt-1">Manage your account, roles, and subscription</p>
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
@@ -228,13 +335,21 @@ export default function SettingsPage() {
             </Avatar>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold" data-testid="text-user-name">{user?.firstName} {user?.lastName}</span>
-                <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400" data-testid="badge-user-role">
+                <span className="font-semibold" data-testid="text-user-name">
+                  {user?.firstName} {user?.lastName}
+                </span>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] border-red-500/30 text-red-400"
+                  data-testid="badge-user-role"
+                >
                   <Crown className="h-2.5 w-2.5 mr-0.5" />
                   Admin
                 </Badge>
               </div>
-              <div className="text-sm text-muted-foreground" data-testid="text-user-email">{user?.email || "No email"}</div>
+              <div className="text-sm text-muted-foreground" data-testid="text-user-email">
+                {user?.email || "No email"}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -250,7 +365,11 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {ROLES.map((role) => (
-            <div key={role.name} className="flex items-start gap-3 p-2 rounded-md bg-muted/30" data-testid={`role-${role.name.toLowerCase()}`}>
+            <div
+              key={role.name}
+              className="flex items-start gap-3 p-2 rounded-md bg-muted/30"
+              data-testid={`role-${role.name.toLowerCase()}`}
+            >
               <Shield className={`h-4 w-4 mt-0.5 flex-shrink-0 ${role.color}`} />
               <div>
                 <div className="text-sm font-medium">{role.name}</div>
@@ -276,21 +395,33 @@ export default function SettingsPage() {
                 <span>Alerts</span>
                 <span className="tabular-nums">{stats?.totalAlerts || 0} / 10,000</span>
               </div>
-              <Progress value={Math.min(((stats?.totalAlerts || 0) / 10000) * 100, 100)} className="h-1.5" data-testid="progress-alerts" />
+              <Progress
+                value={Math.min(((stats?.totalAlerts || 0) / 10000) * 100, 100)}
+                className="h-1.5"
+                data-testid="progress-alerts"
+              />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-1 text-xs text-muted-foreground">
                 <span>Connectors</span>
                 <span className="tabular-nums">{connectorsData?.length || 0} / 10</span>
               </div>
-              <Progress value={Math.min(((connectorsData?.length || 0) / 10) * 100, 100)} className="h-1.5" data-testid="progress-connectors" />
+              <Progress
+                value={Math.min(((connectorsData?.length || 0) / 10) * 100, 100)}
+                className="h-1.5"
+                data-testid="progress-connectors"
+              />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-1 text-xs text-muted-foreground">
                 <span>API Keys</span>
                 <span className="tabular-nums">{apiKeys?.length || 0} / 20</span>
               </div>
-              <Progress value={Math.min(((apiKeys?.length || 0) / 20) * 100, 100)} className="h-1.5" data-testid="progress-api-keys" />
+              <Progress
+                value={Math.min(((apiKeys?.length || 0) / 20) * 100, 100)}
+                className="h-1.5"
+                data-testid="progress-api-keys"
+              />
             </div>
           </div>
 
@@ -302,7 +433,10 @@ export default function SettingsPage() {
                 data-testid={`plan-${plan.name.toLowerCase()}`}
               >
                 <div className="text-xs font-medium">{plan.name}</div>
-                <div className="text-lg font-bold">{plan.price}<span className="text-xs font-normal text-muted-foreground">{plan.period}</span></div>
+                <div className="text-lg font-bold">
+                  {plan.price}
+                  <span className="text-xs font-normal text-muted-foreground">{plan.period}</span>
+                </div>
                 <div className="space-y-1 text-[10px] text-muted-foreground">
                   <div>{plan.alerts} alerts</div>
                   <div>{plan.connectors} connectors</div>
@@ -311,9 +445,13 @@ export default function SettingsPage() {
                   <div>{plan.soar ? "SOAR Automation" : "—"}</div>
                 </div>
                 {plan.current ? (
-                  <Badge variant="outline" className="text-[9px]">Current</Badge>
+                  <Badge variant="outline" className="text-[9px]">
+                    Current
+                  </Badge>
                 ) : plan.name === "Enterprise" ? (
-                  <Button size="sm" className="text-[10px] h-6" data-testid="button-upgrade-enterprise">Upgrade</Button>
+                  <Button size="sm" className="text-[10px] h-6" data-testid="button-upgrade-enterprise">
+                    Upgrade
+                  </Button>
                 ) : null}
               </div>
             ))}
@@ -334,7 +472,11 @@ export default function SettingsPage() {
             const config = getConfigForProvider(provider.key);
             const inputValue = apiKeyInputs[provider.key] || "";
             return (
-              <div key={provider.key} className="p-3 rounded-md bg-muted/30 space-y-2" data-testid={`threat-intel-row-${provider.key}`}>
+              <div
+                key={provider.key}
+                className="p-3 rounded-md bg-muted/30 space-y-2"
+                data-testid={`threat-intel-row-${provider.key}`}
+              >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div>
                     <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
@@ -346,26 +488,47 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     {config ? (
                       <>
-                        <span className="text-xs text-muted-foreground font-mono" data-testid={`masked-key-${provider.key}`}>{config.maskedKey}</span>
+                        <span
+                          className="text-xs text-muted-foreground font-mono"
+                          data-testid={`masked-key-${provider.key}`}
+                        >
+                          {config.maskedKey}
+                        </span>
                         {config.lastTestStatus === "success" ? (
-                          <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400" data-testid={`status-badge-${provider.key}`}>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] border-green-500/30 text-green-400"
+                            data-testid={`status-badge-${provider.key}`}
+                          >
                             <Check className="h-2.5 w-2.5 mr-0.5" />
                             Verified
                           </Badge>
                         ) : config.lastTestStatus === "failed" ? (
-                          <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400" data-testid={`status-badge-${provider.key}`}>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] border-red-500/30 text-red-400"
+                            data-testid={`status-badge-${provider.key}`}
+                          >
                             <X className="h-2.5 w-2.5 mr-0.5" />
                             Failed
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-400" data-testid={`status-badge-${provider.key}`}>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] border-yellow-500/30 text-yellow-400"
+                            data-testid={`status-badge-${provider.key}`}
+                          >
                             <Key className="h-2.5 w-2.5 mr-0.5" />
                             Configured
                           </Badge>
                         )}
                       </>
                     ) : (
-                      <Badge variant="outline" className="text-[10px] text-muted-foreground" data-testid={`status-badge-${provider.key}`}>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] text-muted-foreground"
+                        data-testid={`status-badge-${provider.key}`}
+                      >
                         Not configured
                       </Badge>
                     )}
@@ -432,12 +595,34 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[
           { icon: Key, title: "API Keys", description: "Manage API keys for alert ingestion", href: "/ingestion" },
-          { icon: Globe, title: "Integrations", description: "Configure pull-based security tool connectors", href: "/connectors" },
-          { icon: Brain, title: "AI Engine", description: "Configure AI correlation and triage settings", href: "/ai-engine" },
-          { icon: Activity, title: "Audit Log", description: "View all platform activities and changes", href: "/audit-log" },
+          {
+            icon: Globe,
+            title: "Integrations",
+            description: "Configure pull-based security tool connectors",
+            href: "/connectors",
+          },
+          {
+            icon: Brain,
+            title: "AI Engine",
+            description: "Configure AI correlation and triage settings",
+            href: "/ai-engine",
+          },
+          {
+            icon: Activity,
+            title: "Audit Log",
+            description: "View all platform activities and changes",
+            href: "/audit-log",
+          },
         ].map((item) => (
-          <Link key={item.href} href={item.href} data-testid={`link-setting-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
-            <Card className="hover-elevate cursor-pointer h-full" data-testid={`card-setting-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
+          <Link
+            key={item.href}
+            href={item.href}
+            data-testid={`link-setting-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <Card
+              className="hover-elevate cursor-pointer h-full"
+              data-testid={`card-setting-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+            >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3 relative">
                   <div className="flex items-center justify-center w-9 h-9 rounded-md bg-muted flex-shrink-0">
@@ -478,7 +663,8 @@ export default function SettingsPage() {
           </div>
           <div className="p-2 rounded-md bg-muted/30">
             <div className="text-xs text-muted-foreground">
-              All ingestion endpoints support <span className="font-mono text-foreground">X-Idempotency-Key</span> header for at-most-once delivery
+              All ingestion endpoints support <span className="font-mono text-foreground">X-Idempotency-Key</span>{" "}
+              header for at-most-once delivery
             </div>
           </div>
         </CardContent>
@@ -488,7 +674,9 @@ export default function SettingsPage() {
         <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
           <div>
             <CardTitle className="text-sm font-semibold">Outbound Webhooks</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">Configure webhooks to receive notifications for incident lifecycle events</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Configure webhooks to receive notifications for incident lifecycle events
+            </p>
           </div>
           <Dialog open={addWebhookOpen} onOpenChange={setAddWebhookOpen}>
             <DialogTrigger asChild>
@@ -541,14 +729,18 @@ export default function SettingsPage() {
                           onCheckedChange={() => toggleWebhookEvent(event)}
                           data-testid={`checkbox-event-${event}`}
                         />
-                        <label htmlFor={`event-${event}`} className="text-xs cursor-pointer">{event}</label>
+                        <label htmlFor={`event-${event}`} className="text-xs cursor-pointer">
+                          {event}
+                        </label>
                       </div>
                     ))}
                   </div>
                 </div>
                 <Button
                   className="w-full"
-                  disabled={!webhookForm.name || !webhookForm.url || webhookForm.events.length === 0 || createWebhook.isPending}
+                  disabled={
+                    !webhookForm.name || !webhookForm.url || webhookForm.events.length === 0 || createWebhook.isPending
+                  }
                   onClick={() =>
                     createWebhook.mutate({
                       name: webhookForm.name,
@@ -596,9 +788,13 @@ export default function SettingsPage() {
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {wh.isActive ? (
-                        <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400">Active</Badge>
+                        <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400">
+                          Active
+                        </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">Inactive</Badge>
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                          Inactive
+                        </Badge>
                       )}
                       <Button
                         size="sm"
@@ -636,7 +832,9 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center gap-1 mt-2 flex-wrap ml-7">
                     {wh.events.map((ev) => (
-                      <Badge key={ev} variant="secondary" className="text-[10px]">{ev}</Badge>
+                      <Badge key={ev} variant="secondary" className="text-[10px]">
+                        {ev}
+                      </Badge>
                     ))}
                   </div>
                 </div>
@@ -647,7 +845,11 @@ export default function SettingsPage() {
                       <div className="text-xs text-muted-foreground py-2">No delivery logs yet</div>
                     ) : (
                       webhookLogs.map((log) => (
-                        <div key={log.id} className="flex items-center justify-between gap-2 p-2 rounded-md bg-background text-xs flex-wrap" data-testid={`webhook-log-${log.id}`}>
+                        <div
+                          key={log.id}
+                          className="flex items-center justify-between gap-2 p-2 rounded-md bg-background text-xs flex-wrap"
+                          data-testid={`webhook-log-${log.id}`}
+                        >
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono">{log.event}</span>
                             {log.success ? (
@@ -684,7 +886,9 @@ export default function SettingsPage() {
       </Card>
 
       <div className="pt-2 pb-4">
-        <p className="text-muted-foreground text-xs">Tip: Press Cmd+K to open the command palette for quick navigation</p>
+        <p className="text-muted-foreground text-xs">
+          Tip: Press Cmd+K to open the command palette for quick navigation
+        </p>
       </div>
     </div>
   );

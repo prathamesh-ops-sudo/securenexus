@@ -12,7 +12,18 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  Shield, Cloud, Monitor, FileCheck, Brain, Globe, Server, Lock, Save, RefreshCw, TrendingUp
+  Shield,
+  Cloud,
+  Monitor,
+  FileCheck,
+  Brain,
+  Globe,
+  Server,
+  Lock,
+  Save,
+  RefreshCw,
+  TrendingUp,
+  AlertTriangle,
 } from "lucide-react";
 
 function scoreColor(score: number): string {
@@ -29,7 +40,7 @@ function scoreStrokeColor(score: number): string {
   return "stroke-red-500";
 }
 
-function scoreBgColor(score: number): string {
+function _scoreBgColor(score: number): string {
   if (score >= 80) return "bg-green-500/10 border-green-500/30";
   if (score >= 60) return "bg-yellow-500/10 border-yellow-500/30";
   if (score >= 40) return "bg-orange-500/10 border-orange-500/30";
@@ -46,7 +57,10 @@ function scoreLabel(score: number): string {
 function formatTimestamp(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleString("en-US", {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -93,7 +107,13 @@ function ScoreGauge({ score, size = 180 }: { score: number; size?: number }) {
   );
 }
 
-function ComponentScoreCard({ title, score, icon: Icon, weight, loading }: {
+function ComponentScoreCard({
+  title,
+  score,
+  icon: Icon,
+  weight,
+  loading,
+}: {
   title: string;
   score: number;
   icon: typeof Cloud;
@@ -120,7 +140,11 @@ function ComponentScoreCard({ title, score, icon: Icon, weight, loading }: {
               </span>
               <span className="text-xs text-muted-foreground">/ 100</span>
             </div>
-            <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]" data-testid={`badge-weight-${testId}`}>
+            <Badge
+              variant="outline"
+              className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+              data-testid={`badge-weight-${testId}`}
+            >
               Weight: {weight}
             </Badge>
           </div>
@@ -133,11 +157,21 @@ function ComponentScoreCard({ title, score, icon: Icon, weight, loading }: {
 function PostureScoreTab() {
   const { toast } = useToast();
 
-  const { data: latestScore, isLoading: latestLoading } = useQuery<any>({
+  const {
+    data: latestScore,
+    isLoading: latestLoading,
+    isError: latestError,
+    refetch: refetchLatest,
+  } = useQuery<any>({
     queryKey: ["/api/posture/latest"],
   });
 
-  const { data: scoreHistory, isLoading: historyLoading } = useQuery<any[]>({
+  const {
+    data: scoreHistory,
+    isLoading: historyLoading,
+    isError: historyError,
+    refetch: refetchHistory,
+  } = useQuery<any[]>({
     queryKey: ["/api/posture/scores"],
   });
 
@@ -167,11 +201,38 @@ function PostureScoreTab() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
-              <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
-              <CardContent><Skeleton className="h-7 w-16" /></CardContent>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-7 w-16" />
+              </CardContent>
             </Card>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (latestError || historyError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load security posture data</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchLatest();
+            refetchHistory();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -183,7 +244,9 @@ function PostureScoreTab() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Shield className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No posture score calculated yet</p>
-            <p className="text-xs text-muted-foreground mt-1">Calculate your first security posture score to see your organization's security health</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Calculate your first security posture score to see your organization's security health
+            </p>
             <Button
               className="mt-4"
               onClick={() => calculateMutation.mutate()}
@@ -202,12 +265,7 @@ function PostureScoreTab() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="component-scores">
-            <ComponentScoreCard
-              title="CSPM Score"
-              score={latestScore.cspmScore ?? 0}
-              icon={Cloud}
-              weight="35%"
-            />
+            <ComponentScoreCard title="CSPM Score" score={latestScore.cspmScore ?? 0} icon={Cloud} weight="35%" />
             <ComponentScoreCard
               title="Endpoint Score"
               score={latestScore.endpointScore ?? 0}
@@ -243,29 +301,56 @@ function PostureScoreTab() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b">
-                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Overall</th>
-                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">CSPM</th>
-                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Endpoint</th>
-                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Incident</th>
-                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Compliance</th>
+                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Date
+                          </th>
+                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Overall
+                          </th>
+                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            CSPM
+                          </th>
+                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Endpoint
+                          </th>
+                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Incident
+                          </th>
+                          <th className="text-left p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Compliance
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {scoreHistory.slice(0, 10).map((entry: any, idx: number) => (
-                          <tr key={entry.id || idx} className="border-b last:border-b-0" data-testid={`row-score-history-${idx}`}>
+                          <tr
+                            key={entry.id || idx}
+                            className="border-b last:border-b-0"
+                            data-testid={`row-score-history-${idx}`}
+                          >
                             <td className="p-3 text-xs text-muted-foreground" data-testid={`text-history-date-${idx}`}>
                               {formatTimestamp(entry.generatedAt || entry.createdAt)}
                             </td>
                             <td className="p-3">
-                              <span className={`font-bold tabular-nums ${scoreColor(entry.overallScore ?? 0)}`} data-testid={`value-history-overall-${idx}`}>
+                              <span
+                                className={`font-bold tabular-nums ${scoreColor(entry.overallScore ?? 0)}`}
+                                data-testid={`value-history-overall-${idx}`}
+                              >
                                 {entry.overallScore ?? 0}
                               </span>
                             </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-cspm-${idx}`}>{entry.cspmScore ?? "—"}</td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-endpoint-${idx}`}>{entry.endpointScore ?? "—"}</td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-incident-${idx}`}>{entry.incidentScore ?? "—"}</td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-compliance-${idx}`}>{entry.complianceScore ?? "—"}</td>
+                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-cspm-${idx}`}>
+                              {entry.cspmScore ?? "—"}
+                            </td>
+                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-endpoint-${idx}`}>
+                              {entry.endpointScore ?? "—"}
+                            </td>
+                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-incident-${idx}`}>
+                              {entry.incidentScore ?? "—"}
+                            </td>
+                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-compliance-${idx}`}>
+                              {entry.complianceScore ?? "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -346,7 +431,9 @@ function AIDeploymentTab() {
   return (
     <div className="space-y-6" data-testid="section-ai-deployment">
       <div>
-        <h2 className="text-lg font-semibold" data-testid="text-ai-deployment-title">AI Deployment Configuration</h2>
+        <h2 className="text-lg font-semibold" data-testid="text-ai-deployment-title">
+          AI Deployment Configuration
+        </h2>
         <p className="text-sm text-muted-foreground mt-1" data-testid="text-ai-deployment-description">
           Configure AI model backend, data residency, and on-prem deployment settings
         </p>
@@ -438,9 +525,7 @@ function AIDeploymentTab() {
                 <Globe className="h-4 w-4 text-muted-foreground" />
                 Allow External Calls
               </Label>
-              <p className="text-xs text-muted-foreground">
-                Allow the AI model to make calls to external services
-              </p>
+              <p className="text-xs text-muted-foreground">Allow the AI model to make calls to external services</p>
             </div>
             <Switch
               checked={allowExternalCalls}

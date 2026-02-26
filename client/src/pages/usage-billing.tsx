@@ -5,14 +5,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  BarChart3, Zap, Brain, Plug, Activity, TrendingUp, AlertTriangle,
-  Shield, Cloud, Building, CheckCircle2, Loader2, ArrowRight, Layers,
-  CreditCard, Package,
+  BarChart3,
+  Zap,
+  Brain,
+  Plug,
+  Activity,
+  AlertTriangle,
+  Shield,
+  Cloud,
+  Building,
+  Loader2,
+  ArrowRight,
+  Layers,
+  CreditCard,
+  Package,
 } from "lucide-react";
 
 function statusColor(status: string) {
@@ -35,11 +44,16 @@ function progressColor(pct: number, soft: number, hard: number) {
 
 function metricIcon(type: string) {
   switch (type) {
-    case "events_ingested": return <Activity className="h-5 w-5" />;
-    case "connectors_active": return <Plug className="h-5 w-5" />;
-    case "ai_tokens_used": return <Brain className="h-5 w-5" />;
-    case "automation_runs": return <Zap className="h-5 w-5" />;
-    default: return <BarChart3 className="h-5 w-5" />;
+    case "events_ingested":
+      return <Activity className="h-5 w-5" />;
+    case "connectors_active":
+      return <Plug className="h-5 w-5" />;
+    case "ai_tokens_used":
+      return <Brain className="h-5 w-5" />;
+    case "automation_runs":
+      return <Zap className="h-5 w-5" />;
+    default:
+      return <BarChart3 className="h-5 w-5" />;
   }
 }
 
@@ -109,23 +123,53 @@ function tierBadge(tier: string) {
 
 function templateIcon(icon: string | null) {
   switch (icon) {
-    case "Building": return <Building className="h-8 w-8" />;
-    case "Cloud": return <Cloud className="h-8 w-8" />;
-    default: return <Shield className="h-8 w-8" />;
+    case "Building":
+      return <Building className="h-8 w-8" />;
+    case "Cloud":
+      return <Cloud className="h-8 w-8" />;
+    default:
+      return <Shield className="h-8 w-8" />;
   }
 }
 
 function UsageMeteringTab() {
-  const { data: usage, isLoading } = useQuery<UsageData>({
+  const {
+    data: usage,
+    isLoading,
+    isError: usageError,
+    refetch: refetchUsage,
+  } = useQuery<UsageData>({
     queryKey: ["/api/usage-metering"],
   });
 
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3, 4].map(i => (
+        {[1, 2, 3, 4].map((i) => (
           <Skeleton key={i} className="h-32 w-full rounded-lg" />
         ))}
+      </div>
+    );
+  }
+
+  if (usageError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load usage data</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchUsage();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -142,7 +186,11 @@ function UsageMeteringTab() {
   }
 
   const cycleStart = new Date(usage.billingCycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const cycleEnd = new Date(usage.billingCycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const cycleEnd = new Date(usage.billingCycleEnd).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
     <div className="space-y-6">
@@ -154,7 +202,9 @@ function UsageMeteringTab() {
               {usage.planTier.charAt(0).toUpperCase() + usage.planTier.slice(1)} Plan
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">{cycleStart} — {cycleEnd}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {cycleStart} — {cycleEnd}
+          </p>
         </div>
         {usage.warnings.length > 0 && (
           <Badge variant="outline" className="bg-yellow-500/10 text-yellow-400 border-yellow-500/20 gap-1">
@@ -165,14 +215,12 @@ function UsageMeteringTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {usage.metrics.map(metric => (
+        {usage.metrics.map((metric) => (
           <Card key={metric.type} className={`glass border ${statusBg(metric.status)}`}>
             <CardContent className="pt-5 pb-4">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`p-2 rounded-lg ${statusBg(metric.status)}`}>
-                    {metricIcon(metric.type)}
-                  </div>
+                  <div className={`p-2 rounded-lg ${statusBg(metric.status)}`}>{metricIcon(metric.type)}</div>
                   <div>
                     <p className="font-medium text-sm">{metric.label}</p>
                     <p className="text-xs text-muted-foreground">{metric.unit}</p>
@@ -197,10 +245,7 @@ function UsageMeteringTab() {
                     className="absolute inset-y-0 w-px bg-yellow-500/50"
                     style={{ left: `${metric.softThreshold}%` }}
                   />
-                  <div
-                    className="absolute inset-y-0 w-px bg-red-500/50"
-                    style={{ left: `${metric.hardThreshold}%` }}
-                  />
+                  <div className="absolute inset-y-0 w-px bg-red-500/50" style={{ left: `${metric.hardThreshold}%` }} />
                 </div>
                 <p className="text-xs text-muted-foreground text-right">{metric.pctUsed}% used</p>
               </div>
@@ -219,9 +264,11 @@ function UsageMeteringTab() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
-              {usage.warnings.map(w => (
+              {usage.warnings.map((w) => (
                 <li key={w.type} className="flex items-center justify-between text-sm">
-                  <span>{w.label}: {formatNumber(w.current)} / {formatNumber(w.limit)}</span>
+                  <span>
+                    {w.label}: {formatNumber(w.current)} / {formatNumber(w.limit)}
+                  </span>
                   <span className={`font-medium ${statusColor(w.status)}`}>{w.pctUsed}%</span>
                 </li>
               ))}
@@ -235,19 +282,48 @@ function UsageMeteringTab() {
 
 function PlanLimitsTab() {
   const { toast } = useToast();
-  const [selectedTier, setSelectedTier] = useState<string>("");
+  const [_selectedTier, _setSelectedTier] = useState<string>("");
 
-  const { data: plan, isLoading } = useQuery<PlanData>({
+  const {
+    data: plan,
+    isLoading,
+    isError: _planError,
+    refetch: _refetchPlan,
+  } = useQuery<PlanData>({
     queryKey: ["/api/plan-limits"],
   });
 
   const upgradeMutation = useMutation({
     mutationFn: async (tier: string) => {
       const tierLimits: Record<string, any> = {
-        free: { planTier: "free", eventsPerMonth: 10000, maxConnectors: 3, aiTokensPerMonth: 5000, automationRunsPerMonth: 100 },
-        starter: { planTier: "starter", eventsPerMonth: 50000, maxConnectors: 10, aiTokensPerMonth: 25000, automationRunsPerMonth: 500 },
-        professional: { planTier: "professional", eventsPerMonth: 500000, maxConnectors: 50, aiTokensPerMonth: 100000, automationRunsPerMonth: 5000 },
-        enterprise: { planTier: "enterprise", eventsPerMonth: 5000000, maxConnectors: 500, aiTokensPerMonth: 1000000, automationRunsPerMonth: 50000 },
+        free: {
+          planTier: "free",
+          eventsPerMonth: 10000,
+          maxConnectors: 3,
+          aiTokensPerMonth: 5000,
+          automationRunsPerMonth: 100,
+        },
+        starter: {
+          planTier: "starter",
+          eventsPerMonth: 50000,
+          maxConnectors: 10,
+          aiTokensPerMonth: 25000,
+          automationRunsPerMonth: 500,
+        },
+        professional: {
+          planTier: "professional",
+          eventsPerMonth: 500000,
+          maxConnectors: 50,
+          aiTokensPerMonth: 100000,
+          automationRunsPerMonth: 5000,
+        },
+        enterprise: {
+          planTier: "enterprise",
+          eventsPerMonth: 5000000,
+          maxConnectors: 500,
+          aiTokensPerMonth: 1000000,
+          automationRunsPerMonth: 50000,
+        },
       };
       const res = await apiRequest("PUT", "/api/plan-limits", tierLimits[tier]);
       return res.json();
@@ -260,14 +336,61 @@ function PlanLimitsTab() {
   });
 
   if (isLoading) {
-    return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-48 w-full rounded-lg" />)}</div>;
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-48 w-full rounded-lg" />
+        ))}
+      </div>
+    );
   }
 
   const plans = [
-    { tier: "free", name: "Free", price: "$0", desc: "For evaluation and small teams", events: "10K", connectors: "3", ai: "5K", automation: "100", color: "border-zinc-500/30" },
-    { tier: "starter", name: "Starter", price: "$299/mo", desc: "For growing security teams", events: "50K", connectors: "10", ai: "25K", automation: "500", color: "border-blue-500/30" },
-    { tier: "professional", name: "Professional", price: "$999/mo", desc: "For mature SOC operations", events: "500K", connectors: "50", ai: "100K", automation: "5K", color: "border-purple-500/30", popular: true },
-    { tier: "enterprise", name: "Enterprise", price: "Custom", desc: "Unlimited scale with SLA", events: "5M+", connectors: "500+", ai: "1M+", automation: "50K+", color: "border-amber-500/30" },
+    {
+      tier: "free",
+      name: "Free",
+      price: "$0",
+      desc: "For evaluation and small teams",
+      events: "10K",
+      connectors: "3",
+      ai: "5K",
+      automation: "100",
+      color: "border-zinc-500/30",
+    },
+    {
+      tier: "starter",
+      name: "Starter",
+      price: "$299/mo",
+      desc: "For growing security teams",
+      events: "50K",
+      connectors: "10",
+      ai: "25K",
+      automation: "500",
+      color: "border-blue-500/30",
+    },
+    {
+      tier: "professional",
+      name: "Professional",
+      price: "$999/mo",
+      desc: "For mature SOC operations",
+      events: "500K",
+      connectors: "50",
+      ai: "100K",
+      automation: "5K",
+      color: "border-purple-500/30",
+      popular: true,
+    },
+    {
+      tier: "enterprise",
+      name: "Enterprise",
+      price: "Custom",
+      desc: "Unlimited scale with SLA",
+      events: "5M+",
+      connectors: "500+",
+      ai: "1M+",
+      automation: "50K+",
+      color: "border-amber-500/30",
+    },
   ];
 
   const currentTier = plan?.planTier || "free";
@@ -280,8 +403,11 @@ function PlanLimitsTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {plans.map(p => (
-          <Card key={p.tier} className={`glass border relative ${p.color} ${currentTier === p.tier ? "ring-2 ring-primary" : ""}`}>
+        {plans.map((p) => (
+          <Card
+            key={p.tier}
+            className={`glass border relative ${p.color} ${currentTier === p.tier ? "ring-2 ring-primary" : ""}`}
+          >
             {(p as any).popular && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                 <Badge className="bg-purple-600 text-white text-xs">Most Popular</Badge>
@@ -289,7 +415,9 @@ function PlanLimitsTab() {
             )}
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <Badge variant="outline" className={tierBadge(p.tier)}>{p.name}</Badge>
+                <Badge variant="outline" className={tierBadge(p.tier)}>
+                  {p.name}
+                </Badge>
                 {currentTier === p.tier && <Badge className="bg-primary/20 text-primary text-xs">Current</Badge>}
               </div>
               <CardTitle className="text-2xl mt-2">{p.price}</CardTitle>
@@ -297,10 +425,22 @@ function PlanLimitsTab() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Events/mo</span><span className="font-medium">{p.events}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Connectors</span><span className="font-medium">{p.connectors}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">AI Tokens</span><span className="font-medium">{p.ai}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Automation</span><span className="font-medium">{p.automation}</span></div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Events/mo</span>
+                  <span className="font-medium">{p.events}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Connectors</span>
+                  <span className="font-medium">{p.connectors}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">AI Tokens</span>
+                  <span className="font-medium">{p.ai}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Automation</span>
+                  <span className="font-medium">{p.automation}</span>
+                </div>
               </div>
               {currentTier !== p.tier && (
                 <Button
@@ -311,7 +451,9 @@ function PlanLimitsTab() {
                   onClick={() => upgradeMutation.mutate(p.tier)}
                 >
                   {upgradeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                  {plans.findIndex(x => x.tier === p.tier) > plans.findIndex(x => x.tier === currentTier) ? "Upgrade" : "Downgrade"}
+                  {plans.findIndex((x) => x.tier === p.tier) > plans.findIndex((x) => x.tier === currentTier)
+                    ? "Upgrade"
+                    : "Downgrade"}
                 </Button>
               )}
             </CardContent>
@@ -325,10 +467,22 @@ function PlanLimitsTab() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div><p className="text-muted-foreground">Events/month</p><p className="font-semibold text-lg">{formatNumber(plan?.eventsPerMonth || 10000)}</p></div>
-            <div><p className="text-muted-foreground">Max Connectors</p><p className="font-semibold text-lg">{plan?.maxConnectors || 3}</p></div>
-            <div><p className="text-muted-foreground">AI Tokens/month</p><p className="font-semibold text-lg">{formatNumber(plan?.aiTokensPerMonth || 5000)}</p></div>
-            <div><p className="text-muted-foreground">Automation Runs/month</p><p className="font-semibold text-lg">{formatNumber(plan?.automationRunsPerMonth || 100)}</p></div>
+            <div>
+              <p className="text-muted-foreground">Events/month</p>
+              <p className="font-semibold text-lg">{formatNumber(plan?.eventsPerMonth || 10000)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Max Connectors</p>
+              <p className="font-semibold text-lg">{plan?.maxConnectors || 3}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">AI Tokens/month</p>
+              <p className="font-semibold text-lg">{formatNumber(plan?.aiTokensPerMonth || 5000)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Automation Runs/month</p>
+              <p className="font-semibold text-lg">{formatNumber(plan?.automationRunsPerMonth || 100)}</p>
+            </div>
           </div>
           <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
             <span>Soft threshold: {plan?.softThresholdPct || 80}%</span>
@@ -368,7 +522,13 @@ function WorkspaceTemplatesTab() {
   });
 
   if (isLoading) {
-    return <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-64 rounded-lg" />)}</div>;
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-64 rounded-lg" />
+        ))}
+      </div>
+    );
   }
 
   if (!templates || templates.length === 0) {
@@ -386,11 +546,13 @@ function WorkspaceTemplatesTab() {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold">Workspace Templates</h3>
-        <p className="text-sm text-muted-foreground">Quick-start your SOC with pre-built configurations tailored to your organization type</p>
+        <p className="text-sm text-muted-foreground">
+          Quick-start your SOC with pre-built configurations tailored to your organization type
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {templates.map(t => {
+        {templates.map((t) => {
           const connectors = (t.connectorsConfig || []) as any[];
           const playbooks = (t.playbooksConfig || []) as any[];
           const notifications = (t.notificationConfig || []) as any[];
@@ -400,12 +562,12 @@ function WorkspaceTemplatesTab() {
             <Card key={t.id} className="glass border hover:border-primary/30 transition-colors">
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-lg bg-primary/10 text-primary">
-                    {templateIcon(t.icon)}
-                  </div>
+                  <div className="p-3 rounded-lg bg-primary/10 text-primary">{templateIcon(t.icon)}</div>
                   <div>
                     <CardTitle className="text-base">{t.name}</CardTitle>
-                    <Badge variant="outline" className="text-xs mt-1">{t.category.replace("_", " ")}</Badge>
+                    <Badge variant="outline" className="text-xs mt-1">
+                      {t.category.replace("_", " ")}
+                    </Badge>
                   </div>
                 </div>
               </CardHeader>
@@ -415,15 +577,21 @@ function WorkspaceTemplatesTab() {
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
                     <Plug className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>{connectors.length} connector{connectors.length !== 1 ? "s" : ""}</span>
+                    <span>
+                      {connectors.length} connector{connectors.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>{playbooks.length} playbook{playbooks.length !== 1 ? "s" : ""}</span>
+                    <span>
+                      {playbooks.length} playbook{playbooks.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>{notifications.length} notification channel{notifications.length !== 1 ? "s" : ""}</span>
+                    <span>
+                      {notifications.length} notification channel{notifications.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
                 </div>
 
@@ -433,7 +601,9 @@ function WorkspaceTemplatesTab() {
                       <div>
                         <p className="text-xs font-medium text-muted-foreground mb-1">Connectors</p>
                         {connectors.map((c: any, i: number) => (
-                          <p key={i} className="text-xs ml-2">• {c.name} ({c.type})</p>
+                          <p key={i} className="text-xs ml-2">
+                            • {c.name} ({c.type})
+                          </p>
                         ))}
                       </div>
                     )}
@@ -441,7 +611,9 @@ function WorkspaceTemplatesTab() {
                       <div>
                         <p className="text-xs font-medium text-muted-foreground mb-1">Playbooks</p>
                         {playbooks.map((p: any, i: number) => (
-                          <p key={i} className="text-xs ml-2">• {p.name}</p>
+                          <p key={i} className="text-xs ml-2">
+                            • {p.name}
+                          </p>
                         ))}
                       </div>
                     )}
@@ -463,7 +635,11 @@ function WorkspaceTemplatesTab() {
                     disabled={applyMutation.isPending}
                     onClick={() => applyMutation.mutate(t.id)}
                   >
-                    {applyMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
+                    {applyMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <ArrowRight className="h-3 w-3" />
+                    )}
                     Apply
                   </Button>
                 </div>
@@ -481,19 +657,36 @@ export default function UsageBillingPage() {
     <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Usage & Billing</h1>
-        <p className="text-muted-foreground text-sm mt-1">Monitor resource consumption, manage plan limits, and configure workspace templates</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          Monitor resource consumption, manage plan limits, and configure workspace templates
+        </p>
       </div>
 
       <Tabs defaultValue="usage" className="space-y-4">
         <TabsList className="glass">
-          <TabsTrigger value="usage" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" />Usage</TabsTrigger>
-          <TabsTrigger value="plans" className="gap-1.5"><CreditCard className="h-3.5 w-3.5" />Plans</TabsTrigger>
-          <TabsTrigger value="templates" className="gap-1.5"><Package className="h-3.5 w-3.5" />Templates</TabsTrigger>
+          <TabsTrigger value="usage" className="gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Usage
+          </TabsTrigger>
+          <TabsTrigger value="plans" className="gap-1.5">
+            <CreditCard className="h-3.5 w-3.5" />
+            Plans
+          </TabsTrigger>
+          <TabsTrigger value="templates" className="gap-1.5">
+            <Package className="h-3.5 w-3.5" />
+            Templates
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="usage"><UsageMeteringTab /></TabsContent>
-        <TabsContent value="plans"><PlanLimitsTab /></TabsContent>
-        <TabsContent value="templates"><WorkspaceTemplatesTab /></TabsContent>
+        <TabsContent value="usage">
+          <UsageMeteringTab />
+        </TabsContent>
+        <TabsContent value="plans">
+          <PlanLimitsTab />
+        </TabsContent>
+        <TabsContent value="templates">
+          <WorkspaceTemplatesTab />
+        </TabsContent>
       </Tabs>
     </div>
   );

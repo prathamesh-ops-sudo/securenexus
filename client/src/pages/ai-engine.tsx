@@ -3,10 +3,32 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Brain, Zap, Shield, Target, Activity, Crosshair, AlertTriangle,
-  CheckCircle2, XCircle, Loader2, Sparkles, Network, Users, Server, MapPin,
-  Search, ChevronsUpDown, BarChart3, Cpu, TrendingUp, TrendingDown, ThumbsUp, ThumbsDown,
-  Eye, MessageSquare, RotateCcw,
+  Brain,
+  Zap,
+  Shield,
+  Target,
+  Activity,
+  Crosshair,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Sparkles,
+  Network,
+  Users,
+  Server,
+  MapPin,
+  Search,
+  ChevronsUpDown,
+  BarChart3,
+  Cpu,
+  TrendingUp,
+  TrendingDown,
+  ThumbsUp,
+  ThumbsDown,
+  Eye,
+  MessageSquare,
+  RotateCcw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -89,7 +111,7 @@ interface AIHealth {
   error?: string;
 }
 
-function ThreatMeter({ severity, priority }: { severity: string; priority: number }) {
+function ThreatMeter({ severity }: { severity: string; priority: number }) {
   const severityToLevel: Record<string, number> = {
     critical: 95,
     high: 75,
@@ -146,11 +168,22 @@ export default function AIEnginePage() {
   const [feedbackOutcome, setFeedbackOutcome] = useState<"approve" | "reject" | "correct" | null>(null);
   const [showExplainability, setShowExplainability] = useState(true);
 
-  const { data: config, isLoading: configLoading } = useQuery<AIConfig>({
+  const {
+    data: config,
+    isLoading: configLoading,
+    isError: configError,
+    refetch: refetchConfig,
+  } = useQuery<AIConfig>({
     queryKey: ["/api/ai/config"],
   });
 
-  const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<AIHealth>({
+  const {
+    data: health,
+    isLoading: healthLoading,
+    refetch: refetchHealth,
+    isError: _healthError,
+    refetch: _refetchHealthData,
+  } = useQuery<AIHealth>({
     queryKey: ["/api/ai/health"],
   });
 
@@ -172,9 +205,8 @@ export default function AIEnginePage() {
       return { totalFeedback: 0, avgRating: 0, positiveRate: 0, negativeRate: 0 };
     }
     const totalFeedback = feedbackMetrics.reduce((s, m) => s + m.totalFeedback, 0);
-    const weightedRating = totalFeedback > 0
-      ? feedbackMetrics.reduce((s, m) => s + m.avgRating * m.totalFeedback, 0) / totalFeedback
-      : 0;
+    const weightedRating =
+      totalFeedback > 0 ? feedbackMetrics.reduce((s, m) => s + m.avgRating * m.totalFeedback, 0) / totalFeedback : 0;
     const totalPositive = feedbackMetrics.reduce((s, m) => s + m.positiveFeedback, 0);
     const totalNegative = feedbackMetrics.reduce((s, m) => s + m.negativeFeedback, 0);
     return {
@@ -185,24 +217,23 @@ export default function AIEnginePage() {
     };
   })();
 
-  const uncorrelatedAlerts = alerts?.filter(
-    (a) => a.status === "new" || a.status === "triaged"
-  );
+  const uncorrelatedAlerts = alerts?.filter((a) => a.status === "new" || a.status === "triaged");
 
-  const pendingAlertsCount = alerts?.filter(a => a.status === "new").length ?? 0;
-  const selectedAlert = alerts?.find(a => a.id === triageAlertId);
+  const pendingAlertsCount = alerts?.filter((a) => a.status === "new").length ?? 0;
+  const selectedAlert = alerts?.find((a) => a.id === triageAlertId);
 
   const correlate = useMutation({
     mutationFn: async () => {
-      const body = correlationMode === "select" && selectedAlertIds.length > 0
-        ? { alertIds: selectedAlertIds }
-        : {};
+      const body = correlationMode === "select" && selectedAlertIds.length > 0 ? { alertIds: selectedAlertIds } : {};
       const res = await apiRequest("POST", "/api/ai/correlate", body);
       return res.json();
     },
     onSuccess: (data) => {
       setCorrelationResult(data);
-      toast({ title: "AI Correlation Complete", description: `Found ${data.correlatedGroups.length} correlated group(s)` });
+      toast({
+        title: "AI Correlation Complete",
+        description: `Found ${data.correlatedGroups.length} correlated group(s)`,
+      });
     },
     onError: (error: any) => {
       toast({ title: "AI Correlation Failed", description: error.message, variant: "destructive" });
@@ -240,11 +271,7 @@ export default function AIEnginePage() {
   });
 
   const toggleAlertSelection = (alertId: string) => {
-    setSelectedAlertIds((prev) =>
-      prev.includes(alertId)
-        ? prev.filter((id) => id !== alertId)
-        : [...prev, alertId]
-    );
+    setSelectedAlertIds((prev) => (prev.includes(alertId) ? prev.filter((id) => id !== alertId) : [...prev, alertId]));
   };
 
   const submitFeedback = useMutation({
@@ -291,13 +318,28 @@ export default function AIEnginePage() {
         <div>
           <div className="flex items-center gap-2">
             <Brain className="h-6 w-6 text-primary" aria-hidden="true" />
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">AI Correlation Engine</span></h1>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+              <span className="gradient-text-red">AI Correlation Engine</span>
+            </h1>
           </div>
           <div className="text-sm text-muted-foreground mt-1">
             {configLoading ? (
               <Skeleton className="h-4 w-64 inline-block" />
+            ) : configError ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+                <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                  <AlertTriangle className="h-6 w-6 text-destructive" />
+                </div>
+                <p className="text-sm font-medium">Failed to load AI engine configuration</p>
+                <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchConfig()}>
+                  Try Again
+                </Button>
+              </div>
             ) : config ? (
-              <span data-testid="text-model-info">{config.backend} / {config.model} ({config.region})</span>
+              <span data-testid="text-model-info">
+                {config.backend} / {config.model} ({config.region})
+              </span>
             ) : (
               "AI engine configuration unavailable"
             )}
@@ -305,10 +347,7 @@ export default function AIEnginePage() {
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
         {health && (
-          <Badge
-            variant={health.status === "healthy" ? "default" : "destructive"}
-            data-testid="badge-health-status"
-          >
+          <Badge variant={health.status === "healthy" ? "default" : "destructive"} data-testid="badge-health-status">
             {health.status === "healthy" ? (
               <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
             ) : (
@@ -339,7 +378,9 @@ export default function AIEnginePage() {
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">AI Analyses Run</div>
               <BarChart3 className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             </div>
-            <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-analyses-count">—</div>
+            <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-analyses-count">
+              —
+            </div>
           </CardContent>
         </Card>
         <Card className="relative overflow-visible" data-testid="stat-avg-confidence">
@@ -349,7 +390,9 @@ export default function AIEnginePage() {
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Confidence</div>
               <Target className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             </div>
-            <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-avg-confidence">—</div>
+            <div className="text-2xl font-bold mt-1 tabular-nums" data-testid="text-avg-confidence">
+              —
+            </div>
           </CardContent>
         </Card>
         <Card className="relative overflow-visible" data-testid="stat-model">
@@ -399,35 +442,47 @@ export default function AIEnginePage() {
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Status</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <div className={`w-2 h-2 rounded-full ${health.status === "healthy" ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
-                    <span className="text-sm font-medium capitalize" data-testid="text-health-status">{health.status}</span>
+                    <div
+                      className={`w-2 h-2 rounded-full ${health.status === "healthy" ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`}
+                    />
+                    <span className="text-sm font-medium capitalize" data-testid="text-health-status">
+                      {health.status}
+                    </span>
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Backend</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <Server className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-sm font-medium" data-testid="text-health-backend">{health.backend}</span>
+                    <span className="text-sm font-medium" data-testid="text-health-backend">
+                      {health.backend}
+                    </span>
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Region</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <MapPin className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-sm font-medium" data-testid="text-health-region">{health.region}</span>
+                    <span className="text-sm font-medium" data-testid="text-health-region">
+                      {health.region}
+                    </span>
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Latency</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <Zap className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-sm font-medium tabular-nums" data-testid="text-health-latency">{health.latencyMs}ms</span>
+                    <span className="text-sm font-medium tabular-nums" data-testid="text-health-latency">
+                      {health.latencyMs}ms
+                    </span>
                   </div>
                 </div>
                 {health.error && (
                   <div className="col-span-full">
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Error</div>
-                    <p className="text-xs text-destructive mt-0.5" data-testid="text-health-error">{health.error}</p>
+                    <p className="text-xs text-destructive mt-0.5" data-testid="text-health-error">
+                      {health.error}
+                    </p>
                   </div>
                 )}
               </div>
@@ -435,7 +490,9 @@ export default function AIEnginePage() {
                 <div className="flex items-center gap-2 pt-2 border-t">
                   <Brain className="h-3.5 w-3.5 text-primary" />
                   <span className="text-xs text-muted-foreground">Active Model:</span>
-                  <span className="text-xs font-semibold" data-testid="text-health-model">{health.model}</span>
+                  <span className="text-xs font-semibold" data-testid="text-health-model">
+                    {health.model}
+                  </span>
                 </div>
               )}
             </div>
@@ -458,8 +515,12 @@ export default function AIEnginePage() {
         <CardContent className="space-y-4">
           <Tabs value={correlationMode} onValueChange={setCorrelationMode}>
             <TabsList data-testid="tabs-correlation-mode">
-              <TabsTrigger value="all" data-testid="tab-all-alerts">All New Alerts</TabsTrigger>
-              <TabsTrigger value="select" data-testid="tab-select-alerts">Select Alerts</TabsTrigger>
+              <TabsTrigger value="all" data-testid="tab-all-alerts">
+                All New Alerts
+              </TabsTrigger>
+              <TabsTrigger value="select" data-testid="tab-select-alerts">
+                Select Alerts
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="all">
               <p className="text-xs text-muted-foreground">
@@ -549,13 +610,21 @@ export default function AIEnginePage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Overall Assessment</div>
-                <p className="text-sm" data-testid="text-overall-assessment">{correlationResult.overallAssessment}</p>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                  Overall Assessment
+                </div>
+                <p className="text-sm" data-testid="text-overall-assessment">
+                  {correlationResult.overallAssessment}
+                </p>
               </div>
               {correlationResult.threatLandscape && (
                 <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Threat Landscape</div>
-                  <p className="text-xs text-muted-foreground" data-testid="text-threat-landscape">{correlationResult.threatLandscape}</p>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    Threat Landscape
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="text-threat-landscape">
+                    {correlationResult.threatLandscape}
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -578,17 +647,26 @@ export default function AIEnginePage() {
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="text-muted-foreground">Confidence</span>
-                    <span className="font-medium tabular-nums" data-testid={`text-confidence-${i}`}>{Math.round(group.confidence * 100)}%</span>
+                    <span className="font-medium tabular-nums" data-testid={`text-confidence-${i}`}>
+                      {Math.round(group.confidence * 100)}%
+                    </span>
                   </div>
                   <Progress value={group.confidence * 100} className="h-2" data-testid={`progress-confidence-${i}`} />
                 </div>
 
                 {group.mitreTactics.length > 0 && (
                   <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">MITRE ATT&CK Tactics</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">
+                      MITRE ATT&CK Tactics
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {group.mitreTactics.map((t, j) => (
-                        <Badge key={j} variant="secondary" className="text-[10px]" data-testid={`badge-tactic-${i}-${j}`}>
+                        <Badge
+                          key={j}
+                          variant="secondary"
+                          className="text-[10px]"
+                          data-testid={`badge-tactic-${i}-${j}`}
+                        >
                           <Crosshair className="h-2.5 w-2.5 mr-1" />
                           {t}
                         </Badge>
@@ -602,7 +680,14 @@ export default function AIEnginePage() {
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Techniques</div>
                     <div className="flex flex-wrap gap-1.5">
                       {group.mitreTechniques.map((t, j) => (
-                        <Badge key={j} variant="outline" className="text-[10px] font-mono" data-testid={`badge-technique-${i}-${j}`}>{t}</Badge>
+                        <Badge
+                          key={j}
+                          variant="outline"
+                          className="text-[10px] font-mono"
+                          data-testid={`badge-technique-${i}-${j}`}
+                        >
+                          {t}
+                        </Badge>
                       ))}
                     </div>
                   </div>
@@ -610,10 +695,17 @@ export default function AIEnginePage() {
 
                 {group.killChainPhases.length > 0 && (
                   <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Kill Chain Phases</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">
+                      Kill Chain Phases
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {group.killChainPhases.map((phase, j) => (
-                        <Badge key={j} variant="secondary" className="text-[10px]" data-testid={`badge-killchain-${i}-${j}`}>
+                        <Badge
+                          key={j}
+                          variant="secondary"
+                          className="text-[10px]"
+                          data-testid={`badge-killchain-${i}-${j}`}
+                        >
                           <Target className="h-2.5 w-2.5 mr-1" />
                           {phase}
                         </Badge>
@@ -624,13 +716,17 @@ export default function AIEnginePage() {
 
                 {group.diamondModel && (
                   <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Diamond Model</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">
+                      Diamond Model
+                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div>
                         <div className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Users className="h-2.5 w-2.5" /> Adversary
                         </div>
-                        <p className="text-xs mt-0.5" data-testid={`text-adversary-${i}`}>{group.diamondModel.adversary || "Unknown"}</p>
+                        <p className="text-xs mt-0.5" data-testid={`text-adversary-${i}`}>
+                          {group.diamondModel.adversary || "Unknown"}
+                        </p>
                       </div>
                       <div>
                         <div className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -638,7 +734,13 @@ export default function AIEnginePage() {
                         </div>
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {group.diamondModel.infrastructure?.map((inf, j) => (
-                            <span key={j} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted" data-testid={`text-infra-${i}-${j}`}>{inf}</span>
+                            <span
+                              key={j}
+                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted"
+                              data-testid={`text-infra-${i}-${j}`}
+                            >
+                              {inf}
+                            </span>
                           ))}
                         </div>
                       </div>
@@ -646,7 +748,9 @@ export default function AIEnginePage() {
                         <div className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Shield className="h-2.5 w-2.5" /> Capability
                         </div>
-                        <p className="text-xs mt-0.5" data-testid={`text-capability-${i}`}>{group.diamondModel.capability || "Unknown"}</p>
+                        <p className="text-xs mt-0.5" data-testid={`text-capability-${i}`}>
+                          {group.diamondModel.capability || "Unknown"}
+                        </p>
                       </div>
                       <div>
                         <div className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -654,7 +758,13 @@ export default function AIEnginePage() {
                         </div>
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {group.diamondModel.victim?.map((v, j) => (
-                            <span key={j} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted" data-testid={`text-victim-${i}-${j}`}>{v}</span>
+                            <span
+                              key={j}
+                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted"
+                              data-testid={`text-victim-${i}-${j}`}
+                            >
+                              {v}
+                            </span>
                           ))}
                         </div>
                       </div>
@@ -664,14 +774,24 @@ export default function AIEnginePage() {
 
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Reasoning</div>
-                  <p className="text-xs text-muted-foreground" data-testid={`text-reasoning-${i}`}>{group.reasoning}</p>
+                  <p className="text-xs text-muted-foreground" data-testid={`text-reasoning-${i}`}>
+                    {group.reasoning}
+                  </p>
                 </div>
 
                 <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Alert IDs ({group.alertIds.length})</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    Alert IDs ({group.alertIds.length})
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {group.alertIds.map((id, j) => (
-                      <span key={j} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted" data-testid={`text-alert-id-${i}-${j}`}>{id}</span>
+                      <span
+                        key={j}
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted"
+                        data-testid={`text-alert-id-${i}-${j}`}
+                      >
+                        {id}
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -704,7 +824,9 @@ export default function AIEnginePage() {
               <CardContent>
                 <div className="flex flex-wrap gap-1.5">
                   {correlationResult.uncorrelatedAlertIds.map((id, j) => (
-                    <span key={j} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted">{id}</span>
+                    <span key={j} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted">
+                      {id}
+                    </span>
                   ))}
                 </div>
               </CardContent>
@@ -720,18 +842,15 @@ export default function AIEnginePage() {
             <CardTitle className="text-sm font-medium">AI Alert Triage</CardTitle>
           </div>
           <CardDescription className="text-xs">
-            Perform deep AI analysis on a single alert for severity assessment, kill chain mapping, and actionable recommendations
+            Perform deep AI analysis on a single alert for severity assessment, kill chain mapping, and actionable
+            recommendations
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
             <Popover open={alertPickerOpen} onOpenChange={setAlertPickerOpen}>
               <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full max-w-md justify-between"
-                  data-testid="select-triage-alert"
-                >
+                <Button variant="outline" className="w-full max-w-md justify-between" data-testid="select-triage-alert">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <Search className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                     <span className={`truncate ${!selectedAlert ? "text-muted-foreground" : ""}`}>
@@ -824,15 +943,21 @@ export default function AIEnginePage() {
                 </div>
                 <div className="rounded-md bg-muted/40 p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</div>
-                  <div className="text-sm font-bold mt-1" data-testid="text-triage-priority">P{triageResult.priority}</div>
+                  <div className="text-sm font-bold mt-1" data-testid="text-triage-priority">
+                    P{triageResult.priority}
+                  </div>
                 </div>
                 <div className="rounded-md bg-muted/40 p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Category</div>
-                  <div className="text-xs mt-1" data-testid="text-triage-category">{triageResult.category}</div>
+                  <div className="text-xs mt-1" data-testid="text-triage-category">
+                    {triageResult.category}
+                  </div>
                 </div>
                 <div className="rounded-md bg-muted/40 p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Kill Chain Phase</div>
-                  <div className="text-xs mt-1" data-testid="text-triage-killchain">{triageResult.killChainPhase}</div>
+                  <div className="text-xs mt-1" data-testid="text-triage-killchain">
+                    {triageResult.killChainPhase}
+                  </div>
                 </div>
               </div>
 
@@ -859,22 +984,36 @@ export default function AIEnginePage() {
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-muted-foreground">False Positive Likelihood</span>
-                  <span className="font-medium tabular-nums" data-testid="text-triage-fp">{Math.round(triageResult.falsePositiveLikelihood * 100)}%</span>
+                  <span className="font-medium tabular-nums" data-testid="text-triage-fp">
+                    {Math.round(triageResult.falsePositiveLikelihood * 100)}%
+                  </span>
                 </div>
-                <Progress value={triageResult.falsePositiveLikelihood * 100} className="h-2" data-testid="progress-false-positive" />
+                <Progress
+                  value={triageResult.falsePositiveLikelihood * 100}
+                  className="h-2"
+                  data-testid="progress-false-positive"
+                />
                 {triageResult.falsePositiveReasoning && (
-                  <p className="text-[10px] text-muted-foreground mt-1" data-testid="text-fp-reasoning">{triageResult.falsePositiveReasoning}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1" data-testid="text-fp-reasoning">
+                    {triageResult.falsePositiveReasoning}
+                  </p>
                 )}
               </div>
 
               <div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Reasoning</div>
-                <p className="text-xs text-muted-foreground" data-testid="text-triage-reasoning">{triageResult.reasoning}</p>
+                <p className="text-xs text-muted-foreground" data-testid="text-triage-reasoning">
+                  {triageResult.reasoning}
+                </p>
               </div>
 
               <div className="rounded-md bg-primary/5 border border-primary/20 p-3">
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Recommended Action</div>
-                <p className="text-sm font-medium" data-testid="text-triage-action">{triageResult.recommendedAction}</p>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                  Recommended Action
+                </div>
+                <p className="text-sm font-medium" data-testid="text-triage-action">
+                  {triageResult.recommendedAction}
+                </p>
               </div>
 
               {triageResult.relatedIocs && triageResult.relatedIocs.length > 0 && (
@@ -892,7 +1031,9 @@ export default function AIEnginePage() {
                         {triageResult.relatedIocs.map((ioc, j) => (
                           <tr key={j} className="border-b last:border-0" data-testid={`row-ioc-${j}`}>
                             <td className="px-2 py-1.5">
-                              <Badge variant="outline" className="text-[10px]">{ioc.type}</Badge>
+                              <Badge variant="outline" className="text-[10px]">
+                                {ioc.type}
+                              </Badge>
                             </td>
                             <td className="px-2 py-1.5 font-mono">{ioc.value}</td>
                           </tr>
@@ -905,7 +1046,9 @@ export default function AIEnginePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="rounded-md bg-muted/40 p-3">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Escalation Required</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    Escalation Required
+                  </div>
                   <div className="flex items-center gap-1.5" data-testid="text-escalation">
                     {triageResult.escalationRequired ? (
                       <>
@@ -921,12 +1064,20 @@ export default function AIEnginePage() {
                   </div>
                 </div>
                 <div className="rounded-md bg-muted/40 p-3">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">NIST Classification</div>
-                  <p className="text-xs" data-testid="text-nist">{triageResult.nistClassification}</p>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    NIST Classification
+                  </div>
+                  <p className="text-xs" data-testid="text-nist">
+                    {triageResult.nistClassification}
+                  </p>
                 </div>
                 <div className="rounded-md bg-muted/40 p-3">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Containment Advice</div>
-                  <p className="text-xs text-muted-foreground" data-testid="text-containment">{triageResult.containmentAdvice}</p>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    Containment Advice
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="text-containment">
+                    {triageResult.containmentAdvice}
+                  </p>
                 </div>
               </div>
 
@@ -946,7 +1097,9 @@ export default function AIEnginePage() {
                       {showExplainability ? "Hide" : "Show"}
                     </Button>
                   </div>
-                  <CardDescription className="text-xs">Signals and confidence rationale behind this AI decision</CardDescription>
+                  <CardDescription className="text-xs">
+                    Signals and confidence rationale behind this AI decision
+                  </CardDescription>
                 </CardHeader>
                 {showExplainability && (
                   <CardContent className="space-y-4">
@@ -960,7 +1113,9 @@ export default function AIEnginePage() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium">{triageResult.severity}</span>
-                            <Badge variant="outline" className="text-[10px]">P{triageResult.priority}</Badge>
+                            <Badge variant="outline" className="text-[10px]">
+                              P{triageResult.priority}
+                            </Badge>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
@@ -969,7 +1124,9 @@ export default function AIEnginePage() {
                             <span className="text-xs">False Positive Analysis</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium tabular-nums">{Math.round(triageResult.falsePositiveLikelihood * 100)}% likely FP</span>
+                            <span className="text-xs font-medium tabular-nums">
+                              {Math.round(triageResult.falsePositiveLikelihood * 100)}% likely FP
+                            </span>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
@@ -978,8 +1135,16 @@ export default function AIEnginePage() {
                             <span className="text-xs">MITRE ATT&CK Mapping</span>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            {triageResult.mitreTactic && <Badge variant="secondary" className="text-[10px]">{triageResult.mitreTactic}</Badge>}
-                            {triageResult.mitreTechnique && <Badge variant="outline" className="text-[10px] font-mono">{triageResult.mitreTechnique}</Badge>}
+                            {triageResult.mitreTactic && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                {triageResult.mitreTactic}
+                              </Badge>
+                            )}
+                            {triageResult.mitreTechnique && (
+                              <Badge variant="outline" className="text-[10px] font-mono">
+                                {triageResult.mitreTechnique}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 rounded-md bg-background p-2">
@@ -1002,7 +1167,9 @@ export default function AIEnginePage() {
                               <div className="w-2 h-2 rounded-full bg-yellow-500" />
                               <span className="text-xs">Escalation Flag</span>
                             </div>
-                            <Badge variant="destructive" className="text-[10px]">Required</Badge>
+                            <Badge variant="destructive" className="text-[10px]">
+                              Required
+                            </Badge>
                           </div>
                         )}
                         {triageResult.relatedIocs && triageResult.relatedIocs.length > 0 && (
@@ -1018,10 +1185,14 @@ export default function AIEnginePage() {
                     </div>
 
                     <div data-testid="explainability-rationale">
-                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Confidence Rationale</div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                        Confidence Rationale
+                      </div>
                       <p className="text-xs text-muted-foreground">{triageResult.reasoning}</p>
                       {triageResult.falsePositiveReasoning && (
-                        <p className="text-xs text-muted-foreground mt-1 italic">FP reasoning: {triageResult.falsePositiveReasoning}</p>
+                        <p className="text-xs text-muted-foreground mt-1 italic">
+                          FP reasoning: {triageResult.falsePositiveReasoning}
+                        </p>
                       )}
                     </div>
                   </CardContent>
@@ -1034,14 +1205,19 @@ export default function AIEnginePage() {
                     <MessageSquare className="h-4 w-4 text-amber-500" />
                     <CardTitle className="text-sm font-medium">AI Feedback</CardTitle>
                   </div>
-                  <CardDescription className="text-xs">Rate this triage result to improve future accuracy</CardDescription>
+                  <CardDescription className="text-xs">
+                    Rate this triage result to improve future accuracy
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-2" data-testid="feedback-actions">
                     <Button
                       size="sm"
                       variant={feedbackOutcome === "approve" ? "default" : "outline"}
-                      onClick={() => { setFeedbackOutcome("approve"); setFeedbackRating(5); }}
+                      onClick={() => {
+                        setFeedbackOutcome("approve");
+                        setFeedbackRating(5);
+                      }}
                       className={feedbackOutcome === "approve" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
                       data-testid="button-feedback-approve"
                     >
@@ -1051,7 +1227,10 @@ export default function AIEnginePage() {
                     <Button
                       size="sm"
                       variant={feedbackOutcome === "reject" ? "default" : "outline"}
-                      onClick={() => { setFeedbackOutcome("reject"); setFeedbackRating(1); }}
+                      onClick={() => {
+                        setFeedbackOutcome("reject");
+                        setFeedbackRating(1);
+                      }}
                       className={feedbackOutcome === "reject" ? "bg-red-600 hover:bg-red-700" : ""}
                       data-testid="button-feedback-reject"
                     >
@@ -1061,7 +1240,10 @@ export default function AIEnginePage() {
                     <Button
                       size="sm"
                       variant={feedbackOutcome === "correct" ? "default" : "outline"}
-                      onClick={() => { setFeedbackOutcome("correct"); setFeedbackRating(3); }}
+                      onClick={() => {
+                        setFeedbackOutcome("correct");
+                        setFeedbackRating(3);
+                      }}
                       className={feedbackOutcome === "correct" ? "bg-amber-600 hover:bg-amber-700" : ""}
                       data-testid="button-feedback-correct"
                     >
@@ -1074,7 +1256,9 @@ export default function AIEnginePage() {
                       <textarea
                         className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         rows={2}
-                        placeholder={feedbackOutcome === "correct" ? "Describe the correct outcome..." : "Optional comment..."}
+                        placeholder={
+                          feedbackOutcome === "correct" ? "Describe the correct outcome..." : "Optional comment..."
+                        }
                         value={feedbackComment}
                         onChange={(e) => setFeedbackComment(e.target.value)}
                         data-testid="input-feedback-comment"
@@ -1083,13 +1267,21 @@ export default function AIEnginePage() {
                         size="sm"
                         onClick={() => {
                           if (feedbackRating !== null && feedbackOutcome) {
-                            submitFeedback.mutate({ rating: feedbackRating, outcome: feedbackOutcome, comment: feedbackComment });
+                            submitFeedback.mutate({
+                              rating: feedbackRating,
+                              outcome: feedbackOutcome,
+                              comment: feedbackComment,
+                            });
                           }
                         }}
                         disabled={submitFeedback.isPending || !feedbackOutcome}
                         data-testid="button-submit-feedback"
                       >
-                        {submitFeedback.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1.5" />}
+                        {submitFeedback.isPending ? (
+                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                        )}
                         Submit Feedback
                       </Button>
                     </div>
@@ -1109,9 +1301,7 @@ export default function AIEnginePage() {
                 <BarChart3 className="h-4 w-4 text-primary" />
                 <CardTitle className="text-sm font-medium">Model Drift Dashboard</CardTitle>
               </div>
-              <CardDescription className="text-xs mt-0.5">
-                AI feedback quality trends over time
-              </CardDescription>
+              <CardDescription className="text-xs mt-0.5">AI feedback quality trends over time</CardDescription>
             </div>
             <Select value={driftDays} onValueChange={setDriftDays}>
               <SelectTrigger className="w-[120px]" data-testid="select-drift-days">
@@ -1195,11 +1385,7 @@ export default function AIEnginePage() {
                     {feedbackMetrics.map((m) => {
                       const barWidth = (m.avgRating / 5) * 100;
                       const barColor =
-                        m.avgRating >= 4
-                          ? "bg-emerald-500"
-                          : m.avgRating >= 3
-                          ? "bg-yellow-500"
-                          : "bg-red-500";
+                        m.avgRating >= 4 ? "bg-emerald-500" : m.avgRating >= 3 ? "bg-yellow-500" : "bg-red-500";
                       return (
                         <div key={m.date} className="flex items-center gap-2 text-xs">
                           <span className="w-20 text-muted-foreground tabular-nums flex-shrink-0 text-right">
@@ -1214,7 +1400,10 @@ export default function AIEnginePage() {
                           <span className="w-8 tabular-nums font-medium text-right flex-shrink-0">
                             {m.avgRating.toFixed(1)}
                           </span>
-                          <span className="w-8 text-muted-foreground tabular-nums text-right flex-shrink-0" title="Total feedback">
+                          <span
+                            className="w-8 text-muted-foreground tabular-nums text-right flex-shrink-0"
+                            title="Total feedback"
+                          >
                             {m.totalFeedback}
                           </span>
                         </div>

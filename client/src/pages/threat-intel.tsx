@@ -1,7 +1,33 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Shield, Search, Globe, Server, ExternalLink, Database, RefreshCw, CheckCircle2, XCircle, Zap, Network, Rss, Loader2, Clock, ChevronDown, Plus, Trash2, Eye, AlertTriangle, Filter, Upload, Settings2, List, BookOpen, Play, Bell, BellRing } from "lucide-react";
+import {
+  Shield,
+  Search,
+  Globe,
+  Server,
+  ExternalLink,
+  Database,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Zap,
+  Network,
+  Rss,
+  Loader2,
+  Clock,
+  ChevronDown,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  Filter,
+  Settings2,
+  List,
+  BookOpen,
+  Play,
+  Bell,
+  BellRing,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,24 +37,20 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip as ShadTooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SeverityBadge, formatTimestamp } from "@/components/security-badges";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import type { Alert, Incident } from "@shared/schema";
@@ -185,7 +207,12 @@ export default function ThreatIntelPage() {
   const [feedDataMap, setFeedDataMap] = useState<Record<string, OsintFeedResult>>({});
   const { toast } = useToast();
 
-  const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
+  const {
+    data: alerts,
+    isLoading: alertsLoading,
+    isError: _alertsError,
+    refetch: _refetchAlerts,
+  } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
   });
 
@@ -193,11 +220,21 @@ export default function ThreatIntelPage() {
     queryKey: ["/api/incidents"],
   });
 
-  const { data: providers, isLoading: providersLoading } = useQuery<ProviderStatus[]>({
+  const {
+    data: providers,
+    isLoading: providersLoading,
+    isError: _providersError,
+    refetch: _refetchProviders,
+  } = useQuery<ProviderStatus[]>({
     queryKey: ["/api/enrichment/providers"],
   });
 
-  const { data: feedStatuses, isLoading: feedStatusesLoading } = useQuery<FeedStatus[]>({
+  const {
+    data: feedStatuses,
+    isLoading: feedStatusesLoading,
+    isError: _feedsError,
+    refetch: _refetchFeeds,
+  } = useQuery<FeedStatus[]>({
     queryKey: ["/api/osint-feeds/status"],
   });
 
@@ -231,7 +268,7 @@ export default function ThreatIntelPage() {
         statuses.map(async (feed) => {
           const res = await apiRequest("POST", `/api/osint-feeds/${encodeURIComponent(feed.slug)}/refresh`);
           return res.json() as Promise<OsintFeedResult>;
-        })
+        }),
       );
       return results;
     },
@@ -318,7 +355,7 @@ export default function ThreatIntelPage() {
     queryKey: ["/api/ioc-match-rules"],
   });
 
-  const { data: iocMatchesData } = useQuery<any[]>({
+  const { data: _iocMatchesData } = useQuery<any[]>({
     queryKey: ["/api/ioc-matches"],
   });
 
@@ -359,7 +396,10 @@ export default function ThreatIntelPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-stats"] });
-      toast({ title: "Feed ingested", description: `${data.newEntries} new IOC entries added (${data.totalParsed} parsed)` });
+      toast({
+        title: "Feed ingested",
+        description: `${data.newEntries} new IOC entries added (${data.totalParsed} parsed)`,
+      });
     },
     onError: (e: Error) => toast({ title: "Ingestion failed", description: e.message, variant: "destructive" }),
   });
@@ -442,11 +482,12 @@ export default function ThreatIntelPage() {
     if (!iocEntriesData) return [];
     if (!iocSearch.trim()) return iocEntriesData;
     const q = iocSearch.toLowerCase();
-    return iocEntriesData.filter((e: any) =>
-      e.iocValue?.toLowerCase().includes(q) ||
-      e.malwareFamily?.toLowerCase().includes(q) ||
-      e.source?.toLowerCase().includes(q) ||
-      e.campaignName?.toLowerCase().includes(q)
+    return iocEntriesData.filter(
+      (e: any) =>
+        e.iocValue?.toLowerCase().includes(q) ||
+        e.malwareFamily?.toLowerCase().includes(q) ||
+        e.source?.toLowerCase().includes(q) ||
+        e.campaignName?.toLowerCase().includes(q),
     );
   }, [iocEntriesData, iocSearch]);
 
@@ -466,17 +507,13 @@ export default function ThreatIntelPage() {
       (ioc) =>
         ioc.value.toLowerCase().includes(q) ||
         ioc.type.toLowerCase().includes(q) ||
-        ioc.source.toLowerCase().includes(q)
+        ioc.source.toLowerCase().includes(q),
     );
   }, [allIOCs, search]);
 
   const stats = useMemo(() => {
-    const uniqueDomains = new Set(
-      allIOCs.filter((i) => i.type === "domain").map((i) => i.value.toLowerCase())
-    ).size;
-    const uniqueIPs = new Set(
-      allIOCs.filter((i) => i.type === "ip").map((i) => i.value)
-    ).size;
+    const uniqueDomains = new Set(allIOCs.filter((i) => i.type === "domain").map((i) => i.value.toLowerCase())).size;
+    const uniqueIPs = new Set(allIOCs.filter((i) => i.type === "ip").map((i) => i.value)).size;
     return { total: allIOCs.length, uniqueDomains, uniqueIPs };
   }, [allIOCs]);
 
@@ -489,15 +526,20 @@ export default function ThreatIntelPage() {
   }, [allIOCs]);
 
   const toggleRuleIocType = (t: string) => {
-    setRuleFormIocTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
+    setRuleFormIocTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   };
 
   const toggleRuleMatchField = (f: string) => {
-    setRuleFormMatchFields((prev) => prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]);
+    setRuleFormMatchFields((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]));
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Threat Intelligence" data-testid="page-threat-intel">
+    <div
+      className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto"
+      role="main"
+      aria-label="Threat Intelligence"
+      data-testid="page-threat-intel"
+    >
       <div>
         <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
           <span className="gradient-text-red">Threat Intelligence</span>
@@ -510,11 +552,21 @@ export default function ThreatIntelPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList data-testid="tabs-threat-intel">
-          <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-          <TabsTrigger value="ioc-database" data-testid="tab-ioc-database">IOC Database</TabsTrigger>
-          <TabsTrigger value="watchlists" data-testid="tab-watchlists">Watchlists</TabsTrigger>
-          <TabsTrigger value="match-rules" data-testid="tab-match-rules">Match Rules</TabsTrigger>
-          <TabsTrigger value="feed-sources" data-testid="tab-feed-sources">Feed Sources</TabsTrigger>
+          <TabsTrigger value="overview" data-testid="tab-overview">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="ioc-database" data-testid="tab-ioc-database">
+            IOC Database
+          </TabsTrigger>
+          <TabsTrigger value="watchlists" data-testid="tab-watchlists">
+            Watchlists
+          </TabsTrigger>
+          <TabsTrigger value="match-rules" data-testid="tab-match-rules">
+            Match Rules
+          </TabsTrigger>
+          <TabsTrigger value="feed-sources" data-testid="tab-feed-sources">
+            Feed Sources
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6 mt-4">
@@ -623,50 +675,59 @@ export default function ThreatIntelPage() {
                     {feedStatuses.map((feed) => {
                       const isFetching = refreshFeedMutation.isPending && refreshFeedMutation.variables === feed.name;
                       return (
-                        <div key={feed.name} className="border rounded-md p-4 space-y-3" data-testid={`card-feed-${feed.name}`}>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span
-                                className={`h-2 w-2 rounded-full flex-shrink-0 ${FEED_STATUS_DOT[feed.status] || "bg-gray-400"}`}
-                                data-testid={`status-feed-${feed.name}`}
-                              />
-                              <span className="text-sm font-medium truncate" data-testid={`text-feed-name-${feed.name}`}>
-                                {feed.name}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Database className="h-3 w-3 flex-shrink-0" />
-                              <span data-testid={`text-feed-count-${feed.name}`}>
-                                {feed.totalIndicators.toLocaleString()} indicators
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3 flex-shrink-0" />
-                              <span data-testid={`text-feed-last-fetched-${feed.name}`}>
-                                {formatRelativeTimestamp(feed.lastFetched)}
-                              </span>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full"
-                              disabled={isFetching}
-                              onClick={() => refreshFeedMutation.mutate(feed.slug)}
-                              data-testid={`button-fetch-feed-${feed.name}`}
-                            >
-                              {isFetching ? (
-                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                              ) : (
-                                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                              )}
-                              Fetch
-                            </Button>
+                        <div
+                          key={feed.name}
+                          className="border rounded-md p-4 space-y-3"
+                          data-testid={`card-feed-${feed.name}`}
+                        >
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`h-2 w-2 rounded-full flex-shrink-0 ${FEED_STATUS_DOT[feed.status] || "bg-gray-400"}`}
+                              data-testid={`status-feed-${feed.name}`}
+                            />
+                            <span className="text-sm font-medium truncate" data-testid={`text-feed-name-${feed.name}`}>
+                              {feed.name}
+                            </span>
                           </div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Database className="h-3 w-3 flex-shrink-0" />
+                            <span data-testid={`text-feed-count-${feed.name}`}>
+                              {feed.totalIndicators.toLocaleString()} indicators
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3 flex-shrink-0" />
+                            <span data-testid={`text-feed-last-fetched-${feed.name}`}>
+                              {formatRelativeTimestamp(feed.lastFetched)}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            disabled={isFetching}
+                            onClick={() => refreshFeedMutation.mutate(feed.slug)}
+                            data-testid={`button-fetch-feed-${feed.name}`}
+                          >
+                            {isFetching ? (
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                            )}
+                            Fetch
+                          </Button>
+                        </div>
                       );
                     })}
                   </div>
 
                   {expandedFeed && feedDataMap[expandedFeed] && (
-                    <Collapsible open={true} onOpenChange={(open) => { if (!open) setExpandedFeed(null); }}>
+                    <Collapsible
+                      open={true}
+                      onOpenChange={(open) => {
+                        if (!open) setExpandedFeed(null);
+                      }}
+                    >
                       <CollapsibleTrigger asChild>
                         <Button
                           variant="ghost"
@@ -674,7 +735,8 @@ export default function ThreatIntelPage() {
                           data-testid="button-toggle-feed-data"
                         >
                           <span className="text-sm font-medium">
-                            {feedDataMap[expandedFeed].feedName} - {feedDataMap[expandedFeed].indicators.length} indicators
+                            {feedDataMap[expandedFeed].feedName} - {feedDataMap[expandedFeed].indicators.length}{" "}
+                            indicators
                           </span>
                           <ChevronDown className="h-4 w-4" />
                         </Button>
@@ -706,22 +768,34 @@ export default function ThreatIntelPage() {
                                       </Badge>
                                     </TableCell>
                                     <TableCell>
-                                      <span className="text-xs font-mono truncate max-w-[250px] block" data-testid={`text-feed-indicator-value-${idx}`}>
+                                      <span
+                                        className="text-xs font-mono truncate max-w-[250px] block"
+                                        data-testid={`text-feed-indicator-value-${idx}`}
+                                      >
                                         {indicator.value}
                                       </span>
                                     </TableCell>
                                     <TableCell className="hidden md:table-cell">
-                                      <span className="text-xs text-muted-foreground truncate max-w-[200px] block" data-testid={`text-feed-indicator-threat-${idx}`}>
+                                      <span
+                                        className="text-xs text-muted-foreground truncate max-w-[200px] block"
+                                        data-testid={`text-feed-indicator-threat-${idx}`}
+                                      >
                                         {indicator.threat}
                                       </span>
                                     </TableCell>
                                     <TableCell className="hidden lg:table-cell">
-                                      <span className="text-xs text-muted-foreground" data-testid={`text-feed-indicator-source-${idx}`}>
+                                      <span
+                                        className="text-xs text-muted-foreground"
+                                        data-testid={`text-feed-indicator-source-${idx}`}
+                                      >
                                         {indicator.source}
                                       </span>
                                     </TableCell>
                                     <TableCell className="hidden md:table-cell">
-                                      <span className="text-xs text-muted-foreground" data-testid={`text-feed-indicator-firstseen-${idx}`}>
+                                      <span
+                                        className="text-xs text-muted-foreground"
+                                        data-testid={`text-feed-indicator-firstseen-${idx}`}
+                                      >
                                         {indicator.firstSeen ? formatTimestamp(indicator.firstSeen) : "N/A"}
                                       </span>
                                     </TableCell>
@@ -854,121 +928,152 @@ export default function ThreatIntelPage() {
                         {isLoading ? (
                           Array.from({ length: 6 }).map((_, i) => (
                             <TableRow key={i}>
-                              <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                              <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
-                              <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-32" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                              <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-6" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-6" /></TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-40" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-16" />
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <Skeleton className="h-4 w-24" />
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell">
+                                <Skeleton className="h-4 w-32" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-16" />
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <Skeleton className="h-4 w-24" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-6" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-6" />
+                              </TableCell>
                             </TableRow>
                           ))
                         ) : filteredIOCs.length > 0 ? (
                           filteredIOCs.map((ioc, idx) => (
                             <Fragment key={`${ioc.value}-${ioc.alertId}-${idx}`}>
-                            <TableRow
-                              data-testid={`row-ioc-${idx}`}
-                              className="cursor-pointer"
-                              onClick={() => setSelectedIOCIdx(selectedIOCIdx === idx ? null : idx)}
-                            >
-                              <TableCell>
-                                <span className="text-sm font-mono truncate max-w-[200px] block" data-testid={`text-ioc-value-${idx}`}>
-                                  {ioc.value}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={IOC_TYPE_BADGE_VARIANT[ioc.type] || "secondary"}
-                                  className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
-                                  data-testid={`badge-ioc-type-${idx}`}
-                                >
-                                  {ioc.type}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="hidden md:table-cell">
-                                <span className="text-xs text-muted-foreground" data-testid={`text-ioc-source-${idx}`}>
-                                  {ioc.source}
-                                </span>
-                              </TableCell>
-                              <TableCell className="hidden lg:table-cell">
-                                <span className="text-xs text-muted-foreground truncate max-w-[200px] block" data-testid={`text-ioc-alert-${idx}`}>
-                                  {ioc.alertTitle}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <SeverityBadge severity={ioc.severity} />
-                              </TableCell>
-                              <TableCell className="hidden md:table-cell">
-                                <span className="text-xs text-muted-foreground" data-testid={`text-ioc-firstseen-${idx}`}>
-                                  {formatTimestamp(ioc.firstSeen)}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <ShadTooltip>
-                                  <TooltipTrigger asChild>
-                                    <span>
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        disabled={!anyProviderConfigured}
-                                        data-testid={`button-enrich-${idx}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <RefreshCw className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="text-xs">
-                                      {anyProviderConfigured
-                                        ? "Enrich this IOC"
-                                        : "Configure API keys to enable enrichment"}
-                                    </p>
-                                  </TooltipContent>
-                                </ShadTooltip>
-                              </TableCell>
-                              <TableCell>
-                                {ioc.alertId ? (
-                                  <Link href={`/alerts/${ioc.alertId}`} data-testid={`link-ioc-alert-${idx}`}>
-                                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                                  </Link>
-                                ) : null}
-                              </TableCell>
-                            </TableRow>
-                            {selectedIOCIdx === idx && (
-                              <TableRow key={`${ioc.value}-${ioc.alertId}-${idx}-detail`} data-testid={`row-ioc-detail-${idx}`}>
-                                <TableCell colSpan={8} className="bg-muted/30 p-4">
-                                  <div className="flex items-center gap-4 flex-wrap">
-                                    <div className="flex items-center gap-2 text-sm">
-                                      <Network className="h-4 w-4 text-muted-foreground" />
-                                      <span className="text-muted-foreground">View in Entity Graph:</span>
-                                      <Link
-                                        href={`/entity-graph?search=${encodeURIComponent(ioc.value)}`}
-                                        data-testid={`link-entity-graph-${idx}`}
-                                      >
-                                        <Badge variant="outline" className="text-xs font-mono">
-                                          {ioc.value}
-                                          <ExternalLink className="h-3 w-3 ml-1" />
-                                        </Badge>
-                                      </Link>
-                                    </div>
-                                    {!anyProviderConfigured && (
-                                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                        <XCircle className="h-3.5 w-3.5" />
-                                        <span>No enrichment providers configured</span>
-                                      </div>
-                                    )}
-                                    {anyProviderConfigured && (
-                                      <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-                                        <CheckCircle2 className="h-3.5 w-3.5" />
-                                        <span>Enrichment available</span>
-                                      </div>
-                                    )}
-                                  </div>
+                              <TableRow
+                                data-testid={`row-ioc-${idx}`}
+                                className="cursor-pointer"
+                                onClick={() => setSelectedIOCIdx(selectedIOCIdx === idx ? null : idx)}
+                              >
+                                <TableCell>
+                                  <span
+                                    className="text-sm font-mono truncate max-w-[200px] block"
+                                    data-testid={`text-ioc-value-${idx}`}
+                                  >
+                                    {ioc.value}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={IOC_TYPE_BADGE_VARIANT[ioc.type] || "secondary"}
+                                    className="no-default-hover-elevate no-default-active-elevate text-[10px] uppercase"
+                                    data-testid={`badge-ioc-type-${idx}`}
+                                  >
+                                    {ioc.type}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="hidden md:table-cell">
+                                  <span
+                                    className="text-xs text-muted-foreground"
+                                    data-testid={`text-ioc-source-${idx}`}
+                                  >
+                                    {ioc.source}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="hidden lg:table-cell">
+                                  <span
+                                    className="text-xs text-muted-foreground truncate max-w-[200px] block"
+                                    data-testid={`text-ioc-alert-${idx}`}
+                                  >
+                                    {ioc.alertTitle}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <SeverityBadge severity={ioc.severity} />
+                                </TableCell>
+                                <TableCell className="hidden md:table-cell">
+                                  <span
+                                    className="text-xs text-muted-foreground"
+                                    data-testid={`text-ioc-firstseen-${idx}`}
+                                  >
+                                    {formatTimestamp(ioc.firstSeen)}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <ShadTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          disabled={!anyProviderConfigured}
+                                          data-testid={`button-enrich-${idx}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <RefreshCw className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-xs">
+                                        {anyProviderConfigured
+                                          ? "Enrich this IOC"
+                                          : "Configure API keys to enable enrichment"}
+                                      </p>
+                                    </TooltipContent>
+                                  </ShadTooltip>
+                                </TableCell>
+                                <TableCell>
+                                  {ioc.alertId ? (
+                                    <Link href={`/alerts/${ioc.alertId}`} data-testid={`link-ioc-alert-${idx}`}>
+                                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </Link>
+                                  ) : null}
                                 </TableCell>
                               </TableRow>
-                            )}
+                              {selectedIOCIdx === idx && (
+                                <TableRow
+                                  key={`${ioc.value}-${ioc.alertId}-${idx}-detail`}
+                                  data-testid={`row-ioc-detail-${idx}`}
+                                >
+                                  <TableCell colSpan={8} className="bg-muted/30 p-4">
+                                    <div className="flex items-center gap-4 flex-wrap">
+                                      <div className="flex items-center gap-2 text-sm">
+                                        <Network className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-muted-foreground">View in Entity Graph:</span>
+                                        <Link
+                                          href={`/entity-graph?search=${encodeURIComponent(ioc.value)}`}
+                                          data-testid={`link-entity-graph-${idx}`}
+                                        >
+                                          <Badge variant="outline" className="text-xs font-mono">
+                                            {ioc.value}
+                                            <ExternalLink className="h-3 w-3 ml-1" />
+                                          </Badge>
+                                        </Link>
+                                      </div>
+                                      {!anyProviderConfigured && (
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                          <XCircle className="h-3.5 w-3.5" />
+                                          <span>No enrichment providers configured</span>
+                                        </div>
+                                      )}
+                                      {anyProviderConfigured && (
+                                        <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          <span>Enrichment available</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
                             </Fragment>
                           ))
                         ) : (
@@ -978,9 +1083,7 @@ export default function ThreatIntelPage() {
                                 <Shield className="h-8 w-8 text-muted-foreground/50" />
                                 <p className="text-sm text-muted-foreground">No IOCs found</p>
                                 {search && (
-                                  <p className="text-xs text-muted-foreground">
-                                    Try adjusting your search query
-                                  </p>
+                                  <p className="text-xs text-muted-foreground">Try adjusting your search query</p>
                                 )}
                               </div>
                             </TableCell>
@@ -1017,10 +1120,7 @@ export default function ThreatIntelPage() {
                             dataKey="value"
                           >
                             {typeDistribution.map((_, i) => (
-                              <Cell
-                                key={i}
-                                fill={CHART_COLORS[i % CHART_COLORS.length]}
-                              />
+                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                             ))}
                           </Pie>
                           <RechartsTooltip
@@ -1124,11 +1224,7 @@ export default function ThreatIntelPage() {
                 <SelectItem value="email">Email</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              onClick={() => setShowAddIOCDialog(true)}
-              data-testid="button-add-ioc"
-            >
+            <Button size="sm" onClick={() => setShowAddIOCDialog(true)} data-testid="button-add-ioc">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Add IOC
             </Button>
@@ -1155,22 +1251,43 @@ export default function ThreatIntelPage() {
                     {iocEntriesLoading ? (
                       Array.from({ length: 5 }).map((_, i) => (
                         <TableRow key={i}>
-                          <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                          <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
-                          <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
-                          <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
-                          <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
-                          <TableCell><Skeleton className="h-4 w-6" /></TableCell>
+                          <TableCell>
+                            <Skeleton className="h-4 w-40" />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton className="h-4 w-16" />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton className="h-4 w-12" />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton className="h-4 w-16" />
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <Skeleton className="h-4 w-20" />
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <Skeleton className="h-4 w-20" />
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <Skeleton className="h-4 w-20" />
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <Skeleton className="h-4 w-20" />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton className="h-4 w-6" />
+                          </TableCell>
                         </TableRow>
                       ))
                     ) : filteredIocEntries.length > 0 ? (
                       filteredIocEntries.map((entry: any, idx: number) => (
                         <TableRow key={entry.id || idx} data-testid={`row-ioc-entry-${idx}`}>
                           <TableCell>
-                            <span className="text-sm font-mono truncate max-w-[200px] block" data-testid={`text-ioc-entry-value-${idx}`}>
+                            <span
+                              className="text-sm font-mono truncate max-w-[200px] block"
+                              data-testid={`text-ioc-entry-value-${idx}`}
+                            >
                               {entry.iocValue}
                             </span>
                           </TableCell>
@@ -1192,22 +1309,34 @@ export default function ThreatIntelPage() {
                             <SeverityBadge severity={entry.severity || "medium"} />
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
-                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-malware-${idx}`}>
+                            <span
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-ioc-entry-malware-${idx}`}
+                            >
                               {entry.malwareFamily || "-"}
                             </span>
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
-                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-campaign-${idx}`}>
+                            <span
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-ioc-entry-campaign-${idx}`}
+                            >
                               {entry.campaignName || "-"}
                             </span>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
-                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-source-${idx}`}>
+                            <span
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-ioc-entry-source-${idx}`}
+                            >
                               {entry.source || "-"}
                             </span>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
-                            <span className="text-xs text-muted-foreground" data-testid={`text-ioc-entry-firstseen-${idx}`}>
+                            <span
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-ioc-entry-firstseen-${idx}`}
+                            >
                               {entry.firstSeen ? formatTimestamp(entry.firstSeen) : "-"}
                             </span>
                           </TableCell>
@@ -1229,7 +1358,9 @@ export default function ThreatIntelPage() {
                           <div className="flex flex-col items-center gap-2" data-testid="empty-state-ioc-db">
                             <Database className="h-8 w-8 text-muted-foreground/50" />
                             <p className="text-sm text-muted-foreground">No IOC entries found</p>
-                            <p className="text-xs text-muted-foreground">Add entries manually or ingest from a feed source</p>
+                            <p className="text-xs text-muted-foreground">
+                              Add entries manually or ingest from a feed source
+                            </p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1244,14 +1375,14 @@ export default function ThreatIntelPage() {
         <TabsContent value="watchlists" className="space-y-4 mt-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <h2 className="text-lg font-semibold" data-testid="text-watchlists-title">IOC Watchlists</h2>
-              <p className="text-sm text-muted-foreground">Group and monitor IOCs by campaign, threat actor, or custom criteria</p>
+              <h2 className="text-lg font-semibold" data-testid="text-watchlists-title">
+                IOC Watchlists
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Group and monitor IOCs by campaign, threat actor, or custom criteria
+              </p>
             </div>
-            <Button
-              size="sm"
-              onClick={() => setShowAddWatchlistDialog(true)}
-              data-testid="button-add-watchlist"
-            >
+            <Button size="sm" onClick={() => setShowAddWatchlistDialog(true)} data-testid="button-add-watchlist">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               New Watchlist
             </Button>
@@ -1272,7 +1403,13 @@ export default function ThreatIntelPage() {
           ) : iocWatchlists && iocWatchlists.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="grid-watchlists">
               {iocWatchlists.map((wl: any, idx: number) => (
-                <Card key={wl.id || idx} data-testid={`card-watchlist-${idx}`} className={wl.updatedAt && (Date.now() - new Date(wl.updatedAt).getTime()) < 86400000 ? "border-primary/30" : ""}>
+                <Card
+                  key={wl.id || idx}
+                  data-testid={`card-watchlist-${idx}`}
+                  className={
+                    wl.updatedAt && Date.now() - new Date(wl.updatedAt).getTime() < 86400000 ? "border-primary/30" : ""
+                  }
+                >
                   <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span
@@ -1282,8 +1419,12 @@ export default function ThreatIntelPage() {
                       <CardTitle className="text-sm font-medium" data-testid={`text-watchlist-name-${idx}`}>
                         {wl.name}
                       </CardTitle>
-                      {wl.updatedAt && (Date.now() - new Date(wl.updatedAt).getTime()) < 86400000 && (
-                        <Badge variant="secondary" className="text-[10px] gap-1 bg-primary/10 text-primary" data-testid={`badge-watchlist-recent-${idx}`}>
+                      {wl.updatedAt && Date.now() - new Date(wl.updatedAt).getTime() < 86400000 && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] gap-1 bg-primary/10 text-primary"
+                          data-testid={`badge-watchlist-recent-${idx}`}
+                        >
                           <BellRing className="h-2.5 w-2.5" />
                           Updated
                         </Badge>
@@ -1315,12 +1456,19 @@ export default function ThreatIntelPage() {
                         <span data-testid={`text-watchlist-count-${idx}`}>{wl.entryCount ?? 0} entries</span>
                       </div>
                       {wl.autoMatch && (
-                        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]" data-testid={`badge-watchlist-automatch-${idx}`}>
+                        <Badge
+                          variant="outline"
+                          className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                          data-testid={`badge-watchlist-automatch-${idx}`}
+                        >
                           Auto-Match
                         </Badge>
                       )}
                       {wl.updatedAt && (
-                        <span className="text-[10px] text-muted-foreground" data-testid={`text-watchlist-updated-${idx}`}>
+                        <span
+                          className="text-[10px] text-muted-foreground"
+                          data-testid={`text-watchlist-updated-${idx}`}
+                        >
                           <Clock className="h-2.5 w-2.5 inline mr-0.5" />
                           {formatRelativeTimestamp(wl.updatedAt)}
                         </span>
@@ -1328,7 +1476,11 @@ export default function ThreatIntelPage() {
                     </div>
                     {(wl.matchCount ?? 0) > 0 && (
                       <div className="flex items-center gap-1.5 pt-1">
-                        <Badge variant="destructive" className="text-[10px] gap-1" data-testid={`badge-watchlist-matches-${idx}`}>
+                        <Badge
+                          variant="destructive"
+                          className="text-[10px] gap-1"
+                          data-testid={`badge-watchlist-matches-${idx}`}
+                        >
                           <AlertTriangle className="h-2.5 w-2.5" />
                           {wl.matchCount} match{wl.matchCount === 1 ? "" : "es"} detected
                         </Badge>
@@ -1354,14 +1506,14 @@ export default function ThreatIntelPage() {
         <TabsContent value="match-rules" className="space-y-4 mt-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <h2 className="text-lg font-semibold" data-testid="text-match-rules-title">Auto-Matching Rules</h2>
-              <p className="text-sm text-muted-foreground">Configure rules to automatically match IOCs against incoming alerts and events</p>
+              <h2 className="text-lg font-semibold" data-testid="text-match-rules-title">
+                Auto-Matching Rules
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Configure rules to automatically match IOCs against incoming alerts and events
+              </p>
             </div>
-            <Button
-              size="sm"
-              onClick={() => setShowAddRuleDialog(true)}
-              data-testid="button-add-rule"
-            >
+            <Button size="sm" onClick={() => setShowAddRuleDialog(true)} data-testid="button-add-rule">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               New Rule
             </Button>
@@ -1451,14 +1603,12 @@ export default function ThreatIntelPage() {
         <TabsContent value="feed-sources" className="space-y-4 mt-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <h2 className="text-lg font-semibold" data-testid="text-feed-sources-title">IOC Feed Sources</h2>
+              <h2 className="text-lg font-semibold" data-testid="text-feed-sources-title">
+                IOC Feed Sources
+              </h2>
               <p className="text-sm text-muted-foreground">Configure external feeds to automatically ingest IOC data</p>
             </div>
-            <Button
-              size="sm"
-              onClick={() => setShowAddFeedDialog(true)}
-              data-testid="button-add-feed"
-            >
+            <Button size="sm" onClick={() => setShowAddFeedDialog(true)} data-testid="button-add-feed">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Add Feed
             </Button>
@@ -1556,7 +1706,9 @@ export default function ThreatIntelPage() {
                 <div className="flex flex-col items-center gap-2" data-testid="empty-state-feed-sources">
                   <Rss className="h-8 w-8 text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">No feed sources configured</p>
-                  <p className="text-xs text-muted-foreground">Add external IOC feeds to automatically ingest threat data</p>
+                  <p className="text-xs text-muted-foreground">
+                    Add external IOC feeds to automatically ingest threat data
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -1632,21 +1784,19 @@ export default function ThreatIntelPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowAddFeedDialog(false)}
-              data-testid="button-cancel-feed"
-            >
+            <Button variant="outline" onClick={() => setShowAddFeedDialog(false)} data-testid="button-cancel-feed">
               Cancel
             </Button>
             <Button
-              onClick={() => createFeedMutation.mutate({
-                name: feedFormName,
-                feedType: feedFormType,
-                url: feedFormUrl,
-                schedule: feedFormSchedule,
-                enabled: feedFormEnabled,
-              })}
+              onClick={() =>
+                createFeedMutation.mutate({
+                  name: feedFormName,
+                  feedType: feedFormType,
+                  url: feedFormUrl,
+                  schedule: feedFormSchedule,
+                  enabled: feedFormEnabled,
+                })
+              }
               disabled={!feedFormName.trim() || createFeedMutation.isPending}
               data-testid="button-save-feed"
             >
@@ -1713,12 +1863,14 @@ export default function ThreatIntelPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => createWatchlistMutation.mutate({
-                name: watchlistFormName,
-                description: watchlistFormDescription,
-                color: watchlistFormColor,
-                autoMatch: watchlistFormAutoMatch,
-              })}
+              onClick={() =>
+                createWatchlistMutation.mutate({
+                  name: watchlistFormName,
+                  description: watchlistFormDescription,
+                  color: watchlistFormColor,
+                  autoMatch: watchlistFormAutoMatch,
+                })
+              }
               disabled={!watchlistFormName.trim() || createWatchlistMutation.isPending}
               data-testid="button-save-watchlist"
             >
@@ -1820,23 +1972,21 @@ export default function ThreatIntelPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowAddRuleDialog(false)}
-              data-testid="button-cancel-rule"
-            >
+            <Button variant="outline" onClick={() => setShowAddRuleDialog(false)} data-testid="button-cancel-rule">
               Cancel
             </Button>
             <Button
-              onClick={() => createRuleMutation.mutate({
-                name: ruleFormName,
-                description: ruleFormDescription,
-                iocTypes: ruleFormIocTypes,
-                matchFields: ruleFormMatchFields,
-                minConfidence: parseInt(ruleFormMinConfidence, 10) || 0,
-                enabled: ruleFormEnabled,
-                autoEnrich: ruleFormAutoEnrich,
-              })}
+              onClick={() =>
+                createRuleMutation.mutate({
+                  name: ruleFormName,
+                  description: ruleFormDescription,
+                  iocTypes: ruleFormIocTypes,
+                  matchFields: ruleFormMatchFields,
+                  minConfidence: parseInt(ruleFormMinConfidence, 10) || 0,
+                  enabled: ruleFormEnabled,
+                  autoEnrich: ruleFormAutoEnrich,
+                })
+              }
               disabled={!ruleFormName.trim() || createRuleMutation.isPending}
               data-testid="button-save-rule"
             >
@@ -1949,24 +2099,27 @@ export default function ThreatIntelPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowAddIOCDialog(false)}
-              data-testid="button-cancel-ioc"
-            >
+            <Button variant="outline" onClick={() => setShowAddIOCDialog(false)} data-testid="button-cancel-ioc">
               Cancel
             </Button>
             <Button
-              onClick={() => createIOCMutation.mutate({
-                iocType: iocFormType,
-                iocValue: iocFormValue,
-                confidence: parseInt(iocFormConfidence, 10) || 80,
-                severity: iocFormSeverity,
-                malwareFamily: iocFormMalwareFamily || undefined,
-                campaignName: iocFormCampaignName || undefined,
-                tags: iocFormTags ? iocFormTags.split(",").map((t) => t.trim()).filter(Boolean) : [],
-                source: iocFormSource || "Manual",
-              })}
+              onClick={() =>
+                createIOCMutation.mutate({
+                  iocType: iocFormType,
+                  iocValue: iocFormValue,
+                  confidence: parseInt(iocFormConfidence, 10) || 80,
+                  severity: iocFormSeverity,
+                  malwareFamily: iocFormMalwareFamily || undefined,
+                  campaignName: iocFormCampaignName || undefined,
+                  tags: iocFormTags
+                    ? iocFormTags
+                        .split(",")
+                        .map((t) => t.trim())
+                        .filter(Boolean)
+                    : [],
+                  source: iocFormSource || "Manual",
+                })
+              }
               disabled={!iocFormValue.trim() || createIOCMutation.isPending}
               data-testid="button-save-ioc"
             >

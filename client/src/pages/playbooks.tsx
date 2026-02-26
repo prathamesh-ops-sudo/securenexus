@@ -11,28 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Plus,
   Trash2,
@@ -131,9 +112,7 @@ const PALETTE_CONDITIONS = [
   { value: "time_check", label: "Time Check", icon: Timer },
 ] as const;
 
-const PALETTE_GATES = [
-  { value: "approval_gate", label: "Approval Gate", icon: ShieldCheck },
-] as const;
+const PALETTE_GATES = [{ value: "approval_gate", label: "Approval Gate", icon: ShieldCheck }] as const;
 
 const TRIGGER_OPTIONS = [
   { value: "alert_created", label: "Alert Created" },
@@ -143,7 +122,14 @@ const TRIGGER_OPTIONS = [
   { value: "manual", label: "Manual" },
 ] as const;
 
-const ROLLBACK_ACTION_TYPES = ["isolate_host", "block_ip", "block_domain", "quarantine_file", "disable_user", "kill_process"];
+const ROLLBACK_ACTION_TYPES = [
+  "isolate_host",
+  "block_ip",
+  "block_domain",
+  "quarantine_file",
+  "disable_user",
+  "kill_process",
+];
 
 function hasRollbackableActions(actionsExecuted: unknown): boolean {
   if (!Array.isArray(actionsExecuted)) return false;
@@ -170,48 +156,94 @@ function formatRelativeTime(date: string | Date | null | undefined): string {
 }
 
 function triggerLabel(trigger: string): string {
-  return TRIGGER_OPTIONS.find(t => t.value === trigger)?.label || trigger;
+  return TRIGGER_OPTIONS.find((t) => t.value === trigger)?.label || trigger;
 }
 
 function statusBadge(status: string) {
   switch (status) {
     case "active":
-      return <Badge variant="default" data-testid={`badge-status-${status}`}><CheckCircle className="h-3 w-3 mr-1" />Active</Badge>;
+      return (
+        <Badge variant="default" data-testid={`badge-status-${status}`}>
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Active
+        </Badge>
+      );
     case "draft":
-      return <Badge variant="secondary" data-testid={`badge-status-${status}`}><Pencil className="h-3 w-3 mr-1" />Draft</Badge>;
+      return (
+        <Badge variant="secondary" data-testid={`badge-status-${status}`}>
+          <Pencil className="h-3 w-3 mr-1" />
+          Draft
+        </Badge>
+      );
     case "inactive":
-      return <Badge variant="outline" data-testid={`badge-status-${status}`}>Inactive</Badge>;
+      return (
+        <Badge variant="outline" data-testid={`badge-status-${status}`}>
+          Inactive
+        </Badge>
+      );
     default:
-      return <Badge variant="outline" data-testid={`badge-status-${status}`}>{status}</Badge>;
+      return (
+        <Badge variant="outline" data-testid={`badge-status-${status}`}>
+          {status}
+        </Badge>
+      );
   }
 }
 
 function executionStatusBadge(status: string) {
   switch (status) {
     case "completed":
-      return <Badge variant="default" data-testid={`badge-exec-status-${status}`}><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>;
+      return (
+        <Badge variant="default" data-testid={`badge-exec-status-${status}`}>
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Completed
+        </Badge>
+      );
     case "running":
-      return <Badge variant="secondary" data-testid={`badge-exec-status-${status}`}><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</Badge>;
+      return (
+        <Badge variant="secondary" data-testid={`badge-exec-status-${status}`}>
+          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+          Running
+        </Badge>
+      );
     case "failed":
-      return <Badge variant="destructive" data-testid={`badge-exec-status-${status}`}><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      return (
+        <Badge variant="destructive" data-testid={`badge-exec-status-${status}`}>
+          <XCircle className="h-3 w-3 mr-1" />
+          Failed
+        </Badge>
+      );
     case "awaiting_approval":
-      return <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400" data-testid={`badge-exec-status-${status}`}><Clock className="h-3 w-3 mr-1" />Awaiting Approval</Badge>;
+      return (
+        <Badge
+          variant="outline"
+          className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400"
+          data-testid={`badge-exec-status-${status}`}
+        >
+          <Clock className="h-3 w-3 mr-1" />
+          Awaiting Approval
+        </Badge>
+      );
     default:
-      return <Badge variant="outline" data-testid={`badge-exec-status-${status}`}>{status}</Badge>;
+      return (
+        <Badge variant="outline" data-testid={`badge-exec-status-${status}`}>
+          {status}
+        </Badge>
+      );
   }
 }
 
 function getNodeIcon(node: FlowNode) {
   if (node.type === "trigger") {
-    const found = PALETTE_TRIGGERS.find(t => t.value === node.data.trigger);
+    const found = PALETTE_TRIGGERS.find((t) => t.value === node.data.trigger);
     return found ? found.icon : Bell;
   }
   if (node.type === "action") {
-    const found = PALETTE_ACTIONS.find(a => a.value === node.data.actionType);
+    const found = PALETTE_ACTIONS.find((a) => a.value === node.data.actionType);
     return found ? found.icon : Settings;
   }
   if (node.type === "condition") {
-    const found = PALETTE_CONDITIONS.find(c => c.value === node.data.conditionType);
+    const found = PALETTE_CONDITIONS.find((c) => c.value === node.data.conditionType);
     return found ? found.icon : Eye;
   }
   if (node.type === "approval") {
@@ -222,21 +254,59 @@ function getNodeIcon(node: FlowNode) {
 
 function getNodeBorderColor(type: string) {
   switch (type) {
-    case "trigger": return "border-l-blue-500";
-    case "action": return "border-l-green-500";
-    case "condition": return "border-l-orange-500";
-    case "approval": return "border-l-purple-500";
-    default: return "border-l-muted-foreground";
+    case "trigger":
+      return "border-l-blue-500";
+    case "action":
+      return "border-l-green-500";
+    case "condition":
+      return "border-l-orange-500";
+    case "approval":
+      return "border-l-purple-500";
+    default:
+      return "border-l-muted-foreground";
   }
 }
 
 function getNodeTypeBadge(type: string) {
   switch (type) {
-    case "trigger": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-blue-500/40 text-blue-400">Trigger</Badge>;
-    case "action": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-green-500/40 text-green-400">Action</Badge>;
-    case "condition": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-orange-500/40 text-orange-400">Condition</Badge>;
-    case "approval": return <Badge variant="outline" className="text-[10px] no-default-hover-elevate no-default-active-elevate border-purple-500/40 text-purple-400">Approval</Badge>;
-    default: return null;
+    case "trigger":
+      return (
+        <Badge
+          variant="outline"
+          className="text-[10px] no-default-hover-elevate no-default-active-elevate border-blue-500/40 text-blue-400"
+        >
+          Trigger
+        </Badge>
+      );
+    case "action":
+      return (
+        <Badge
+          variant="outline"
+          className="text-[10px] no-default-hover-elevate no-default-active-elevate border-green-500/40 text-green-400"
+        >
+          Action
+        </Badge>
+      );
+    case "condition":
+      return (
+        <Badge
+          variant="outline"
+          className="text-[10px] no-default-hover-elevate no-default-active-elevate border-orange-500/40 text-orange-400"
+        >
+          Condition
+        </Badge>
+      );
+    case "approval":
+      return (
+        <Badge
+          variant="outline"
+          className="text-[10px] no-default-hover-elevate no-default-active-elevate border-purple-500/40 text-purple-400"
+        >
+          Approval
+        </Badge>
+      );
+    default:
+      return null;
   }
 }
 
@@ -287,13 +357,15 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
   if (node.type === "approval") {
     return (
       <div className="space-y-3">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Approval Gate Configuration</h4>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Approval Gate Configuration
+        </h4>
         <div className="space-y-1.5">
           <Label className="text-xs">Approver Role</Label>
           <Input
             placeholder="e.g. soc_lead, admin"
             value={config.approverRole || ""}
-            onChange={e => updateField("approverRole", e.target.value)}
+            onChange={(e) => updateField("approverRole", e.target.value)}
             data-testid="config-approver-role"
           />
         </div>
@@ -302,7 +374,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Textarea
             placeholder="Describe what needs to be approved..."
             value={config.message || ""}
-            onChange={e => updateField("message", e.target.value)}
+            onChange={(e) => updateField("message", e.target.value)}
             className="resize-none text-xs"
             rows={3}
             data-testid="config-approval-message"
@@ -316,11 +388,13 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
     const condType = node.data.conditionType;
     return (
       <div className="space-y-3">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Condition Configuration</h4>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Condition Configuration
+        </h4>
         {condType === "severity_check" && (
           <div className="space-y-1.5">
             <Label className="text-xs">Severity</Label>
-            <Select value={config.severity || ""} onValueChange={v => updateField("severity", v)}>
+            <Select value={config.severity || ""} onValueChange={(v) => updateField("severity", v)}>
               <SelectTrigger data-testid="config-severity">
                 <SelectValue placeholder="Select severity..." />
               </SelectTrigger>
@@ -339,7 +413,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
             <Input
               placeholder="e.g. CrowdStrike EDR"
               value={config.source || ""}
-              onChange={e => updateField("source", e.target.value)}
+              onChange={(e) => updateField("source", e.target.value)}
               data-testid="config-source"
             />
           </div>
@@ -352,7 +426,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
                 type="number"
                 placeholder="0"
                 value={config.startHour || ""}
-                onChange={e => updateField("startHour", e.target.value)}
+                onChange={(e) => updateField("startHour", e.target.value)}
                 data-testid="config-start-hour"
               />
             </div>
@@ -362,7 +436,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
                 type="number"
                 placeholder="23"
                 value={config.endHour || ""}
-                onChange={e => updateField("endHour", e.target.value)}
+                onChange={(e) => updateField("endHour", e.target.value)}
                 data-testid="config-end-hour"
               />
             </div>
@@ -382,7 +456,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Input
             placeholder="#channel-name"
             value={config.channel || ""}
-            onChange={e => updateField("channel", e.target.value)}
+            onChange={(e) => updateField("channel", e.target.value)}
             data-testid="config-channel"
           />
         </div>
@@ -393,7 +467,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Input
             placeholder="email@example.com"
             value={config.recipients || ""}
-            onChange={e => updateField("recipients", e.target.value)}
+            onChange={(e) => updateField("recipients", e.target.value)}
             data-testid="config-recipients"
           />
         </div>
@@ -404,7 +478,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Input
             placeholder="https://..."
             value={config.webhookUrl || ""}
-            onChange={e => updateField("webhookUrl", e.target.value)}
+            onChange={(e) => updateField("webhookUrl", e.target.value)}
             data-testid="config-webhook-url"
           />
         </div>
@@ -415,7 +489,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Input
             placeholder="analyst@example.com"
             value={config.analyst || ""}
-            onChange={e => updateField("analyst", e.target.value)}
+            onChange={(e) => updateField("analyst", e.target.value)}
             data-testid="config-analyst"
           />
         </div>
@@ -426,7 +500,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Input
             placeholder="investigating"
             value={config.status || ""}
-            onChange={e => updateField("status", e.target.value)}
+            onChange={(e) => updateField("status", e.target.value)}
             data-testid="config-status"
           />
         </div>
@@ -437,7 +511,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
           <Input
             placeholder="tag-name"
             value={config.tag || ""}
-            onChange={e => updateField("tag", e.target.value)}
+            onChange={(e) => updateField("tag", e.target.value)}
             data-testid="config-tag"
           />
         </div>
@@ -449,7 +523,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
             type="number"
             placeholder="24"
             value={config.duration || ""}
-            onChange={e => updateField("duration", e.target.value)}
+            onChange={(e) => updateField("duration", e.target.value)}
             data-testid="config-duration"
           />
         </div>
@@ -461,7 +535,7 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
             <Input
               placeholder="SEC"
               value={config.project || ""}
-              onChange={e => updateField("project", e.target.value)}
+              onChange={(e) => updateField("project", e.target.value)}
               data-testid="config-project"
             />
           </div>
@@ -470,19 +544,31 @@ function NodeConfigPanel({ node, onUpdate }: { node: FlowNode; onUpdate: (config
             <Input
               placeholder="high"
               value={config.priority || ""}
-              onChange={e => updateField("priority", e.target.value)}
+              onChange={(e) => updateField("priority", e.target.value)}
               data-testid="config-priority"
             />
           </div>
         </>
       )}
-      {!["notify_slack", "notify_teams", "notify_email", "notify_webhook", "assign_analyst", "change_status", "add_tag", "block_ip", "block_domain", "create_jira_ticket", "create_servicenow_ticket"].includes(actionType || "") && (
+      {![
+        "notify_slack",
+        "notify_teams",
+        "notify_email",
+        "notify_webhook",
+        "assign_analyst",
+        "change_status",
+        "add_tag",
+        "block_ip",
+        "block_domain",
+        "create_jira_ticket",
+        "create_servicenow_ticket",
+      ].includes(actionType || "") && (
         <div className="space-y-1.5">
           <Label className="text-xs">Parameters</Label>
           <Input
             placeholder="Additional config..."
             value={config.params || ""}
-            onChange={e => updateField("params", e.target.value)}
+            onChange={(e) => updateField("params", e.target.value)}
             data-testid="config-params"
           />
         </div>
@@ -500,7 +586,9 @@ function configSummary(node: FlowNode): string {
     if (cfg.message) parts.push(`msg: ${cfg.message.substring(0, 40)}${cfg.message.length > 40 ? "..." : ""}`);
     return parts.join(", ");
   }
-  const parts = Object.entries(cfg).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+  const parts = Object.entries(cfg)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}: ${v}`);
   return parts.join(", ");
 }
 
@@ -515,40 +603,52 @@ function VisualBuilder({
   selectedNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
 }) {
-  const addNode = useCallback((type: "trigger" | "action" | "condition" | "approval", value: string, label: string) => {
-    const newNode: FlowNode = {
-      id: nextNodeId(),
-      type,
-      data: {
-        label,
-        config: {},
-        ...(type === "trigger" ? { trigger: value } : {}),
-        ...(type === "action" ? { actionType: value } : {}),
-        ...(type === "condition" ? { conditionType: value } : {}),
-      },
-    };
-    setNodes([...nodes, newNode]);
-    setSelectedNodeId(newNode.id);
-  }, [nodes, setNodes, setSelectedNodeId]);
+  const addNode = useCallback(
+    (type: "trigger" | "action" | "condition" | "approval", value: string, label: string) => {
+      const newNode: FlowNode = {
+        id: nextNodeId(),
+        type,
+        data: {
+          label,
+          config: {},
+          ...(type === "trigger" ? { trigger: value } : {}),
+          ...(type === "action" ? { actionType: value } : {}),
+          ...(type === "condition" ? { conditionType: value } : {}),
+        },
+      };
+      setNodes([...nodes, newNode]);
+      setSelectedNodeId(newNode.id);
+    },
+    [nodes, setNodes, setSelectedNodeId],
+  );
 
-  const removeNode = useCallback((id: string) => {
-    setNodes(nodes.filter(n => n.id !== id));
-    if (selectedNodeId === id) setSelectedNodeId(null);
-  }, [nodes, setNodes, selectedNodeId, setSelectedNodeId]);
+  const removeNode = useCallback(
+    (id: string) => {
+      setNodes(nodes.filter((n) => n.id !== id));
+      if (selectedNodeId === id) setSelectedNodeId(null);
+    },
+    [nodes, setNodes, selectedNodeId, setSelectedNodeId],
+  );
 
-  const moveNode = useCallback((idx: number, dir: -1 | 1) => {
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= nodes.length) return;
-    const updated = [...nodes];
-    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
-    setNodes(updated);
-  }, [nodes, setNodes]);
+  const moveNode = useCallback(
+    (idx: number, dir: -1 | 1) => {
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= nodes.length) return;
+      const updated = [...nodes];
+      [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
+      setNodes(updated);
+    },
+    [nodes, setNodes],
+  );
 
-  const updateNodeConfig = useCallback((id: string, config: Record<string, string>) => {
-    setNodes(nodes.map(n => n.id === id ? { ...n, data: { ...n.data, config } } : n));
-  }, [nodes, setNodes]);
+  const updateNodeConfig = useCallback(
+    (id: string, config: Record<string, string>) => {
+      setNodes(nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, config } } : n)));
+    },
+    [nodes, setNodes],
+  );
 
-  const selectedNode = nodes.find(n => n.id === selectedNodeId);
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
   return (
     <div className="flex gap-4 flex-1 min-h-0">
@@ -556,7 +656,7 @@ function VisualBuilder({
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Triggers</h4>
           <div className="space-y-1">
-            {PALETTE_TRIGGERS.map(t => {
+            {PALETTE_TRIGGERS.map((t) => {
               const Icon = t.icon;
               return (
                 <button
@@ -575,7 +675,7 @@ function VisualBuilder({
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Actions</h4>
           <div className="space-y-1">
-            {PALETTE_ACTIONS.map(a => {
+            {PALETTE_ACTIONS.map((a) => {
               const Icon = a.icon;
               return (
                 <button
@@ -594,7 +694,7 @@ function VisualBuilder({
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Conditions</h4>
           <div className="space-y-1">
-            {PALETTE_CONDITIONS.map(c => {
+            {PALETTE_CONDITIONS.map((c) => {
               const Icon = c.icon;
               return (
                 <button
@@ -613,7 +713,7 @@ function VisualBuilder({
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gates</h4>
           <div className="space-y-1">
-            {PALETTE_GATES.map(g => {
+            {PALETTE_GATES.map((g) => {
               const Icon = g.icon;
               return (
                 <button
@@ -658,15 +758,16 @@ function VisualBuilder({
                           <span className="text-sm font-medium truncate">{node.data.label}</span>
                           {getNodeTypeBadge(node.type)}
                         </div>
-                        {summary && (
-                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{summary}</p>
-                        )}
+                        {summary && <p className="text-xs text-muted-foreground mt-0.5 truncate">{summary}</p>}
                       </div>
                       <div className="flex items-center gap-0.5 flex-shrink-0">
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={e => { e.stopPropagation(); moveNode(idx, -1); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveNode(idx, -1);
+                          }}
                           disabled={idx === 0}
                           data-testid={`button-move-up-${node.id}`}
                         >
@@ -675,7 +776,10 @@ function VisualBuilder({
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={e => { e.stopPropagation(); moveNode(idx, 1); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveNode(idx, 1);
+                          }}
                           disabled={idx === nodes.length - 1}
                           data-testid={`button-move-down-${node.id}`}
                         >
@@ -684,7 +788,10 @@ function VisualBuilder({
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={e => { e.stopPropagation(); removeNode(node.id); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeNode(node.id);
+                          }}
                           data-testid={`button-remove-node-${node.id}`}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -709,10 +816,7 @@ function VisualBuilder({
         {selectedNode && (
           <Card className="flex-shrink-0" data-testid="panel-config">
             <CardContent className="p-4">
-              <NodeConfigPanel
-                node={selectedNode}
-                onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
-              />
+              <NodeConfigPanel node={selectedNode} onUpdate={(config) => updateNodeConfig(selectedNode.id, config)} />
             </CardContent>
           </Card>
         )}
@@ -737,15 +841,30 @@ export default function PlaybooksPage() {
   const [proposalSeverity, setProposalSeverity] = useState("high");
   const [proposal, setProposal] = useState<any | null>(null);
 
-  const { data: playbooks, isLoading: playbooksLoading } = useQuery<Playbook[]>({
+  const {
+    data: playbooks,
+    isLoading: playbooksLoading,
+    isError: playbooksError,
+    refetch: refetchPlaybooks,
+  } = useQuery<Playbook[]>({
     queryKey: ["/api/playbooks"],
   });
 
-  const { data: executions, isLoading: executionsLoading } = useQuery<(PlaybookExecution & { playbookName?: string })[]>({
+  const {
+    data: executions,
+    isLoading: executionsLoading,
+    isError: _executionsError,
+    refetch: _refetchExecutions,
+  } = useQuery<(PlaybookExecution & { playbookName?: string })[]>({
     queryKey: ["/api/playbook-executions"],
   });
 
-  const { data: approvals, isLoading: approvalsLoading } = useQuery<PlaybookApproval[]>({
+  const {
+    data: approvals,
+    isLoading: approvalsLoading,
+    isError: _approvalsError,
+    refetch: _refetchApprovals,
+  } = useQuery<PlaybookApproval[]>({
     queryKey: ["/api/playbook-approvals"],
   });
 
@@ -832,7 +951,10 @@ export default function PlaybooksPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/playbook-executions"] });
-      toast({ title: "Rollback initiated", description: `Created ${Array.isArray(data) ? data.length : 0} rollback record(s)` });
+      toast({
+        title: "Rollback initiated",
+        description: `Created ${Array.isArray(data) ? data.length : 0} rollback record(s)`,
+      });
     },
     onError: (err: any) => {
       toast({ title: "Rollback failed", description: err.message, variant: "destructive" });
@@ -886,7 +1008,11 @@ export default function PlaybooksPage() {
 
   function handleSubmit() {
     if (!formName || !formTrigger) {
-      toast({ title: "Missing required fields", description: "Name and trigger are required.", variant: "destructive" });
+      toast({
+        title: "Missing required fields",
+        description: "Name and trigger are required.",
+        variant: "destructive",
+      });
       return;
     }
     const edges = generateEdges(flowNodes);
@@ -906,16 +1032,20 @@ export default function PlaybooksPage() {
     }
   }
 
-  const activeCount = playbooks?.filter(p => p.status === "active").length || 0;
+  const activeCount = playbooks?.filter((p) => p.status === "active").length || 0;
   const totalExecutions = playbooks?.reduce((sum, p) => sum + (p.triggerCount || 0), 0) || 0;
-  const pendingApprovals = approvals?.filter(a => a.status === "pending").length || 0;
+  const pendingApprovals = approvals?.filter((a) => a.status === "pending").length || 0;
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title"><span className="gradient-text-red">Automation Playbooks</span></h1>
-          <p className="text-sm text-muted-foreground">Create and manage automated response workflows for security events</p>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+            <span className="gradient-text-red">Automation Playbooks</span>
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Create and manage automated response workflows for security events
+          </p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
         <Button onClick={openCreate} data-testid="button-create-playbook">
@@ -938,7 +1068,9 @@ export default function PlaybooksPage() {
               data-testid="input-proposal-objective"
             />
             <Select value={proposalSeverity} onValueChange={setProposalSeverity}>
-              <SelectTrigger data-testid="select-proposal-severity"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="select-proposal-severity">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="critical">Critical</SelectItem>
                 <SelectItem value="high">High</SelectItem>
@@ -946,7 +1078,11 @@ export default function PlaybooksPage() {
                 <SelectItem value="low">Low</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={() => proposePlaybookMutation.mutate()} disabled={!proposalObjective || proposePlaybookMutation.isPending} data-testid="button-generate-proposal">
+            <Button
+              onClick={() => proposePlaybookMutation.mutate()}
+              disabled={!proposalObjective || proposePlaybookMutation.isPending}
+              data-testid="button-generate-proposal"
+            >
               {proposePlaybookMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Generate Proposal
             </Button>
@@ -954,7 +1090,9 @@ export default function PlaybooksPage() {
           {proposal && (
             <div className="border rounded-md p-3 space-y-2" data-testid="panel-playbook-proposal">
               <div className="text-sm font-medium">{proposal.objective}</div>
-              <div className="text-xs text-muted-foreground">Guardrails: {(proposal.guardrailsApplied || []).join(", ")}</div>
+              <div className="text-xs text-muted-foreground">
+                Guardrails: {(proposal.guardrailsApplied || []).join(", ")}
+              </div>
               <div className="space-y-1">
                 {(proposal.proposedActions || []).map((action: any, idx: number) => (
                   <div key={idx} className="text-sm flex items-center justify-between border rounded p-2">
@@ -963,7 +1101,9 @@ export default function PlaybooksPage() {
                   </div>
                 ))}
               </div>
-              <div className="text-xs font-medium text-amber-500">Requires analyst approval before playbook execution.</div>
+              <div className="text-xs font-medium text-amber-500">
+                Requires analyst approval before playbook execution.
+              </div>
             </div>
           )}
         </CardContent>
@@ -979,7 +1119,9 @@ export default function PlaybooksPage() {
             {playbooksLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold" data-testid="text-total-playbooks">{playbooks?.length || 0}</div>
+              <div className="text-2xl font-bold" data-testid="text-total-playbooks">
+                {playbooks?.length || 0}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -992,7 +1134,9 @@ export default function PlaybooksPage() {
             {playbooksLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold" data-testid="text-active-playbooks">{activeCount}</div>
+              <div className="text-2xl font-bold" data-testid="text-active-playbooks">
+                {activeCount}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1005,7 +1149,9 @@ export default function PlaybooksPage() {
             {playbooksLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold" data-testid="text-total-executions">{totalExecutions}</div>
+              <div className="text-2xl font-bold" data-testid="text-total-executions">
+                {totalExecutions}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1018,7 +1164,9 @@ export default function PlaybooksPage() {
             {approvalsLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold" data-testid="text-pending-approvals">{pendingApprovals}</div>
+              <div className="text-2xl font-bold" data-testid="text-pending-approvals">
+                {pendingApprovals}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1034,7 +1182,11 @@ export default function PlaybooksPage() {
             <ShieldCheck className="h-4 w-4 mr-1.5" />
             Approvals
             {pendingApprovals > 0 && (
-              <Badge variant="secondary" className="ml-1.5 no-default-hover-elevate no-default-active-elevate" data-testid="badge-pending-count">
+              <Badge
+                variant="secondary"
+                className="ml-1.5 no-default-hover-elevate no-default-active-elevate"
+                data-testid="badge-pending-count"
+              >
                 {pendingApprovals}
               </Badge>
             )}
@@ -1048,7 +1200,7 @@ export default function PlaybooksPage() {
         <TabsContent value="playbooks" className="mt-4">
           {playbooksLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map(i => (
+              {[1, 2, 3].map((i) => (
                 <Card key={i}>
                   <CardContent className="p-5 space-y-3">
                     <Skeleton className="h-5 w-3/4" />
@@ -1062,6 +1214,19 @@ export default function PlaybooksPage() {
                 </Card>
               ))}
             </div>
+          ) : playbooksError ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12" role="alert">
+                <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                  <AlertTriangle className="h-6 w-6 text-destructive" />
+                </div>
+                <p className="text-sm font-medium">Failed to load playbooks</p>
+                <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching playbook data.</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPlaybooks()}>
+                  Try Again
+                </Button>
+              </CardContent>
+            </Card>
           ) : !playbooks?.length ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -1072,7 +1237,7 @@ export default function PlaybooksPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {playbooks.map(pb => {
+              {playbooks.map((pb) => {
                 const flow = parseFlowFromActions(pb.actions);
                 const nodeCount = flow.nodes.length;
                 return (
@@ -1080,9 +1245,16 @@ export default function PlaybooksPage() {
                     <CardContent className="p-5 space-y-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-semibold text-sm truncate" data-testid={`text-playbook-name-${pb.id}`}>{pb.name}</h3>
+                          <h3 className="font-semibold text-sm truncate" data-testid={`text-playbook-name-${pb.id}`}>
+                            {pb.name}
+                          </h3>
                           {pb.description && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2" data-testid={`text-playbook-desc-${pb.id}`}>{pb.description}</p>
+                            <p
+                              className="text-xs text-muted-foreground mt-1 line-clamp-2"
+                              data-testid={`text-playbook-desc-${pb.id}`}
+                            >
+                              {pb.description}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1157,7 +1329,7 @@ export default function PlaybooksPage() {
             <CardContent>
               {approvalsLoading ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
+                  {[1, 2, 3].map((i) => (
                     <div key={i} className="flex items-center gap-4">
                       <Skeleton className="h-5 w-20" />
                       <Skeleton className="h-4 w-32" />
@@ -1185,28 +1357,47 @@ export default function PlaybooksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {approvals.map(approval => {
-                      const pb = playbooks?.find(p => p.id === approval.playbookId);
+                    {approvals.map((approval) => {
+                      const pb = playbooks?.find((p) => p.id === approval.playbookId);
                       return (
                         <TableRow key={approval.id} data-testid={`row-approval-${approval.id}`}>
                           <TableCell>
                             {approval.status === "pending" && (
-                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400" data-testid={`badge-approval-status-${approval.id}`}>
-                                <Clock className="h-3 w-3 mr-1" />Pending
+                              <Badge
+                                variant="outline"
+                                className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400"
+                                data-testid={`badge-approval-status-${approval.id}`}
+                              >
+                                <Clock className="h-3 w-3 mr-1" />
+                                Pending
                               </Badge>
                             )}
                             {approval.status === "approved" && (
-                              <Badge variant="default" className="no-default-hover-elevate no-default-active-elevate" data-testid={`badge-approval-status-${approval.id}`}>
-                                <CheckCircle className="h-3 w-3 mr-1" />Approved
+                              <Badge
+                                variant="default"
+                                className="no-default-hover-elevate no-default-active-elevate"
+                                data-testid={`badge-approval-status-${approval.id}`}
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Approved
                               </Badge>
                             )}
                             {approval.status === "rejected" && (
-                              <Badge variant="destructive" className="no-default-hover-elevate no-default-active-elevate" data-testid={`badge-approval-status-${approval.id}`}>
-                                <XCircle className="h-3 w-3 mr-1" />Rejected
+                              <Badge
+                                variant="destructive"
+                                className="no-default-hover-elevate no-default-active-elevate"
+                                data-testid={`badge-approval-status-${approval.id}`}
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Rejected
                               </Badge>
                             )}
                             {approval.status === "expired" && (
-                              <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate" data-testid={`badge-approval-status-${approval.id}`}>
+                              <Badge
+                                variant="outline"
+                                className="no-default-hover-elevate no-default-active-elevate"
+                                data-testid={`badge-approval-status-${approval.id}`}
+                              >
                                 Expired
                               </Badge>
                             )}
@@ -1217,17 +1408,26 @@ export default function PlaybooksPage() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm text-muted-foreground" data-testid={`text-approval-message-${approval.id}`}>
+                            <span
+                              className="text-sm text-muted-foreground"
+                              data-testid={`text-approval-message-${approval.id}`}
+                            >
                               {approval.approvalMessage || "\u2014"}
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm text-muted-foreground" data-testid={`text-approval-requested-by-${approval.id}`}>
+                            <span
+                              className="text-sm text-muted-foreground"
+                              data-testid={`text-approval-requested-by-${approval.id}`}
+                            >
                               {approval.requestedBy || "System"}
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm text-muted-foreground" data-testid={`text-approval-requested-at-${approval.id}`}>
+                            <span
+                              className="text-sm text-muted-foreground"
+                              data-testid={`text-approval-requested-at-${approval.id}`}
+                            >
                               {formatRelativeTime(approval.requestedAt)}
                             </span>
                           </TableCell>
@@ -1256,7 +1456,10 @@ export default function PlaybooksPage() {
                                 </Button>
                               </div>
                             ) : (
-                              <span className="text-xs text-muted-foreground" data-testid={`text-approval-decided-${approval.id}`}>
+                              <span
+                                className="text-xs text-muted-foreground"
+                                data-testid={`text-approval-decided-${approval.id}`}
+                              >
                                 {approval.decidedBy ? `by ${approval.decidedBy}` : "\u2014"}
                               </span>
                             )}
@@ -1280,7 +1483,7 @@ export default function PlaybooksPage() {
             <CardContent>
               {executionsLoading ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
+                  {[1, 2, 3].map((i) => (
                     <div key={i} className="flex items-center gap-4">
                       <Skeleton className="h-5 w-20" />
                       <Skeleton className="h-4 w-32" />
@@ -1308,8 +1511,8 @@ export default function PlaybooksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {executions.map(exec => {
-                      const pb = playbooks?.find(p => p.id === exec.playbookId);
+                    {executions.map((exec) => {
+                      const pb = playbooks?.find((p) => p.id === exec.playbookId);
                       const canRollback = hasRollbackableActions(exec.actionsExecuted);
                       return (
                         <TableRow key={exec.id} data-testid={`row-execution-${exec.id}`}>
@@ -1317,7 +1520,11 @@ export default function PlaybooksPage() {
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {executionStatusBadge(exec.status)}
                               {exec.dryRun && (
-                                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate border-cyan-500/40 text-cyan-400 text-[10px]" data-testid={`badge-dry-run-${exec.id}`}>
+                                <Badge
+                                  variant="outline"
+                                  className="no-default-hover-elevate no-default-active-elevate border-cyan-500/40 text-cyan-400 text-[10px]"
+                                  data-testid={`badge-dry-run-${exec.id}`}
+                                >
                                   DRY RUN
                                 </Badge>
                               )}
@@ -1329,12 +1536,18 @@ export default function PlaybooksPage() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm text-muted-foreground" data-testid={`text-exec-triggered-by-${exec.id}`}>
+                            <span
+                              className="text-sm text-muted-foreground"
+                              data-testid={`text-exec-triggered-by-${exec.id}`}
+                            >
                               {exec.triggeredBy || "System"}
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm text-muted-foreground" data-testid={`text-exec-resource-${exec.id}`}>
+                            <span
+                              className="text-sm text-muted-foreground"
+                              data-testid={`text-exec-resource-${exec.id}`}
+                            >
                               {exec.resourceType && exec.resourceId
                                 ? `${exec.resourceType}:${exec.resourceId.substring(0, 8)}`
                                 : "N/A"}
@@ -1356,7 +1569,9 @@ export default function PlaybooksPage() {
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => {
-                                  if (confirm("Rollback this execution? This will attempt to reverse all EDR actions.")) {
+                                  if (
+                                    confirm("Rollback this execution? This will attempt to reverse all EDR actions.")
+                                  ) {
                                     rollbackMutation.mutate(exec.id);
                                   }
                                 }}
@@ -1378,12 +1593,21 @@ export default function PlaybooksPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!executeDialogId} onOpenChange={(open) => { if (!open) { setExecuteDialogId(null); setExecuteDryRun(false); } }}>
+      <Dialog
+        open={!!executeDialogId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setExecuteDialogId(null);
+            setExecuteDryRun(false);
+          }
+        }}
+      >
         <DialogContent className="max-w-md" data-testid="dialog-execute">
           <DialogHeader>
             <DialogTitle>Execute Playbook</DialogTitle>
             <DialogDescription>
-              Configure execution options for {playbooks?.find(p => p.id === executeDialogId)?.name || "this playbook"}.
+              Configure execution options for{" "}
+              {playbooks?.find((p) => p.id === executeDialogId)?.name || "this playbook"}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1392,20 +1616,25 @@ export default function PlaybooksPage() {
                 <Label className="text-sm font-medium">Dry Run Mode</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">Simulate execution without taking real actions</p>
               </div>
-              <Switch
-                checked={executeDryRun}
-                onCheckedChange={setExecuteDryRun}
-                data-testid="switch-dry-run"
-              />
+              <Switch checked={executeDryRun} onCheckedChange={setExecuteDryRun} data-testid="switch-dry-run" />
             </div>
             {executeDryRun && (
               <div className="rounded-md bg-cyan-500/10 p-3">
-                <p className="text-xs text-cyan-400">Actions will be logged but not executed. No changes will be made to your environment.</p>
+                <p className="text-xs text-cyan-400">
+                  Actions will be logged but not executed. No changes will be made to your environment.
+                </p>
               </div>
             )}
           </div>
           <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={() => { setExecuteDialogId(null); setExecuteDryRun(false); }} data-testid="button-cancel-execute">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setExecuteDialogId(null);
+                setExecuteDryRun(false);
+              }}
+              data-testid="button-cancel-execute"
+            >
               Cancel
             </Button>
             <Button
@@ -1428,12 +1657,20 @@ export default function PlaybooksPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showDialog} onOpenChange={(open) => { if (!open) closeDialog(); else setShowDialog(true); }}>
+      <Dialog
+        open={showDialog}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+          else setShowDialog(true);
+        }}
+      >
         <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingPlaybook ? "Edit Playbook" : "Create Playbook"}</DialogTitle>
             <DialogDescription>
-              {editingPlaybook ? "Update your automation playbook with the visual builder." : "Build a new automated response workflow visually."}
+              {editingPlaybook
+                ? "Update your automation playbook with the visual builder."
+                : "Build a new automated response workflow visually."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1443,7 +1680,7 @@ export default function PlaybooksPage() {
               <Input
                 placeholder="e.g. Critical Alert Auto-Triage"
                 value={formName}
-                onChange={e => setFormName(e.target.value)}
+                onChange={(e) => setFormName(e.target.value)}
                 data-testid="input-playbook-name"
               />
             </div>
@@ -1454,7 +1691,7 @@ export default function PlaybooksPage() {
                   <SelectValue placeholder="Select trigger..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {TRIGGER_OPTIONS.map(t => (
+                  {TRIGGER_OPTIONS.map((t) => (
                     <SelectItem key={t.value} value={t.value} data-testid={`option-trigger-${t.value}`}>
                       {t.label}
                     </SelectItem>
@@ -1469,9 +1706,15 @@ export default function PlaybooksPage() {
                   <SelectValue placeholder="Status..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft" data-testid="option-status-draft">Draft</SelectItem>
-                  <SelectItem value="active" data-testid="option-status-active">Active</SelectItem>
-                  <SelectItem value="inactive" data-testid="option-status-inactive">Inactive</SelectItem>
+                  <SelectItem value="draft" data-testid="option-status-draft">
+                    Draft
+                  </SelectItem>
+                  <SelectItem value="active" data-testid="option-status-active">
+                    Active
+                  </SelectItem>
+                  <SelectItem value="inactive" data-testid="option-status-inactive">
+                    Inactive
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1480,7 +1723,7 @@ export default function PlaybooksPage() {
               <Input
                 placeholder="What does this playbook do?"
                 value={formDescription}
-                onChange={e => setFormDescription(e.target.value)}
+                onChange={(e) => setFormDescription(e.target.value)}
                 data-testid="input-playbook-description"
               />
             </div>
@@ -1496,9 +1739,7 @@ export default function PlaybooksPage() {
           </div>
 
           <div className="flex items-center justify-between gap-4 pt-2 flex-wrap">
-            <div className="text-xs text-muted-foreground">
-              {flowNodes.length} nodes in flow
-            </div>
+            <div className="text-xs text-muted-foreground">{flowNodes.length} nodes in flow</div>
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={closeDialog} data-testid="button-cancel">
                 Cancel
@@ -1508,7 +1749,7 @@ export default function PlaybooksPage() {
                 disabled={createMutation.isPending || updateMutation.isPending}
                 data-testid="button-save-playbook"
               >
-                {(createMutation.isPending || updateMutation.isPending) ? (
+                {createMutation.isPending || updateMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <CheckCircle className="h-4 w-4 mr-2" />
