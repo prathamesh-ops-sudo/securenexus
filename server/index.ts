@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startReportScheduler } from "./report-scheduler";
 import { sliMiddleware, startSliCollection } from "./sli-middleware";
+import { performanceBudgetMiddleware } from "./db-performance";
 import { startJobWorker } from "./job-queue";
 import { startSloAlerting } from "./slo-alerting";
 import { replyInternal } from "./api-response";
@@ -34,6 +35,7 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 
 app.use(sliMiddleware);
+app.use(performanceBudgetMiddleware);
 
 app.use(correlationMiddleware);
 app.use(requestLogger);
