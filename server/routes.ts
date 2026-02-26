@@ -45,6 +45,8 @@ import {
 import { logger } from "./logger";
 import { getIndexHitRates, getTableScanStats, getUnusedIndexes, getCacheHitRatio, getRecentSlowQueries, PERFORMANCE_BUDGETS, parsePaginationParams } from "./db-performance";
 import { applyCsrfProtection, getCsrfEndpointHandler } from "./security-middleware";
+import { validateQuery, validateBody, validatePathId, querySchemas, bodySchemas } from "./request-validator";
+import { validateConnectorConfig } from "./connector-config-validator";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -391,16 +393,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/alerts", isAuthenticated, async (req, res) => {
+  app.get("/api/v1/alerts", isAuthenticated, validateQuery(querySchemas.alertsList), async (req, res) => {
     try {
-      const offset = Number(req.query.offset ?? 0) || 0;
-      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
-      const search = typeof req.query.search === "string" ? req.query.search : undefined;
-      const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
-      const status = typeof req.query.status === "string" ? req.query.status : undefined;
-      const source = typeof req.query.source === "string" ? req.query.source : undefined;
-      const sortBy = typeof req.query.sortBy === "string" ? req.query.sortBy : undefined;
-      const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
+      const { offset, limit, search, severity, status, source, sortBy, sortOrder } = (req as any).validatedQuery;
 
       const { items, total } = await storage.getAlertsPaginatedWithSort({
         offset,
@@ -430,7 +425,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/alerts/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/alerts/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const alert = await storage.getAlert(p(req.params.id));
       if (!alert) return res.status(404).json({ message: "Alert not found" });
@@ -458,7 +453,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.patch("/api/alerts/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
     try {
       const parsed = insertAlertSchema.partial().safeParse(req.body);
       if (!parsed.success) {
@@ -476,7 +471,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id/status", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.patch("/api/alerts/:id/status", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
     try {
       const { status, incidentId } = req.body;
       if (!status) return res.status(400).json({ message: "Status required" });
@@ -536,7 +531,7 @@ export async function registerRoutes(
   });
 
   // Alert tags
-  app.get("/api/alerts/:id/tags", isAuthenticated, async (req, res) => {
+  app.get("/api/alerts/:id/tags", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const alertTags = await storage.getAlertTags(p(req.params.id));
       res.json(alertTags);
@@ -545,10 +540,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts/:id/tags", isAuthenticated, async (req, res) => {
+  app.post("/api/alerts/:id/tags", isAuthenticated, validatePathId("id"), validateBody(bodySchemas.incidentTagAdd), async (req, res) => {
     try {
-      const { tagId } = req.body;
-      if (!tagId) return res.status(400).json({ message: "tagId required" });
+      const { tagId } = (req as any).validatedBody;
       await storage.addAlertTag(p(req.params.id), tagId);
       res.status(201).json({ message: "Tag added" });
     } catch (error) {
@@ -556,7 +550,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/alerts/:alertId/tags/:tagId", isAuthenticated, async (req, res) => {
+  app.delete("/api/alerts/:alertId/tags/:tagId", isAuthenticated, validatePathId("alertId"), validatePathId("tagId"), async (req, res) => {
     try {
       await storage.removeAlertTag(p(req.params.alertId), p(req.params.tagId));
       res.json({ message: "Tag removed" });
@@ -577,16 +571,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/incidents", isAuthenticated, async (req, res) => {
+  app.get("/api/v1/incidents", isAuthenticated, validateQuery(querySchemas.incidentsList), async (req, res) => {
     try {
-      const offset = Number(req.query.offset ?? 0) || 0;
-      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
-      const queue = typeof req.query.queue === "string" ? req.query.queue : undefined;
-      const search = typeof req.query.search === "string" ? req.query.search : undefined;
-      const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
-      const status = typeof req.query.status === "string" ? req.query.status : undefined;
-      const sortBy = typeof req.query.sortBy === "string" ? req.query.sortBy : undefined;
-      const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
+      const { offset, limit, queue, search, severity, status, sortBy, sortOrder } = (req as any).validatedQuery;
 
       const { items, total } = await storage.getIncidentsPaginatedWithSort({
         offset,
@@ -631,7 +618,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/incidents/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/incidents/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const incident = await storage.getIncident(p(req.params.id));
       if (!incident) return res.status(404).json({ message: "Incident not found" });
@@ -641,7 +628,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/incidents/:id/alerts", isAuthenticated, async (req, res) => {
+  app.get("/api/incidents/:id/alerts", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const incidentAlerts = await storage.getAlertsByIncident(p(req.params.id));
       res.json(incidentAlerts);
@@ -680,7 +667,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/incidents/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), async (req, res) => {
+  app.patch("/api/incidents/:id", isAuthenticated, resolveOrgContext, requirePermission("incidents", "write"), validatePathId("id"), async (req, res) => {
     try {
       const parsed = insertIncidentSchema.partial().safeParse(req.body);
       if (!parsed.success) {
@@ -829,7 +816,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/incidents/:id/activity", isAuthenticated, async (req, res) => {
+  app.get("/api/incidents/:id/activity", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const logs = await storage.getAuditLogsByResource("incident", p(req.params.id));
       res.json(logs);
@@ -839,7 +826,7 @@ export async function registerRoutes(
   });
 
   // Incident comments
-  app.get("/api/incidents/:id/comments", isAuthenticated, async (req, res) => {
+  app.get("/api/incidents/:id/comments", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const comments = await storage.getComments(p(req.params.id));
       res.json(comments);
@@ -848,7 +835,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/incidents/:id/comments", isAuthenticated, async (req, res) => {
+  app.post("/api/incidents/:id/comments", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const parsed = insertCommentSchema.safeParse({
         ...req.body,
@@ -864,7 +851,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/comments/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/comments/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const deleted = await storage.deleteComment(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Comment not found" });
@@ -875,7 +862,7 @@ export async function registerRoutes(
   });
 
   // Incident tags
-  app.get("/api/incidents/:id/tags", isAuthenticated, async (req, res) => {
+  app.get("/api/incidents/:id/tags", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const incTags = await storage.getIncidentTags(p(req.params.id));
       res.json(incTags);
@@ -884,7 +871,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/incidents/:id/tags", isAuthenticated, async (req, res) => {
+  app.post("/api/incidents/:id/tags", isAuthenticated, validatePathId("id"), validateBody(bodySchemas.incidentTagAdd), async (req, res) => {
     try {
       const { tagId } = req.body;
       if (!tagId) return res.status(400).json({ message: "tagId required" });
@@ -895,7 +882,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/incidents/:incidentId/tags/:tagId", isAuthenticated, async (req, res) => {
+  app.delete("/api/incidents/:incidentId/tags/:tagId", isAuthenticated, validatePathId("incidentId"), validatePathId("tagId"), async (req, res) => {
     try {
       await storage.removeIncidentTag(p(req.params.incidentId), p(req.params.tagId));
       res.json({ message: "Tag removed" });
@@ -1163,11 +1150,10 @@ export async function registerRoutes(
     return sendEnvelope(res, policies);
   });
 
-  app.post("/api/api-keys", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "write"), async (req, res) => {
+  app.post("/api/api-keys", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "write"), validateBody(bodySchemas.apiKeyCreate), async (req, res) => {
     try {
-      const { name, scopes } = req.body;
+      const { name, scopes } = (req as any).validatedBody;
       const orgId = getOrgId(req);
-      if (!name) return res.status(400).json({ message: "Key name is required" });
       const { key, prefix, hash } = generateApiKey();
       const apiKey = await storage.createApiKey({
         name,
@@ -1199,7 +1185,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/api-keys/:id", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "admin"), async (req, res) => {
+  app.delete("/api/api-keys/:id", isAuthenticated, resolveOrgContext, requirePermission("api_keys", "admin"), validatePathId("id"), async (req, res) => {
     try {
       const revoked = await storage.revokeApiKey(p(req.params.id));
       if (!revoked) return res.status(404).json({ message: "API key not found" });
@@ -1510,7 +1496,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch dead-letter job runs" }); }
   });
 
-  app.get("/api/connectors/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
@@ -1521,15 +1507,12 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors", isAuthenticated, async (req, res) => {
+  app.post("/api/connectors", isAuthenticated, validateBody(bodySchemas.connectorCreate), async (req, res) => {
     try {
-      const { name, type, authType, config, pollingIntervalMin } = req.body;
-      if (!name || !type || !authType || !config) {
-        return res.status(400).json({ message: "Missing required fields: name, type, authType, config" });
-      }
-      const validTypes = getAllConnectorTypes();
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({ message: `Invalid connector type. Valid types: ${validTypes.join(", ")}` });
+      const { name, type, authType, config, pollingIntervalMin } = (req as any).validatedBody;
+      const configValidation = validateConnectorConfig(type, config);
+      if (!configValidation.valid) {
+        return res.status(400).json({ message: "Invalid connector configuration", errors: configValidation.errors });
       }
       const connector = await storage.createConnector({
         name,
@@ -1557,11 +1540,11 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/connectors/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/connectors/:id", isAuthenticated, validatePathId("id"), validateBody(bodySchemas.connectorUpdate), async (req, res) => {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
-      const { name, config, status, pollingIntervalMin } = req.body;
+      const { name, config, status, pollingIntervalMin } = (req as any).validatedBody;
       const updateData: any = {};
       if (name) updateData.name = name;
       if (config) {
@@ -1584,7 +1567,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/connectors/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
@@ -1603,7 +1586,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors/:id/test", isAuthenticated, async (req, res) => {
+  app.post("/api/connectors/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
@@ -1616,11 +1599,12 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors/test", isAuthenticated, async (req, res) => {
+  app.post("/api/connectors/test", isAuthenticated, validateBody(bodySchemas.connectorTest), async (req, res) => {
     try {
-      const { type, config } = req.body;
-      if (!type || !config) {
-        return res.status(400).json({ success: false, message: "Missing type and config" });
+      const { type, config } = (req as any).validatedBody;
+      const configValidation = validateConnectorConfig(type, config);
+      if (!configValidation.valid) {
+        return res.status(400).json({ success: false, message: "Invalid connector configuration", errors: configValidation.errors });
       }
       const result = await testConnector(type, config);
       res.json(result);
@@ -1630,7 +1614,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors/:id/sync", isAuthenticated, async (req, res) => {
+  app.post("/api/connectors/:id/sync", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
@@ -1721,7 +1705,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/connectors/:id/jobs", isAuthenticated, async (req, res) => {
+  app.get("/api/connectors/:id/jobs", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string, 10) || 50;
       const runs = await storage.getConnectorJobRuns(p(req.params.id), limit);
@@ -1729,14 +1713,14 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch job runs" }); }
   });
 
-  app.get("/api/connectors/:id/metrics", isAuthenticated, async (req, res) => {
+  app.get("/api/connectors/:id/metrics", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const metrics = await storage.getConnectorMetrics(p(req.params.id));
       res.json(metrics);
     } catch (error) { res.status(500).json({ message: "Failed to fetch connector metrics" }); }
   });
 
-  app.post("/api/connectors/:id/health-check", isAuthenticated, async (req, res) => {
+  app.post("/api/connectors/:id/health-check", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
@@ -1767,7 +1751,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to run health check" }); }
   });
 
-  app.get("/api/connectors/:id/health", isAuthenticated, async (req, res) => {
+  app.get("/api/connectors/:id/health", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string, 10) || 50;
       const checks = await storage.getConnectorHealthChecks(p(req.params.id), limit);
@@ -1776,10 +1760,9 @@ export async function registerRoutes(
   });
 
   // AI Feedback (Phase 7+12)
-  app.post("/api/ai/feedback", isAuthenticated, async (req, res) => {
+  app.post("/api/ai/feedback", isAuthenticated, validateBody(bodySchemas.aiFeedback), async (req, res) => {
     try {
-      const { resourceType, resourceId, rating, comment, aiOutput, correctionReason, correctedSeverity, correctedCategory } = req.body;
-      if (!resourceType || !rating) return res.status(400).json({ message: "resourceType and rating required" });
+      const { resourceType, resourceId, rating, comment, aiOutput, correctionReason, correctedSeverity, correctedCategory } = (req as any).validatedBody;
       const feedbackData: any = {
         userId: (req as any).user?.id,
         userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
@@ -1800,10 +1783,10 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to submit feedback" }); }
   });
 
-  app.get("/api/ai/feedback/metrics", isAuthenticated, async (req, res) => {
+  app.get("/api/ai/feedback/metrics", isAuthenticated, validateQuery(querySchemas.feedbackMetrics), async (req, res) => {
     try {
       const orgId = (req as any).user?.organizationId;
-      const days = parseInt(req.query.days as string, 10) || 30;
+      const { days } = (req as any).validatedQuery;
       const metrics = await storage.getAiFeedbackMetrics(orgId, days);
       res.json(metrics);
     } catch (error) { res.status(500).json({ message: "Failed to fetch feedback metrics" }); }
@@ -1816,9 +1799,9 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch feedback for resource" }); }
   });
 
-  app.get("/api/ai/feedback", isAuthenticated, async (req, res) => {
+  app.get("/api/ai/feedback", isAuthenticated, validateQuery(querySchemas.aiFeedbackByQuery), async (req, res) => {
     try {
-      const { resourceType, resourceId } = req.query;
+      const { resourceType, resourceId } = (req as any).validatedQuery;
       const feedback = await storage.getAiFeedback(resourceType as string, resourceId as string);
       res.json(feedback);
     } catch (error) { res.status(500).json({ message: "Failed to fetch feedback" }); }
@@ -1830,7 +1813,7 @@ export async function registerRoutes(
     catch (error) { res.status(500).json({ message: "Failed to fetch playbooks" }); }
   });
 
-  app.get("/api/playbooks/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const pb = await storage.getPlaybook(p(req.params.id));
       if (!pb) return res.status(404).json({ message: "Playbook not found" });
@@ -1838,10 +1821,9 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch playbook" }); }
   });
 
-  app.post("/api/playbooks", isAuthenticated, async (req, res) => {
+  app.post("/api/playbooks", isAuthenticated, validateBody(bodySchemas.playbookCreate), async (req, res) => {
     try {
-      const { name, description, trigger, conditions, actions, status } = req.body;
-      if (!name || !trigger || !actions) return res.status(400).json({ message: "name, trigger, and actions required" });
+      const { name, description, trigger, conditions, actions, status } = (req as any).validatedBody;
       const playbook = await storage.createPlaybook({
         name, description, trigger, conditions, actions, status: status || "draft",
         createdBy: (req as any).user?.id,
@@ -1857,7 +1839,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create playbook" }); }
   });
 
-  app.patch("/api/playbooks/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const existing = await storage.getPlaybook(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Playbook not found" });
@@ -1868,7 +1850,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to update playbook" }); }
   });
 
-  app.delete("/api/playbooks/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const deleted = await storage.deletePlaybook(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Playbook not found" });
@@ -1882,7 +1864,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to delete playbook" }); }
   });
 
-  app.post("/api/playbooks/:id/execute", isAuthenticated, async (req, res) => {
+  app.post("/api/playbooks/:id/execute", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const pb = await storage.getPlaybook(p(req.params.id));
       if (!pb) return res.status(404).json({ message: "Playbook not found" });
@@ -2029,16 +2011,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/playbook-executions", isAuthenticated, async (req, res) => {
+  app.get("/api/playbook-executions", isAuthenticated, validateQuery(querySchemas.playbookExecutions), async (req, res) => {
     try {
-      const { playbookId, limit } = req.query;
-      res.json(await storage.getPlaybookExecutions(playbookId as string, parseInt(limit as string, 10) || 50));
+      const { playbookId, limit } = (req as any).validatedQuery;
+      res.json(await storage.getPlaybookExecutions(playbookId, limit));
     } catch (error) { res.status(500).json({ message: "Failed to fetch executions" }); }
   });
 
-  app.get("/api/playbook-approvals", isAuthenticated, async (req, res) => {
+  app.get("/api/playbook-approvals", isAuthenticated, validateQuery(querySchemas.approvalStatus), async (req, res) => {
     try {
-      const status = (req.query.status as string) || "pending";
+      const { status } = (req as any).validatedQuery;
       const approvals = await storage.getPlaybookApprovals(status);
       res.json(approvals);
     } catch (error) {
@@ -2046,14 +2028,11 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/playbook-approvals/:id/decide", isAuthenticated, async (req, res) => {
+  app.post("/api/playbook-approvals/:id/decide", isAuthenticated, validatePathId("id"), validateBody(bodySchemas.approvalDecision), async (req, res) => {
     try {
       const user = (req as any).user;
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const { decision, note } = req.body;
-      if (!decision || (decision !== "approved" && decision !== "rejected")) {
-        return res.status(400).json({ message: "decision must be 'approved' or 'rejected'" });
-      }
+      const { decision, note } = (req as any).validatedBody;
 
       const approval = await storage.getPlaybookApproval(p(req.params.id));
       if (!approval) return res.status(404).json({ message: "Approval not found" });
@@ -2156,7 +2135,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/playbook-executions/:id/resume", isAuthenticated, async (req, res) => {
+  app.post("/api/playbook-executions/:id/resume", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const user = (req as any).user;
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
@@ -2250,7 +2229,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/playbook-executions/:id/rollback", isAuthenticated, async (req, res) => {
+  app.post("/api/playbook-executions/:id/rollback", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const user = (req as any).user;
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
@@ -3588,7 +3567,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch integrations" }); }
   });
 
-  app.get("/api/integrations/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/integrations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const config = await storage.getIntegrationConfig(p(req.params.id));
       if (!config) return res.status(404).json({ message: "Integration not found" });
@@ -3597,12 +3576,9 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch integration" }); }
   });
 
-  app.post("/api/integrations", isAuthenticated, async (req, res) => {
+  app.post("/api/integrations", isAuthenticated, validateBody(bodySchemas.integrationCreate), async (req, res) => {
     try {
-      const { name, type, config } = req.body;
-      if (!name || !type || !config) {
-        return res.status(400).json({ message: "Missing required fields: name, type, config" });
-      }
+      const { name, type, config } = (req as any).validatedBody;
       const created = await storage.createIntegrationConfig({
         name,
         type,
@@ -3624,7 +3600,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create integration" }); }
   });
 
-  app.patch("/api/integrations/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/integrations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const existing = await storage.getIntegrationConfig(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Integration not found" });
@@ -3647,7 +3623,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to update integration" }); }
   });
 
-  app.delete("/api/integrations/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/integrations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const existing = await storage.getIntegrationConfig(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Integration not found" });
@@ -3664,7 +3640,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to delete integration" }); }
   });
 
-  app.post("/api/integrations/:id/test", isAuthenticated, async (req, res) => {
+  app.post("/api/integrations/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const config = await storage.getIntegrationConfig(p(req.params.id));
       if (!config) return res.status(404).json({ message: "Integration not found" });
@@ -3695,12 +3671,9 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to fetch notification channels" }); }
   });
 
-  app.post("/api/notification-channels", isAuthenticated, async (req, res) => {
+  app.post("/api/notification-channels", isAuthenticated, validateBody(bodySchemas.notificationChannelCreate), async (req, res) => {
     try {
-      const { name, type, config, events, isDefault } = req.body;
-      if (!name || !type || !config) {
-        return res.status(400).json({ message: "Missing required fields: name, type, config" });
-      }
+      const { name, type, config, events, isDefault } = (req as any).validatedBody;
       const created = await storage.createNotificationChannel({
         name,
         type,
@@ -3723,7 +3696,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create notification channel" }); }
   });
 
-  app.patch("/api/notification-channels/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/notification-channels/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const existing = await storage.getNotificationChannel(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Channel not found" });
@@ -3732,7 +3705,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to update channel" }); }
   });
 
-  app.delete("/api/notification-channels/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/notification-channels/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const existing = await storage.getNotificationChannel(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Channel not found" });
@@ -3741,7 +3714,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to delete channel" }); }
   });
 
-  app.post("/api/notification-channels/:id/test", isAuthenticated, async (req, res) => {
+  app.post("/api/notification-channels/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const channel = await storage.getNotificationChannel(p(req.params.id));
       if (!channel) return res.status(404).json({ message: "Channel not found" });
@@ -3756,20 +3729,17 @@ export async function registerRoutes(
   // ============================
   // Phase 7: Response Actions
   // ============================
-  app.get("/api/response-actions", isAuthenticated, async (req, res) => {
+  app.get("/api/response-actions", isAuthenticated, validateQuery(querySchemas.responseActions), async (req, res) => {
     try {
-      const { incidentId } = req.query;
+      const { incidentId } = (req as any).validatedQuery;
       const orgId = (req as any).user?.orgId;
       res.json(await storage.getResponseActions(orgId, incidentId as string));
     } catch (error) { res.status(500).json({ message: "Failed to fetch response actions" }); }
   });
 
-  app.post("/api/response-actions", isAuthenticated, async (req, res) => {
+  app.post("/api/response-actions", isAuthenticated, validateBody(bodySchemas.responseActionCreate), async (req, res) => {
     try {
-      const { actionType, target, connectorId, incidentId, alertId } = req.body;
-      if (!actionType || !target) {
-        return res.status(400).json({ message: "Missing required fields: actionType, target" });
-      }
+      const { actionType, target, connectorId, incidentId, alertId } = (req as any).validatedBody;
       const user = (req as any).user;
       const context: ActionContext = {
         orgId: user?.orgId,
@@ -4730,17 +4700,13 @@ export async function registerRoutes(
   });
 
   // Create invitation
-  app.post("/api/orgs/:orgId/invitations", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
+  app.post("/api/orgs/:orgId/invitations", isAuthenticated, resolveOrgContext, requireMinRole("admin"), validatePathId("orgId"), validateBody(bodySchemas.invitationCreate), async (req, res) => {
     try {
       const orgId = p(req.params.orgId);
       const userOrgId = (req as any).orgId;
       if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
 
-      const { email, role } = req.body;
-      if (!email) return res.status(400).json({ error: "Email is required" });
-      if (role && !["admin", "analyst", "read_only"].includes(role)) {
-        return res.status(400).json({ error: "Invalid role for invitation" });
-      }
+      const { email, role } = (req as any).validatedBody;
 
       const userId = (req as any).user?.id;
       const token = randomBytes(32).toString("hex");
@@ -7265,14 +7231,11 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create approval request" }); }
   });
 
-  app.post("/api/response-approvals/:id/decide", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.post("/api/response-approvals/:id/decide", isAuthenticated, resolveOrgContext, validatePathId("id"), validateBody(bodySchemas.approvalDecision), async (req, res) => {
     try {
       const user = (req as any).user;
       const orgId = (req as any).orgId;
-      const { decision, note } = req.body;
-      if (!decision || (decision !== "approved" && decision !== "rejected")) {
-        return res.status(400).json({ message: "decision must be 'approved' or 'rejected'" });
-      }
+      const { decision, note } = (req as any).validatedBody;
       const approval = await storage.getResponseActionApproval(p(req.params.id));
       if (!approval) return res.status(404).json({ message: "Approval not found" });
       if (approval.status !== "pending") {

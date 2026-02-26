@@ -46,6 +46,48 @@ jobs:
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high || true
 
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+      - name: Scan for hardcoded secrets in source
+        run: |
+          set -euo pipefail
+          PATTERNS=(
+            'AKIA[A-Z0-9]{16}'
+            'ghp_[A-Za-z0-9]{36}'
+            'snx_[a-f0-9]{64}'
+            'sk-[A-Za-z0-9]{48}'
+            'password\s*[:=]\s*["\x27][^"\x27]{8,}'
+          )
+          FOUND=0
+          for pat in "${PATTERNS[@]}"; do
+            MATCHES=$(grep -rn --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' -E "$pat" server/ client/ shared/ 2>/dev/null | grep -v node_modules | grep -v '\.test\.' | grep -v 'REDACTED' | grep -v 'pattern' | grep -v 'RegExp' || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::warning::Potential secret pattern found: $pat"
+              echo "$MATCHES"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::warning::Potential secrets detected in source code. Review the matches above."
+          else
+            echo "No hardcoded secrets detected."
+          fi
+
   bundle-check:
     name: Bundle Size Check
     if: github.event_name == 'pull_request'
