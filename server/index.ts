@@ -12,6 +12,8 @@ import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middle
 import { config } from "./config";
 import { logger, correlationMiddleware, requestLogger } from "./logger";
 import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
+import { initializeScalingState, gracefulShutdown } from "./scaling-state";
+import { startRetentionScheduler } from "./retention-scheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -104,10 +106,28 @@ export function log(message: string, source = "express") {
     },
     () => {
       logger.child("express").info(`serving on port ${port}`);
+      initializeScalingState();
       startReportScheduler();
+      startRetentionScheduler();
       startJobWorker();
       startSliCollection();
       startSloAlerting();
     },
   );
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => {
+      logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
+      gracefulShutdown(signal).then(() => {
+        httpServer.close(() => {
+          logger.child("express").info("HTTP server closed");
+          process.exit(0);
+        });
+        setTimeout(() => {
+          logger.child("express").warn("Forced shutdown after timeout");
+          process.exit(1);
+        }, 15_000);
+      });
+    });
+  }
 })();
