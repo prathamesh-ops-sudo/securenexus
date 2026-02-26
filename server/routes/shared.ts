@@ -13,6 +13,7 @@ import {
 } from "../api-response";
 import { logger } from "../logger";
 import { createEventFingerprint } from "../outbox-processor";
+import { validateAndLogEvent } from "../event-catalog";
 import { validateWebhookUrl, isCircuitOpen, isWebhookRateLimited, recordDeliverySuccess, recordDeliveryFailure, secureOutboundFetch, redactDeliveryLog } from "../outbound-security";
 
 export { storage, logger, ERROR_CODES, reply, replyError, replyUnauthenticated, replyForbidden, replyRateLimit, randomBytes };
@@ -218,6 +219,7 @@ export async function publishOutboxEvent(
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (!orgId) return;
+  validateAndLogEvent(eventType, aggregateType, aggregateId, payload);
   try {
     const fingerprint = createEventFingerprint(eventType, aggregateType, aggregateId, payload);
     await storage.createOutboxEvent({
