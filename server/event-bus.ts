@@ -55,11 +55,7 @@ class EventBus extends EventEmitter {
 
     this.keepAliveInterval = setInterval(() => {
       Array.from(this.clients.entries()).forEach(([id, client]) => {
-        try {
-          client.res.write(":ping\n\n");
-        } catch {
-          this.removeClient(id);
-        }
+        this.sendToClient(client, ":ping\n\n");
       });
     }, KEEP_ALIVE_INTERVAL_MS);
   }

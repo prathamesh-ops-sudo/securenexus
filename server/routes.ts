@@ -2520,7 +2520,7 @@ export async function registerRoutes(
     ]);
     const rawTypes = req.query.types as string | undefined;
     const subscriptions = rawTypes
-      ? rawTypes.split(",").filter((t) => VALID_EVENT_TYPES.has(t.trim())) as any[]
+      ? rawTypes.split(",").map((t) => t.trim()).filter((t) => VALID_EVENT_TYPES.has(t)) as any[]
       : undefined;
 
     eventBus.addClient({
