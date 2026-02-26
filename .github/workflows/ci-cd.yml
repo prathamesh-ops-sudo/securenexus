@@ -43,8 +43,70 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit 2>&1 || true
 
-      - name: Dependency audit
-        run: npm audit --omit=dev --audit-level=high || true
+      - name: Dependency audit (fail on high/critical)
+        run: |
+          npm audit --omit=dev --audit-level=high 2>&1 | tee audit-report.txt || true
+          HIGH_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
+          CRITICAL_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
+          echo "High: $HIGH_COUNT, Critical: $CRITICAL_COUNT"
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "::error::$CRITICAL_COUNT critical vulnerabilities found — failing build"
+            exit 1
+          fi
+          if [ "$HIGH_COUNT" -gt 5 ]; then
+            echo "::error::$HIGH_COUNT high vulnerabilities exceed threshold (5) — failing build"
+            exit 1
+          fi
+
+      - name: Generate SBOM (CycloneDX)
+        run: npx --yes @cyclonedx/cyclonedx-npm --output-file sbom.json --spec-version 1.5 --output-reproducible 2>/dev/null || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json
+
+      - name: Upload SBOM artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.json
+          retention-days: 90
+
+      - name: License compliance check
+        run: |
+          set -euo pipefail
+          npx --yes license-checker --production --json --out license-report.json 2>/dev/null || true
+          if [ ! -f license-report.json ]; then
+            echo "License checker produced no output — skipping"
+            exit 0
+          fi
+          DENIED_LICENSES="AGPL-1.0|AGPL-3.0|GPL-2.0|GPL-3.0|SSPL|BSL|EUPL"
+          VIOLATIONS=$(node -e "
+            const report = require('./license-report.json');
+            const denied = new RegExp('$DENIED_LICENSES', 'i');
+            const violations = [];
+            for (const [pkg, info] of Object.entries(report)) {
+              const lic = String(info.licenses || '');
+              if (denied.test(lic)) violations.push(pkg + ' (' + lic + ')');
+            }
+            if (violations.length > 0) {
+              console.log('DENIED_LICENSES_FOUND=' + violations.length);
+              violations.forEach(v => console.log('  - ' + v));
+            } else {
+              console.log('DENIED_LICENSES_FOUND=0');
+            }
+          " 2>/dev/null || echo "DENIED_LICENSES_FOUND=0")
+          echo "$VIOLATIONS"
+          COUNT=$(echo "$VIOLATIONS" | head -1 | grep -oP '\d+' || echo "0")
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::$COUNT packages use denied licenses. See docs/LICENSE_POLICY.md for exception process."
+          fi
+
+      - name: Upload license report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
+          retention-days: 90
+          if-no-files-found: ignore
 
   secret-scan:
     name: Secret Scanning

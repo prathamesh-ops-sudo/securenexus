@@ -47,6 +47,7 @@ import { getIndexHitRates, getTableScanStats, getUnusedIndexes, getCacheHitRatio
 import { applyCsrfProtection, getCsrfEndpointHandler } from "./security-middleware";
 import { validateQuery, validateBody, validatePathId, querySchemas, bodySchemas } from "./request-validator";
 import { validateConnectorConfig } from "./connector-config-validator";
+import { validateWebhookUrl, isCircuitOpen, isWebhookRateLimited, recordDeliverySuccess, recordDeliveryFailure, secureOutboundFetch, redactDeliveryLog, getCircuitBreakerStatus, getOutboundSecurityStats } from "./outbound-security";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -164,6 +165,30 @@ async function dispatchWebhookEvent(orgId: string | null, event: string, payload
     const webhooks = await storage.getActiveWebhooksByEvent(orgId, event);
     for (const webhook of webhooks) {
       (async () => {
+        const urlCheck = validateWebhookUrl(webhook.url);
+        if (!urlCheck.valid) {
+          logger.child("webhook").warn("SSRF blocked: webhook URL rejected", { webhookId: webhook.id, reason: urlCheck.reason });
+          await storage.createOutboundWebhookLog({
+            webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
+            responseStatus: 0, responseBody: `Blocked: ${urlCheck.reason}`, success: false,
+          }).catch(() => {});
+          return;
+        }
+        if (isCircuitOpen(webhook.id)) {
+          logger.child("webhook").warn("Circuit breaker open — skipping delivery", { webhookId: webhook.id });
+          await storage.createOutboundWebhookLog({
+            webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
+            responseStatus: 0, responseBody: "Circuit breaker open", success: false,
+          }).catch(() => {});
+          return;
+        }
+        if (isWebhookRateLimited(webhook.id)) {
+          await storage.createOutboundWebhookLog({
+            webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
+            responseStatus: 429, responseBody: "Rate limited", success: false,
+          }).catch(() => {});
+          return;
+        }
         const body = JSON.stringify(payload);
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (webhook.secret) {
@@ -173,24 +198,15 @@ async function dispatchWebhookEvent(orgId: string | null, event: string, payload
           headers["X-Webhook-Signature"] = `sha256=${signature}`;
           headers["X-Webhook-Timestamp"] = timestamp;
         }
-        let statusCode = 0;
-        let responseBody = "";
-        let success = false;
-        try {
-          const resp = await fetch(webhook.url, { method: "POST", headers, body, signal: AbortSignal.timeout(10000) });
-          statusCode = resp.status;
-          responseBody = await resp.text().catch(() => "");
-          success = resp.ok;
-        } catch (err: any) {
-          responseBody = err.message || "Request failed";
+        const result = await secureOutboundFetch(webhook.url, { method: "POST", headers, body });
+        if (result.success) {
+          recordDeliverySuccess(webhook.id);
+        } else {
+          recordDeliveryFailure(webhook.id);
         }
         await storage.createOutboundWebhookLog({
-          webhookId: webhook.id,
-          event,
-          payload,
-          responseStatus: statusCode,
-          responseBody: responseBody.slice(0, 2000),
-          success,
+          webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
+          responseStatus: result.statusCode, responseBody: result.responseBody.slice(0, 2000), success: result.success,
         }).catch((err) => logger.child("webhook").warn("Failed to log outbound webhook", { error: String(err) }));
       })().catch((err) => logger.child("webhook").warn("Webhook dispatch error", { error: String(err) }));
     }
@@ -6216,6 +6232,10 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid webhook data", errors: parsed.error.flatten() });
       }
+      const urlCheck = validateWebhookUrl(parsed.data.url);
+      if (!urlCheck.valid) {
+        return res.status(400).json({ message: `Invalid webhook URL: ${urlCheck.reason}` });
+      }
       const webhook = await storage.createOutboundWebhook(parsed.data);
       res.status(201).json(webhook);
     } catch (error) {
@@ -6225,6 +6245,12 @@ export async function registerRoutes(
 
   app.patch("/api/outbound-webhooks/:id", isAuthenticated, async (req, res) => {
     try {
+      if (req.body.url) {
+        const urlCheck = validateWebhookUrl(req.body.url);
+        if (!urlCheck.valid) {
+          return res.status(400).json({ message: `Invalid webhook URL: ${urlCheck.reason}` });
+        }
+      }
       const webhook = await storage.updateOutboundWebhook(p(req.params.id), req.body);
       if (!webhook) return res.status(404).json({ message: "Webhook not found" });
       res.json(webhook);
@@ -6256,33 +6282,30 @@ export async function registerRoutes(
     try {
       const webhook = await storage.getOutboundWebhook(p(req.params.id));
       if (!webhook) return res.status(404).json({ message: "Webhook not found" });
+      const urlCheck = validateWebhookUrl(webhook.url);
+      if (!urlCheck.valid) {
+        return res.status(400).json({ message: `Webhook URL blocked: ${urlCheck.reason}` });
+      }
       const testPayload = { event: "test", timestamp: new Date().toISOString(), message: "Test webhook delivery from SecureNexus" };
       const body = JSON.stringify(testPayload);
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (webhook.secret) {
-        const signature = createHmac("sha256", webhook.secret).update(body).digest("hex");
+        const timestamp = String(Date.now());
+        const signedPayload = `${timestamp}.${body}`;
+        const signature = createHmac("sha256", webhook.secret).update(signedPayload).digest("hex");
         headers["X-Webhook-Signature"] = `sha256=${signature}`;
+        headers["X-Webhook-Timestamp"] = timestamp;
       }
-      let statusCode = 0;
-      let responseBody = "";
-      let success = false;
-      try {
-        const resp = await fetch(webhook.url, { method: "POST", headers, body, signal: AbortSignal.timeout(10000) });
-        statusCode = resp.status;
-        responseBody = await resp.text().catch(() => "");
-        success = resp.ok;
-      } catch (err: any) {
-        responseBody = err.message || "Request failed";
-      }
+      const result = await secureOutboundFetch(webhook.url, { method: "POST", headers, body });
       await storage.createOutboundWebhookLog({
         webhookId: webhook.id,
         event: "test",
-        payload: testPayload,
-        responseStatus: statusCode,
-        responseBody: responseBody.slice(0, 2000),
-        success,
+        payload: redactDeliveryLog(testPayload) as Record<string, unknown>,
+        responseStatus: result.statusCode,
+        responseBody: result.responseBody.slice(0, 2000),
+        success: result.success,
       });
-      res.json({ success, statusCode, responseBody: responseBody.slice(0, 500) });
+      res.json({ success: result.success, statusCode: result.statusCode, responseBody: result.responseBody.slice(0, 500) });
     } catch (error) {
       res.status(500).json({ message: "Failed to test webhook" });
     }
@@ -6322,6 +6345,13 @@ export async function registerRoutes(
               details: parsed.error.flatten(),
             },
           ],
+        });
+      }
+      const urlCheck = validateWebhookUrl(parsed.data.url);
+      if (!urlCheck.valid) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "WEBHOOK_URL_BLOCKED", message: `Invalid webhook URL: ${urlCheck.reason}` }],
         });
       }
       const webhook = await storage.createOutboundWebhook(parsed.data);
