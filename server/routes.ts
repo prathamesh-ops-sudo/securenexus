@@ -5361,11 +5361,16 @@ export async function registerRoutes(
   });
 
   app.post("/api/report-templates", isAuthenticated, async (req, res) => {
-    const user = req.user as any;
-    const orgId = getOrgId(req);
-    const data = insertReportTemplateSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
-    const template = await storage.createReportTemplate(data);
-    res.status(201).json(template);
+    try {
+      const user = req.user as any;
+      const orgId = getOrgId(req);
+      const data = insertReportTemplateSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
+      const template = await storage.createReportTemplate(data);
+      res.status(201).json(template);
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to create report template" });
+    }
   });
 
   app.patch("/api/report-templates/:id", isAuthenticated, async (req, res) => {
@@ -5402,18 +5407,23 @@ export async function registerRoutes(
   });
 
   app.post("/api/report-schedules", isAuthenticated, async (req, res) => {
-    const user = req.user as any;
-    const cadence = req.body.cadence || "weekly";
-    const nextRunAt = calculateNextRunFromCadence(cadence);
-    const orgId = getOrgId(req);
-    const data = insertReportScheduleSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
-    const template = await storage.getReportTemplate(data.templateId);
-    if (!template) return res.status(404).json({ message: "Template not found" });
-    if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Template access denied" });
-    const schedule = await storage.createReportSchedule(data);
-    await storage.updateReportSchedule(schedule.id, { nextRunAt });
-    const updated = await storage.getReportSchedule(schedule.id);
-    res.status(201).json(updated);
+    try {
+      const user = req.user as any;
+      const cadence = req.body.cadence || "weekly";
+      const nextRunAt = calculateNextRunFromCadence(cadence);
+      const orgId = getOrgId(req);
+      const data = insertReportScheduleSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
+      const template = await storage.getReportTemplate(data.templateId);
+      if (!template) return res.status(404).json({ message: "Template not found" });
+      if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Template access denied" });
+      const schedule = await storage.createReportSchedule(data);
+      await storage.updateReportSchedule(schedule.id, { nextRunAt });
+      const updated = await storage.getReportSchedule(schedule.id);
+      res.status(201).json(updated);
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to create report schedule" });
+    }
   });
 
   app.patch("/api/report-schedules/:id", isAuthenticated, async (req, res) => {
@@ -5500,26 +5510,31 @@ export async function registerRoutes(
   });
 
   app.post("/api/report-templates/seed", isAuthenticated, async (req, res) => {
-    const user = req.user as any;
-    const orgId = getOrgId(req);
-    const existing = await storage.getReportTemplates(orgId);
-    if (existing.some(t => t.isBuiltIn)) {
-      return res.json({ message: "Built-in templates already exist", count: existing.filter(t => t.isBuiltIn).length });
+    try {
+      const user = req.user as any;
+      const orgId = getOrgId(req);
+      const allTemplates = await storage.getReportTemplates(undefined);
+      if (allTemplates.some(t => t.isBuiltIn && t.orgId === orgId)) {
+        return res.json({ message: "Built-in templates already exist for this org", count: allTemplates.filter(t => t.isBuiltIn && t.orgId === orgId).length });
+      }
+      const builtIns = [
+        { name: "Weekly SOC KPI Report", description: "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution", reportType: "soc_kpi", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Incident Summary Report", description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics", reportType: "incidents", format: "csv", dashboardRole: "analyst", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "MITRE ATT&CK Coverage Report", description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework", reportType: "attack_coverage", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Connector Health Report", description: "Status and performance metrics for all configured data connectors", reportType: "connector_health", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Executive Security Brief", description: "High-level security posture summary for executive leadership including risk trends and key metrics", reportType: "executive_summary", format: "json", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        { name: "Compliance Status Report", description: "Compliance framework coverage, data retention status, and DSAR request tracking", reportType: "compliance", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+      ];
+      const created = [];
+      for (const t of builtIns) {
+        const template = await storage.createReportTemplate(t as any);
+        created.push(template);
+      }
+      res.status(201).json({ message: "Built-in templates created", count: created.length, templates: created });
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to seed report templates" });
     }
-    const builtIns = [
-      { name: "Weekly SOC KPI Report", description: "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution", reportType: "soc_kpi", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
-      { name: "Incident Summary Report", description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics", reportType: "incidents", format: "csv", dashboardRole: "analyst", isBuiltIn: true, orgId, createdBy: user?.id || null },
-      { name: "MITRE ATT&CK Coverage Report", description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework", reportType: "attack_coverage", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
-      { name: "Connector Health Report", description: "Status and performance metrics for all configured data connectors", reportType: "connector_health", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
-      { name: "Executive Security Brief", description: "High-level security posture summary for executive leadership including risk trends and key metrics", reportType: "executive_summary", format: "json", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
-      { name: "Compliance Status Report", description: "Compliance framework coverage, data retention status, and DSAR request tracking", reportType: "compliance", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
-    ];
-    const created = [];
-    for (const t of builtIns) {
-      const template = await storage.createReportTemplate(t as any);
-      created.push(template);
-    }
-    res.status(201).json({ message: "Built-in templates created", count: created.length, templates: created });
   });
 
   app.get("/api/dashboard/:role", isAuthenticated, async (req, res) => {
