@@ -123,7 +123,8 @@ function loadConfig(): AppConfig {
       warnings.push("FORCE_HTTPS is not enabled — cookies will not have the Secure flag");
     }
     if (cfg.session.secret.length < 32) {
-      warnings.push("SESSION_SECRET is shorter than 32 characters — consider using a stronger secret");
+      logger.child("config").error("SESSION_SECRET must be at least 32 characters in production environments");
+      process.exit(1);
     }
   }
 

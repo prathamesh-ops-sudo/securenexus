@@ -11,6 +11,7 @@ import { replyInternal } from "./api-response";
 import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middleware";
 import { config } from "./config";
 import { logger, correlationMiddleware, requestLogger } from "./logger";
+import { applySecurityMiddleware } from "./security-middleware";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +23,8 @@ declare module "http" {
 }
 
 app.disable("x-powered-by");
+
+applySecurityMiddleware(app);
 
 app.use(
   express.json({
