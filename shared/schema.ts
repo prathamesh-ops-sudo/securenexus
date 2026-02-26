@@ -2175,11 +2175,17 @@ export const jobQueue = pgTable("job_queue", {
   attempts: integer("attempts").default(0),
   maxAttempts: integer("max_attempts").default(3),
   lastError: text("last_error"),
+  fingerprint: varchar("fingerprint", { length: 32 }),
+  fingerprintExpiresAt: timestamp("fingerprint_expires_at"),
+  lockedBy: varchar("locked_by", { length: 64 }),
+  lockedUntil: timestamp("locked_until"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_job_queue_status_run").on(table.status, table.runAt),
   index("idx_job_queue_org").on(table.orgId),
   index("idx_job_queue_type_status").on(table.type, table.status),
+  index("idx_job_queue_fingerprint").on(table.fingerprint),
+  index("idx_job_queue_locked_until").on(table.lockedUntil),
 ]);
 
 export const dashboardMetricsCache = pgTable("dashboard_metrics_cache", {

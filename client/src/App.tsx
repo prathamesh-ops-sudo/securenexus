@@ -1,5 +1,5 @@
 import { Switch, Route } from "wouter";
-import { createContext, useContext } from "react";
+import { createContext, useContext, lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -12,40 +12,56 @@ import type { StreamEvent } from "@/hooks/use-event-stream";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import LandingPage from "@/pages/landing";
-import Dashboard from "@/pages/dashboard";
-import AlertsPage from "@/pages/alerts";
-import IncidentsPage from "@/pages/incidents";
-import IncidentDetailPage from "@/pages/incident-detail";
-import AuditLogPage from "@/pages/audit-log";
-import SettingsPage from "@/pages/settings";
-import IngestionPage from "@/pages/ingestion";
-import ConnectorsPage from "@/pages/connectors";
-import AIEnginePage from "@/pages/ai-engine";
-import AlertDetailPage from "@/pages/alert-detail";
-import AnalyticsPage from "@/pages/analytics";
-import ThreatIntelPage from "@/pages/threat-intel";
-import MitreAttackPage from "@/pages/mitre-attack";
-import PlaybooksPage from "@/pages/playbooks";
-import EntityGraphPage from "@/pages/entity-graph";
-import AttackGraphPage from "@/pages/attack-graph";
-import KillChainPage from "@/pages/kill-chain";
-import CompliancePage from "@/pages/compliance";
-import IntegrationsPage from "@/pages/integrations";
-import PredictiveDefensePage from "@/pages/predictive-defense";
-import AutonomousResponsePage from "@/pages/autonomous-response";
-import SecurityPosturePage from "@/pages/security-posture";
-import CspmPage from "@/pages/cspm";
-import EndpointTelemetryPage from "@/pages/endpoint-telemetry";
-import TeamManagementPage from "@/pages/team-management";
-import ReportsPage from "@/pages/reports";
-import OperationsPage from "@/pages/operations";
-import OnboardingPage from "@/pages/onboarding";
-import UsageBillingPage from "@/pages/usage-billing";
 import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const AlertsPage = lazy(() => import("@/pages/alerts"));
+const IncidentsPage = lazy(() => import("@/pages/incidents"));
+const IncidentDetailPage = lazy(() => import("@/pages/incident-detail"));
+const AuditLogPage = lazy(() => import("@/pages/audit-log"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const IngestionPage = lazy(() => import("@/pages/ingestion"));
+const ConnectorsPage = lazy(() => import("@/pages/connectors"));
+const AIEnginePage = lazy(() => import("@/pages/ai-engine"));
+const AlertDetailPage = lazy(() => import("@/pages/alert-detail"));
+const AnalyticsPage = lazy(() => import("@/pages/analytics"));
+const ThreatIntelPage = lazy(() => import("@/pages/threat-intel"));
+const MitreAttackPage = lazy(() => import("@/pages/mitre-attack"));
+const PlaybooksPage = lazy(() => import("@/pages/playbooks"));
+const EntityGraphPage = lazy(() => import("@/pages/entity-graph"));
+const AttackGraphPage = lazy(() => import("@/pages/attack-graph"));
+const KillChainPage = lazy(() => import("@/pages/kill-chain"));
+const CompliancePage = lazy(() => import("@/pages/compliance"));
+const IntegrationsPage = lazy(() => import("@/pages/integrations"));
+const PredictiveDefensePage = lazy(() => import("@/pages/predictive-defense"));
+const AutonomousResponsePage = lazy(() => import("@/pages/autonomous-response"));
+const SecurityPosturePage = lazy(() => import("@/pages/security-posture"));
+const CspmPage = lazy(() => import("@/pages/cspm"));
+const EndpointTelemetryPage = lazy(() => import("@/pages/endpoint-telemetry"));
+const TeamManagementPage = lazy(() => import("@/pages/team-management"));
+const ReportsPage = lazy(() => import("@/pages/reports"));
+const OperationsPage = lazy(() => import("@/pages/operations"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding"));
+const UsageBillingPage = lazy(() => import("@/pages/usage-billing"));
+
+function PageSkeleton() {
+  return (
+    <div className="p-6 space-y-4" role="status" aria-label="Loading page">
+      <Skeleton className="h-8 w-64" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
+      </div>
+      <Skeleton className="h-64 w-full" />
+      <span className="sr-only">Loading page content...</span>
+    </div>
+  );
+}
 
 interface EventStreamContextType {
   connected: boolean;
@@ -102,6 +118,7 @@ function AuthenticatedApp() {
               <ThemeToggle />
             </header>
             <main className="flex-1 overflow-auto">
+              <Suspense fallback={<PageSkeleton />}>
               <Switch>
                 <Route path="/" component={Dashboard} />
                 <Route path="/alerts/:id" component={AlertDetailPage} />
@@ -134,6 +151,7 @@ function AuthenticatedApp() {
                 <Route path="/usage-billing" component={UsageBillingPage} />
                 <Route component={NotFound} />
               </Switch>
+              </Suspense>
             </main>
           </div>
         </div>

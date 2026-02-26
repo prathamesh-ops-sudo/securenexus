@@ -46,6 +46,56 @@ jobs:
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high || true
 
+  bundle-check:
+    name: Bundle Size Check
+    if: github.event_name == 'pull_request'
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npx vite build
+
+      - name: Check bundle sizes
+        run: |
+          set -euo pipefail
+          BUDGET_TOTAL_KB=1500
+          BUDGET_ENTRY_KB=250
+
+          TOTAL_SIZE=$(du -sk dist/public/assets/ | awk '{print $1}')
+          echo "Total bundle size: ${TOTAL_SIZE}KB (budget: ${BUDGET_TOTAL_KB}KB)"
+
+          ENTRY_FILES=$(ls -lS dist/public/assets/index-*.js 2>/dev/null || true)
+          if [ -n "$ENTRY_FILES" ]; then
+            ENTRY_SIZE=$(stat -c%s dist/public/assets/index-*.js 2>/dev/null | head -1)
+            ENTRY_KB=$((ENTRY_SIZE / 1024))
+            echo "Entry chunk size: ${ENTRY_KB}KB (budget: ${BUDGET_ENTRY_KB}KB)"
+          fi
+
+          echo ""
+          echo "=== Bundle breakdown ==="
+          ls -lhS dist/public/assets/*.js | awk '{print $5, $9}'
+
+          CHUNK_COUNT=$(ls dist/public/assets/*.js 2>/dev/null | wc -l)
+          echo ""
+          echo "Total JS chunks: ${CHUNK_COUNT}"
+
+          if [ "$TOTAL_SIZE" -gt "$BUDGET_TOTAL_KB" ]; then
+            echo "::warning::Total bundle size ${TOTAL_SIZE}KB exceeds budget of ${BUDGET_TOTAL_KB}KB"
+          fi
+
   build-check:
     name: Build & Security Scan
     if: github.event_name == 'pull_request'

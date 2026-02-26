@@ -1,31 +1,21 @@
 import { storage } from "./storage";
 import { db } from "./db";
 import { logger } from "./logger";
+import { createHash, randomBytes } from "crypto";
+import { sql } from "drizzle-orm";
 
 const DEAD_LETTER_MAX_ATTEMPTS = 3;
-const JOB_DEDUP_WINDOW_MS = 60 * 1000;
-const recentJobFingerprints = new Map<string, number>();
+const VISIBILITY_TIMEOUT_MS = 120_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const LEASE_EXTENSION_MS = 120_000;
+const STALE_JOB_REAPER_INTERVAL_MS = 60_000;
+const DEDUP_TTL_MS = 60_000;
 
-function buildJobFingerprint(type: string, orgId: string, payload: any): string {
-  const { createHash } = require("crypto");
+const workerId = `worker-${randomBytes(8).toString("hex")}`;
+
+function buildJobFingerprint(type: string, orgId: string, payload: unknown): string {
   const data = JSON.stringify({ type, orgId, payload });
   return createHash("md5").update(data).digest("hex").slice(0, 16);
-}
-
-function isJobDuplicate(type: string, orgId: string, payload: any): boolean {
-  const fp = buildJobFingerprint(type, orgId, payload);
-  const lastSeen = recentJobFingerprints.get(fp);
-  if (lastSeen && Date.now() - lastSeen < JOB_DEDUP_WINDOW_MS) {
-    return true;
-  }
-  recentJobFingerprints.set(fp, Date.now());
-  if (recentJobFingerprints.size > 500) {
-    const now = Date.now();
-    for (const [key, ts] of Array.from(recentJobFingerprints)) {
-      if (now - ts > JOB_DEDUP_WINDOW_MS) recentJobFingerprints.delete(key);
-    }
-  }
-  return false;
 }
 
 const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
@@ -86,7 +76,6 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       }
       const beforeDate = job.payload?.beforeDate ? new Date(job.payload.beforeDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const reason = job.payload?.reason || "cold_storage";
-      const { sql } = await import("drizzle-orm");
       const oldAlerts = await db.execute(sql`SELECT id FROM alerts WHERE org_id = ${orgId} AND created_at < ${beforeDate}`);
       const alertIds = ((oldAlerts as any).rows || []).map((r: any) => r.id);
       if (alertIds.length > 0) {
@@ -106,7 +95,6 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         return { refreshed: false, error: "Missing orgId in job payload" };
       }
       const date = job.payload?.date || new Date().toISOString().split("T")[0];
-      const { sql } = await import("drizzle-orm");
       const result = await db.execute(sql`
         SELECT
           count(*) as total,
@@ -151,38 +139,159 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
 
 let workerRunning = false;
 let workerInterval: NodeJS.Timeout | null = null;
+let heartbeatInterval: NodeJS.Timeout | null = null;
+let reaperInterval: NodeJS.Timeout | null = null;
 const POLL_INTERVAL_MS = 5000;
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 4;
 let activeJobs = 0;
+const activeJobIds = new Set<string>();
+
+async function claimNextJobDistributed(): Promise<any | undefined> {
+  const lockedUntil = new Date(Date.now() + VISIBILITY_TIMEOUT_MS);
+  const result = await db.execute(sql`
+    UPDATE job_queue
+    SET status = 'running',
+        started_at = NOW(),
+        attempts = attempts + 1,
+        locked_by = ${workerId},
+        locked_until = ${lockedUntil}
+    WHERE id = (
+      SELECT id FROM job_queue
+      WHERE status = 'pending' AND run_at <= NOW()
+      ORDER BY priority DESC, run_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING *
+  `);
+  const rows = result.rows as any[];
+  if (!rows || rows.length === 0) return undefined;
+  const row = rows[0];
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    type: row.type,
+    status: row.status,
+    payload: row.payload,
+    result: row.result,
+    priority: row.priority,
+    runAt: row.run_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    lastError: row.last_error,
+    lockedBy: row.locked_by,
+    lockedUntil: row.locked_until,
+    fingerprint: row.fingerprint,
+    createdAt: row.created_at,
+  };
+}
+
+async function extendLease(jobId: string): Promise<boolean> {
+  const newLockedUntil = new Date(Date.now() + LEASE_EXTENSION_MS);
+  const result = await db.execute(sql`
+    UPDATE job_queue
+    SET locked_until = ${newLockedUntil}
+    WHERE id = ${jobId} AND locked_by = ${workerId} AND status = 'running'
+  `);
+  return (result as any).rowCount > 0;
+}
+
+async function runHeartbeats(): Promise<void> {
+  for (const jobId of Array.from(activeJobIds)) {
+    try {
+      const extended = await extendLease(jobId);
+      if (!extended) {
+        logger.child("job-queue").warn(`Heartbeat failed for job ${jobId} — lease lost`);
+        activeJobIds.delete(jobId);
+      }
+    } catch (err) {
+      logger.child("job-queue").error(`Heartbeat error for job ${jobId}`, { error: String(err) });
+    }
+  }
+}
+
+async function reapStaleJobs(): Promise<void> {
+  try {
+    const result = await db.execute(sql`
+      UPDATE job_queue
+      SET status = 'pending',
+          locked_by = NULL,
+          locked_until = NULL,
+          last_error = 'Lease expired — returned to queue'
+      WHERE status = 'running'
+        AND locked_until < NOW()
+        AND locked_until IS NOT NULL
+      RETURNING id
+    `);
+    const rows = (result as any).rows || [];
+    if (rows.length > 0) {
+      logger.child("job-queue").warn(`Reaped ${rows.length} stale jobs back to pending`, {
+        jobIds: rows.map((r: any) => r.id),
+      });
+    }
+  } catch (err) {
+    logger.child("job-queue").error("Stale job reaper error", { error: String(err) });
+  }
+}
+
+async function isDuplicateInDb(type: string, orgId: string, payload: unknown): Promise<boolean> {
+  const fp = buildJobFingerprint(type, orgId, payload);
+  const result = await db.execute(sql`
+    SELECT id FROM job_queue
+    WHERE fingerprint = ${fp}
+      AND fingerprint_expires_at > NOW()
+      AND status IN ('pending', 'running')
+    LIMIT 1
+  `);
+  const rows = (result as any).rows || [];
+  return rows.length > 0;
+}
 
 export function startJobWorker(): void {
   if (workerRunning) return;
   workerRunning = true;
 
-  logger.child("job-queue").info("Started - polling every 5s");
+  logger.child("job-queue").info(`Started distributed worker ${workerId} — polling every ${POLL_INTERVAL_MS}ms, max concurrency ${MAX_CONCURRENT}`);
 
   workerInterval = setInterval(async () => {
     if (activeJobs >= MAX_CONCURRENT) return;
 
     try {
-      const job = await storage.claimNextJob();
+      const job = await claimNextJobDistributed();
       if (!job) return;
 
       activeJobs++;
-      processJob(job).finally(() => { activeJobs--; });
+      activeJobIds.add(job.id);
+      processJob(job).finally(() => {
+        activeJobs--;
+        activeJobIds.delete(job.id);
+      });
     } catch (err) {
       logger.child("job-queue").error("Poll error:", { error: String(err) });
     }
   }, POLL_INTERVAL_MS);
+
+  heartbeatInterval = setInterval(() => {
+    runHeartbeats().catch((err) =>
+      logger.child("job-queue").error("Heartbeat sweep error", { error: String(err) })
+    );
+  }, HEARTBEAT_INTERVAL_MS);
+
+  reaperInterval = setInterval(() => {
+    reapStaleJobs().catch((err) =>
+      logger.child("job-queue").error("Reaper sweep error", { error: String(err) })
+    );
+  }, STALE_JOB_REAPER_INTERVAL_MS);
 }
 
 export function stopJobWorker(): void {
   workerRunning = false;
-  if (workerInterval) {
-    clearInterval(workerInterval);
-    workerInterval = null;
-  }
-  logger.child("job-queue").info("Stopped");
+  if (workerInterval) { clearInterval(workerInterval); workerInterval = null; }
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  if (reaperInterval) { clearInterval(reaperInterval); reaperInterval = null; }
+  logger.child("job-queue").info(`Stopped worker ${workerId}`);
 }
 
 async function processJob(job: any): Promise<void> {
@@ -192,30 +301,36 @@ async function processJob(job: any): Promise<void> {
       status: "failed",
       lastError: `Unknown job type: ${job.type}`,
       completedAt: new Date(),
-    });
+      lockedBy: null,
+      lockedUntil: null,
+    } as any);
     return;
   }
 
   try {
-    logger.child("job-queue").info(`Processing job ${job.id} (${job.type})`);
+    logger.child("job-queue").info(`Processing job ${job.id} (${job.type}) [worker=${workerId}]`);
     const result = await handler(job);
     await storage.updateJob(job.id, {
       status: "completed",
       result,
       completedAt: new Date(),
-    });
+      lockedBy: null,
+      lockedUntil: null,
+    } as any);
     logger.child("job-queue").info(`Completed job ${job.id}`);
   } catch (err: any) {
     const attempts = (job.attempts || 0);
-    const maxAttempts = job.maxAttempts || 3;
+    const maxAttempts = job.maxAttempts || DEAD_LETTER_MAX_ATTEMPTS;
 
     if (attempts >= maxAttempts) {
       await storage.updateJob(job.id, {
         status: "failed",
         lastError: err.message || String(err),
         completedAt: new Date(),
-      });
-      logger.child("job-queue").error(`[JobWorker] Job ${job.id} failed permanently after ${attempts} attempts`);
+        lockedBy: null,
+        lockedUntil: null,
+      } as any);
+      logger.child("job-queue").error(`Job ${job.id} failed permanently after ${attempts} attempts`);
     } else {
       const backoffMs = Math.min(60000, 1000 * Math.pow(2, attempts));
       const runAt = new Date(Date.now() + backoffMs);
@@ -223,19 +338,39 @@ async function processJob(job: any): Promise<void> {
         status: "pending",
         lastError: err.message || String(err),
         runAt,
-      });
+        lockedBy: null,
+        lockedUntil: null,
+      } as any);
       logger.child("job-queue").warn(`Job ${job.id} failed, retrying at ${runAt.toISOString()}`);
     }
   }
 }
 
-export function getWorkerStatus(): { running: boolean; activeJobs: number; pollIntervalMs: number } {
-  return { running: workerRunning, activeJobs, pollIntervalMs: POLL_INTERVAL_MS };
+export function getWorkerStatus(): {
+  running: boolean;
+  workerId: string;
+  activeJobs: number;
+  activeJobIds: string[];
+  pollIntervalMs: number;
+  maxConcurrent: number;
+  visibilityTimeoutMs: number;
+} {
+  return {
+    running: workerRunning,
+    workerId,
+    activeJobs,
+    activeJobIds: Array.from(activeJobIds),
+    pollIntervalMs: POLL_INTERVAL_MS,
+    maxConcurrent: MAX_CONCURRENT,
+    visibilityTimeoutMs: VISIBILITY_TIMEOUT_MS,
+  };
 }
 
 export async function enqueueJob(type: string, orgId: string, payload: any, priority?: number): Promise<any> {
-  if (isJobDuplicate(type, orgId, payload)) {
-    logger.child("job-queue").info(`Dedup: skipping duplicate job ${type} for org ${orgId}`);
+  const fp = buildJobFingerprint(type, orgId, payload);
+  const isDuplicate = await isDuplicateInDb(type, orgId, payload);
+  if (isDuplicate) {
+    logger.child("job-queue").info(`Dedup: skipping duplicate job ${type} for org ${orgId} (fingerprint=${fp})`);
     return null;
   }
   return storage.createJob({
@@ -247,10 +382,13 @@ export async function enqueueJob(type: string, orgId: string, payload: any, prio
     runAt: new Date(),
     attempts: 0,
     maxAttempts: DEAD_LETTER_MAX_ATTEMPTS,
-  });
+    fingerprint: fp,
+    fingerprintExpiresAt: new Date(Date.now() + DEDUP_TTL_MS),
+  } as any);
 }
 
 export async function scheduleJob(type: string, orgId: string, payload: any, runAt: Date, priority?: number): Promise<any> {
+  const fp = buildJobFingerprint(type, orgId, payload);
   return storage.createJob({
     orgId,
     type,
@@ -260,7 +398,9 @@ export async function scheduleJob(type: string, orgId: string, payload: any, run
     runAt,
     attempts: 0,
     maxAttempts: DEAD_LETTER_MAX_ATTEMPTS,
-  });
+    fingerprint: fp,
+    fingerprintExpiresAt: new Date(runAt.getTime() + DEDUP_TTL_MS),
+  } as any);
 }
 
 export async function getDeadLetterJobs(): Promise<any[]> {
@@ -275,5 +415,18 @@ export async function retryDeadLetterJob(jobId: string): Promise<any> {
     attempts: 0,
     lastError: null,
     runAt: new Date(),
-  });
+    lockedBy: null,
+    lockedUntil: null,
+  } as any);
+}
+
+export async function cleanupExpiredFingerprints(): Promise<number> {
+  const result = await db.execute(sql`
+    UPDATE job_queue
+    SET fingerprint = NULL, fingerprint_expires_at = NULL
+    WHERE fingerprint IS NOT NULL
+      AND fingerprint_expires_at < NOW()
+      AND status IN ('completed', 'failed')
+  `);
+  return (result as any).rowCount || 0;
 }
