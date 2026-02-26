@@ -35,19 +35,18 @@ async function acquireProviderSlot(provider: string): Promise<void> {
       providerWaiters.set(provider, waiters);
     }
     waiters.push(() => {
-      providerActiveCount.set(provider, (providerActiveCount.get(provider) ?? 0) + 1);
       resolve();
     });
   });
 }
 
 function releaseProviderSlot(provider: string): void {
-  const active = providerActiveCount.get(provider) ?? 1;
   const waiters = providerWaiters.get(provider);
   if (waiters && waiters.length > 0) {
     const next = waiters.shift()!;
     next();
   } else {
+    const active = providerActiveCount.get(provider) ?? 1;
     providerActiveCount.set(provider, Math.max(0, active - 1));
   }
 }
@@ -1846,10 +1845,15 @@ function classifyError(errorMessage: string): { errorType: string; throttled: bo
   return { errorType, throttled, httpStatus };
 }
 
+export interface SyncWithRetryResult {
+  jobRun: ConnectorJobRun;
+  syncResult: SyncResult;
+}
+
 export async function syncConnectorWithRetry(
   connector: Connector,
   maxAttempts: number = 3
-): Promise<ConnectorJobRun> {
+): Promise<SyncWithRetryResult> {
   const startTime = Date.now();
   const fetchWindowStart = connector.lastSyncAt ?? undefined;
   const fetchWindowEnd = new Date();
@@ -1869,16 +1873,19 @@ export async function syncConnectorWithRetry(
   });
 
   let currentAttempt = 1;
-  let lastError: Error | null = null;
+  let lastErrorMessage = "Unknown error";
 
   while (currentAttempt <= maxAttempts) {
-    try {
-      const syncResult = await syncConnector(connector);
+    const syncResult = await syncConnector(connector);
 
+    const isCompleteFail = syncResult.errors.length > 0 && syncResult.alertsReceived === 0;
+
+    if (!isCompleteFail) {
       const latencyMs = Date.now() - startTime;
+      const status = syncResult.errors.length > 0 ? "partial" : "success";
 
       const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
-        status: "success",
+        status,
         attempt: currentAttempt,
         alertsReceived: syncResult.alertsReceived,
         alertsCreated: syncResult.alertsCreated,
@@ -1890,62 +1897,68 @@ export async function syncConnectorWithRetry(
         completedAt: new Date(),
       });
 
-      return updatedJobRun;
-    } catch (err: any) {
-      lastError = err;
-      const errorMessage = err.message || String(err);
-      const { errorType, throttled, httpStatus } = classifyError(errorMessage);
+      return { jobRun: updatedJobRun, syncResult };
+    }
 
-      if (throttled) {
-        applyProviderBackoff(connector.type);
-      }
+    lastErrorMessage = syncResult.errors[0] || "Unknown error";
+    const { errorType, throttled, httpStatus } = classifyError(lastErrorMessage);
 
-      if (currentAttempt >= maxAttempts) {
-        const latencyMs = Date.now() - startTime;
-        return await storage.updateConnectorJobRun(jobRun.id, {
-          status: "failed",
-          attempt: currentAttempt,
-          latencyMs,
-          errorMessage,
-          errorType,
-          httpStatus,
-          throttled,
-          isDeadLetter: true,
-          completedAt: new Date(),
-        });
-      }
+    if (throttled) {
+      applyProviderBackoff(connector.type);
+    }
 
-      const backoffSeconds = Math.pow(2, currentAttempt);
-      const nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
-      logger.child("connector-engine").warn(`Sync failed on attempt ${currentAttempt}/${maxAttempts}`, {
-        connectorId: connector.id, errorType, backoffSeconds, error: errorMessage,
-      });
-
-      await storage.updateConnectorJobRun(jobRun.id, {
-        attempt: currentAttempt + 1,
-        errorMessage,
+    if (currentAttempt >= maxAttempts) {
+      const latencyMs = Date.now() - startTime;
+      const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
+        status: "failed",
+        attempt: currentAttempt,
+        latencyMs,
+        errorMessage: lastErrorMessage,
         errorType,
         httpStatus,
         throttled,
-        backoffSeconds,
-        nextRetryAt,
-        retryStrategy: "exponential",
+        isDeadLetter: true,
+        completedAt: new Date(),
       });
 
-      currentAttempt++;
+      return { jobRun: updatedJobRun, syncResult };
     }
+
+    const backoffSeconds = Math.pow(2, currentAttempt);
+    const nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
+    logger.child("connector-engine").warn(`Sync failed on attempt ${currentAttempt}/${maxAttempts}`, {
+      connectorId: connector.id, errorType, backoffSeconds, error: lastErrorMessage,
+    });
+
+    await storage.updateConnectorJobRun(jobRun.id, {
+      attempt: currentAttempt + 1,
+      errorMessage: lastErrorMessage,
+      errorType,
+      httpStatus,
+      throttled,
+      backoffSeconds,
+      nextRetryAt,
+      retryStrategy: "exponential",
+    });
+
+    currentAttempt++;
   }
 
   const latencyMs = Date.now() - startTime;
-  return await storage.updateConnectorJobRun(jobRun.id, {
+  const finalJobRun = await storage.updateConnectorJobRun(jobRun.id, {
     status: "failed",
     attempt: currentAttempt - 1,
     latencyMs,
-    errorMessage: lastError?.message || "Unknown error",
+    errorMessage: lastErrorMessage,
     errorType: "api_error",
     isDeadLetter: true,
     completedAt: new Date(),
   });
+
+  return {
+    jobRun: finalJobRun,
+    syncResult: { alertsReceived: 0, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 0, errors: [lastErrorMessage], rawAlerts: [] },
+  };
 }
 
 export async function syncConnectorsBatch(
@@ -1960,8 +1973,8 @@ export async function syncConnectorsBatch(
       const connector = connectors[idx++];
       if (!connector) break;
       try {
-        const result = await syncConnectorWithRetry(connector);
-        results.push(result);
+        const { jobRun } = await syncConnectorWithRetry(connector);
+        results.push(jobRun);
       } catch (err: any) {
         logger.child("connector-engine").error(`Batch sync failed for connector ${connector.id}`, { error: err.message });
       }
