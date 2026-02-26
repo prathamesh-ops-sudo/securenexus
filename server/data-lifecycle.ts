@@ -73,11 +73,34 @@ const ALLOWED_TABLES: ReadonlySet<string> = new Set([
   "jobs", "connector_job_runs", "outbox_events", "ingestion_logs",
 ]);
 
+const ALLOWED_COLUMNS: Record<string, ReadonlySet<string>> = {
+  alerts: new Set(["id", "org_id", "title", "description", "severity", "status", "source", "created_at", "updated_at", "assigned_to", "tags", "raw_data", "connector_id", "external_id", "mitre_tactics", "mitre_techniques", "entity_ids", "confidence_score", "first_seen", "last_seen"]),
+  incidents: new Set(["id", "org_id", "title", "description", "severity", "status", "created_at", "updated_at", "assigned_to", "alert_ids", "tags", "timeline", "root_cause", "resolution", "priority", "category", "sla_breach", "closed_at"]),
+  audit_logs: new Set(["id", "org_id", "user_id", "user_name", "action", "resource_type", "resource_id", "details", "ip_address", "user_agent", "created_at"]),
+  sli_metrics: new Set(["id", "org_id", "metric_name", "value", "unit", "tags", "recorded_at", "created_at", "window_start", "window_end", "p50", "p95", "p99", "error_rate", "request_count"]),
+  jobs: new Set(["id", "org_id", "type", "status", "payload", "result", "error", "attempts", "max_attempts", "priority", "created_at", "updated_at", "started_at", "completed_at", "locked_by", "locked_at", "scheduled_for"]),
+  connector_job_runs: new Set(["id", "org_id", "connector_id", "status", "started_at", "completed_at", "records_fetched", "records_created", "error", "created_at", "duration_ms", "checkpoint"]),
+  outbox_events: new Set(["id", "org_id", "event_type", "payload", "status", "created_at", "published_at", "attempts", "last_error", "aggregate_id", "aggregate_type"]),
+  ingestion_logs: new Set(["id", "org_id", "source", "status", "records_received", "records_accepted", "records_rejected", "errors", "created_at", "duration_ms", "connector_id", "batch_id"]),
+};
+
 function validateTableName(dataType: DataType): string {
   if (!ALLOWED_TABLES.has(dataType)) {
     throw new Error(`Invalid data type: ${dataType}`);
   }
   return dataType;
+}
+
+function validateColumnNames(tableName: string, columns: string[]): string[] {
+  const allowedCols = ALLOWED_COLUMNS[tableName];
+  if (!allowedCols) {
+    throw new Error(`No column allowlist for table: ${tableName}`);
+  }
+  const validColumns = columns.filter((col) => allowedCols.has(col));
+  if (validColumns.length === 0) {
+    throw new Error(`No valid columns found for table ${tableName}`);
+  }
+  return validColumns;
 }
 
 const BATCH_SIZE = 500;
@@ -266,22 +289,28 @@ export async function rehydrateFromColdStorage(
     }
 
     const tableName = validateTableName(dataType);
+    const rawColumns = Object.keys(records[0]);
+    const validColumns = validateColumnNames(tableName, rawColumns);
+    if (validColumns.length < rawColumns.length) {
+      const dropped = rawColumns.filter((c) => !validColumns.includes(c));
+      log.warn("Dropped disallowed columns from rehydration", { tableName, dropped });
+    }
+
     let insertedCount = 0;
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const batch = records.slice(i, i + BATCH_SIZE);
       try {
-        const columns = Object.keys(batch[0]);
-        const values = batch.map((row: Record<string, unknown>) =>
-          `(${columns.map((col) => {
+        const columnsSql = validColumns.map((c) => sql.identifier(c));
+        for (const row of batch) {
+          const vals = validColumns.map((col) => {
             const val = row[col];
-            if (val === null || val === undefined) return "NULL";
-            if (typeof val === "number" || typeof val === "boolean") return String(val);
-            return `'${String(val).replace(/'/g, "''")}'`;
-          }).join(", ")})`
-        ).join(", ");
-        await db.execute(
-          sql.raw(`INSERT INTO ${tableName} (${columns.map((c) => `"${c}"`).join(", ")}) VALUES ${values} ON CONFLICT (id) DO NOTHING`)
-        );
+            if (val === null || val === undefined) return sql`NULL`;
+            return sql`${String(val)}`;
+          });
+          await db.execute(
+            sql`INSERT INTO ${sql.identifier(tableName)} (${sql.join(columnsSql, sql`, `)}) VALUES (${sql.join(vals, sql`, `)}) ON CONFLICT (id) DO NOTHING`
+          );
+        }
         insertedCount += batch.length;
       } catch (insertErr) {
         result.errors.push(`Failed to insert batch starting at index ${i}: ${String(insertErr)}`);

@@ -37,15 +37,28 @@ export async function deleteFile(key: string) {
 }
 
 export async function listFiles(prefix?: string) {
-  const command = new ListObjectsV2Command({
-    Bucket: BUCKET_NAME,
-    Prefix: prefix || undefined,
-  });
-  const result = await s3Client.send(command);
-  return (result.Contents || []).map((item) => ({
-    key: item.Key,
-    size: item.Size,
-    lastModified: item.LastModified,
-    etag: item.ETag,
-  }));
+  const allItems: Array<{ key: string | undefined; size: number | undefined; lastModified: Date | undefined; etag: string | undefined }> = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: prefix || undefined,
+      ContinuationToken: continuationToken,
+    });
+    const result = await s3Client.send(command);
+    if (result.Contents) {
+      allItems.push(
+        ...result.Contents.map((item) => ({
+          key: item.Key,
+          size: item.Size,
+          lastModified: item.LastModified,
+          etag: item.ETag,
+        })),
+      );
+    }
+    continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return allItems;
 }
