@@ -61,7 +61,7 @@ const SENSITIVE_KEYS = new Set([
   "password", "secret", "token", "authorization", "cookie",
   "apikey", "api_key", "x-api-key", "webhooksecret", "sessionsecret",
   "databaseurl", "database_url", "accesskeyid", "secretaccesskey",
-  "clientsecret", "clientid", "refreshtoken", "privatekey", "private_key",
+  "clientsecret", "refreshtoken", "privatekey", "private_key",
   "credentials", "connectionstring", "connection_string",
 ]);
 
