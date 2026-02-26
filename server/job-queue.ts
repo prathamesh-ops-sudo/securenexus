@@ -216,20 +216,30 @@ async function reapStaleJobs(): Promise<void> {
   try {
     const result = await db.execute(sql`
       UPDATE job_queue
-      SET status = 'pending',
+      SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
           locked_by = NULL,
           locked_until = NULL,
-          last_error = 'Lease expired — returned to queue'
+          last_error = CASE WHEN attempts >= max_attempts THEN 'Lease expired — max attempts exhausted' ELSE 'Lease expired — returned to queue' END,
+          completed_at = CASE WHEN attempts >= max_attempts THEN NOW() ELSE completed_at END
       WHERE status = 'running'
         AND locked_until < NOW()
         AND locked_until IS NOT NULL
-      RETURNING id
+      RETURNING id, status
     `);
     const rows = (result as any).rows || [];
     if (rows.length > 0) {
-      logger.child("job-queue").warn(`Reaped ${rows.length} stale jobs back to pending`, {
-        jobIds: rows.map((r: any) => r.id),
-      });
+      const reaped = rows.filter((r: any) => r.status === "pending");
+      const deadLettered = rows.filter((r: any) => r.status === "failed");
+      if (reaped.length > 0) {
+        logger.child("job-queue").warn(`Reaped ${reaped.length} stale jobs back to pending`, {
+          jobIds: reaped.map((r: any) => r.id),
+        });
+      }
+      if (deadLettered.length > 0) {
+        logger.child("job-queue").error(`Dead-lettered ${deadLettered.length} jobs — max attempts exhausted`, {
+          jobIds: deadLettered.map((r: any) => r.id),
+        });
+      }
     }
   } catch (err) {
     logger.child("job-queue").error("Stale job reaper error", { error: String(err) });
@@ -297,51 +307,75 @@ export function stopJobWorker(): void {
 async function processJob(job: any): Promise<void> {
   const handler = JOB_HANDLERS[job.type];
   if (!handler) {
-    await storage.updateJob(job.id, {
-      status: "failed",
-      lastError: `Unknown job type: ${job.type}`,
-      completedAt: new Date(),
-      lockedBy: null,
-      lockedUntil: null,
-    } as any);
+    const res = await db.execute(sql`
+      UPDATE job_queue
+      SET status = 'failed',
+          last_error = ${`Unknown job type: ${job.type}`},
+          completed_at = NOW(),
+          locked_by = NULL,
+          locked_until = NULL
+      WHERE id = ${job.id} AND locked_by = ${workerId}
+    `);
+    if ((res as any).rowCount === 0) {
+      logger.child("job-queue").warn(`Lease lost for job ${job.id} — skipping failed update`);
+    }
     return;
   }
 
   try {
     logger.child("job-queue").info(`Processing job ${job.id} (${job.type}) [worker=${workerId}]`);
     const result = await handler(job);
-    await storage.updateJob(job.id, {
-      status: "completed",
-      result,
-      completedAt: new Date(),
-      lockedBy: null,
-      lockedUntil: null,
-    } as any);
-    logger.child("job-queue").info(`Completed job ${job.id}`);
+    const res = await db.execute(sql`
+      UPDATE job_queue
+      SET status = 'completed',
+          result = ${JSON.stringify(result)}::jsonb,
+          completed_at = NOW(),
+          locked_by = NULL,
+          locked_until = NULL
+      WHERE id = ${job.id} AND locked_by = ${workerId}
+    `);
+    if ((res as any).rowCount === 0) {
+      logger.child("job-queue").warn(`Lease lost for job ${job.id} — completed result discarded`);
+    } else {
+      logger.child("job-queue").info(`Completed job ${job.id}`);
+    }
   } catch (err: any) {
     const attempts = (job.attempts || 0);
     const maxAttempts = job.maxAttempts || DEAD_LETTER_MAX_ATTEMPTS;
+    const errorMsg = err.message || String(err);
 
     if (attempts >= maxAttempts) {
-      await storage.updateJob(job.id, {
-        status: "failed",
-        lastError: err.message || String(err),
-        completedAt: new Date(),
-        lockedBy: null,
-        lockedUntil: null,
-      } as any);
-      logger.child("job-queue").error(`Job ${job.id} failed permanently after ${attempts} attempts`);
+      const res = await db.execute(sql`
+        UPDATE job_queue
+        SET status = 'failed',
+            last_error = ${errorMsg},
+            completed_at = NOW(),
+            locked_by = NULL,
+            locked_until = NULL
+        WHERE id = ${job.id} AND locked_by = ${workerId}
+      `);
+      if ((res as any).rowCount === 0) {
+        logger.child("job-queue").warn(`Lease lost for job ${job.id} — failed update discarded`);
+      } else {
+        logger.child("job-queue").error(`Job ${job.id} failed permanently after ${attempts} attempts`);
+      }
     } else {
       const backoffMs = Math.min(60000, 1000 * Math.pow(2, attempts));
       const runAt = new Date(Date.now() + backoffMs);
-      await storage.updateJob(job.id, {
-        status: "pending",
-        lastError: err.message || String(err),
-        runAt,
-        lockedBy: null,
-        lockedUntil: null,
-      } as any);
-      logger.child("job-queue").warn(`Job ${job.id} failed, retrying at ${runAt.toISOString()}`);
+      const res = await db.execute(sql`
+        UPDATE job_queue
+        SET status = 'pending',
+            last_error = ${errorMsg},
+            run_at = ${runAt},
+            locked_by = NULL,
+            locked_until = NULL
+        WHERE id = ${job.id} AND locked_by = ${workerId}
+      `);
+      if ((res as any).rowCount === 0) {
+        logger.child("job-queue").warn(`Lease lost for job ${job.id} — retry update discarded`);
+      } else {
+        logger.child("job-queue").warn(`Job ${job.id} failed, retrying at ${runAt.toISOString()}`);
+      }
     }
   }
 }
@@ -389,6 +423,11 @@ export async function enqueueJob(type: string, orgId: string, payload: any, prio
 
 export async function scheduleJob(type: string, orgId: string, payload: any, runAt: Date, priority?: number): Promise<any> {
   const fp = buildJobFingerprint(type, orgId, payload);
+  const isDuplicate = await isDuplicateInDb(type, orgId, payload);
+  if (isDuplicate) {
+    logger.child("job-queue").info(`Dedup: skipping duplicate scheduled job ${type} for org ${orgId} (fingerprint=${fp})`);
+    return null;
+  }
   return storage.createJob({
     orgId,
     type,
