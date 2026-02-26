@@ -1,0 +1,53 @@
+import type { Express } from "express";
+import { generalLimiter } from "./shared";
+import { registerHealthRoutes } from "./health";
+import { registerDashboardRoutes } from "./dashboard";
+import { registerAlertsRoutes } from "./alerts";
+import { registerIncidentsRoutes } from "./incidents";
+import { registerConnectorsRoutes } from "./connectors";
+import { registerAiRoutes } from "./ai";
+import { registerComplianceRoutes } from "./compliance";
+import { registerEntitiesRoutes } from "./entities";
+import { registerPlaybooksRoutes } from "./playbooks";
+import { registerIngestionRoutes } from "./ingestion";
+import { registerOperationsRoutes } from "./operations";
+import { registerAdminRoutes } from "./admin";
+import { registerIntegrationsRoutes } from "./integrations";
+import { registerCommercialRoutes } from "./commercial";
+import { registerWebhooksRoutes } from "./webhooks";
+import { registerReportsRoutes } from "./reports";
+import { registerThreatIntelRoutes } from "./threat-intel";
+import { registerEndpointsRoutes } from "./endpoints";
+import { registerInvestigationsRoutes } from "./investigations";
+import { registerOrgsRoutes } from "./orgs";
+import { registerOnboardingRoutes } from "./onboarding";
+import { registerEventsRoutes } from "./events";
+import { registerFilesRoutes } from "./files";
+
+export function registerAllDomainRoutes(app: Express): void {
+  app.use("/api/", generalLimiter);
+
+  registerHealthRoutes(app);
+  registerDashboardRoutes(app);
+  registerAlertsRoutes(app);
+  registerOnboardingRoutes(app);
+  registerIncidentsRoutes(app);
+  registerConnectorsRoutes(app);
+  registerAiRoutes(app);
+  registerIngestionRoutes(app);
+  registerEntitiesRoutes(app);
+  registerPlaybooksRoutes(app);
+  registerReportsRoutes(app);
+  registerEventsRoutes(app);
+  registerThreatIntelRoutes(app);
+  registerComplianceRoutes(app);
+  registerIntegrationsRoutes(app);
+  registerEndpointsRoutes(app);
+  registerInvestigationsRoutes(app);
+  registerOperationsRoutes(app);
+  registerAdminRoutes(app);
+  registerOrgsRoutes(app);
+  registerCommercialRoutes(app);
+  registerWebhooksRoutes(app);
+  registerFilesRoutes(app);
+}
