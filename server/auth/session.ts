@@ -30,10 +30,7 @@ export async function comparePasswords(
   return timingSafeEqual(Buffer.from(hashedPassword, "hex"), buf);
 }
 
-const PRODUCTION_ENVS = new Set(["production", "staging", "uat"]);
-
 export function getSession() {
-  const isProduction = PRODUCTION_ENVS.has(config.nodeEnv);
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
