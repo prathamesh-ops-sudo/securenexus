@@ -115,6 +115,7 @@
     "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^9.39.3",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/typography": "^0.5.15",
@@ -131,6 +132,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.20",
+    "axe-core": "^4.11.1",
     "drizzle-kit": "^0.31.8",
     "esbuild": "^0.25.0",
     "eslint": "^9.39.3",

@@ -312,7 +312,7 @@ export default function AIEnginePage() {
     : "—";
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="AI Correlation Engine">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" aria-label="AI Correlation Engine">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2">

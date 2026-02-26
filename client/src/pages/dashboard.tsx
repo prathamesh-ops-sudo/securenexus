@@ -29,6 +29,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { GuidedWorkflowBanner } from "@/components/guided-workflow";
 import {
   ResponsiveContainer,
   PieChart,
@@ -1005,9 +1006,10 @@ export default function Dashboard() {
   }, [isWidgetVisible]);
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-2rem)]" role="main" aria-label="Security Operations Dashboard">
+    <div className="flex flex-col min-h-[calc(100vh-2rem)]" aria-label="Security Operations Dashboard">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
         <AnomalyBanners stats={stats} />
+        <GuidedWorkflowBanner />
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

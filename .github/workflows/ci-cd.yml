@@ -156,6 +156,31 @@ jobs:
             echo "No hardcoded secrets detected."
           fi
 
+  a11y-audit:
+    name: Accessibility Audit
+    if: github.event_name == 'pull_request'
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run a11y tests
+        run: npx playwright test e2e/a11y.spec.ts --reporter=list 2>&1 || true
+
   unit-tests:
     name: Unit Tests
     needs: lint-and-typecheck
