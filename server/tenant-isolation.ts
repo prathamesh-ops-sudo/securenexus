@@ -11,6 +11,7 @@ export type PlanTier = "free" | "pro" | "enterprise";
 
 export interface TenantIsolationConfig {
   orgId: string;
+  planTier: PlanTier;
   isolationLevel: IsolationLevel;
   dedicatedDbUrl?: string;
   dedicatedSchema?: string;
@@ -31,11 +32,25 @@ const tenantConfigs = new Map<string, TenantIsolationConfig>();
 
 export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free"): TenantIsolationConfig {
   const existing = tenantConfigs.get(orgId);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.planTier !== plan) {
+      const previousPlan = existing.planTier;
+      const newDefaults = PLAN_ISOLATION_DEFAULTS[plan];
+      existing.planTier = plan;
+      existing.connectionPoolSize = newDefaults.connectionPoolSize;
+      existing.maxConnectionsPerOrg = newDefaults.maxConnectionsPerOrg;
+      existing.isolationLevel = newDefaults.isolationLevel;
+      existing.resourceGroup = plan === "enterprise" ? "dedicated" : "shared";
+      existing.lastAssessedAt = new Date().toISOString();
+      log.info("Tenant config updated due to plan change", { orgId, oldPlan: previousPlan, newPlan: plan });
+    }
+    return existing;
+  }
 
   const defaults = PLAN_ISOLATION_DEFAULTS[plan];
   const config: TenantIsolationConfig = {
     orgId,
+    planTier: plan,
     isolationLevel: defaults.isolationLevel,
     connectionPoolSize: defaults.connectionPoolSize,
     maxConnectionsPerOrg: defaults.maxConnectionsPerOrg,
@@ -48,8 +63,8 @@ export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free")
   return config;
 }
 
-export function setTenantIsolationConfig(orgId: string, updates: Partial<TenantIsolationConfig>): TenantIsolationConfig {
-  const current = tenantConfigs.get(orgId) || getTenantIsolationConfig(orgId);
+export function setTenantIsolationConfig(orgId: string, updates: Partial<TenantIsolationConfig>, plan: PlanTier = "free"): TenantIsolationConfig {
+  const current = tenantConfigs.get(orgId) || getTenantIsolationConfig(orgId, plan);
   const updated: TenantIsolationConfig = {
     ...current,
     ...updates,
@@ -167,7 +182,7 @@ export interface SchemaIsolationStatus {
   created: boolean;
 }
 
-export async function provisionDedicatedSchema(orgId: string): Promise<SchemaIsolationStatus> {
+export async function provisionDedicatedSchema(orgId: string, plan: PlanTier = "enterprise"): Promise<SchemaIsolationStatus> {
   const schemaName = `org_${orgId.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 
   try {
@@ -196,7 +211,7 @@ export async function provisionDedicatedSchema(orgId: string): Promise<SchemaIso
       isolationLevel: "dedicated-schema",
       dedicatedSchema: schemaName,
       resourceGroup: "dedicated",
-    });
+    }, plan);
 
     log.info("Dedicated schema provisioned", { orgId, schemaName, tableCount });
 
@@ -248,7 +263,7 @@ export interface DedicatedInstanceConfig {
 
 const dedicatedInstances = new Map<string, DedicatedInstanceConfig>();
 
-export function registerDedicatedInstance(orgId: string, instanceConfig: Omit<DedicatedInstanceConfig, "orgId" | "provisionedAt">): DedicatedInstanceConfig {
+export function registerDedicatedInstance(orgId: string, instanceConfig: Omit<DedicatedInstanceConfig, "orgId" | "provisionedAt">, plan: PlanTier = "enterprise"): DedicatedInstanceConfig {
   const config: DedicatedInstanceConfig = {
     ...instanceConfig,
     orgId,
@@ -261,7 +276,7 @@ export function registerDedicatedInstance(orgId: string, instanceConfig: Omit<De
     isolationLevel: "dedicated-instance",
     dedicatedDbUrl: `postgresql://${instanceConfig.endpoint}:${instanceConfig.port}`,
     resourceGroup: "dedicated-instance",
-  });
+  }, plan);
 
   log.info("Dedicated RDS instance registered", { orgId, instanceIdentifier: instanceConfig.instanceIdentifier });
   return config;
