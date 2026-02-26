@@ -44,6 +44,7 @@ import {
 } from "./api-response";
 import { logger } from "./logger";
 import { getIndexHitRates, getTableScanStats, getUnusedIndexes, getCacheHitRatio, getRecentSlowQueries, PERFORMANCE_BUDGETS, parsePaginationParams } from "./db-performance";
+import { applyCsrfProtection, getCsrfEndpointHandler } from "./security-middleware";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -265,6 +266,10 @@ export async function registerRoutes(
 
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  applyCsrfProtection(app);
+
+  app.get("/api/csrf-token", getCsrfEndpointHandler);
 
   const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

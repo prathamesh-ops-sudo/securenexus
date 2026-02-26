@@ -18,6 +18,10 @@ export const ERROR_CODES = {
   ORG_ACCESS_DENIED:        "ORG_ACCESS_DENIED",
   ORG_MEMBERSHIP_REQUIRED:  "ORG_MEMBERSHIP_REQUIRED",
 
+  // CSRF
+  CSRF_MISSING:             "CSRF_MISSING",
+  CSRF_INVALID:             "CSRF_INVALID",
+
   // Client errors
   BAD_REQUEST:              "BAD_REQUEST",
   NOT_FOUND:                "NOT_FOUND",
