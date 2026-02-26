@@ -335,14 +335,10 @@ async function fetchPaloAlto(config: ConnectorConfig, since?: Date): Promise<any
 
 async function fetchGuardDuty(config: ConnectorConfig, since?: Date): Promise<any[]> {
   const { GuardDutyClient, ListDetectorsCommand, ListFindingsCommand, GetFindingsCommand } = await import("@aws-sdk/client-guardduty");
-  const resolvedAccessKeyId = config.accessKeyId || appConfig.aws.accessKeyId;
-  const resolvedSecretAccessKey = config.secretAccessKey || appConfig.aws.secretAccessKey;
-  const client = new GuardDutyClient({
-    region: config.region || "us-east-1",
-    ...(resolvedAccessKeyId && resolvedSecretAccessKey
-      ? { credentials: { accessKeyId: resolvedAccessKeyId, secretAccessKey: resolvedSecretAccessKey } }
-      : {}),
-  });
+  const { getConnectorAwsClientConfig } = await import("./aws-credentials");
+  const client = new GuardDutyClient(
+    getConnectorAwsClientConfig(config.region, config.accessKeyId, config.secretAccessKey) as any,
+  );
   const detectorsRes = await client.send(new ListDetectorsCommand({}));
   const detectorId = detectorsRes.DetectorIds?.[0];
   if (!detectorId) return [];
@@ -1576,14 +1572,10 @@ export async function testConnector(type: string, config: ConnectorConfig): Prom
       }
       case "guardduty": {
         const { GuardDutyClient, ListDetectorsCommand } = await import("@aws-sdk/client-guardduty");
-        const gdAccessKeyId = config.accessKeyId || appConfig.aws.accessKeyId;
-        const gdSecretAccessKey = config.secretAccessKey || appConfig.aws.secretAccessKey;
-        const client = new GuardDutyClient({
-          region: config.region || "us-east-1",
-          ...(gdAccessKeyId && gdSecretAccessKey
-            ? { credentials: { accessKeyId: gdAccessKeyId, secretAccessKey: gdSecretAccessKey } }
-            : {}),
-        });
+        const { getConnectorAwsClientConfig } = await import("./aws-credentials");
+        const client = new GuardDutyClient(
+          getConnectorAwsClientConfig(config.region, config.accessKeyId, config.secretAccessKey) as any,
+        );
         const res = await client.send(new ListDetectorsCommand({}));
         if (!res.DetectorIds?.length) throw new Error("No GuardDuty detectors found");
         break;

@@ -46,6 +46,8 @@ const SECRET_REGISTRY: SecretEntry[] = [
     rotationIntervalDays: 90,
     owner: "infra-team",
     verifyFn: async () => {
+      const { getCredentialMode } = await import("./aws-credentials");
+      if (getCredentialMode() === "irsa") return true;
       return !config.aws.accessKeyId || config.aws.accessKeyId.startsWith("AKIA");
     },
   },
@@ -55,6 +57,10 @@ const SECRET_REGISTRY: SecretEntry[] = [
     lastRotated: null,
     rotationIntervalDays: 90,
     owner: "infra-team",
+    verifyFn: async () => {
+      const { getCredentialMode } = await import("./aws-credentials");
+      return getCredentialMode() === "irsa" || !!config.aws.secretAccessKey;
+    },
   },
   {
     name: "GOOGLE_CLIENT_SECRET",
@@ -179,6 +185,12 @@ export function getRotationRunbook(secretName: string): string {
       "6. Update the lastRotated date in the secret registry",
     ].join("\n"),
     AWS_ACCESS_KEY_ID: [
+      "PREFERRED: Migrate to IRSA (IAM Roles for Service Accounts) and remove static keys entirely.",
+      "  - Annotate the K8s ServiceAccount with eks.amazonaws.com/role-arn",
+      "  - Remove AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from Secrets Manager",
+      "  - The SDK credential chain will automatically use the pod's IRSA role",
+      "",
+      "LEGACY (if still using static keys):",
       "1. Create a new IAM access key for the service account in AWS Console",
       "2. Update AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Secrets Manager",
       "3. Deploy with rolling restart",
@@ -189,6 +201,7 @@ export function getRotationRunbook(secretName: string): string {
     ].join("\n"),
     AWS_SECRET_ACCESS_KEY: [
       "Same runbook as AWS_ACCESS_KEY_ID — these must be rotated together.",
+      "Prefer IRSA migration over key rotation.",
     ].join("\n"),
     GOOGLE_CLIENT_SECRET: [
       "1. Go to Google Cloud Console > APIs & Services > Credentials",

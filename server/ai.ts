@@ -7,20 +7,11 @@ import { getEnrichmentForEntity } from "./threat-enrichment";
 import { getCachedOsintIndicators } from "./osint-feeds";
 import { config as appConfig } from "./config";
 import { logger } from "./logger";
+import { getAwsClientConfig } from "./aws-credentials";
 
-const awsCredentials = appConfig.aws.accessKeyId && appConfig.aws.secretAccessKey
-  ? { accessKeyId: appConfig.aws.accessKeyId, secretAccessKey: appConfig.aws.secretAccessKey }
-  : undefined;
+const bedrockClient = new BedrockRuntimeClient(getAwsClientConfig());
 
-const bedrockClient = new BedrockRuntimeClient({
-  region: appConfig.aws.region,
-  ...(awsCredentials ? { credentials: awsCredentials } : {}),
-});
-
-const sagemakerClient = new SageMakerRuntimeClient({
-  region: appConfig.aws.region,
-  ...(awsCredentials ? { credentials: awsCredentials } : {}),
-});
+const sagemakerClient = new SageMakerRuntimeClient(getAwsClientConfig());
 
 type ModelBackend = "bedrock" | "sagemaker";
 
@@ -121,7 +112,7 @@ async function invokeBedrock(systemPrompt: string, userMessage: string, maxToken
     return outputContent[0].text || "";
   } catch (error: any) {
     if (error.name === "AccessDeniedException" || error.name === "UnrecognizedClientException") {
-      throw new Error("AWS credentials are invalid or lack Bedrock access. Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY have bedrock:InvokeModel permission.");
+      throw new Error("AWS credentials are invalid or lack Bedrock access. Verify IAM role has bedrock:InvokeModel permission.");
     }
     if (error.name === "ResourceNotFoundException" || error.name === "ModelNotReadyException" || error.name === "ValidationException") {
       throw new Error(`Model ${MODEL_CONFIG.modelId} is not available in region ${appConfig.aws.region}. Enable it in the AWS Bedrock console under Model Access.`);
@@ -231,7 +222,7 @@ async function invokeBedrockWithConfig(systemPrompt: string, userMessage: string
       return fallbackContent[0].text || "";
     }
     if (error.name === "AccessDeniedException" || error.name === "UnrecognizedClientException") {
-      throw new Error("AWS credentials are invalid or lack Bedrock access. Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY have bedrock:InvokeModel permission.");
+      throw new Error("AWS credentials are invalid or lack Bedrock access. Verify IAM role has bedrock:InvokeModel permission.");
     }
     if (error.name === "ResourceNotFoundException" || error.name === "ModelNotReadyException" || error.name === "ValidationException") {
       throw new Error(`Model ${config.modelId} is not available in region ${appConfig.aws.region}. Enable it in the AWS Bedrock console under Model Access.`);
