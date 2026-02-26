@@ -105,7 +105,7 @@ function configureHelmet(): ReturnType<typeof helmet> {
         connectSrc: ["'self'", "https://accounts.google.com", "https://github.com"],
         frameSrc: ["'self'", "https://accounts.google.com"],
         objectSrc: ["'none'"],
-        upgradeInsecureRequests: PRODUCTION_ENVS.has(config.nodeEnv) ? [] : null,
+        upgradeInsecureRequests: config.session.forceHttps ? [] : null,
       },
     },
     crossOriginEmbedderPolicy: false,
