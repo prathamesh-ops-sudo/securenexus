@@ -2767,7 +2767,7 @@ export async function registerRoutes(
       if (hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '127.0.0.1') return false;
       if (hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('169.254.')) return false;
       if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
-      if (hostname === '[::1]' || hostname.startsWith('fc') || hostname.startsWith('fd')) return false;
+      if (hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd')) return false;
       return true;
     } catch {
       return false;
