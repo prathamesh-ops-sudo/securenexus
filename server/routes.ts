@@ -2515,7 +2515,7 @@ export async function registerRoutes(
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
-    const orgId = getOrgId(req);
+    const orgId = (req as any).user?.orgId ?? null;
     const clientId = eventBus.generateClientId();
 
     eventBus.addClient({
@@ -2538,10 +2538,10 @@ export async function registerRoutes(
   });
 
   app.get("/api/events/status", isAuthenticated, (req: Request, res: Response) => {
-    const orgId = getOrgId(req);
+    const orgId = (req as any).user?.orgId ?? null;
     res.json({
       connected: eventBus.getClientCount(),
-      orgClients: eventBus.getOrgClientCount(orgId),
+      orgClients: orgId ? eventBus.getOrgClientCount(orgId) : 0,
     });
   });
 
