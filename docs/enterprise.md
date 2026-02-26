@@ -2,6 +2,19 @@
 
 > Comprehensive phase-by-phase plan for transforming SecureNexus from a single-tenant SOC platform into a fully enterprise-ready, multi-tenant SaaS product with subscription billing, client onboarding, organizational hierarchy, and platform administration.
 
+This document is written as plain descriptive language (no code snippets, no schema definitions) and is meant to be a persistent backlog for product, engineering, and infrastructure work.
+
+For every item below, the structure is:
+- Current state (what exists today / what is missing)
+- Why it matters (risk, cost, user impact, scalability)
+- What to do (exactly what should be implemented or changed)
+
+Scope assumptions (based on current repo + infra conventions):
+- Backend: Node.js + Express, Drizzle ORM, PostgreSQL on RDS
+- Frontend: React + Vite + Tailwind + Radix
+- Deploy: EKS (staging/uat/production), Argo Rollouts, GitHub Actions, AWS Secrets Manager, S3
+- Platform: Multi-tenant org model + RBAC + connectors + ingestion + correlation + AI-assisted workflows
+
 ---
 
 ## Table of Contents
@@ -18,6 +31,8 @@
 - [Phase 9: Security Hardening for Multi-Tenancy](#phase-9-security-hardening-for-multi-tenancy)
 - [Phase 10: Audit, Compliance & Data Residency](#phase-10-audit-compliance--data-residency)
 - [Infrastructure Reference](#infrastructure-reference)
+- [Implementation Priority Summary](#implementation-priority-summary)
+- [RBAC Permission Matrix](#quick-reference-who-can-do-what-final-state)
 
 ---
 
@@ -25,39 +40,34 @@
 
 ### What Already Exists
 
-| Component | Location | Status |
-|---|---|---|
-| **Organizations table** | `shared/schema.ts` line 87 | `id, name, slug, industry, contactEmail, maxUsers` |
-| **Organization Memberships** | `shared/schema.ts` line 1113 | `orgId, userId, role, status, invitedBy, invitedEmail, joinedAt, suspendedAt` |
-| **Org Invitations** | `shared/schema.ts` line 1131 | Token-based with email, role, expiry, acceptedAt |
-| **RBAC Roles** | `shared/schema.ts` line 52 | 4 roles: `owner`, `admin`, `analyst`, `read_only` |
-| **Permission Matrix** | `shared/schema.ts` line 52 | Scopes: `incidents`, `connectors`, `api_keys`, `response_actions`, `settings`, `team` with `read/write/admin` actions |
-| **RBAC Middleware** | `server/rbac.ts` | `resolveOrgContext`, `requireOrgRole`, `requireMinRole`, `requirePermission` |
-| **Team Management UI** | `client/src/pages/team-management.tsx` | Members tab (list, change role, suspend, activate, remove), Invitations tab (create, cancel), Audit Trail tab |
-| **Technical Onboarding** | `client/src/pages/onboarding.tsx` | 4-step checklist: integrations, ingestion, endpoints, CSPM |
-| **Settings Page** | `client/src/pages/settings.tsx` | Profile, roles display, hardcoded plan cards (Free/Pro/Enterprise), threat intel keys, webhooks |
-| **Auth Routes** | `server/auth/routes.ts` | Register, login, logout, Google OAuth, GitHub OAuth, providers endpoint |
-| **Auto-Provisioning** | `server/auth/routes.ts` line 7 | `ensureOrgMembership()` — new user auto-creates org or joins first existing org |
-| **Audit Logs** | `shared/schema.ts` line 227 | Full audit trail table with userId, action, resourceType, resourceId, details, ipAddress |
-| **API Key Auth** | `server/routes.ts` line 59 | Alternative auth via `X-API-Key` header for programmatic access |
+- **Organizations table** in the shared schema with fields for id, name, slug, industry, contactEmail, and maxUsers.
+- **Organization Memberships** with orgId, userId, role, status, invitedBy, invitedEmail, joinedAt, and suspendedAt.
+- **Org Invitations** with token-based invitations including email, role, expiry, and acceptedAt tracking.
+- **RBAC Roles** with four roles defined: owner, admin, analyst, and read_only. Permission scopes cover incidents, connectors, api_keys, response_actions, settings, and team with read/write/admin actions.
+- **RBAC Middleware** providing resolveOrgContext, requireOrgRole, requireMinRole, and requirePermission helpers.
+- **Team Management UI** with Members tab (list, change role, suspend, activate, remove), Invitations tab (create, cancel), and Audit Trail tab.
+- **Technical Onboarding** with a 4-step checklist covering integrations, ingestion, endpoints, and CSPM.
+- **Settings Page** with profile section, roles display, hardcoded plan cards (Free/Pro/Enterprise), threat intel keys, and webhooks.
+- **Auth Routes** for register, login, logout, Google OAuth, GitHub OAuth, and a providers endpoint.
+- **Auto-Provisioning** where new users auto-create an org or join the first existing org via ensureOrgMembership.
+- **Audit Logs** with a full audit trail table tracking userId, action, resourceType, resourceId, details, and ipAddress.
+- **API Key Auth** as an alternative auth mechanism via X-API-Key header for programmatic access.
 
 ### What's Missing
 
-| Gap | Impact | Phase |
-|---|---|---|
-| No subscription/billing tables | Cannot enforce plan limits or collect payment | Phase 3 |
-| No Stripe integration | No payment processing | Phase 3 |
-| No business onboarding wizard | Users land on technical onboarding without org setup or plan selection | Phase 2 |
-| No org switcher UI | Users in multiple orgs cannot switch between them | Phase 1 |
-| No org settings page | Cannot edit org name, logo, industry, contact info | Phase 1 |
-| No invitation emails | Invitations exist in DB but no email is sent | Phase 4 |
-| No plan limit enforcement | `maxUsers` exists but is never checked; no alert/connector limits enforced | Phase 8 |
-| No platform admin panel | No way to view all orgs, subscriptions, platform metrics | Phase 5 |
-| No domain auto-join | Cannot auto-assign users by email domain to an org | Phase 6 |
-| No SSO/SAML | Enterprise clients need SSO — currently only email + Google + GitHub | Phase 6 |
-| No parent-child orgs | MSSPs cannot manage multiple client orgs | Phase 7 |
-| No usage metering | Cannot track alerts ingested, API calls, storage used per org | Phase 8 |
-| No data residency controls | All data in us-east-1, no per-org region selection | Phase 10 |
+- **No subscription/billing tables** — cannot enforce plan limits or collect payment (addressed in Phase 3).
+- **No Stripe integration** — no payment processing (addressed in Phase 3).
+- **No business onboarding wizard** — users land on technical onboarding without org setup or plan selection (addressed in Phase 2).
+- **No org switcher UI** — users in multiple orgs cannot switch between them (addressed in Phase 1).
+- **No org settings page** — cannot edit org name, logo, industry, or contact info (addressed in Phase 1).
+- **No invitation emails** — invitations exist in DB but no email is sent (addressed in Phase 4).
+- **No plan limit enforcement** — maxUsers exists but is never checked; no alert/connector limits enforced (addressed in Phase 8).
+- **No platform admin panel** — no way to view all orgs, subscriptions, or platform metrics (addressed in Phase 5).
+- **No domain auto-join** — cannot auto-assign users by email domain to an org (addressed in Phase 6).
+- **No SSO/SAML** — enterprise clients need SSO, currently only email + Google + GitHub (addressed in Phase 6).
+- **No parent-child orgs** — MSSPs cannot manage multiple client orgs (addressed in Phase 7).
+- **No usage metering** — cannot track alerts ingested, API calls, or storage used per org (addressed in Phase 8).
+- **No data residency controls** — all data in us-east-1, no per-org region selection (addressed in Phase 10).
 
 ---
 
@@ -69,221 +79,71 @@
 
 ### 1.1 Organization Settings Page
 
-**New file:** `client/src/pages/org-settings.tsx`
-
-**UI sections:**
-
-| Section | Fields | Who Can Edit |
-|---|---|---|
-| **General** | Org name, slug (read-only), industry dropdown, company size | Owner, Admin |
-| **Contact** | Contact email, billing email, phone, address | Owner, Admin |
-| **Branding** | Logo upload (to S3), primary color hex | Owner, Admin |
-| **Danger Zone** | Delete organization (owner only, requires confirmation + type org name) | Owner only |
-
-**Backend routes to add in `server/routes.ts`:**
-
-```
-GET    /api/orgs/:orgId                    → Get org details (any member)
-PATCH  /api/orgs/:orgId                    → Update org details (admin+)
-DELETE /api/orgs/:orgId                    → Delete org (owner only)
-POST   /api/orgs/:orgId/logo              → Upload logo to S3 (admin+)
-POST   /api/orgs/:orgId/transfer-ownership → Transfer owner role (owner only)
-```
-
-**Schema changes in `shared/schema.ts`:**
-
-```typescript
-// Extend organizations table
-export const organizations = pgTable("organizations", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  industry: text("industry"),
-  companySize: text("company_size"),         // NEW: "1-10", "11-50", "51-200", "201-1000", "1001+"
-  contactEmail: text("contact_email"),
-  billingEmail: text("billing_email"),       // NEW
-  phone: text("phone"),                      // NEW
-  address: jsonb("address"),                 // NEW: { line1, line2, city, state, country, zip }
-  logoUrl: text("logo_url"),                 // NEW: S3 URL
-  primaryColor: text("primary_color"),       // NEW: hex color for white-labeling
-  timezone: text("timezone"),                // NEW: default timezone for the org
-  maxUsers: integer("max_users").default(10),
-  deletedAt: timestamp("deleted_at"),        // NEW: soft delete
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(), // NEW
-});
-```
-
-**How it works with current infra:**
-
-- Logo uploads go to existing S3 bucket `securenexus-platform-557845624595` under key `orgs/{orgId}/logo.{ext}`
-- DB schema migration via Drizzle `npx drizzle-kit push` against RDS `securenexus-db.cspsu4cuei9t.us-east-1.rds.amazonaws.com`
-- No new AWS resources needed
+- Current state: No dedicated org settings page exists. Org details cannot be edited after creation.
+- Why it matters: Org owners need to manage their organization's identity, contact information, and branding without asking a platform admin. This is table stakes for any multi-tenant SaaS product.
+- What to do:
+  - Create a new org settings page with sections for General (org name, slug as read-only, industry dropdown, company size), Contact (contact email, billing email, phone, address), Branding (logo upload to S3, primary color hex for white-labeling), and a Danger Zone (delete organization, owner-only with confirmation requiring the user to type the org name).
+  - Add backend routes for getting org details (any member), updating org details (admin+), deleting org (owner only), uploading logo to S3 (admin+), and transferring ownership (owner only).
+  - Extend the organizations table with new columns for companySize, billingEmail, phone, address (as JSON), logoUrl, primaryColor, timezone, deletedAt (soft delete), and updatedAt.
+  - Logo uploads go to the existing S3 bucket under the key path orgs/{orgId}/logo.{ext}. DB schema migration via Drizzle against the existing RDS instance. No new AWS resources needed.
 
 ### 1.2 Organization Switcher
 
-**Where:** Sidebar header (in `client/src/components/app-sidebar.tsx`)
-
-**How it works:**
-
-1. On app load, call `GET /api/auth/me` — returns all org memberships for the current user
-2. Store `activeOrgId` in React context (and localStorage for persistence)
-3. All API calls include `X-Org-Id: {activeOrgId}` header (already supported by `resolveOrgContext` middleware in `server/rbac.ts` line 29)
-4. Sidebar header shows current org name + dropdown to switch
-5. Switching orgs refreshes all queries via `queryClient.invalidateQueries()`
-
-**New React context:** `client/src/contexts/org-context.tsx`
-
-```typescript
-interface OrgContextType {
-  currentOrg: Organization | null;
-  memberships: OrganizationMembership[];
-  currentRole: string;
-  switchOrg: (orgId: string) => void;
-  isLoading: boolean;
-}
-```
-
-**Frontend changes:**
-
-- `app-sidebar.tsx`: Add org switcher dropdown in sidebar header
-- `lib/queryClient.ts`: Add interceptor to attach `X-Org-Id` header to all API calls
-- `hooks/use-auth.ts`: Expose org context alongside user context
+- Current state: Users who belong to multiple orgs have no way to switch between them in the UI.
+- Why it matters: Enterprise users, consultants, and MSSP analysts often belong to multiple organizations and need seamless context switching.
+- What to do:
+  - On app load, fetch all org memberships for the current user from the auth endpoint.
+  - Store the active org ID in React context and localStorage for persistence.
+  - Attach X-Org-Id header to all API calls (already supported by the resolveOrgContext middleware in the RBAC module).
+  - Add a dropdown in the sidebar header showing the current org name with the ability to switch. Switching orgs refreshes all queries via query client invalidation.
+  - Create an org context provider exposing the current org, memberships, current role, switch function, and loading state.
 
 ### 1.3 Ownership Transfer
 
-**Route:** `POST /api/orgs/:orgId/transfer-ownership`
-
-**Body:** `{ newOwnerId: string }`
-
-**Logic:**
-1. Verify current user is owner
-2. Verify target user is an active member of this org
-3. Update current owner's role to `admin`
-4. Update target user's role to `owner`
-5. Create audit log entry
-6. Return updated memberships
-
-**Safeguard:** Require current owner to re-enter password before transfer.
+- Current state: No mechanism to transfer org ownership to another member.
+- Why it matters: When founders leave, teams restructure, or companies get acquired, ownership must be transferable without losing continuity.
+- What to do:
+  - Add a transfer-ownership route that verifies the current user is the owner, verifies the target user is an active member, updates the current owner's role to admin, updates the target user's role to owner, and creates an audit log entry.
+  - Require the current owner to re-enter their password before transfer as a safeguard.
 
 ---
 
 ## Phase 2: Business Onboarding Wizard
 
-**Goal:** Guide new clients through a complete onboarding flow: create org → choose plan → invite team → connect first integration.
+**Goal:** Guide new clients through a complete onboarding flow: create org, choose plan, invite team, connect first integration.
 
 **Estimated Effort:** 3-4 days
 
 ### 2.1 Onboarding Flow Architecture
 
-```
-Sign Up (email/Google/GitHub)
-  │
-  ▼
-Step 1: Create Organization
-  │  Name, industry, company size
-  ▼
-Step 2: Choose Plan
-  │  Free / Pro / Enterprise
-  │  Stripe Checkout for paid plans
-  ▼
-Step 3: Invite Team
-  │  Bulk email input + role assignment
-  │  Skip option for solo users
-  ▼
-Step 4: Connect First Integration
-  │  Pick from connector catalog
-  │  Guided setup with test connection
-  ▼
-Step 5: Dashboard Tour
-  │  Interactive overlay highlighting key features
-  │  Can be dismissed and replayed from Settings
-  ▼
-Dashboard (fully onboarded)
-```
+- Current state: New users are auto-provisioned into an org with a generic name and land on a technical onboarding checklist. There is no plan selection, no team invitation step, and no guided tour.
+- Why it matters: First impressions determine activation. Without a structured business onboarding, users miss critical setup steps and churn before seeing value.
+- What to do:
+  - Build a multi-step wizard with five steps: (1) Create Organization with name, industry, and company size; (2) Choose Plan from Free, Pro, or Enterprise with Stripe Checkout for paid plans; (3) Invite Team with bulk email input and role assignment, plus a skip option for solo users; (4) Connect First Integration by picking from the connector catalog with guided setup and test connection; (5) Dashboard Tour with an interactive overlay highlighting key features that can be dismissed and replayed from Settings.
+  - Create new frontend files: a wizard container page with progress bar, and separate step components for org creation, plan selection, team invitation, integration connection, and the dashboard tour.
+  - Add backend routes for getting wizard status (current step + completion), creating org with extended fields, selecting a plan (Stripe checkout or free activation), bulk-creating invitations, and marking onboarding as complete.
+  - Track onboarding progress per org/user with a schema storing the current step, which steps are completed (as a JSON blob), and a completion timestamp.
 
-### 2.2 New Files
+### 2.2 Auto-Provisioning Changes
 
-| File | Purpose |
-|---|---|
-| `client/src/pages/onboarding-wizard.tsx` | Multi-step wizard container with progress bar |
-| `client/src/components/onboarding/step-create-org.tsx` | Org creation form |
-| `client/src/components/onboarding/step-choose-plan.tsx` | Plan selection cards with Stripe checkout |
-| `client/src/components/onboarding/step-invite-team.tsx` | Bulk invite form with role dropdowns |
-| `client/src/components/onboarding/step-connect-integration.tsx` | Connector catalog with guided setup |
-| `client/src/components/onboarding/step-dashboard-tour.tsx` | Interactive feature tour overlay |
+- Current state: New users automatically create an org named after their email and are assigned the owner role. No plan is selected, no onboarding happens.
+- Why it matters: The auto-provisioning shortcut skips critical business setup steps that determine long-term engagement and revenue.
+- What to do:
+  - Change the flow so new users without memberships or pending invitations are redirected to the onboarding wizard instead of being auto-assigned to a generic org.
+  - Users with pending invitations should auto-accept and skip org creation, going straight to the dashboard.
+  - Detect first-time users in the frontend by checking if the authenticated user has zero memberships, and redirect to the onboarding route.
 
-### 2.3 Backend Changes
+### 2.3 Dashboard Tour
 
-**New routes:**
+- Current state: No guided tour exists for new users.
+- Why it matters: Enterprise SOC platforms are complex. A tour reduces time-to-value and support tickets.
+- What to do:
+  - Implement an interactive tour (using a lightweight library or custom Radix popovers) with stops covering sidebar navigation overview, dashboard metrics explanation, alert trend chart, command palette shortcut, notification bell, and settings link.
+  - Persist tour completion status in the onboarding progress record so it only shows once per user.
 
-```
-GET  /api/onboarding/wizard-status     → Returns current step + completion status
-POST /api/onboarding/create-org        → Creates org with extended fields
-POST /api/onboarding/select-plan       → Creates Stripe checkout session (or activates free plan)
-POST /api/onboarding/invite-team       → Bulk create invitations
-POST /api/onboarding/complete          → Mark onboarding as complete
-```
+### 2.4 Infrastructure Notes
 
-**Schema addition:**
-
-```typescript
-export const onboardingProgress = pgTable("onboarding_progress", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull().references(() => organizations.id),
-  userId: varchar("user_id").notNull(),
-  currentStep: integer("current_step").notNull().default(1),
-  stepsCompleted: jsonb("steps_completed").default({}),
-  // { createOrg: true, choosePlan: true, inviteTeam: false, connectIntegration: false, dashboardTour: false }
-  completedAt: timestamp("completed_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-```
-
-### 2.4 Auto-Provisioning Changes
-
-**Current behavior** (`server/auth/routes.ts` line 7):
-- New user → auto-creates org with name `"{email}'s Organization"` → assigns owner role
-- No plan, no onboarding
-
-**New behavior:**
-- New user → check if they have any org memberships
-- If no memberships and no pending invitations → redirect to `/onboarding` wizard
-- Wizard creates the org properly (with industry, size, etc.)
-- After wizard completion → redirect to dashboard
-- If user has pending invitation → accept it → skip org creation → redirect to dashboard
-
-**How to detect first-time user in frontend:**
-
-```typescript
-// In App.tsx route guard
-const { data: me } = useQuery({ queryKey: ["/api/auth/me"] });
-if (me && me.memberships.length === 0) {
-  return <Redirect to="/onboarding" />;
-}
-```
-
-### 2.5 Dashboard Tour
-
-**Implementation:** Use a lightweight library like `react-joyride` or build custom with Radix popover.
-
-**Tour stops:**
-1. Sidebar navigation overview
-2. Dashboard metrics explanation
-3. Alert trend chart
-4. Command palette (Ctrl+K)
-5. Notification bell
-6. Settings link
-
-**Persistence:** Store `tourCompleted: boolean` in `onboardingProgress.stepsCompleted` so it only shows once.
-
-### 2.6 How This Works With Current Infra
-
-- No new AWS resources — all stored in existing RDS database
-- Wizard pages served by existing Vite frontend (client-side routing)
-- Stripe Checkout redirects happen client-side (no new server infrastructure)
-- CI/CD pipeline deploys wizard code alongside existing app via same Docker image → ECR → EKS flow
+- No new AWS resources needed. All data stored in existing RDS database. Wizard pages served by existing Vite frontend via client-side routing. Stripe Checkout redirects happen client-side with no new server infrastructure. CI/CD pipeline deploys wizard code alongside existing app via same Docker image to ECR to EKS flow.
 
 ---
 
@@ -295,160 +155,43 @@ if (me && me.memberships.length === 0) {
 
 ### 3.1 Plan Definitions
 
-| Feature | Free | Pro ($49/mo) | Enterprise ($199/mo) | Custom |
-|---|---|---|---|---|
-| **Alerts/month** | 100 | 10,000 | Unlimited | Custom |
-| **Connectors** | 2 | 10 | Unlimited | Custom |
-| **Users** | 1 | 5 | Unlimited | Custom |
-| **Data retention** | 7 days | 30 days | 365 days | Custom |
-| **API keys** | 1 | 10 | 50 | Custom |
-| **AI Engine** | No | Yes | Yes | Yes |
-| **SOAR Automation** | No | No | Yes | Yes |
-| **CSPM Scanning** | No | Yes | Yes | Yes |
-| **IOC Threat Intel** | No | Yes | Yes | Yes |
-| **Custom playbooks** | No | 5 | Unlimited | Custom |
-| **SSO/SAML** | No | No | Yes | Yes |
-| **Compliance reports** | No | No | Yes | Yes |
-| **Priority support** | No | No | Yes | Yes |
-| **SLA guarantee** | No | No | 99.9% | Custom |
+- Current state: Plan cards exist in the settings page but are hardcoded with no backend enforcement.
+- Why it matters: Revenue collection and feature gating are fundamental to SaaS viability.
+- What to do:
+  - Define four plan tiers: Free, Pro ($49/month), Enterprise ($199/month), and Custom.
+  - Feature limits per plan: alerts per month (100 / 10,000 / unlimited / custom), connectors (2 / 10 / unlimited / custom), users (1 / 5 / unlimited / custom), data retention (7 / 30 / 365 days / custom), API keys (1 / 10 / 50 / custom), custom playbooks (none / 5 / unlimited / custom).
+  - Feature flags per plan: AI engine (no / yes / yes / yes), SOAR automation (no / no / yes / yes), CSPM scanning (no / yes / yes / yes), IOC threat intel (no / yes / yes / yes), SSO/SAML (no / no / yes / yes), compliance reports (no / no / yes / yes), priority support (no / no / yes / yes), SLA guarantee (none / none / 99.9% / custom).
 
 ### 3.2 Database Schema
 
-```typescript
-export const PLAN_NAMES = ["free", "pro", "enterprise", "custom"] as const;
-export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "cancelled", "paused"] as const;
-export const BILLING_CYCLES = ["monthly", "annual"] as const;
-
-export const plans = pgTable("plans", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull().unique(),           // free, pro, enterprise, custom
-  displayName: text("display_name").notNull(),
-  description: text("description"),
-  priceMonthly: integer("price_monthly").notNull(), // cents (e.g., 4900 = $49)
-  priceAnnual: integer("price_annual").notNull(),   // cents (e.g., 47040 = $470.40 = $39.20/mo)
-  stripePriceIdMonthly: text("stripe_price_id_monthly"),
-  stripePriceIdAnnual: text("stripe_price_id_annual"),
-  features: jsonb("features").notNull(),
-  // { maxAlerts: 10000, maxConnectors: 10, maxUsers: 5, maxApiKeys: 10,
-  //   retentionDays: 30, aiEnabled: true, soarEnabled: false, cspmEnabled: true,
-  //   iocEnabled: true, maxPlaybooks: 5, ssoEnabled: false, complianceReports: false,
-  //   prioritySupport: false, slaGuarantee: null }
-  isActive: boolean("is_active").default(true),
-  sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const subscriptions = pgTable("subscriptions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull().references(() => organizations.id).unique(),
-  planId: varchar("plan_id").notNull().references(() => plans.id),
-  status: text("status").notNull().default("active"),  // trialing, active, past_due, cancelled, paused
-  billingCycle: text("billing_cycle").notNull().default("monthly"),
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
-  trialEndsAt: timestamp("trial_ends_at"),
-  currentPeriodStart: timestamp("current_period_start"),
-  currentPeriodEnd: timestamp("current_period_end"),
-  cancelledAt: timestamp("cancelled_at"),
-  cancelReason: text("cancel_reason"),
-  customFeatureOverrides: jsonb("custom_feature_overrides"), // for custom plans
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_subscriptions_org").on(table.orgId),
-  index("idx_subscriptions_stripe_customer").on(table.stripeCustomerId),
-  index("idx_subscriptions_status").on(table.status),
-]);
-
-export const invoices = pgTable("invoices", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull().references(() => organizations.id),
-  subscriptionId: varchar("subscription_id").notNull().references(() => subscriptions.id),
-  stripeInvoiceId: text("stripe_invoice_id"),
-  amountDue: integer("amount_due"),       // cents
-  amountPaid: integer("amount_paid"),     // cents
-  currency: text("currency").default("usd"),
-  status: text("status").notNull(),       // draft, open, paid, void, uncollectible
-  invoicePdfUrl: text("invoice_pdf_url"),
-  hostedInvoiceUrl: text("hosted_invoice_url"),
-  periodStart: timestamp("period_start"),
-  periodEnd: timestamp("period_end"),
-  paidAt: timestamp("paid_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
-  index("idx_invoices_org").on(table.orgId),
-  index("idx_invoices_subscription").on(table.subscriptionId),
-]);
-```
+- Current state: No plans, subscriptions, or invoices tables exist.
+- Why it matters: Without persistent billing state, the platform cannot track who is on which plan, when payments are due, or what limits apply.
+- What to do:
+  - Create a plans table storing plan name (unique), display name, description, monthly and annual prices (in cents), Stripe price IDs for both billing cycles, a features JSON blob containing all limits and flags, active status, and sort order.
+  - Create a subscriptions table linking each org (unique) to a plan with status tracking (trialing, active, past_due, cancelled, paused), billing cycle (monthly or annual), Stripe customer and subscription IDs, trial end date, current period start/end, cancellation date and reason, custom feature overrides for custom plans, and proper indexes on orgId, stripeCustomerId, and status.
+  - Create an invoices table storing org and subscription references, Stripe invoice ID, amounts due and paid (in cents), currency, status (draft, open, paid, void, uncollectible), PDF and hosted URLs, period dates, and payment date, with indexes on orgId and subscriptionId.
 
 ### 3.3 Stripe Integration
 
-**New dependency:** `stripe` npm package
-
-**New file:** `server/stripe.ts`
-
-**Environment variables (stored in AWS Secrets Manager):**
-
-```
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PUBLISHABLE_KEY=pk_live_...   (sent to frontend via /api/config endpoint)
-```
-
-**Backend routes:**
-
-```
-POST /api/billing/create-checkout-session    → Create Stripe Checkout for plan upgrade
-POST /api/billing/create-portal-session      → Create Stripe Customer Portal session
-GET  /api/billing/subscription               → Get current subscription details
-POST /api/billing/change-plan                → Upgrade/downgrade plan
-POST /api/billing/cancel                     → Cancel subscription (end of period)
-POST /api/billing/reactivate                 → Reactivate cancelled subscription
-GET  /api/billing/invoices                   → List invoices for current org
-GET  /api/billing/usage                      → Get current usage vs plan limits
-POST /api/webhooks/stripe                    → Stripe webhook endpoint (no auth)
-```
-
-**Stripe webhook events to handle:**
-
-| Event | Action |
-|---|---|
-| `checkout.session.completed` | Activate subscription, update plan |
-| `invoice.paid` | Record invoice, update subscription period |
-| `invoice.payment_failed` | Set subscription status to `past_due`, notify owner via email |
-| `customer.subscription.updated` | Sync plan changes (upgrade/downgrade) |
-| `customer.subscription.deleted` | Set status to `cancelled`, downgrade to free plan |
-| `customer.subscription.trial_will_end` | Send email warning 3 days before trial ends |
-
-**Webhook security:**
-- Verify Stripe webhook signature using `stripe.webhooks.constructEvent(body, sig, webhookSecret)`
-- Webhook endpoint is excluded from session auth (uses Stripe signature instead)
-- Webhook endpoint is excluded from CSRF protection
-- Webhook endpoint is excluded from rate limiting
+- Current state: No payment processing exists.
+- Why it matters: Without Stripe, there is no way to collect revenue from paid plans or manage the subscription lifecycle.
+- What to do:
+  - Add the Stripe npm package and create a Stripe service module.
+  - Store Stripe keys (secret key, webhook secret, publishable key) in AWS Secrets Manager and sync them to K8s secrets via the CI/CD pipeline.
+  - Add backend routes for creating a Stripe Checkout session, creating a Stripe Customer Portal session, getting current subscription details, changing plans (upgrade/downgrade), cancelling (end of period), reactivating cancelled subscriptions, listing invoices, getting usage vs limits, and a Stripe webhook endpoint.
+  - Handle webhook events: checkout.session.completed (activate subscription), invoice.paid (record invoice, update period), invoice.payment_failed (set status to past_due, notify owner via email), customer.subscription.updated (sync plan changes), customer.subscription.deleted (set cancelled, downgrade to free), and customer.subscription.trial_will_end (send warning email 3 days before).
+  - Webhook security: verify Stripe signature, exclude from session auth (uses Stripe signature instead), exclude from CSRF, and exclude from rate limiting.
 
 ### 3.4 Frontend: Billing Page
 
-**New file:** `client/src/pages/billing.tsx`
+- Current state: Settings page has hardcoded plan cards with no real billing functionality.
+- Why it matters: Users need self-service plan management, payment visibility, and upgrade paths.
+- What to do:
+  - Create a billing page with sections for Current Plan (plan name, status badge, renewal date, usage meters for alerts, connectors, users, API keys), Plan Comparison (three cards with feature matrix and Current/Upgrade/Contact Sales buttons), Payment Method (card on file with last 4 digits, Manage button opens Stripe Customer Portal), Invoices (table with date, amount, status, PDF download), and Cancel/Reactivate (danger zone showing what access will be lost).
 
-**Sections:**
+### 3.5 Infrastructure Notes
 
-| Section | Content |
-|---|---|
-| **Current Plan** | Plan name, status badge, renewal date, usage meters (alerts, connectors, users, API keys) |
-| **Plan Comparison** | 3 cards (Free/Pro/Enterprise) with feature comparison matrix, "Current" / "Upgrade" / "Contact Sales" buttons |
-| **Payment Method** | Card on file (last 4 digits), "Manage" button opens Stripe Customer Portal |
-| **Invoices** | Table: date, amount, status, PDF download link |
-| **Cancel/Reactivate** | Red danger zone for cancellation, shows what access will be lost |
-
-### 3.5 How This Works With Current Infra
-
-- **Stripe API calls** happen server-side from EKS pods — no new AWS resources needed
-- **Stripe webhook** endpoint receives POST from Stripe → needs to be publicly accessible → already is via ELB
-- **Stripe keys** stored in AWS Secrets Manager (`securenexus/staging`, `securenexus/production`) → synced to K8s secrets by CI/CD pipeline (`.github/workflows/ci-cd.yml` lines 92-101)
-- **Plans table** seeded via existing `server/seed.ts` mechanism
-- **Frontend** adds billing page to existing React router — same Docker image, same deployment
-
-**CI/CD pipeline change:** Add `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` to the secrets sync step in `.github/workflows/ci-cd.yml` for all environments.
+- Stripe API calls happen server-side from EKS pods with no new AWS resources needed. The Stripe webhook endpoint receives POSTs from Stripe and is already publicly accessible via the ELB. Plans table is seeded via the existing seed mechanism. The frontend adds a billing page to the existing React router in the same Docker image and deployment.
 
 ---
 
@@ -460,123 +203,53 @@ POST /api/webhooks/stripe                    → Stripe webhook endpoint (no aut
 
 ### 4.1 Amazon SES Setup
 
-**AWS resources to provision:**
-
-| Resource | Config | Notes |
-|---|---|---|
-| **SES verified domain** | `aricatech.xyz` | Verify via DNS TXT record |
-| **SES sending identity** | `noreply@aricatech.xyz` | For transactional emails |
-| **SES configuration set** | `securenexus-emails` | For tracking bounces/complaints |
-| **IAM policy** | `ses:SendEmail`, `ses:SendRawEmail` | Attach to EKS pod IAM role |
-
-**Environment variables:**
-
-```
-SES_FROM_EMAIL=noreply@aricatech.xyz
-SES_REGION=us-east-1
-```
-
-**SES is already available in us-east-1 under account 557845624595.** No new infrastructure needed beyond domain verification and IAM policy.
+- Current state: Invitations exist in the database but no email is ever sent. There is no password reset flow.
+- Why it matters: Without email delivery, invitations are useless, password resets are impossible, and billing notifications cannot reach users. Email is a critical communication channel for any SaaS product.
+- What to do:
+  - Verify the aricatech.xyz domain in SES via DNS TXT record.
+  - Set up a sending identity (noreply@aricatech.xyz) for transactional emails.
+  - Create an SES configuration set for tracking bounces and complaints.
+  - Add ses:SendEmail and ses:SendRawEmail permissions to the EKS pod IAM role.
+  - SES is already available in us-east-1 under the existing AWS account. No new infrastructure needed beyond domain verification and IAM policy.
 
 ### 4.2 Email Service
 
-**New file:** `server/email.ts`
-
-```typescript
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
-
-interface EmailOptions {
-  to: string | string[];
-  subject: string;
-  html: string;
-  text?: string;
-}
-
-export async function sendEmail(options: EmailOptions): Promise<void> {
-  const ses = new SESv2Client({ region: process.env.SES_REGION || "us-east-1" });
-  await ses.send(new SendEmailCommand({
-    FromEmailAddress: process.env.SES_FROM_EMAIL,
-    Destination: { ToAddresses: Array.isArray(options.to) ? options.to : [options.to] },
-    Content: {
-      Simple: {
-        Subject: { Data: options.subject },
-        Body: {
-          Html: { Data: options.html },
-          ...(options.text ? { Text: { Data: options.text } } : {}),
-        },
-      },
-    },
-  }));
-}
-```
+- Current state: No email sending capability exists in the application.
+- Why it matters: Transactional email is a foundational SaaS capability that enables invitations, notifications, and security flows.
+- What to do:
+  - Create an email service module using the AWS SES v2 client that accepts recipient(s), subject, HTML body, and optional plain text.
+  - Use the existing AWS credentials already available in K8s secrets (no separate SES keys needed).
+  - The AWS SES v2 client is included in the AWS SDK already available in the project, so no new npm dependencies are required.
 
 ### 4.3 Email Templates
 
-**New directory:** `server/email-templates/`
-
-| Template | Trigger | Content |
-|---|---|---|
-| `invitation.html` | `POST /api/orgs/:orgId/invitations` | "You've been invited to join {orgName} on SecureNexus. Click here to accept." |
-| `welcome.html` | User completes registration | "Welcome to SecureNexus! Here's how to get started." |
-| `password-reset.html` | `POST /api/auth/forgot-password` | "Click here to reset your password. Link expires in 1 hour." |
-| `payment-failed.html` | Stripe `invoice.payment_failed` webhook | "Your payment for SecureNexus failed. Please update your payment method." |
-| `trial-ending.html` | Stripe `customer.subscription.trial_will_end` webhook | "Your trial ends in 3 days. Upgrade to keep full access." |
-| `subscription-cancelled.html` | Stripe `customer.subscription.deleted` webhook | "Your subscription has been cancelled. Access continues until {periodEnd}." |
-| `member-suspended.html` | `POST /api/orgs/:orgId/members/:memberId/suspend` | "Your access to {orgName} has been suspended by an administrator." |
-| `member-role-changed.html` | `PATCH /api/orgs/:orgId/members/:memberId/role` | "Your role in {orgName} has been changed to {newRole}." |
-
-**Template engine:** Use simple string interpolation (no external dependency). Each template is a function that takes variables and returns HTML string.
+- Current state: No email templates exist.
+- Why it matters: Consistent, branded emails build trust and reduce support burden.
+- What to do:
+  - Create templates using simple string interpolation (no external dependency) for: invitation (triggered when an admin creates an invitation), welcome (triggered on registration completion), password reset (triggered on forgot-password request, link expires in 1 hour), payment failed (triggered by Stripe webhook), trial ending (triggered 3 days before trial ends), subscription cancelled (triggered by Stripe webhook, shows access end date), member suspended (triggered when an admin suspends a member), and member role changed (triggered on role update).
 
 ### 4.4 Password Reset Flow
 
-**Currently missing entirely. Routes to add:**
-
-```
-POST /api/auth/forgot-password       → Generate reset token, send email
-POST /api/auth/reset-password         → Validate token, update password
-```
-
-**Schema addition:**
-
-```typescript
-export const passwordResetTokens = pgTable("password_reset_tokens", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at").notNull(),
-  usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
-  index("idx_reset_tokens_user").on(table.userId),
-  index("idx_reset_tokens_token").on(table.token),
-]);
-```
-
-**Frontend pages:**
-- `client/src/pages/forgot-password.tsx` — email input form
-- `client/src/pages/reset-password.tsx` — new password form (accessed via token in URL)
+- Current state: No password reset mechanism exists at all.
+- Why it matters: Users who forget their password are completely locked out. This is a critical security and usability gap.
+- What to do:
+  - Add routes for forgot-password (generates a reset token, sends email) and reset-password (validates token, updates password).
+  - Create a password_reset_tokens table with userId, token (unique), expiresAt, usedAt, and createdAt, with indexes on userId and token.
+  - Create frontend pages for forgot-password (email input form) and reset-password (new password form accessed via token in URL).
 
 ### 4.5 Invitation Email Flow
 
-**Current flow** (broken):
-1. Admin creates invitation → token stored in DB → nothing else happens
-2. Invited user must manually navigate to the app and somehow know to accept
+- Current state: Admin creates invitation, token is stored in DB, but nothing else happens. The invited user must manually navigate to the app and somehow know to accept.
+- Why it matters: Invitations without email delivery have near-zero conversion. This is the primary bottleneck for team growth.
+- What to do:
+  - When an admin creates an invitation, send an email via SES containing a link to accept the invitation at the production domain.
+  - When the user clicks the link: if logged in, auto-accept the invitation; if not logged in, redirect to signup with invitation context preserved.
+  - After signup/login with invitation context, auto-accept the invitation and land the user in the org's dashboard.
+  - Create a frontend page for accepting invitations that handles both authenticated and unauthenticated states.
 
-**New flow:**
-1. Admin creates invitation → token stored in DB → email sent via SES
-2. Email contains link: `https://nexus.aricatech.xyz/invite/accept?token={token}`
-3. User clicks link → if logged in, auto-accepts → if not, redirected to signup with invitation context
-4. After signup/login, invitation auto-accepted, user lands in the org's dashboard
+### 4.6 Infrastructure Notes
 
-**Frontend page:** `client/src/pages/accept-invitation.tsx`
-
-### 4.6 How This Works With Current Infra
-
-- **SES** is already available in the AWS account (us-east-1) — just needs domain verification
-- **EKS pods** already have AWS credentials via K8s secrets — add `ses:SendEmail` permission to the IAM role
-- **SES credentials** don't need separate keys — pods use the same `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` already in K8s secrets
-- **DNS records** for SES verification added alongside existing CNAME records for `staging.aricatech.xyz` / `nexus.aricatech.xyz`
-- **No new npm dependencies** — `@aws-sdk/client-sesv2` is included in the AWS SDK already available
+- SES is already available in the AWS account (us-east-1) and just needs domain verification. EKS pods already have AWS credentials via K8s secrets; just add SES permissions to the IAM role. DNS records for SES verification are added alongside existing CNAME records for the custom domains.
 
 ---
 
@@ -588,91 +261,41 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 
 ### 5.1 Super-Admin Role
 
-**Schema change:**
-
-```typescript
-// Add to users table in shared/models/auth.ts
-isSuperAdmin: boolean("is_super_admin").default(false),
-```
-
-**Middleware:**
-
-```typescript
-// server/rbac.ts
-export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
-  const user = (req as any).user;
-  if (!user?.isSuperAdmin) {
-    return res.status(403).json({ error: "Super admin access required" });
-  }
-  next();
-}
-```
-
-**Security:** Super-admin flag is ONLY set directly in the database by a DBA. It cannot be set via any API endpoint. This prevents privilege escalation.
+- Current state: No platform-level admin role exists. There is no way to manage all organizations from a single view.
+- Why it matters: Platform operators need visibility into all tenants for support, billing management, and incident response. Without this, every admin action requires direct database access.
+- What to do:
+  - Add an isSuperAdmin boolean flag to the users table, defaulting to false.
+  - Create a requireSuperAdmin middleware that checks this flag and returns 403 if not set.
+  - The super-admin flag is ONLY set directly in the database by a DBA. No API endpoint can set it. This prevents privilege escalation.
 
 ### 5.2 Admin API Routes
 
-All routes prefixed with `/api/admin/` and protected by `requireSuperAdmin` middleware.
-
-```
-GET  /api/admin/stats                        → Platform-wide metrics
-GET  /api/admin/organizations                → List all orgs with pagination, search, filters
-GET  /api/admin/organizations/:orgId         → Full org details including subscription, members, usage
-PATCH /api/admin/organizations/:orgId        → Update org (e.g., custom plan limits)
-POST /api/admin/organizations/:orgId/suspend → Suspend an entire org
-POST /api/admin/organizations/:orgId/activate → Reactivate suspended org
-GET  /api/admin/users                        → List all users across all orgs
-GET  /api/admin/users/:userId                → User details + all org memberships
-POST /api/admin/users/:userId/impersonate    → Generate impersonation session
-POST /api/admin/users/:userId/disable        → Disable user account
-POST /api/admin/users/:userId/reset-password → Force password reset
-GET  /api/admin/subscriptions                → All subscriptions with status filters
-GET  /api/admin/subscriptions/mrr            → Monthly Recurring Revenue breakdown
-GET  /api/admin/audit-logs                   → Platform-wide audit log
-GET  /api/admin/health                       → Platform health (RDS, EKS, S3, SES status)
-```
+- Current state: No admin-specific routes exist.
+- Why it matters: Platform operators need programmatic access to all tenant data for support, compliance, and business intelligence.
+- What to do:
+  - Create routes under /api/admin/ protected by the requireSuperAdmin middleware for: platform-wide stats, listing all orgs with pagination/search/filters, getting full org details including subscription/members/usage, updating orgs (custom plan limits), suspending/activating entire orgs, listing all users across all orgs, getting user details with all org memberships, generating impersonation sessions, disabling user accounts, forcing password resets, viewing all subscriptions with status filters, getting MRR breakdown, viewing platform-wide audit logs, and checking platform health (RDS, EKS, S3, SES status).
 
 ### 5.3 Admin Dashboard UI
 
-**New route:** `/admin` (only visible to super-admins)
-
-**New file:** `client/src/pages/admin/admin-dashboard.tsx`
-
-**Layout:** Full-width layout (no sidebar) with its own nav tabs.
-
-**Tabs:**
-
-| Tab | Content |
-|---|---|
-| **Overview** | Total orgs, total users, total alerts (all orgs), MRR, growth charts |
-| **Organizations** | Searchable table: name, plan, status, users, alerts, created date, actions |
-| **Users** | Searchable table: name, email, orgs, last login, status, actions (impersonate, disable) |
-| **Subscriptions** | Table: org, plan, status, amount, renewal date, payment method status |
-| **Revenue** | MRR chart, plan distribution pie chart, churn rate, upgrade/downgrade trends |
-| **Audit Log** | Platform-wide audit log with filters (org, user, action type, date range) |
-| **Health** | Real-time status of RDS, EKS pods, S3, SES, Stripe API |
+- Current state: No admin UI exists.
+- Why it matters: A visual admin panel makes platform operations efficient and reduces the risk of direct database mistakes.
+- What to do:
+  - Create an admin dashboard at /admin (only visible to super-admins) with a full-width layout and its own nav tabs.
+  - Include tabs for Overview (total orgs, total users, total alerts, MRR, growth charts), Organizations (searchable table with name, plan, status, users, alerts, created date, actions), Users (searchable table with name, email, orgs, last login, status, actions for impersonate and disable), Subscriptions (table with org, plan, status, amount, renewal date, payment method status), Revenue (MRR chart, plan distribution pie chart, churn rate, upgrade/downgrade trends), Audit Log (platform-wide log with filters for org, user, action type, date range), and Health (real-time status of RDS, EKS pods, S3, SES, Stripe API).
 
 ### 5.4 Impersonation
 
-**How it works:**
-1. Super-admin clicks "Impersonate" on a user
-2. Backend creates a temporary session for that user with `impersonatedBy: superAdminId` flag
-3. Super-admin sees the app exactly as that user sees it
-4. Yellow banner at top: "You are impersonating {userName}. Click here to exit."
-5. All actions taken while impersonating are logged in audit trail with `impersonatedBy` field
+- Current state: No way for platform operators to see the app as a specific user sees it.
+- Why it matters: Support engineers need to reproduce user-reported issues without asking users for credentials.
+- What to do:
+  - When a super-admin clicks "Impersonate" on a user, the backend creates a temporary session for that user with an impersonatedBy flag referencing the super-admin.
+  - The super-admin sees the app exactly as that user sees it, with a yellow banner at top showing who they are impersonating and a button to exit.
+  - All actions taken while impersonating are logged in the audit trail with the impersonatedBy field.
+  - Security: impersonation sessions expire after 1 hour, cannot impersonate other super-admins, all impersonation events are logged, and impersonation creates a NEW session without modifying the super-admin's existing session.
 
-**Security:**
-- Impersonation sessions expire after 1 hour
-- Cannot impersonate other super-admins
-- All impersonation events logged
-- Impersonation creates a NEW session — does not modify the super-admin's session
+### 5.5 Infrastructure Notes
 
-### 5.5 How This Works With Current Infra
-
-- **No new AWS resources** — admin dashboard is just more React pages + API routes in the same app
-- **Admin access** controlled by `isSuperAdmin` flag in existing `users` table in RDS
-- **Grafana** (already deployed at `http://a8afc157eacc24326b394e8a1dea8465-1678634722.us-east-1.elb.amazonaws.com`) provides infrastructure monitoring — admin health tab can link to it
-- **RDS query performance** for admin stats: add materialized views or caching with Redis (or use PostgreSQL's built-in `pg_stat_statements` for now)
+- No new AWS resources needed. The admin dashboard is just more React pages and API routes in the same app. Admin access is controlled by the isSuperAdmin flag in the existing users table in RDS. The existing Grafana deployment provides infrastructure monitoring and the admin health tab can link to it. For admin stats query performance, use materialized views or caching, or leverage PostgreSQL's built-in pg_stat_statements initially.
 
 ---
 
@@ -684,125 +307,28 @@ GET  /api/admin/health                       → Platform health (RDS, EKS, S3, 
 
 ### 6.1 Domain Auto-Join
 
-**Schema:**
-
-```typescript
-export const orgDomains = pgTable("org_domains", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull().references(() => organizations.id),
-  domain: text("domain").notNull(),           // e.g., "aricatech.xyz"
-  verified: boolean("verified").default(false),
-  verificationToken: text("verification_token"),
-  verificationMethod: text("verification_method").default("dns_txt"),
-  // dns_txt: add TXT record securenexus-verify={token} to domain DNS
-  defaultRole: text("default_role").default("analyst"),
-  autoJoinEnabled: boolean("auto_join_enabled").default(false),
-  verifiedAt: timestamp("verified_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
-  uniqueIndex("idx_org_domains_domain").on(table.domain),
-  index("idx_org_domains_org").on(table.orgId),
-]);
-```
-
-**Routes:**
-
-```
-POST /api/orgs/:orgId/domains                    → Add domain claim
-GET  /api/orgs/:orgId/domains                    → List claimed domains
-POST /api/orgs/:orgId/domains/:domainId/verify   → Verify domain ownership (checks DNS)
-DELETE /api/orgs/:orgId/domains/:domainId         → Remove domain claim
-PATCH /api/orgs/:orgId/domains/:domainId          → Update default role, auto-join toggle
-```
-
-**Auto-join logic (modify `ensureOrgMembership` in `server/auth/routes.ts`):**
-
-```
-1. User signs up with email user@aricatech.xyz
-2. Check orgDomains for domain "aricatech.xyz" where verified=true AND autoJoinEnabled=true
-3. If found → auto-create membership with defaultRole
-4. If not found → proceed with normal flow (create personal org)
-```
-
-**Domain verification:**
-
-1. Owner adds domain `aricatech.xyz`
-2. System generates verification token: `securenexus-verify=abc123def456`
-3. Owner adds TXT record to DNS: `securenexus-verify=abc123def456`
-4. Owner clicks "Verify" → backend does DNS lookup for TXT records → if match, set `verified=true`
+- Current state: No mechanism for automatic org membership based on email domain.
+- Why it matters: Enterprise clients with hundreds of employees need frictionless onboarding. Manually inviting every user is not scalable.
+- What to do:
+  - Create an org_domains table with orgId, domain, verified status, verification token, verification method (DNS TXT), default role for auto-joined users, auto-join toggle, verification timestamp, and creation timestamp. Add a unique index on domain and an index on orgId.
+  - Add routes for claiming a domain, listing claimed domains, verifying domain ownership via DNS lookup, removing domain claims, and updating default role and auto-join toggle.
+  - Modify the auto-provisioning logic so that when a user signs up, the system checks for a verified domain with auto-join enabled matching their email domain. If found, auto-create membership with the configured default role. If not found, proceed with the normal flow of creating a personal org.
+  - Domain verification works by: owner adds a domain, system generates a verification token, owner adds a TXT record to their DNS with that token, and the backend does a DNS lookup to confirm the match.
 
 ### 6.2 SAML/OIDC SSO (Enterprise Plan Only)
 
-**New dependency:** `passport-saml` or `@node-saml/passport-saml`
+- Current state: Authentication is limited to email/password, Google OAuth, and GitHub OAuth. No SAML or OIDC support exists.
+- Why it matters: Enterprise clients require SSO integration with their identity providers (Okta, Azure AD, etc.) for security compliance, centralized access control, and employee lifecycle management.
+- What to do:
+  - Create an sso_configs table with orgId (unique per org), protocol (SAML or OIDC), SAML-specific fields (entry point URL, issuer/SP entity ID, IdP certificate in PEM format), OIDC-specific fields (client ID, client secret encrypted at rest, discovery URL), common fields (default role, enforced flag to disable password login, enabled toggle), and timestamps. Add an index on orgId.
+  - Add routes for initiating SSO login (redirects to IdP), handling the SAML assertion consumer or OIDC callback, getting SSO config (admin+), creating/updating SSO config (owner only), testing SSO connection, and removing SSO config (owner only).
+  - The SSO login flow: user navigates to the SSO URL for their org slug, backend looks up the SSO config, redirects to the IdP (SAML entry point or OIDC authorize URL), user authenticates at the IdP, IdP posts back the SAML assertion or redirects with an auth code, backend validates the assertion/token, extracts the email, finds or creates the user, creates a session, and redirects to the dashboard.
+  - Add a "Sign in with SSO" button on the landing page that shows an org slug input and redirects to the SSO flow.
+  - SSO config UI is only shown if the org's subscription plan has SSO enabled.
 
-**Schema:**
+### 6.3 Infrastructure Notes
 
-```typescript
-export const ssoConfigs = pgTable("sso_configs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull().references(() => organizations.id).unique(),
-  protocol: text("protocol").notNull(),          // "saml" or "oidc"
-  // SAML fields
-  entryPoint: text("entry_point"),               // IdP SSO URL
-  issuer: text("issuer"),                        // SP Entity ID
-  cert: text("cert"),                            // IdP certificate (PEM)
-  // OIDC fields
-  oidcClientId: text("oidc_client_id"),
-  oidcClientSecret: text("oidc_client_secret"),  // encrypted at rest
-  oidcDiscoveryUrl: text("oidc_discovery_url"),  // e.g., https://login.microsoftonline.com/{tenant}/.well-known/openid-configuration
-  // Common
-  defaultRole: text("default_role").default("analyst"),
-  enforced: boolean("enforced").default(false),   // if true, only SSO login allowed (no email/password)
-  enabled: boolean("enabled").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_sso_configs_org").on(table.orgId),
-]);
-```
-
-**Routes:**
-
-```
-GET  /api/auth/sso/:orgSlug                      → Initiate SSO login (redirects to IdP)
-POST /api/auth/sso/:orgSlug/callback              → SAML assertion consumer / OIDC callback
-GET  /api/orgs/:orgId/sso-config                  → Get SSO config (admin+)
-PUT  /api/orgs/:orgId/sso-config                  → Create/update SSO config (owner only)
-POST /api/orgs/:orgId/sso-config/test             → Test SSO connection
-DELETE /api/orgs/:orgId/sso-config                → Remove SSO config (owner only)
-```
-
-**SSO login flow:**
-
-```
-User navigates to https://nexus.aricatech.xyz/sso/{orgSlug}
-  │
-  ▼
-Backend looks up SSO config for orgSlug
-  │
-  ▼ SAML                          ▼ OIDC
-  Redirect to IdP entryPoint      Redirect to OIDC authorize URL
-  │                                │
-  ▼                                ▼
-  User authenticates at IdP        User authenticates at IdP
-  │                                │
-  ▼                                ▼
-  IdP POSTs SAML assertion to      IdP redirects with auth code to
-  /api/auth/sso/{slug}/callback    /api/auth/sso/{slug}/callback
-  │                                │
-  ▼                                ▼
-  Validate assertion/token → Extract email → Find/create user → Create session → Redirect to dashboard
-```
-
-**Landing page change:** Add "Sign in with SSO" button that shows org slug input → redirects to SSO flow.
-
-### 6.3 How This Works With Current Infra
-
-- **DNS verification** uses Node.js `dns.resolveTxt()` — no external service needed
-- **SAML certificates** stored encrypted in RDS — no need for certificate management service
-- **SSO endpoints** served by existing Express app in EKS
-- **Passport strategies** dynamically loaded per-org (not at startup) since each org has different IdP config
-- **Enterprise plan gate**: SSO config UI only shown if org subscription plan has `ssoEnabled: true`
+- DNS verification uses Node.js built-in dns.resolveTxt with no external service needed. SAML certificates are stored encrypted in RDS with no certificate management service required. SSO endpoints are served by the existing Express app in EKS. Passport strategies are dynamically loaded per-org (not at startup) since each org has different IdP config.
 
 ---
 
@@ -812,60 +338,25 @@ Backend looks up SSO config for orgSlug
 
 **Estimated Effort:** 2-3 days
 
-### 7.1 Schema Changes
+### 7.1 Parent-Child Org Model
 
-```typescript
-// Extend organizations table
-parentOrgId: varchar("parent_org_id").references(() => organizations.id),
-orgType: text("org_type").default("standard"),   // "standard", "mssp_parent", "mssp_child"
-```
+- Current state: All organizations are flat peers with no hierarchy.
+- Why it matters: MSSPs are a major market segment for SOC platforms. They need to manage dozens of client orgs from a single account with controlled access and aggregated visibility.
+- What to do:
+  - Extend the organizations table with a parentOrgId (self-referential foreign key) and an orgType field (standard, mssp_parent, mssp_child).
+  - Create an mssp_access_grants table defining what access the parent org's team gets in each child org, with fields for parentOrgId, childOrgId, granted role, scope (JSON defining which permission scopes are granted per resource type), grant metadata (who granted, when), and revocation tracking. Add a unique composite index on parentOrgId + childOrgId, plus individual indexes on each.
+  - Add routes for creating a child org for an MSSP client, listing all child orgs, granting MSSP team access to a child org with specific role and scope, revoking access, and getting aggregated stats across all child orgs.
 
-```typescript
-export const msspAccessGrants = pgTable("mssp_access_grants", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  parentOrgId: varchar("parent_org_id").notNull().references(() => organizations.id),
-  childOrgId: varchar("child_org_id").notNull().references(() => organizations.id),
-  grantedRole: text("granted_role").notNull().default("analyst"),
-  // what role MSSP analysts get in the child org
-  scope: jsonb("scope").default({}),
-  // which permission scopes are granted: { incidents: ["read", "write"], connectors: ["read"] }
-  grantedAt: timestamp("granted_at").defaultNow(),
-  grantedBy: varchar("granted_by"),
-  revokedAt: timestamp("revoked_at"),
-}, (table) => [
-  uniqueIndex("idx_mssp_access_parent_child").on(table.parentOrgId, table.childOrgId),
-  index("idx_mssp_access_parent").on(table.parentOrgId),
-  index("idx_mssp_access_child").on(table.childOrgId),
-]);
-```
+### 7.2 MSSP Dashboard
 
-### 7.2 Routes
+- Current state: No aggregated view across multiple organizations exists.
+- Why it matters: MSSP analysts need a single pane of glass to monitor all their clients without constantly switching contexts.
+- What to do:
+  - Create an MSSP dashboard page showing a list of all client orgs with health status, alert counts, and open incidents; aggregated metrics across all clients; quick switch to any client org via the org switcher; a consolidated alert view across all client orgs; and per-client SLA tracking.
 
-```
-POST /api/orgs/:parentOrgId/clients                    → Create child org for MSSP client
-GET  /api/orgs/:parentOrgId/clients                    → List all child orgs
-POST /api/orgs/:parentOrgId/clients/:childOrgId/grant  → Grant MSSP team access to child org
-DELETE /api/orgs/:parentOrgId/clients/:childOrgId/grant → Revoke access
-GET  /api/orgs/:parentOrgId/clients/overview            → Aggregated stats across all child orgs
-```
+### 7.3 Infrastructure Notes
 
-### 7.3 MSSP Dashboard
-
-**New file:** `client/src/pages/mssp-dashboard.tsx`
-
-**Content:**
-- List of all client orgs with health status, alert counts, open incidents
-- Aggregated metrics across all clients
-- Quick switch to any client org (using org switcher)
-- Consolidated alert view across all client orgs
-- Per-client SLA tracking
-
-### 7.4 How This Works With Current Infra
-
-- **Same database** — parent-child relationship is a self-referential FK on `organizations` table
-- **Org switcher** (Phase 1) already supports switching — MSSP users just have more orgs to switch between
-- **RBAC middleware** already reads `X-Org-Id` header — no changes needed
-- **Data isolation** maintained — each child org has its own `orgId` on all tables
+- Same database with parent-child relationship as a self-referential FK on the organizations table. The org switcher from Phase 1 already supports switching, and MSSP users just have more orgs to switch between. The RBAC middleware already reads the X-Org-Id header with no changes needed. Data isolation is maintained since each child org has its own orgId on all tables.
 
 ---
 
@@ -875,114 +366,40 @@ GET  /api/orgs/:parentOrgId/clients/overview            → Aggregated stats acr
 
 **Estimated Effort:** 2-3 days
 
-### 8.1 Usage Tracking Schema
+### 8.1 Usage Tracking
 
-```typescript
-export const usageRecords = pgTable("usage_records", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull().references(() => organizations.id),
-  metric: text("metric").notNull(),
-  // "alerts_ingested", "api_calls", "ai_analyses", "storage_bytes", "connector_syncs"
-  value: integer("value").notNull().default(0),
-  periodStart: timestamp("period_start").notNull(),
-  periodEnd: timestamp("period_end").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_usage_org_metric").on(table.orgId, table.metric),
-  index("idx_usage_period").on(table.periodStart, table.periodEnd),
-  uniqueIndex("idx_usage_org_metric_period").on(table.orgId, table.metric, table.periodStart),
-]);
-```
+- Current state: The maxUsers field exists on organizations but is never checked. No usage tracking or limit enforcement exists.
+- Why it matters: Without metering and enforcement, paid plans have no teeth. Users on free plans can consume unlimited resources, and there is no data to drive upgrade conversations.
+- What to do:
+  - Create a usage_records table with orgId, metric name (alerts_ingested, api_calls, ai_analyses, storage_bytes, connector_syncs), value counter, period start/end timestamps, and indexes on org+metric, period, and a unique composite index on org+metric+period to enable upsert operations.
+  - Usage counters are incremented via upsert (insert on conflict update) for efficient single-row operations.
 
 ### 8.2 Enforcement Middleware
 
-**New file:** `server/plan-enforcement.ts`
-
-```typescript
-export function enforcePlanLimit(metric: string) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const orgId = (req as any).orgId;
-    if (!orgId) return next();
-
-    const subscription = await storage.getSubscriptionByOrgId(orgId);
-    if (!subscription) return next(); // free plan with defaults
-
-    const plan = await storage.getPlan(subscription.planId);
-    const features = plan.features;
-    const currentUsage = await storage.getCurrentUsage(orgId, metric);
-
-    const limitMap: Record<string, number | null> = {
-      alerts_ingested: features.maxAlerts,
-      connectors: features.maxConnectors,
-      users: features.maxUsers,
-      api_keys: features.maxApiKeys,
-      playbooks: features.maxPlaybooks,
-    };
-
-    const limit = limitMap[metric];
-    if (limit !== null && limit !== undefined && currentUsage >= limit) {
-      return res.status(429).json({
-        error: "Plan limit reached",
-        metric,
-        current: currentUsage,
-        limit,
-        upgradeUrl: "/settings/billing",
-      });
-    }
-
-    next();
-  };
-}
-```
-
-**Apply to routes:**
-
-| Route | Metric Enforced |
-|---|---|
-| `POST /api/alerts/ingest` | `alerts_ingested` |
-| `POST /api/connectors` | `connectors` |
-| `POST /api/orgs/:orgId/invitations` | `users` |
-| `POST /api/api-keys` | `api_keys` |
-| `POST /api/playbooks` | `playbooks` |
-| `POST /api/ai/*` | `ai_analyses` (if `aiEnabled` is false, return 403) |
+- Current state: No plan limit enforcement exists at the API level.
+- Why it matters: Without enforcement, plan limits are purely advisory and there is no incentive to upgrade.
+- What to do:
+  - Create a plan enforcement middleware that looks up the current org's subscription and plan, queries current usage for the relevant metric, and returns a 429 response with the current usage, limit, and upgrade URL if the limit is reached.
+  - Apply enforcement to: alert ingestion (alerts_ingested limit), connector creation (connectors limit), team invitation (users limit), API key creation (api_keys limit), playbook creation (playbooks limit), and AI analysis endpoints (ai_analyses limit, or 403 if AI is disabled for the plan).
 
 ### 8.3 Usage Dashboard Widget
 
-**In Settings → Plan & Usage section (existing `client/src/pages/settings.tsx`):**
-
-Replace hardcoded progress bars with real data from `GET /api/billing/usage`:
-
-```json
-{
-  "alerts": { "used": 3247, "limit": 10000, "percent": 32.5 },
-  "connectors": { "used": 4, "limit": 10, "percent": 40 },
-  "users": { "used": 3, "limit": 5, "percent": 60 },
-  "apiKeys": { "used": 2, "limit": 10, "percent": 20 },
-  "storage": { "used": "1.2 GB", "limit": "10 GB", "percent": 12 },
-  "aiAnalyses": { "used": 47, "limit": 500, "percent": 9.4 }
-}
-```
+- Current state: Settings page shows hardcoded progress bars for plan usage.
+- Why it matters: Users need real-time visibility into their consumption to plan upgrades and manage resources.
+- What to do:
+  - Replace hardcoded progress bars with real data from the billing usage endpoint, showing used vs limit counts and percentages for alerts, connectors, users, API keys, storage, and AI analyses.
 
 ### 8.4 Approaching-Limit Notifications
 
-When usage hits 80% of a limit:
-1. Show yellow warning banner in dashboard
-2. Send email to org owner/admins: "You've used 80% of your monthly alert quota"
-3. Show upgrade CTA in the warning
+- Current state: No usage threshold notifications exist.
+- Why it matters: Users should be warned before they hit hard limits so they can proactively upgrade rather than being blocked mid-workflow.
+- What to do:
+  - At 80% usage: show a yellow warning banner in the dashboard, send email to org owner/admins, and show an upgrade CTA.
+  - At 100% usage: show a red banner ("Plan limit reached"), API returns 429 with upgrade URL, and existing data is NOT deleted (only new ingestion/creation is blocked).
 
-When usage hits 100%:
-1. Show red banner: "Plan limit reached — upgrade to continue"
-2. API returns 429 with upgrade URL
-3. Existing data is NOT deleted — just new ingestion/creation blocked
+### 8.5 Infrastructure Notes
 
-### 8.5 How This Works With Current Infra
-
-- **Usage counters** stored in RDS — simple `INSERT ... ON CONFLICT DO UPDATE SET value = value + 1`
-- **Usage check** on every relevant API call adds ~1ms (single indexed query)
-- **Background job** to roll over usage periods: run a CronJob in EKS (`k8s/base/usage-rollover-cronjob.yml`) at midnight UTC on the 1st of each month
-- **No Redis needed** — PostgreSQL is fast enough for single-row lookups with proper indexes
-- **Grafana** can visualize usage trends using the existing Prometheus + PostgreSQL exporter setup
+- Usage counters stored in RDS with simple upsert operations. Usage checks on relevant API calls add approximately 1ms (single indexed query). A background CronJob in EKS rolls over usage periods at midnight UTC on the 1st of each month. No Redis needed since PostgreSQL is fast enough for single-row lookups with proper indexes. Grafana can visualize usage trends using the existing Prometheus + PostgreSQL exporter setup.
 
 ---
 
@@ -994,88 +411,48 @@ When usage hits 100%:
 
 ### 9.1 Data Isolation Audit
 
-Every query that touches org-scoped data MUST include `WHERE org_id = ?`. Audit all storage methods in `server/storage.ts`:
-
-| Check | Current State | Action Needed |
-|---|---|---|
-| Alerts always filtered by orgId | Most queries include orgId | Audit all 40+ alert methods |
-| Incidents always filtered by orgId | Most queries include orgId | Audit all 20+ incident methods |
-| Connectors always filtered by orgId | Yes | Verify |
-| API keys always filtered by orgId | Yes | Verify |
-| Audit logs always filtered by orgId | No — some queries are global | Fix: add orgId filter for non-admin routes |
-| AI feedback always filtered by orgId | Partial | Fix |
-
-**Implementation:** Add a `withOrgScope` helper that wraps all queries:
-
-```typescript
-function withOrgScope<T>(query: T, orgId: string | null): T {
-  if (!orgId) throw new Error("orgId is required for tenant-scoped queries");
-  return query.where(eq(table.orgId, orgId));
-}
-```
+- Current state: Most queries include orgId filtering, but coverage is not 100% and there is no systematic enforcement.
+- Why it matters: Cross-tenant data exposure is an existential risk for a SOC platform. A single leaking query can expose one customer's security data to another.
+- What to do:
+  - Audit every storage method that touches org-scoped data (40+ alert methods, 20+ incident methods, connectors, API keys, audit logs, AI feedback) to ensure all include orgId filtering.
+  - Fix known gaps: audit logs have some global queries that should be org-scoped for non-admin routes, and AI feedback filtering is partial.
+  - Implement a withOrgScope helper that wraps all tenant-scoped queries, throwing an error if orgId is not provided rather than silently returning unscoped data.
 
 ### 9.2 API Security Hardening
 
-Based on security best practices:
-
-| Hardening | Implementation | Where |
-|---|---|---|
-| **Helmet** | Already using `helmet()` in `server/index.ts` | Verify CSP, X-Frame-Options, HSTS |
-| **Rate limiting** | Already using `express-rate-limit` (100 req/15min global, stricter on auth) | Add per-org rate limiting |
-| **Body size limit** | Already using `express.json({ limit: '1mb' })` | Verify |
-| **X-Powered-By** | Already disabled | Verify |
-| **CORS** | Not configured (same-origin only) | Add CORS for API-key-authenticated requests |
-| **CSRF** | Not implemented | Add `csurf` middleware for all mutating endpoints |
-| **Input validation** | Using Zod schemas via `createInsertSchema` | Verify all routes use validation |
-| **SQL injection** | Drizzle ORM parameterizes all queries | Safe |
-| **XSS** | React auto-escapes output | Verify no `dangerouslySetInnerHTML` usage |
-| **Session security** | `httpOnly: true`, `secure: true` in production | Verify `sameSite: 'strict'` |
+- Current state: Some security measures exist (Helmet, rate limiting, body size limits, X-Powered-By disabled, Zod validation, Drizzle ORM parameterization, React auto-escaping) but coverage is incomplete.
+- Why it matters: Enterprises expect baseline OWASP protections and security headers. Gaps increase exploitability and block security reviews.
+- What to do:
+  - Verify and strengthen existing protections: CSP headers, X-Frame-Options, and HSTS via Helmet; rate limiting with per-org limits added; body size limit verification; CORS configuration for API-key-authenticated requests.
+  - Add missing protections: CSRF middleware for all mutating endpoints; verification that all routes use Zod validation; verification of no dangerouslySetInnerHTML usage; session security with sameSite set to strict.
 
 ### 9.3 Per-Org Rate Limiting
 
-```typescript
-import rateLimit from "express-rate-limit";
-
-const orgRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: (req) => {
-    const plan = (req as any).planFeatures;
-    if (!plan) return 100;
-    return plan.name === "enterprise" ? 10000 : plan.name === "pro" ? 5000 : 1000;
-  },
-  keyGenerator: (req) => (req as any).orgId || req.ip,
-  message: { error: "Rate limit exceeded for your organization" },
-});
-```
+- Current state: Global rate limiting exists (100 req/15min) but is not plan-aware.
+- Why it matters: Enterprise customers need higher limits, while free-tier abuse must be prevented. One-size-fits-all limits either throttle paying customers or leave the platform open to abuse.
+- What to do:
+  - Implement plan-aware rate limiting: enterprise gets 10,000 requests per 15 minutes, pro gets 5,000, and free gets 1,000. Use orgId as the rate limit key (falling back to IP for unauthenticated requests).
 
 ### 9.4 Secrets Management
 
-**Current state:** Secrets stored in AWS Secrets Manager and synced to K8s secrets by CI/CD pipeline.
-
-**Enhancement:**
-- Rotate `SESSION_SECRET` every 90 days via a scheduled Lambda
-- Rotate RDS password every 90 days via RDS automatic rotation
-- Stripe webhook secret rotated when regenerated in Stripe dashboard
-- OAuth client secrets rotation procedure documented
+- Current state: Secrets are stored in AWS Secrets Manager and synced to K8s secrets by the CI/CD pipeline.
+- Why it matters: Credential rotation is a compliance requirement and reduces blast radius of any compromise.
+- What to do:
+  - Rotate SESSION_SECRET every 90 days via a scheduled Lambda.
+  - Rotate RDS password every 90 days via RDS automatic rotation.
+  - Rotate Stripe webhook secret when regenerated in the Stripe dashboard.
+  - Document OAuth client secrets rotation procedure.
 
 ### 9.5 Audit Log Enhancement
 
-Add to every audit log entry:
+- Current state: Audit logs capture userId, action, resourceType, resourceId, details, and ipAddress.
+- Why it matters: Enterprise compliance and forensics require richer context for every audited event.
+- What to do:
+  - Add new fields to audit log entries: userAgent, impersonatedBy (for super-admin impersonation tracking), and requestId (for correlating with application logs).
 
-```typescript
-ipAddress: text("ip_address"),      // already exists
-userAgent: text("user_agent"),      // NEW
-orgId: varchar("org_id"),           // already exists
-impersonatedBy: varchar("impersonated_by"), // NEW (for super-admin impersonation)
-requestId: text("request_id"),      // NEW (for correlating with application logs)
-```
+### 9.6 Infrastructure Notes
 
-### 9.6 How This Works With Current Infra
-
-- **All changes are application-level** — no new AWS resources
-- **Rate limiting state** stored in-memory (existing `express-rate-limit` behavior) — fine for single-pod-per-namespace deployments
-- **For multi-pod scaling**, use `rate-limit-redis` with an ElastiCache Redis instance — provision only when needed
-- **Audit logs** already stored in RDS — just add new columns via Drizzle migration
+- All changes are application-level with no new AWS resources. Rate limiting state is stored in-memory (existing express-rate-limit behavior), which is fine for single-pod-per-namespace deployments. For multi-pod scaling, use rate-limit-redis with an ElastiCache Redis instance, provisioned only when needed. Audit log changes are just new columns via Drizzle migration.
 
 ---
 
@@ -1087,92 +464,41 @@ requestId: text("request_id"),      // NEW (for correlating with application log
 
 ### 10.1 Compliance Dashboard
 
-**New file:** `client/src/pages/compliance-center.tsx`
-
-**Sections:**
-
-| Section | Content |
-|---|---|
-| **Framework Coverage** | SOC 2, ISO 27001, NIST CSF, PCI DSS — show coverage % per framework |
-| **Control Mapping** | Which SecureNexus features map to which compliance controls |
-| **Evidence Locker** | Already exists (`evidence_locker_items` table) — needs UI |
-| **Data Retention** | Per-org retention policies — already exists (`compliance_policies` table) |
-| **DSAR Processing** | Already exists (`dsar_requests` table) — needs better UI |
-| **Audit Export** | Export audit logs as CSV/PDF for auditor review |
+- Current state: Compliance-related tables exist (evidence_locker_items, compliance_policies, dsar_requests) but lack comprehensive UI.
+- Why it matters: Enterprise buyers require visible compliance posture, evidence management, and audit export capabilities.
+- What to do:
+  - Create a compliance center page with sections for Framework Coverage (SOC 2, ISO 27001, NIST CSF, PCI DSS with coverage percentage per framework), Control Mapping (which SecureNexus features map to which compliance controls), Evidence Locker (UI for the existing evidence_locker_items table), Data Retention (per-org retention policies using the existing compliance_policies table), DSAR Processing (better UI for the existing dsar_requests table), and Audit Export (export audit logs as CSV/PDF for auditor review).
 
 ### 10.2 Data Retention Enforcement
 
-**Current state:** `compliance_policies` table has `retentionDays` but enforcement is not automated.
-
-**Add K8s CronJob:** `k8s/base/retention-cronjob.yml`
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: data-retention-cleanup
-  namespace: production
-spec:
-  schedule: "0 2 * * *"    # 2 AM UTC daily
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: retention-cleanup
-            image: ${ECR_IMAGE}
-            command: ["node", "dist/retention-cleanup.js"]
-            envFrom:
-            - secretRef:
-                name: securenexus-secrets
-          restartPolicy: OnFailure
-```
-
-**Cleanup script:** `server/retention-cleanup.ts`
-
-```typescript
-// For each org:
-// 1. Get org's retention policy (from compliance_policies or plan default)
-// 2. Delete alerts older than retentionDays
-// 3. Delete audit logs older than retentionDays (archive to S3 first)
-// 4. Delete ingestion logs older than retentionDays
-// 5. Log cleanup stats
-```
+- Current state: The compliance_policies table has a retentionDays field but enforcement is not automated.
+- Why it matters: Without automated retention enforcement, data accumulates indefinitely, increasing storage costs and compliance risk.
+- What to do:
+  - Create a K8s CronJob that runs daily at 2 AM UTC to enforce retention policies. For each org: get the org's retention policy (from compliance_policies or plan default), delete alerts older than retentionDays, archive audit logs to S3 before deleting, delete ingestion logs older than retentionDays, and log cleanup stats.
 
 ### 10.3 Data Residency (Future)
 
-**Current:** All data stored in `us-east-1` (RDS, S3, EKS).
-
-**For EU clients (GDPR):**
-- Provision separate RDS instance in `eu-west-1`
-- Provision separate S3 bucket in `eu-west-1`
-- Route EU org traffic to EU infrastructure via Kubernetes namespace isolation
-- Store `dataResidency` field on `organizations` table (already exists on `aiDeploymentConfigs`)
-
-**Implementation approach:**
-- Add `dataResidency: text("data_residency").default("us")` to `organizations` table
-- During onboarding, enterprise clients choose region
-- Application reads org's region and connects to the correct database/S3 bucket
-- This is a significant architectural change — implement only when EU clients require it
+- Current state: All data is stored in us-east-1 (RDS, S3, EKS).
+- Why it matters: EU clients under GDPR may require data to reside within EU borders. This is a common enterprise procurement blocker.
+- What to do:
+  - Provision separate RDS instance and S3 bucket in eu-west-1 for EU clients.
+  - Route EU org traffic to EU infrastructure via Kubernetes namespace isolation.
+  - Add a dataResidency field to the organizations table.
+  - During onboarding, enterprise clients choose their region.
+  - The application reads the org's region and connects to the correct database/S3 bucket.
+  - This is a significant architectural change and should be implemented only when EU clients require it.
 
 ### 10.4 Audit Log Export
 
-**Routes:**
+- Current state: Audit logs exist in the database but cannot be exported.
+- Why it matters: External auditors require downloadable, immutable audit records. This is a hard requirement for SOC 2 and ISO 27001 certification.
+- What to do:
+  - Add routes for streaming CSV export (with date range filters), generating PDF reports, and archiving old logs to S3.
+  - S3 archive path follows the pattern: audit-archives/{orgId}/{year}/{month}.json.gz in the existing S3 bucket.
 
-```
-GET  /api/audit-logs/export?format=csv&startDate=&endDate=    → Stream CSV download
-GET  /api/audit-logs/export?format=pdf&startDate=&endDate=    → Generate PDF report
-POST /api/audit-logs/archive                                   → Archive old logs to S3
-```
+### 10.5 Infrastructure Notes
 
-**S3 archive path:** `s3://securenexus-platform-557845624595/audit-archives/{orgId}/{year}/{month}.json.gz`
-
-### 10.5 How This Works With Current Infra
-
-- **CronJobs** run in the existing EKS cluster — same namespace, same image
-- **S3 archival** uses existing bucket `securenexus-platform-557845624595`
-- **PDF generation** use `pdfkit` or `puppeteer` (if complex layout needed) — runs in EKS pod
-- **EU data residency** requires new RDS + S3 in eu-west-1 — only provision when needed
+- CronJobs run in the existing EKS cluster using the same namespace and image. S3 archival uses the existing bucket. PDF generation uses pdfkit or puppeteer (if complex layout is needed) running in EKS pods. EU data residency requires new RDS + S3 in eu-west-1, provisioned only when needed.
 
 ---
 
@@ -1180,102 +506,68 @@ POST /api/audit-logs/archive                                   → Archive old l
 
 ### Current AWS Resources
 
-| Resource | Identifier | Region |
-|---|---|---|
-| **AWS Account** | `557845624595` | — |
-| **EKS Cluster** | `securenexus` | us-east-1 |
-| **RDS PostgreSQL** | `securenexus-db.cspsu4cuei9t.us-east-1.rds.amazonaws.com` | us-east-1 |
-| **ECR Repository** | `557845624595.dkr.ecr.us-east-1.amazonaws.com/securenexus` | us-east-1 |
-| **S3 Bucket** | `securenexus-platform-557845624595` | us-east-1 |
-| **Secrets Manager** | `securenexus/staging`, `securenexus/uat`, `securenexus/production` | us-east-1 |
-| **VPC Connector** | For App Runner (legacy) | us-east-1 |
+- **AWS Account:** 557845624595
+- **EKS Cluster:** securenexus in us-east-1
+- **RDS PostgreSQL:** securenexus-db.cspsu4cuei9t.us-east-1.rds.amazonaws.com in us-east-1
+- **ECR Repository:** 557845624595.dkr.ecr.us-east-1.amazonaws.com/securenexus in us-east-1
+- **S3 Bucket:** securenexus-platform-557845624595 in us-east-1
+- **Secrets Manager:** securenexus/staging, securenexus/uat, securenexus/production in us-east-1
+- **VPC Connector:** For App Runner (legacy) in us-east-1
 
 ### Current EKS Namespaces
 
-| Namespace | URL | Purpose |
-|---|---|---|
-| `staging` | `http://a04e0b6e1e6064d8087b9efeea03ad62-2085941450.us-east-1.elb.amazonaws.com` | Staging environment |
-| `production` | `http://aee5203ae785c4ebab01261c0f93eba4-294515603.us-east-1.elb.amazonaws.com` | Production (canary rollout via Argo) |
-| `uat` | UAT environment | User acceptance testing |
-| `monitoring` | Prometheus + Grafana | Metrics and dashboards |
-| `argo-rollouts` | Argo Rollouts controller | Canary deployment management |
+- **staging** — Staging environment accessible via the staging ELB
+- **production** — Production environment with canary rollout via Argo Rollouts, accessible via the production ELB
+- **uat** — User acceptance testing environment
+- **monitoring** — Prometheus + Grafana for metrics and dashboards
+- **argo-rollouts** — Argo Rollouts controller for canary deployment management
 
 ### Custom Domains
 
-| Domain | Points To | Purpose |
-|---|---|---|
-| `staging.aricatech.xyz` | Staging ELB | Staging access |
-| `nexus.aricatech.xyz` | Production ELB | Production access |
+- **staging.aricatech.xyz** — Points to the staging ELB for staging access
+- **nexus.aricatech.xyz** — Points to the production ELB for production access
 
 ### CI/CD Pipeline
 
-```
-Push to main
-  │
-  ▼
-GitHub Actions (.github/workflows/ci-cd.yml)
-  │
-  ├─► Build Docker image
-  │   └─► Push to ECR (tagged with commit SHA + latest)
-  │
-  ├─► Deploy to Staging
-  │   ├─► Sync secrets from AWS Secrets Manager
-  │   └─► kubectl apply rollout.yml + service.yml
-  │
-  ├─► Deploy to UAT
-  │   ├─► Sync secrets from AWS Secrets Manager
-  │   └─► kubectl apply rollout.yml + service.yml
-  │
-  └─► Deploy to Production
-      ├─► Sync secrets from AWS Secrets Manager
-      ├─► kubectl apply rollout.yml (Argo Rollout)
-      └─► Canary: 20% → 40% → 60% → 80% → 100%
-```
+The pipeline is triggered on every push to main. GitHub Actions builds the Docker image, pushes to ECR tagged with commit SHA and latest, then deploys sequentially: first to staging (sync secrets from Secrets Manager, apply rollout and service manifests), then to UAT (same process), then to production (same process but using Argo Rollout with canary progression at 20%, 40%, 60%, 80%, 100%).
 
 ### Monitoring
 
-| Tool | URL | Credentials |
-|---|---|---|
-| **Grafana** | `http://a8afc157eacc24326b394e8a1dea8465-1678634722.us-east-1.elb.amazonaws.com` | admin / SecureNexusGrafana2026 |
-| **Prometheus** | Internal (ClusterIP) | Scraped by Grafana |
+- **Grafana** is deployed and accessible via the monitoring namespace ELB with admin credentials.
+- **Prometheus** runs as a ClusterIP service scraped by Grafana.
 
 ---
 
 ## New AWS Resources Needed (by Phase)
 
-| Phase | Resource | Type | Estimated Cost |
-|---|---|---|---|
-| Phase 4 | SES verified domain | SES | ~$0.10/1000 emails |
-| Phase 4 | SES sending identity | SES | Free |
-| Phase 8 | ElastiCache Redis (optional) | ElastiCache | ~$15/month (cache.t3.micro) |
-| Phase 10 | EU RDS instance (optional) | RDS | ~$30/month (db.t3.micro) |
-| Phase 10 | EU S3 bucket (optional) | S3 | ~$5/month |
+- **Phase 4:** SES verified domain and sending identity. Estimated cost: approximately $0.10 per 1,000 emails.
+- **Phase 8 (optional):** ElastiCache Redis instance for distributed rate limiting. Estimated cost: approximately $15/month for cache.t3.micro.
+- **Phase 10 (optional):** EU RDS instance. Estimated cost: approximately $30/month for db.t3.micro.
+- **Phase 10 (optional):** EU S3 bucket. Estimated cost: approximately $5/month.
 
-**Total additional AWS cost:** ~$0.10/month minimum (SES only), up to ~$50/month with all optional resources.
+Total additional AWS cost: approximately $0.10/month minimum (SES only), up to approximately $50/month with all optional resources.
 
 ---
 
 ## Implementation Priority Summary
 
-| Phase | Name | Effort | Dependencies |
-|---|---|---|---|
-| **Phase 1** | Organization Management & Settings | 2-3 days | None |
-| **Phase 2** | Business Onboarding Wizard | 3-4 days | Phase 1 |
-| **Phase 3** | Subscription & Billing (Stripe) | 4-5 days | Phase 1 |
-| **Phase 4** | Invitation System & Email (SES) | 2-3 days | None |
-| **Phase 5** | Platform Super-Admin Dashboard | 3-4 days | Phase 3 |
-| **Phase 6** | Domain Auto-Join & SSO | 3-4 days | Phase 1 |
-| **Phase 7** | MSSP / Parent-Child Organizations | 2-3 days | Phase 1 |
-| **Phase 8** | Usage Metering & Plan Enforcement | 2-3 days | Phase 3 |
-| **Phase 9** | Security Hardening for Multi-Tenancy | 2-3 days | Phase 1 |
-| **Phase 10** | Audit, Compliance & Data Residency | 3-4 days | Phase 8 |
+- **Phase 1** — Organization Management & Settings: 2-3 days, no dependencies.
+- **Phase 2** — Business Onboarding Wizard: 3-4 days, depends on Phase 1.
+- **Phase 3** — Subscription & Billing (Stripe): 4-5 days, depends on Phase 1.
+- **Phase 4** — Invitation System & Email (SES): 2-3 days, no dependencies.
+- **Phase 5** — Platform Super-Admin Dashboard: 3-4 days, depends on Phase 3.
+- **Phase 6** — Domain Auto-Join & SSO: 3-4 days, depends on Phase 1.
+- **Phase 7** — MSSP / Parent-Child Organizations: 2-3 days, depends on Phase 1.
+- **Phase 8** — Usage Metering & Plan Enforcement: 2-3 days, depends on Phase 3.
+- **Phase 9** — Security Hardening for Multi-Tenancy: 2-3 days, depends on Phase 1.
+- **Phase 10** — Audit, Compliance & Data Residency: 3-4 days, depends on Phase 8.
 
-**Critical path:** Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 8
+**Critical path:** Phase 1 then Phase 2 then Phase 3 then Phase 5 then Phase 8.
 
 **Parallel tracks:**
-- Phase 4 (Email) can start in parallel with Phase 1
-- Phase 6 (SSO) can start after Phase 1
-- Phase 9 (Security) can start after Phase 1
+- Phase 4 (Email) can start in parallel with Phase 1.
+- Phase 6 (SSO) can start after Phase 1.
+- Phase 9 (Security) can start after Phase 1.
 
 **Total estimated effort:** 27-36 days for all phases.
 
@@ -1283,26 +575,21 @@ GitHub Actions (.github/workflows/ci-cd.yml)
 
 ## Quick Reference: Who Can Do What (Final State)
 
-| Action | Owner | Admin | Analyst | Read-Only | Super-Admin |
-|---|---|---|---|---|---|
-| View dashboard | Y | Y | Y | Y | Y |
-| View alerts & incidents | Y | Y | Y | Y | Y |
-| Edit alerts & incidents | Y | Y | Y | N | Y |
-| Run AI analysis | Y | Y | Y | N | Y |
-| Manage connectors | Y | Y | N | N | Y |
-| Manage API keys | Y | Y | N | N | Y |
-| Execute response actions | Y | Y | Y | N | Y |
-| Manage playbooks | Y | Y | Y (limited) | N | Y |
-| Invite team members | Y | Y | N | N | Y |
-| Change member roles | Y | Y | N | N | Y |
-| Suspend/remove members | Y | Y | N | N | Y |
-| Edit org settings | Y | Y | N | N | Y |
-| Manage billing/subscription | Y | N | N | N | Y |
-| Transfer ownership | Y | N | N | N | N |
-| Delete organization | Y | N | N | N | Y |
-| Configure SSO/SAML | Y | N | N | N | Y |
-| Manage domain auto-join | Y | Y | N | N | Y |
-| View platform admin panel | N | N | N | N | Y |
-| Impersonate users | N | N | N | N | Y |
-| View all organizations | N | N | N | N | Y |
-| Modify plan limits | N | N | N | N | Y |
+- **View dashboard:** Owner, Admin, Analyst, Read-Only, Super-Admin.
+- **View alerts & incidents:** Owner, Admin, Analyst, Read-Only, Super-Admin.
+- **Edit alerts & incidents:** Owner, Admin, Analyst, Super-Admin.
+- **Run AI analysis:** Owner, Admin, Analyst, Super-Admin.
+- **Manage connectors:** Owner, Admin, Super-Admin.
+- **Manage API keys:** Owner, Admin, Super-Admin.
+- **Execute response actions:** Owner, Admin, Analyst, Super-Admin.
+- **Manage playbooks:** Owner, Admin, Analyst (limited), Super-Admin.
+- **Invite team members:** Owner, Admin, Super-Admin.
+- **Change member roles:** Owner, Admin, Super-Admin.
+- **Suspend/remove members:** Owner, Admin, Super-Admin.
+- **Edit org settings:** Owner, Admin, Super-Admin.
+- **Manage billing/subscription:** Owner, Super-Admin.
+- **Transfer ownership:** Owner only.
+- **Delete organization:** Owner, Super-Admin.
+- **Configure SSO/SAML:** Owner, Super-Admin.
+- **Manage domain auto-join:** Owner, Admin, Super-Admin.
+- **View platform admin panel:** Super-Admin only.
