@@ -2514,16 +2514,27 @@ export async function registerRoutes(
     const orgId = (req as any).user?.orgId ?? null;
     const clientId = eventBus.generateClientId();
 
+    const VALID_EVENT_TYPES: Set<string> = new Set([
+      "alert:created", "alert:updated", "incident:created", "incident:updated",
+      "correlation:found", "entity:resolved", "system:health",
+    ]);
+    const rawTypes = req.query.types as string | undefined;
+    const subscriptions = rawTypes
+      ? rawTypes.split(",").map((t) => t.trim()).filter((t) => VALID_EVENT_TYPES.has(t)) as any[]
+      : undefined;
+
     eventBus.addClient({
       id: clientId,
       orgId,
       res,
       connectedAt: new Date(),
+      subscriptions,
     });
 
     const connectEvent = {
       type: "connected",
       clientId,
+      subscriptions: subscriptions || "all",
       timestamp: new Date().toISOString(),
     };
     res.write(`event: connected\ndata: ${JSON.stringify(connectEvent)}\n\n`);
@@ -2535,9 +2546,13 @@ export async function registerRoutes(
 
   app.get("/api/events/status", isAuthenticated, (req: Request, res: Response) => {
     const orgId = (req as any).user?.orgId ?? null;
+    const stats = eventBus.getStats();
     res.json({
-      connected: eventBus.getClientCount(),
+      connected: stats.totalClients,
       orgClients: orgId ? eventBus.getOrgClientCount(orgId) : 0,
+      slowClients: stats.slowClients,
+      totalDropped: stats.totalDropped,
+      totalBuffered: stats.totalBuffered,
     });
   });
 
