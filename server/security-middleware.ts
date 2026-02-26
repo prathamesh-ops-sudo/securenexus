@@ -80,9 +80,11 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   }
 
   const sessionToken = session.csrfToken as string;
+  const headerBuf = Buffer.from(headerToken, "utf8");
+  const sessionBuf = Buffer.from(sessionToken, "utf8");
   if (
-    headerToken.length !== sessionToken.length ||
-    !timingSafeEqual(Buffer.from(headerToken, "utf8"), Buffer.from(sessionToken, "utf8"))
+    headerBuf.length !== sessionBuf.length ||
+    !timingSafeEqual(headerBuf, sessionBuf)
   ) {
     replyForbidden(res, "CSRF token invalid. Refresh the page and try again.", ERROR_CODES.CSRF_INVALID);
     return;
@@ -178,14 +180,17 @@ function sanitizeString(input: string): string {
 export function applySecurityMiddleware(app: Express): void {
   app.use(configureHelmet());
 
-  app.use(inputSanitization);
-
   app.use("/api/login", authRateLimiter());
   app.use("/api/register", authRateLimiter());
   app.use("/api/auth/google", authRateLimiter());
   app.use("/api/auth/github", authRateLimiter());
 
-  logger.child("security").info("Security middleware applied: helmet, input sanitization, auth rate limiting");
+  logger.child("security").info("Security middleware applied: helmet, auth rate limiting");
+}
+
+export function applyInputSanitization(app: Express): void {
+  app.use(inputSanitization);
+  logger.child("security").info("Input sanitization middleware applied");
 }
 
 export function applyCsrfProtection(app: Express): void {

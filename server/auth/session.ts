@@ -51,7 +51,7 @@ export function getSession() {
       httpOnly: true,
       secure: config.session.forceHttps,
       maxAge: sessionTtl,
-      sameSite: isProduction ? "strict" : "lax",
+      sameSite: "lax",
     },
   });
 }

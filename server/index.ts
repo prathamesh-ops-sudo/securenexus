@@ -11,7 +11,7 @@ import { replyInternal } from "./api-response";
 import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middleware";
 import { config } from "./config";
 import { logger, correlationMiddleware, requestLogger } from "./logger";
-import { applySecurityMiddleware } from "./security-middleware";
+import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
 
 const app = express();
 const httpServer = createServer(app);
@@ -36,6 +36,8 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+applyInputSanitization(app);
 
 app.use(sliMiddleware);
 app.use(performanceBudgetMiddleware);
