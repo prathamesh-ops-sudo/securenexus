@@ -170,11 +170,7 @@ function sanitizeObject(obj: Record<string, unknown>): void {
 }
 
 function sanitizeString(input: string): string {
-  if (input.startsWith("$") || input.startsWith("{")) {
-    return input;
-  }
-  return input
-    .replace(/\0/g, "");
+  return input.replace(/\0/g, "");
 }
 
 export function applySecurityMiddleware(app: Express): void {
