@@ -7231,7 +7231,7 @@ export async function registerRoutes(
     } catch (error) { res.status(500).json({ message: "Failed to create approval request" }); }
   });
 
-  app.post("/api/response-approvals/:id/decide", isAuthenticated, resolveOrgContext, validatePathId("id"), validateBody(bodySchemas.approvalDecision), async (req, res) => {
+  app.post("/api/response-approvals/:id/decide", isAuthenticated, resolveOrgContext, requireOrgId, validatePathId("id"), validateBody(bodySchemas.approvalDecision), async (req, res) => {
     try {
       const user = (req as any).user;
       const orgId = (req as any).orgId;
