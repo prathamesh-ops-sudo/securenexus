@@ -152,6 +152,9 @@ export const alerts = pgTable("alerts", {
   index("idx_alerts_source").on(table.source),
   index("idx_alerts_category").on(table.category),
   index("idx_alerts_org_created").on(table.orgId, table.createdAt),
+  index("idx_alerts_org_status_created").on(table.orgId, table.status, table.createdAt),
+  index("idx_alerts_org_severity_created").on(table.orgId, table.severity, table.createdAt),
+  index("idx_alerts_org_source_created").on(table.orgId, table.source, table.createdAt),
   uniqueIndex("idx_alerts_dedup").on(table.orgId, table.source, table.sourceEventId),
 ]);
 
@@ -210,6 +213,8 @@ export const incidents = pgTable("incidents", {
   index("idx_incidents_status").on(table.status),
   index("idx_incidents_severity").on(table.severity),
   index("idx_incidents_org_created").on(table.orgId, table.createdAt),
+  index("idx_incidents_org_status_created").on(table.orgId, table.status, table.createdAt),
+  index("idx_incidents_org_severity_created").on(table.orgId, table.severity, table.createdAt),
   index("idx_incidents_assigned").on(table.assignedTo),
   index("idx_incidents_sla_breached").on(table.orgId, table.slaBreached),
 ]);
@@ -266,6 +271,10 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_audit_logs_org_seq").on(table.orgId, table.sequenceNum),
+  index("idx_audit_logs_org_created").on(table.orgId, table.createdAt),
+  index("idx_audit_logs_org_action_created").on(table.orgId, table.action, table.createdAt),
+  index("idx_audit_logs_org_user_created").on(table.orgId, table.userId, table.createdAt),
+  index("idx_audit_logs_org_resource").on(table.orgId, table.resourceType, table.resourceId),
 ]);
 
 /**
@@ -351,6 +360,7 @@ export const ingestionLogs = pgTable("ingestion_logs", {
   index("idx_ingestion_logs_source").on(table.source),
   index("idx_ingestion_logs_received").on(table.receivedAt),
   index("idx_ingestion_logs_org_received").on(table.orgId, table.receivedAt),
+  index("idx_ingestion_logs_org_status_received").on(table.orgId, table.status, table.receivedAt),
 ]);
 
 export const connectors = pgTable("connectors", {
@@ -374,6 +384,8 @@ export const connectors = pgTable("connectors", {
   index("idx_connectors_org").on(table.orgId),
   index("idx_connectors_type").on(table.type),
   index("idx_connectors_status").on(table.status),
+  index("idx_connectors_org_status").on(table.orgId, table.status),
+  index("idx_connectors_org_created").on(table.orgId, table.createdAt),
 ]);
 
 export const aiFeedback = pgTable("ai_feedback", {
@@ -677,6 +689,8 @@ export const responseActions = pgTable("response_actions", {
   index("idx_response_actions_incident").on(table.incidentId),
   index("idx_response_actions_status").on(table.status),
   index("idx_response_actions_type").on(table.actionType),
+  index("idx_response_actions_org_created").on(table.orgId, table.createdAt),
+  index("idx_response_actions_org_status_created").on(table.orgId, table.status, table.createdAt),
 ]);
 
 export const predictiveAnomalies = pgTable("predictive_anomalies", {
@@ -1400,6 +1414,9 @@ export const iocEntries = pgTable("ioc_entries", {
   index("idx_ioc_entries_type").on(table.iocType),
   index("idx_ioc_entries_value").on(table.iocValue),
   index("idx_ioc_entries_type_value").on(table.iocType, table.iocValue),
+  index("idx_ioc_entries_org_created").on(table.orgId, table.createdAt),
+  index("idx_ioc_entries_org_type_created").on(table.orgId, table.iocType, table.createdAt),
+  index("idx_ioc_entries_status").on(table.status),
 ]);
 
 export const iocWatchlists = pgTable("ioc_watchlists", {
@@ -1862,6 +1879,7 @@ export const connectorJobRuns = pgTable("connector_job_runs", {
   index("idx_connector_job_runs_dead_letter").on(table.isDeadLetter),
   index("idx_connector_job_runs_started").on(table.startedAt),
   index("idx_connector_job_runs_next_retry").on(table.nextRetryAt),
+  index("idx_connector_job_runs_connector_started").on(table.connectorId, table.startedAt),
 ]);
 
 export const connectorHealthChecks = pgTable("connector_health_checks", {

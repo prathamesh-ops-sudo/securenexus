@@ -42,6 +42,7 @@ import {
   type ApiMeta,
 } from "./api-response";
 import { logger } from "./logger";
+import { getIndexHitRates, getTableScanStats, getUnusedIndexes, getCacheHitRatio, getRecentSlowQueries, PERFORMANCE_BUDGETS, parsePaginationParams } from "./db-performance";
 
 function p(val: string | string[] | undefined): string {
   return (Array.isArray(val) ? val[0] : val) as string;
@@ -335,12 +336,14 @@ export async function registerRoutes(
   app.get("/api/alerts", isAuthenticated, async (req, res) => {
     try {
       const { search } = req.query;
+      const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
       if (search && typeof search === "string") {
         const results = await storage.searchAlerts(search);
-        return res.json(results);
+        return res.json(results.slice(offset, offset + limit));
       }
       const allAlerts = await storage.getAlerts();
-      res.json(allAlerts);
+      const sorted = sortOrder === "asc" ? allAlerts : [...allAlerts].reverse();
+      res.json(sorted.slice(offset, offset + limit));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch alerts" });
     }
@@ -573,8 +576,10 @@ export async function registerRoutes(
   // Incidents
   app.get("/api/incidents", isAuthenticated, async (req, res) => {
     try {
+      const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
       const allIncidents = await storage.getIncidents();
-      res.json(allIncidents);
+      const sorted = sortOrder === "asc" ? allIncidents : [...allIncidents].reverse();
+      res.json(sorted.slice(offset, offset + limit));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch incidents" });
     }
@@ -1500,11 +1505,12 @@ export async function registerRoutes(
     res.json(metadata);
   });
 
-  app.get("/api/connectors", isAuthenticated, async (_req, res) => {
+  app.get("/api/connectors", isAuthenticated, async (req, res) => {
     try {
+      const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
       const allConnectors = await storage.getConnectors();
       const sanitized = allConnectors.map(c => ({ ...c, config: sanitizeConfig(c.config) }));
-      res.json(sanitized);
+      res.json(sanitized.slice(offset, offset + limit));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch connectors" });
     }
@@ -1513,8 +1519,9 @@ export async function registerRoutes(
   app.get("/api/connectors/dead-letters", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.organizationId;
+      const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
       const runs = await storage.getDeadLetterJobRuns(orgId);
-      res.json(runs);
+      res.json(runs.slice(offset, offset + limit));
     } catch (error) { res.status(500).json({ message: "Failed to fetch dead-letter job runs" }); }
   });
 
@@ -8125,6 +8132,59 @@ export async function registerRoutes(
       return sendEnvelope(res, null, {
         status: 500,
         errors: [{ code: "SCHEDULE_FAILED", message: "Failed to schedule job", details: error?.message }],
+      });
+    }
+  });
+
+  app.get("/api/v1/monitoring/db-performance", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      const [indexHitRates, tableScanStats, unusedIndexes, cacheHitRatio, slowQueries] = await Promise.all([
+        getIndexHitRates(),
+        getTableScanStats(),
+        getUnusedIndexes(),
+        getCacheHitRatio(),
+        Promise.resolve(getRecentSlowQueries()),
+      ]);
+
+      return sendEnvelope(res, {
+        performanceBudgets: PERFORMANCE_BUDGETS,
+        indexHitRates,
+        tableScanStats,
+        unusedIndexes,
+        cacheHitRatio,
+        recentSlowQueries: slowQueries,
+        queryCacheStats: cacheStats(),
+      });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "DB_PERF_FAILED", message: "Failed to fetch DB performance metrics", details: error?.message }],
+      });
+    }
+  });
+
+  app.get("/api/v1/monitoring/index-stats", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      const [indexHitRates, unusedIndexes] = await Promise.all([
+        getIndexHitRates(),
+        getUnusedIndexes(),
+      ]);
+      return sendEnvelope(res, { indexHitRates, unusedIndexes });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "INDEX_STATS_FAILED", message: "Failed to fetch index stats", details: error?.message }],
+      });
+    }
+  });
+
+  app.get("/api/v1/monitoring/slow-queries", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
+    try {
+      return sendEnvelope(res, { recentSlowQueries: getRecentSlowQueries() });
+    } catch (error: any) {
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "SLOW_QUERIES_FAILED", message: "Failed to fetch slow queries", details: error?.message }],
       });
     }
   });
