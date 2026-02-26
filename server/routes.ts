@@ -2282,7 +2282,8 @@ export async function registerRoutes(
       });
 
       res.json({ message: `Created ${rollbacks.length} rollback records`, rollbacks });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       logger.child("routes").error("Rollback creation error", { error: String(error) });
       res.status(500).json({ message: "Failed to create rollback records" });
     }
@@ -2815,7 +2816,8 @@ export async function registerRoutes(
       }
       const feed = await storage.createIocFeed({ ...parsed.data, orgId });
       res.status(201).json(feed);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC feed" });
     }
   });
@@ -2911,7 +2913,8 @@ export async function registerRoutes(
       }
       const entry = await storage.createIocEntry({ ...parsed.data, orgId });
       res.status(201).json(entry);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC entry" });
     }
   });
@@ -2976,7 +2979,8 @@ export async function registerRoutes(
       }
       const watchlist = await storage.createIocWatchlist({ ...parsed.data, orgId, createdBy: userName });
       res.status(201).json(watchlist);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create watchlist" });
     }
   });
@@ -3059,7 +3063,8 @@ export async function registerRoutes(
       }
       const rule = await storage.createIocMatchRule({ ...parsed.data, orgId });
       res.status(201).json(rule);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create match rule" });
     }
   });
@@ -4920,7 +4925,8 @@ export async function registerRoutes(
       }
       const hypothesis = await storage.createHypothesis(parsed.data);
       res.status(201).json(hypothesis);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create hypothesis" });
     }
   });
@@ -4999,7 +5005,8 @@ export async function registerRoutes(
       }
       const task = await storage.createInvestigationTask(parsed.data);
       res.status(201).json(task);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create task" });
     }
   });
@@ -5082,7 +5089,8 @@ export async function registerRoutes(
       }
       const template = await storage.createRunbookTemplate(parsed.data);
       res.status(201).json(template);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create runbook template" });
     }
   });

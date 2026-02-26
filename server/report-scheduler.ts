@@ -133,7 +133,7 @@ export async function runReportOnDemand(templateId: string, orgId?: string, crea
 
   try {
     await storage.updateReportRun(run.id, { startedAt: new Date() });
-    const data = await generateReportData(template.reportType, orgId || template.orgId || undefined);
+    const data = await generateReportData(template.reportType, orgId ?? template.orgId ?? undefined);
     const content = template.format === "csv" ? formatAsCSV(data) : JSON.stringify(data, null, 2);
 
     await storage.updateReportRun(run.id, {
