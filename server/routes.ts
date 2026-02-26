@@ -26,7 +26,7 @@ import { runCspmScan } from "./cspm-scanner";
 import { seedEndpointAssets, generateTelemetry, calculateEndpointRisk } from "./endpoint-telemetry";
 import { calculatePostureScore } from "./posture-engine";
 import { cacheGetWithStats, cacheSet, cacheInvalidate, buildCacheKey, cacheStats, cacheGetOrLoad, CACHE_TTL } from "./query-cache";
-import { getProviderSyncStats, setProviderConcurrency, syncConnectorsBatch } from "./connector-engine";
+import { getProviderSyncStats, setProviderConcurrency } from "./connector-engine";
 import { startOutboxProcessor, stopOutboxProcessor, createEventFingerprint, getOutboxProcessorStatus } from "./outbox-processor";
 import { scheduleJob, getDeadLetterJobs, retryDeadLetterJob } from "./job-queue";
 import { evaluateAndAlert, getBreachHistory, seedDefaultSloTargets } from "./slo-alerting";
@@ -1632,8 +1632,7 @@ export async function registerRoutes(
 
       await storage.updateConnector(connector.id, { status: "syncing" } as any);
 
-      const jobRun = await syncConnectorWithRetry(connector);
-      const syncResult = await syncConnector(connector);
+      const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
 
       let created = 0;
       let deduped = 0;
