@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -655,8 +656,9 @@ export default function IncidentsPage() {
         </Card>
       )}
 
-      <div className={`flex gap-4 ${isDetailOpen && selectedIncident ? "" : ""}`}>
-      <Card className={`${isDetailOpen && selectedIncident ? "flex-1 min-w-0" : "w-full"} transition-all duration-200`}>
+      <ResizablePanelGroup direction="horizontal" className="rounded-lg">
+      <ResizablePanel defaultSize={isDetailOpen && selectedIncident ? 60 : 100} minSize={35}>
+      <Card className="h-full transition-all duration-200">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -790,9 +792,13 @@ export default function IncidentsPage() {
           )}
         </CardContent>
       </Card>
+      </ResizablePanel>
 
       {isDetailOpen && selectedIncident && (
-        <Card className="w-full max-w-md flex-shrink-0 hidden lg:flex flex-col max-h-[calc(100vh-12rem)] sticky top-24">
+        <>
+        <ResizableHandle withHandle />
+        <ResizablePanel defaultSize={40} minSize={20}>
+        <Card className="flex flex-col h-full max-h-[calc(100vh-12rem)]">
           <div className="flex items-center justify-between px-4 py-3 border-b">
             <div className="flex items-center gap-2">
               <PanelRight className="h-4 w-4 text-muted-foreground" />
@@ -867,8 +873,10 @@ export default function IncidentsPage() {
             </Button>
           </div>
         </Card>
+        </ResizablePanel>
+        </>
       )}
-      </div>
+      </ResizablePanelGroup>
     </div>
   );
 }

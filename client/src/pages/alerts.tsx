@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule } from "@shared/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
 function MiniTimeline({ alert }: { alert: Alert }) {
   const events: { label: string; actor?: string }[] = [];
@@ -997,8 +998,9 @@ export default function AlertsPage() {
         </Card>
       )}
 
-      <div className={`flex gap-4 ${isDetailOpen && selectedAlert ? "" : ""}`}>
-      <Card className={`${isDetailOpen && selectedAlert ? "flex-1 min-w-0" : "w-full"} transition-all duration-200`}>
+      <ResizablePanelGroup direction="horizontal" className="rounded-lg">
+      <ResizablePanel defaultSize={isDetailOpen && selectedAlert ? 60 : 100} minSize={35}>
+      <Card className="h-full transition-all duration-200">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -1198,9 +1200,13 @@ export default function AlertsPage() {
           )}
         </CardContent>
       </Card>
+      </ResizablePanel>
 
       {isDetailOpen && selectedAlert && (
-        <Card className="w-full max-w-md flex-shrink-0 hidden lg:flex flex-col max-h-[calc(100vh-12rem)] sticky top-24">
+        <>
+        <ResizableHandle withHandle />
+        <ResizablePanel defaultSize={40} minSize={20}>
+        <Card className="flex flex-col h-full max-h-[calc(100vh-12rem)]">
           <div className="flex items-center justify-between gap-2 p-4 border-b">
             <h3 className="text-sm font-semibold truncate">Alert Detail</h3>
             <Button size="icon" variant="ghost" onClick={() => setIsDetailOpen(false)} aria-label="Close detail panel">
@@ -1313,8 +1319,10 @@ export default function AlertsPage() {
             </div>
           </div>
         </Card>
+        </ResizablePanel>
+        </>
       )}
-      </div>
+      </ResizablePanelGroup>
     </div>
   );
 }
