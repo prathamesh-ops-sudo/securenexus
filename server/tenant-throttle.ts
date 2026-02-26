@@ -359,6 +359,51 @@ export function recordApiCall(orgId: string): void {
   state.apiCallsPerDay.count++;
 }
 
+export function checkAndRecordApiCall(orgId: string, plan: PlanTier): QuotaCheckResult {
+  const quotas = getOrgQuotas(orgId, plan);
+  const state = getOrCreateUsage(orgId);
+
+  resetWindowIfExpired(state.apiCallsPerMinute, ONE_MINUTE);
+  resetWindowIfExpired(state.apiCallsPerDay, ONE_DAY);
+
+  if (state.apiCallsPerMinute.count + 1 > quotas.apiCallsPerMinute) {
+    const retryAfter = Math.ceil((ONE_MINUTE - (Date.now() - state.apiCallsPerMinute.windowStartMs)) / 1000);
+    return {
+      allowed: false,
+      category: "api_calls",
+      current: state.apiCallsPerMinute.count,
+      limit: quotas.apiCallsPerMinute,
+      remaining: 0,
+      retryAfterSeconds: Math.max(1, retryAfter),
+      message: `API rate limit: ${state.apiCallsPerMinute.count}/${quotas.apiCallsPerMinute} calls/min`,
+    };
+  }
+
+  if (state.apiCallsPerDay.count + 1 > quotas.apiCallsPerDay) {
+    const retryAfter = Math.ceil((ONE_DAY - (Date.now() - state.apiCallsPerDay.windowStartMs)) / 1000);
+    return {
+      allowed: false,
+      category: "api_calls",
+      current: state.apiCallsPerDay.count,
+      limit: quotas.apiCallsPerDay,
+      remaining: 0,
+      retryAfterSeconds: Math.max(1, retryAfter),
+      message: `Daily API limit: ${state.apiCallsPerDay.count}/${quotas.apiCallsPerDay} calls/day`,
+    };
+  }
+
+  state.apiCallsPerMinute.count++;
+  state.apiCallsPerDay.count++;
+
+  return {
+    allowed: true,
+    category: "api_calls",
+    current: state.apiCallsPerMinute.count,
+    limit: quotas.apiCallsPerMinute,
+    remaining: quotas.apiCallsPerMinute - state.apiCallsPerMinute.count,
+  };
+}
+
 export function checkSseConnectionQuota(orgId: string, plan: PlanTier): QuotaCheckResult {
   const quotas = getOrgQuotas(orgId, plan);
   const state = getOrCreateUsage(orgId);
@@ -460,7 +505,7 @@ export function tenantApiThrottleMiddleware(detectPlan: (req: Request) => PlanTi
     if (!orgId) return next();
 
     const plan = detectPlan(req);
-    const check = checkApiCallQuota(orgId, plan);
+    const check = checkAndRecordApiCall(orgId, plan);
 
     if (!check.allowed) {
       res.setHeader("Retry-After", String(check.retryAfterSeconds || 60));
@@ -468,8 +513,6 @@ export function tenantApiThrottleMiddleware(detectPlan: (req: Request) => PlanTi
       res.setHeader("X-RateLimit-Remaining", "0");
       return replyRateLimit(res, check.message || "API rate limit exceeded", ERROR_CODES.RATE_LIMITED);
     }
-
-    recordApiCall(orgId);
 
     res.setHeader("X-RateLimit-Limit", String(check.limit));
     res.setHeader("X-RateLimit-Remaining", String(check.remaining));

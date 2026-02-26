@@ -31,7 +31,20 @@ const tenantConfigs = new Map<string, TenantIsolationConfig>();
 
 export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free"): TenantIsolationConfig {
   const existing = tenantConfigs.get(orgId);
-  if (existing) return existing;
+  if (existing) {
+    const expectedDefaults = PLAN_ISOLATION_DEFAULTS[plan];
+    if (
+      existing.connectionPoolSize !== expectedDefaults.connectionPoolSize &&
+      existing.isolationLevel === PLAN_ISOLATION_DEFAULTS[existing.resourceGroup === "dedicated" ? "enterprise" : "free"].isolationLevel
+    ) {
+      existing.connectionPoolSize = expectedDefaults.connectionPoolSize;
+      existing.maxConnectionsPerOrg = expectedDefaults.maxConnectionsPerOrg;
+      existing.isolationLevel = expectedDefaults.isolationLevel;
+      existing.resourceGroup = plan === "enterprise" ? "dedicated" : "shared";
+      existing.lastAssessedAt = new Date().toISOString();
+    }
+    return existing;
+  }
 
   const defaults = PLAN_ISOLATION_DEFAULTS[plan];
   const config: TenantIsolationConfig = {
@@ -48,8 +61,8 @@ export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free")
   return config;
 }
 
-export function setTenantIsolationConfig(orgId: string, updates: Partial<TenantIsolationConfig>): TenantIsolationConfig {
-  const current = tenantConfigs.get(orgId) || getTenantIsolationConfig(orgId);
+export function setTenantIsolationConfig(orgId: string, updates: Partial<TenantIsolationConfig>, plan: PlanTier = "free"): TenantIsolationConfig {
+  const current = tenantConfigs.get(orgId) || getTenantIsolationConfig(orgId, plan);
   const updated: TenantIsolationConfig = {
     ...current,
     ...updates,
