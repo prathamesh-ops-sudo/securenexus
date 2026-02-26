@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import type { Response } from "express";
 import { randomBytes } from "crypto";
 import { logger } from "./logger";
+import { getPodId, registerShutdownHandler, isDraining } from "./scaling-state";
 
 export type EventType =
   | "alert:created"
@@ -16,6 +17,7 @@ export interface BusEvent {
   type: EventType;
   orgId: string | null;
   timestamp: string;
+  podId: string;
   data: Record<string, any>;
 }
 
@@ -198,6 +200,21 @@ class EventBus extends EventEmitter {
     });
   }
 
+  drainAllClients(): void {
+    const count = this.clients.size;
+    if (count === 0) return;
+    logger.child("sse").info("Draining all SSE clients for shutdown", { count });
+    for (const [id, client] of Array.from(this.clients.entries())) {
+      try {
+        client.res.write("event: system:shutdown\ndata: {\"reason\":\"pod_shutdown\"}\n\n");
+        client.res.end();
+      } catch { /* client already gone */ }
+      this.clients.delete(id);
+    }
+    this.orgIndex.clear();
+    clearInterval(this.keepAliveInterval);
+  }
+
   getClientCount(): number {
     return this.clients.size;
   }
@@ -245,11 +262,18 @@ class EventBus extends EventEmitter {
 
 export const eventBus = new EventBus();
 
+registerShutdownHandler("sse-clients", () => {
+  eventBus.drainAllClients();
+});
+
 export function broadcastEvent(event: { type: EventType; orgId: string | null; data: Record<string, any> }): void {
+  if (isDraining()) return;
+
   const fullEvent: BusEvent = {
     type: event.type,
     orgId: event.orgId,
     timestamp: new Date().toISOString(),
+    podId: getPodId(),
     data: event.data,
   };
 

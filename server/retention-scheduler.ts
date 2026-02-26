@@ -3,6 +3,11 @@ import { compliancePolicies } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
 import { logger } from "./logger";
+import { runTieredCleanup, type PlanTier, type TieredCleanupResult } from "./data-lifecycle";
+import { registerShutdownHandler } from "./scaling-state";
+
+let retentionTimer: ReturnType<typeof setInterval> | null = null;
+let lifecycleTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startRetentionScheduler(): void {
   setTimeout(() => {
@@ -11,13 +16,24 @@ export function startRetentionScheduler(): void {
     });
   }, 60 * 1000);
 
-  setInterval(() => {
+  retentionTimer = setInterval(() => {
     runRetentionCleanup().catch((err) => {
       logger.child("retention-scheduler").error("Retention cleanup error", { error: String(err) });
     });
   }, 24 * 60 * 60 * 1000);
 
-  logger.child("retention-scheduler").info("Started - runs every 24 hours");
+  lifecycleTimer = setInterval(() => {
+    runLifecycleCleanup().catch((err) => {
+      logger.child("retention-scheduler").error("Lifecycle cleanup error", { error: String(err) });
+    });
+  }, 24 * 60 * 60 * 1000);
+
+  registerShutdownHandler("retention-scheduler", () => {
+    if (retentionTimer) clearInterval(retentionTimer);
+    if (lifecycleTimer) clearInterval(lifecycleTimer);
+  });
+
+  logger.child("retention-scheduler").info("Started - retention + lifecycle cleanup every 24 hours");
 }
 
 export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDeleted: number; incidentsDeleted: number; auditLogsDeleted: number }[]> {
@@ -101,4 +117,48 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
   }
 
   return results;
+}
+
+export async function runLifecycleCleanup(): Promise<TieredCleanupResult[]> {
+  const log = logger.child("lifecycle-cleanup");
+  const policies = await db.select().from(compliancePolicies);
+  const results: TieredCleanupResult[] = [];
+
+  for (const policy of policies) {
+    if (!policy.orgId) continue;
+
+    const plan: PlanTier = detectPlanTier(policy);
+
+    try {
+      const result = await runTieredCleanup(policy.orgId, plan);
+      results.push(result);
+
+      const totalExported = result.results.reduce((s, r) => s + r.exportedToS3, 0);
+      const totalDeleted = result.results.reduce((s, r) => s + r.deletedFromDb, 0);
+
+      if (totalExported > 0 || totalDeleted > 0) {
+        log.info("Lifecycle cleanup for org", {
+          orgId: policy.orgId,
+          plan,
+          totalExported,
+          totalDeleted,
+        });
+      }
+    } catch (err) {
+      log.error("Lifecycle cleanup failed for org", { orgId: policy.orgId, error: String(err) });
+    }
+  }
+
+  return results;
+}
+
+function detectPlanTier(policy: typeof compliancePolicies.$inferSelect): PlanTier {
+  const frameworks = policy.enabledFrameworks as string[] | null;
+  if (frameworks && (frameworks.includes("soc2") || frameworks.includes("iso27001") || frameworks.includes("hipaa"))) {
+    return "enterprise";
+  }
+  if (policy.alertRetentionDays && policy.alertRetentionDays > 90) {
+    return "pro";
+  }
+  return "free";
 }
