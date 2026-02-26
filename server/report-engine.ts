@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { logger } from "./logger";
 
 interface ReportData {
   title: string;
@@ -325,11 +326,12 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
         });
       }
     }
-  } catch {
+  } catch (err) {
+    logger.child("report-engine").error("Failed to generate compliance policy section", { error: String(err) });
     sections.push({
       title: "Compliance Policy",
       type: "summary",
-      data: { "Status": "No compliance policy configured" }
+      data: { "Status": "Error retrieving compliance data" }
     });
   }
 

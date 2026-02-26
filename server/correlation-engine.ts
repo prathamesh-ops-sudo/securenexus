@@ -3,6 +3,7 @@ import { alerts, entities, alertEntities, correlationClusters, incidents, type A
 import { eq, and, sql, gte, desc, inArray, ne } from "drizzle-orm";
 import { findRelatedAlertsByEntity } from "./entity-resolver";
 import { computeThreatIntelConfidenceBoost } from "./threat-enrichment";
+import { logger } from "./logger";
 
 export interface CorrelationResult {
   clusterId: string;
@@ -84,7 +85,8 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
       threatIntelBoost = computeThreatIntelConfidenceBoost(
         enrichedEntities.map(e => e.metadata as Record<string, any> | null)
       );
-    } catch {
+    } catch (err) {
+      logger.child("correlation-engine").warn("Threat intel confidence boost computation failed, defaulting to 0", { alertId: alert.id, error: String(err) });
       threatIntelBoost = 0;
     }
   }

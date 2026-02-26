@@ -84,6 +84,7 @@ export function parseMISPFeed(data: any): RawIOC[] {
     }
   } catch (e) {
     logger.child("ioc-ingestion").error("MISP parse error", { error: String(e) });
+    throw e;
   }
   return iocs;
 }
@@ -133,6 +134,7 @@ export function parseSTIXBundle(data: any): RawIOC[] {
     }
   } catch (e) {
     logger.child("ioc-ingestion").error("STIX parse error", { error: String(e) });
+    throw e;
   }
   return iocs;
 }
@@ -192,6 +194,7 @@ export function parseOTXPulses(data: any): RawIOC[] {
     }
   } catch (e) {
     logger.child("ioc-ingestion").error("OTX parse error", { error: String(e) });
+    throw e;
   }
   return iocs;
 }
@@ -224,6 +227,7 @@ export function parseVirusTotalFeed(data: any): RawIOC[] {
     }
   } catch (e) {
     logger.child("ioc-ingestion").error("VirusTotal parse error", { error: String(e) });
+    throw e;
   }
   return iocs;
 }
@@ -245,6 +249,7 @@ export function parseCSVFeed(data: string, config?: { typeColumn?: number; value
     }
   } catch (e) {
     logger.child("ioc-ingestion").error("CSV parse error", { error: String(e) });
+    throw e;
   }
   return iocs;
 }

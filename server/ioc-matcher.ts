@@ -79,6 +79,7 @@ export async function matchAlertAgainstIOCs(alert: Alert, orgId?: string): Promi
               },
             });
           } catch (e) {
+            logger.child("ioc-matcher").warn("Failed to insert IOC match record", { iocId: ioc.id, alertId: alert.id, matchField: mf.field, error: String(e) });
           }
         }
       }
@@ -153,6 +154,7 @@ export async function matchAlertAgainstRules(alert: Alert, orgId?: string): Prom
               updatedAt: new Date(),
             }).where(eq(iocMatchRules.id, rule.id));
           } catch (e) {
+            logger.child("ioc-matcher").warn("Failed to insert rule match or update rule counter", { ruleId: rule.id, iocId: ioc.id, alertId: alert.id, error: String(e) });
           }
         }
       }

@@ -16,10 +16,10 @@ import {
 } from "../api-response";
 import { logger } from "../logger";
 
-async function ensureOrgMembership(user: any) {
+async function ensureOrgMembership(user: any): Promise<boolean> {
   try {
     const memberships = await storage.getUserMemberships(user.id);
-    if (memberships.length > 0) return;
+    if (memberships.length > 0) return true;
 
     const orgs = await storage.getOrganizations();
     if (orgs.length > 0) {
@@ -30,7 +30,7 @@ async function ensureOrgMembership(user: any) {
         status: "active",
         joinedAt: new Date(),
       });
-      return;
+      return true;
     }
 
     const newOrg = await storage.createOrganization({
@@ -45,8 +45,18 @@ async function ensureOrgMembership(user: any) {
       status: "active",
       joinedAt: new Date(),
     });
+    return true;
   } catch (err) {
-    logger.child("routes").error("Error ensuring org membership", { error: String(err) });
+    logger.child("auth").error("Failed to ensure org membership — user may lack org context", { userId: user.id, email: user.email, error: String(err) });
+    storage.createAuditLog({
+      userId: user.id,
+      userName: user.email || "unknown",
+      action: "org_membership_provision_failed",
+      resourceType: "user",
+      resourceId: user.id,
+      details: { error: String(err) },
+    }).catch((auditErr) => logger.child("auth").warn("Failed to audit org membership failure", { error: String(auditErr) }));
+    return false;
   }
 }
 
