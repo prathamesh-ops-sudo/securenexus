@@ -24,6 +24,8 @@ export interface ModelInvokeOptions {
   orgId?: string;
   promptId?: string;
   promptVersion?: number;
+  tier?: string;
+  skipCache?: boolean;
 }
 
 export interface ModelInvokeResult {
@@ -45,7 +47,12 @@ const COST_TABLE: Record<string, { input: number; output: number }> = {
   "default": { input: 0.000002, output: 0.000006 },
 };
 
-function estimateCost(modelId: string, inputTokens: number, outputTokens: number): number {
+const TRIAGE_RATES = { input: 0.00000015, output: 0.0000002 };
+
+function estimateCost(modelId: string, inputTokens: number, outputTokens: number, tier?: string): number {
+  if (tier === "triage") {
+    return (inputTokens * TRIAGE_RATES.input) + (outputTokens * TRIAGE_RATES.output);
+  }
   const rates = COST_TABLE[modelId] || COST_TABLE["default"];
   return (inputTokens * rates.input) + (outputTokens * rates.output);
 }
@@ -243,10 +250,12 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
   }
 
   const cacheKey = buildCacheKey(opts);
-  const cached = getCached(cacheKey);
-  if (cached) {
-    log.info("Model response served from cache", { modelId: opts.modelId, promptId: opts.promptId });
-    return cached;
+  if (!opts.skipCache) {
+    const cached = getCached(cacheKey);
+    if (cached) {
+      log.info("Model response served from cache", { modelId: opts.modelId, promptId: opts.promptId });
+      return cached;
+    }
   }
 
   let lastError: Error | undefined;
@@ -267,7 +276,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
       const latencyMs = Date.now() - start;
       const inputTokensEstimate = Math.ceil((opts.systemPrompt.length + opts.userMessage.length) / 4);
       const outputTokensEstimate = Math.ceil(text.length / 4);
-      const costEstimateUsd = estimateCost(opts.modelId, inputTokensEstimate, outputTokensEstimate);
+      const costEstimateUsd = estimateCost(opts.modelId, inputTokensEstimate, outputTokensEstimate, opts.tier);
 
       recordCircuitSuccess(circuitKey);
 
@@ -294,7 +303,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
         });
       }
 
-      if (opts.temperature <= 0.2) {
+      if (opts.temperature <= 0.2 && !opts.skipCache) {
         putCache(cacheKey, result);
       }
 
@@ -302,7 +311,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
     } catch (error: unknown) {
       const classified = classifyModelError(error);
       lastError = new Error(classified.message);
-      recordCircuitFailure(circuitKey);
+      if (classified.retryable) recordCircuitFailure(circuitKey);
 
       if (!classified.retryable || attempt >= MAX_RETRIES) {
         log.error("Model invocation failed (non-retryable or max retries)", {

@@ -72,6 +72,7 @@ async function invokeWithPrompt(
     orgId,
     promptId: prompt.id,
     promptVersion: prompt.version,
+    tier,
   });
 
   recordPromptInvocation(prompt.id, prompt.version, {
@@ -433,6 +434,7 @@ export async function checkModelHealth(): Promise<{
       temperature: prompt.temperature,
       topP: appConfig.ai.topP,
       sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+      skipCache: true,
     });
 
     return {
