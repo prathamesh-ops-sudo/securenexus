@@ -305,7 +305,8 @@ export async function rehydrateFromColdStorage(
           const vals = validColumns.map((col) => {
             const val = row[col];
             if (val === null || val === undefined) return sql`NULL`;
-            return sql`${String(val)}`;
+            if (typeof val === "object") return sql`${JSON.stringify(val)}`;
+            return sql`${val}`;
           });
           await db.execute(
             sql`INSERT INTO ${sql.identifier(tableName)} (${sql.join(columnsSql, sql`, `)}) VALUES (${sql.join(vals, sql`, `)}) ON CONFLICT (id) DO NOTHING`
