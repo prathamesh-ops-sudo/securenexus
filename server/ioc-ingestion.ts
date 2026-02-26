@@ -157,11 +157,7 @@ export function parseTAXIICollection(data: any): RawIOC[] {
   if (Array.isArray(data)) {
     const all: RawIOC[] = [];
     for (const item of data) {
-      try {
-        if (item?.objects) all.push(...parseSTIXBundle(item));
-      } catch (e) {
-        logger.child("ioc-ingestion").warn("Failed to parse TAXII bundle item, continuing with remaining bundles", { error: String(e) });
-      }
+      if (item?.objects) all.push(...parseSTIXBundle(item));
     }
     return all;
   }
