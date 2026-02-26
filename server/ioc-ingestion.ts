@@ -83,8 +83,7 @@ export function parseMISPFeed(data: any): RawIOC[] {
       }
     }
   } catch (e) {
-    logger.child("ioc-ingestion").error("MISP parse error", { error: String(e) });
-    throw e;
+    logger.child("ioc-ingestion").error("MISP parse error", { error: String(e), partialCount: iocs.length });
   }
   return iocs;
 }
@@ -133,8 +132,7 @@ export function parseSTIXBundle(data: any): RawIOC[] {
       }
     }
   } catch (e) {
-    logger.child("ioc-ingestion").error("STIX parse error", { error: String(e) });
-    throw e;
+    logger.child("ioc-ingestion").error("STIX parse error", { error: String(e), partialCount: iocs.length });
   }
   return iocs;
 }
@@ -159,7 +157,11 @@ export function parseTAXIICollection(data: any): RawIOC[] {
   if (Array.isArray(data)) {
     const all: RawIOC[] = [];
     for (const item of data) {
-      if (item?.objects) all.push(...parseSTIXBundle(item));
+      try {
+        if (item?.objects) all.push(...parseSTIXBundle(item));
+      } catch (e) {
+        logger.child("ioc-ingestion").warn("Failed to parse TAXII bundle item, continuing with remaining bundles", { error: String(e) });
+      }
     }
     return all;
   }
@@ -193,8 +195,7 @@ export function parseOTXPulses(data: any): RawIOC[] {
       }
     }
   } catch (e) {
-    logger.child("ioc-ingestion").error("OTX parse error", { error: String(e) });
-    throw e;
+    logger.child("ioc-ingestion").error("OTX parse error", { error: String(e), partialCount: iocs.length });
   }
   return iocs;
 }
@@ -226,8 +227,7 @@ export function parseVirusTotalFeed(data: any): RawIOC[] {
       });
     }
   } catch (e) {
-    logger.child("ioc-ingestion").error("VirusTotal parse error", { error: String(e) });
-    throw e;
+    logger.child("ioc-ingestion").error("VirusTotal parse error", { error: String(e), partialCount: iocs.length });
   }
   return iocs;
 }
@@ -248,8 +248,7 @@ export function parseCSVFeed(data: string, config?: { typeColumn?: number; value
       iocs.push({ type, value, confidence: 50, source: "CSV", tags: [] });
     }
   } catch (e) {
-    logger.child("ioc-ingestion").error("CSV parse error", { error: String(e) });
-    throw e;
+    logger.child("ioc-ingestion").error("CSV parse error", { error: String(e), partialCount: iocs.length });
   }
   return iocs;
 }
