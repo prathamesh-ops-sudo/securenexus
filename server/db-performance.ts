@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { config } from "./config";
 import { logger } from "./logger";
 
 const log = logger.child("db-performance");
@@ -206,7 +207,7 @@ export function performanceBudgetMiddleware(req: any, res: any, next: any): void
     const baseUrl = typeof req.baseUrl === "string" ? req.baseUrl : "";
     const endpointKey = `${req.method} ${routePath ? `${baseUrl}${routePath}` : req.path}`;
 
-    const env = (process.env.NODE_ENV === "production" ? "production" : "staging") as "staging" | "production";
+    const env = (config.nodeEnv === "production" ? "production" : "staging") as "staging" | "production";
     const budget = PERFORMANCE_BUDGETS[endpointKey];
 
     if (budget) {
