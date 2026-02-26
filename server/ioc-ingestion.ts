@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { iocEntries, iocFeeds, type IocFeed, type InsertIocEntry } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
+import { logger } from "./logger";
 
 export interface IngestionResult {
   feedId: string;
@@ -82,7 +83,7 @@ export function parseMISPFeed(data: any): RawIOC[] {
       }
     }
   } catch (e) {
-    console.error("MISP parse error:", e);
+    logger.child("ioc-ingestion").error("MISP parse error", { error: String(e) });
   }
   return iocs;
 }
@@ -131,7 +132,7 @@ export function parseSTIXBundle(data: any): RawIOC[] {
       }
     }
   } catch (e) {
-    console.error("STIX parse error:", e);
+    logger.child("ioc-ingestion").error("STIX parse error", { error: String(e) });
   }
   return iocs;
 }
@@ -190,7 +191,7 @@ export function parseOTXPulses(data: any): RawIOC[] {
       }
     }
   } catch (e) {
-    console.error("OTX parse error:", e);
+    logger.child("ioc-ingestion").error("OTX parse error", { error: String(e) });
   }
   return iocs;
 }
@@ -222,7 +223,7 @@ export function parseVirusTotalFeed(data: any): RawIOC[] {
       });
     }
   } catch (e) {
-    console.error("VirusTotal parse error:", e);
+    logger.child("ioc-ingestion").error("VirusTotal parse error", { error: String(e) });
   }
   return iocs;
 }
@@ -243,7 +244,7 @@ export function parseCSVFeed(data: string, config?: { typeColumn?: number; value
       iocs.push({ type, value, confidence: 50, source: "CSV", tags: [] });
     }
   } catch (e) {
-    console.error("CSV parse error:", e);
+    logger.child("ioc-ingestion").error("CSV parse error", { error: String(e) });
   }
   return iocs;
 }

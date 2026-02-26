@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { createHash, createHmac } from "crypto";
+import { logger } from "./logger";
 
 const POLL_INTERVAL_MS = 3000;
 const BATCH_SIZE = 10;
@@ -11,13 +12,13 @@ let failedCount = 0;
 export function startOutboxProcessor(): void {
   if (processorRunning) return;
   processorRunning = true;
-  console.log("[OutboxProcessor] Started - polling every 3s");
+  logger.child("outbox-processor").info("Started - polling every 3s");
 
   processorInterval = setInterval(async () => {
     try {
       await processPendingEvents();
     } catch (err) {
-      console.error("[OutboxProcessor] Poll error:", err);
+      logger.child("outbox-processor").error("Poll error:", { error: String(err) });
     }
   }, POLL_INTERVAL_MS);
 }
@@ -28,7 +29,7 @@ export function stopOutboxProcessor(): void {
     clearInterval(processorInterval);
     processorInterval = null;
   }
-  console.log("[OutboxProcessor] Stopped");
+  logger.child("outbox-processor").info("Stopped");
 }
 
 async function processPendingEvents(): Promise<void> {
@@ -54,7 +55,7 @@ async function processPendingEvents(): Promise<void> {
           attempts,
         });
         failedCount++;
-        console.error(`[OutboxProcessor] Event ${event.id} failed permanently after ${attempts} attempts`);
+        logger.child("outbox-processor").error(`[OutboxProcessor] Event ${event.id} failed permanently after ${attempts} attempts`);
       } else {
         const backoffMs = Math.min(300000, 1000 * Math.pow(2, attempts));
         const nextRetryAt = new Date(Date.now() + backoffMs);

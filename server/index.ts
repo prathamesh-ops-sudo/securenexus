@@ -9,6 +9,7 @@ import { startSloAlerting } from "./slo-alerting";
 import { replyInternal } from "./api-response";
 import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middleware";
 import { config } from "./config";
+import { logger, correlationMiddleware, requestLogger } from "./logger";
 
 const app = express();
 const httpServer = createServer(app);
@@ -34,6 +35,9 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use(sliMiddleware);
 
+app.use(correlationMiddleware);
+app.use(requestLogger);
+
 // Standardised API response envelope – wraps every res.json() for /api/* paths
 // into { data, meta, errors } and adds RFC 8594 deprecation headers to
 // un-versioned legacy endpoints.
@@ -41,42 +45,8 @@ app.use(envelopeMiddleware);
 app.use(autoDeprecationMiddleware);
 
 export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
+  logger.child(source).info(message);
 }
-
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        const responseStr = JSON.stringify(capturedJsonResponse);
-        logLine += ` :: ${responseStr.length > 200 ? responseStr.slice(0, 200) + "..." : responseStr}`;
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
 
 (async () => {
   await registerRoutes(httpServer, app);
@@ -89,9 +59,9 @@ app.use((req, res, next) => {
     const message = err.message || "Internal Server Error";
 
     if (config.nodeEnv === "development" || config.nodeEnv === "test") {
-      console.error("Internal Server Error:", err);
+      logger.child("express").error("Internal Server Error", { error: String(err), stack: err.stack });
     } else {
-      console.error(`Error ${status}: ${message}`);
+      logger.child("express").error(`Error ${status}: ${message}`);
     }
 
     if (res.headersSent) {
@@ -126,7 +96,7 @@ app.use((req, res, next) => {
       reusePort: true,
     },
     () => {
-      log(`serving on port ${port}`);
+      logger.child("express").info(`serving on port ${port}`);
       startReportScheduler();
       startJobWorker();
       startSliCollection();

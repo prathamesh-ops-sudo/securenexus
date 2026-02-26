@@ -2,6 +2,7 @@ import { type Connector, type InsertAlert, type ConnectorJobRun, type InsertConn
 import { normalizeAlert, toInsertAlert, SOURCE_KEYS } from "./normalizer";
 import { storage } from "./storage";
 import { config as appConfig } from "./config";
+import { logger } from "./logger";
 
 export interface ConnectorConfig {
   baseUrl: string;
@@ -1776,10 +1777,7 @@ export async function syncConnectorWithRetry(
 
       // If error and attempt < maxAttempts, calculate backoff and log next attempt
       const backoffSeconds = Math.pow(2, currentAttempt);
-      console.log(
-        `[Connector ${connector.id}] Sync failed on attempt ${currentAttempt}/${maxAttempts}. ` +
-        `Error type: ${errorType}. Next retry in ${backoffSeconds} seconds. Error: ${errorMessage}`
-      );
+      logger.child("connector-engine").warn(`Sync failed on attempt ${currentAttempt}/${maxAttempts}`, { connectorId: connector.id, errorType, backoffSeconds, error: errorMessage });
 
       // Update job run with error details but keep it in running state for retry
       await storage.updateConnectorJobRun(jobRun.id, {
