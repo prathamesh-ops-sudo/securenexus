@@ -69,7 +69,7 @@ function redact(input: string): string {
 
 const contextStore = new AsyncLocalStorage<LogContext>();
 
-function currentContext(): LogContext {
+export function currentContext(): LogContext {
   return contextStore.getStore() ?? {};
 }
 
