@@ -147,8 +147,8 @@ async function fetchSplunk(config: ConnectorConfig, since?: Date): Promise<any[]
     try {
       const parsed = JSON.parse(line);
       if (parsed.result) results.push(parsed.result);
-    } catch {
-      // Skip malformed JSON lines in Splunk streaming response
+    } catch (parseErr) {
+      logger.child("connector-engine").warn("Skipping malformed JSON line in Splunk streaming response", { line: line.slice(0, 200), error: String(parseErr) });
     }
   }
   return results;

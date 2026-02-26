@@ -243,11 +243,14 @@ function idempotencyCheck(req: Request, res: Response, next: NextFunction) {
         responseStatus: res.statusCode,
         responseBody: body,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      }).catch(() => {});
+      }).catch((err) => logger.child("idempotency").warn("Failed to store idempotency key", { key: idempotencyKey, endpoint, error: String(err) }));
       return originalJson(body);
     } as any;
     next();
-  }).catch(() => next());
+  }).catch((err) => {
+    logger.child("idempotency").warn("Failed to check idempotency key", { key: idempotencyKey, endpoint, error: String(err) });
+    next();
+  });
 }
 
 export async function registerRoutes(
@@ -1314,7 +1317,7 @@ export async function registerRoutes(
         requestId,
         ipAddress: req.ip || null,
         processingTimeMs: Date.now() - startTime,
-      }).catch(() => {});
+      }).catch((err) => logger.child("ingestion").warn("Failed to create ingestion log after error", { requestId, source, error: String(err) }));
       res.status(500).json({ error: "Ingestion failed", requestId });
     }
   });
@@ -1399,7 +1402,7 @@ export async function registerRoutes(
         requestId,
         ipAddress: req.ip || null,
         processingTimeMs: Date.now() - startTime,
-      }).catch(() => {});
+      }).catch((err) => logger.child("ingestion").warn("Failed to create ingestion log after bulk error", { requestId, source, error: String(err) }));
       res.status(500).json({ error: "Bulk ingestion failed", requestId });
     }
   });

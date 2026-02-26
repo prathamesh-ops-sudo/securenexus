@@ -65,7 +65,7 @@ async function executeScheduledReport(schedule: any) {
           const result = await uploadFile(s3Key, content, contentType);
           outputLocation = `s3://${result.bucket}/${result.key}`;
         } catch (err: any) {
-          logger.child("report-scheduler").info(`S3 delivery for schedule ${schedule.id}: ${err.message}`);
+          logger.child("report-scheduler").warn(`S3 delivery failed for schedule ${schedule.id}`, { error: err.message });
           outputLocation = `local://${s3Key}`;
         }
       } else if (target.type === "webhook" && target.url) {
@@ -77,7 +77,7 @@ async function executeScheduledReport(schedule: any) {
           });
           logger.child("report-scheduler").info(`Webhook delivered for schedule ${schedule.id} to ${target.url}`);
         } catch (err: any) {
-          logger.child("report-scheduler").info(`Webhook delivery failed for schedule ${schedule.id}: ${err.message}`);
+          logger.child("report-scheduler").warn(`Webhook delivery failed for schedule ${schedule.id}`, { url: target.url, error: err.message });
         }
       } else if (target.type === "email" && target.address) {
         logger.child("report-scheduler").info(`Email delivery simulated for schedule ${schedule.id} to ${target.address}`);

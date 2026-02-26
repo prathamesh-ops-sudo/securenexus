@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import type { AutoResponsePolicy, Alert, Incident } from "@shared/schema";
+import { logger } from "./logger";
 
 interface PolicyEvalContext {
   incident: Incident;
@@ -28,7 +29,7 @@ export async function evaluatePolicies(context: PolicyEvalContext): Promise<Poli
       storage.updateAutoResponsePolicy(policy.id, {
         lastTriggeredAt: new Date(),
         executionCount: (policy.executionCount || 0) + 1,
-      }).catch(() => {}); // fire and forget
+      }).catch((err) => logger.child("policy-engine").warn("Failed to update policy tracking", { policyId: policy.id, error: String(err) }));
       matches.push(match);
     }
   }
