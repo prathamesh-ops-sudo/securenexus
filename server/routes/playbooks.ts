@@ -886,6 +886,9 @@ export function registerPlaybooksRoutes(app: Express): void {
           const graph = actionsArr[0] as any;
           const nodes = (graph.nodes || []).filter((n: any) => n.type === "action");
           entityCount = nodes.length;
+          affectedEntities.length = 0;
+          riskFactors.length = 0;
+          reversible = true;
           for (const node of nodes) {
             affectedEntities.push({
               type: "action_node",

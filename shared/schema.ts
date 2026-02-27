@@ -1215,7 +1215,7 @@ export const evidenceChainEntries = pgTable(
   (table) => [
     index("idx_evidence_chain_incident").on(table.incidentId),
     index("idx_evidence_chain_org").on(table.orgId),
-    index("idx_evidence_chain_seq").on(table.incidentId, table.sequenceNum),
+    uniqueIndex("uq_evidence_chain_incident_seq").on(table.incidentId, table.sequenceNum),
     index("idx_evidence_chain_type").on(table.entryType),
   ],
 );
