@@ -280,6 +280,35 @@ export function registerReportGovernanceRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/compliance-helpers/coverage-summary", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const frameworks = ["NIST CSF", "ISO 27001", "CIS", "SOC 2"];
+      const summary: any[] = [];
+
+      for (const framework of frameworks) {
+        const controls = await storage.getComplianceControls(framework);
+        const mappings = await storage.getComplianceControlMappings(orgId);
+        const mappedControlIds = new Set(mappings.map((m: any) => m.controlId));
+        const coveredCount = controls.filter((c: any) => mappedControlIds.has(c.id)).length;
+
+        summary.push({
+          framework,
+          totalControls: controls.length,
+          coveredCount,
+          gapCount: controls.length - coveredCount,
+          coveragePercent: controls.length > 0 ? Math.round((coveredCount / controls.length) * 100) : 0,
+        });
+      }
+
+      res.json({ frameworks: summary, generatedAt: new Date().toISOString() });
+    } catch (error: any) {
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
+      res.status(500).json({ message: "Failed to generate coverage summary" });
+    }
+  });
+
   app.get("/api/compliance-helpers/:id", isAuthenticated, async (req, res) => {
     try {
       const helper = await storage.getComplianceControlHelper(p(req.params.id));
@@ -438,35 +467,6 @@ export function registerReportGovernanceRoutes(app: Express): void {
         return res.status(403).json({ message: "Organization context required" });
       logger.child("report-governance").error("Cross-map failed", { error: String(error) });
       res.status(500).json({ message: "Failed to run cross-map" });
-    }
-  });
-
-  app.get("/api/compliance-helpers/coverage-summary", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const frameworks = ["NIST CSF", "ISO 27001", "CIS", "SOC 2"];
-      const summary: any[] = [];
-
-      for (const framework of frameworks) {
-        const controls = await storage.getComplianceControls(framework);
-        const mappings = await storage.getComplianceControlMappings(orgId);
-        const mappedControlIds = new Set(mappings.map((m: any) => m.controlId));
-        const coveredCount = controls.filter((c: any) => mappedControlIds.has(c.id)).length;
-
-        summary.push({
-          framework,
-          totalControls: controls.length,
-          coveredCount,
-          gapCount: controls.length - coveredCount,
-          coveragePercent: controls.length > 0 ? Math.round((coveredCount / controls.length) * 100) : 0,
-        });
-      }
-
-      res.json({ frameworks: summary, generatedAt: new Date().toISOString() });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      res.status(500).json({ message: "Failed to generate coverage summary" });
     }
   });
 }

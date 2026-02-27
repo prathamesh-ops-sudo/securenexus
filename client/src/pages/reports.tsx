@@ -917,6 +917,8 @@ export default function ReportsPage() {
             </div>
           ) : null}
         </TabsContent>
+
+        <TemplateVersioningTab templates={templates || []} />
       </Tabs>
 
       <Dialog open={showCreateTemplate} onOpenChange={setShowCreateTemplate}>
@@ -1138,8 +1140,6 @@ export default function ReportsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <TemplateVersioningTab templates={templates || []} />
     </div>
   );
 }
