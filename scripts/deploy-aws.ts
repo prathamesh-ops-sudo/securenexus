@@ -1,43 +1,4 @@
-import {
-  AppRunnerClient,
-  CreateServiceCommand,
-  DescribeServiceCommand,
-  ListServicesCommand,
-  CreateAutoScalingConfigurationCommand,
-  CreateVpcConnectorCommand,
-  ListVpcConnectorsCommand,
-  type SourceConfiguration,
-} from "@aws-sdk/client-apprunner";
-import {
-  RDSClient,
-  CreateDBInstanceCommand,
-  DescribeDBInstancesCommand,
-  ModifyDBInstanceCommand,
-} from "@aws-sdk/client-rds";
-import {
-  EC2Client,
-  DescribeSubnetsCommand,
-  DescribeSecurityGroupsCommand,
-  CreateSecurityGroupCommand,
-  AuthorizeSecurityGroupIngressCommand,
-  DescribeVpcsCommand,
-} from "@aws-sdk/client-ec2";
-import {
-  IAMClient,
-  CreateRoleCommand,
-  AttachRolePolicyCommand,
-  GetRoleCommand,
-} from "@aws-sdk/client-iam";
-import {
-  STSClient,
-  GetCallerIdentityCommand,
-} from "@aws-sdk/client-sts";
-import {
-  ECRClient,
-  CreateRepositoryCommand,
-  DescribeRepositoriesCommand,
-  GetAuthorizationTokenCommand,
-} from "@aws-sdk/client-ecr";
+import crypto from "crypto";
 
 const REGION = process.env.AWS_REGION || "us-east-1";
 const APP_NAME = "securenexus";
@@ -47,16 +8,9 @@ const DB_USERNAME = "securenexus_admin";
 const DB_PASSWORD = process.env.RDS_DB_PASSWORD || generatePassword();
 const ECR_REPO_NAME = APP_NAME;
 
-const appRunner = new AppRunnerClient({ region: REGION });
-const rds = new RDSClient({ region: REGION });
-const ec2 = new EC2Client({ region: REGION });
-const iam = new IAMClient({ region: REGION });
-const sts = new STSClient({ region: REGION });
-const ecr = new ECRClient({ region: REGION });
-
 function generatePassword(): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!^&*-_=+";
-  const bytes = require("crypto").randomBytes(32);
+  const bytes = crypto.randomBytes(32);
   let result = "";
   for (let i = 0; i < 32; i++) {
     result += chars.charAt(bytes[i] % chars.length);
@@ -68,17 +22,23 @@ function log(msg: string) {
   console.log(`[deploy] ${new Date().toISOString()} ${msg}`);
 }
 
-function logError(msg: string, err: any) {
-  console.error(`[deploy] ERROR: ${msg}`, err?.message || err);
+function logError(msg: string, err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[deploy] ERROR: ${msg}`, message);
 }
 
 async function getAccountId(): Promise<string> {
+  const { STSClient, GetCallerIdentityCommand } = await import("@aws-sdk/client-sts");
+  const sts = new STSClient({ region: REGION });
   const identity = await sts.send(new GetCallerIdentityCommand({}));
   return identity.Account!;
 }
 
 async function getDefaultVpc(): Promise<{ vpcId: string; subnetIds: string[] }> {
   log("Finding default VPC and subnets...");
+  const { EC2Client, DescribeVpcsCommand, DescribeSubnetsCommand } = await import("@aws-sdk/client-ec2");
+  const ec2 = new EC2Client({ region: REGION });
+
   const vpcs = await ec2.send(new DescribeVpcsCommand({ Filters: [{ Name: "isDefault", Values: ["true"] }] }));
   const vpcId = vpcs.Vpcs?.[0]?.VpcId;
   if (!vpcId) throw new Error("No default VPC found. Create one or specify VPC_ID env var.");
@@ -94,14 +54,19 @@ async function getDefaultVpc(): Promise<{ vpcId: string; subnetIds: string[] }> 
 async function createOrGetSecurityGroup(vpcId: string): Promise<string> {
   log("Setting up security group...");
   const sgName = `${APP_NAME}-db-sg`;
+  const { EC2Client, DescribeSecurityGroupsCommand, CreateSecurityGroupCommand, AuthorizeSecurityGroupIngressCommand } =
+    await import("@aws-sdk/client-ec2");
+  const ec2 = new EC2Client({ region: REGION });
 
   try {
-    const existing = await ec2.send(new DescribeSecurityGroupsCommand({
-      Filters: [
-        { Name: "group-name", Values: [sgName] },
-        { Name: "vpc-id", Values: [vpcId] },
-      ],
-    }));
+    const existing = await ec2.send(
+      new DescribeSecurityGroupsCommand({
+        Filters: [
+          { Name: "group-name", Values: [sgName] },
+          { Name: "vpc-id", Values: [vpcId] },
+        ],
+      }),
+    );
     if (existing.SecurityGroups?.length) {
       log(`Using existing security group: ${existing.SecurityGroups[0].GroupId}`);
       return existing.SecurityGroups[0].GroupId!;
@@ -113,24 +78,28 @@ async function createOrGetSecurityGroup(vpcId: string): Promise<string> {
     }
   }
 
-  const sg = await ec2.send(new CreateSecurityGroupCommand({
-    GroupName: sgName,
-    Description: "SecureNexus RDS security group - allows PostgreSQL from VPC",
-    VpcId: vpcId,
-  }));
+  const sg = await ec2.send(
+    new CreateSecurityGroupCommand({
+      GroupName: sgName,
+      Description: "SecureNexus RDS security group - allows PostgreSQL from VPC",
+      VpcId: vpcId,
+    }),
+  );
   const sgId = sg.GroupId!;
 
-  await ec2.send(new AuthorizeSecurityGroupIngressCommand({
-    GroupId: sgId,
-    IpPermissions: [
-      {
-        IpProtocol: "tcp",
-        FromPort: 5432,
-        ToPort: 5432,
-        IpRanges: [{ CidrIp: "10.0.0.0/8", Description: "Allow PostgreSQL from VPC private range" }],
-      },
-    ],
-  }));
+  await ec2.send(
+    new AuthorizeSecurityGroupIngressCommand({
+      GroupId: sgId,
+      IpPermissions: [
+        {
+          IpProtocol: "tcp",
+          FromPort: 5432,
+          ToPort: 5432,
+          IpRanges: [{ CidrIp: "10.0.0.0/8", Description: "Allow PostgreSQL from VPC private range" }],
+        },
+      ],
+    }),
+  );
 
   log(`Created security group: ${sgId}`);
   return sgId;
@@ -138,11 +107,15 @@ async function createOrGetSecurityGroup(vpcId: string): Promise<string> {
 
 async function createOrGetRdsInstance(sgId: string): Promise<string> {
   log("Setting up RDS PostgreSQL database...");
+  const { RDSClient, DescribeDBInstancesCommand, CreateDBInstanceCommand } = await import("@aws-sdk/client-rds");
+  const rds = new RDSClient({ region: REGION });
 
   try {
-    const existing = await rds.send(new DescribeDBInstancesCommand({
-      DBInstanceIdentifier: DB_INSTANCE_ID,
-    }));
+    const existing = await rds.send(
+      new DescribeDBInstancesCommand({
+        DBInstanceIdentifier: DB_INSTANCE_ID,
+      }),
+    );
     const instance = existing.DBInstances?.[0];
     if (instance) {
       const endpoint = instance.Endpoint?.Address;
@@ -156,45 +129,53 @@ async function createOrGetRdsInstance(sgId: string): Promise<string> {
       log(`RDS instance exists but endpoint not available yet. Status: ${instance.DBInstanceStatus}`);
       return await waitForRds();
     }
-  } catch (err: any) {
-    if (!err.name?.includes("DBInstanceNotFound") && !err.message?.includes("not found")) {
+  } catch (err: unknown) {
+    const errObj = err as { name?: string; message?: string };
+    if (!errObj.name?.includes("DBInstanceNotFound") && !errObj.message?.includes("not found")) {
       throw err;
     }
   }
 
   log("Creating new RDS instance (this takes 5-10 minutes)...");
-  await rds.send(new CreateDBInstanceCommand({
-    DBInstanceIdentifier: DB_INSTANCE_ID,
-    DBName: DB_NAME,
-    Engine: "postgres",
-    EngineVersion: "16.4",
-    DBInstanceClass: "db.t3.micro",
-    AllocatedStorage: 20,
-    MasterUsername: DB_USERNAME,
-    MasterUserPassword: DB_PASSWORD,
-    VpcSecurityGroupIds: [sgId],
-    PubliclyAccessible: true,
-    StorageType: "gp3",
-    BackupRetentionPeriod: 7,
-    MultiAZ: false,
-    StorageEncrypted: true,
-    DeletionProtection: true,
-    Tags: [
-      { Key: "Application", Value: APP_NAME },
-      { Key: "Environment", Value: "production" },
-    ],
-  }));
+  await rds.send(
+    new CreateDBInstanceCommand({
+      DBInstanceIdentifier: DB_INSTANCE_ID,
+      DBName: DB_NAME,
+      Engine: "postgres",
+      EngineVersion: "16.4",
+      DBInstanceClass: "db.t3.micro",
+      AllocatedStorage: 20,
+      MasterUsername: DB_USERNAME,
+      MasterUserPassword: DB_PASSWORD,
+      VpcSecurityGroupIds: [sgId],
+      PubliclyAccessible: true,
+      StorageType: "gp3",
+      BackupRetentionPeriod: 7,
+      MultiAZ: false,
+      StorageEncrypted: true,
+      DeletionProtection: true,
+      Tags: [
+        { Key: "Application", Value: APP_NAME },
+        { Key: "Environment", Value: "production" },
+      ],
+    }),
+  );
 
   log("RDS instance creation started. Waiting for it to become available...");
   return await waitForRds();
 }
 
 async function waitForRds(): Promise<string> {
+  const { RDSClient, DescribeDBInstancesCommand } = await import("@aws-sdk/client-rds");
+  const rds = new RDSClient({ region: REGION });
   const maxAttempts = 60;
+  const pollIntervalMs = 15000;
   for (let i = 0; i < maxAttempts; i++) {
-    const result = await rds.send(new DescribeDBInstancesCommand({
-      DBInstanceIdentifier: DB_INSTANCE_ID,
-    }));
+    const result = await rds.send(
+      new DescribeDBInstancesCommand({
+        DBInstanceIdentifier: DB_INSTANCE_ID,
+      }),
+    );
     const instance = result.DBInstances?.[0];
     const status = instance?.DBInstanceStatus;
     const endpoint = instance?.Endpoint?.Address;
@@ -208,19 +189,23 @@ async function waitForRds(): Promise<string> {
       return dbUrl;
     }
 
-    await new Promise((r) => setTimeout(r, 15000));
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
   throw new Error("RDS instance did not become available within timeout");
 }
 
 async function createEcrRepo(): Promise<string> {
   log("Setting up ECR repository...");
-  const accountId = await getAccountId();
+  await getAccountId();
+  const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand } = await import("@aws-sdk/client-ecr");
+  const ecr = new ECRClient({ region: REGION });
 
   try {
-    const existing = await ecr.send(new DescribeRepositoriesCommand({
-      repositoryNames: [ECR_REPO_NAME],
-    }));
+    const existing = await ecr.send(
+      new DescribeRepositoriesCommand({
+        repositoryNames: [ECR_REPO_NAME],
+      }),
+    );
     if (existing.repositories?.length) {
       const uri = existing.repositories[0].repositoryUri!;
       log(`ECR repo already exists: ${uri}`);
@@ -233,11 +218,13 @@ async function createEcrRepo(): Promise<string> {
     }
   }
 
-  const repo = await ecr.send(new CreateRepositoryCommand({
-    repositoryName: ECR_REPO_NAME,
-    imageScanningConfiguration: { scanOnPush: true },
-    imageTagMutability: "MUTABLE",
-  }));
+  const repo = await ecr.send(
+    new CreateRepositoryCommand({
+      repositoryName: ECR_REPO_NAME,
+      imageScanningConfiguration: { scanOnPush: true },
+      imageTagMutability: "MUTABLE",
+    }),
+  );
 
   const uri = repo.repository?.repositoryUri!;
   log(`Created ECR repo: ${uri}`);
@@ -246,7 +233,9 @@ async function createEcrRepo(): Promise<string> {
 
 async function createAppRunnerAccessRole(): Promise<string> {
   const roleName = `${APP_NAME}-apprunner-ecr-role`;
-  const accountId = await getAccountId();
+  await getAccountId();
+  const { IAMClient, GetRoleCommand, CreateRoleCommand, AttachRolePolicyCommand } = await import("@aws-sdk/client-iam");
+  const iam = new IAMClient({ region: REGION });
 
   try {
     const existing = await iam.send(new GetRoleCommand({ RoleName: roleName }));
@@ -273,25 +262,32 @@ async function createAppRunnerAccessRole(): Promise<string> {
     ],
   };
 
-  const role = await iam.send(new CreateRoleCommand({
-    RoleName: roleName,
-    AssumeRolePolicyDocument: JSON.stringify(trustPolicy),
-    Description: "Allows App Runner to pull images from ECR",
-    Tags: [{ Key: "Application", Value: APP_NAME }],
-  }));
+  const role = await iam.send(
+    new CreateRoleCommand({
+      RoleName: roleName,
+      AssumeRolePolicyDocument: JSON.stringify(trustPolicy),
+      Description: "Allows App Runner to pull images from ECR",
+      Tags: [{ Key: "Application", Value: APP_NAME }],
+    }),
+  );
 
-  await iam.send(new AttachRolePolicyCommand({
-    RoleName: roleName,
-    PolicyArn: "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess",
-  }));
+  await iam.send(
+    new AttachRolePolicyCommand({
+      RoleName: roleName,
+      PolicyArn: "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess",
+    }),
+  );
 
   log(`Created IAM role: ${role.Role?.Arn}`);
-  await new Promise((r) => setTimeout(r, 10000));
+  const iamPropagationDelayMs = 10000;
+  await new Promise((r) => setTimeout(r, iamPropagationDelayMs));
   return role.Role?.Arn!;
 }
 
 async function createAppRunnerInstanceRole(): Promise<string> {
   const roleName = `${APP_NAME}-apprunner-instance-role`;
+  const { IAMClient, GetRoleCommand, CreateRoleCommand, AttachRolePolicyCommand } = await import("@aws-sdk/client-iam");
+  const iam = new IAMClient({ region: REGION });
 
   try {
     const existing = await iam.send(new GetRoleCommand({ RoleName: roleName }));
@@ -318,33 +314,37 @@ async function createAppRunnerInstanceRole(): Promise<string> {
     ],
   };
 
-  const role = await iam.send(new CreateRoleCommand({
-    RoleName: roleName,
-    AssumeRolePolicyDocument: JSON.stringify(trustPolicy),
-    Description: "SecureNexus App Runner instance role for AWS service access",
-    Tags: [{ Key: "Application", Value: APP_NAME }],
-  }));
+  const role = await iam.send(
+    new CreateRoleCommand({
+      RoleName: roleName,
+      AssumeRolePolicyDocument: JSON.stringify(trustPolicy),
+      Description: "SecureNexus App Runner instance role for AWS service access",
+      Tags: [{ Key: "Application", Value: APP_NAME }],
+    }),
+  );
 
-  const policies = [
-    "arn:aws:iam::aws:policy/AmazonBedrockReadOnly",
-    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
-  ];
+  const policies = ["arn:aws:iam::aws:policy/AmazonBedrockReadOnly", "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"];
 
   for (const policyArn of policies) {
     try {
       await iam.send(new AttachRolePolicyCommand({ RoleName: roleName, PolicyArn: policyArn }));
-    } catch (err: any) {
-      log(`Warning: Could not attach policy ${policyArn}: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`Warning: Could not attach policy ${policyArn}: ${message}`);
     }
   }
 
   log(`Created instance role: ${role.Role?.Arn}`);
-  await new Promise((r) => setTimeout(r, 10000));
+  const iamPropagationDelayMs = 10000;
+  await new Promise((r) => setTimeout(r, iamPropagationDelayMs));
   return role.Role?.Arn!;
 }
 
 async function createOrGetVpcConnector(subnetIds: string[], sgId: string): Promise<string> {
   const connectorName = `${APP_NAME}-vpc-connector`;
+  const { AppRunnerClient, ListVpcConnectorsCommand, CreateVpcConnectorCommand } =
+    await import("@aws-sdk/client-apprunner");
+  const appRunner = new AppRunnerClient({ region: REGION });
 
   try {
     const existing = await appRunner.send(new ListVpcConnectorsCommand({}));
@@ -358,12 +358,14 @@ async function createOrGetVpcConnector(subnetIds: string[], sgId: string): Promi
   }
 
   log("Creating VPC connector for App Runner to reach RDS...");
-  const connector = await appRunner.send(new CreateVpcConnectorCommand({
-    VpcConnectorName: connectorName,
-    Subnets: subnetIds.slice(0, 3),
-    SecurityGroups: [sgId],
-    Tags: [{ Key: "Application", Value: APP_NAME }],
-  }));
+  const connector = await appRunner.send(
+    new CreateVpcConnectorCommand({
+      VpcConnectorName: connectorName,
+      Subnets: subnetIds.slice(0, 3),
+      SecurityGroups: [sgId],
+      Tags: [{ Key: "Application", Value: APP_NAME }],
+    }),
+  );
 
   log(`Created VPC connector: ${connector.VpcConnector?.VpcConnectorArn}`);
   return connector.VpcConnector?.VpcConnectorArn!;
@@ -378,12 +380,13 @@ async function createAppRunnerService(
   sessionSecret: string,
 ): Promise<string> {
   log("Setting up App Runner service...");
+  const { AppRunnerClient, ListServicesCommand, CreateServiceCommand, CreateAutoScalingConfigurationCommand } =
+    await import("@aws-sdk/client-apprunner");
+  const appRunner = new AppRunnerClient({ region: REGION });
 
   try {
     const existing = await appRunner.send(new ListServicesCommand({}));
-    const found = existing.ServiceSummaryList?.find(
-      (s) => s.ServiceName === APP_NAME && s.Status !== "DELETED",
-    );
+    const found = existing.ServiceSummaryList?.find((s) => s.ServiceName === APP_NAME && s.Status !== "DELETED");
     if (found) {
       log(`App Runner service already exists: ${found.ServiceUrl}`);
       log(`Status: ${found.Status}`);
@@ -394,10 +397,10 @@ async function createAppRunnerService(
   }
 
   const imageTag = "latest";
-  const sourceConfig: SourceConfiguration = {
+  const sourceConfig = {
     ImageRepository: {
       ImageIdentifier: `${ecrUri}:${imageTag}`,
-      ImageRepositoryType: "ECR",
+      ImageRepositoryType: "ECR" as const,
       ImageConfiguration: {
         Port: "5000",
         RuntimeEnvironmentVariables: {
@@ -415,41 +418,45 @@ async function createAppRunnerService(
     AutoDeploymentsEnabled: true,
   };
 
-  const autoScaling = await appRunner.send(new CreateAutoScalingConfigurationCommand({
-    AutoScalingConfigurationName: `${APP_NAME}-scaling`,
-    MinSize: 1,
-    MaxSize: 3,
-    MaxConcurrency: 100,
-  }));
+  const autoScaling = await appRunner.send(
+    new CreateAutoScalingConfigurationCommand({
+      AutoScalingConfigurationName: `${APP_NAME}-scaling`,
+      MinSize: 1,
+      MaxSize: 3,
+      MaxConcurrency: 100,
+    }),
+  );
 
-  const service = await appRunner.send(new CreateServiceCommand({
-    ServiceName: APP_NAME,
-    SourceConfiguration: sourceConfig,
-    InstanceConfiguration: {
-      Cpu: "1 vCPU",
-      Memory: "2 GB",
-      InstanceRoleArn: instanceRoleArn,
-    },
-    HealthCheckConfiguration: {
-      Protocol: "HTTP",
-      Path: "/api/ops/health",
-      Interval: 10,
-      Timeout: 5,
-      HealthyThreshold: 1,
-      UnhealthyThreshold: 3,
-    },
-    AutoScalingConfigurationArn: autoScaling.AutoScalingConfiguration?.AutoScalingConfigurationArn,
-    NetworkConfiguration: {
-      EgressConfiguration: {
-        EgressType: "VPC",
-        VpcConnectorArn: vpcConnectorArn,
+  const service = await appRunner.send(
+    new CreateServiceCommand({
+      ServiceName: APP_NAME,
+      SourceConfiguration: sourceConfig,
+      InstanceConfiguration: {
+        Cpu: "1 vCPU",
+        Memory: "2 GB",
+        InstanceRoleArn: instanceRoleArn,
       },
-    },
-    Tags: [
-      { Key: "Application", Value: APP_NAME },
-      { Key: "Environment", Value: "production" },
-    ],
-  }));
+      HealthCheckConfiguration: {
+        Protocol: "HTTP",
+        Path: "/api/ops/health",
+        Interval: 10,
+        Timeout: 5,
+        HealthyThreshold: 1,
+        UnhealthyThreshold: 3,
+      },
+      AutoScalingConfigurationArn: autoScaling.AutoScalingConfiguration?.AutoScalingConfigurationArn,
+      NetworkConfiguration: {
+        EgressConfiguration: {
+          EgressType: "VPC",
+          VpcConnectorArn: vpcConnectorArn,
+        },
+      },
+      Tags: [
+        { Key: "Application", Value: APP_NAME },
+        { Key: "Environment", Value: "production" },
+      ],
+    }),
+  );
 
   const serviceUrl = `https://${service.Service?.ServiceUrl}`;
   log(`App Runner service created: ${serviceUrl}`);
@@ -505,7 +512,9 @@ async function main() {
   log("=== Next Steps ===");
   log("1. Build and push Docker image to ECR:");
   log(`   docker build -t ${ecrUri}:latest .`);
-  log(`   aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ecrUri.split('/')[0]}`);
+  log(
+    `   aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ecrUri.split("/")[0]}`,
+  );
   log(`   docker push ${ecrUri}:latest`);
   log("");
   log("2. Run database migrations:");
