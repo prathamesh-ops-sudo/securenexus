@@ -6,6 +6,7 @@ import { logger } from "./logger";
 import { getPlugin, getAllPluginTypes, getPluginMetadata as registryGetMetadata } from "./connectors/connector-plugin";
 import type { ConnectorPlugin } from "./connectors/connector-plugin";
 import { initializeConnectorPlugins } from "./connectors/registry";
+import { startSpan, addSpanAttribute } from "./tracing";
 
 export type { ConnectorConfig, SyncResult, ConnectorTestResult } from "./connectors/connector-plugin";
 import type { ConnectorConfig, SyncResult, ConnectorTestResult } from "./connectors/connector-plugin";
@@ -75,16 +76,23 @@ function applyProviderBackoff(provider: string): void {
   const factor = existing ? Math.min(existing.factor * 2, 64) : 2;
   const waitMs = factor * 1000;
   providerBackoff.set(provider, { until: Date.now() + waitMs, factor });
-  logger.child("connector-engine").warn("Provider " + provider + " backoff applied: " + waitMs + "ms", { provider, factor });
+  logger
+    .child("connector-engine")
+    .warn("Provider " + provider + " backoff applied: " + waitMs + "ms", { provider, factor });
 }
 
 function clearProviderBackoff(provider: string): void {
   providerBackoff.delete(provider);
 }
 
-export function getProviderSyncStats(): Record<string, { active: number; maxConcurrency: number; backoffMs: number; waiting: number }> {
+export function getProviderSyncStats(): Record<
+  string,
+  { active: number; maxConcurrency: number; backoffMs: number; waiting: number }
+> {
   const stats: Record<string, { active: number; maxConcurrency: number; backoffMs: number; waiting: number }> = {};
-  const allProviders = Array.from(new Set([...Array.from(providerConcurrency.keys()), ...Array.from(providerActiveCount.keys())]));
+  const allProviders = Array.from(
+    new Set([...Array.from(providerConcurrency.keys()), ...Array.from(providerActiveCount.keys())]),
+  );
   for (let pi = 0; pi < allProviders.length; pi++) {
     const p = allProviders[pi]!;
     stats[p] = {
@@ -136,13 +144,23 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
   const type = connector.type;
   const plugin = getPlugin(type);
   if (!plugin) {
-    return { alertsReceived: 0, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 0, errors: ["Unknown connector type: " + type], rawAlerts: [] };
+    return {
+      alertsReceived: 0,
+      alertsCreated: 0,
+      alertsDeduped: 0,
+      alertsFailed: 0,
+      errors: ["Unknown connector type: " + type],
+      rawAlerts: [],
+    };
   }
 
   const backoffMs = checkProviderBackoff(type);
   if (backoffMs > 0) {
     return {
-      alertsReceived: 0, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 0,
+      alertsReceived: 0,
+      alertsCreated: 0,
+      alertsDeduped: 0,
+      alertsFailed: 0,
       errors: ["Provider " + type + " in backoff for " + Math.ceil(backoffMs / 1000) + "s"],
       rawAlerts: [],
     };
@@ -160,7 +178,14 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
       if (msg.includes("429") || msg.includes("rate limit") || msg.includes("throttl") || msg.includes("503")) {
         applyProviderBackoff(type);
       }
-      return { alertsReceived: 0, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 0, errors: [(err as Error).message], rawAlerts: [] };
+      return {
+        alertsReceived: 0,
+        alertsCreated: 0,
+        alertsDeduped: 0,
+        alertsFailed: 0,
+        errors: [(err as Error).message],
+        rawAlerts: [],
+      };
     }
 
     const { normalized, failed, errors } = normalizeBatch(rawAlerts, plugin.normalize.bind(plugin), connector.orgId);
@@ -178,25 +203,40 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
   }
 }
 
-function classifyError(errorMessage: string): { errorType: string; throttled: boolean; httpStatus: number | undefined } {
+function classifyError(errorMessage: string): {
+  errorType: string;
+  throttled: boolean;
+  httpStatus: number | undefined;
+} {
   const errorLower = errorMessage.toLowerCase();
   let errorType = "api_error";
   let throttled = false;
   let httpStatus: number | undefined;
 
-  if (errorLower.includes("429") || errorLower.includes("503") ||
-      errorLower.includes("rate limit") || errorLower.includes("throttl")) {
+  if (
+    errorLower.includes("429") ||
+    errorLower.includes("503") ||
+    errorLower.includes("rate limit") ||
+    errorLower.includes("throttl")
+  ) {
     errorType = "throttle";
     throttled = true;
     if (errorLower.includes("429")) httpStatus = 429;
     if (errorLower.includes("503")) httpStatus = 503;
-  } else if (errorLower.includes("401") || errorLower.includes("403") ||
-             errorLower.includes("unauthorized") || errorLower.includes("forbidden")) {
+  } else if (
+    errorLower.includes("401") ||
+    errorLower.includes("403") ||
+    errorLower.includes("unauthorized") ||
+    errorLower.includes("forbidden")
+  ) {
     errorType = "auth_error";
     if (errorLower.includes("401")) httpStatus = 401;
     if (errorLower.includes("403")) httpStatus = 403;
-  } else if (errorLower.includes("timeout") || errorLower.includes("econnreset") ||
-             errorLower.includes("econnrefused")) {
+  } else if (
+    errorLower.includes("timeout") ||
+    errorLower.includes("econnreset") ||
+    errorLower.includes("econnrefused")
+  ) {
     errorType = "network_error";
   }
 
@@ -210,111 +250,126 @@ export interface SyncWithRetryResult {
 
 export async function syncConnectorWithRetry(
   connector: Connector,
-  maxAttempts: number = 3
+  maxAttempts: number = 3,
 ): Promise<SyncWithRetryResult> {
-  const startTime = Date.now();
-  const fetchWindowStart = connector.lastSyncAt ?? undefined;
-  const fetchWindowEnd = new Date();
+  return startSpan("connector-engine", `sync:${connector.type}`, async () => {
+    const startTime = Date.now();
+    addSpanAttribute("connector.id", connector.id);
+    addSpanAttribute("connector.type", connector.type);
+    addSpanAttribute("connector.orgId", connector.orgId ?? "");
+    const fetchWindowStart = connector.lastSyncAt ?? undefined;
+    const fetchWindowEnd = new Date();
 
-  const jobRun = await storage.createConnectorJobRun({
-    connectorId: connector.id,
-    orgId: connector.orgId,
-    status: "running",
-    attempt: 1,
-    maxAttempts,
-    alertsReceived: 0,
-    alertsCreated: 0,
-    alertsDeduped: 0,
-    alertsFailed: 0,
-    fetchWindowStart: fetchWindowStart ?? null,
-    fetchWindowEnd,
-  });
+    const jobRun = await storage.createConnectorJobRun({
+      connectorId: connector.id,
+      orgId: connector.orgId,
+      status: "running",
+      attempt: 1,
+      maxAttempts,
+      alertsReceived: 0,
+      alertsCreated: 0,
+      alertsDeduped: 0,
+      alertsFailed: 0,
+      fetchWindowStart: fetchWindowStart ?? null,
+      fetchWindowEnd,
+    });
 
-  let currentAttempt = 1;
-  let lastErrorMessage = "Unknown error";
+    let currentAttempt = 1;
+    let lastErrorMessage = "Unknown error";
 
-  while (currentAttempt <= maxAttempts) {
-    const syncResult = await syncConnector(connector);
+    while (currentAttempt <= maxAttempts) {
+      const syncResult = await syncConnector(connector);
 
-    const isCompleteFail = syncResult.errors.length > 0 && syncResult.alertsReceived === 0;
+      const isCompleteFail = syncResult.errors.length > 0 && syncResult.alertsReceived === 0;
 
-    if (!isCompleteFail) {
-      const latencyMs = Date.now() - startTime;
-      const status = syncResult.errors.length > 0 ? "partial" : "success";
+      if (!isCompleteFail) {
+        const latencyMs = Date.now() - startTime;
+        const status = syncResult.errors.length > 0 ? "partial" : "success";
 
-      const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
-        status,
-        attempt: currentAttempt,
-        alertsReceived: syncResult.alertsReceived,
-        alertsCreated: syncResult.alertsCreated,
-        alertsDeduped: syncResult.alertsDeduped,
-        alertsFailed: syncResult.alertsFailed,
-        latencyMs,
-        checkpointData: { alertsReceived: syncResult.alertsReceived, completedAt: new Date().toISOString() },
-        checkpointAt: new Date(),
-        completedAt: new Date(),
+        const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
+          status,
+          attempt: currentAttempt,
+          alertsReceived: syncResult.alertsReceived,
+          alertsCreated: syncResult.alertsCreated,
+          alertsDeduped: syncResult.alertsDeduped,
+          alertsFailed: syncResult.alertsFailed,
+          latencyMs,
+          checkpointData: { alertsReceived: syncResult.alertsReceived, completedAt: new Date().toISOString() },
+          checkpointAt: new Date(),
+          completedAt: new Date(),
+        });
+
+        return { jobRun: updatedJobRun, syncResult };
+      }
+
+      lastErrorMessage = syncResult.errors[0] || "Unknown error";
+      const { errorType, throttled, httpStatus } = classifyError(lastErrorMessage);
+
+      if (currentAttempt >= maxAttempts) {
+        const latencyMs = Date.now() - startTime;
+        const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
+          status: "failed",
+          attempt: currentAttempt,
+          latencyMs,
+          errorMessage: lastErrorMessage,
+          errorType,
+          httpStatus,
+          throttled,
+          isDeadLetter: true,
+          completedAt: new Date(),
+        });
+
+        return { jobRun: updatedJobRun, syncResult };
+      }
+
+      const backoffSeconds = Math.pow(2, currentAttempt);
+      const nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
+      logger.child("connector-engine").warn("Sync failed on attempt " + currentAttempt + "/" + maxAttempts, {
+        connectorId: connector.id,
+        errorType,
+        backoffSeconds,
+        error: lastErrorMessage,
       });
 
-      return { jobRun: updatedJobRun, syncResult };
-    }
-
-    lastErrorMessage = syncResult.errors[0] || "Unknown error";
-    const { errorType, throttled, httpStatus } = classifyError(lastErrorMessage);
-
-    if (currentAttempt >= maxAttempts) {
-      const latencyMs = Date.now() - startTime;
-      const updatedJobRun = await storage.updateConnectorJobRun(jobRun.id, {
-        status: "failed",
-        attempt: currentAttempt,
-        latencyMs,
+      await storage.updateConnectorJobRun(jobRun.id, {
+        attempt: currentAttempt + 1,
         errorMessage: lastErrorMessage,
         errorType,
         httpStatus,
         throttled,
-        isDeadLetter: true,
-        completedAt: new Date(),
+        backoffSeconds,
+        nextRetryAt,
+        retryStrategy: "exponential",
       });
 
-      return { jobRun: updatedJobRun, syncResult };
+      await new Promise((resolve) => setTimeout(resolve, backoffSeconds * 1000));
+
+      currentAttempt++;
     }
 
-    const backoffSeconds = Math.pow(2, currentAttempt);
-    const nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
-    logger.child("connector-engine").warn("Sync failed on attempt " + currentAttempt + "/" + maxAttempts, {
-      connectorId: connector.id, errorType, backoffSeconds, error: lastErrorMessage,
-    });
-
-    await storage.updateConnectorJobRun(jobRun.id, {
-      attempt: currentAttempt + 1,
+    const latencyMs = Date.now() - startTime;
+    const finalJobRun = await storage.updateConnectorJobRun(jobRun.id, {
+      status: "failed",
+      attempt: currentAttempt - 1,
+      latencyMs,
       errorMessage: lastErrorMessage,
-      errorType,
-      httpStatus,
-      throttled,
-      backoffSeconds,
-      nextRetryAt,
-      retryStrategy: "exponential",
+      errorType: "api_error",
+      isDeadLetter: true,
+      completedAt: new Date(),
     });
 
-    await new Promise((resolve) => setTimeout(resolve, backoffSeconds * 1000));
-
-    currentAttempt++;
-  }
-
-  const latencyMs = Date.now() - startTime;
-  const finalJobRun = await storage.updateConnectorJobRun(jobRun.id, {
-    status: "failed",
-    attempt: currentAttempt - 1,
-    latencyMs,
-    errorMessage: lastErrorMessage,
-    errorType: "api_error",
-    isDeadLetter: true,
-    completedAt: new Date(),
+    return {
+      jobRun: finalJobRun,
+      syncResult: {
+        alertsReceived: 0,
+        alertsCreated: 0,
+        alertsDeduped: 0,
+        alertsFailed: 0,
+        errors: [lastErrorMessage],
+        rawAlerts: [],
+      },
+    };
   });
-
-  return {
-    jobRun: finalJobRun,
-    syncResult: { alertsReceived: 0, alertsCreated: 0, alertsDeduped: 0, alertsFailed: 0, errors: [lastErrorMessage], rawAlerts: [] },
-  };
 }
 
 export async function syncConnectorsBatch(
@@ -332,7 +387,9 @@ export async function syncConnectorsBatch(
         const { jobRun } = await syncConnectorWithRetry(connector);
         results.push(jobRun);
       } catch (err: unknown) {
-        logger.child("connector-engine").error("Batch sync failed for connector " + connector.id, { error: (err as Error).message });
+        logger
+          .child("connector-engine")
+          .error("Batch sync failed for connector " + connector.id, { error: (err as Error).message });
       }
     }
   }
