@@ -264,6 +264,27 @@ import {
   type SavedView,
   type InsertSavedView,
   savedViews,
+  type EvidenceChainEntry,
+  type InsertEvidenceChainEntry,
+  evidenceChainEntries,
+  type IncidentResponseApproval,
+  type InsertIncidentResponseApproval,
+  incidentResponseApprovals,
+  type PirActionItem,
+  type InsertPirActionItem,
+  pirActionItems,
+  type PlaybookVersion,
+  type InsertPlaybookVersion,
+  playbookVersions,
+  type BlastRadiusPreview,
+  type InsertBlastRadiusPreview,
+  blastRadiusPreviews,
+  type PlaybookSimulation,
+  type InsertPlaybookSimulation,
+  playbookSimulations,
+  type PlaybookRollbackPlan,
+  type InsertPlaybookRollbackPlan,
+  playbookRollbackPlans,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
@@ -897,6 +918,60 @@ export interface IStorage {
   getOrgScimConfig(orgId: string): Promise<OrgScimConfig | undefined>;
   upsertOrgScimConfig(config: InsertOrgScimConfig): Promise<OrgScimConfig>;
   deleteOrgScimConfig(orgId: string): Promise<boolean>;
+
+  // Evidence Chain Entries (8.2)
+  getEvidenceChainEntries(incidentId: string, orgId?: string): Promise<EvidenceChainEntry[]>;
+  getEvidenceChainEntry(id: string): Promise<EvidenceChainEntry | undefined>;
+  createEvidenceChainEntry(entry: InsertEvidenceChainEntry): Promise<EvidenceChainEntry>;
+  getNextSequenceNum(incidentId: string): Promise<number>;
+  getLatestChainHash(incidentId: string): Promise<string | null>;
+
+  // Incident Response Approvals (8.2)
+  getIncidentResponseApprovals(
+    orgId: string,
+    incidentId?: string,
+    status?: string,
+  ): Promise<IncidentResponseApproval[]>;
+  getIncidentResponseApproval(id: string): Promise<IncidentResponseApproval | undefined>;
+  createIncidentResponseApproval(approval: InsertIncidentResponseApproval): Promise<IncidentResponseApproval>;
+  updateIncidentResponseApproval(
+    id: string,
+    data: Partial<IncidentResponseApproval>,
+  ): Promise<IncidentResponseApproval | undefined>;
+
+  // PIR Action Items (8.2)
+  getPirActionItems(reviewId: string, orgId?: string): Promise<PirActionItem[]>;
+  getPirActionItem(id: string): Promise<PirActionItem | undefined>;
+  createPirActionItem(item: InsertPirActionItem): Promise<PirActionItem>;
+  updatePirActionItem(id: string, data: Partial<PirActionItem>): Promise<PirActionItem | undefined>;
+  deletePirActionItem(id: string): Promise<boolean>;
+
+  // Playbook Versions (8.3)
+  getPlaybookVersions(playbookId: string, orgId?: string): Promise<PlaybookVersion[]>;
+  getPlaybookVersion(id: string): Promise<PlaybookVersion | undefined>;
+  getLatestPlaybookVersion(playbookId: string): Promise<PlaybookVersion | undefined>;
+  createPlaybookVersion(version: InsertPlaybookVersion): Promise<PlaybookVersion>;
+  updatePlaybookVersion(id: string, data: Partial<PlaybookVersion>): Promise<PlaybookVersion | undefined>;
+
+  // Blast Radius Previews (8.3)
+  getBlastRadiusPreviews(playbookId: string, orgId?: string): Promise<BlastRadiusPreview[]>;
+  getBlastRadiusPreview(id: string): Promise<BlastRadiusPreview | undefined>;
+  createBlastRadiusPreview(preview: InsertBlastRadiusPreview): Promise<BlastRadiusPreview>;
+
+  // Playbook Simulations (8.3)
+  getPlaybookSimulations(playbookId: string, orgId?: string): Promise<PlaybookSimulation[]>;
+  getPlaybookSimulation(id: string): Promise<PlaybookSimulation | undefined>;
+  createPlaybookSimulation(simulation: InsertPlaybookSimulation): Promise<PlaybookSimulation>;
+  updatePlaybookSimulation(id: string, data: Partial<PlaybookSimulation>): Promise<PlaybookSimulation | undefined>;
+
+  // Playbook Rollback Plans (8.3)
+  getPlaybookRollbackPlans(playbookId: string, orgId?: string): Promise<PlaybookRollbackPlan[]>;
+  getPlaybookRollbackPlan(id: string): Promise<PlaybookRollbackPlan | undefined>;
+  createPlaybookRollbackPlan(plan: InsertPlaybookRollbackPlan): Promise<PlaybookRollbackPlan>;
+  updatePlaybookRollbackPlan(
+    id: string,
+    data: Partial<PlaybookRollbackPlan>,
+  ): Promise<PlaybookRollbackPlan | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4401,6 +4476,254 @@ export class DatabaseStorage implements IStorage {
   async deleteOrgScimConfig(orgId: string): Promise<boolean> {
     const result = await db.delete(orgScimConfigs).where(eq(orgScimConfigs.orgId, orgId)).returning();
     return result.length > 0;
+  }
+
+  // ==========================================
+  // 8.2 — Evidence Chain Entries
+  // ==========================================
+
+  async getEvidenceChainEntries(incidentId: string, orgId?: string): Promise<EvidenceChainEntry[]> {
+    const conditions = [eq(evidenceChainEntries.incidentId, incidentId)];
+    if (orgId) conditions.push(eq(evidenceChainEntries.orgId, orgId));
+    return db
+      .select()
+      .from(evidenceChainEntries)
+      .where(and(...conditions))
+      .orderBy(asc(evidenceChainEntries.sequenceNum));
+  }
+
+  async getEvidenceChainEntry(id: string): Promise<EvidenceChainEntry | undefined> {
+    const [entry] = await db.select().from(evidenceChainEntries).where(eq(evidenceChainEntries.id, id));
+    return entry;
+  }
+
+  async createEvidenceChainEntry(entry: InsertEvidenceChainEntry): Promise<EvidenceChainEntry> {
+    const [created] = await db.insert(evidenceChainEntries).values(entry).returning();
+    return created;
+  }
+
+  async getNextSequenceNum(incidentId: string): Promise<number> {
+    const [result] = await db
+      .select({ maxSeq: sql<number>`COALESCE(MAX(${evidenceChainEntries.sequenceNum}), 0)` })
+      .from(evidenceChainEntries)
+      .where(eq(evidenceChainEntries.incidentId, incidentId));
+    return (result?.maxSeq ?? 0) + 1;
+  }
+
+  async getLatestChainHash(incidentId: string): Promise<string | null> {
+    const [result] = await db
+      .select({ hash: evidenceChainEntries.entryHash })
+      .from(evidenceChainEntries)
+      .where(eq(evidenceChainEntries.incidentId, incidentId))
+      .orderBy(desc(evidenceChainEntries.sequenceNum))
+      .limit(1);
+    return result?.hash ?? null;
+  }
+
+  // ==========================================
+  // 8.2 — Incident Response Approvals
+  // ==========================================
+
+  async getIncidentResponseApprovals(
+    orgId: string,
+    incidentId?: string,
+    status?: string,
+  ): Promise<IncidentResponseApproval[]> {
+    const conditions = [eq(incidentResponseApprovals.orgId, orgId)];
+    if (incidentId) conditions.push(eq(incidentResponseApprovals.incidentId, incidentId));
+    if (status) conditions.push(eq(incidentResponseApprovals.status, status));
+    return db
+      .select()
+      .from(incidentResponseApprovals)
+      .where(and(...conditions))
+      .orderBy(desc(incidentResponseApprovals.requestedAt));
+  }
+
+  async getIncidentResponseApproval(id: string): Promise<IncidentResponseApproval | undefined> {
+    const [approval] = await db.select().from(incidentResponseApprovals).where(eq(incidentResponseApprovals.id, id));
+    return approval;
+  }
+
+  async createIncidentResponseApproval(approval: InsertIncidentResponseApproval): Promise<IncidentResponseApproval> {
+    const [created] = await db.insert(incidentResponseApprovals).values(approval).returning();
+    return created;
+  }
+
+  async updateIncidentResponseApproval(
+    id: string,
+    data: Partial<IncidentResponseApproval>,
+  ): Promise<IncidentResponseApproval | undefined> {
+    const [updated] = await db
+      .update(incidentResponseApprovals)
+      .set(data)
+      .where(eq(incidentResponseApprovals.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ==========================================
+  // 8.2 — PIR Action Items
+  // ==========================================
+
+  async getPirActionItems(reviewId: string, orgId?: string): Promise<PirActionItem[]> {
+    const conditions = [eq(pirActionItems.reviewId, reviewId)];
+    if (orgId) conditions.push(eq(pirActionItems.orgId, orgId));
+    return db
+      .select()
+      .from(pirActionItems)
+      .where(and(...conditions))
+      .orderBy(desc(pirActionItems.createdAt));
+  }
+
+  async getPirActionItem(id: string): Promise<PirActionItem | undefined> {
+    const [item] = await db.select().from(pirActionItems).where(eq(pirActionItems.id, id));
+    return item;
+  }
+
+  async createPirActionItem(item: InsertPirActionItem): Promise<PirActionItem> {
+    const [created] = await db.insert(pirActionItems).values(item).returning();
+    return created;
+  }
+
+  async updatePirActionItem(id: string, data: Partial<PirActionItem>): Promise<PirActionItem | undefined> {
+    const [updated] = await db.update(pirActionItems).set(data).where(eq(pirActionItems.id, id)).returning();
+    return updated;
+  }
+
+  async deletePirActionItem(id: string): Promise<boolean> {
+    const [deleted] = await db.delete(pirActionItems).where(eq(pirActionItems.id, id)).returning();
+    return !!deleted;
+  }
+
+  // ==========================================
+  // 8.3 — Playbook Versions
+  // ==========================================
+
+  async getPlaybookVersions(playbookId: string, orgId?: string): Promise<PlaybookVersion[]> {
+    const conditions = [eq(playbookVersions.playbookId, playbookId)];
+    if (orgId) conditions.push(eq(playbookVersions.orgId, orgId));
+    return db
+      .select()
+      .from(playbookVersions)
+      .where(and(...conditions))
+      .orderBy(desc(playbookVersions.version));
+  }
+
+  async getPlaybookVersion(id: string): Promise<PlaybookVersion | undefined> {
+    const [version] = await db.select().from(playbookVersions).where(eq(playbookVersions.id, id));
+    return version;
+  }
+
+  async getLatestPlaybookVersion(playbookId: string): Promise<PlaybookVersion | undefined> {
+    const [version] = await db
+      .select()
+      .from(playbookVersions)
+      .where(eq(playbookVersions.playbookId, playbookId))
+      .orderBy(desc(playbookVersions.version))
+      .limit(1);
+    return version;
+  }
+
+  async createPlaybookVersion(version: InsertPlaybookVersion): Promise<PlaybookVersion> {
+    const [created] = await db.insert(playbookVersions).values(version).returning();
+    return created;
+  }
+
+  async updatePlaybookVersion(id: string, data: Partial<PlaybookVersion>): Promise<PlaybookVersion | undefined> {
+    const [updated] = await db.update(playbookVersions).set(data).where(eq(playbookVersions.id, id)).returning();
+    return updated;
+  }
+
+  // ==========================================
+  // 8.3 — Blast Radius Previews
+  // ==========================================
+
+  async getBlastRadiusPreviews(playbookId: string, orgId?: string): Promise<BlastRadiusPreview[]> {
+    const conditions = [eq(blastRadiusPreviews.playbookId, playbookId)];
+    if (orgId) conditions.push(eq(blastRadiusPreviews.orgId, orgId));
+    return db
+      .select()
+      .from(blastRadiusPreviews)
+      .where(and(...conditions))
+      .orderBy(desc(blastRadiusPreviews.createdAt));
+  }
+
+  async getBlastRadiusPreview(id: string): Promise<BlastRadiusPreview | undefined> {
+    const [preview] = await db.select().from(blastRadiusPreviews).where(eq(blastRadiusPreviews.id, id));
+    return preview;
+  }
+
+  async createBlastRadiusPreview(preview: InsertBlastRadiusPreview): Promise<BlastRadiusPreview> {
+    const [created] = await db.insert(blastRadiusPreviews).values(preview).returning();
+    return created;
+  }
+
+  // ==========================================
+  // 8.3 — Playbook Simulations
+  // ==========================================
+
+  async getPlaybookSimulations(playbookId: string, orgId?: string): Promise<PlaybookSimulation[]> {
+    const conditions = [eq(playbookSimulations.playbookId, playbookId)];
+    if (orgId) conditions.push(eq(playbookSimulations.orgId, orgId));
+    return db
+      .select()
+      .from(playbookSimulations)
+      .where(and(...conditions))
+      .orderBy(desc(playbookSimulations.createdAt));
+  }
+
+  async getPlaybookSimulation(id: string): Promise<PlaybookSimulation | undefined> {
+    const [sim] = await db.select().from(playbookSimulations).where(eq(playbookSimulations.id, id));
+    return sim;
+  }
+
+  async createPlaybookSimulation(simulation: InsertPlaybookSimulation): Promise<PlaybookSimulation> {
+    const [created] = await db.insert(playbookSimulations).values(simulation).returning();
+    return created;
+  }
+
+  async updatePlaybookSimulation(
+    id: string,
+    data: Partial<PlaybookSimulation>,
+  ): Promise<PlaybookSimulation | undefined> {
+    const [updated] = await db.update(playbookSimulations).set(data).where(eq(playbookSimulations.id, id)).returning();
+    return updated;
+  }
+
+  // ==========================================
+  // 8.3 — Playbook Rollback Plans
+  // ==========================================
+
+  async getPlaybookRollbackPlans(playbookId: string, orgId?: string): Promise<PlaybookRollbackPlan[]> {
+    const conditions = [eq(playbookRollbackPlans.playbookId, playbookId)];
+    if (orgId) conditions.push(eq(playbookRollbackPlans.orgId, orgId));
+    return db
+      .select()
+      .from(playbookRollbackPlans)
+      .where(and(...conditions))
+      .orderBy(desc(playbookRollbackPlans.createdAt));
+  }
+
+  async getPlaybookRollbackPlan(id: string): Promise<PlaybookRollbackPlan | undefined> {
+    const [plan] = await db.select().from(playbookRollbackPlans).where(eq(playbookRollbackPlans.id, id));
+    return plan;
+  }
+
+  async createPlaybookRollbackPlan(plan: InsertPlaybookRollbackPlan): Promise<PlaybookRollbackPlan> {
+    const [created] = await db.insert(playbookRollbackPlans).values(plan).returning();
+    return created;
+  }
+
+  async updatePlaybookRollbackPlan(
+    id: string,
+    data: Partial<PlaybookRollbackPlan>,
+  ): Promise<PlaybookRollbackPlan | undefined> {
+    const [updated] = await db
+      .update(playbookRollbackPlans)
+      .set(data)
+      .where(eq(playbookRollbackPlans.id, id))
+      .returning();
+    return updated;
   }
 }
 
