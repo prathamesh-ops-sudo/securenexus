@@ -126,10 +126,15 @@ export function log(message: string, source = "express") {
       logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
       gracefulShutdown(signal).then(() => {
         httpServer.close(() => {
-          drainPool().then(() => {
-            logger.child("express").info("HTTP server closed and pool drained");
-            process.exit(0);
-          });
+          drainPool()
+            .then(() => {
+              logger.child("express").info("HTTP server closed and pool drained");
+              process.exit(0);
+            })
+            .catch((err: unknown) => {
+              logger.child("express").error("Pool drain failed during shutdown", { error: String(err) });
+              process.exit(1);
+            });
         });
         setTimeout(() => {
           logger.child("express").warn("Forced shutdown after timeout");

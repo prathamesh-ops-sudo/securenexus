@@ -39,11 +39,11 @@ async function rollbackLastMigration(): Promise<void> {
       return;
     }
 
-    const last = lastMigration.rows[0] as { id: number; hash: string; created_at: number };
+    const last = lastMigration.rows[0] as { id: number; hash: string; created_at: string };
     console.log(`Last applied migration:`);
     console.log(`  ID: ${last.id}`);
     console.log(`  Hash: ${last.hash}`);
-    console.log(`  Applied: ${new Date(last.created_at).toISOString()}`);
+    console.log(`  Applied: ${new Date(Number(last.created_at)).toISOString()}`);
 
     const args = process.argv.slice(2);
     if (!args.includes("--confirm")) {

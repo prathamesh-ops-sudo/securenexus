@@ -48,8 +48,8 @@ async function runMigrations(opts: MigrateOptions): Promise<void> {
           "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 10",
         );
         console.log(`\nApplied migrations: ${totalApplied}`);
-        for (const row of applied.rows as { hash: string; created_at: number }[]) {
-          console.log(`  - ${row.hash} (applied ${new Date(row.created_at).toISOString()})`);
+        for (const row of applied.rows as { hash: string; created_at: string }[]) {
+          console.log(`  - ${row.hash} (applied ${new Date(Number(row.created_at)).toISOString()})`);
         }
       } else {
         console.log("\nNo migrations have been applied yet (fresh database).");
