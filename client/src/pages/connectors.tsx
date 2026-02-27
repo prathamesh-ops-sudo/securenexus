@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { formatDateShort, formatDateTime } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -319,12 +320,10 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
                 {credentialExpiringSoon && (
                   <Badge variant="destructive" data-testid={`badge-credential-warning-${connector.id}`}>
                     <AlertTriangle className="h-3 w-3 mr-1" />
-                    Credential expires {credentialExpiresAt!.toLocaleDateString()}
+                    Credential expires {formatDateShort(credentialExpiresAt)}
                   </Badge>
                 )}
-                <span className="text-xs text-muted-foreground">
-                  Checked: {new Date(latestHealth.checkedAt!).toLocaleString()}
-                </span>
+                <span className="text-xs text-muted-foreground">Checked: {formatDateTime(latestHealth.checkedAt)}</span>
               </div>
             )}
           </CardContent>
@@ -363,7 +362,7 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
                     <TableRow key={job.id} data-testid={`row-job-${job.id}`}>
                       <TableCell>{jobStatusBadge(job.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {job.startedAt ? new Date(job.startedAt).toLocaleString() : "-"}
+                        {job.startedAt ? formatDateTime(job.startedAt) : "-"}
                       </TableCell>
                       <TableCell className="text-sm font-mono">
                         {job.latencyMs != null ? `${job.latencyMs}ms` : "-"}
@@ -566,7 +565,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
                 </button>
                 <span className="text-muted-foreground">Every {r.rotationIntervalDays}d</span>
                 {r.lastRotatedAt && (
-                  <span className="text-muted-foreground">Last: {new Date(r.lastRotatedAt).toLocaleDateString()}</span>
+                  <span className="text-muted-foreground">Last: {formatDateShort(r.lastRotatedAt)}</span>
                 )}
                 {r.nextRotationDue && (
                   <span
@@ -574,7 +573,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
                       isExpiringSoon(r.nextRotationDue) ? "text-yellow-400 font-medium" : "text-muted-foreground"
                     }
                   >
-                    Due: {new Date(r.nextRotationDue).toLocaleDateString()}
+                    Due: {formatDateShort(r.nextRotationDue)}
                     {isExpiringSoon(r.nextRotationDue) && " (soon)"}
                   </span>
                 )}
@@ -781,7 +780,7 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
                   <TableCell className="font-medium">{connectorNameMap[dl.connectorId] || dl.connectorId}</TableCell>
                   <TableCell className="text-sm text-destructive max-w-md truncate">{dl.errorMessage || "-"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {dl.startedAt ? new Date(dl.startedAt).toLocaleString() : "-"}
+                    {dl.startedAt ? formatDateTime(dl.startedAt) : "-"}
                   </TableCell>
                   <TableCell className="text-sm font-mono">
                     {dl.attempt}/{dl.maxAttempts}
@@ -1198,7 +1197,7 @@ export default function ConnectorsPage() {
                               {connector.lastSyncAt ? (
                                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                                   <Clock className="h-3 w-3" />
-                                  {new Date(connector.lastSyncAt).toLocaleString()}
+                                  {formatDateTime(connector.lastSyncAt)}
                                 </div>
                               ) : (
                                 <span className="text-sm text-muted-foreground">Never</span>

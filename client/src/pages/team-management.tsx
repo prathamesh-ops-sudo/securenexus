@@ -44,7 +44,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  formatDateShort as formatDate,
+  formatDateTime,
+  SUPPORTED_LOCALES,
+  COMMON_TIMEZONES,
+  setLocale,
+  setTimezone,
+} from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -68,26 +77,6 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const ASSIGNABLE_ROLES = ["admin", "analyst", "read_only"];
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatDateTime(date: string | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function useOrgContext() {
   const ensureOrg = useMutation({
@@ -810,6 +799,24 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
   const [newDomain, setNewDomain] = useState("");
   const [newDomainMethod, setNewDomainMethod] = useState("dns_txt");
   const [ipInput, setIpInput] = useState("");
+  const [selectedLocale, setSelectedLocale] = useState(securityPolicy?.locale || "en-US");
+  const [selectedTimezone, setSelectedTimezone] = useState(securityPolicy?.timezone || "UTC");
+
+  const updateLocaleTimezone = useMutation({
+    mutationFn: async (data: { locale?: string; timezone?: string }) => {
+      const res = await apiRequest("PUT", `/api/orgs/${orgId}/security-policy`, data);
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orgs", orgId, "security-policy"] });
+      if (variables.locale) setLocale(variables.locale);
+      if (variables.timezone) setTimezone(variables.timezone);
+      toast({ title: "Locale & timezone updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
+    },
+  });
 
   if (policyLoading || domainsLoading || ssoLoading || scimLoading) {
     return (
@@ -843,6 +850,7 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     { key: "sso", label: "SSO", icon: Key },
     { key: "scim", label: "SCIM", icon: Network },
     { key: "ip", label: "IP Allowlist", icon: Shield },
+    { key: "locale", label: "Locale & Timezone", icon: Globe },
   ];
 
   const currentIps: string[] = securityPolicy?.ipAllowlistCidrs || [];
@@ -1411,6 +1419,69 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                 No IP ranges configured. All IPs are currently allowed.
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeSection === "locale" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Globe className="h-4 w-4 text-primary" />
+              Locale & Timezone
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="org-locale">Display Locale</Label>
+                <Select
+                  value={selectedLocale}
+                  onValueChange={(val) => {
+                    setSelectedLocale(val);
+                    updateLocaleTimezone.mutate({ locale: val });
+                  }}
+                >
+                  <SelectTrigger id="org-locale" data-testid="select-locale">
+                    <SelectValue placeholder="Select locale" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_LOCALES.map((loc) => (
+                      <SelectItem key={loc.value} value={loc.value}>
+                        {loc.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Controls date, number, and currency formatting across the platform.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="org-timezone">Organization Timezone</Label>
+                <Select
+                  value={selectedTimezone}
+                  onValueChange={(val) => {
+                    setSelectedTimezone(val);
+                    updateLocaleTimezone.mutate({ timezone: val });
+                  }}
+                >
+                  <SelectTrigger id="org-timezone" data-testid="select-timezone">
+                    <SelectValue placeholder="Select timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMMON_TIMEZONES.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label} ({tz.value})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Used for report scheduling, SLA calculations, and time display across all pages.
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

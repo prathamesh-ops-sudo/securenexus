@@ -229,6 +229,8 @@ export const organizations = pgTable("organizations", {
   industry: text("industry"),
   contactEmail: text("contact_email"),
   maxUsers: integer("max_users").default(10),
+  locale: text("locale").default("en-US"),
+  timezone: text("timezone").default("UTC"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

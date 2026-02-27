@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateShort as formatDate, formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 
 interface CompliancePolicy {
@@ -221,26 +222,6 @@ const DSAR_STATUS_COLORS: Record<string, string> = {
 };
 
 const REQUEST_TYPES = ["access", "erasure", "portability", "rectification"];
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatDateTime(date: string | null | undefined): string {
-  if (!date) return "Never";
-  return new Date(date).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function PoliciesTab() {
   const { toast } = useToast();

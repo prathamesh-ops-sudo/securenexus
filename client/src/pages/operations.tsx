@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Server,
@@ -29,16 +30,6 @@ import {
   Gauge,
   Database,
 } from "lucide-react";
-
-function formatTimestamp(date: string | Date | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function jobStatusStyle(status: string) {
   const styles: Record<string, string> = {

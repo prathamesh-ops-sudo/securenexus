@@ -51,7 +51,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { SeverityBadge, formatTimestamp } from "@/components/security-badges";
+import { SeverityBadge } from "@/components/security-badges";
+import { formatTimestamp, formatRelativeTime as formatRelativeTimestamp } from "@/lib/i18n";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import type { Alert, Incident } from "@shared/schema";
 
@@ -178,20 +179,6 @@ function extractIOCsFromIncidents(incidents: Incident[]): IOCEntry[] {
     }
   }
   return iocs;
-}
-
-function formatRelativeTimestamp(date: string | null): string {
-  if (!date) return "Never";
-  const d = new Date(date);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
 }
 
 const FEED_STATUS_DOT: Record<string, string> = {

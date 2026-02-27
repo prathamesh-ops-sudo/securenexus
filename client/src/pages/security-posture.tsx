@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import {
   Shield,
   Cloud,
@@ -52,16 +53,6 @@ function scoreLabel(score: number): string {
   if (score >= 60) return "Good";
   if (score >= 40) return "Fair";
   return "Critical";
-}
-
-function formatTimestamp(date: string | Date | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function ScoreGauge({ score, size = 180 }: { score: number; size?: number }) {

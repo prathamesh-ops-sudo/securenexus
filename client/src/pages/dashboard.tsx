@@ -44,6 +44,7 @@ import {
   AreaChart,
   Area,
 } from "recharts";
+import { formatChartDateLabel, formatTime } from "@/lib/i18n";
 
 type WidgetId = "severity" | "sources" | "trend" | "mitre" | "categories" | "connectors" | "ingestion" | "whatChanged";
 
@@ -404,7 +405,7 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
 function TrendChart({ data }: { data: { date: string; count: number }[] }) {
   const formatted = data.map((d) => ({
     ...d,
-    label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    label: formatChartDateLabel(d.date),
   }));
 
   return (
@@ -625,7 +626,7 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
   const formatted = data.map((d) => ({
     ...d,
     total: d.created + d.deduped + d.failed,
-    label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    label: formatChartDateLabel(d.date),
   }));
 
   return (
@@ -1146,9 +1147,7 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div className="px-3 py-2 border-t border-border bg-muted/20 text-center">
-                    <span className="text-[10px] text-muted-foreground">
-                      Updated {lastUpdated.toLocaleTimeString()}
-                    </span>
+                    <span className="text-[10px] text-muted-foreground">Updated {formatTime(lastUpdated)}</span>
                   </div>
                 </div>
               )}

@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateShort, formatDateFull, formatNumber as formatI18nNumber } from "@/lib/i18n";
 import {
   BarChart3,
   Zap,
@@ -60,7 +61,7 @@ function metricIcon(type: string) {
 function formatNumber(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return n.toLocaleString();
+  return formatI18nNumber(n);
 }
 
 interface UsageMetric {
@@ -185,12 +186,8 @@ function UsageMeteringTab() {
     );
   }
 
-  const cycleStart = new Date(usage.billingCycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const cycleEnd = new Date(usage.billingCycleEnd).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const cycleStart = formatDateShort(usage.billingCycleStart);
+  const cycleEnd = formatDateFull(usage.billingCycleEnd);
 
   return (
     <div className="space-y-6">

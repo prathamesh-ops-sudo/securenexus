@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import {
   AlertTriangle,
   Shield,
@@ -29,16 +30,6 @@ import {
   X,
   BarChart3,
 } from "lucide-react";
-
-function formatTimestamp(date: string | Date | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function formatType(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());

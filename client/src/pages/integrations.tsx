@@ -36,6 +36,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import type { IntegrationConfig, NotificationChannel, ResponseAction } from "@shared/schema";
 
@@ -99,17 +100,6 @@ const CONFIG_FIELDS: Record<string, { key: string; label: string; type: string; 
     { key: "method", label: "Method", type: "text", placeholder: "POST" },
   ],
 };
-
-function formatDateTime(date: string | Date | null | undefined): string {
-  if (!date) return "Never";
-  return new Date(date).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function typeBadge(type: string) {
   const colors: Record<string, string> = {

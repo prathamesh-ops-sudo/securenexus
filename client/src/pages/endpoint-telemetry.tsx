@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import {
   Monitor,
   Cpu,
@@ -24,16 +25,6 @@ import {
   ChevronRight,
 } from "lucide-react";
 import type { EndpointAsset, EndpointTelemetry } from "@shared/schema";
-
-function formatTimestamp(date: string | Date | null | undefined): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function statusDot(status: string | null | undefined) {
   const s = status ?? "offline";

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import type { AuditLog } from "@shared/schema";
+import { formatDateTime } from "@/lib/i18n";
 
 const ACTION_ICONS: Record<string, any> = {
   "incident.escalate": FileWarning,
@@ -232,7 +233,7 @@ export default function AuditLogPage() {
                             {log.userName}
                           </span>
                         )}
-                        {log.createdAt && <span>{new Date(log.createdAt).toLocaleString()}</span>}
+                        {log.createdAt && <span>{formatDateTime(log.createdAt)}</span>}
                       </div>
                       {details && (
                         <div className="mt-1.5 text-xs text-muted-foreground/80">

@@ -2,6 +2,7 @@ import { storage } from "./storage";
 import { generateReportData, formatAsCSV } from "./report-engine";
 import { uploadFile } from "./s3";
 import { logger } from "./logger";
+import { calculateNextRunTimeInTimezone, safeTimezone, formatInTimezone } from "./timezone-utils";
 
 const SCHEDULER_INTERVAL_MS = 60 * 60 * 1000;
 let schedulerTimer: NodeJS.Timeout | null = null;
@@ -65,7 +66,9 @@ async function executeScheduledReport(schedule: any) {
           const result = await uploadFile(s3Key, content, contentType);
           outputLocation = `s3://${result.bucket}/${result.key}`;
         } catch (err: any) {
-          logger.child("report-scheduler").warn(`S3 delivery failed for schedule ${schedule.id}`, { error: err.message });
+          logger
+            .child("report-scheduler")
+            .warn(`S3 delivery failed for schedule ${schedule.id}`, { error: err.message });
           outputLocation = `local://${s3Key}`;
         }
       } else if (target.type === "webhook" && target.url) {
@@ -77,11 +80,16 @@ async function executeScheduledReport(schedule: any) {
           });
           logger.child("report-scheduler").info(`Webhook delivered for schedule ${schedule.id} to ${target.url}`);
         } catch (err: any) {
-          logger.child("report-scheduler").warn(`Webhook delivery failed for schedule ${schedule.id}`, { url: target.url, error: err.message });
+          logger
+            .child("report-scheduler")
+            .warn(`Webhook delivery failed for schedule ${schedule.id}`, { url: target.url, error: err.message });
         }
       } else if (target.type === "email" && target.address) {
-        logger.child("report-scheduler").info(`Email delivery simulated for schedule ${schedule.id} to ${target.address}`);
-        logger.child("report-scheduler").info(`Subject: ${template.name} - ${new Date().toLocaleDateString()}`);
+        logger
+          .child("report-scheduler")
+          .info(`Email delivery simulated for schedule ${schedule.id} to ${target.address}`);
+        const tz = safeTimezone(schedule.timezone);
+        logger.child("report-scheduler").info(`Subject: ${template.name} - ${formatInTimezone(new Date(), tz)}`);
       }
     }
 
@@ -94,7 +102,8 @@ async function executeScheduledReport(schedule: any) {
       fileSize: Buffer.byteLength(content),
     });
 
-    const nextRun = calculateNextRunTime(schedule.cadence);
+    const tz = safeTimezone(schedule.timezone);
+    const nextRun = calculateNextRunTimeInTimezone(schedule.cadence, tz);
     await storage.updateReportSchedule(schedule.id, { lastRunAt: new Date(), nextRunAt: nextRun });
 
     logger.child("report-scheduler").info(`Completed report run ${run.id} for schedule ${schedule.id}`);
@@ -110,12 +119,24 @@ async function executeScheduledReport(schedule: any) {
 function calculateNextRunTime(cadence: string): Date {
   const now = new Date();
   switch (cadence) {
-    case "daily": return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    case "weekly": return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    case "biweekly": return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    case "monthly": { const d = new Date(now); d.setMonth(d.getMonth() + 1); return d; }
-    case "quarterly": { const d = new Date(now); d.setMonth(d.getMonth() + 3); return d; }
-    default: return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case "daily":
+      return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    case "weekly":
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case "biweekly":
+      return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    case "monthly": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() + 1);
+      return d;
+    }
+    case "quarterly": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() + 3);
+      return d;
+    }
+    default:
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   }
 }
 
