@@ -17,6 +17,8 @@ import { startPoolHealthMonitor, drainPool } from "./db";
 import { startRetentionScheduler } from "./retention-scheduler";
 import { initializeTenantIsolation } from "./tenant-isolation";
 import { initializeTenantThrottle } from "./tenant-throttle";
+import { startArchivalScheduler } from "./partition-strategy";
+import { startMetricsRollupScheduler } from "./metrics-rollup";
 
 const app = express();
 const httpServer = createServer(app);
@@ -118,6 +120,8 @@ export function log(message: string, source = "express") {
       startJobWorker();
       startSliCollection();
       startSloAlerting();
+      startArchivalScheduler();
+      startMetricsRollupScheduler();
     },
   );
 

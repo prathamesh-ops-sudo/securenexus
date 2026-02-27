@@ -14,6 +14,8 @@ import { getPoolHealth, checkPoolConnectivity } from "../db";
 import { getDeadLetterJobs, retryDeadLetterJob, scheduleJob } from "../job-queue";
 import { getOutboxProcessorStatus } from "../outbox-processor";
 import { cacheInvalidate, cacheStats } from "../query-cache";
+import { getTableSizes, getPartitionConfigs, runArchivalJob } from "../partition-strategy";
+import { runFullRollup, getRollupConfig } from "../metrics-rollup";
 
 export function registerAdminRoutes(app: Express): void {
   app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -343,6 +345,114 @@ export function registerAdminRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "POOL_HEALTH_FAILED", message: "Failed to fetch pool health", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/monitoring/table-sizes",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        const sizes = await getTableSizes();
+        const configs = getPartitionConfigs();
+        return sendEnvelope(res, { tables: sizes, partitionConfigs: configs });
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "TABLE_SIZES_FAILED", message: "Failed to fetch table sizes", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/admin/archival/run",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const result = await runArchivalJob();
+        await storage.createAuditLog({
+          orgId: (req as any).user?.orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Admin",
+          action: "manual_archival_run",
+          resourceType: "system",
+          details: {
+            archived: result.results.reduce((s, r) => s + r.archivedCount, 0),
+            pruned: result.pruned.reduce((s, r) => s + r.deleted, 0),
+            errors: result.errors.length,
+          },
+        });
+        return sendEnvelope(res, result);
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "ARCHIVAL_FAILED", message: "Failed to run archival job", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/admin/metrics-rollup/run",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const result = await runFullRollup();
+        await storage.createAuditLog({
+          orgId: (req as any).user?.orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Admin",
+          action: "manual_metrics_rollup",
+          resourceType: "system",
+          details: {
+            hourlyRows: result.hourly.rowsInserted,
+            dailyRows: result.daily.rowsInserted,
+            rawPruned: result.retention.rawDeleted,
+            hourlyPruned: result.retention.hourlyDeleted,
+          },
+        });
+        return sendEnvelope(res, result);
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "ROLLUP_FAILED", message: "Failed to run metrics rollup", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/metrics-rollup/config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        return sendEnvelope(res, {
+          rollupConfig: getRollupConfig(),
+          partitionConfigs: getPartitionConfigs(),
+        });
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "CONFIG_FAILED", message: "Failed to fetch rollup config", details: error?.message }],
         });
       }
     },

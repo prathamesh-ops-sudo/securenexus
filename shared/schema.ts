@@ -4304,3 +4304,161 @@ export const auditVerificationRunsRelations = relations(auditVerificationRuns, (
 export const approvalDecisionRecordsRelations = relations(approvalDecisionRecords, ({ one }) => ({
   organization: one(organizations, { fields: [approvalDecisionRecords.orgId], references: [organizations.id] }),
 }));
+
+// ── 10.3 Large-table archival tables ────────────────────────────────────────
+
+export const endpointTelemetryArchive = pgTable(
+  "endpoint_telemetry_archive",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    assetId: varchar("asset_id").notNull(),
+    metricType: text("metric_type").notNull(),
+    metricValue: jsonb("metric_value").notNull(),
+    collectedAt: timestamp("collected_at"),
+    archivedAt: timestamp("archived_at").defaultNow(),
+    archiveReason: text("archive_reason").default("retention"),
+  },
+  (table) => [
+    index("idx_telemetry_archive_org_archived").on(table.orgId, table.archivedAt),
+    index("idx_telemetry_archive_asset").on(table.assetId, table.archivedAt),
+  ],
+);
+
+export const ingestionLogsArchive = pgTable(
+  "ingestion_logs_archive",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id"),
+    source: text("source").notNull(),
+    status: text("status").notNull().default("success"),
+    alertsReceived: integer("alerts_received").default(0),
+    alertsCreated: integer("alerts_created").default(0),
+    alertsDeduped: integer("alerts_deduped").default(0),
+    alertsFailed: integer("alerts_failed").default(0),
+    errorMessage: text("error_message"),
+    requestId: varchar("request_id"),
+    ipAddress: text("ip_address"),
+    processingTimeMs: integer("processing_time_ms"),
+    receivedAt: timestamp("received_at"),
+    archivedAt: timestamp("archived_at").defaultNow(),
+    archiveReason: text("archive_reason").default("retention"),
+  },
+  (table) => [index("idx_ingestion_archive_org_archived").on(table.orgId, table.archivedAt)],
+);
+
+export const connectorJobRunsArchive = pgTable(
+  "connector_job_runs_archive",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    connectorId: varchar("connector_id").notNull(),
+    orgId: varchar("org_id"),
+    status: text("status").notNull().default("running"),
+    attempt: integer("attempt").notNull().default(1),
+    alertsReceived: integer("alerts_received").default(0),
+    alertsCreated: integer("alerts_created").default(0),
+    alertsDeduped: integer("alerts_deduped").default(0),
+    alertsFailed: integer("alerts_failed").default(0),
+    latencyMs: integer("latency_ms"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    archivedAt: timestamp("archived_at").defaultNow(),
+    archiveReason: text("archive_reason").default("retention"),
+  },
+  (table) => [
+    index("idx_connector_runs_archive_org").on(table.orgId, table.archivedAt),
+    index("idx_connector_runs_archive_connector").on(table.connectorId, table.archivedAt),
+  ],
+);
+
+// ── 10.3 Partition management tracking ──────────────────────────────────────
+
+export const tablePartitions = pgTable(
+  "table_partitions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    tableName: text("table_name").notNull(),
+    partitionName: text("partition_name").notNull(),
+    rangeStart: timestamp("range_start").notNull(),
+    rangeEnd: timestamp("range_end").notNull(),
+    rowCountEstimate: integer("row_count_estimate").default(0),
+    sizeBytes: integer("size_bytes").default(0),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow(),
+    detachedAt: timestamp("detached_at"),
+  },
+  (table) => [
+    uniqueIndex("idx_table_partitions_unique").on(table.tableName, table.partitionName),
+    index("idx_table_partitions_table_status").on(table.tableName, table.status),
+  ],
+);
+
+// ── 11.1 SLI metrics rollup tables ─────────────────────────────────────────
+
+export const sliMetricsHourly = pgTable(
+  "sli_metrics_hourly",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    service: text("service").notNull(),
+    metric: text("metric").notNull(),
+    hour: timestamp("hour").notNull(),
+    minValue: real("min_value").notNull(),
+    maxValue: real("max_value").notNull(),
+    avgValue: real("avg_value").notNull(),
+    p50Value: real("p50_value"),
+    p95Value: real("p95_value"),
+    p99Value: real("p99_value"),
+    sampleCount: integer("sample_count").notNull().default(0),
+    labels: jsonb("labels"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_sli_hourly_unique").on(table.service, table.metric, table.hour),
+    index("idx_sli_hourly_hour").on(table.hour),
+    index("idx_sli_hourly_service_hour").on(table.service, table.hour),
+  ],
+);
+
+export const sliMetricsDaily = pgTable(
+  "sli_metrics_daily",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    service: text("service").notNull(),
+    metric: text("metric").notNull(),
+    day: timestamp("day").notNull(),
+    minValue: real("min_value").notNull(),
+    maxValue: real("max_value").notNull(),
+    avgValue: real("avg_value").notNull(),
+    p50Value: real("p50_value"),
+    p95Value: real("p95_value"),
+    p99Value: real("p99_value"),
+    sampleCount: integer("sample_count").notNull().default(0),
+    labels: jsonb("labels"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_sli_daily_unique").on(table.service, table.metric, table.day),
+    index("idx_sli_daily_day").on(table.day),
+    index("idx_sli_daily_service_day").on(table.service, table.day),
+  ],
+);
+
+export type EndpointTelemetryArchive = typeof endpointTelemetryArchive.$inferSelect;
+export type IngestionLogsArchive = typeof ingestionLogsArchive.$inferSelect;
+export type ConnectorJobRunsArchive = typeof connectorJobRunsArchive.$inferSelect;
+export type TablePartition = typeof tablePartitions.$inferSelect;
+export type SliMetricHourly = typeof sliMetricsHourly.$inferSelect;
+export type SliMetricDaily = typeof sliMetricsDaily.$inferSelect;
