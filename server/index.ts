@@ -131,6 +131,7 @@ export function log(message: string, source = "express") {
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
+      stopTracingFlush();
       gracefulShutdown(signal).then(() => {
         httpServer.close(() => {
           drainPool()
