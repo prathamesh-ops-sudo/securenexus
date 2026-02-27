@@ -61,6 +61,7 @@ export function registerOrgsRoutes(app: Express): void {
       if (userEmail) {
         const orgs = await storage.getOrganizations();
         for (const org of orgs) {
+          if (org.deletedAt) continue;
           const invitations = await storage.getOrgInvitations(org.id);
           const pending = invitations.find(
             (inv) => inv.email === userEmail && !inv.acceptedAt && new Date(inv.expiresAt) > new Date(),
@@ -619,7 +620,9 @@ export function registerOrgsRoutes(app: Express): void {
         const s3Key = `orgs/${orgId}/logo.${safeExt}`;
 
         const org = await storage.getOrganization(orgId);
-        if (org?.logoUrl && org.logoUrl !== s3Key) {
+        if (!org) return res.status(404).json({ error: "Organization not found" });
+        if (org.deletedAt) return res.status(410).json({ error: "Organization has been deleted" });
+        if (org.logoUrl && org.logoUrl !== s3Key) {
           try {
             await deleteFile(org.logoUrl);
           } catch {
@@ -666,6 +669,7 @@ export function registerOrgsRoutes(app: Express): void {
 
         const org = await storage.getOrganization(orgId);
         if (!org) return res.status(404).json({ error: "Organization not found" });
+        if (org.deletedAt) return res.status(410).json({ error: "Organization has been deleted" });
 
         if (org.logoUrl) {
           try {
@@ -717,6 +721,10 @@ export function registerOrgsRoutes(app: Express): void {
         if (targetUserId === userId) {
           return res.status(400).json({ error: "You are already the owner" });
         }
+
+        const org = await storage.getOrganization(orgId);
+        if (!org) return res.status(404).json({ error: "Organization not found" });
+        if (org.deletedAt) return res.status(410).json({ error: "Organization has been deleted" });
 
         const members = await storage.getOrgMemberships(orgId);
         const targetMember = members.find((m) => m.userId === targetUserId && m.status === "active");
