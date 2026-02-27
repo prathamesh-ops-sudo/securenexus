@@ -33,6 +33,7 @@ const MAX_TRACE_BUFFER = 1000;
 const FLUSH_INTERVAL_MS = 30_000;
 const spanBuffer: FinishedSpan[] = [];
 let flushTimer: NodeJS.Timeout | null = null;
+let flushCursor = 0;
 
 function generateId(): string {
   return randomUUID().replace(/-/g, "").slice(0, 16);
@@ -110,7 +111,9 @@ function finishSpan(span: SpanContext, status: "ok" | "error", error?: unknown):
 
   spanBuffer.push(finished);
   if (spanBuffer.length > MAX_TRACE_BUFFER) {
-    spanBuffer.splice(0, spanBuffer.length - MAX_TRACE_BUFFER);
+    const trimCount = spanBuffer.length - MAX_TRACE_BUFFER;
+    spanBuffer.splice(0, trimCount);
+    flushCursor = Math.max(0, flushCursor - trimCount);
   }
 }
 
@@ -209,9 +212,10 @@ export function withTraceContext<T>(
 }
 
 function flushSpans(): void {
-  if (spanBuffer.length === 0) return;
+  if (flushCursor >= spanBuffer.length) return;
 
-  const batch = [...spanBuffer];
+  const batch = spanBuffer.slice(flushCursor);
+  flushCursor = spanBuffer.length;
   const errorSpans = batch.filter((s) => s.status === "error");
   const slowSpans = batch.filter((s) => s.durationMs > 5000);
 
