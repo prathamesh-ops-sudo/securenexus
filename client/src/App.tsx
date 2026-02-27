@@ -1,5 +1,5 @@
-import { Switch, Route } from "wouter";
-import { createContext, useContext, lazy, Suspense } from "react";
+import { Switch, Route, useLocation } from "wouter";
+import { createContext, useContext, lazy, Suspense, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -50,6 +50,7 @@ const OperationsPage = lazy(() => import("@/pages/operations"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const UsageBillingPage = lazy(() => import("@/pages/usage-billing"));
 const OrgSettingsPage = lazy(() => import("@/pages/org-settings"));
+const OnboardingWizardPage = lazy(() => import("@/pages/onboarding-wizard"));
 
 function PageSkeleton() {
   return (
@@ -90,6 +91,13 @@ function AuthenticatedApp() {
   useRoleLanding();
   const { connected, connectionState, eventCount, events, lastEvent } = useEventStream({ enabled: true });
   const orgContext = useOrgContextProvider();
+  const [location, navigate] = useLocation();
+
+  useEffect(() => {
+    if (orgContext.needsOnboarding && location !== "/onboarding-wizard") {
+      navigate("/onboarding-wizard");
+    }
+  }, [orgContext.needsOnboarding, location, navigate]);
 
   const style = {
     "--sidebar-width": "16rem",
@@ -157,6 +165,7 @@ function AuthenticatedApp() {
                     <Route path="/reports" component={ReportsPage} />
                     <Route path="/operations" component={OperationsPage} />
                     <Route path="/onboarding" component={OnboardingPage} />
+                    <Route path="/onboarding-wizard" component={OnboardingWizardPage} />
                     <Route path="/usage-billing" component={UsageBillingPage} />
                     <Route path="/org-settings" component={OrgSettingsPage} />
                     <Route component={NotFound} />
