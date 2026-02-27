@@ -23,6 +23,11 @@ import {
   Upload,
   Gavel,
   Ban,
+  Paperclip,
+  Search,
+  BarChart3,
+  ArrowRightLeft,
+  Eye,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -2308,6 +2313,489 @@ function LegalHoldsTab() {
   );
 }
 
+const ATTACHMENT_STATUS_COLORS: Record<string, string> = {
+  pending_upload: "border-yellow-500/30 text-yellow-400",
+  uploaded: "border-blue-500/30 text-blue-400",
+  verified: "border-green-500/30 text-green-400",
+  rejected: "border-red-500/30 text-red-400",
+  expired: "border-gray-500/30 text-gray-400",
+};
+
+const HELPER_TYPE_LABELS: Record<string, string> = {
+  gap_analysis: "Gap Analysis",
+  cross_map: "Cross-Map",
+  coverage_report: "Coverage Report",
+  readiness_check: "Readiness Check",
+};
+
+const HELPER_TYPE_COLORS: Record<string, string> = {
+  gap_analysis: "border-blue-500/30 text-blue-400",
+  cross_map: "border-purple-500/30 text-purple-400",
+  coverage_report: "border-green-500/30 text-green-400",
+  readiness_check: "border-orange-500/30 text-orange-400",
+};
+
+function EvidenceAttachmentsTab() {
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [mimeType, setMimeType] = useState("application/pdf");
+  const [controlMappingFilter, setControlMappingFilter] = useState("");
+
+  const {
+    data: attachments,
+    isLoading,
+    refetch: refetchAttachments,
+  } = useQuery<any[]>({
+    queryKey: ["/api/evidence-attachments", controlMappingFilter],
+    queryFn: async () => {
+      const url = controlMappingFilter
+        ? `/api/evidence-attachments?controlMappingId=${controlMappingFilter}`
+        : "/api/evidence-attachments";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const createAttachment = useMutation({
+    mutationFn: async (data: { fileName: string; mimeType: string }) => {
+      const res = await apiRequest("POST", "/api/evidence-attachments", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchAttachments();
+      setShowCreate(false);
+      setFileName("");
+      toast({ title: "Attachment Created", description: "Use presigned URL to upload the file." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const getPresignedUrl = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: string }) => {
+      const res = await apiRequest("POST", `/api/evidence-attachments/${id}/presign`, { action });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      if (data.url) {
+        window.open(data.url, "_blank");
+        toast({ title: `${data.action === "download" ? "Download" : "Upload"} URL Generated` });
+      }
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const verifyAttachment = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("PATCH", `/api/evidence-attachments/${id}`, { status: "verified" });
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchAttachments();
+      toast({ title: "Attachment Verified" });
+    },
+  });
+
+  const deleteAttachment = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/evidence-attachments/${id}`);
+    },
+    onSuccess: () => {
+      refetchAttachments();
+      toast({ title: "Attachment Deleted" });
+    },
+  });
+
+  return (
+    <div className="space-y-4 mt-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-lg font-semibold">Evidence Attachments (S3-backed)</h2>
+        <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-create-attachment">
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Add Evidence
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 bg-muted/30 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      ) : !attachments?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Paperclip className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p>No evidence attachments</p>
+            <p className="text-xs mt-1">Upload evidence files linked to compliance control mappings</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>File Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Uploaded</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {attachments.map((a: any) => (
+              <TableRow key={a.id}>
+                <TableCell className="font-medium">{a.fileName}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate">
+                    {a.mimeType || "unknown"}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={`no-default-hover-elevate no-default-active-elevate ${ATTACHMENT_STATUS_COLORS[a.status] || ""}`}
+                  >
+                    {a.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatDateTime(a.createdAt)}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => getPresignedUrl.mutate({ id: a.id, action: "upload" })}
+                      title="Get Upload URL"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => getPresignedUrl.mutate({ id: a.id, action: "download" })}
+                      title="Get Download URL"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                    {a.status !== "verified" && (
+                      <Button size="icon" variant="ghost" onClick={() => verifyAttachment.mutate(a.id)} title="Verify">
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button size="icon" variant="ghost" onClick={() => deleteAttachment.mutate(a.id)} title="Delete">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Evidence Attachment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="att-filename">File Name</Label>
+              <Input
+                id="att-filename"
+                value={fileName}
+                onChange={(e) => setFileName(e.target.value)}
+                placeholder="compliance-report-q1.pdf"
+                data-testid="input-attachment-filename"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="att-mime">MIME Type</Label>
+              <Select value={mimeType} onValueChange={setMimeType}>
+                <SelectTrigger data-testid="select-attachment-mime">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="application/pdf">PDF</SelectItem>
+                  <SelectItem value="image/png">PNG Image</SelectItem>
+                  <SelectItem value="image/jpeg">JPEG Image</SelectItem>
+                  <SelectItem value="text/csv">CSV</SelectItem>
+                  <SelectItem value="application/json">JSON</SelectItem>
+                  <SelectItem value="application/zip">ZIP Archive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreate(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createAttachment.mutate({ fileName, mimeType })}
+              disabled={!fileName.trim() || createAttachment.isPending}
+              data-testid="button-submit-attachment"
+            >
+              {createAttachment.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              Create & Get Upload URL
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ComplianceHelpersTab() {
+  const { toast } = useToast();
+  const [gapFramework, setGapFramework] = useState("NIST CSF");
+  const [crossSource, setCrossSource] = useState("NIST CSF");
+  const [crossTarget, setCrossTarget] = useState("ISO 27001");
+
+  const {
+    data: helpers,
+    isLoading,
+    refetch: refetchHelpers,
+  } = useQuery<any[]>({
+    queryKey: ["/api/compliance-helpers"],
+  });
+
+  const { data: coverageSummary, isLoading: coverageLoading } = useQuery<any>({
+    queryKey: ["/api/compliance-helpers/coverage-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/compliance-helpers/coverage-summary", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const runGapAnalysis = useMutation({
+    mutationFn: async (framework: string) => {
+      const res = await apiRequest("POST", "/api/compliance-helpers/run-gap-analysis", { framework });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      refetchHelpers();
+      toast({
+        title: "Gap Analysis Complete",
+        description: `${data.result?.coveragePercent || 0}% coverage for ${data.result?.framework}`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const runCrossMap = useMutation({
+    mutationFn: async (data: { sourceFramework: string; targetFramework: string }) => {
+      const res = await apiRequest("POST", "/api/compliance-helpers/run-cross-map", data);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      refetchHelpers();
+      toast({
+        title: "Cross-Map Complete",
+        description: `${data.result?.mappedCount || 0} controls mapped between frameworks`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const FRAMEWORKS_LIST = ["NIST CSF", "ISO 27001", "CIS", "SOC 2"];
+
+  return (
+    <div className="space-y-6 mt-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Search className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              Gap Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Identify controls that are not yet mapped to organizational resources.
+            </p>
+            <Select value={gapFramework} onValueChange={setGapFramework}>
+              <SelectTrigger data-testid="select-gap-framework">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FRAMEWORKS_LIST.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {f}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              className="w-full"
+              onClick={() => runGapAnalysis.mutate(gapFramework)}
+              disabled={runGapAnalysis.isPending}
+              data-testid="button-run-gap-analysis"
+            >
+              {runGapAnalysis.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Search className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Run Gap Analysis
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              Cross-Framework Mapping
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Map controls between two compliance frameworks to identify overlap.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Select value={crossSource} onValueChange={setCrossSource}>
+                <SelectTrigger data-testid="select-cross-source">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FRAMEWORKS_LIST.map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={crossTarget} onValueChange={setCrossTarget}>
+                <SelectTrigger data-testid="select-cross-target">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FRAMEWORKS_LIST.map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => runCrossMap.mutate({ sourceFramework: crossSource, targetFramework: crossTarget })}
+              disabled={runCrossMap.isPending || crossSource === crossTarget}
+              data-testid="button-run-cross-map"
+            >
+              {runCrossMap.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Run Cross-Map
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {coverageSummary?.frameworks && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              Coverage Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {coverageSummary.frameworks.map((fw: any) => (
+                <div key={fw.framework} className="p-3 rounded-lg bg-muted/30 space-y-2">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {fw.framework}
+                  </div>
+                  <div className="text-2xl font-bold">{fw.coveragePercent}%</div>
+                  <div className="text-xs text-muted-foreground">
+                    {fw.coveredCount}/{fw.totalControls} controls
+                  </div>
+                  <div className="w-full bg-muted/50 rounded-full h-2">
+                    <div
+                      className="bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full h-2 transition-all"
+                      style={{ width: `${fw.coveragePercent}%` }}
+                    />
+                  </div>
+                  {fw.gapCount > 0 && <div className="text-xs text-red-400">{fw.gapCount} gaps remaining</div>}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Helper Run History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-16 bg-muted/30 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : !helpers?.length ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <BarChart3 className="h-10 w-10 mx-auto mb-3 opacity-40" />
+              <p>No helper runs yet</p>
+              <p className="text-xs mt-1">Run a gap analysis or cross-map to get started</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Framework(s)</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {helpers.map((h: any) => (
+                  <TableRow key={h.id}>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`no-default-hover-elevate no-default-active-elevate ${HELPER_TYPE_COLORS[h.helperType] || ""}`}
+                      >
+                        {HELPER_TYPE_LABELS[h.helperType] || h.helperType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {h.sourceFramework}
+                      {h.targetFramework && <span className="text-muted-foreground"> → {h.targetFramework}</span>}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`no-default-hover-elevate no-default-active-elevate ${
+                          h.status === "completed"
+                            ? "border-green-500/30 text-green-400"
+                            : "border-yellow-500/30 text-yellow-400"
+                        }`}
+                      >
+                        {h.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(h.createdAt)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function CompliancePage() {
   return (
     <div
@@ -2359,6 +2847,14 @@ export default function CompliancePage() {
             <Lock className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Evidence Locker
           </TabsTrigger>
+          <TabsTrigger value="evidence-attachments" data-testid="tab-evidence-attachments">
+            <Paperclip className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+            Attachments
+          </TabsTrigger>
+          <TabsTrigger value="compliance-helpers" data-testid="tab-compliance-helpers">
+            <BarChart3 className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+            Helpers
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="policies">
@@ -2384,6 +2880,12 @@ export default function CompliancePage() {
         </TabsContent>
         <TabsContent value="evidence-locker">
           <EvidenceLockerTab />
+        </TabsContent>
+        <TabsContent value="evidence-attachments">
+          <EvidenceAttachmentsTab />
+        </TabsContent>
+        <TabsContent value="compliance-helpers">
+          <ComplianceHelpersTab />
         </TabsContent>
       </Tabs>
     </div>
