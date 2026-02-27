@@ -135,6 +135,24 @@ export interface ArchivalResult {
 
 const ARCHIVAL_BATCH_SIZE = 500;
 
+async function getCommonColumns(sourceTable: string, archiveTable: string): Promise<string[]> {
+  const result = await pool.query(
+    `
+    SELECT s.column_name
+    FROM information_schema.columns s
+    INNER JOIN information_schema.columns a
+      ON s.column_name = a.column_name
+    WHERE s.table_name = $1
+      AND a.table_name = $2
+      AND s.table_schema = 'public'
+      AND a.table_schema = 'public'
+    ORDER BY s.ordinal_position
+  `,
+    [sourceTable, archiveTable],
+  );
+  return (result.rows as { column_name: string }[]).map((r) => r.column_name);
+}
+
 export async function archiveOldRows(
   tableName: string,
   archiveTableName: string,
@@ -151,44 +169,58 @@ export async function archiveOldRows(
   };
 
   try {
+    const commonCols = await getCommonColumns(tableName, archiveTableName);
+    if (commonCols.length === 0) {
+      result.errors.push(`No common columns between ${tableName} and ${archiveTableName}`);
+      return result;
+    }
+
+    const colList = commonCols.map((c) => `"${c}"`).join(", ");
     let totalArchived = 0;
     let hasMore = true;
 
     while (hasMore) {
-      const orgClause = orgId ? sql` AND org_id = ${orgId}` : sql``;
-      const selectQuery = sql`
-        SELECT * FROM ${sql.identifier(tableName)}
-        WHERE ${sql.identifier(partitionColumn)} < ${cutoffDate}${orgClause}
-        ORDER BY ${sql.identifier(partitionColumn)} ASC
-        LIMIT ${ARCHIVAL_BATCH_SIZE}
-      `;
+      const orgFilter = orgId ? ` AND org_id = '${orgId}'` : "";
 
-      const rows = await db.execute(selectQuery);
-      const records = (rows as unknown as { rows: Record<string, unknown>[] }).rows || [];
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
 
-      if (records.length === 0) {
-        hasMore = false;
-        break;
-      }
+        const selectResult = await client.query(
+          `SELECT id FROM "${tableName}" WHERE "${partitionColumn}" < $1${orgFilter} ORDER BY "${partitionColumn}" ASC LIMIT $2`,
+          [cutoffDate.toISOString(), ARCHIVAL_BATCH_SIZE],
+        );
 
-      const ids = records.map((r) => r.id as string);
+        const ids = (selectResult.rows as { id: string }[]).map((r) => r.id);
 
-      await db.execute(sql`
-        INSERT INTO ${sql.identifier(archiveTableName)}
-        SELECT *, NOW() AS archived_at, 'retention' AS archive_reason
-        FROM ${sql.identifier(tableName)}
-        WHERE id = ANY(${ids})
-      `);
+        if (ids.length === 0) {
+          await client.query("COMMIT");
+          hasMore = false;
+          break;
+        }
 
-      await db.execute(sql`
-        DELETE FROM ${sql.identifier(tableName)}
-        WHERE id = ANY(${ids})
-      `);
+        await client.query(
+          `INSERT INTO "${archiveTableName}" (${colList}, archived_at, archive_reason)
+           SELECT ${colList}, NOW(), 'retention'
+           FROM "${tableName}"
+           WHERE id = ANY($1)`,
+          [ids],
+        );
 
-      totalArchived += records.length;
+        await client.query(`DELETE FROM "${tableName}" WHERE id = ANY($1)`, [ids]);
 
-      if (records.length < ARCHIVAL_BATCH_SIZE) {
-        hasMore = false;
+        await client.query("COMMIT");
+
+        totalArchived += ids.length;
+
+        if (ids.length < ARCHIVAL_BATCH_SIZE) {
+          hasMore = false;
+        }
+      } catch (txErr) {
+        await client.query("ROLLBACK");
+        throw txErr;
+      } finally {
+        client.release();
       }
     }
 
