@@ -13,6 +13,7 @@ import { config } from "./config";
 import { logger, correlationMiddleware, requestLogger } from "./logger";
 import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
 import { initializeScalingState, gracefulShutdown } from "./scaling-state";
+import { startPoolHealthMonitor, drainPool } from "./db";
 import { startRetentionScheduler } from "./retention-scheduler";
 import { initializeTenantIsolation } from "./tenant-isolation";
 import { initializeTenantThrottle } from "./tenant-throttle";
@@ -111,6 +112,7 @@ export function log(message: string, source = "express") {
       initializeScalingState();
       initializeTenantIsolation();
       initializeTenantThrottle();
+      startPoolHealthMonitor();
       startReportScheduler();
       startRetentionScheduler();
       startJobWorker();
@@ -124,8 +126,15 @@ export function log(message: string, source = "express") {
       logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
       gracefulShutdown(signal).then(() => {
         httpServer.close(() => {
-          logger.child("express").info("HTTP server closed");
-          process.exit(0);
+          drainPool()
+            .then(() => {
+              logger.child("express").info("HTTP server closed and pool drained");
+              process.exit(0);
+            })
+            .catch((err: unknown) => {
+              logger.child("express").error("Pool drain failed during shutdown", { error: String(err) });
+              process.exit(1);
+            });
         });
         setTimeout(() => {
           logger.child("express").warn("Forced shutdown after timeout");
