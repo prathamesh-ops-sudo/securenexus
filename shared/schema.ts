@@ -1453,6 +1453,41 @@ export const playbookRollbackPlans = pgTable(
   ],
 );
 
+export const WIZARD_STEPS = [
+  "create_org",
+  "choose_plan",
+  "invite_team",
+  "connect_integration",
+  "dashboard_tour",
+] as const;
+
+export const wizardProgress = pgTable(
+  "wizard_progress",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    userId: varchar("user_id").notNull(),
+    currentStep: integer("current_step").notNull().default(0),
+    completedSteps: jsonb("completed_steps")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    skippedSteps: jsonb("skipped_steps")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    completedAt: timestamp("completed_at"),
+    tourCompletedAt: timestamp("tour_completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_wizard_progress_org").on(table.orgId),
+    index("idx_wizard_progress_user").on(table.userId),
+    uniqueIndex("idx_wizard_progress_user_unique").on(table.userId),
+  ],
+);
+
 // Relations
 export const connectorsRelations = relations(connectors, ({ one }) => ({
   organization: one(organizations, { fields: [connectors.orgId], references: [organizations.id] }),
@@ -4054,6 +4089,11 @@ export const insertOnboardingProgressSchema = createInsertSchema(onboardingProgr
   createdAt: true,
 });
 export const insertWorkspaceTemplateSchema = createInsertSchema(workspaceTemplates).omit({ id: true, createdAt: true });
+export const insertWizardProgressSchema = createInsertSchema(wizardProgress).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
 
 export type OrgPlanLimit = typeof orgPlanLimits.$inferSelect;
 export type InsertOrgPlanLimit = z.infer<typeof insertOrgPlanLimitsSchema>;
@@ -4063,6 +4103,8 @@ export type OnboardingProgressItem = typeof onboardingProgress.$inferSelect;
 export type InsertOnboardingProgress = z.infer<typeof insertOnboardingProgressSchema>;
 export type WorkspaceTemplate = typeof workspaceTemplates.$inferSelect;
 export type InsertWorkspaceTemplate = z.infer<typeof insertWorkspaceTemplateSchema>;
+export type WizardProgress = typeof wizardProgress.$inferSelect;
+export type InsertWizardProgress = z.infer<typeof insertWizardProgressSchema>;
 
 // ============================
 // Feature Flags

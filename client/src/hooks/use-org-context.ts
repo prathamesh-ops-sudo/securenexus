@@ -25,6 +25,7 @@ interface OrgContextValue {
   currentRole: string | null;
   memberships: OrgMembership[];
   isLoading: boolean;
+  needsOnboarding: boolean;
   switchOrg: (orgId: string) => void;
 }
 
@@ -34,6 +35,7 @@ export const OrgContext = createContext<OrgContextValue>({
   currentRole: null,
   memberships: [],
   isLoading: true,
+  needsOnboarding: false,
   switchOrg: () => {},
 });
 
@@ -58,6 +60,7 @@ export function useOrgContextProvider(): OrgContextValue {
   });
 
   const memberships = data?.memberships ?? [];
+  const needsOnboarding = !isLoading && data !== undefined && memberships.length === 0;
 
   const resolvedMembership = memberships.find((m) => m.orgId === activeOrgId) || memberships[0] || null;
 
@@ -91,6 +94,7 @@ export function useOrgContextProvider(): OrgContextValue {
     currentRole: resolvedMembership?.role ?? null,
     memberships,
     isLoading,
+    needsOnboarding,
     switchOrg,
   };
 }

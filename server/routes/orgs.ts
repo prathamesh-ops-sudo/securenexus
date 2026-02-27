@@ -80,20 +80,8 @@ export function registerOrgsRoutes(app: Express): void {
         }
       }
 
-      // No existing membership or invitation — create a new org for this user
-      const newOrg = await storage.createOrganization({
-        name: `${userEmail ? userEmail.split("@")[0] : "User"}'s Organization`,
-        slug: `org-${Date.now()}`,
-        contactEmail: userEmail || undefined,
-      });
-      const membership = await storage.createOrgMembership({
-        orgId: newOrg.id,
-        userId,
-        role: "owner",
-        status: "active",
-        joinedAt: new Date(),
-      });
-      return res.json({ membership, organization: newOrg });
+      // No existing membership or invitation — redirect to onboarding wizard
+      return res.json({ needsOnboarding: true });
     } catch (error) {
       logger.child("routes").error("Error ensuring org", { error: String(error) });
       res.status(500).json({ message: "Failed to ensure organization membership" });

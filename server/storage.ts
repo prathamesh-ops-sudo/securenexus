@@ -246,6 +246,9 @@ import {
   type WorkspaceTemplate,
   type InsertWorkspaceTemplate,
   workspaceTemplates,
+  type WizardProgress,
+  type InsertWizardProgress,
+  wizardProgress,
   type OutboxEvent,
   type InsertOutboxEvent,
   outboxEvents,
@@ -839,6 +842,11 @@ export interface IStorage {
     stepKey: string,
     completedBy?: string,
   ): Promise<OnboardingProgressItem | undefined>;
+
+  // Wizard Progress (Phase 2 Onboarding Wizard)
+  getWizardProgress(userId: string): Promise<WizardProgress | undefined>;
+  upsertWizardProgress(data: InsertWizardProgress): Promise<WizardProgress>;
+  updateWizardProgress(userId: string, data: Partial<WizardProgress>): Promise<WizardProgress | undefined>;
 
   // Workspace Templates
   getWorkspaceTemplates(): Promise<WorkspaceTemplate[]>;
@@ -4146,6 +4154,38 @@ export class DatabaseStorage implements IStorage {
       .update(onboardingProgress)
       .set({ isCompleted: true, completedAt: new Date(), completedBy: completedBy || null })
       .where(and(eq(onboardingProgress.orgId, orgId), eq(onboardingProgress.stepKey, stepKey)))
+      .returning();
+    return updated;
+  }
+
+  async getWizardProgress(userId: string): Promise<WizardProgress | undefined> {
+    const [row] = await db.select().from(wizardProgress).where(eq(wizardProgress.userId, userId));
+    return row;
+  }
+
+  async upsertWizardProgress(data: InsertWizardProgress): Promise<WizardProgress> {
+    const [result] = await db
+      .insert(wizardProgress)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [wizardProgress.userId],
+        set: {
+          orgId: data.orgId,
+          currentStep: data.currentStep,
+          completedSteps: data.completedSteps,
+          skippedSteps: data.skippedSteps,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async updateWizardProgress(userId: string, data: Partial<WizardProgress>): Promise<WizardProgress | undefined> {
+    const [updated] = await db
+      .update(wizardProgress)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(wizardProgress.userId, userId))
       .returning();
     return updated;
   }
