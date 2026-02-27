@@ -112,9 +112,9 @@ export async function rollupToDaily(windowDays = 2): Promise<DailyRollupResult> 
         MIN(min_value) AS min_value,
         MAX(max_value) AS max_value,
         SUM(avg_value * sample_count) / NULLIF(SUM(sample_count), 0) AS avg_value,
-        MIN(p50_value) AS p50_value,
-        MAX(p95_value) AS p95_value,
-        MAX(p99_value) AS p99_value,
+        SUM(p50_value * sample_count) / NULLIF(SUM(sample_count), 0) AS p50_value,
+        SUM(p95_value * sample_count) / NULLIF(SUM(sample_count), 0) AS p95_value,
+        SUM(p99_value * sample_count) / NULLIF(SUM(sample_count), 0) AS p99_value,
         SUM(sample_count)::int AS sample_count,
         NULL
       FROM sli_metrics_hourly
