@@ -240,12 +240,14 @@ export async function runFullRollup(): Promise<FullRollupResult> {
 }
 
 let rollupTimer: ReturnType<typeof setInterval> | null = null;
+let rollupStartupTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function startMetricsRollupScheduler(): void {
   if (rollupTimer) return;
 
-  setTimeout(
+  rollupStartupTimer = setTimeout(
     () => {
+      rollupStartupTimer = null;
       runFullRollup().catch((err) => {
         log.error("Rollup startup error", { error: String(err) });
       });
@@ -263,6 +265,10 @@ export function startMetricsRollupScheduler(): void {
   );
 
   registerShutdownHandler("metrics-rollup", () => {
+    if (rollupStartupTimer) {
+      clearTimeout(rollupStartupTimer);
+      rollupStartupTimer = null;
+    }
     if (rollupTimer) {
       clearInterval(rollupTimer);
       rollupTimer = null;

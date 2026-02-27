@@ -180,7 +180,9 @@ export async function archiveOldRows(
     let hasMore = true;
 
     while (hasMore) {
-      const orgFilter = orgId ? ` AND org_id = '${orgId}'` : "";
+      const orgFilter = orgId ? " AND org_id = $3" : "";
+      const params: (string | number)[] = [cutoffDate.toISOString(), ARCHIVAL_BATCH_SIZE];
+      if (orgId) params.push(orgId);
 
       const client = await pool.connect();
       try {
@@ -188,7 +190,7 @@ export async function archiveOldRows(
 
         const selectResult = await client.query(
           `SELECT id FROM "${tableName}" WHERE "${partitionColumn}" < $1${orgFilter} ORDER BY "${partitionColumn}" ASC LIMIT $2`,
-          [cutoffDate.toISOString(), ARCHIVAL_BATCH_SIZE],
+          params,
         );
 
         const ids = (selectResult.rows as { id: string }[]).map((r) => r.id);
@@ -325,12 +327,14 @@ export async function runArchivalJob(): Promise<ArchivalJobResult> {
 }
 
 let archivalTimer: ReturnType<typeof setInterval> | null = null;
+let archivalStartupTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function startArchivalScheduler(): void {
   if (archivalTimer) return;
 
-  setTimeout(
+  archivalStartupTimer = setTimeout(
     () => {
+      archivalStartupTimer = null;
       runArchivalJob().catch((err) => {
         log.error("Archival job startup error", { error: String(err) });
       });
@@ -348,6 +352,10 @@ export function startArchivalScheduler(): void {
   );
 
   registerShutdownHandler("archival-scheduler", () => {
+    if (archivalStartupTimer) {
+      clearTimeout(archivalStartupTimer);
+      archivalStartupTimer = null;
+    }
     if (archivalTimer) {
       clearInterval(archivalTimer);
       archivalTimer = null;
