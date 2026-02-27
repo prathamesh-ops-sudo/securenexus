@@ -483,15 +483,31 @@ export function registerOrgsRoutes(app: Express): void {
         }
 
         if (updateData.contactEmail !== undefined && updateData.contactEmail !== null) {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(String(updateData.contactEmail))) {
+          const email = String(updateData.contactEmail).trim();
+          const atIdx = email.indexOf("@");
+          const dotIdx = email.lastIndexOf(".");
+          if (
+            email.length > 254 ||
+            atIdx < 1 ||
+            dotIdx <= atIdx + 1 ||
+            dotIdx >= email.length - 1 ||
+            email.includes(" ")
+          ) {
             return res.status(400).json({ error: "Invalid contact email format" });
           }
         }
 
         if (updateData.billingEmail !== undefined && updateData.billingEmail !== null) {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(String(updateData.billingEmail))) {
+          const email = String(updateData.billingEmail).trim();
+          const atIdx = email.indexOf("@");
+          const dotIdx = email.lastIndexOf(".");
+          if (
+            email.length > 254 ||
+            atIdx < 1 ||
+            dotIdx <= atIdx + 1 ||
+            dotIdx >= email.length - 1 ||
+            email.includes(" ")
+          ) {
             return res.status(400).json({ error: "Invalid billing email format" });
           }
         }
