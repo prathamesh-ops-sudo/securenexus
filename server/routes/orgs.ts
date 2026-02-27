@@ -483,36 +483,44 @@ export function registerOrgsRoutes(app: Express): void {
           updateData.name = nameStr;
         }
 
-        if (updateData.contactEmail !== undefined && updateData.contactEmail !== null) {
-          const email = String(updateData.contactEmail).trim();
-          const atIdx = email.indexOf("@");
-          const dotIdx = email.lastIndexOf(".");
-          if (
-            email.length > 254 ||
-            atIdx < 1 ||
-            dotIdx <= atIdx + 1 ||
-            dotIdx >= email.length - 1 ||
-            email.includes(" ")
-          ) {
-            return res.status(400).json({ error: "Invalid contact email format" });
+        if (updateData.contactEmail !== undefined) {
+          const email = String(updateData.contactEmail ?? "").trim();
+          if (email === "") {
+            updateData.contactEmail = null;
+          } else {
+            const atIdx = email.indexOf("@");
+            const dotIdx = email.lastIndexOf(".");
+            if (
+              email.length > 254 ||
+              atIdx < 1 ||
+              dotIdx <= atIdx + 1 ||
+              dotIdx >= email.length - 1 ||
+              email.includes(" ")
+            ) {
+              return res.status(400).json({ error: "Invalid contact email format" });
+            }
+            updateData.contactEmail = email;
           }
-          updateData.contactEmail = email;
         }
 
-        if (updateData.billingEmail !== undefined && updateData.billingEmail !== null) {
-          const email = String(updateData.billingEmail).trim();
-          const atIdx = email.indexOf("@");
-          const dotIdx = email.lastIndexOf(".");
-          if (
-            email.length > 254 ||
-            atIdx < 1 ||
-            dotIdx <= atIdx + 1 ||
-            dotIdx >= email.length - 1 ||
-            email.includes(" ")
-          ) {
-            return res.status(400).json({ error: "Invalid billing email format" });
+        if (updateData.billingEmail !== undefined) {
+          const email = String(updateData.billingEmail ?? "").trim();
+          if (email === "") {
+            updateData.billingEmail = null;
+          } else {
+            const atIdx = email.indexOf("@");
+            const dotIdx = email.lastIndexOf(".");
+            if (
+              email.length > 254 ||
+              atIdx < 1 ||
+              dotIdx <= atIdx + 1 ||
+              dotIdx >= email.length - 1 ||
+              email.includes(" ")
+            ) {
+              return res.status(400).json({ error: "Invalid billing email format" });
+            }
+            updateData.billingEmail = email;
           }
-          updateData.billingEmail = email;
         }
 
         if (updateData.primaryColor !== undefined && updateData.primaryColor !== null) {
