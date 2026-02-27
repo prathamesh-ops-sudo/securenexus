@@ -1,9 +1,38 @@
 import type { Express } from "express";
-import { createHash } from "crypto";
+import { createHash, createCipheriv, createDecipheriv, randomBytes as cryptoRandomBytes } from "crypto";
 import { logger, p, randomBytes, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { z } from "zod";
+import { config } from "../config";
+
+const ALGO = "aes-256-gcm" as const;
+const IV_LEN = 12;
+const TAG_LEN = 16;
+
+function deriveEncryptionKey(): Buffer {
+  return createHash("sha256").update(config.session.secret).digest();
+}
+
+function encryptSecret(plaintext: string): string {
+  const key = deriveEncryptionKey();
+  const iv = cryptoRandomBytes(IV_LEN);
+  const cipher = createCipheriv(ALGO, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString("base64");
+}
+
+function decryptSecret(ciphertext: string): string {
+  const key = deriveEncryptionKey();
+  const buf = Buffer.from(ciphertext, "base64");
+  const iv = buf.subarray(0, IV_LEN);
+  const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);
+  const encrypted = buf.subarray(IV_LEN + TAG_LEN);
+  const decipher = createDecipheriv(ALGO, key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(encrypted) + decipher.final("utf8");
+}
 
 function hashSecret(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -335,12 +364,14 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       const userId = (req as any).user?.id;
       const ssoPayload: Record<string, unknown> = { orgId, ...parsed.data, createdBy: userId };
       if (parsed.data.clientSecret) {
-        ssoPayload.clientSecret = hashSecret(parsed.data.clientSecret);
+        ssoPayload.clientSecret = encryptSecret(parsed.data.clientSecret);
       }
       if (parsed.data.certificate) {
-        ssoPayload.certificate = hashSecret(parsed.data.certificate);
+        ssoPayload.certificate = encryptSecret(parsed.data.certificate);
       }
-      const config = await storage.upsertOrgSsoConfig(ssoPayload as Parameters<typeof storage.upsertOrgSsoConfig>[0]);
+      const ssoResult = await storage.upsertOrgSsoConfig(
+        ssoPayload as Parameters<typeof storage.upsertOrgSsoConfig>[0],
+      );
       await storage.createAuditLog({
         userId,
         userName: (req as any).user?.firstName
@@ -356,9 +387,9 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
         },
       });
       const sanitized = {
-        ...config,
-        clientSecret: config.clientSecret ? "••••••••" : null,
-        certificate: config.certificate ? "••••••••" : null,
+        ...ssoResult,
+        clientSecret: ssoResult.clientSecret ? "••••••••" : null,
+        certificate: ssoResult.certificate ? "••••••••" : null,
       };
       res.json(sanitized);
     } catch (error) {
@@ -389,12 +420,12 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       const orgId = p(req.params.orgId);
       const userOrgId = (req as any).orgId;
       if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
-      const config = await storage.getOrgScimConfig(orgId);
-      if (config) {
+      const scimResult = await storage.getOrgScimConfig(orgId);
+      if (scimResult) {
         const sanitized = {
-          ...config,
+          ...scimResult,
           bearerTokenHash: undefined,
-          bearerTokenPrefix: config.bearerTokenPrefix ?? null,
+          bearerTokenPrefix: scimResult.bearerTokenPrefix ?? null,
         };
         return res.json(sanitized);
       }
@@ -413,7 +444,7 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       const parsed = scimConfigSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
       const userId = (req as any).user?.id;
-      const config = await storage.upsertOrgScimConfig({ orgId, ...parsed.data, createdBy: userId });
+      const scimUpdateResult = await storage.upsertOrgScimConfig({ orgId, ...parsed.data, createdBy: userId });
       await storage.createAuditLog({
         userId,
         userName: (req as any).user?.firstName
@@ -424,7 +455,7 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
         resourceId: orgId,
         details: { enabled: parsed.data.enabled },
       });
-      const sanitized = { ...config, bearerTokenHash: undefined };
+      const sanitized = { ...scimUpdateResult, bearerTokenHash: undefined };
       res.json(sanitized);
     } catch (error) {
       logger.child("routes").error("Failed to update SCIM config", { error: String(error) });
