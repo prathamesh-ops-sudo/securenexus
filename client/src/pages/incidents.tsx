@@ -14,6 +14,10 @@ import {
   CheckCircle2,
   User,
   Clock,
+  Filter,
+  SlidersHorizontal,
+  BookmarkPlus,
+  Keyboard,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,7 +37,8 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Incident, IncidentSlaPolicy } from "@shared/schema";
+import { CardHeader, CardTitle } from "@/components/ui/card";
+import type { Incident, IncidentSlaPolicy, SavedView } from "@shared/schema";
 
 function IncidentMiniTimeline({ incident }: { incident: Incident }) {
   const events: { label: string; actor?: string }[] = [];
@@ -126,7 +131,7 @@ interface QueuesResponse {
   aging: Incident[];
 }
 
-interface SavedView {
+interface LocalSavedView {
   name: string;
   search: string;
   status: string;
@@ -356,10 +361,14 @@ export default function IncidentsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>("investigating");
   const [bulkAssignee, setBulkAssignee] = useState("");
-  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [savedViewName, setSavedViewName] = useState("");
   const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [severityFilter, setSeverityFilter] = useState<string>("all");
+  const [showQueryBuilder, setShowQueryBuilder] = useState(false);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Optimistic update helper for incident status changes
   const optimisticStatusUpdate = useCallback((incidentId: string, updates: Partial<Incident>) => {
@@ -369,18 +378,46 @@ export default function IncidentsPage() {
     });
   }, []);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("incidents.savedViews.v1");
-      if (raw) setSavedViews(JSON.parse(raw));
-    } catch {
-      setSavedViews([]);
-    }
-  }, []);
+  const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
+    queryKey: ["/api/orgs/default/saved-views", "incidents"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", "/api/orgs/default/saved-views?resourceType=incidents");
+        return res.json();
+      } catch {
+        return [];
+      }
+    },
+  });
 
-  useEffect(() => {
-    localStorage.setItem("incidents.savedViews.v1", JSON.stringify(savedViews));
-  }, [savedViews]);
+  const createSavedViewMutation = useMutation({
+    mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
+      const res = await apiRequest("POST", "/api/orgs/default/saved-views", {
+        name: viewData.name,
+        resourceType: "incidents",
+        filters: viewData.filters,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchSavedViews();
+      toast({ title: "View Saved" });
+      setSavedViewName("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save view", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteSavedViewMutation = useMutation({
+    mutationFn: async (viewId: string) => {
+      await apiRequest("DELETE", `/api/orgs/default/saved-views/${viewId}`);
+    },
+    onSuccess: () => {
+      refetchSavedViews();
+      toast({ title: "View Deleted" });
+    },
+  });
 
   const {
     data: incidents,
@@ -431,22 +468,30 @@ export default function IncidentsPage() {
     return counts;
   }, [activeIncidents]);
 
+  const uniqueSeverities = useMemo(() => {
+    if (!incidents) return [];
+    return Array.from(new Set(incidents.map((i) => i.severity).filter(Boolean))).sort();
+  }, [incidents]);
+
   const filtered = useMemo(() => {
     return activeIncidents
       .filter((inc) => {
         const matchesStatus = statusFilter === "all" || inc.status === statusFilter;
+        const matchesSeverity = severityFilter === "all" || inc.severity === severityFilter;
         const matchesSearch =
           !search ||
           inc.title.toLowerCase().includes(search.toLowerCase()) ||
           inc.summary?.toLowerCase().includes(search.toLowerCase());
-        return matchesStatus && matchesSearch;
+        const matchesDateFrom = !dateFrom || new Date(inc.createdAt || 0) >= new Date(dateFrom);
+        const matchesDateTo = !dateTo || new Date(inc.createdAt || 0) <= new Date(dateTo + "T23:59:59");
+        return matchesStatus && matchesSeverity && matchesSearch && matchesDateFrom && matchesDateTo;
       })
       .sort((a, b) => {
         const aDate = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
         const bDate = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
         return bDate - aDate;
       });
-  }, [activeIncidents, search, statusFilter]);
+  }, [activeIncidents, search, statusFilter, severityFilter, dateFrom, dateTo]);
 
   const currentLoading = queueTab === "all" ? isLoading : queuesLoading;
   const allPageIds = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((i) => i.id);
@@ -514,21 +559,41 @@ export default function IncidentsPage() {
     const chips: { key: string; label: string; value: string }[] = [];
     if (statusFilter !== "all")
       chips.push({ key: "status", label: "Status", value: STATUS_LABELS[statusFilter] || statusFilter });
+    if (severityFilter !== "all") chips.push({ key: "severity", label: "Severity", value: severityFilter });
     if (search) chips.push({ key: "search", label: "Search", value: search });
     if (queueTab !== "all") chips.push({ key: "queue", label: "Queue", value: queueTab });
+    if (dateFrom) chips.push({ key: "dateFrom", label: "From", value: dateFrom });
+    if (dateTo) chips.push({ key: "dateTo", label: "To", value: dateTo });
     return chips;
-  }, [statusFilter, search, queueTab]);
+  }, [statusFilter, severityFilter, search, queueTab, dateFrom, dateTo]);
 
   const handleRemoveFilter = useCallback((key: string) => {
     if (key === "status") setStatusFilter("all");
+    if (key === "severity") setSeverityFilter("all");
     if (key === "search") setSearch("");
     if (key === "queue") setQueueTab("all");
+    if (key === "dateFrom") setDateFrom("");
+    if (key === "dateTo") setDateTo("");
   }, []);
 
   const handleClearAllFilters = useCallback(() => {
     setStatusFilter("all");
+    setSeverityFilter("all");
     setSearch("");
     setQueueTab("all");
+    setDateFrom("");
+    setDateTo("");
+  }, []);
+
+  const applySavedView = useCallback((view: SavedView) => {
+    const f = view.filters as Record<string, string> | null;
+    if (!f) return;
+    if (f.status) setStatusFilter(f.status);
+    if (f.severity) setSeverityFilter(f.severity);
+    if (f.search) setSearch(f.search);
+    if (f.queue) setQueueTab(f.queue as QueueTab);
+    if (f.dateFrom) setDateFrom(f.dateFrom);
+    if (f.dateTo) setDateTo(f.dateTo);
   }, []);
 
   useEffect(() => {
@@ -659,69 +724,188 @@ export default function IncidentsPage() {
         >
           <Download className="h-4 w-4" />
         </Button>
-        <Input
-          placeholder="View name"
-          value={savedViewName}
-          onChange={(e) => setSavedViewName(e.target.value)}
-          className="w-36"
-        />
+        <Button variant="outline" size="sm" onClick={() => setShowQueryBuilder(!showQueryBuilder)}>
+          <Filter className="h-3.5 w-3.5 mr-1.5" />
+          {showQueryBuilder ? "Hide Builder" : "Query Builder"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowKeyboardHelp(!showKeyboardHelp)}>
+          <Keyboard className="h-3.5 w-3.5 mr-1.5" />
+          Keys
+        </Button>
         <Button
           variant="outline"
           size="sm"
-          disabled={!savedViewName.trim()}
-          onClick={() => {
-            const entry: SavedView = { name: savedViewName.trim(), search, status: statusFilter, queue: queueTab };
-            setSavedViews((prev) => [entry, ...prev.filter((v) => v.name !== entry.name)].slice(0, 8));
-            setSavedViewName("");
-            toast({ title: "View saved" });
-          }}
-          data-testid="button-save-view"
+          onClick={() => setIsDetailOpen((prev) => !prev)}
+          disabled={!selectedIncident}
+          data-testid="button-toggle-detail-pane"
         >
-          <Bookmark className="h-3.5 w-3.5 mr-1.5" />
-          Save View
+          <PanelRight className="h-3.5 w-3.5 mr-1.5" />
+          {isDetailOpen ? "Hide Detail" : "Show Detail"}
         </Button>
       </div>
 
-      {savedViews.length > 0 && (
-        <div className="flex flex-wrap gap-2" data-testid="section-saved-views">
-          {savedViews.map((v) => (
-            <div key={v.name} className="flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setSearch(v.search);
-                  setStatusFilter(v.status);
-                  setQueueTab(v.queue);
-                }}
-                data-testid={`saved-view-${v.name}`}
-              >
+      {showKeyboardHelp && (
+        <Card className="border-primary/20 bg-muted/30">
+          <CardContent className="pt-4 pb-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">J</kbd>{" "}
+                <span className="text-muted-foreground">Next incident</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">K</kbd>{" "}
+                <span className="text-muted-foreground">Previous incident</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">Enter</kbd>{" "}
+                <span className="text-muted-foreground">Open detail</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">Esc</kbd>{" "}
+                <span className="text-muted-foreground">Close detail</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">A</kbd>{" "}
+                <span className="text-muted-foreground">Assign focused</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">E</kbd>{" "}
+                <span className="text-muted-foreground">Escalate focused</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">R</kbd>{" "}
+                <span className="text-muted-foreground">Resolve focused</span>
+              </div>
+              <div>
+                <kbd className="px-1.5 py-0.5 bg-background rounded border text-[10px] font-mono">T</kbd>{" "}
+                <span className="text-muted-foreground">Triage selected</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showQueryBuilder && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 text-primary" />
+              Query Builder
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Status</label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+                  Severity
+                </label>
+                <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Severities</SelectItem>
+                    {uniqueSeverities.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+                  Date From
+                </label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Date To</label>
+                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-8 text-xs" />
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+                  Save Current Filters
+                </label>
+                <div className="flex gap-1">
+                  <Input
+                    placeholder="View name..."
+                    value={savedViewName}
+                    onChange={(e) => setSavedViewName(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    disabled={!savedViewName.trim() || createSavedViewMutation.isPending}
+                    onClick={() => {
+                      createSavedViewMutation.mutate({
+                        name: savedViewName.trim(),
+                        filters: {
+                          status: statusFilter,
+                          severity: severityFilter,
+                          search,
+                          queue: queueTab,
+                          dateFrom,
+                          dateTo,
+                        },
+                      });
+                    }}
+                    data-testid="button-save-view"
+                  >
+                    <BookmarkPlus className="h-3 w-3 mr-1" />
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {serverSavedViews && serverSavedViews.length > 0 && (
+        <div className="flex flex-wrap gap-2 items-center" data-testid="section-saved-views">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Saved Views:</span>
+          {serverSavedViews.map((v) => (
+            <div key={v.id} className="inline-flex items-center gap-0.5">
+              <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => applySavedView(v)}>
                 {v.name}
               </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6"
-                onClick={() => setSavedViews((prev) => prev.filter((x) => x.name !== v.name))}
+              <button
+                onClick={() => deleteSavedViewMutation.mutate(v.id)}
+                className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
               >
-                <Trash2 className="h-3 w-3" />
-              </Button>
+                <X className="h-3 w-3" />
+              </button>
             </div>
           ))}
         </div>
       )}
 
       <IncidentFilterChips filters={activeFilters} onRemove={handleRemoveFilter} onClearAll={handleClearAllFilters} />
-
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground border border-border/50 rounded-md px-3 py-1.5 bg-muted/20">
-        <span className="font-medium">Shortcuts:</span>
-        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">J/K</kbd> navigate
-        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">Enter</kbd> open
-        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">A</kbd> assign
-        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">E</kbd> escalate
-        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">R</kbd> resolve
-        <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">Esc</kbd> close
-      </div>
 
       {selectedIds.length > 0 && (
         <Card data-testid="section-bulk-actions">

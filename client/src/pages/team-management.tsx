@@ -15,7 +15,20 @@ import {
   ShieldCheck,
   Eye,
   AlertTriangle,
+  Globe,
+  Key,
+  Lock,
+  Fingerprint,
+  Network,
+  Plus,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -622,6 +635,789 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
   );
 }
 
+function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
+  const { toast } = useToast();
+  const isOwner = orgRole === "owner";
+  const [activeSection, setActiveSection] = useState<string>("policies");
+
+  const { data: securityPolicy, isLoading: policyLoading } = useQuery<any>({
+    queryKey: ["/api/orgs", orgId, "security-policy"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/orgs/${orgId}/security-policy`);
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!orgId,
+  });
+
+  const {
+    data: domains,
+    isLoading: domainsLoading,
+    refetch: refetchDomains,
+  } = useQuery<any[]>({
+    queryKey: ["/api/orgs", orgId, "domains"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/orgs/${orgId}/domains`);
+        return res.json();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!orgId,
+  });
+
+  const {
+    data: ssoConfig,
+    isLoading: ssoLoading,
+    refetch: refetchSso,
+  } = useQuery<any>({
+    queryKey: ["/api/orgs", orgId, "sso"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/orgs/${orgId}/sso`);
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!orgId,
+  });
+
+  const {
+    data: scimConfig,
+    isLoading: scimLoading,
+    refetch: refetchScim,
+  } = useQuery<any>({
+    queryKey: ["/api/orgs", orgId, "scim"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/orgs/${orgId}/scim`);
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!orgId,
+  });
+
+  const updatePolicy = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("PUT", `/api/orgs/${orgId}/security-policy`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orgs", orgId, "security-policy"] });
+      toast({ title: "Security policy updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update policy", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addDomain = useMutation({
+    mutationFn: async (data: { domain: string; verificationMethod: string }) => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/domains`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDomains();
+      toast({ title: "Domain added" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add domain", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const verifyDomain = useMutation({
+    mutationFn: async (domainId: string) => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/domains/${domainId}/verify`);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDomains();
+      toast({ title: "Domain verification initiated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteDomain = useMutation({
+    mutationFn: async (domainId: string) => {
+      await apiRequest("DELETE", `/api/orgs/${orgId}/domains/${domainId}`);
+    },
+    onSuccess: () => {
+      refetchDomains();
+      toast({ title: "Domain removed" });
+    },
+  });
+
+  const updateSso = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("PUT", `/api/orgs/${orgId}/sso`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchSso();
+      toast({ title: "SSO configuration updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update SSO", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateScim = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("PUT", `/api/orgs/${orgId}/scim`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchScim();
+      toast({ title: "SCIM configuration updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update SCIM", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const generateScimToken = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/scim/generate-token`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      refetchScim();
+      if (data.token) {
+        navigator.clipboard
+          .writeText(data.token)
+          .then(() => {
+            toast({ title: "SCIM token generated and copied to clipboard" });
+          })
+          .catch(() => {
+            toast({ title: "SCIM token generated", description: "Token: " + data.token.substring(0, 12) + "..." });
+          });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to generate token", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [newDomain, setNewDomain] = useState("");
+  const [newDomainMethod, setNewDomainMethod] = useState("dns_txt");
+  const [ipInput, setIpInput] = useState("");
+
+  if (policyLoading || domainsLoading || ssoLoading || scimLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
+          <Lock className="h-8 w-8 text-muted-foreground" />
+          <div className="text-sm text-muted-foreground">Only organization owners can manage security settings.</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const SECTIONS = [
+    { key: "policies", label: "MFA & Session", icon: Fingerprint },
+    { key: "domains", label: "Domains", icon: Globe },
+    { key: "sso", label: "SSO", icon: Key },
+    { key: "scim", label: "SCIM", icon: Network },
+    { key: "ip", label: "IP Allowlist", icon: Shield },
+  ];
+
+  const currentIps: string[] = securityPolicy?.ipAllowlistCidrs || [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 flex-wrap">
+        {SECTIONS.map((sec) => {
+          const Icon = sec.icon;
+          return (
+            <Button
+              key={sec.key}
+              variant={activeSection === sec.key ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveSection(sec.key)}
+              data-testid={`security-section-${sec.key}`}
+            >
+              <Icon className="h-3.5 w-3.5 mr-1.5" />
+              {sec.label}
+            </Button>
+          );
+        })}
+      </div>
+
+      {activeSection === "policies" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Fingerprint className="h-4 w-4 text-primary" />
+              MFA, Session & Password Policies
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center justify-between p-3 border rounded-md">
+                <div>
+                  <div className="text-sm font-medium">Require MFA</div>
+                  <div className="text-xs text-muted-foreground">
+                    All members must enable multi-factor authentication
+                  </div>
+                </div>
+                <Switch
+                  checked={securityPolicy?.mfaRequired || false}
+                  onCheckedChange={(checked) => updatePolicy.mutate({ mfaRequired: checked })}
+                  data-testid="switch-mfa-required"
+                />
+              </div>
+              <div className="flex items-center justify-between p-3 border rounded-md">
+                <div>
+                  <div className="text-sm font-medium">Device Trust</div>
+                  <div className="text-xs text-muted-foreground">Require trusted device verification</div>
+                </div>
+                <Switch
+                  checked={securityPolicy?.deviceTrustRequired || false}
+                  onCheckedChange={(checked) => updatePolicy.mutate({ deviceTrustRequired: checked })}
+                  data-testid="switch-device-trust"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Session Timeout (minutes)</label>
+                <Input
+                  type="number"
+                  defaultValue={securityPolicy?.sessionTimeoutMinutes || 480}
+                  onBlur={(e) => updatePolicy.mutate({ sessionTimeoutMinutes: parseInt(e.target.value, 10) })}
+                  className="h-8 text-sm"
+                  data-testid="input-session-timeout"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Max Concurrent Sessions</label>
+                <Input
+                  type="number"
+                  defaultValue={securityPolicy?.maxConcurrentSessions || 5}
+                  onBlur={(e) => updatePolicy.mutate({ maxConcurrentSessions: parseInt(e.target.value, 10) })}
+                  className="h-8 text-sm"
+                  data-testid="input-max-sessions"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Password Expiry (days)</label>
+                <Input
+                  type="number"
+                  defaultValue={securityPolicy?.passwordExpiryDays || 90}
+                  onBlur={(e) => updatePolicy.mutate({ passwordExpiryDays: parseInt(e.target.value, 10) })}
+                  className="h-8 text-sm"
+                  data-testid="input-password-expiry"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Min Password Length</label>
+                <Input
+                  type="number"
+                  defaultValue={securityPolicy?.passwordMinLength || 12}
+                  onBlur={(e) => updatePolicy.mutate({ passwordMinLength: parseInt(e.target.value, 10) })}
+                  className="h-8 text-sm"
+                  data-testid="input-password-min-length"
+                />
+              </div>
+              <div className="space-y-2 p-3 border rounded-md">
+                <div className="text-xs text-muted-foreground">Password Requirements</div>
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      checked={securityPolicy?.passwordRequireUppercase !== false}
+                      onCheckedChange={(checked) => updatePolicy.mutate({ passwordRequireUppercase: checked })}
+                    />
+                    <span className="text-xs">Uppercase</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      checked={securityPolicy?.passwordRequireNumber !== false}
+                      onCheckedChange={(checked) => updatePolicy.mutate({ passwordRequireNumber: checked })}
+                    />
+                    <span className="text-xs">Number</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      checked={securityPolicy?.passwordRequireSpecial !== false}
+                      onCheckedChange={(checked) => updatePolicy.mutate({ passwordRequireSpecial: checked })}
+                    />
+                    <span className="text-xs">Special char</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeSection === "domains" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Globe className="h-4 w-4 text-primary" />
+              Domain Verification
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="example.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                className="flex-1 h-8 text-sm"
+                data-testid="input-new-domain"
+              />
+              <Select value={newDomainMethod} onValueChange={setNewDomainMethod}>
+                <SelectTrigger className="w-32 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dns_txt">DNS TXT</SelectItem>
+                  <SelectItem value="dns_cname">DNS CNAME</SelectItem>
+                  <SelectItem value="meta_tag">Meta Tag</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="h-8"
+                disabled={!newDomain.trim() || addDomain.isPending}
+                onClick={() => {
+                  addDomain.mutate({ domain: newDomain.trim(), verificationMethod: newDomainMethod });
+                  setNewDomain("");
+                }}
+                data-testid="button-add-domain"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add
+              </Button>
+            </div>
+            {domains && domains.length > 0 ? (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Domain</TableHead>
+                      <TableHead className="text-xs">Method</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs">Token</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {domains.map((d: any) => (
+                      <TableRow key={d.id}>
+                        <TableCell className="text-sm font-medium">{d.domain}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-[10px]">
+                            {d.verificationMethod}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] ${
+                              d.status === "verified"
+                                ? "border-green-500/30 text-green-400"
+                                : d.status === "failed"
+                                  ? "border-red-500/30 text-red-400"
+                                  : "border-yellow-500/30 text-yellow-400"
+                            }`}
+                          >
+                            {d.status === "verified" && <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />}
+                            {d.status === "failed" && <XCircle className="h-2.5 w-2.5 mr-0.5" />}
+                            {d.status === "pending" && <Clock className="h-2.5 w-2.5 mr-0.5" />}
+                            {d.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(d.verificationToken || "");
+                              toast({ title: "Token copied" });
+                            }}
+                            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                          >
+                            <Copy className="h-3 w-3" />
+                            {(d.verificationToken || "").substring(0, 16)}...
+                          </button>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            {d.status !== "verified" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7"
+                                onClick={() => verifyDomain.mutate(d.id)}
+                                disabled={verifyDomain.isPending}
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-destructive"
+                              onClick={() => deleteDomain.mutate(d.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                No domains configured. Add a domain to enable email-based auto-provisioning.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeSection === "sso" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Key className="h-4 w-4 text-primary" />
+              Single Sign-On (SSO)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center justify-between p-3 border rounded-md">
+                <div>
+                  <div className="text-sm font-medium">Enable SSO</div>
+                  <div className="text-xs text-muted-foreground">Allow SSO-based authentication</div>
+                </div>
+                <Switch
+                  checked={ssoConfig?.enabled || false}
+                  onCheckedChange={(checked) => updateSso.mutate({ enabled: checked })}
+                  data-testid="switch-sso-enabled"
+                />
+              </div>
+              <div className="flex items-center justify-between p-3 border rounded-md">
+                <div>
+                  <div className="text-sm font-medium">Enforce SSO</div>
+                  <div className="text-xs text-muted-foreground">Require SSO for all members (no password login)</div>
+                </div>
+                <Switch
+                  checked={ssoConfig?.enforced || false}
+                  onCheckedChange={(checked) => updateSso.mutate({ enforced: checked })}
+                  data-testid="switch-sso-enforced"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Provider Type</label>
+                <Select
+                  value={ssoConfig?.providerType || "saml"}
+                  onValueChange={(v) => updateSso.mutate({ providerType: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-sso-provider">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="saml">SAML 2.0</SelectItem>
+                    <SelectItem value="oidc">OpenID Connect</SelectItem>
+                    <SelectItem value="google">Google Workspace</SelectItem>
+                    <SelectItem value="github">GitHub</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Default Role for SSO Users</label>
+                <Select
+                  value={ssoConfig?.defaultRole || "analyst"}
+                  onValueChange={(v) => updateSso.mutate({ defaultRole: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="analyst">Analyst</SelectItem>
+                    <SelectItem value="read_only">Read Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {(ssoConfig?.providerType === "saml" || !ssoConfig?.providerType) && (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Metadata URL</label>
+                  <Input
+                    placeholder="https://idp.example.com/metadata.xml"
+                    defaultValue={ssoConfig?.metadataUrl || ""}
+                    onBlur={(e) => updateSso.mutate({ metadataUrl: e.target.value })}
+                    className="h-8 text-sm"
+                    data-testid="input-sso-metadata-url"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Entity ID</label>
+                  <Input
+                    placeholder="urn:example:sp"
+                    defaultValue={ssoConfig?.entityId || ""}
+                    onBlur={(e) => updateSso.mutate({ entityId: e.target.value })}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">SSO URL</label>
+                  <Input
+                    placeholder="https://idp.example.com/sso"
+                    defaultValue={ssoConfig?.ssoUrl || ""}
+                    onBlur={(e) => updateSso.mutate({ ssoUrl: e.target.value })}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+            {ssoConfig?.providerType === "oidc" && (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Client ID</label>
+                  <Input
+                    defaultValue={ssoConfig?.clientId || ""}
+                    onBlur={(e) => updateSso.mutate({ clientId: e.target.value })}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-between p-3 border rounded-md">
+              <div>
+                <div className="text-sm font-medium">Auto-Provision Users</div>
+                <div className="text-xs text-muted-foreground">Automatically create accounts for SSO users</div>
+              </div>
+              <Switch
+                checked={ssoConfig?.autoProvision !== false}
+                onCheckedChange={(checked) => updateSso.mutate({ autoProvision: checked })}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeSection === "scim" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Network className="h-4 w-4 text-primary" />
+              SCIM Provisioning
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-3 border rounded-md">
+              <div>
+                <div className="text-sm font-medium">Enable SCIM</div>
+                <div className="text-xs text-muted-foreground">
+                  Allow identity providers to manage users via SCIM 2.0
+                </div>
+              </div>
+              <Switch
+                checked={scimConfig?.enabled || false}
+                onCheckedChange={(checked) => updateScim.mutate({ enabled: checked })}
+                data-testid="switch-scim-enabled"
+              />
+            </div>
+            {scimConfig?.enabled && (
+              <>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">SCIM Endpoint URL</label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={scimConfig?.endpointUrl || "Not configured"}
+                        readOnly
+                        className="h-8 text-sm bg-muted/50"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        onClick={() => {
+                          navigator.clipboard.writeText(scimConfig?.endpointUrl || "");
+                          toast({ title: "Endpoint URL copied" });
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Bearer Token</label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={scimConfig?.bearerTokenPrefix ? `${scimConfig.bearerTokenPrefix}...` : "Not generated"}
+                        readOnly
+                        className="h-8 text-sm bg-muted/50"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        onClick={() => generateScimToken.mutate()}
+                        disabled={generateScimToken.isPending}
+                        data-testid="button-generate-scim-token"
+                      >
+                        {generateScimToken.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3" />
+                        )}
+                        <span className="ml-1 text-xs">Generate</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Default Role</label>
+                    <Select
+                      value={scimConfig?.defaultRole || "analyst"}
+                      onValueChange={(v) => updateScim.mutate({ defaultRole: v })}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="analyst">Analyst</SelectItem>
+                        <SelectItem value="read_only">Read Only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-between p-3 border rounded-md">
+                    <div>
+                      <div className="text-xs font-medium">Auto-Deprovision</div>
+                      <div className="text-[10px] text-muted-foreground">Remove users when deprovisioned in IdP</div>
+                    </div>
+                    <Switch
+                      checked={scimConfig?.autoDeprovision !== false}
+                      onCheckedChange={(checked) => updateScim.mutate({ autoDeprovision: checked })}
+                    />
+                  </div>
+                </div>
+                {scimConfig?.lastSyncAt && (
+                  <div className="text-xs text-muted-foreground p-2 bg-muted/30 rounded-md">
+                    Last sync: {formatDateTime(scimConfig.lastSyncAt)} — Status:{" "}
+                    {scimConfig.lastSyncStatus || "unknown"} — Users: {scimConfig.lastSyncUserCount || 0}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeSection === "ip" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" />
+              IP Allowlist
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-3 border rounded-md">
+              <div>
+                <div className="text-sm font-medium">Enable IP Allowlist</div>
+                <div className="text-xs text-muted-foreground">
+                  Restrict access to specific IP ranges (CIDR notation)
+                </div>
+              </div>
+              <Switch
+                checked={securityPolicy?.ipAllowlistEnabled || false}
+                onCheckedChange={(checked) => updatePolicy.mutate({ ipAllowlistEnabled: checked })}
+                data-testid="switch-ip-allowlist"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="10.0.0.0/8 or 192.168.1.0/24"
+                value={ipInput}
+                onChange={(e) => setIpInput(e.target.value)}
+                className="flex-1 h-8 text-sm"
+                data-testid="input-ip-cidr"
+              />
+              <Button
+                size="sm"
+                className="h-8"
+                disabled={!ipInput.trim()}
+                onClick={() => {
+                  const updated = [...currentIps, ipInput.trim()];
+                  updatePolicy.mutate({ ipAllowlistCidrs: updated });
+                  setIpInput("");
+                }}
+                data-testid="button-add-ip"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add
+              </Button>
+            </div>
+            {currentIps.length > 0 ? (
+              <div className="space-y-1">
+                {currentIps.map((cidr, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2 border rounded-md text-sm">
+                    <code className="text-xs font-mono">{cidr}</code>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-destructive"
+                      onClick={() => {
+                        const updated = currentIps.filter((_, i) => i !== idx);
+                        updatePolicy.mutate({ ipAllowlistCidrs: updated });
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No IP ranges configured. All IPs are currently allowed.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function AuditTrailTab({ orgId }: { orgId: string }) {
   const { data: auditLogs, isLoading } = useQuery<any[]>({
     queryKey: ["/api/audit-logs"],
@@ -770,6 +1566,10 @@ export default function TeamManagementPage() {
             <Mail className="h-4 w-4 mr-1.5" />
             Invitations
           </TabsTrigger>
+          <TabsTrigger value="security" data-testid="tab-security">
+            <Lock className="h-4 w-4 mr-1.5" />
+            Security
+          </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit">
             <ScrollText className="h-4 w-4 mr-1.5" />
             Audit Trail
@@ -782,6 +1582,10 @@ export default function TeamManagementPage() {
 
         <TabsContent value="invitations">
           <InvitationsTab orgId={orgId} orgRole={orgRole} />
+        </TabsContent>
+
+        <TabsContent value="security">
+          <SecurityTab orgId={orgId} orgRole={orgRole} />
         </TabsContent>
 
         <TabsContent value="audit">
