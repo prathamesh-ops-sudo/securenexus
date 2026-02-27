@@ -564,6 +564,7 @@ export interface IStorage {
   getUserMemberships(userId: string): Promise<OrganizationMembership[]>;
   createOrgMembership(membership: InsertOrganizationMembership): Promise<OrganizationMembership>;
   updateOrgMembership(id: string, data: Partial<OrganizationMembership>): Promise<OrganizationMembership | undefined>;
+  transferOwnership(currentOwnerMembershipId: string, newOwnerMembershipId: string): Promise<void>;
   deleteOrgMembership(id: string): Promise<boolean>;
 
   getOrgInvitations(orgId: string): Promise<OrgInvitation[]>;
@@ -2500,6 +2501,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(organizationMemberships.id, id))
       .returning();
     return updated;
+  }
+
+  async transferOwnership(currentOwnerMembershipId: string, newOwnerMembershipId: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(organizationMemberships)
+        .set({ role: "admin" })
+        .where(eq(organizationMemberships.id, currentOwnerMembershipId));
+      await tx
+        .update(organizationMemberships)
+        .set({ role: "owner" })
+        .where(eq(organizationMemberships.id, newOwnerMembershipId));
+    });
   }
 
   async deleteOrgMembership(id: string): Promise<boolean> {

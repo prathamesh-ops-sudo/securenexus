@@ -34,7 +34,8 @@ export function registerOrgsRoutes(app: Express): void {
           return { ...m, organization: org };
         }),
       );
-      res.json({ userId, memberships: orgs });
+      const visibleOrgs = orgs.filter((o) => !o.organization?.deletedAt);
+      res.json({ userId, memberships: visibleOrgs });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user context" });
     }
@@ -606,6 +607,16 @@ export function registerOrgsRoutes(app: Express): void {
         const ext = req.file.originalname.split(".").pop() || "png";
         const safeExt = ext.replace(/[^a-zA-Z0-9]/g, "").substring(0, 4);
         const s3Key = `orgs/${orgId}/logo.${safeExt}`;
+
+        const org = await storage.getOrganization(orgId);
+        if (org?.logoUrl && org.logoUrl !== s3Key) {
+          try {
+            await deleteFile(org.logoUrl);
+          } catch {
+            /* best-effort cleanup of previous logo */
+          }
+        }
+
         await uploadFile(s3Key, req.file.buffer, req.file.mimetype);
         await storage.updateOrganization(orgId, { logoUrl: s3Key });
 
@@ -708,8 +719,7 @@ export function registerOrgsRoutes(app: Express): void {
           return res.status(403).json({ error: "You are not the owner of this organization" });
         }
 
-        await storage.updateOrgMembership(currentOwner.id, { role: "admin" });
-        await storage.updateOrgMembership(targetMember.id, { role: "owner" });
+        await storage.transferOwnership(currentOwner.id, targetMember.id);
 
         await storage.createAuditLog({
           userId,
