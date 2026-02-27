@@ -45,6 +45,7 @@ spec:
         app.kubernetes.io/name: securenexus
         app.kubernetes.io/instance: securenexus-production
     spec:
+      serviceAccountName: securenexus
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -53,7 +54,7 @@ spec:
         fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 45
       containers:
         - name: securenexus
           image: ${IMAGE}
@@ -73,27 +74,34 @@ spec:
               value: "production"
             - name: PORT
               value: "5000"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           readinessProbe:
             httpGet:
-              path: /api/ops/health
+              path: /api/ops/ready
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 5
             failureThreshold: 3
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
-              path: /api/ops/health
+              path: /api/ops/live
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 10
             failureThreshold: 3
+            timeoutSeconds: 3
           startupProbe:
             httpGet:
-              path: /api/ops/health
+              path: /api/ops/live
               port: 5000
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 12
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 256m
@@ -104,6 +112,14 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: securenexus
+              environment: production
       volumes:
         - name: tmp
           emptyDir:

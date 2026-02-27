@@ -1787,7 +1787,19 @@ function addReportEndpoints(paths: Record<string, PathItemObject>): void {
 }
 
 function addOperationsEndpoints(paths: Record<string, PathItemObject>): void {
-  paths["/api/ops/health"] = { get: op("Get operational health", "getOpsHealth", ["Operations"], { security: [] }) };
+  paths["/api/ops/ready"] = {
+    get: op("Readiness probe - checks DB connectivity and critical dependencies", "getOpsReady", ["Operations"], {
+      security: [],
+    }),
+  };
+  paths["/api/ops/live"] = {
+    get: op("Liveness probe - lightweight process alive check", "getOpsLive", ["Operations"], { security: [] }),
+  };
+  paths["/api/ops/health"] = {
+    get: op("Combined health check with readiness, liveness, and job queue status", "getOpsHealth", ["Operations"], {
+      security: [],
+    }),
+  };
   paths["/api/ops/sli"] = { get: op("Get SLI metrics", "getOpsSLI", ["Operations"]) };
   paths["/api/ops/slo"] = { get: op("Get SLO status", "getOpsSLO", ["Operations"]) };
   paths["/api/ops/slo-targets"] = { get: op("Get SLO targets", "getOpsSLOTargets", ["Operations"]) };

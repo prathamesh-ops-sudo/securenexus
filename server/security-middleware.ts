@@ -14,14 +14,14 @@ const CSRF_COOKIE = "XSRF-TOKEN";
 const CSRF_EXEMPT_PATHS = new Set([
   "/api/health",
   "/ops/health",
+  "/api/ops/health",
+  "/api/ops/ready",
+  "/api/ops/live",
   "/api/auth/google/callback",
   "/api/auth/github/callback",
 ]);
 
-const CSRF_EXEMPT_PREFIXES = [
-  "/api/v1/ingest",
-  "/api/v1/webhooks",
-];
+const CSRF_EXEMPT_PREFIXES = ["/api/v1/ingest", "/api/v1/webhooks"];
 
 function isApiKeyAuthenticated(req: Request): boolean {
   return !!(req as any).apiKey;
@@ -82,10 +82,7 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   const sessionToken = session.csrfToken as string;
   const headerBuf = Buffer.from(headerToken, "utf8");
   const sessionBuf = Buffer.from(sessionToken, "utf8");
-  if (
-    headerBuf.length !== sessionBuf.length ||
-    !timingSafeEqual(headerBuf, sessionBuf)
-  ) {
+  if (headerBuf.length !== sessionBuf.length || !timingSafeEqual(headerBuf, sessionBuf)) {
     replyForbidden(res, "CSRF token invalid. Refresh the page and try again.", ERROR_CODES.CSRF_INVALID);
     return;
   }
@@ -111,9 +108,7 @@ function configureHelmet(): ReturnType<typeof helmet> {
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     crossOriginResourcePolicy: { policy: "same-site" },
-    hsts: PRODUCTION_ENVS.has(config.nodeEnv)
-      ? { maxAge: 31536000, includeSubDomains: true, preload: true }
-      : false,
+    hsts: PRODUCTION_ENVS.has(config.nodeEnv) ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     xContentTypeOptions: true,
     xDnsPrefetchControl: { allow: false },
@@ -132,10 +127,9 @@ function authRateLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      return req.ip || req.headers["x-forwarded-for"] as string || "unknown";
+      return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown";
     },
-    handler: (_req, res) =>
-      replyRateLimit(res, "Too many authentication attempts. Try again in 5 minutes."),
+    handler: (_req, res) => replyRateLimit(res, "Too many authentication attempts. Try again in 5 minutes."),
     skip: (req) => req.method === "GET",
   });
 }
@@ -195,7 +189,7 @@ export function applyCsrfProtection(app: Express): void {
 }
 
 export function getCsrfEndpointHandler(_req: Request, res: Response): void {
-  const session = (_req.session as any);
+  const session = _req.session as any;
   if (!session.csrfToken) {
     session.csrfToken = generateCsrfToken();
   }

@@ -13,17 +13,37 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - from: []
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: staging
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
       ports:
         - protocol: TCP
           port: 5000
   egress:
-    - to: []
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
         - protocol: TCP
           port: 443
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
@@ -44,17 +64,37 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - from: []
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: uat
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
       ports:
         - protocol: TCP
           port: 5000
   egress:
-    - to: []
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
         - protocol: TCP
           port: 443
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
@@ -75,17 +115,37 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - from: []
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: production
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
       ports:
         - protocol: TCP
           port: 5000
   egress:
-    - to: []
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
         - protocol: TCP
           port: 443
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
