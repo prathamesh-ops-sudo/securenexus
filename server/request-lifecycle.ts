@@ -73,14 +73,14 @@ export async function checkReadiness(): Promise<ReadinessStatus> {
   const draining = isDraining();
   const inFlight = inFlightCount;
 
-  if (draining) {
+  if (draining || !serverReady) {
     return {
       ready: false,
       timestamp: new Date().toISOString(),
       checks: {
         database: { connected: false, latencyMs: 0 },
         pool: { healthy: false, utilization: 0, waiting: 0 },
-        draining: true,
+        draining,
         inFlight,
       },
     };
@@ -90,7 +90,7 @@ export async function checkReadiness(): Promise<ReadinessStatus> {
   const poolHealth = getPoolHealth();
 
   return {
-    ready: dbCheck.connected && poolHealth.healthy && !draining,
+    ready: serverReady && dbCheck.connected && poolHealth.healthy && !draining,
     timestamp: new Date().toISOString(),
     checks: {
       database: { connected: dbCheck.connected, latencyMs: dbCheck.latencyMs },
