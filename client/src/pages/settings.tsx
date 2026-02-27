@@ -23,6 +23,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDateTime } from "@/lib/i18n";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -872,7 +873,7 @@ export default function SettingsPage() {
                             {log.errorMessage && (
                               <span className="text-red-400 truncate max-w-[200px]">{log.errorMessage}</span>
                             )}
-                            <span className="text-muted-foreground">{new Date(log.deliveredAt).toLocaleString()}</span>
+                            <span className="text-muted-foreground">{formatDateTime(log.deliveredAt)}</span>
                           </div>
                         </div>
                       ))

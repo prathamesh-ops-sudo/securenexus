@@ -17,6 +17,7 @@ import {
   AreaChart,
   Area,
 } from "recharts";
+import { formatChartDateLabel } from "@/lib/i18n";
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#ef4444",
@@ -137,7 +138,7 @@ function ChartSkeleton() {
 function AlertVolumeTrendChart({ data }: { data: { date: string; count: number }[] }) {
   const formatted = data.map((d) => ({
     ...d,
-    label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    label: formatChartDateLabel(d.date),
   }));
 
   return (
@@ -351,7 +352,7 @@ function MitreTacticsChart({ data }: { data: { name: string; value: number }[] }
 function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) {
   const formatted = data.map((d) => ({
     ...d,
-    label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    label: formatChartDateLabel(d.date),
   }));
 
   return (

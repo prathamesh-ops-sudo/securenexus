@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Alert } from "@shared/schema";
+import { formatDateFull } from "@/lib/i18n";
 
 const MITRE_TACTICS = [
   "Reconnaissance",
@@ -359,13 +360,7 @@ export default function MitreAttackPage() {
                         <td className="py-2 px-3 text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            {tech.lastSeen
-                              ? tech.lastSeen.toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })
-                              : "Unknown"}
+                            {tech.lastSeen ? formatDateFull(tech.lastSeen) : "Unknown"}
                           </div>
                         </td>
                       </tr>

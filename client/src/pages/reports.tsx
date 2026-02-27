@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -248,7 +249,7 @@ export default function ReportsPage() {
 
   function formatDate(d: string | null) {
     if (!d) return "Never";
-    return new Date(d).toLocaleString();
+    return formatDateTime(d);
   }
 
   function formatFileSize(bytes: number | null) {
@@ -860,7 +861,7 @@ export default function ReportsPage() {
                                   </Badge>
                                 </td>
                                 <td className="p-2 text-muted-foreground">
-                                  {c.lastSyncAt ? new Date(c.lastSyncAt).toLocaleString() : "Never"}
+                                  {c.lastSyncAt ? formatDateTime(c.lastSyncAt) : "Never"}
                                 </td>
                               </tr>
                             ))}
@@ -1266,8 +1267,8 @@ function TemplateVersioningTab({ templates }: { templates: any[] }) {
                     </div>
                     <p className="text-sm text-muted-foreground">{v.changeDescription}</p>
                     <p className="text-xs text-muted-foreground">
-                      Created: {new Date(v.createdAt).toLocaleString()}
-                      {v.approvedAt && ` | Approved: ${new Date(v.approvedAt).toLocaleString()}`}
+                      Created: {formatDateTime(v.createdAt)}
+                      {v.approvedAt && ` | Approved: ${formatDateTime(v.approvedAt)}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

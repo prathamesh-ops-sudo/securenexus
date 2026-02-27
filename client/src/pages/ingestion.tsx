@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { formatDateTime } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -176,7 +177,7 @@ export default function IngestionPage() {
 
   const formatTime = (ts: string | null) => {
     if (!ts) return "Never";
-    return new Date(ts).toLocaleString();
+    return formatDateTime(ts);
   };
 
   if (keysError || logsError) {
