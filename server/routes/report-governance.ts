@@ -142,7 +142,10 @@ export function registerReportGovernanceRoutes(app: Express): void {
       const user = req.user as any;
       const orgId = getOrgId(req);
       const parsed = insertEvidenceAttachmentSchema.safeParse({
-        ...req.body,
+        fileName: req.body.fileName,
+        mimeType: req.body.mimeType,
+        controlMappingId: req.body.controlMappingId || null,
+        evidenceLockerId: req.body.evidenceLockerId || null,
         orgId,
         uploadedBy: user?.id || null,
         uploadedByName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : null,
@@ -178,8 +181,13 @@ export function registerReportGovernanceRoutes(app: Express): void {
         return res.status(403).json({ message: "Access denied" });
       }
       const action = (req.body.action as string) || "upload";
-      const bucket = attachment.s3Bucket || process.env.EVIDENCE_S3_BUCKET || "securenexus-evidence";
-      const key = attachment.s3Key || `evidence/${attachment.orgId}/${attachment.id}/${attachment.fileName}`;
+      const evidenceBucket = process.env.EVIDENCE_S3_BUCKET || "securenexus-evidence";
+      const bucket = attachment.s3Bucket === evidenceBucket ? attachment.s3Bucket : evidenceBucket;
+      const sanitizedFileName = (attachment.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const key =
+        attachment.s3Key && attachment.s3Key.startsWith(`evidence/${attachment.orgId}/`)
+          ? attachment.s3Key
+          : `evidence/${attachment.orgId}/${attachment.id}/${sanitizedFileName}`;
       try {
         const { S3Client, PutObjectCommand, GetObjectCommand } = await import("@aws-sdk/client-s3");
         const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
@@ -286,10 +294,11 @@ export function registerReportGovernanceRoutes(app: Express): void {
       const frameworks = ["NIST CSF", "ISO 27001", "CIS", "SOC 2"];
       const summary: any[] = [];
 
+      const mappings = await storage.getComplianceControlMappings(orgId);
+      const mappedControlIds = new Set(mappings.map((m: any) => m.controlId));
+
       for (const framework of frameworks) {
         const controls = await storage.getComplianceControls(framework);
-        const mappings = await storage.getComplianceControlMappings(orgId);
-        const mappedControlIds = new Set(mappings.map((m: any) => m.controlId));
         const coveredCount = controls.filter((c: any) => mappedControlIds.has(c.id)).length;
 
         summary.push({
