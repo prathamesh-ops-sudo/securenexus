@@ -496,6 +496,7 @@ export function registerOrgsRoutes(app: Express): void {
           ) {
             return res.status(400).json({ error: "Invalid contact email format" });
           }
+          updateData.contactEmail = email;
         }
 
         if (updateData.billingEmail !== undefined && updateData.billingEmail !== null) {
@@ -511,6 +512,7 @@ export function registerOrgsRoutes(app: Express): void {
           ) {
             return res.status(400).json({ error: "Invalid billing email format" });
           }
+          updateData.billingEmail = email;
         }
 
         if (updateData.primaryColor !== undefined && updateData.primaryColor !== null) {

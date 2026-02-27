@@ -152,10 +152,20 @@ export default function OrgSettingsPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("logo", file);
+      const hdrs: Record<string, string> = {};
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
+      if (csrfMatch) hdrs["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) hdrs["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
       const res = await fetch(`/api/orgs/${currentOrgId}/logo`, {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers: hdrs,
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "Upload failed" }));
