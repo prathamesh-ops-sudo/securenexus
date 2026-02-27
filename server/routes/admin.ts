@@ -16,6 +16,9 @@ import { getOutboxProcessorStatus } from "../outbox-processor";
 import { cacheInvalidate, cacheStats } from "../query-cache";
 import { getTableSizes, getPartitionConfigs, runArchivalJob } from "../partition-strategy";
 import { runFullRollup, getRollupConfig } from "../metrics-rollup";
+import { getRecentTraces, getTraceById, getTraceStats } from "../tracing";
+import { getDispatcherStatus } from "../notification-dispatcher";
+import { getBreachHistory } from "../slo-alerting";
 
 export function registerAdminRoutes(app: Express): void {
   app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -454,6 +457,121 @@ export function registerAdminRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "CONFIG_FAILED", message: "Failed to fetch rollup config", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/tracing/stats",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        return sendEnvelope(res, getTraceStats());
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "TRACING_STATS_FAILED", message: "Failed to fetch tracing stats", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/tracing/recent",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+        return sendEnvelope(res, getRecentTraces(limit));
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [
+            { code: "TRACING_RECENT_FAILED", message: "Failed to fetch recent traces", details: error?.message },
+          ],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/tracing/:traceId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const traceId = req.params.traceId;
+        if (!traceId || typeof traceId !== "string" || traceId.length > 64) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_TRACE_ID", message: "Invalid trace ID" }],
+          });
+        }
+        const spans = getTraceById(traceId);
+        if (spans.length === 0) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Trace not found in buffer" }],
+          });
+        }
+        return sendEnvelope(res, spans);
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "TRACE_LOOKUP_FAILED", message: "Failed to fetch trace", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/alerting/status",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        const dispatcherStatus = getDispatcherStatus();
+        return sendEnvelope(res, dispatcherStatus);
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [
+            { code: "ALERTING_STATUS_FAILED", message: "Failed to fetch alerting status", details: error?.message },
+          ],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/alerting/breach-history",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const service = typeof req.query.service === "string" ? req.query.service : undefined;
+        const hoursBack = Math.min(Number(req.query.hours ?? 24) || 24, 168);
+        const history = await getBreachHistory(service, hoursBack);
+        return sendEnvelope(res, history, { meta: { service: service ?? "all", hoursBack } });
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [
+            { code: "BREACH_HISTORY_FAILED", message: "Failed to fetch breach history", details: error?.message },
+          ],
         });
       }
     },

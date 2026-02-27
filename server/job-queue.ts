@@ -3,6 +3,7 @@ import { db } from "./db";
 import { logger } from "./logger";
 import { createHash, randomBytes } from "crypto";
 import { sql } from "drizzle-orm";
+import { startSpan } from "./tracing";
 
 const DEAD_LETTER_MAX_ATTEMPTS = 3;
 const VISIBILITY_TIMEOUT_MS = 120_000;
@@ -74,9 +75,13 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         logger.child("job-queue").warn(`Job ${job.id} missing orgId in payload — skipping`);
         return { refreshed: false, error: "Missing orgId in job payload" };
       }
-      const beforeDate = job.payload?.beforeDate ? new Date(job.payload.beforeDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const beforeDate = job.payload?.beforeDate
+        ? new Date(job.payload.beforeDate)
+        : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const reason = job.payload?.reason || "cold_storage";
-      const oldAlerts = await db.execute(sql`SELECT id FROM alerts WHERE org_id = ${orgId} AND created_at < ${beforeDate}`);
+      const oldAlerts = await db.execute(
+        sql`SELECT id FROM alerts WHERE org_id = ${orgId} AND created_at < ${beforeDate}`,
+      );
       const alertIds = ((oldAlerts as any).rows || []).map((r: any) => r.id);
       if (alertIds.length > 0) {
         const archived = await storage.archiveAlerts(orgId, alertIds, reason);
@@ -107,7 +112,7 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         WHERE org_id = ${orgId}
           AND created_at::date = ${date}::date
       `);
-      const row = ((result as any).rows?.[0]) || {};
+      const row = (result as any).rows?.[0] || {};
       await storage.upsertAlertDailyStat({
         orgId,
         date,
@@ -129,7 +134,7 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
     try {
       const { evaluateSlos } = await import("./sli-middleware");
       const evaluations = await evaluateSlos();
-      const breaches = evaluations.filter(e => e.breached);
+      const breaches = evaluations.filter((e) => e.breached);
       return { collected: true, totalSlos: evaluations.length, breaches: breaches.length };
     } catch (err: any) {
       return { collected: false, type: "sli_collection", error: err.message || String(err) };
@@ -263,7 +268,11 @@ export function startJobWorker(): void {
   if (workerRunning) return;
   workerRunning = true;
 
-  logger.child("job-queue").info(`Started distributed worker ${workerId} — polling every ${POLL_INTERVAL_MS}ms, max concurrency ${MAX_CONCURRENT}`);
+  logger
+    .child("job-queue")
+    .info(
+      `Started distributed worker ${workerId} — polling every ${POLL_INTERVAL_MS}ms, max concurrency ${MAX_CONCURRENT}`,
+    );
 
   workerInterval = setInterval(async () => {
     if (activeJobs >= MAX_CONCURRENT) return;
@@ -284,23 +293,28 @@ export function startJobWorker(): void {
   }, POLL_INTERVAL_MS);
 
   heartbeatInterval = setInterval(() => {
-    runHeartbeats().catch((err) =>
-      logger.child("job-queue").error("Heartbeat sweep error", { error: String(err) })
-    );
+    runHeartbeats().catch((err) => logger.child("job-queue").error("Heartbeat sweep error", { error: String(err) }));
   }, HEARTBEAT_INTERVAL_MS);
 
   reaperInterval = setInterval(() => {
-    reapStaleJobs().catch((err) =>
-      logger.child("job-queue").error("Reaper sweep error", { error: String(err) })
-    );
+    reapStaleJobs().catch((err) => logger.child("job-queue").error("Reaper sweep error", { error: String(err) }));
   }, STALE_JOB_REAPER_INTERVAL_MS);
 }
 
 export function stopJobWorker(): void {
   workerRunning = false;
-  if (workerInterval) { clearInterval(workerInterval); workerInterval = null; }
-  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-  if (reaperInterval) { clearInterval(reaperInterval); reaperInterval = null; }
+  if (workerInterval) {
+    clearInterval(workerInterval);
+    workerInterval = null;
+  }
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+  if (reaperInterval) {
+    clearInterval(reaperInterval);
+    reaperInterval = null;
+  }
   logger.child("job-queue").info(`Stopped worker ${workerId}`);
 }
 
@@ -324,7 +338,12 @@ async function processJob(job: any): Promise<void> {
 
   try {
     logger.child("job-queue").info(`Processing job ${job.id} (${job.type}) [worker=${workerId}]`);
-    const result = await handler(job);
+    const result = await startSpan("job-queue", `job:${job.type}`, () => handler(job), {
+      "job.id": job.id,
+      "job.type": job.type,
+      "job.orgId": job.orgId ?? "",
+      "job.attempt": job.attempts ?? 1,
+    });
     const res = await db.execute(sql`
       UPDATE job_queue
       SET status = 'completed',
@@ -340,7 +359,7 @@ async function processJob(job: any): Promise<void> {
       logger.child("job-queue").info(`Completed job ${job.id}`);
     }
   } catch (err: any) {
-    const attempts = (job.attempts || 0);
+    const attempts = job.attempts || 0;
     const maxAttempts = job.maxAttempts || DEAD_LETTER_MAX_ATTEMPTS;
     const errorMsg = err.message || String(err);
 
@@ -421,11 +440,19 @@ export async function enqueueJob(type: string, orgId: string, payload: any, prio
   } as any);
 }
 
-export async function scheduleJob(type: string, orgId: string, payload: any, runAt: Date, priority?: number): Promise<any> {
+export async function scheduleJob(
+  type: string,
+  orgId: string,
+  payload: any,
+  runAt: Date,
+  priority?: number,
+): Promise<any> {
   const fp = buildJobFingerprint(type, orgId, payload);
   const isDuplicate = await isDuplicateInDb(type, orgId, payload);
   if (isDuplicate) {
-    logger.child("job-queue").info(`Dedup: skipping duplicate scheduled job ${type} for org ${orgId} (fingerprint=${fp})`);
+    logger
+      .child("job-queue")
+      .info(`Dedup: skipping duplicate scheduled job ${type} for org ${orgId} (fingerprint=${fp})`);
     return null;
   }
   return storage.createJob({

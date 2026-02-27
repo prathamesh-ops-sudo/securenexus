@@ -19,6 +19,7 @@ import { initializeTenantIsolation } from "./tenant-isolation";
 import { initializeTenantThrottle } from "./tenant-throttle";
 import { startArchivalScheduler } from "./partition-strategy";
 import { startMetricsRollupScheduler } from "./metrics-rollup";
+import { tracingMiddleware, startTracingFlush, stopTracingFlush } from "./tracing";
 
 const app = express();
 const httpServer = createServer(app);
@@ -49,6 +50,7 @@ applyInputSanitization(app);
 app.use(sliMiddleware);
 app.use(performanceBudgetMiddleware);
 
+app.use(tracingMiddleware);
 app.use(correlationMiddleware);
 app.use(requestLogger);
 
@@ -122,12 +124,14 @@ export function log(message: string, source = "express") {
       startSloAlerting();
       startArchivalScheduler();
       startMetricsRollupScheduler();
+      startTracingFlush();
     },
   );
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
+      stopTracingFlush();
       gracefulShutdown(signal).then(() => {
         httpServer.close(() => {
           drainPool()
