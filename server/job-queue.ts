@@ -3,7 +3,7 @@ import { db } from "./db";
 import { logger } from "./logger";
 import { createHash, randomBytes } from "crypto";
 import { sql } from "drizzle-orm";
-import { startSpan, currentTraceId } from "./tracing";
+import { startSpan } from "./tracing";
 
 const DEAD_LETTER_MAX_ATTEMPTS = 3;
 const VISIBILITY_TIMEOUT_MS = 120_000;

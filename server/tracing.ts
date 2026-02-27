@@ -211,7 +211,7 @@ export function withTraceContext<T>(
 function flushSpans(): void {
   if (spanBuffer.length === 0) return;
 
-  const batch = spanBuffer.splice(0, spanBuffer.length);
+  const batch = [...spanBuffer];
   const errorSpans = batch.filter((s) => s.status === "error");
   const slowSpans = batch.filter((s) => s.durationMs > 5000);
 

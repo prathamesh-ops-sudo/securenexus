@@ -275,8 +275,6 @@ async function createBreachIncident(breach: SloBreachRecord): Promise<void> {
   if (lastCreated && Date.now() - lastCreated < INCIDENT_DEDUP_MS) {
     return;
   }
-  recentIncidentKeys.set(dedupKey, Date.now());
-
   const title = `[Auto] SLO Breach: ${breach.service}/${breach.metric} (${breach.actual} vs target ${breach.target})`;
 
   await storage.createIncident({
@@ -287,6 +285,8 @@ async function createBreachIncident(breach: SloBreachRecord): Promise<void> {
     assignedTo: null,
     orgId: null,
   });
+
+  recentIncidentKeys.set(dedupKey, Date.now());
 
   logger.child("slo-alerting").info("Auto-created incident for critical SLO breach", {
     service: breach.service,

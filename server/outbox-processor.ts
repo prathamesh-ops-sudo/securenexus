@@ -10,7 +10,7 @@ import {
   secureOutboundFetch,
   redactDeliveryLog,
 } from "./outbound-security";
-import { startSpan, injectTraceHeaders } from "./tracing";
+import { startSpan } from "./tracing";
 
 const POLL_INTERVAL_MS = 3000;
 const BATCH_SIZE = 10;

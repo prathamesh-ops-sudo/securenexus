@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { logger } from "./logger";
 import { startSpan } from "./tracing";
+import { validateWebhookUrl } from "./outbound-security";
 import type { NotificationChannel } from "@shared/schema";
 
 const log = logger.child("notification-dispatcher");
@@ -31,6 +32,11 @@ async function dispatchToSlack(
   const webhookUrl = config.webhookUrl as string | undefined;
   if (!webhookUrl) {
     return { success: false, error: "Missing webhookUrl in Slack channel config" };
+  }
+
+  const urlCheck = validateWebhookUrl(webhookUrl);
+  if (!urlCheck.valid) {
+    return { success: false, error: `URL validation failed: ${urlCheck.reason}` };
   }
 
   const colorMap: Record<string, string> = {
@@ -153,6 +159,11 @@ async function dispatchToWebhook(
   const url = config.url as string | undefined;
   if (!url) {
     return { success: false, error: "Missing url in webhook channel config" };
+  }
+
+  const urlCheck = validateWebhookUrl(url);
+  if (!urlCheck.valid) {
+    return { success: false, error: `URL validation failed: ${urlCheck.reason}` };
   }
 
   const controller = new AbortController();
