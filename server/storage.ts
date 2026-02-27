@@ -335,6 +335,8 @@ export interface IStorage {
   getOrganizations(): Promise<Organization[]>;
   getOrganization(id: string): Promise<Organization | undefined>;
   createOrganization(org: InsertOrganization): Promise<Organization>;
+  updateOrganization(id: string, data: Partial<Organization>): Promise<Organization | undefined>;
+  softDeleteOrganization(id: string): Promise<Organization | undefined>;
 
   createAuditLog(log: Partial<AuditLog>): Promise<AuditLog>;
   getAuditLogs(orgId?: string): Promise<AuditLog[]>;
@@ -562,6 +564,7 @@ export interface IStorage {
   getUserMemberships(userId: string): Promise<OrganizationMembership[]>;
   createOrgMembership(membership: InsertOrganizationMembership): Promise<OrganizationMembership>;
   updateOrgMembership(id: string, data: Partial<OrganizationMembership>): Promise<OrganizationMembership | undefined>;
+  transferOwnership(currentOwnerMembershipId: string, newOwnerMembershipId: string): Promise<void>;
   deleteOrgMembership(id: string): Promise<boolean>;
 
   getOrgInvitations(orgId: string): Promise<OrgInvitation[]>;
@@ -1192,6 +1195,24 @@ export class DatabaseStorage implements IStorage {
   async createOrganization(org: InsertOrganization): Promise<Organization> {
     const [created] = await db.insert(organizations).values(org).returning();
     return created;
+  }
+
+  async updateOrganization(id: string, data: Partial<Organization>): Promise<Organization | undefined> {
+    const [updated] = await db
+      .update(organizations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async softDeleteOrganization(id: string): Promise<Organization | undefined> {
+    const [updated] = await db
+      .update(organizations)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return updated;
   }
 
   async createAuditLog(log: Partial<AuditLog>): Promise<AuditLog> {
@@ -2480,6 +2501,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(organizationMemberships.id, id))
       .returning();
     return updated;
+  }
+
+  async transferOwnership(currentOwnerMembershipId: string, newOwnerMembershipId: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(organizationMemberships)
+        .set({ role: "admin" })
+        .where(eq(organizationMemberships.id, currentOwnerMembershipId));
+      await tx
+        .update(organizationMemberships)
+        .set({ role: "owner" })
+        .where(eq(organizationMemberships.id, newOwnerMembershipId));
+    });
   }
 
   async deleteOrgMembership(id: string): Promise<boolean> {

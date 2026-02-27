@@ -17,11 +17,7 @@ interface ApiEnvelope<T = unknown> {
 function isEnvelope(body: unknown): body is ApiEnvelope {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
   const obj = body as Record<string, unknown>;
-  return (
-    "data" in obj &&
-    "meta" in obj &&
-    "errors" in obj
-  );
+  return "data" in obj && "meta" in obj && "errors" in obj;
 }
 
 /** Extract a human-readable error string from an envelope (or fall back to raw text). */
@@ -58,11 +54,7 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-export async function apiRequest(
-  method: string,
-  url: string,
-  data?: unknown | undefined,
-): Promise<Response> {
+export async function apiRequest(method: string, url: string, data?: unknown | undefined): Promise<Response> {
   const headers: Record<string, string> = {};
   if (data) {
     headers["Content-Type"] = "application/json";
@@ -70,6 +62,12 @@ export async function apiRequest(
   const csrfToken = getCsrfToken();
   if (csrfToken && method !== "GET" && method !== "HEAD") {
     headers["X-CSRF-Token"] = csrfToken;
+  }
+  try {
+    const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+    if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+  } catch {
+    /* SSR / privacy mode */
   }
   const res = await fetch(url, {
     method,
@@ -93,13 +91,19 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
+export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const reqHeaders: Record<string, string> = {};
+    try {
+      const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+      if (activeOrgId) reqHeaders["X-Org-Id"] = activeOrgId;
+    } catch {
+      /* SSR / privacy mode */
+    }
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
+      headers: reqHeaders,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

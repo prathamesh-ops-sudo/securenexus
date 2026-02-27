@@ -228,9 +228,17 @@ export const organizations = pgTable("organizations", {
   slug: text("slug").notNull().unique(),
   industry: text("industry"),
   contactEmail: text("contact_email"),
+  billingEmail: text("billing_email"),
+  phone: text("phone"),
+  address: jsonb("address"),
+  companySize: text("company_size"),
+  logoUrl: text("logo_url"),
+  primaryColor: text("primary_color"),
   maxUsers: integer("max_users").default(10),
   locale: text("locale").default("en-US"),
   timezone: text("timezone").default("UTC"),
+  deletedAt: timestamp("deleted_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
