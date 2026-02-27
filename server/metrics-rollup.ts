@@ -231,10 +231,21 @@ export interface FullRollupResult {
   retention: RetentionPruneResult;
 }
 
-export async function runFullRollup(): Promise<FullRollupResult> {
-  const hourly = await rollupToHourly();
-  const daily = await rollupToDaily();
+export async function runFullRollup(recoveryMode = false): Promise<FullRollupResult> {
+  const hourlyWindow = recoveryMode ? DEFAULT_ROLLUP_CONFIG.rawRetentionDays * 24 : 2;
+  const dailyWindow = recoveryMode ? Math.ceil(DEFAULT_ROLLUP_CONFIG.hourlyRetentionDays / 2) : 2;
+  const hourly = await rollupToHourly(hourlyWindow);
+  const daily = await rollupToDaily(dailyWindow);
   const retention = await pruneOldMetrics();
+
+  if (recoveryMode) {
+    log.info("Recovery rollup complete", {
+      hourlyWindow,
+      dailyWindow,
+      hourlyRows: hourly.rowsInserted,
+      dailyRows: daily.rowsInserted,
+    });
+  }
 
   return { hourly, daily, retention };
 }
@@ -248,7 +259,7 @@ export function startMetricsRollupScheduler(): void {
   rollupStartupTimer = setTimeout(
     () => {
       rollupStartupTimer = null;
-      runFullRollup().catch((err) => {
+      runFullRollup(true).catch((err) => {
         log.error("Rollup startup error", { error: String(err) });
       });
     },

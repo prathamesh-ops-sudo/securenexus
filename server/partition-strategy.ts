@@ -298,7 +298,9 @@ export async function runArchivalJob(): Promise<ArchivalJobResult> {
 
   for (const config of PARTITION_CONFIGS) {
     const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - config.retentionMonths);
+    const targetMonth = cutoff.getMonth() - config.retentionMonths;
+    cutoff.setDate(1);
+    cutoff.setMonth(targetMonth);
 
     if (config.archiveTable) {
       const archResult = await archiveOldRows(config.tableName, config.archiveTable, config.partitionColumn, cutoff);

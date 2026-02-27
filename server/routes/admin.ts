@@ -411,7 +411,8 @@ export function registerAdminRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const result = await runFullRollup();
+        const recovery = req.query.recovery === "true";
+        const result = await runFullRollup(recovery);
         await storage.createAuditLog({
           orgId: (req as any).user?.orgId,
           userId: (req as any).user?.id,
