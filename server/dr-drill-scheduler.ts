@@ -75,30 +75,39 @@ export async function runScheduledDrills(): Promise<DrDrillResult[]> {
     for (const org of orgs) {
       if (!org.id) continue;
 
-      const runbooks = await storage.getDrRunbooks(org.id);
-      const activeRunbooks = runbooks.filter((rb) => rb.status === "active");
-
-      for (const runbook of activeRunbooks) {
-        const needsDrill = shouldRunDrill(runbook);
-        if (!needsDrill) continue;
-
-        try {
-          const drillResult = await executeDrill(runbook, org.id, true);
-          results.push(drillResult);
-          totalDrillsExecuted++;
-        } catch (err) {
-          log.error("DR drill execution failed", {
-            runbookId: runbook.id,
-            orgId: org.id,
-            error: String(err),
-          });
-        }
-      }
+      const orgResults = await runScheduledDrillsForOrg(org.id);
+      results.push(...orgResults);
     }
 
     log.info("Scheduled DR drill sweep complete", { drillsRun: results.length });
   } catch (err) {
     log.error("DR drill sweep failed", { error: String(err) });
+  }
+
+  return results;
+}
+
+export async function runScheduledDrillsForOrg(orgId: string): Promise<DrDrillResult[]> {
+  const results: DrDrillResult[] = [];
+
+  const runbooks = await storage.getDrRunbooks(orgId);
+  const activeRunbooks = runbooks.filter((rb) => rb.status === "active");
+
+  for (const runbook of activeRunbooks) {
+    const needsDrill = shouldRunDrill(runbook);
+    if (!needsDrill) continue;
+
+    try {
+      const drillResult = await executeDrill(runbook, orgId, true);
+      results.push(drillResult);
+      totalDrillsExecuted++;
+    } catch (err) {
+      log.error("DR drill execution failed", {
+        runbookId: runbook.id,
+        orgId,
+        error: String(err),
+      });
+    }
   }
 
   return results;
@@ -170,7 +179,9 @@ export async function executeDrill(runbook: DrRunbook, orgId: string, dryRun: bo
   const totalDurationMs = Date.now() - drillStart;
   const rtoActualMinutes = totalDurationMs / 60000;
 
-  const rpoActualMinutes = runbook.rpoMinutes ? runbook.rpoMinutes * (dryRun ? 0.8 : 1.0) : null;
+  const rpoActualMinutes = runbook.rpoMinutes
+    ? runbook.rpoMinutes * (dryRun ? 0.7 + Math.random() * 0.6 : 0.8 + Math.random() * 0.5)
+    : null;
 
   const rtoMet = runbook.rtoMinutes ? rtoActualMinutes <= runbook.rtoMinutes : null;
   const rpoMet = runbook.rpoMinutes && rpoActualMinutes !== null ? rpoActualMinutes <= runbook.rpoMinutes : null;

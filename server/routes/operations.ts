@@ -13,7 +13,12 @@ import {
   getRollbackRunbook,
   createRollbackIncident,
 } from "../canary-analysis";
-import { executeDrill, getDrillSchedulerStatus, getRpoRtoDashboard, runScheduledDrills } from "../dr-drill-scheduler";
+import {
+  executeDrill,
+  getDrillSchedulerStatus,
+  getRpoRtoDashboard,
+  runScheduledDrillsForOrg,
+} from "../dr-drill-scheduler";
 
 export function registerOperationsRoutes(app: Express): void {
   // === Job Queue ===
@@ -1058,8 +1063,31 @@ export function registerOperationsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const { analysisResult, triggeredBy } = req.body;
-        if (!analysisResult) return res.status(400).json({ message: "analysisResult required" });
-        await createRollbackIncident(analysisResult, triggeredBy || "manual");
+        if (!analysisResult || typeof analysisResult !== "object") {
+          return res.status(400).json({ message: "analysisResult object required" });
+        }
+        if (!Array.isArray(analysisResult.violations)) {
+          return res.status(400).json({ message: "analysisResult.violations must be an array" });
+        }
+        if (
+          !analysisResult.metrics ||
+          typeof analysisResult.metrics.errorRate !== "number" ||
+          typeof analysisResult.metrics.latencyP95Ms !== "number"
+        ) {
+          return res
+            .status(400)
+            .json({ message: "analysisResult.metrics must include numeric errorRate and latencyP95Ms" });
+        }
+        if (
+          !analysisResult.thresholds ||
+          typeof analysisResult.thresholds.errorRateMax !== "number" ||
+          typeof analysisResult.thresholds.latencyP95MaxMs !== "number"
+        ) {
+          return res
+            .status(400)
+            .json({ message: "analysisResult.thresholds must include numeric errorRateMax and latencyP95MaxMs" });
+        }
+        await createRollbackIncident(analysisResult, typeof triggeredBy === "string" ? triggeredBy : "manual");
         res.status(201).json({ created: true });
       } catch (error) {
         res.status(500).json({ message: "Failed to create rollback incident" });
@@ -1117,9 +1145,10 @@ export function registerOperationsRoutes(app: Express): void {
     resolveOrgContext,
     requireOrgId,
     requireMinRole("admin"),
-    async (_req, res) => {
+    async (req, res) => {
       try {
-        const results = await runScheduledDrills();
+        const orgId = getOrgId(req);
+        const results = await runScheduledDrillsForOrg(orgId);
         res.json({ drillsRun: results.length, results });
       } catch (error) {
         res.status(500).json({ message: "Failed to run scheduled drills" });
@@ -1152,10 +1181,11 @@ export function registerOperationsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const result = await executeDrill(runbook, orgId, dryRun !== false);
         return sendEnvelope(res, result, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Failed to run persisted DR drill";
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "DR_DRILL_FAILED", message: error?.message || "Failed to run persisted DR drill" }],
+          errors: [{ code: "DR_DRILL_FAILED", message }],
         });
       }
     },
