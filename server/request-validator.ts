@@ -17,11 +17,13 @@ import {
   ORG_ROLES,
 } from "@shared/schema";
 
+import { PAGINATION_CONTRACT } from "./pagination-contract";
+
 const MAX_STRING = 2000;
 const MAX_NAME = 255;
-const MAX_OFFSET = 1_000_000;
-const MAX_LIMIT = 500;
-const DEFAULT_LIMIT = 50;
+const MAX_OFFSET = PAGINATION_CONTRACT.maxOffset;
+const MAX_LIMIT = PAGINATION_CONTRACT.maxLimit;
+const DEFAULT_LIMIT = PAGINATION_CONTRACT.defaultLimit;
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -236,7 +238,7 @@ export function validateBody<T extends z.ZodType>(schema: T) {
     if (!result.success) {
       logger.child("validation").warn("Request body validation failed", {
         path: req.path,
-        errors: result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`),
+        errors: result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
       });
       res.status(400).json({
         message: "Invalid request body",
