@@ -37,6 +37,8 @@ import {
   RefreshCw,
   Users,
   AlertTriangle,
+  GitBranch,
+  History,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -77,6 +79,13 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const CHART_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6"];
+
+const VERSION_STATUS_COLORS: Record<string, string> = {
+  draft: "border-yellow-500/30 text-yellow-400",
+  active: "border-green-500/30 text-green-400",
+  deprecated: "border-orange-500/30 text-orange-400",
+  archived: "border-gray-500/30 text-gray-400",
+};
 
 export default function ReportsPage() {
   const { toast } = useToast();
@@ -277,6 +286,10 @@ export default function ReportsPage() {
           <TabsTrigger value="dashboards" data-testid="tab-dashboards">
             <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
             Dashboards
+          </TabsTrigger>
+          <TabsTrigger value="versioning" data-testid="tab-versioning">
+            <GitBranch className="h-3.5 w-3.5 mr-1.5" />
+            Versioning
           </TabsTrigger>
         </TabsList>
 
@@ -904,6 +917,8 @@ export default function ReportsPage() {
             </div>
           ) : null}
         </TabsContent>
+
+        <TemplateVersioningTab templates={templates || []} />
       </Tabs>
 
       <Dialog open={showCreateTemplate} onOpenChange={setShowCreateTemplate}>
@@ -1126,5 +1141,200 @@ export default function ReportsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function TemplateVersioningTab({ templates }: { templates: any[] }) {
+  const { toast } = useToast();
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [showCreateVersion, setShowCreateVersion] = useState(false);
+  const [changeDescription, setChangeDescription] = useState("");
+
+  const {
+    data: versions,
+    isLoading: versionsLoading,
+    refetch: refetchVersions,
+  } = useQuery<any[]>({
+    queryKey: ["/api/report-templates", selectedTemplate, "versions"],
+    queryFn: async () => {
+      if (!selectedTemplate) return [];
+      const res = await fetch(`/api/report-templates/${selectedTemplate}/versions`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedTemplate,
+  });
+
+  const createVersion = useMutation({
+    mutationFn: async (data: { changeDescription: string }) => {
+      const res = await apiRequest("POST", `/api/report-templates/${selectedTemplate}/versions`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchVersions();
+      setShowCreateVersion(false);
+      setChangeDescription("");
+      toast({ title: "Version Created" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const approveVersion = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("PATCH", `/api/report-template-versions/${id}`, { status: "active" });
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchVersions();
+      toast({ title: "Version Approved" });
+    },
+  });
+
+  const deprecateVersion = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("PATCH", `/api/report-template-versions/${id}`, { status: "deprecated" });
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchVersions();
+      toast({ title: "Version Deprecated" });
+    },
+  });
+
+  return (
+    <TabsContent value="versioning" className="space-y-4 mt-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-lg font-semibold">Template Version History</h2>
+        <div className="flex items-center gap-2">
+          <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+            <SelectTrigger className="w-[220px]" data-testid="select-version-template">
+              <SelectValue placeholder="Select template" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((t: any) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedTemplate && (
+            <Button size="sm" onClick={() => setShowCreateVersion(true)} data-testid="button-create-version">
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New Version
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {!selectedTemplate ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <GitBranch className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p>Select a template to view its version history</p>
+          </CardContent>
+        </Card>
+      ) : versionsLoading ? (
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+      ) : !versions?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <History className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p>No versions yet</p>
+            <p className="text-xs mt-1">Create a version to start tracking changes</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {versions.map((v: any) => (
+            <Card key={v.id} data-testid={`card-version-${v.id}`}>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-semibold">v{v.version}</span>
+                      <Badge
+                        variant="outline"
+                        className={`no-default-hover-elevate no-default-active-elevate ${VERSION_STATUS_COLORS[v.status] || ""}`}
+                      >
+                        {v.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{v.changeDescription}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Created: {new Date(v.createdAt).toLocaleString()}
+                      {v.approvedAt && ` | Approved: ${new Date(v.approvedAt).toLocaleString()}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {v.status === "draft" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => approveVersion.mutate(v.id)}
+                        disabled={approveVersion.isPending}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                        Approve
+                      </Button>
+                    )}
+                    {v.status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => deprecateVersion.mutate(v.id)}
+                        disabled={deprecateVersion.isPending}
+                      >
+                        Deprecate
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showCreateVersion} onOpenChange={setShowCreateVersion}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Version</DialogTitle>
+            <DialogDescription>
+              Create a new version of this report template with a description of changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="version-desc">Change Description</Label>
+              <Textarea
+                id="version-desc"
+                value={changeDescription}
+                onChange={(e) => setChangeDescription(e.target.value)}
+                placeholder="Describe what changed in this version..."
+                data-testid="input-version-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateVersion(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createVersion.mutate({ changeDescription })}
+              disabled={!changeDescription.trim() || createVersion.isPending}
+              data-testid="button-submit-version"
+            >
+              {createVersion.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              Create Version
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </TabsContent>
   );
 }

@@ -3168,6 +3168,142 @@ export const evidenceLockerItems = pgTable(
   ],
 );
 
+// ==========================================
+// 8.4 — Reporting & Compliance as First-Class Products
+// ==========================================
+
+export const REPORT_TEMPLATE_VERSION_STATUSES = ["draft", "active", "deprecated", "archived"] as const;
+
+export const reportTemplateVersions = pgTable(
+  "report_template_versions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    templateId: varchar("template_id")
+      .notNull()
+      .references(() => reportTemplates.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    changeDescription: text("change_description").notNull(),
+    config: text("config"),
+    format: text("format"),
+    status: text("status").notNull().default("draft"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_report_tpl_ver_template").on(table.templateId),
+    index("idx_report_tpl_ver_org").on(table.orgId),
+    uniqueIndex("uq_report_tpl_ver_version").on(table.templateId, table.version),
+  ],
+);
+
+export const EVIDENCE_ATTACHMENT_STATUSES = ["pending_upload", "uploaded", "verified", "expired", "rejected"] as const;
+
+export const evidenceAttachments = pgTable(
+  "evidence_attachments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    controlMappingId: varchar("control_mapping_id").references(() => complianceControlMappings.id, {
+      onDelete: "cascade",
+    }),
+    evidenceLockerId: varchar("evidence_locker_id").references(() => evidenceLockerItems.id, { onDelete: "set null" }),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type"),
+    fileSize: integer("file_size"),
+    s3Bucket: text("s3_bucket"),
+    s3Key: text("s3_key"),
+    checksum: text("checksum"),
+    status: text("status").notNull().default("pending_upload"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNotes: text("review_notes"),
+    expiresAt: timestamp("expires_at"),
+    uploadedBy: text("uploaded_by"),
+    uploadedByName: text("uploaded_by_name"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_evidence_attach_org").on(table.orgId),
+    index("idx_evidence_attach_mapping").on(table.controlMappingId),
+    index("idx_evidence_attach_locker").on(table.evidenceLockerId),
+    index("idx_evidence_attach_status").on(table.status),
+  ],
+);
+
+export const COMPLIANCE_CONTROL_HELPER_TYPES = [
+  "gap_analysis",
+  "cross_map",
+  "coverage_report",
+  "readiness_check",
+] as const;
+
+export const complianceControlHelpers = pgTable(
+  "compliance_control_helpers",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    helperType: text("helper_type").notNull(),
+    sourceFramework: text("source_framework"),
+    targetFramework: text("target_framework"),
+    result: jsonb("result").default({}),
+    status: text("status").notNull().default("pending"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_compliance_helpers_org").on(table.orgId),
+    index("idx_compliance_helpers_type").on(table.helperType),
+  ],
+);
+
+export const insertReportTemplateVersionSchema = createInsertSchema(reportTemplateVersions).omit({
+  id: true,
+  createdAt: true,
+  approvedAt: true,
+});
+export const insertEvidenceAttachmentSchema = createInsertSchema(evidenceAttachments).omit({
+  id: true,
+  createdAt: true,
+  reviewedAt: true,
+});
+export const insertComplianceControlHelperSchema = createInsertSchema(complianceControlHelpers).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+
+export type ReportTemplateVersion = typeof reportTemplateVersions.$inferSelect;
+export type InsertReportTemplateVersion = z.infer<typeof insertReportTemplateVersionSchema>;
+export type EvidenceAttachment = typeof evidenceAttachments.$inferSelect;
+export type InsertEvidenceAttachment = z.infer<typeof insertEvidenceAttachmentSchema>;
+export type ComplianceControlHelper = typeof complianceControlHelpers.$inferSelect;
+export type InsertComplianceControlHelper = z.infer<typeof insertComplianceControlHelperSchema>;
+
+export const reportTemplateVersionsRelations = relations(reportTemplateVersions, ({ one }) => ({
+  template: one(reportTemplates, { fields: [reportTemplateVersions.templateId], references: [reportTemplates.id] }),
+}));
+
+export const evidenceAttachmentsRelations = relations(evidenceAttachments, ({ one }) => ({
+  controlMapping: one(complianceControlMappings, {
+    fields: [evidenceAttachments.controlMappingId],
+    references: [complianceControlMappings.id],
+  }),
+  evidenceLocker: one(evidenceLockerItems, {
+    fields: [evidenceAttachments.evidenceLockerId],
+    references: [evidenceLockerItems.id],
+  }),
+}));
+
 export const OUTBOUND_WEBHOOK_EVENTS = [
   "incident.created",
   "incident.updated",

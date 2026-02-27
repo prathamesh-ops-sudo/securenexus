@@ -285,6 +285,15 @@ import {
   type PlaybookRollbackPlan,
   type InsertPlaybookRollbackPlan,
   playbookRollbackPlans,
+  type ReportTemplateVersion,
+  type InsertReportTemplateVersion,
+  reportTemplateVersions,
+  type EvidenceAttachment,
+  type InsertEvidenceAttachment,
+  evidenceAttachments,
+  type ComplianceControlHelper,
+  type InsertComplianceControlHelper,
+  complianceControlHelpers,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
@@ -972,6 +981,32 @@ export interface IStorage {
     id: string,
     data: Partial<PlaybookRollbackPlan>,
   ): Promise<PlaybookRollbackPlan | undefined>;
+
+  // Report Template Versions (8.4)
+  getReportTemplateVersions(templateId: string, orgId?: string): Promise<ReportTemplateVersion[]>;
+  getReportTemplateVersion(id: string): Promise<ReportTemplateVersion | undefined>;
+  getLatestTemplateVersion(templateId: string): Promise<ReportTemplateVersion | undefined>;
+  createReportTemplateVersion(version: InsertReportTemplateVersion): Promise<ReportTemplateVersion>;
+  updateReportTemplateVersion(
+    id: string,
+    data: Partial<ReportTemplateVersion>,
+  ): Promise<ReportTemplateVersion | undefined>;
+
+  // Evidence Attachments (8.4)
+  getEvidenceAttachments(orgId: string, controlMappingId?: string): Promise<EvidenceAttachment[]>;
+  getEvidenceAttachment(id: string): Promise<EvidenceAttachment | undefined>;
+  createEvidenceAttachment(attachment: InsertEvidenceAttachment): Promise<EvidenceAttachment>;
+  updateEvidenceAttachment(id: string, data: Partial<EvidenceAttachment>): Promise<EvidenceAttachment | undefined>;
+  deleteEvidenceAttachment(id: string): Promise<boolean>;
+
+  // Compliance Control Helpers (8.4)
+  getComplianceControlHelpers(orgId: string, helperType?: string): Promise<ComplianceControlHelper[]>;
+  getComplianceControlHelper(id: string): Promise<ComplianceControlHelper | undefined>;
+  createComplianceControlHelper(helper: InsertComplianceControlHelper): Promise<ComplianceControlHelper>;
+  updateComplianceControlHelper(
+    id: string,
+    data: Partial<ComplianceControlHelper>,
+  ): Promise<ComplianceControlHelper | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4722,6 +4757,131 @@ export class DatabaseStorage implements IStorage {
       .update(playbookRollbackPlans)
       .set(data)
       .where(eq(playbookRollbackPlans.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ==========================================
+  // 8.4 — Report Template Versions
+  // ==========================================
+
+  async getReportTemplateVersions(templateId: string, orgId?: string): Promise<ReportTemplateVersion[]> {
+    const conditions = [eq(reportTemplateVersions.templateId, templateId)];
+    if (orgId) {
+      conditions.push(eq(reportTemplateVersions.orgId, orgId));
+    }
+    return db
+      .select()
+      .from(reportTemplateVersions)
+      .where(and(...conditions))
+      .orderBy(desc(reportTemplateVersions.version));
+  }
+
+  async getReportTemplateVersion(id: string): Promise<ReportTemplateVersion | undefined> {
+    const [row] = await db.select().from(reportTemplateVersions).where(eq(reportTemplateVersions.id, id));
+    return row;
+  }
+
+  async getLatestTemplateVersion(templateId: string): Promise<ReportTemplateVersion | undefined> {
+    const [row] = await db
+      .select()
+      .from(reportTemplateVersions)
+      .where(eq(reportTemplateVersions.templateId, templateId))
+      .orderBy(desc(reportTemplateVersions.version))
+      .limit(1);
+    return row;
+  }
+
+  async createReportTemplateVersion(version: InsertReportTemplateVersion): Promise<ReportTemplateVersion> {
+    const [created] = await db.insert(reportTemplateVersions).values(version).returning();
+    return created;
+  }
+
+  async updateReportTemplateVersion(
+    id: string,
+    data: Partial<ReportTemplateVersion>,
+  ): Promise<ReportTemplateVersion | undefined> {
+    const [updated] = await db
+      .update(reportTemplateVersions)
+      .set(data)
+      .where(eq(reportTemplateVersions.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ==========================================
+  // 8.4 — Evidence Attachments
+  // ==========================================
+
+  async getEvidenceAttachments(orgId: string, controlMappingId?: string): Promise<EvidenceAttachment[]> {
+    const conditions = [eq(evidenceAttachments.orgId, orgId)];
+    if (controlMappingId) {
+      conditions.push(eq(evidenceAttachments.controlMappingId, controlMappingId));
+    }
+    return db
+      .select()
+      .from(evidenceAttachments)
+      .where(and(...conditions))
+      .orderBy(desc(evidenceAttachments.createdAt));
+  }
+
+  async getEvidenceAttachment(id: string): Promise<EvidenceAttachment | undefined> {
+    const [row] = await db.select().from(evidenceAttachments).where(eq(evidenceAttachments.id, id));
+    return row;
+  }
+
+  async createEvidenceAttachment(attachment: InsertEvidenceAttachment): Promise<EvidenceAttachment> {
+    const [created] = await db.insert(evidenceAttachments).values(attachment).returning();
+    return created;
+  }
+
+  async updateEvidenceAttachment(
+    id: string,
+    data: Partial<EvidenceAttachment>,
+  ): Promise<EvidenceAttachment | undefined> {
+    const [updated] = await db.update(evidenceAttachments).set(data).where(eq(evidenceAttachments.id, id)).returning();
+    return updated;
+  }
+
+  async deleteEvidenceAttachment(id: string): Promise<boolean> {
+    const result = await db.delete(evidenceAttachments).where(eq(evidenceAttachments.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // ==========================================
+  // 8.4 — Compliance Control Helpers
+  // ==========================================
+
+  async getComplianceControlHelpers(orgId: string, helperType?: string): Promise<ComplianceControlHelper[]> {
+    const conditions = [eq(complianceControlHelpers.orgId, orgId)];
+    if (helperType) {
+      conditions.push(eq(complianceControlHelpers.helperType, helperType));
+    }
+    return db
+      .select()
+      .from(complianceControlHelpers)
+      .where(and(...conditions))
+      .orderBy(desc(complianceControlHelpers.createdAt));
+  }
+
+  async getComplianceControlHelper(id: string): Promise<ComplianceControlHelper | undefined> {
+    const [row] = await db.select().from(complianceControlHelpers).where(eq(complianceControlHelpers.id, id));
+    return row;
+  }
+
+  async createComplianceControlHelper(helper: InsertComplianceControlHelper): Promise<ComplianceControlHelper> {
+    const [created] = await db.insert(complianceControlHelpers).values(helper).returning();
+    return created;
+  }
+
+  async updateComplianceControlHelper(
+    id: string,
+    data: Partial<ComplianceControlHelper>,
+  ): Promise<ComplianceControlHelper | undefined> {
+    const [updated] = await db
+      .update(complianceControlHelpers)
+      .set(data)
+      .where(eq(complianceControlHelpers.id, id))
       .returning();
     return updated;
   }
