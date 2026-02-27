@@ -571,7 +571,7 @@ export default function AlertsPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" role="main" aria-label="Alerts Management">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" aria-label="Alerts Management">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
