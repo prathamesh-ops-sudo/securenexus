@@ -125,9 +125,9 @@ export function log(message: string, source = "express") {
     process.on(signal, () => {
       logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
       gracefulShutdown(signal).then(() => {
-        drainPool().then(() => {
-          httpServer.close(() => {
-            logger.child("express").info("HTTP server closed");
+        httpServer.close(() => {
+          drainPool().then(() => {
+            logger.child("express").info("HTTP server closed and pool drained");
             process.exit(0);
           });
         });

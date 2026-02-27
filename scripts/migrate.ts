@@ -42,10 +42,12 @@ async function runMigrations(opts: MigrateOptions): Promise<void> {
       const hasTable = (journalCheck.rows[0] as { exists: boolean }).exists;
 
       if (hasTable) {
+        const countResult = await pool.query("SELECT COUNT(*) AS total FROM __drizzle_migrations");
+        const totalApplied = (countResult.rows[0] as { total: string }).total;
         const applied = await pool.query(
           "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 10",
         );
-        console.log(`\nApplied migrations: ${applied.rowCount}`);
+        console.log(`\nApplied migrations: ${totalApplied}`);
         for (const row of applied.rows as { hash: string; created_at: number }[]) {
           console.log(`  - ${row.hash} (applied ${new Date(row.created_at).toISOString()})`);
         }
