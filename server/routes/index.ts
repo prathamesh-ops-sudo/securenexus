@@ -25,6 +25,7 @@ import { registerEventsRoutes } from "./events";
 import { registerFilesRoutes } from "./files";
 import { registerLifecycleRoutes } from "./lifecycle";
 import { registerTenantIsolationRoutes } from "./tenant-isolation";
+import { registerEnterpriseOrgRoutes } from "./enterprise-org";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -54,4 +55,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerFilesRoutes(app);
   registerLifecycleRoutes(app);
   registerTenantIsolationRoutes(app);
+  registerEnterpriseOrgRoutes(app);
 }

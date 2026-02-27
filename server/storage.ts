@@ -1,89 +1,269 @@
 import {
-  type Alert, type InsertAlert, alerts,
-  type Incident, type InsertIncident, incidents,
-  type Organization, type InsertOrganization, organizations,
-  type AuditLog, auditLogs,
-  type IncidentComment, type InsertComment, incidentComments,
-  type Tag, type InsertTag, tags,
-  type ApiKey, type InsertApiKey, apiKeys,
-  type IngestionLog, type InsertIngestionLog, ingestionLogs,
-  type Connector, type InsertConnector, connectors,
-  type AiFeedback, type InsertAiFeedback, aiFeedback,
-  type Playbook, type InsertPlaybook, playbooks,
-  type PlaybookExecution, type InsertPlaybookExecution, playbookExecutions,
-  type PlaybookApproval, type InsertPlaybookApproval, playbookApprovals,
-  type ThreatIntelConfig, type InsertThreatIntelConfig, threatIntelConfigs,
-  type CompliancePolicy, type InsertCompliancePolicy, compliancePolicies,
-  type DsarRequest, type InsertDsarRequest, dsarRequests,
-  type IntegrationConfig, type InsertIntegrationConfig, integrationConfigs,
-  type NotificationChannel, type InsertNotificationChannel, notificationChannels,
-  type ResponseAction, type InsertResponseAction, responseActions,
-  type PredictiveAnomaly, type InsertPredictiveAnomaly, predictiveAnomalies,
-  type AttackSurfaceAsset, type InsertAttackSurfaceAsset, attackSurfaceAssets,
-  type RiskForecast, type InsertRiskForecast, riskForecasts,
-  type AnomalySubscription, type InsertAnomalySubscription, anomalySubscriptions,
-  type ForecastQualitySnapshot, type InsertForecastQualitySnapshot, forecastQualitySnapshots,
-  type HardeningRecommendation, type InsertHardeningRecommendation, hardeningRecommendations,
-  type AutoResponsePolicy, type InsertAutoResponsePolicy, autoResponsePolicies,
-  type InvestigationRun, type InsertInvestigationRun, investigationRuns,
-  type InvestigationStep, type InsertInvestigationStep, investigationSteps,
-  type ResponseActionRollback, type InsertResponseActionRollback, responseActionRollbacks,
-  type CspmAccount, type InsertCspmAccount, cspmAccounts,
-  type CspmScan, type InsertCspmScan, cspmScans,
-  type CspmFinding, type InsertCspmFinding, cspmFindings,
-  type EndpointAsset, type InsertEndpointAsset, endpointAssets,
-  type EndpointTelemetry, type InsertEndpointTelemetry, endpointTelemetry,
-  type PostureScore, type InsertPostureScore, postureScores,
-  type AiDeploymentConfig, type InsertAiDeploymentConfig, aiDeploymentConfigs,
-  alertTags, incidentTags,
-  organizationMemberships, orgInvitations,
-  type OrganizationMembership, type InsertOrganizationMembership,
-  type OrgInvitation, type InsertOrgInvitation,
-  type IocFeed, type InsertIocFeed, iocFeeds,
-  type IocEntry, type InsertIocEntry, iocEntries,
-  type IocWatchlist, type InsertIocWatchlist, iocWatchlists,
-  type IocWatchlistEntry, type InsertIocWatchlistEntry, iocWatchlistEntries,
-  type IocMatchRule, type InsertIocMatchRule, iocMatchRules,
-  type IocMatch, type InsertIocMatch, iocMatches,
-  type EvidenceItem, type InsertEvidenceItem, evidenceItems,
-  type InvestigationHypothesis, type InsertInvestigationHypothesis, investigationHypotheses,
-  type InvestigationTask, type InsertInvestigationTask, investigationTasks,
-  type RunbookTemplate, type InsertRunbookTemplate, runbookTemplates,
-  type RunbookStep, type InsertRunbookStep, runbookSteps,
-  type ReportTemplate, type InsertReportTemplate, reportTemplates,
-  type ReportSchedule, type InsertReportSchedule, reportSchedules,
-  type ReportRun, type InsertReportRun, reportRuns,
-  type SuppressionRule, type InsertSuppressionRule, suppressionRules,
-  type AlertDedupCluster, type InsertAlertDedupCluster, alertDedupClusters,
-  type IncidentSlaPolicy, type InsertIncidentSlaPolicy, incidentSlaPolicies,
-  type PostIncidentReview, type InsertPostIncidentReview, postIncidentReviews,
-  type ConnectorJobRun, type InsertConnectorJobRun, connectorJobRuns,
-  type ConnectorHealthCheck, type InsertConnectorHealthCheck, connectorHealthChecks,
-  type PolicyCheck, type InsertPolicyCheck, policyChecks,
-  type PolicyResult, type InsertPolicyResult, policyResults,
-  type ComplianceControl, type InsertComplianceControl, complianceControls,
-  type ComplianceControlMapping, type InsertComplianceControlMapping, complianceControlMappings,
-  type EvidenceLockerItem, type InsertEvidenceLockerItem, evidenceLockerItems,
-  type OutboundWebhook, type InsertOutboundWebhook, outboundWebhooks,
-  type OutboundWebhookLog, type InsertOutboundWebhookLog, outboundWebhookLogs,
-  type IdempotencyKey, type InsertIdempotencyKey, idempotencyKeys,
-  type AlertArchive, type InsertAlertArchive, alertsArchive,
-  type JobQueue as Job, type InsertJobQueue as InsertJob, jobQueue,
-  type DashboardMetricsCache, type InsertDashboardMetricsCache, dashboardMetricsCache,
-  type AlertDailyStats as AlertDailyStat, type InsertAlertDailyStats as InsertAlertDailyStat, alertDailyStats,
-  type SliMetric, type InsertSliMetric, sliMetrics,
-  type SloTarget, type InsertSloTarget, sloTargets,
-  type DrRunbook, type InsertDrRunbook, drRunbooks,
-  type TicketSyncJob, type InsertTicketSyncJob, ticketSyncJobs,
-  type ResponseActionApproval, type InsertResponseActionApproval, responseActionApprovals,
-  type LegalHold, type InsertLegalHold, legalHolds,
-  type ConnectorSecretRotation, type InsertConnectorSecretRotation, connectorSecretRotations,
-  type OrgPlanLimit, type InsertOrgPlanLimit, orgPlanLimits,
-  type UsageMeterSnapshot, type InsertUsageMeterSnapshot, usageMeterSnapshots,
-  type OnboardingProgressItem, type InsertOnboardingProgress, onboardingProgress,
-  type WorkspaceTemplate, type InsertWorkspaceTemplate, workspaceTemplates,
-  type OutboxEvent, type InsertOutboxEvent, outboxEvents,
-  type FeatureFlag, type InsertFeatureFlag, featureFlags,
+  type Alert,
+  type InsertAlert,
+  alerts,
+  type Incident,
+  type InsertIncident,
+  incidents,
+  type Organization,
+  type InsertOrganization,
+  organizations,
+  type AuditLog,
+  auditLogs,
+  type IncidentComment,
+  type InsertComment,
+  incidentComments,
+  type Tag,
+  type InsertTag,
+  tags,
+  type ApiKey,
+  type InsertApiKey,
+  apiKeys,
+  type IngestionLog,
+  type InsertIngestionLog,
+  ingestionLogs,
+  type Connector,
+  type InsertConnector,
+  connectors,
+  type AiFeedback,
+  type InsertAiFeedback,
+  aiFeedback,
+  type Playbook,
+  type InsertPlaybook,
+  playbooks,
+  type PlaybookExecution,
+  type InsertPlaybookExecution,
+  playbookExecutions,
+  type PlaybookApproval,
+  type InsertPlaybookApproval,
+  playbookApprovals,
+  type ThreatIntelConfig,
+  type InsertThreatIntelConfig,
+  threatIntelConfigs,
+  type CompliancePolicy,
+  type InsertCompliancePolicy,
+  compliancePolicies,
+  type DsarRequest,
+  type InsertDsarRequest,
+  dsarRequests,
+  type IntegrationConfig,
+  type InsertIntegrationConfig,
+  integrationConfigs,
+  type NotificationChannel,
+  type InsertNotificationChannel,
+  notificationChannels,
+  type ResponseAction,
+  type InsertResponseAction,
+  responseActions,
+  type PredictiveAnomaly,
+  type InsertPredictiveAnomaly,
+  predictiveAnomalies,
+  type AttackSurfaceAsset,
+  type InsertAttackSurfaceAsset,
+  attackSurfaceAssets,
+  type RiskForecast,
+  type InsertRiskForecast,
+  riskForecasts,
+  type AnomalySubscription,
+  type InsertAnomalySubscription,
+  anomalySubscriptions,
+  type ForecastQualitySnapshot,
+  type InsertForecastQualitySnapshot,
+  forecastQualitySnapshots,
+  type HardeningRecommendation,
+  type InsertHardeningRecommendation,
+  hardeningRecommendations,
+  type AutoResponsePolicy,
+  type InsertAutoResponsePolicy,
+  autoResponsePolicies,
+  type InvestigationRun,
+  type InsertInvestigationRun,
+  investigationRuns,
+  type InvestigationStep,
+  type InsertInvestigationStep,
+  investigationSteps,
+  type ResponseActionRollback,
+  type InsertResponseActionRollback,
+  responseActionRollbacks,
+  type CspmAccount,
+  type InsertCspmAccount,
+  cspmAccounts,
+  type CspmScan,
+  type InsertCspmScan,
+  cspmScans,
+  type CspmFinding,
+  type InsertCspmFinding,
+  cspmFindings,
+  type EndpointAsset,
+  type InsertEndpointAsset,
+  endpointAssets,
+  type EndpointTelemetry,
+  type InsertEndpointTelemetry,
+  endpointTelemetry,
+  type PostureScore,
+  type InsertPostureScore,
+  postureScores,
+  type AiDeploymentConfig,
+  type InsertAiDeploymentConfig,
+  aiDeploymentConfigs,
+  alertTags,
+  incidentTags,
+  organizationMemberships,
+  orgInvitations,
+  type OrganizationMembership,
+  type InsertOrganizationMembership,
+  type OrgInvitation,
+  type InsertOrgInvitation,
+  type IocFeed,
+  type InsertIocFeed,
+  iocFeeds,
+  type IocEntry,
+  type InsertIocEntry,
+  iocEntries,
+  type IocWatchlist,
+  type InsertIocWatchlist,
+  iocWatchlists,
+  type IocWatchlistEntry,
+  type InsertIocWatchlistEntry,
+  iocWatchlistEntries,
+  type IocMatchRule,
+  type InsertIocMatchRule,
+  iocMatchRules,
+  type IocMatch,
+  type InsertIocMatch,
+  iocMatches,
+  type EvidenceItem,
+  type InsertEvidenceItem,
+  evidenceItems,
+  type InvestigationHypothesis,
+  type InsertInvestigationHypothesis,
+  investigationHypotheses,
+  type InvestigationTask,
+  type InsertInvestigationTask,
+  investigationTasks,
+  type RunbookTemplate,
+  type InsertRunbookTemplate,
+  runbookTemplates,
+  type RunbookStep,
+  type InsertRunbookStep,
+  runbookSteps,
+  type ReportTemplate,
+  type InsertReportTemplate,
+  reportTemplates,
+  type ReportSchedule,
+  type InsertReportSchedule,
+  reportSchedules,
+  type ReportRun,
+  type InsertReportRun,
+  reportRuns,
+  type SuppressionRule,
+  type InsertSuppressionRule,
+  suppressionRules,
+  type AlertDedupCluster,
+  type InsertAlertDedupCluster,
+  alertDedupClusters,
+  type IncidentSlaPolicy,
+  type InsertIncidentSlaPolicy,
+  incidentSlaPolicies,
+  type PostIncidentReview,
+  type InsertPostIncidentReview,
+  postIncidentReviews,
+  type ConnectorJobRun,
+  type InsertConnectorJobRun,
+  connectorJobRuns,
+  type ConnectorHealthCheck,
+  type InsertConnectorHealthCheck,
+  connectorHealthChecks,
+  type PolicyCheck,
+  type InsertPolicyCheck,
+  policyChecks,
+  type PolicyResult,
+  type InsertPolicyResult,
+  policyResults,
+  type ComplianceControl,
+  type InsertComplianceControl,
+  complianceControls,
+  type ComplianceControlMapping,
+  type InsertComplianceControlMapping,
+  complianceControlMappings,
+  type EvidenceLockerItem,
+  type InsertEvidenceLockerItem,
+  evidenceLockerItems,
+  type OutboundWebhook,
+  type InsertOutboundWebhook,
+  outboundWebhooks,
+  type OutboundWebhookLog,
+  type InsertOutboundWebhookLog,
+  outboundWebhookLogs,
+  type IdempotencyKey,
+  type InsertIdempotencyKey,
+  idempotencyKeys,
+  type AlertArchive,
+  type InsertAlertArchive,
+  alertsArchive,
+  type JobQueue as Job,
+  type InsertJobQueue as InsertJob,
+  jobQueue,
+  type DashboardMetricsCache,
+  type InsertDashboardMetricsCache,
+  dashboardMetricsCache,
+  type AlertDailyStats as AlertDailyStat,
+  type InsertAlertDailyStats as InsertAlertDailyStat,
+  alertDailyStats,
+  type SliMetric,
+  type InsertSliMetric,
+  sliMetrics,
+  type SloTarget,
+  type InsertSloTarget,
+  sloTargets,
+  type DrRunbook,
+  type InsertDrRunbook,
+  drRunbooks,
+  type TicketSyncJob,
+  type InsertTicketSyncJob,
+  ticketSyncJobs,
+  type ResponseActionApproval,
+  type InsertResponseActionApproval,
+  responseActionApprovals,
+  type LegalHold,
+  type InsertLegalHold,
+  legalHolds,
+  type ConnectorSecretRotation,
+  type InsertConnectorSecretRotation,
+  connectorSecretRotations,
+  type OrgPlanLimit,
+  type InsertOrgPlanLimit,
+  orgPlanLimits,
+  type UsageMeterSnapshot,
+  type InsertUsageMeterSnapshot,
+  usageMeterSnapshots,
+  type OnboardingProgressItem,
+  type InsertOnboardingProgress,
+  onboardingProgress,
+  type WorkspaceTemplate,
+  type InsertWorkspaceTemplate,
+  workspaceTemplates,
+  type OutboxEvent,
+  type InsertOutboxEvent,
+  outboxEvents,
+  type FeatureFlag,
+  type InsertFeatureFlag,
+  featureFlags,
+  type OrgSecurityPolicy,
+  type InsertOrgSecurityPolicy,
+  orgSecurityPolicies,
+  type OrgDomainVerification,
+  type InsertOrgDomainVerification,
+  orgDomainVerifications,
+  type OrgSsoConfig,
+  type InsertOrgSsoConfig,
+  orgSsoConfigs,
+  type OrgScimConfig,
+  type InsertOrgScimConfig,
+  orgScimConfigs,
+  type SavedView,
+  type InsertSavedView,
+  savedViews,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
@@ -167,7 +347,16 @@ export interface IStorage {
   createConnector(connector: InsertConnector): Promise<Connector>;
   updateConnector(id: string, data: Partial<Connector>): Promise<Connector | undefined>;
   deleteConnector(id: string): Promise<boolean>;
-  updateConnectorSyncStatus(id: string, data: { lastSyncAt: Date; lastSyncStatus: string; lastSyncAlerts: number; lastSyncError?: string; totalAlertsSynced?: number }): Promise<void>;
+  updateConnectorSyncStatus(
+    id: string,
+    data: {
+      lastSyncAt: Date;
+      lastSyncStatus: string;
+      lastSyncAlerts: number;
+      lastSyncError?: string;
+      totalAlertsSynced?: number;
+    },
+  ): Promise<void>;
 
   getConnectorsPaginated(params: {
     orgId?: string;
@@ -219,7 +408,14 @@ export interface IStorage {
     alertTrend: { date: string; count: number }[];
     mttrHours: number | null;
     topMitreTactics: { name: string; value: number }[];
-    connectorHealth: { name: string; type: string; status: string; lastSyncAt: string | null; lastSyncAlerts: number; lastSyncError: string | null }[];
+    connectorHealth: {
+      name: string;
+      type: string;
+      status: string;
+      lastSyncAt: string | null;
+      lastSyncAlerts: number;
+      lastSyncError: string | null;
+    }[];
     ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
   }>;
 
@@ -264,13 +460,19 @@ export interface IStorage {
   clearRiskForecasts(orgId: string): Promise<void>;
   getAnomalySubscriptions(orgId?: string): Promise<AnomalySubscription[]>;
   createAnomalySubscription(subscription: InsertAnomalySubscription): Promise<AnomalySubscription>;
-  updateAnomalySubscription(id: string, updates: Partial<AnomalySubscription>): Promise<AnomalySubscription | undefined>;
+  updateAnomalySubscription(
+    id: string,
+    updates: Partial<AnomalySubscription>,
+  ): Promise<AnomalySubscription | undefined>;
   deleteAnomalySubscription(id: string): Promise<boolean>;
   getForecastQualitySnapshots(orgId?: string): Promise<ForecastQualitySnapshot[]>;
   createForecastQualitySnapshot(snapshot: InsertForecastQualitySnapshot): Promise<ForecastQualitySnapshot>;
   getHardeningRecommendations(orgId?: string): Promise<HardeningRecommendation[]>;
   createHardeningRecommendation(rec: InsertHardeningRecommendation): Promise<HardeningRecommendation>;
-  updateHardeningRecommendation(id: string, updates: Partial<InsertHardeningRecommendation>): Promise<HardeningRecommendation | undefined>;
+  updateHardeningRecommendation(
+    id: string,
+    updates: Partial<InsertHardeningRecommendation>,
+  ): Promise<HardeningRecommendation | undefined>;
   clearHardeningRecommendations(orgId: string): Promise<void>;
 
   getAutoResponsePolicies(orgId?: string): Promise<AutoResponsePolicy[]>;
@@ -289,7 +491,10 @@ export interface IStorage {
 
   getResponseActionRollbacks(orgId?: string): Promise<ResponseActionRollback[]>;
   createResponseActionRollback(rollback: InsertResponseActionRollback): Promise<ResponseActionRollback>;
-  updateResponseActionRollback(id: string, updates: Partial<ResponseActionRollback>): Promise<ResponseActionRollback | null>;
+  updateResponseActionRollback(
+    id: string,
+    updates: Partial<ResponseActionRollback>,
+  ): Promise<ResponseActionRollback | null>;
 
   getCspmAccounts(orgId: string): Promise<CspmAccount[]>;
   getCspmAccount(id: string): Promise<CspmAccount | undefined>;
@@ -340,7 +545,13 @@ export interface IStorage {
   deleteIocFeed(id: string): Promise<boolean>;
 
   // IOC Entries
-  getIocEntries(orgId?: string, feedId?: string, iocType?: string, status?: string, limit?: number): Promise<IocEntry[]>;
+  getIocEntries(
+    orgId?: string,
+    feedId?: string,
+    iocType?: string,
+    status?: string,
+    limit?: number,
+  ): Promise<IocEntry[]>;
   getIocEntry(id: string): Promise<IocEntry | undefined>;
   getIocEntriesByValue(iocType: string, iocValue: string, orgId?: string): Promise<IocEntry[]>;
   createIocEntry(entry: InsertIocEntry): Promise<IocEntry>;
@@ -452,13 +663,24 @@ export interface IStorage {
   updateConnectorJobRun(id: string, updates: Partial<ConnectorJobRun>): Promise<ConnectorJobRun>;
   getConnectorJobRuns(connectorId: string, limit?: number): Promise<ConnectorJobRun[]>;
   getDeadLetterJobRuns(orgId?: string): Promise<ConnectorJobRun[]>;
-  getConnectorMetrics(connectorId: string): Promise<{ avgLatencyMs: number; errorRate: number; throttleCount: number; totalRuns: number; successRate: number }>;
+  getConnectorMetrics(connectorId: string): Promise<{
+    avgLatencyMs: number;
+    errorRate: number;
+    throttleCount: number;
+    totalRuns: number;
+    successRate: number;
+  }>;
 
   createConnectorHealthCheck(check: InsertConnectorHealthCheck): Promise<ConnectorHealthCheck>;
   getConnectorHealthChecks(connectorId: string, limit?: number): Promise<ConnectorHealthCheck[]>;
   getLatestHealthCheck(connectorId: string): Promise<ConnectorHealthCheck | undefined>;
 
-  getAiFeedbackMetrics(orgId?: string, days?: number): Promise<{ date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]>;
+  getAiFeedbackMetrics(
+    orgId?: string,
+    days?: number,
+  ): Promise<
+    { date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]
+  >;
   getAiFeedbackByResource(resourceType: string, resourceId: string): Promise<AiFeedback[]>;
 
   getPolicyChecks(orgId: string): Promise<PolicyCheck[]>;
@@ -480,7 +702,10 @@ export interface IStorage {
 
   getComplianceControlMappings(orgId: string, controlId?: string): Promise<ComplianceControlMapping[]>;
   createComplianceControlMapping(mapping: InsertComplianceControlMapping): Promise<ComplianceControlMapping>;
-  updateComplianceControlMapping(id: string, data: Partial<ComplianceControlMapping>): Promise<ComplianceControlMapping | undefined>;
+  updateComplianceControlMapping(
+    id: string,
+    data: Partial<ComplianceControlMapping>,
+  ): Promise<ComplianceControlMapping | undefined>;
   deleteComplianceControlMapping(id: string): Promise<boolean>;
 
   getEvidenceLockerItems(orgId: string, framework?: string, artifactType?: string): Promise<EvidenceLockerItem[]>;
@@ -530,7 +755,13 @@ export interface IStorage {
   upsertAlertDailyStat(data: InsertAlertDailyStat): Promise<AlertDailyStat>;
 
   // SLI Metrics
-  getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date, labels?: Record<string, string>): Promise<SliMetric[]>;
+  getSliMetrics(
+    service: string,
+    metric: string,
+    startTime: Date,
+    endTime: Date,
+    labels?: Record<string, string>,
+  ): Promise<SliMetric[]>;
   createSliMetric(data: InsertSliMetric): Promise<SliMetric>;
   createSliMetricsBatch(data: InsertSliMetric[]): Promise<SliMetric[]>;
   cleanupOldSliMetrics(olderThanDays: number): Promise<number>;
@@ -561,7 +792,11 @@ export interface IStorage {
   // Onboarding Progress
   getOnboardingProgress(orgId: string): Promise<OnboardingProgressItem[]>;
   upsertOnboardingStep(data: InsertOnboardingProgress): Promise<OnboardingProgressItem>;
-  completeOnboardingStep(orgId: string, stepKey: string, completedBy?: string): Promise<OnboardingProgressItem | undefined>;
+  completeOnboardingStep(
+    orgId: string,
+    stepKey: string,
+    completedBy?: string,
+  ): Promise<OnboardingProgressItem | undefined>;
 
   // Workspace Templates
   getWorkspaceTemplates(): Promise<WorkspaceTemplate[]>;
@@ -572,7 +807,12 @@ export interface IStorage {
   createOutboxEvent(event: InsertOutboxEvent): Promise<OutboxEvent>;
   getPendingOutboxEvents(batchSize: number): Promise<OutboxEvent[]>;
   updateOutboxEvent(id: string, data: Partial<OutboxEvent>): Promise<OutboxEvent | undefined>;
-  getOutboxEvents(orgId?: string, status?: string, limit?: number, offset?: number): Promise<{ items: OutboxEvent[]; total: number }>;
+  getOutboxEvents(
+    orgId?: string,
+    status?: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<{ items: OutboxEvent[]; total: number }>;
   replayOutboxEvent(id: string): Promise<OutboxEvent | undefined>;
   cleanupDispatchedOutboxEvents(olderThanDays: number): Promise<number>;
 
@@ -626,6 +866,37 @@ export interface IStorage {
     sortBy?: string;
     sortOrder?: "asc" | "desc";
   }): Promise<{ items: Connector[]; total: number }>;
+
+  // Saved Views
+  getSavedViews(orgId: string, resourceType?: string): Promise<SavedView[]>;
+  getSavedView(id: string): Promise<SavedView | undefined>;
+  createSavedView(view: InsertSavedView): Promise<SavedView>;
+  updateSavedView(id: string, data: Partial<SavedView>): Promise<SavedView | undefined>;
+  deleteSavedView(id: string): Promise<boolean>;
+
+  // Org Security Policies
+  getOrgSecurityPolicy(orgId: string): Promise<OrgSecurityPolicy | undefined>;
+  upsertOrgSecurityPolicy(policy: InsertOrgSecurityPolicy): Promise<OrgSecurityPolicy>;
+
+  // Org Domain Verifications
+  getOrgDomainVerifications(orgId: string): Promise<OrgDomainVerification[]>;
+  getOrgDomainVerification(id: string): Promise<OrgDomainVerification | undefined>;
+  createOrgDomainVerification(verification: InsertOrgDomainVerification): Promise<OrgDomainVerification>;
+  updateOrgDomainVerification(
+    id: string,
+    data: Partial<OrgDomainVerification>,
+  ): Promise<OrgDomainVerification | undefined>;
+  deleteOrgDomainVerification(id: string): Promise<boolean>;
+
+  // Org SSO Configs
+  getOrgSsoConfig(orgId: string): Promise<OrgSsoConfig | undefined>;
+  upsertOrgSsoConfig(config: InsertOrgSsoConfig): Promise<OrgSsoConfig>;
+  deleteOrgSsoConfig(orgId: string): Promise<boolean>;
+
+  // Org SCIM Configs
+  getOrgScimConfig(orgId: string): Promise<OrgScimConfig | undefined>;
+  upsertOrgScimConfig(config: InsertOrgScimConfig): Promise<OrgScimConfig>;
+  deleteOrgScimConfig(orgId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -667,7 +938,11 @@ export class DatabaseStorage implements IStorage {
       ilike(alerts.sourceIp, searchPattern),
     );
     if (orgId) {
-      return db.select().from(alerts).where(and(eq(alerts.orgId, orgId), searchCondition)).orderBy(desc(alerts.createdAt));
+      return db
+        .select()
+        .from(alerts)
+        .where(and(eq(alerts.orgId, orgId), searchCondition))
+        .orderBy(desc(alerts.createdAt));
     }
     return db.select().from(alerts).where(searchCondition).orderBy(desc(alerts.createdAt));
   }
@@ -680,7 +955,10 @@ export class DatabaseStorage implements IStorage {
     if (!sourceEventId) return undefined;
     const conditions = [eq(alerts.source, source), eq(alerts.sourceEventId, sourceEventId)];
     if (orgId) conditions.push(eq(alerts.orgId, orgId));
-    const [existing] = await db.select().from(alerts).where(and(...conditions));
+    const [existing] = await db
+      .select()
+      .from(alerts)
+      .where(and(...conditions));
     return existing;
   }
 
@@ -748,7 +1026,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIncident(id: string, data: Partial<Incident>): Promise<Incident | undefined> {
-    const [updated] = await db.update(incidents).set({ ...data, updatedAt: new Date() }).where(eq(incidents.id, id)).returning();
+    const [updated] = await db
+      .update(incidents)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(incidents.id, id))
+      .returning();
     return updated;
   }
 
@@ -771,12 +1053,7 @@ export class DatabaseStorage implements IStorage {
     const whereCondition = conditions.length ? and(...conditions) : undefined;
 
     const totalQuery = db.select({ total: count() }).from(incidents);
-    const itemsQuery = db
-      .select()
-      .from(incidents)
-      .orderBy(desc(incidents.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const itemsQuery = db.select().from(incidents).orderBy(desc(incidents.createdAt)).limit(limit).offset(offset);
 
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
@@ -803,21 +1080,28 @@ export class DatabaseStorage implements IStorage {
     const lastSeq = await this.getLatestAuditLogSequence(orgId);
     const sequenceNum = lastSeq ? lastSeq.sequenceNum + 1 : 1;
     const prevHash = lastSeq ? lastSeq.entryHash : "genesis";
-    const entryHash = createHash("sha256").update(JSON.stringify({
-      prevHash,
-      action: log.action,
-      userId: log.userId,
-      resourceType: log.resourceType,
-      resourceId: log.resourceId,
-      details: log.details,
-      sequenceNum,
-    })).digest("hex");
-    const [created] = await db.insert(auditLogs).values({
-      ...log,
-      sequenceNum,
-      prevHash,
-      entryHash,
-    } as any).returning();
+    const entryHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          prevHash,
+          action: log.action,
+          userId: log.userId,
+          resourceType: log.resourceType,
+          resourceId: log.resourceId,
+          details: log.details,
+          sequenceNum,
+        }),
+      )
+      .digest("hex");
+    const [created] = await db
+      .insert(auditLogs)
+      .values({
+        ...log,
+        sequenceNum,
+        prevHash,
+        entryHash,
+      } as any)
+      .returning();
     return created;
   }
 
@@ -829,13 +1113,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAuditLogsByResource(resourceType: string, resourceId: string): Promise<AuditLog[]> {
-    return db.select().from(auditLogs)
+    return db
+      .select()
+      .from(auditLogs)
       .where(and(eq(auditLogs.resourceType, resourceType), eq(auditLogs.resourceId, resourceId)))
       .orderBy(desc(auditLogs.createdAt));
   }
 
   async getComments(incidentId: string): Promise<IncidentComment[]> {
-    return db.select().from(incidentComments).where(eq(incidentComments.incidentId, incidentId)).orderBy(desc(incidentComments.createdAt));
+    return db
+      .select()
+      .from(incidentComments)
+      .where(eq(incidentComments.incidentId, incidentId))
+      .orderBy(desc(incidentComments.createdAt));
   }
 
   async createComment(comment: InsertComment): Promise<IncidentComment> {
@@ -863,13 +1153,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAlertTags(alertId: string): Promise<Tag[]> {
-    const rows = await db.select({ tag: tags }).from(alertTags).innerJoin(tags, eq(alertTags.tagId, tags.id)).where(eq(alertTags.alertId, alertId));
-    return rows.map(r => r.tag);
+    const rows = await db
+      .select({ tag: tags })
+      .from(alertTags)
+      .innerJoin(tags, eq(alertTags.tagId, tags.id))
+      .where(eq(alertTags.alertId, alertId));
+    return rows.map((r) => r.tag);
   }
 
   async getIncidentTags(incidentId: string): Promise<Tag[]> {
-    const rows = await db.select({ tag: tags }).from(incidentTags).innerJoin(tags, eq(incidentTags.tagId, tags.id)).where(eq(incidentTags.incidentId, incidentId));
-    return rows.map(r => r.tag);
+    const rows = await db
+      .select({ tag: tags })
+      .from(incidentTags)
+      .innerJoin(tags, eq(incidentTags.tagId, tags.id))
+      .where(eq(incidentTags.incidentId, incidentId));
+    return rows.map((r) => r.tag);
   }
 
   async addAlertTag(alertId: string, tagId: string): Promise<void> {
@@ -901,12 +1199,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getApiKeyByHash(hash: string): Promise<ApiKey | undefined> {
-    const [key] = await db.select().from(apiKeys).where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.isActive, true)));
+    const [key] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.isActive, true)));
     return key;
   }
 
   async revokeApiKey(id: string): Promise<ApiKey | undefined> {
-    const [updated] = await db.update(apiKeys).set({ isActive: false, revokedAt: new Date() }).where(eq(apiKeys.id, id)).returning();
+    const [updated] = await db
+      .update(apiKeys)
+      .set({ isActive: false, revokedAt: new Date() })
+      .where(eq(apiKeys.id, id))
+      .returning();
     return updated;
   }
 
@@ -921,7 +1226,12 @@ export class DatabaseStorage implements IStorage {
 
   async getIngestionLogs(orgId?: string, limit = 50): Promise<IngestionLog[]> {
     if (orgId) {
-      return db.select().from(ingestionLogs).where(eq(ingestionLogs.orgId, orgId)).orderBy(desc(ingestionLogs.receivedAt)).limit(limit);
+      return db
+        .select()
+        .from(ingestionLogs)
+        .where(eq(ingestionLogs.orgId, orgId))
+        .orderBy(desc(ingestionLogs.receivedAt))
+        .limit(limit);
     }
     return db.select().from(ingestionLogs).orderBy(desc(ingestionLogs.receivedAt)).limit(limit);
   }
@@ -959,18 +1269,25 @@ export class DatabaseStorage implements IStorage {
     const conditions = orgId ? [eq(ingestionLogs.orgId, orgId)] : [];
     const condition = conditions.length ? conditions[0] : undefined;
 
-    const [totals] = await db.select({
-      totalIngested: sql<number>`COALESCE(SUM(${ingestionLogs.alertsReceived}), 0)::int`,
-      totalCreated: sql<number>`COALESCE(SUM(${ingestionLogs.alertsCreated}), 0)::int`,
-      totalDeduped: sql<number>`COALESCE(SUM(${ingestionLogs.alertsDeduped}), 0)::int`,
-      totalFailed: sql<number>`COALESCE(SUM(${ingestionLogs.alertsFailed}), 0)::int`,
-    }).from(ingestionLogs).where(condition);
+    const [totals] = await db
+      .select({
+        totalIngested: sql<number>`COALESCE(SUM(${ingestionLogs.alertsReceived}), 0)::int`,
+        totalCreated: sql<number>`COALESCE(SUM(${ingestionLogs.alertsCreated}), 0)::int`,
+        totalDeduped: sql<number>`COALESCE(SUM(${ingestionLogs.alertsDeduped}), 0)::int`,
+        totalFailed: sql<number>`COALESCE(SUM(${ingestionLogs.alertsFailed}), 0)::int`,
+      })
+      .from(ingestionLogs)
+      .where(condition);
 
-    const breakdown = await db.select({
-      source: ingestionLogs.source,
-      count: sql<number>`COUNT(*)::int`,
-      lastReceived: sql<Date | null>`MAX(${ingestionLogs.receivedAt})`,
-    }).from(ingestionLogs).where(condition).groupBy(ingestionLogs.source);
+    const breakdown = await db
+      .select({
+        source: ingestionLogs.source,
+        count: sql<number>`COUNT(*)::int`,
+        lastReceived: sql<Date | null>`MAX(${ingestionLogs.receivedAt})`,
+      })
+      .from(ingestionLogs)
+      .where(condition)
+      .groupBy(ingestionLogs.source);
 
     return {
       totalIngested: totals?.totalIngested ?? 0,
@@ -992,29 +1309,49 @@ export class DatabaseStorage implements IStorage {
     const conditions = orgId ? [eq(alerts.orgId, orgId)] : [];
     const incidentConditions = orgId ? [eq(incidents.orgId, orgId)] : [];
 
-    const [totalAlertsResult] = await db.select({ count: count() }).from(alerts).where(conditions.length ? conditions[0] : undefined);
-    const [criticalResult] = await db.select({ count: count() }).from(alerts).where(
-      conditions.length ? and(conditions[0], eq(alerts.severity, "critical")) : eq(alerts.severity, "critical")
-    );
-    const [openResult] = await db.select({ count: count() }).from(incidents).where(
-      incidentConditions.length ? and(incidentConditions[0], eq(incidents.status, "open")) : eq(incidents.status, "open")
-    );
-    const [resolvedResult] = await db.select({ count: count() }).from(incidents).where(
-      incidentConditions.length ? and(incidentConditions[0], eq(incidents.status, "resolved")) : eq(incidents.status, "resolved")
-    );
+    const [totalAlertsResult] = await db
+      .select({ count: count() })
+      .from(alerts)
+      .where(conditions.length ? conditions[0] : undefined);
+    const [criticalResult] = await db
+      .select({ count: count() })
+      .from(alerts)
+      .where(conditions.length ? and(conditions[0], eq(alerts.severity, "critical")) : eq(alerts.severity, "critical"));
+    const [openResult] = await db
+      .select({ count: count() })
+      .from(incidents)
+      .where(
+        incidentConditions.length
+          ? and(incidentConditions[0], eq(incidents.status, "open"))
+          : eq(incidents.status, "open"),
+      );
+    const [resolvedResult] = await db
+      .select({ count: count() })
+      .from(incidents)
+      .where(
+        incidentConditions.length
+          ? and(incidentConditions[0], eq(incidents.status, "resolved"))
+          : eq(incidents.status, "resolved"),
+      );
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const [newTodayResult] = await db.select({ count: count() }).from(alerts).where(
-      conditions.length
-        ? and(conditions[0], sql`${alerts.createdAt} >= ${today}`)
-        : sql`${alerts.createdAt} >= ${today}`
-    );
-    const [escalatedResult] = await db.select({ count: count() }).from(incidents).where(
-      incidentConditions.length
-        ? and(incidentConditions[0], eq(incidents.escalated, true))
-        : eq(incidents.escalated, true)
-    );
+    const [newTodayResult] = await db
+      .select({ count: count() })
+      .from(alerts)
+      .where(
+        conditions.length
+          ? and(conditions[0], sql`${alerts.createdAt} >= ${today}`)
+          : sql`${alerts.createdAt} >= ${today}`,
+      );
+    const [escalatedResult] = await db
+      .select({ count: count() })
+      .from(incidents)
+      .where(
+        incidentConditions.length
+          ? and(incidentConditions[0], eq(incidents.escalated, true))
+          : eq(incidents.escalated, true),
+      );
 
     return {
       totalAlerts: totalAlertsResult?.count ?? 0,
@@ -1042,12 +1379,7 @@ export class DatabaseStorage implements IStorage {
     const whereCondition = orgId ? eq(connectors.orgId, orgId) : undefined;
 
     const totalQuery = db.select({ total: count() }).from(connectors);
-    const itemsQuery = db
-      .select()
-      .from(connectors)
-      .orderBy(desc(connectors.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const itemsQuery = db.select().from(connectors).orderBy(desc(connectors.createdAt)).limit(limit).offset(offset);
 
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
@@ -1066,7 +1398,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateConnector(id: string, data: Partial<Connector>): Promise<Connector | undefined> {
-    const [result] = await db.update(connectors).set({ ...data, updatedAt: new Date() }).where(eq(connectors.id, id)).returning();
+    const [result] = await db
+      .update(connectors)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(connectors.id, id))
+      .returning();
     return result;
   }
 
@@ -1075,7 +1411,16 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async updateConnectorSyncStatus(id: string, data: { lastSyncAt: Date; lastSyncStatus: string; lastSyncAlerts: number; lastSyncError?: string; totalAlertsSynced?: number }): Promise<void> {
+  async updateConnectorSyncStatus(
+    id: string,
+    data: {
+      lastSyncAt: Date;
+      lastSyncStatus: string;
+      lastSyncAlerts: number;
+      lastSyncError?: string;
+      totalAlertsSynced?: number;
+    },
+  ): Promise<void> {
     const updateData: any = {
       lastSyncAt: data.lastSyncAt,
       lastSyncStatus: data.lastSyncStatus,
@@ -1103,7 +1448,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async countAiFeedbackByOrg(orgId: string): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`count(*)` }).from(aiFeedback).where(eq(aiFeedback.orgId, orgId));
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(aiFeedback)
+      .where(eq(aiFeedback.orgId, orgId));
     return Number(result?.count ?? 0);
   }
 
@@ -1122,7 +1470,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePlaybook(id: string, data: Partial<Playbook>): Promise<Playbook | undefined> {
-    const [updated] = await db.update(playbooks).set({ ...data, updatedAt: new Date() }).where(eq(playbooks.id, id)).returning();
+    const [updated] = await db
+      .update(playbooks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(playbooks.id, id))
+      .returning();
     return updated;
   }
 
@@ -1133,13 +1485,19 @@ export class DatabaseStorage implements IStorage {
 
   async getPlaybookExecutions(playbookId?: string, limit = 50): Promise<PlaybookExecution[]> {
     if (playbookId) {
-      return db.select().from(playbookExecutions).where(eq(playbookExecutions.playbookId, playbookId)).orderBy(desc(playbookExecutions.createdAt)).limit(limit);
+      return db
+        .select()
+        .from(playbookExecutions)
+        .where(eq(playbookExecutions.playbookId, playbookId))
+        .orderBy(desc(playbookExecutions.createdAt))
+        .limit(limit);
     }
     return db.select().from(playbookExecutions).orderBy(desc(playbookExecutions.createdAt)).limit(limit);
   }
 
   async countPlaybookExecutionsByOrg(orgId: string): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`count(*)` })
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
       .from(playbookExecutions)
       .innerJoin(playbooks, eq(playbookExecutions.playbookId, playbooks.id))
       .where(eq(playbooks.orgId, orgId));
@@ -1163,7 +1521,11 @@ export class DatabaseStorage implements IStorage {
 
   async getPlaybookApprovals(status?: string): Promise<PlaybookApproval[]> {
     if (status) {
-      return db.select().from(playbookApprovals).where(eq(playbookApprovals.status, status)).orderBy(desc(playbookApprovals.requestedAt));
+      return db
+        .select()
+        .from(playbookApprovals)
+        .where(eq(playbookApprovals.status, status))
+        .orderBy(desc(playbookApprovals.requestedAt));
     }
     return db.select().from(playbookApprovals).orderBy(desc(playbookApprovals.requestedAt));
   }
@@ -1174,7 +1536,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPlaybookApprovalsByExecution(executionId: string): Promise<PlaybookApproval[]> {
-    return db.select().from(playbookApprovals).where(eq(playbookApprovals.executionId, executionId)).orderBy(desc(playbookApprovals.requestedAt));
+    return db
+      .select()
+      .from(playbookApprovals)
+      .where(eq(playbookApprovals.executionId, executionId))
+      .orderBy(desc(playbookApprovals.requestedAt));
   }
 
   async createPlaybookApproval(approval: InsertPlaybookApproval): Promise<PlaybookApproval> {
@@ -1188,28 +1554,41 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getThreatIntelConfigs(orgId: string): Promise<ThreatIntelConfig[]> {
-    return db.select().from(threatIntelConfigs).where(eq(threatIntelConfigs.orgId, orgId)).orderBy(desc(threatIntelConfigs.createdAt));
+    return db
+      .select()
+      .from(threatIntelConfigs)
+      .where(eq(threatIntelConfigs.orgId, orgId))
+      .orderBy(desc(threatIntelConfigs.createdAt));
   }
 
   async getThreatIntelConfig(orgId: string, provider: string): Promise<ThreatIntelConfig | undefined> {
-    const [config] = await db.select().from(threatIntelConfigs).where(and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, provider)));
+    const [config] = await db
+      .select()
+      .from(threatIntelConfigs)
+      .where(and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, provider)));
     return config;
   }
 
   async upsertThreatIntelConfig(config: InsertThreatIntelConfig): Promise<ThreatIntelConfig> {
-    const [result] = await db.insert(threatIntelConfigs).values(config).onConflictDoUpdate({
-      target: [threatIntelConfigs.orgId, threatIntelConfigs.provider],
-      set: {
-        apiKey: config.apiKey,
-        enabled: config.enabled,
-        updatedAt: new Date(),
-      },
-    }).returning();
+    const [result] = await db
+      .insert(threatIntelConfigs)
+      .values(config)
+      .onConflictDoUpdate({
+        target: [threatIntelConfigs.orgId, threatIntelConfigs.provider],
+        set: {
+          apiKey: config.apiKey,
+          enabled: config.enabled,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
     return result;
   }
 
   async deleteThreatIntelConfig(orgId: string, provider: string): Promise<void> {
-    await db.delete(threatIntelConfigs).where(and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, provider)));
+    await db
+      .delete(threatIntelConfigs)
+      .where(and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, provider)));
   }
 
   async getDashboardAnalytics(orgId?: string): Promise<{
@@ -1220,7 +1599,14 @@ export class DatabaseStorage implements IStorage {
     alertTrend: { date: string; count: number }[];
     mttrHours: number | null;
     topMitreTactics: { name: string; value: number }[];
-    connectorHealth: { name: string; type: string; status: string; lastSyncAt: string | null; lastSyncAlerts: number; lastSyncError: string | null }[];
+    connectorHealth: {
+      name: string;
+      type: string;
+      status: string;
+      lastSyncAt: string | null;
+      lastSyncAlerts: number;
+      lastSyncError: string | null;
+    }[];
     ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
   }> {
     const alertCond = orgId ? eq(alerts.orgId, orgId) : undefined;
@@ -1230,19 +1616,31 @@ export class DatabaseStorage implements IStorage {
 
     const severityDistribution = await db
       .select({ name: alerts.severity, value: sql<number>`COUNT(*)::int` })
-      .from(alerts).where(alertCond).groupBy(alerts.severity);
+      .from(alerts)
+      .where(alertCond)
+      .groupBy(alerts.severity);
 
     const sourceDistribution = await db
       .select({ name: alerts.source, value: sql<number>`COUNT(*)::int` })
-      .from(alerts).where(alertCond).groupBy(alerts.source).orderBy(sql`COUNT(*) DESC`).limit(10);
+      .from(alerts)
+      .where(alertCond)
+      .groupBy(alerts.source)
+      .orderBy(sql`COUNT(*) DESC`)
+      .limit(10);
 
     const categoryDistribution = await db
       .select({ name: alerts.category, value: sql<number>`COUNT(*)::int` })
-      .from(alerts).where(alertCond).groupBy(alerts.category).orderBy(sql`COUNT(*) DESC`).limit(10);
+      .from(alerts)
+      .where(alertCond)
+      .groupBy(alerts.category)
+      .orderBy(sql`COUNT(*) DESC`)
+      .limit(10);
 
     const statusDistribution = await db
       .select({ name: alerts.status, value: sql<number>`COUNT(*)::int` })
-      .from(alerts).where(alertCond).groupBy(alerts.status);
+      .from(alerts)
+      .where(alertCond)
+      .groupBy(alerts.status);
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -1254,26 +1652,37 @@ export class DatabaseStorage implements IStorage {
         date: sql<string>`TO_CHAR(${alerts.createdAt}, 'YYYY-MM-DD')`,
         count: sql<number>`COUNT(*)::int`,
       })
-      .from(alerts).where(trendCond)
+      .from(alerts)
+      .where(trendCond)
       .groupBy(sql`TO_CHAR(${alerts.createdAt}, 'YYYY-MM-DD')`)
       .orderBy(sql`TO_CHAR(${alerts.createdAt}, 'YYYY-MM-DD')`);
 
     const mttrResult = await db
       .select({
-        avgHours: sql<number | null>`AVG(EXTRACT(EPOCH FROM (${incidents.resolvedAt} - ${incidents.createdAt})) / 3600)`,
+        avgHours: sql<
+          number | null
+        >`AVG(EXTRACT(EPOCH FROM (${incidents.resolvedAt} - ${incidents.createdAt})) / 3600)`,
       })
       .from(incidents)
-      .where(incidentCond ? and(incidentCond, sql`${incidents.resolvedAt} IS NOT NULL`) : sql`${incidents.resolvedAt} IS NOT NULL`);
+      .where(
+        incidentCond
+          ? and(incidentCond, sql`${incidents.resolvedAt} IS NOT NULL`)
+          : sql`${incidents.resolvedAt} IS NOT NULL`,
+      );
     const mttrHours = mttrResult[0]?.avgHours ? Math.round(mttrResult[0].avgHours * 10) / 10 : null;
 
     const tacticRows = await db
       .select({ tactic: alerts.mitreTactic, value: sql<number>`COUNT(*)::int` })
       .from(alerts)
-      .where(alertCond ? and(alertCond, sql`${alerts.mitreTactic} IS NOT NULL AND ${alerts.mitreTactic} != ''`) : sql`${alerts.mitreTactic} IS NOT NULL AND ${alerts.mitreTactic} != ''`)
+      .where(
+        alertCond
+          ? and(alertCond, sql`${alerts.mitreTactic} IS NOT NULL AND ${alerts.mitreTactic} != ''`)
+          : sql`${alerts.mitreTactic} IS NOT NULL AND ${alerts.mitreTactic} != ''`,
+      )
       .groupBy(alerts.mitreTactic)
       .orderBy(sql`COUNT(*) DESC`)
       .limit(8);
-    const topMitreTactics = tacticRows.map(r => ({ name: r.tactic || "Unknown", value: r.value }));
+    const topMitreTactics = tacticRows.map((r) => ({ name: r.tactic || "Unknown", value: r.value }));
 
     const connectorRows = await db
       .select({
@@ -1284,8 +1693,10 @@ export class DatabaseStorage implements IStorage {
         lastSyncAlerts: connectors.lastSyncAlerts,
         lastSyncError: connectors.lastSyncError,
       })
-      .from(connectors).where(connectorCond).orderBy(desc(connectors.updatedAt));
-    const connectorHealth = connectorRows.map(r => ({
+      .from(connectors)
+      .where(connectorCond)
+      .orderBy(desc(connectors.updatedAt));
+    const connectorHealth = connectorRows.map((r) => ({
       name: r.name,
       type: r.type,
       status: r.status,
@@ -1304,15 +1715,16 @@ export class DatabaseStorage implements IStorage {
         deduped: sql<number>`COALESCE(SUM(${ingestionLogs.alertsDeduped}), 0)::int`,
         failed: sql<number>`COALESCE(SUM(${ingestionLogs.alertsFailed}), 0)::int`,
       })
-      .from(ingestionLogs).where(ingestionTrendCond)
+      .from(ingestionLogs)
+      .where(ingestionTrendCond)
       .groupBy(sql`TO_CHAR(${ingestionLogs.receivedAt}, 'YYYY-MM-DD')`)
       .orderBy(sql`TO_CHAR(${ingestionLogs.receivedAt}, 'YYYY-MM-DD')`);
 
     return {
-      severityDistribution: severityDistribution.map(r => ({ name: r.name || "unknown", value: r.value })),
-      sourceDistribution: sourceDistribution.map(r => ({ name: r.name || "unknown", value: r.value })),
-      categoryDistribution: categoryDistribution.map(r => ({ name: r.name || "unknown", value: r.value })),
-      statusDistribution: statusDistribution.map(r => ({ name: r.name || "unknown", value: r.value })),
+      severityDistribution: severityDistribution.map((r) => ({ name: r.name || "unknown", value: r.value })),
+      sourceDistribution: sourceDistribution.map((r) => ({ name: r.name || "unknown", value: r.value })),
+      categoryDistribution: categoryDistribution.map((r) => ({ name: r.name || "unknown", value: r.value })),
+      statusDistribution: statusDistribution.map((r) => ({ name: r.name || "unknown", value: r.value })),
       alertTrend,
       mttrHours,
       topMitreTactics,
@@ -1326,21 +1738,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertCompliancePolicy(policy: InsertCompliancePolicy): Promise<CompliancePolicy> {
-    const [result] = await db.insert(compliancePolicies).values(policy).onConflictDoUpdate({
-      target: [compliancePolicies.orgId],
-      set: {
-        alertRetentionDays: policy.alertRetentionDays,
-        incidentRetentionDays: policy.incidentRetentionDays,
-        auditLogRetentionDays: policy.auditLogRetentionDays,
-        piiMaskingEnabled: policy.piiMaskingEnabled,
-        pseudonymizeExports: policy.pseudonymizeExports,
-        enabledFrameworks: policy.enabledFrameworks,
-        dataProcessingBasis: policy.dataProcessingBasis,
-        dpoEmail: policy.dpoEmail,
-        dsarSlaDays: policy.dsarSlaDays,
-        updatedAt: new Date(),
-      },
-    }).returning();
+    const [result] = await db
+      .insert(compliancePolicies)
+      .values(policy)
+      .onConflictDoUpdate({
+        target: [compliancePolicies.orgId],
+        set: {
+          alertRetentionDays: policy.alertRetentionDays,
+          incidentRetentionDays: policy.incidentRetentionDays,
+          auditLogRetentionDays: policy.auditLogRetentionDays,
+          piiMaskingEnabled: policy.piiMaskingEnabled,
+          pseudonymizeExports: policy.pseudonymizeExports,
+          enabledFrameworks: policy.enabledFrameworks,
+          dataProcessingBasis: policy.dataProcessingBasis,
+          dpoEmail: policy.dpoEmail,
+          dsarSlaDays: policy.dsarSlaDays,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
     return result;
   }
 
@@ -1359,7 +1775,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateDsarRequest(id: string, data: Partial<DsarRequest>): Promise<DsarRequest | undefined> {
-    const [updated] = await db.update(dsarRequests).set({ ...data, updatedAt: new Date() }).where(eq(dsarRequests.id, id)).returning();
+    const [updated] = await db
+      .update(dsarRequests)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(dsarRequests.id, id))
+      .returning();
     return updated;
   }
 
@@ -1377,17 +1797,26 @@ export class DatabaseStorage implements IStorage {
 
   async getLatestAuditLogSequence(orgId: string | null): Promise<{ sequenceNum: number; entryHash: string } | null> {
     const condition = orgId ? eq(auditLogs.orgId, orgId) : isNull(auditLogs.orgId);
-    const [result] = await db.select({
-      sequenceNum: auditLogs.sequenceNum,
-      entryHash: auditLogs.entryHash,
-    }).from(auditLogs).where(condition).orderBy(desc(auditLogs.sequenceNum)).limit(1);
+    const [result] = await db
+      .select({
+        sequenceNum: auditLogs.sequenceNum,
+        entryHash: auditLogs.entryHash,
+      })
+      .from(auditLogs)
+      .where(condition)
+      .orderBy(desc(auditLogs.sequenceNum))
+      .limit(1);
     if (!result || result.sequenceNum === null || result.entryHash === null) return null;
     return { sequenceNum: result.sequenceNum, entryHash: result.entryHash };
   }
 
   async getIntegrationConfigs(orgId?: string): Promise<IntegrationConfig[]> {
     if (orgId) {
-      return db.select().from(integrationConfigs).where(eq(integrationConfigs.orgId, orgId)).orderBy(desc(integrationConfigs.createdAt));
+      return db
+        .select()
+        .from(integrationConfigs)
+        .where(eq(integrationConfigs.orgId, orgId))
+        .orderBy(desc(integrationConfigs.createdAt));
     }
     return db.select().from(integrationConfigs).orderBy(desc(integrationConfigs.createdAt));
   }
@@ -1403,7 +1832,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIntegrationConfig(id: string, data: Partial<IntegrationConfig>): Promise<IntegrationConfig | undefined> {
-    const [updated] = await db.update(integrationConfigs).set({ ...data, updatedAt: new Date() }).where(eq(integrationConfigs.id, id)).returning();
+    const [updated] = await db
+      .update(integrationConfigs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(integrationConfigs.id, id))
+      .returning();
     return updated;
   }
 
@@ -1414,7 +1847,11 @@ export class DatabaseStorage implements IStorage {
 
   async getNotificationChannels(orgId?: string): Promise<NotificationChannel[]> {
     if (orgId) {
-      return db.select().from(notificationChannels).where(eq(notificationChannels.orgId, orgId)).orderBy(desc(notificationChannels.createdAt));
+      return db
+        .select()
+        .from(notificationChannels)
+        .where(eq(notificationChannels.orgId, orgId))
+        .orderBy(desc(notificationChannels.createdAt));
     }
     return db.select().from(notificationChannels).orderBy(desc(notificationChannels.createdAt));
   }
@@ -1429,8 +1866,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateNotificationChannel(id: string, data: Partial<NotificationChannel>): Promise<NotificationChannel | undefined> {
-    const [updated] = await db.update(notificationChannels).set({ ...data, updatedAt: new Date() }).where(eq(notificationChannels.id, id)).returning();
+  async updateNotificationChannel(
+    id: string,
+    data: Partial<NotificationChannel>,
+  ): Promise<NotificationChannel | undefined> {
+    const [updated] = await db
+      .update(notificationChannels)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(notificationChannels.id, id))
+      .returning();
     return updated;
   }
 
@@ -1464,7 +1908,11 @@ export class DatabaseStorage implements IStorage {
 
   async getPredictiveAnomalies(orgId?: string): Promise<PredictiveAnomaly[]> {
     if (orgId) {
-      return db.select().from(predictiveAnomalies).where(eq(predictiveAnomalies.orgId, orgId)).orderBy(desc(predictiveAnomalies.createdAt));
+      return db
+        .select()
+        .from(predictiveAnomalies)
+        .where(eq(predictiveAnomalies.orgId, orgId))
+        .orderBy(desc(predictiveAnomalies.createdAt));
     }
     return db.select().from(predictiveAnomalies).orderBy(desc(predictiveAnomalies.createdAt));
   }
@@ -1480,7 +1928,11 @@ export class DatabaseStorage implements IStorage {
 
   async getAttackSurfaceAssets(orgId?: string): Promise<AttackSurfaceAsset[]> {
     if (orgId) {
-      return db.select().from(attackSurfaceAssets).where(eq(attackSurfaceAssets.orgId, orgId)).orderBy(desc(attackSurfaceAssets.riskScore));
+      return db
+        .select()
+        .from(attackSurfaceAssets)
+        .where(eq(attackSurfaceAssets.orgId, orgId))
+        .orderBy(desc(attackSurfaceAssets.riskScore));
     }
     return db.select().from(attackSurfaceAssets).orderBy(desc(attackSurfaceAssets.riskScore));
   }
@@ -1491,12 +1943,19 @@ export class DatabaseStorage implements IStorage {
       eq(attackSurfaceAssets.entityValue, asset.entityValue),
     ];
     if (asset.orgId) conditions.push(eq(attackSurfaceAssets.orgId, asset.orgId));
-    const [existing] = await db.select().from(attackSurfaceAssets).where(and(...conditions));
+    const [existing] = await db
+      .select()
+      .from(attackSurfaceAssets)
+      .where(and(...conditions));
     if (existing) {
-      const [updated] = await db.update(attackSurfaceAssets).set({
-        ...asset,
-        updatedAt: new Date(),
-      }).where(eq(attackSurfaceAssets.id, existing.id)).returning();
+      const [updated] = await db
+        .update(attackSurfaceAssets)
+        .set({
+          ...asset,
+          updatedAt: new Date(),
+        })
+        .where(eq(attackSurfaceAssets.id, existing.id))
+        .returning();
       return updated;
     }
     const [created] = await db.insert(attackSurfaceAssets).values(asset).returning();
@@ -1509,7 +1968,11 @@ export class DatabaseStorage implements IStorage {
 
   async getRiskForecasts(orgId?: string): Promise<RiskForecast[]> {
     if (orgId) {
-      return db.select().from(riskForecasts).where(eq(riskForecasts.orgId, orgId)).orderBy(desc(riskForecasts.probability));
+      return db
+        .select()
+        .from(riskForecasts)
+        .where(eq(riskForecasts.orgId, orgId))
+        .orderBy(desc(riskForecasts.probability));
     }
     return db.select().from(riskForecasts).orderBy(desc(riskForecasts.probability));
   }
@@ -1525,7 +1988,11 @@ export class DatabaseStorage implements IStorage {
 
   async getAnomalySubscriptions(orgId?: string): Promise<AnomalySubscription[]> {
     if (orgId) {
-      return db.select().from(anomalySubscriptions).where(eq(anomalySubscriptions.orgId, orgId)).orderBy(desc(anomalySubscriptions.createdAt));
+      return db
+        .select()
+        .from(anomalySubscriptions)
+        .where(eq(anomalySubscriptions.orgId, orgId))
+        .orderBy(desc(anomalySubscriptions.createdAt));
     }
     return db.select().from(anomalySubscriptions).orderBy(desc(anomalySubscriptions.createdAt));
   }
@@ -1535,8 +2002,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateAnomalySubscription(id: string, updates: Partial<AnomalySubscription>): Promise<AnomalySubscription | undefined> {
-    const [updated] = await db.update(anomalySubscriptions).set({ ...updates, updatedAt: new Date() }).where(eq(anomalySubscriptions.id, id)).returning();
+  async updateAnomalySubscription(
+    id: string,
+    updates: Partial<AnomalySubscription>,
+  ): Promise<AnomalySubscription | undefined> {
+    const [updated] = await db
+      .update(anomalySubscriptions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(anomalySubscriptions.id, id))
+      .returning();
     return updated;
   }
 
@@ -1547,7 +2021,11 @@ export class DatabaseStorage implements IStorage {
 
   async getForecastQualitySnapshots(orgId?: string): Promise<ForecastQualitySnapshot[]> {
     if (orgId) {
-      return db.select().from(forecastQualitySnapshots).where(eq(forecastQualitySnapshots.orgId, orgId)).orderBy(desc(forecastQualitySnapshots.measuredAt));
+      return db
+        .select()
+        .from(forecastQualitySnapshots)
+        .where(eq(forecastQualitySnapshots.orgId, orgId))
+        .orderBy(desc(forecastQualitySnapshots.measuredAt));
     }
     return db.select().from(forecastQualitySnapshots).orderBy(desc(forecastQualitySnapshots.measuredAt));
   }
@@ -1559,7 +2037,11 @@ export class DatabaseStorage implements IStorage {
 
   async getHardeningRecommendations(orgId?: string): Promise<HardeningRecommendation[]> {
     if (orgId) {
-      return db.select().from(hardeningRecommendations).where(eq(hardeningRecommendations.orgId, orgId)).orderBy(desc(hardeningRecommendations.createdAt));
+      return db
+        .select()
+        .from(hardeningRecommendations)
+        .where(eq(hardeningRecommendations.orgId, orgId))
+        .orderBy(desc(hardeningRecommendations.createdAt));
     }
     return db.select().from(hardeningRecommendations).orderBy(desc(hardeningRecommendations.createdAt));
   }
@@ -1569,8 +2051,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateHardeningRecommendation(id: string, updates: Partial<InsertHardeningRecommendation>): Promise<HardeningRecommendation | undefined> {
-    const [updated] = await db.update(hardeningRecommendations).set({ ...updates, updatedAt: new Date() }).where(eq(hardeningRecommendations.id, id)).returning();
+  async updateHardeningRecommendation(
+    id: string,
+    updates: Partial<InsertHardeningRecommendation>,
+  ): Promise<HardeningRecommendation | undefined> {
+    const [updated] = await db
+      .update(hardeningRecommendations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(hardeningRecommendations.id, id))
+      .returning();
     return updated;
   }
 
@@ -1580,7 +2069,11 @@ export class DatabaseStorage implements IStorage {
 
   async getAutoResponsePolicies(orgId?: string): Promise<AutoResponsePolicy[]> {
     if (orgId) {
-      return db.select().from(autoResponsePolicies).where(eq(autoResponsePolicies.orgId, orgId)).orderBy(desc(autoResponsePolicies.createdAt));
+      return db
+        .select()
+        .from(autoResponsePolicies)
+        .where(eq(autoResponsePolicies.orgId, orgId))
+        .orderBy(desc(autoResponsePolicies.createdAt));
     }
     return db.select().from(autoResponsePolicies).orderBy(desc(autoResponsePolicies.createdAt));
   }
@@ -1591,7 +2084,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAutoResponsePolicy(id: string, updates: Partial<AutoResponsePolicy>): Promise<AutoResponsePolicy | null> {
-    const [updated] = await db.update(autoResponsePolicies).set({ ...updates, updatedAt: new Date() }).where(eq(autoResponsePolicies.id, id)).returning();
+    const [updated] = await db
+      .update(autoResponsePolicies)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(autoResponsePolicies.id, id))
+      .returning();
     return updated || null;
   }
 
@@ -1602,7 +2099,11 @@ export class DatabaseStorage implements IStorage {
 
   async getInvestigationRuns(orgId?: string): Promise<InvestigationRun[]> {
     if (orgId) {
-      return db.select().from(investigationRuns).where(eq(investigationRuns.orgId, orgId)).orderBy(desc(investigationRuns.createdAt));
+      return db
+        .select()
+        .from(investigationRuns)
+        .where(eq(investigationRuns.orgId, orgId))
+        .orderBy(desc(investigationRuns.createdAt));
     }
     return db.select().from(investigationRuns).orderBy(desc(investigationRuns.createdAt));
   }
@@ -1623,7 +2124,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInvestigationSteps(runId: string): Promise<InvestigationStep[]> {
-    return db.select().from(investigationSteps).where(eq(investigationSteps.runId, runId)).orderBy(asc(investigationSteps.stepOrder));
+    return db
+      .select()
+      .from(investigationSteps)
+      .where(eq(investigationSteps.runId, runId))
+      .orderBy(asc(investigationSteps.stepOrder));
   }
 
   async createInvestigationStep(step: InsertInvestigationStep): Promise<InvestigationStep> {
@@ -1638,7 +2143,11 @@ export class DatabaseStorage implements IStorage {
 
   async getResponseActionRollbacks(orgId?: string): Promise<ResponseActionRollback[]> {
     if (orgId) {
-      return db.select().from(responseActionRollbacks).where(eq(responseActionRollbacks.orgId, orgId)).orderBy(desc(responseActionRollbacks.createdAt));
+      return db
+        .select()
+        .from(responseActionRollbacks)
+        .where(eq(responseActionRollbacks.orgId, orgId))
+        .orderBy(desc(responseActionRollbacks.createdAt));
     }
     return db.select().from(responseActionRollbacks).orderBy(desc(responseActionRollbacks.createdAt));
   }
@@ -1648,8 +2157,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateResponseActionRollback(id: string, updates: Partial<ResponseActionRollback>): Promise<ResponseActionRollback | null> {
-    const [updated] = await db.update(responseActionRollbacks).set(updates).where(eq(responseActionRollbacks.id, id)).returning();
+  async updateResponseActionRollback(
+    id: string,
+    updates: Partial<ResponseActionRollback>,
+  ): Promise<ResponseActionRollback | null> {
+    const [updated] = await db
+      .update(responseActionRollbacks)
+      .set(updates)
+      .where(eq(responseActionRollbacks.id, id))
+      .returning();
     return updated || null;
   }
 
@@ -1680,7 +2196,11 @@ export class DatabaseStorage implements IStorage {
   async getCspmScans(orgId: string, accountId?: string): Promise<CspmScan[]> {
     const conditions = [eq(cspmScans.orgId, orgId)];
     if (accountId) conditions.push(eq(cspmScans.accountId, accountId));
-    return db.select().from(cspmScans).where(and(...conditions)).orderBy(desc(cspmScans.startedAt));
+    return db
+      .select()
+      .from(cspmScans)
+      .where(and(...conditions))
+      .orderBy(desc(cspmScans.startedAt));
   }
 
   async createCspmScan(scan: InsertCspmScan): Promise<CspmScan> {
@@ -1697,7 +2217,11 @@ export class DatabaseStorage implements IStorage {
     const conditions: any[] = [eq(cspmFindings.orgId, orgId)];
     if (scanId) conditions.push(eq(cspmFindings.scanId, scanId));
     if (severity) conditions.push(eq(cspmFindings.severity, severity));
-    return db.select().from(cspmFindings).where(and(...conditions)).orderBy(desc(cspmFindings.detectedAt));
+    return db
+      .select()
+      .from(cspmFindings)
+      .where(and(...conditions))
+      .orderBy(desc(cspmFindings.detectedAt));
   }
 
   async createCspmFinding(finding: InsertCspmFinding): Promise<CspmFinding> {
@@ -1711,7 +2235,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEndpointAssets(orgId: string): Promise<EndpointAsset[]> {
-    return db.select().from(endpointAssets).where(eq(endpointAssets.orgId, orgId)).orderBy(desc(endpointAssets.createdAt));
+    return db
+      .select()
+      .from(endpointAssets)
+      .where(eq(endpointAssets.orgId, orgId))
+      .orderBy(desc(endpointAssets.createdAt));
   }
 
   async getEndpointAsset(id: string): Promise<EndpointAsset | undefined> {
@@ -1735,7 +2263,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEndpointTelemetry(assetId: string): Promise<EndpointTelemetry[]> {
-    return db.select().from(endpointTelemetry).where(eq(endpointTelemetry.assetId, assetId)).orderBy(desc(endpointTelemetry.collectedAt));
+    return db
+      .select()
+      .from(endpointTelemetry)
+      .where(eq(endpointTelemetry.assetId, assetId))
+      .orderBy(desc(endpointTelemetry.collectedAt));
   }
 
   async createEndpointTelemetry(telemetry: InsertEndpointTelemetry): Promise<EndpointTelemetry> {
@@ -1744,7 +2276,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPostureScores(orgId: string): Promise<PostureScore[]> {
-    return db.select().from(postureScores).where(eq(postureScores.orgId, orgId)).orderBy(desc(postureScores.generatedAt));
+    return db
+      .select()
+      .from(postureScores)
+      .where(eq(postureScores.orgId, orgId))
+      .orderBy(desc(postureScores.generatedAt));
   }
 
   async createPostureScore(score: InsertPostureScore): Promise<PostureScore> {
@@ -1753,7 +2289,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLatestPostureScore(orgId: string): Promise<PostureScore | undefined> {
-    const [score] = await db.select().from(postureScores).where(eq(postureScores.orgId, orgId)).orderBy(desc(postureScores.generatedAt)).limit(1);
+    const [score] = await db
+      .select()
+      .from(postureScores)
+      .where(eq(postureScores.orgId, orgId))
+      .orderBy(desc(postureScores.generatedAt))
+      .limit(1);
     return score;
   }
 
@@ -1765,7 +2306,11 @@ export class DatabaseStorage implements IStorage {
   async upsertAiDeploymentConfig(config: InsertAiDeploymentConfig): Promise<AiDeploymentConfig> {
     const existing = await this.getAiDeploymentConfig(config.orgId);
     if (existing) {
-      const [updated] = await db.update(aiDeploymentConfigs).set({ ...config, updatedAt: new Date() }).where(eq(aiDeploymentConfigs.orgId, config.orgId)).returning();
+      const [updated] = await db
+        .update(aiDeploymentConfigs)
+        .set({ ...config, updatedAt: new Date() })
+        .where(eq(aiDeploymentConfigs.orgId, config.orgId))
+        .returning();
       return updated;
     }
     const [created] = await db.insert(aiDeploymentConfigs).values(config).returning();
@@ -1773,11 +2318,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOrgMemberships(orgId: string): Promise<OrganizationMembership[]> {
-    return db.select().from(organizationMemberships).where(eq(organizationMemberships.orgId, orgId)).orderBy(desc(organizationMemberships.createdAt));
+    return db
+      .select()
+      .from(organizationMemberships)
+      .where(eq(organizationMemberships.orgId, orgId))
+      .orderBy(desc(organizationMemberships.createdAt));
   }
 
   async getOrgMembership(orgId: string, userId: string): Promise<OrganizationMembership | undefined> {
-    const [membership] = await db.select().from(organizationMemberships).where(and(eq(organizationMemberships.orgId, orgId), eq(organizationMemberships.userId, userId)));
+    const [membership] = await db
+      .select()
+      .from(organizationMemberships)
+      .where(and(eq(organizationMemberships.orgId, orgId), eq(organizationMemberships.userId, userId)));
     return membership;
   }
 
@@ -1787,7 +2339,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserMemberships(userId: string): Promise<OrganizationMembership[]> {
-    return db.select().from(organizationMemberships).where(eq(organizationMemberships.userId, userId)).orderBy(desc(organizationMemberships.createdAt));
+    return db
+      .select()
+      .from(organizationMemberships)
+      .where(eq(organizationMemberships.userId, userId))
+      .orderBy(desc(organizationMemberships.createdAt));
   }
 
   async createOrgMembership(membership: InsertOrganizationMembership): Promise<OrganizationMembership> {
@@ -1795,8 +2351,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateOrgMembership(id: string, data: Partial<OrganizationMembership>): Promise<OrganizationMembership | undefined> {
-    const [updated] = await db.update(organizationMemberships).set(data).where(eq(organizationMemberships.id, id)).returning();
+  async updateOrgMembership(
+    id: string,
+    data: Partial<OrganizationMembership>,
+  ): Promise<OrganizationMembership | undefined> {
+    const [updated] = await db
+      .update(organizationMemberships)
+      .set(data)
+      .where(eq(organizationMemberships.id, id))
+      .returning();
     return updated;
   }
 
@@ -1806,7 +2369,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOrgInvitations(orgId: string): Promise<OrgInvitation[]> {
-    return db.select().from(orgInvitations).where(eq(orgInvitations.orgId, orgId)).orderBy(desc(orgInvitations.createdAt));
+    return db
+      .select()
+      .from(orgInvitations)
+      .where(eq(orgInvitations.orgId, orgId))
+      .orderBy(desc(orgInvitations.createdAt));
   }
 
   async getOrgInvitationByToken(token: string): Promise<OrgInvitation | undefined> {
@@ -1847,7 +2414,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIocFeed(id: string, data: Partial<IocFeed>): Promise<IocFeed | undefined> {
-    const [updated] = await db.update(iocFeeds).set({ ...data, updatedAt: new Date() }).where(eq(iocFeeds.id, id)).returning();
+    const [updated] = await db
+      .update(iocFeeds)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(iocFeeds.id, id))
+      .returning();
     return updated;
   }
 
@@ -1856,7 +2427,13 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getIocEntries(orgId?: string, feedId?: string, iocType?: string, status?: string, limit?: number): Promise<IocEntry[]> {
+  async getIocEntries(
+    orgId?: string,
+    feedId?: string,
+    iocType?: string,
+    status?: string,
+    limit?: number,
+  ): Promise<IocEntry[]> {
     const conditions: any[] = [];
     if (orgId) conditions.push(eq(iocEntries.orgId, orgId));
     if (feedId) conditions.push(eq(iocEntries.feedId, feedId));
@@ -1864,7 +2441,10 @@ export class DatabaseStorage implements IStorage {
     if (status) conditions.push(eq(iocEntries.status, status));
     const query = db.select().from(iocEntries);
     if (conditions.length > 0) {
-      return query.where(and(...conditions)).limit(limit || 500).orderBy(desc(iocEntries.createdAt));
+      return query
+        .where(and(...conditions))
+        .limit(limit || 500)
+        .orderBy(desc(iocEntries.createdAt));
     }
     return query.limit(limit || 500).orderBy(desc(iocEntries.createdAt));
   }
@@ -1877,7 +2457,10 @@ export class DatabaseStorage implements IStorage {
   async getIocEntriesByValue(iocType: string, iocValue: string, orgId?: string): Promise<IocEntry[]> {
     const conditions: any[] = [eq(iocEntries.iocType, iocType), eq(iocEntries.iocValue, iocValue.toLowerCase())];
     if (orgId) conditions.push(eq(iocEntries.orgId, orgId));
-    return db.select().from(iocEntries).where(and(...conditions));
+    return db
+      .select()
+      .from(iocEntries)
+      .where(and(...conditions));
   }
 
   async createIocEntry(entry: InsertIocEntry): Promise<IocEntry> {
@@ -1902,7 +2485,11 @@ export class DatabaseStorage implements IStorage {
 
   async getIocWatchlists(orgId?: string): Promise<IocWatchlist[]> {
     if (orgId) {
-      return db.select().from(iocWatchlists).where(eq(iocWatchlists.orgId, orgId)).orderBy(desc(iocWatchlists.createdAt));
+      return db
+        .select()
+        .from(iocWatchlists)
+        .where(eq(iocWatchlists.orgId, orgId))
+        .orderBy(desc(iocWatchlists.createdAt));
     }
     return db.select().from(iocWatchlists).orderBy(desc(iocWatchlists.createdAt));
   }
@@ -1918,7 +2505,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIocWatchlist(id: string, data: Partial<IocWatchlist>): Promise<IocWatchlist | undefined> {
-    const [updated] = await db.update(iocWatchlists).set({ ...data, updatedAt: new Date() }).where(eq(iocWatchlists.id, id)).returning();
+    const [updated] = await db
+      .update(iocWatchlists)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(iocWatchlists.id, id))
+      .returning();
     return updated;
   }
 
@@ -1933,7 +2524,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async removeIocFromWatchlist(watchlistId: string, iocEntryId: string): Promise<boolean> {
-    const result = await db.delete(iocWatchlistEntries).where(and(eq(iocWatchlistEntries.watchlistId, watchlistId), eq(iocWatchlistEntries.iocEntryId, iocEntryId)));
+    const result = await db
+      .delete(iocWatchlistEntries)
+      .where(and(eq(iocWatchlistEntries.watchlistId, watchlistId), eq(iocWatchlistEntries.iocEntryId, iocEntryId)));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -1943,7 +2536,11 @@ export class DatabaseStorage implements IStorage {
 
   async getIocMatchRules(orgId?: string): Promise<IocMatchRule[]> {
     if (orgId) {
-      return db.select().from(iocMatchRules).where(eq(iocMatchRules.orgId, orgId)).orderBy(desc(iocMatchRules.createdAt));
+      return db
+        .select()
+        .from(iocMatchRules)
+        .where(eq(iocMatchRules.orgId, orgId))
+        .orderBy(desc(iocMatchRules.createdAt));
     }
     return db.select().from(iocMatchRules).orderBy(desc(iocMatchRules.createdAt));
   }
@@ -1959,7 +2556,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIocMatchRule(id: string, data: Partial<IocMatchRule>): Promise<IocMatchRule | undefined> {
-    const [updated] = await db.update(iocMatchRules).set({ ...data, updatedAt: new Date() }).where(eq(iocMatchRules.id, id)).returning();
+    const [updated] = await db
+      .update(iocMatchRules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(iocMatchRules.id, id))
+      .returning();
     return updated;
   }
 
@@ -1975,7 +2576,10 @@ export class DatabaseStorage implements IStorage {
     if (iocEntryId) conditions.push(eq(iocMatches.iocEntryId, iocEntryId));
     const query = db.select().from(iocMatches);
     if (conditions.length > 0) {
-      return query.where(and(...conditions)).limit(limit || 200).orderBy(desc(iocMatches.createdAt));
+      return query
+        .where(and(...conditions))
+        .limit(limit || 200)
+        .orderBy(desc(iocMatches.createdAt));
     }
     return query.limit(limit || 200).orderBy(desc(iocMatches.createdAt));
   }
@@ -1988,7 +2592,11 @@ export class DatabaseStorage implements IStorage {
   async getEvidenceItems(incidentId: string, orgId?: string): Promise<EvidenceItem[]> {
     const conditions: any[] = [eq(evidenceItems.incidentId, incidentId)];
     if (orgId) conditions.push(eq(evidenceItems.orgId, orgId));
-    return db.select().from(evidenceItems).where(and(...conditions)).orderBy(desc(evidenceItems.createdAt));
+    return db
+      .select()
+      .from(evidenceItems)
+      .where(and(...conditions))
+      .orderBy(desc(evidenceItems.createdAt));
   }
 
   async getEvidenceItem(id: string): Promise<EvidenceItem | undefined> {
@@ -2009,7 +2617,11 @@ export class DatabaseStorage implements IStorage {
   async getHypotheses(incidentId: string, orgId?: string): Promise<InvestigationHypothesis[]> {
     const conditions: any[] = [eq(investigationHypotheses.incidentId, incidentId)];
     if (orgId) conditions.push(eq(investigationHypotheses.orgId, orgId));
-    return db.select().from(investigationHypotheses).where(and(...conditions)).orderBy(desc(investigationHypotheses.createdAt));
+    return db
+      .select()
+      .from(investigationHypotheses)
+      .where(and(...conditions))
+      .orderBy(desc(investigationHypotheses.createdAt));
   }
 
   async getHypothesis(id: string): Promise<InvestigationHypothesis | undefined> {
@@ -2022,8 +2634,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateHypothesis(id: string, data: Partial<InvestigationHypothesis>): Promise<InvestigationHypothesis | undefined> {
-    const [updated] = await db.update(investigationHypotheses).set({ ...data, updatedAt: new Date() }).where(eq(investigationHypotheses.id, id)).returning();
+  async updateHypothesis(
+    id: string,
+    data: Partial<InvestigationHypothesis>,
+  ): Promise<InvestigationHypothesis | undefined> {
+    const [updated] = await db
+      .update(investigationHypotheses)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(investigationHypotheses.id, id))
+      .returning();
     return updated;
   }
 
@@ -2035,7 +2654,11 @@ export class DatabaseStorage implements IStorage {
   async getInvestigationTasks(incidentId: string, orgId?: string): Promise<InvestigationTask[]> {
     const conditions: any[] = [eq(investigationTasks.incidentId, incidentId)];
     if (orgId) conditions.push(eq(investigationTasks.orgId, orgId));
-    return db.select().from(investigationTasks).where(and(...conditions)).orderBy(desc(investigationTasks.createdAt));
+    return db
+      .select()
+      .from(investigationTasks)
+      .where(and(...conditions))
+      .orderBy(desc(investigationTasks.createdAt));
   }
 
   async getInvestigationTask(id: string): Promise<InvestigationTask | undefined> {
@@ -2049,7 +2672,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateInvestigationTask(id: string, data: Partial<InvestigationTask>): Promise<InvestigationTask | undefined> {
-    const [updated] = await db.update(investigationTasks).set({ ...data, updatedAt: new Date() }).where(eq(investigationTasks.id, id)).returning();
+    const [updated] = await db
+      .update(investigationTasks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(investigationTasks.id, id))
+      .returning();
     return updated;
   }
 
@@ -2067,7 +2694,11 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(runbookTemplates.incidentType, incidentType));
     }
     if (conditions.length > 0) {
-      return db.select().from(runbookTemplates).where(and(...conditions)).orderBy(desc(runbookTemplates.createdAt));
+      return db
+        .select()
+        .from(runbookTemplates)
+        .where(and(...conditions))
+        .orderBy(desc(runbookTemplates.createdAt));
     }
     return db.select().from(runbookTemplates).orderBy(desc(runbookTemplates.createdAt));
   }
@@ -2083,7 +2714,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateRunbookTemplate(id: string, data: Partial<RunbookTemplate>): Promise<RunbookTemplate | undefined> {
-    const [updated] = await db.update(runbookTemplates).set({ ...data, updatedAt: new Date() }).where(eq(runbookTemplates.id, id)).returning();
+    const [updated] = await db
+      .update(runbookTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(runbookTemplates.id, id))
+      .returning();
     return updated;
   }
 
@@ -2093,7 +2728,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRunbookSteps(templateId: string): Promise<RunbookStep[]> {
-    return db.select().from(runbookSteps).where(eq(runbookSteps.templateId, templateId)).orderBy(asc(runbookSteps.stepOrder));
+    return db
+      .select()
+      .from(runbookSteps)
+      .where(eq(runbookSteps.templateId, templateId))
+      .orderBy(asc(runbookSteps.stepOrder));
   }
 
   async createRunbookStep(step: InsertRunbookStep): Promise<RunbookStep> {
@@ -2113,7 +2752,9 @@ export class DatabaseStorage implements IStorage {
 
   async getReportTemplates(orgId?: string): Promise<ReportTemplate[]> {
     if (orgId) {
-      return db.select().from(reportTemplates)
+      return db
+        .select()
+        .from(reportTemplates)
         .where(or(eq(reportTemplates.orgId, orgId), isNull(reportTemplates.orgId)))
         .orderBy(desc(reportTemplates.createdAt));
     }
@@ -2131,7 +2772,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateReportTemplate(id: string, data: Partial<ReportTemplate>): Promise<ReportTemplate | undefined> {
-    const [t] = await db.update(reportTemplates).set({ ...data, updatedAt: new Date() }).where(eq(reportTemplates.id, id)).returning();
+    const [t] = await db
+      .update(reportTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reportTemplates.id, id))
+      .returning();
     return t;
   }
 
@@ -2142,7 +2787,11 @@ export class DatabaseStorage implements IStorage {
 
   async getReportSchedules(orgId?: string): Promise<ReportSchedule[]> {
     if (orgId) {
-      return db.select().from(reportSchedules).where(eq(reportSchedules.orgId, orgId)).orderBy(desc(reportSchedules.createdAt));
+      return db
+        .select()
+        .from(reportSchedules)
+        .where(eq(reportSchedules.orgId, orgId))
+        .orderBy(desc(reportSchedules.createdAt));
     }
     return db.select().from(reportSchedules).orderBy(desc(reportSchedules.createdAt));
   }
@@ -2158,7 +2807,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateReportSchedule(id: string, data: Partial<ReportSchedule>): Promise<ReportSchedule | undefined> {
-    const [s] = await db.update(reportSchedules).set({ ...data, updatedAt: new Date() }).where(eq(reportSchedules.id, id)).returning();
+    const [s] = await db
+      .update(reportSchedules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reportSchedules.id, id))
+      .returning();
     return s;
   }
 
@@ -2172,7 +2825,12 @@ export class DatabaseStorage implements IStorage {
     if (orgId) conditions.push(eq(reportRuns.orgId, orgId));
     if (templateId) conditions.push(eq(reportRuns.templateId, templateId));
     if (conditions.length > 0) {
-      return db.select().from(reportRuns).where(and(...conditions)).orderBy(desc(reportRuns.createdAt)).limit(limit);
+      return db
+        .select()
+        .from(reportRuns)
+        .where(and(...conditions))
+        .orderBy(desc(reportRuns.createdAt))
+        .limit(limit);
     }
     return db.select().from(reportRuns).orderBy(desc(reportRuns.createdAt)).limit(limit);
   }
@@ -2193,18 +2851,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDueSchedules(): Promise<ReportSchedule[]> {
-    return db.select().from(reportSchedules)
-      .where(and(
-        eq(reportSchedules.enabled, true),
-        sql`${reportSchedules.nextRunAt} IS NOT NULL AND ${reportSchedules.nextRunAt} <= NOW()`
-      ))
+    return db
+      .select()
+      .from(reportSchedules)
+      .where(
+        and(
+          eq(reportSchedules.enabled, true),
+          sql`${reportSchedules.nextRunAt} IS NOT NULL AND ${reportSchedules.nextRunAt} <= NOW()`,
+        ),
+      )
       .orderBy(asc(reportSchedules.nextRunAt));
   }
 
   // Suppression Rules
   async getSuppressionRules(orgId?: string): Promise<SuppressionRule[]> {
     if (orgId) {
-      return db.select().from(suppressionRules).where(eq(suppressionRules.orgId, orgId)).orderBy(desc(suppressionRules.createdAt));
+      return db
+        .select()
+        .from(suppressionRules)
+        .where(eq(suppressionRules.orgId, orgId))
+        .orderBy(desc(suppressionRules.createdAt));
     }
     return db.select().from(suppressionRules).orderBy(desc(suppressionRules.createdAt));
   }
@@ -2220,7 +2886,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSuppressionRule(id: string, data: Partial<SuppressionRule>): Promise<SuppressionRule | undefined> {
-    const [updated] = await db.update(suppressionRules).set({ ...data, updatedAt: new Date() }).where(eq(suppressionRules.id, id)).returning();
+    const [updated] = await db
+      .update(suppressionRules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(suppressionRules.id, id))
+      .returning();
     return updated;
   }
 
@@ -2232,7 +2902,11 @@ export class DatabaseStorage implements IStorage {
   // Alert Dedup Clusters
   async getAlertDedupClusters(orgId?: string): Promise<AlertDedupCluster[]> {
     if (orgId) {
-      return db.select().from(alertDedupClusters).where(eq(alertDedupClusters.orgId, orgId)).orderBy(desc(alertDedupClusters.createdAt));
+      return db
+        .select()
+        .from(alertDedupClusters)
+        .where(eq(alertDedupClusters.orgId, orgId))
+        .orderBy(desc(alertDedupClusters.createdAt));
     }
     return db.select().from(alertDedupClusters).orderBy(desc(alertDedupClusters.createdAt));
   }
@@ -2255,7 +2929,11 @@ export class DatabaseStorage implements IStorage {
   // SLA Policies
   async getIncidentSlaPolicies(orgId?: string): Promise<IncidentSlaPolicy[]> {
     if (orgId) {
-      return db.select().from(incidentSlaPolicies).where(eq(incidentSlaPolicies.orgId, orgId)).orderBy(desc(incidentSlaPolicies.createdAt));
+      return db
+        .select()
+        .from(incidentSlaPolicies)
+        .where(eq(incidentSlaPolicies.orgId, orgId))
+        .orderBy(desc(incidentSlaPolicies.createdAt));
     }
     return db.select().from(incidentSlaPolicies).orderBy(desc(incidentSlaPolicies.createdAt));
   }
@@ -2271,7 +2949,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIncidentSlaPolicy(id: string, data: Partial<IncidentSlaPolicy>): Promise<IncidentSlaPolicy | undefined> {
-    const [updated] = await db.update(incidentSlaPolicies).set({ ...data, updatedAt: new Date() }).where(eq(incidentSlaPolicies.id, id)).returning();
+    const [updated] = await db
+      .update(incidentSlaPolicies)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(incidentSlaPolicies.id, id))
+      .returning();
     return updated;
   }
 
@@ -2286,7 +2968,11 @@ export class DatabaseStorage implements IStorage {
     if (orgId) conditions.push(eq(postIncidentReviews.orgId, orgId));
     if (incidentId) conditions.push(eq(postIncidentReviews.incidentId, incidentId));
     if (conditions.length > 0) {
-      return db.select().from(postIncidentReviews).where(and(...conditions)).orderBy(desc(postIncidentReviews.createdAt));
+      return db
+        .select()
+        .from(postIncidentReviews)
+        .where(and(...conditions))
+        .orderBy(desc(postIncidentReviews.createdAt));
     }
     return db.select().from(postIncidentReviews).orderBy(desc(postIncidentReviews.createdAt));
   }
@@ -2301,8 +2987,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updatePostIncidentReview(id: string, data: Partial<PostIncidentReview>): Promise<PostIncidentReview | undefined> {
-    const [updated] = await db.update(postIncidentReviews).set({ ...data, updatedAt: new Date() }).where(eq(postIncidentReviews.id, id)).returning();
+  async updatePostIncidentReview(
+    id: string,
+    data: Partial<PostIncidentReview>,
+  ): Promise<PostIncidentReview | undefined> {
+    const [updated] = await db
+      .update(postIncidentReviews)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(postIncidentReviews.id, id))
+      .returning();
     return updated;
   }
 
@@ -2322,7 +3015,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getConnectorJobRuns(connectorId: string, limit?: number): Promise<ConnectorJobRun[]> {
-    return db.select().from(connectorJobRuns)
+    return db
+      .select()
+      .from(connectorJobRuns)
       .where(eq(connectorJobRuns.connectorId, connectorId))
       .orderBy(desc(connectorJobRuns.startedAt))
       .limit(limit || 50);
@@ -2331,12 +3026,20 @@ export class DatabaseStorage implements IStorage {
   async getDeadLetterJobRuns(orgId?: string): Promise<ConnectorJobRun[]> {
     const conditions = [eq(connectorJobRuns.isDeadLetter, true)];
     if (orgId) conditions.push(eq(connectorJobRuns.orgId, orgId));
-    return db.select().from(connectorJobRuns)
+    return db
+      .select()
+      .from(connectorJobRuns)
       .where(and(...conditions))
       .orderBy(desc(connectorJobRuns.startedAt));
   }
 
-  async getConnectorMetrics(connectorId: string): Promise<{ avgLatencyMs: number; errorRate: number; throttleCount: number; totalRuns: number; successRate: number }> {
+  async getConnectorMetrics(connectorId: string): Promise<{
+    avgLatencyMs: number;
+    errorRate: number;
+    throttleCount: number;
+    totalRuns: number;
+    successRate: number;
+  }> {
     const result = await db.execute(sql`
       SELECT
         COUNT(*) as total_runs,
@@ -2368,21 +3071,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getConnectorHealthChecks(connectorId: string, limit?: number): Promise<ConnectorHealthCheck[]> {
-    return db.select().from(connectorHealthChecks)
+    return db
+      .select()
+      .from(connectorHealthChecks)
       .where(eq(connectorHealthChecks.connectorId, connectorId))
       .orderBy(desc(connectorHealthChecks.checkedAt))
       .limit(limit || 50);
   }
 
   async getLatestHealthCheck(connectorId: string): Promise<ConnectorHealthCheck | undefined> {
-    const [check] = await db.select().from(connectorHealthChecks)
+    const [check] = await db
+      .select()
+      .from(connectorHealthChecks)
       .where(eq(connectorHealthChecks.connectorId, connectorId))
       .orderBy(desc(connectorHealthChecks.checkedAt))
       .limit(1);
     return check;
   }
 
-  async getAiFeedbackMetrics(orgId?: string, days?: number): Promise<{ date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]> {
+  async getAiFeedbackMetrics(
+    orgId?: string,
+    days?: number,
+  ): Promise<
+    { date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]
+  > {
     const d = days || 30;
     const orgCondition = orgId ? sql` AND org_id = ${orgId}` : sql``;
     const result = await db.execute(sql`
@@ -2399,7 +3111,7 @@ export class DatabaseStorage implements IStorage {
     `);
     const rows = (result as any).rows || result || [];
     return rows.map((row: any) => ({
-      date: row.date ? new Date(row.date).toISOString().split('T')[0] : '',
+      date: row.date ? new Date(row.date).toISOString().split("T")[0] : "",
       avgRating: Number(row.avg_rating) || 0,
       totalFeedback: Number(row.total) || 0,
       negativeFeedback: Number(row.negative) || 0,
@@ -2408,7 +3120,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAiFeedbackByResource(resourceType: string, resourceId: string): Promise<AiFeedback[]> {
-    return db.select().from(aiFeedback)
+    return db
+      .select()
+      .from(aiFeedback)
       .where(and(eq(aiFeedback.resourceType, resourceType), eq(aiFeedback.resourceId, resourceId)))
       .orderBy(desc(aiFeedback.createdAt));
   }
@@ -2441,7 +3155,11 @@ export class DatabaseStorage implements IStorage {
     if (policyCheckId) {
       conditions.push(eq(policyResults.policyCheckId, policyCheckId));
     }
-    return db.select().from(policyResults).where(and(...conditions)).orderBy(desc(policyResults.evaluatedAt));
+    return db
+      .select()
+      .from(policyResults)
+      .where(and(...conditions))
+      .orderBy(desc(policyResults.evaluatedAt));
   }
 
   async createPolicyResult(result: InsertPolicyResult): Promise<PolicyResult> {
@@ -2490,7 +3208,10 @@ export class DatabaseStorage implements IStorage {
     if (controlId) {
       conditions.push(eq(complianceControlMappings.controlId, controlId));
     }
-    return db.select().from(complianceControlMappings).where(and(...conditions));
+    return db
+      .select()
+      .from(complianceControlMappings)
+      .where(and(...conditions));
   }
 
   async createComplianceControlMapping(mapping: InsertComplianceControlMapping): Promise<ComplianceControlMapping> {
@@ -2498,8 +3219,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateComplianceControlMapping(id: string, data: Partial<ComplianceControlMapping>): Promise<ComplianceControlMapping | undefined> {
-    const [updated] = await db.update(complianceControlMappings).set(data).where(eq(complianceControlMappings.id, id)).returning();
+  async updateComplianceControlMapping(
+    id: string,
+    data: Partial<ComplianceControlMapping>,
+  ): Promise<ComplianceControlMapping | undefined> {
+    const [updated] = await db
+      .update(complianceControlMappings)
+      .set(data)
+      .where(eq(complianceControlMappings.id, id))
+      .returning();
     return updated;
   }
 
@@ -2508,7 +3236,11 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getEvidenceLockerItems(orgId: string, framework?: string, artifactType?: string): Promise<EvidenceLockerItem[]> {
+  async getEvidenceLockerItems(
+    orgId: string,
+    framework?: string,
+    artifactType?: string,
+  ): Promise<EvidenceLockerItem[]> {
     const conditions = [eq(evidenceLockerItems.orgId, orgId)];
     if (framework) {
       conditions.push(eq(evidenceLockerItems.framework, framework));
@@ -2516,7 +3248,11 @@ export class DatabaseStorage implements IStorage {
     if (artifactType) {
       conditions.push(eq(evidenceLockerItems.artifactType, artifactType));
     }
-    return db.select().from(evidenceLockerItems).where(and(...conditions)).orderBy(desc(evidenceLockerItems.createdAt));
+    return db
+      .select()
+      .from(evidenceLockerItems)
+      .where(and(...conditions))
+      .orderBy(desc(evidenceLockerItems.createdAt));
   }
 
   async getEvidenceLockerItem(id: string): Promise<EvidenceLockerItem | undefined> {
@@ -2529,7 +3265,10 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateEvidenceLockerItem(id: string, data: Partial<EvidenceLockerItem>): Promise<EvidenceLockerItem | undefined> {
+  async updateEvidenceLockerItem(
+    id: string,
+    data: Partial<EvidenceLockerItem>,
+  ): Promise<EvidenceLockerItem | undefined> {
     const [updated] = await db.update(evidenceLockerItems).set(data).where(eq(evidenceLockerItems.id, id)).returning();
     return updated;
   }
@@ -2540,7 +3279,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOutboundWebhooks(orgId: string): Promise<OutboundWebhook[]> {
-    return db.select().from(outboundWebhooks).where(eq(outboundWebhooks.orgId, orgId)).orderBy(desc(outboundWebhooks.createdAt));
+    return db
+      .select()
+      .from(outboundWebhooks)
+      .where(eq(outboundWebhooks.orgId, orgId))
+      .orderBy(desc(outboundWebhooks.createdAt));
   }
 
   async getOutboundWebhook(id: string): Promise<OutboundWebhook | undefined> {
@@ -2564,12 +3307,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActiveWebhooksByEvent(orgId: string, event: string): Promise<OutboundWebhook[]> {
-    return db.select().from(outboundWebhooks)
-      .where(and(eq(outboundWebhooks.orgId, orgId), eq(outboundWebhooks.isActive, true), sql`${event} = ANY(${outboundWebhooks.events})`));
+    return db
+      .select()
+      .from(outboundWebhooks)
+      .where(
+        and(
+          eq(outboundWebhooks.orgId, orgId),
+          eq(outboundWebhooks.isActive, true),
+          sql`${event} = ANY(${outboundWebhooks.events})`,
+        ),
+      );
   }
 
   async getOutboundWebhookLogs(webhookId: string, limit?: number): Promise<OutboundWebhookLog[]> {
-    return db.select().from(outboundWebhookLogs)
+    return db
+      .select()
+      .from(outboundWebhookLogs)
       .where(eq(outboundWebhookLogs.webhookId, webhookId))
       .orderBy(desc(outboundWebhookLogs.deliveredAt))
       .limit(limit || 100);
@@ -2581,8 +3334,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getIdempotencyKey(orgId: string, key: string, endpoint: string): Promise<IdempotencyKey | undefined> {
-    const [found] = await db.select().from(idempotencyKeys)
-      .where(and(eq(idempotencyKeys.orgId, orgId), eq(idempotencyKeys.idempotencyKey, key), eq(idempotencyKeys.endpoint, endpoint)));
+    const [found] = await db
+      .select()
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.orgId, orgId),
+          eq(idempotencyKeys.idempotencyKey, key),
+          eq(idempotencyKeys.endpoint, endpoint),
+        ),
+      );
     return found;
   }
 
@@ -2592,12 +3353,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cleanupExpiredIdempotencyKeys(): Promise<number> {
-    const result = await db.delete(idempotencyKeys).where(sql`${idempotencyKeys.expiresAt} < NOW()`).returning();
+    const result = await db
+      .delete(idempotencyKeys)
+      .where(sql`${idempotencyKeys.expiresAt} < NOW()`)
+      .returning();
     return result.length;
   }
 
   async getArchivedAlerts(orgId: string, limit?: number, offset?: number): Promise<AlertArchive[]> {
-    return db.select().from(alertsArchive)
+    return db
+      .select()
+      .from(alertsArchive)
       .where(eq(alertsArchive.orgId, orgId))
       .orderBy(desc(alertsArchive.archivedAt))
       .limit(limit || 100)
@@ -2610,9 +3376,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async archiveAlerts(orgId: string, alertIds: string[], reason: string): Promise<number> {
-    const alertsToArchive = await db.select().from(alerts).where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds)));
+    const alertsToArchive = await db
+      .select()
+      .from(alerts)
+      .where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds)));
     if (alertsToArchive.length === 0) return 0;
-    const archiveData = alertsToArchive.map(a => ({
+    const archiveData = alertsToArchive.map((a) => ({
       orgId: a.orgId,
       source: a.source,
       sourceEventId: a.sourceEventId,
@@ -2660,7 +3429,7 @@ export class DatabaseStorage implements IStorage {
   async restoreArchivedAlerts(ids: string[]): Promise<number> {
     const archived = await db.select().from(alertsArchive).where(inArray(alertsArchive.id, ids));
     if (archived.length === 0) return 0;
-    const restoreData = archived.map(a => ({
+    const restoreData = archived.map((a) => ({
       orgId: a.orgId,
       source: a.source,
       sourceEventId: a.sourceEventId,
@@ -2705,7 +3474,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteArchivedAlerts(orgId: string, beforeDate: Date): Promise<number> {
-    const result = await db.delete(alertsArchive)
+    const result = await db
+      .delete(alertsArchive)
       .where(and(eq(alertsArchive.orgId, orgId), lte(alertsArchive.archivedAt, beforeDate)))
       .returning();
     return result.length;
@@ -2718,7 +3488,10 @@ export class DatabaseStorage implements IStorage {
     if (type) conditions.push(eq(jobQueue.type, type));
     const query = db.select().from(jobQueue);
     if (conditions.length > 0) {
-      return query.where(and(...conditions)).orderBy(desc(jobQueue.createdAt)).limit(limit || 100);
+      return query
+        .where(and(...conditions))
+        .orderBy(desc(jobQueue.createdAt))
+        .limit(limit || 100);
     }
     return query.orderBy(desc(jobQueue.createdAt)).limit(limit || 100);
   }
@@ -2734,9 +3507,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async claimNextJob(types?: string[]): Promise<Job | undefined> {
-    const typesFilter = types && types.length > 0
-      ? sql`AND type IN (${sql.join(types.map(t => sql`${t}`), sql`, `)})`
-      : sql``;
+    const typesFilter =
+      types && types.length > 0
+        ? sql`AND type IN (${sql.join(
+            types.map((t) => sql`${t}`),
+            sql`, `,
+          )})`
+        : sql``;
     const result = await db.execute(sql`
       UPDATE job_queue
       SET status = 'running', started_at = NOW(), attempts = attempts + 1
@@ -2776,15 +3553,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cancelJob(id: string): Promise<boolean> {
-    const [updated] = await db.update(jobQueue).set({ status: "cancelled" } as any).where(eq(jobQueue.id, id)).returning();
+    const [updated] = await db
+      .update(jobQueue)
+      .set({ status: "cancelled" } as any)
+      .where(eq(jobQueue.id, id))
+      .returning();
     return !!updated;
   }
 
   async getJobStats(): Promise<{ pending: number; running: number; completed: number; failed: number }> {
-    const result = await db.select({
-      status: jobQueue.status,
-      count: count(),
-    }).from(jobQueue).groupBy(jobQueue.status);
+    const result = await db
+      .select({
+        status: jobQueue.status,
+        count: count(),
+      })
+      .from(jobQueue)
+      .groupBy(jobQueue.status);
     const stats = { pending: 0, running: 0, completed: 0, failed: 0 };
     for (const row of result) {
       if (row.status in stats) {
@@ -2795,27 +3579,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cleanupCompletedJobs(olderThanDays: number): Promise<number> {
-    const result = await db.delete(jobQueue)
-      .where(and(
-        or(eq(jobQueue.status, "completed"), eq(jobQueue.status, "failed")),
-        sql`${jobQueue.completedAt} < NOW() - INTERVAL '${sql.raw(String(olderThanDays))} days'`
-      ))
+    const result = await db
+      .delete(jobQueue)
+      .where(
+        and(
+          or(eq(jobQueue.status, "completed"), eq(jobQueue.status, "failed")),
+          sql`${jobQueue.completedAt} < NOW() - INTERVAL '${sql.raw(String(olderThanDays))} days'`,
+        ),
+      )
       .returning();
     return result.length;
   }
 
   async getCachedMetrics(orgId: string, metricType: string): Promise<DashboardMetricsCache | undefined> {
-    const [cached] = await db.select().from(dashboardMetricsCache)
-      .where(and(
-        eq(dashboardMetricsCache.orgId, orgId),
-        eq(dashboardMetricsCache.metricType, metricType),
-        sql`${dashboardMetricsCache.expiresAt} > NOW()`
-      ));
+    const [cached] = await db
+      .select()
+      .from(dashboardMetricsCache)
+      .where(
+        and(
+          eq(dashboardMetricsCache.orgId, orgId),
+          eq(dashboardMetricsCache.metricType, metricType),
+          sql`${dashboardMetricsCache.expiresAt} > NOW()`,
+        ),
+      );
     return cached;
   }
 
   async upsertCachedMetrics(data: InsertDashboardMetricsCache): Promise<DashboardMetricsCache> {
-    const [result] = await db.insert(dashboardMetricsCache).values(data)
+    const [result] = await db
+      .insert(dashboardMetricsCache)
+      .values(data)
       .onConflictDoUpdate({
         target: [dashboardMetricsCache.orgId, dashboardMetricsCache.metricType],
         set: {
@@ -2829,24 +3622,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async clearExpiredCache(): Promise<number> {
-    const result = await db.delete(dashboardMetricsCache)
+    const result = await db
+      .delete(dashboardMetricsCache)
       .where(sql`${dashboardMetricsCache.expiresAt} <= NOW()`)
       .returning();
     return result.length;
   }
 
   async getAlertDailyStats(orgId: string, startDate: string, endDate: string): Promise<AlertDailyStat[]> {
-    return db.select().from(alertDailyStats)
-      .where(and(
-        eq(alertDailyStats.orgId, orgId),
-        gte(alertDailyStats.date, startDate),
-        lte(alertDailyStats.date, endDate)
-      ))
+    return db
+      .select()
+      .from(alertDailyStats)
+      .where(
+        and(eq(alertDailyStats.orgId, orgId), gte(alertDailyStats.date, startDate), lte(alertDailyStats.date, endDate)),
+      )
       .orderBy(asc(alertDailyStats.date));
   }
 
   async upsertAlertDailyStat(data: InsertAlertDailyStat): Promise<AlertDailyStat> {
-    const [result] = await db.insert(alertDailyStats).values(data)
+    const [result] = await db
+      .insert(alertDailyStats)
+      .values(data)
       .onConflictDoUpdate({
         target: [alertDailyStats.orgId, alertDailyStats.date],
         set: {
@@ -2864,7 +3660,13 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getSliMetrics(service: string, metric: string, startTime: Date, endTime: Date, labels?: Record<string, string>): Promise<SliMetric[]> {
+  async getSliMetrics(
+    service: string,
+    metric: string,
+    startTime: Date,
+    endTime: Date,
+    labels?: Record<string, string>,
+  ): Promise<SliMetric[]> {
     const conditions: any[] = [
       eq(sliMetrics.service, service),
       eq(sliMetrics.metric, metric),
@@ -2876,7 +3678,9 @@ export class DatabaseStorage implements IStorage {
       conditions.push(sql`${sliMetrics.labels} ->> 'endpoint' = ${labels.endpoint}`);
     }
 
-    return db.select().from(sliMetrics)
+    return db
+      .select()
+      .from(sliMetrics)
       .where(and(...conditions))
       .orderBy(asc(sliMetrics.recordedAt));
   }
@@ -2892,7 +3696,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cleanupOldSliMetrics(olderThanDays: number): Promise<number> {
-    const result = await db.delete(sliMetrics)
+    const result = await db
+      .delete(sliMetrics)
       .where(sql`${sliMetrics.recordedAt} < NOW() - INTERVAL '${sql.raw(String(olderThanDays))} days'`)
       .returning();
     return result.length;
@@ -2913,7 +3718,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSloTarget(id: string, data: Partial<SloTarget>): Promise<SloTarget | undefined> {
-    const [updated] = await db.update(sloTargets).set({ ...data, updatedAt: new Date() }).where(eq(sloTargets.id, id)).returning();
+    const [updated] = await db
+      .update(sloTargets)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(sloTargets.id, id))
+      .returning();
     return updated;
   }
 
@@ -2937,7 +3746,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateDrRunbook(id: string, data: Partial<DrRunbook>): Promise<DrRunbook | undefined> {
-    const [updated] = await db.update(drRunbooks).set({ ...data, updatedAt: new Date() }).where(eq(drRunbooks.id, id)).returning();
+    const [updated] = await db
+      .update(drRunbooks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(drRunbooks.id, id))
+      .returning();
     return updated;
   }
 
@@ -2950,7 +3763,9 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (orgId) conditions.push(eq(ticketSyncJobs.orgId, orgId));
     if (integrationId) conditions.push(eq(ticketSyncJobs.integrationId, integrationId));
-    return db.select().from(ticketSyncJobs)
+    return db
+      .select()
+      .from(ticketSyncJobs)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(ticketSyncJobs.createdAt));
   }
@@ -2966,7 +3781,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateTicketSyncJob(id: string, data: Partial<TicketSyncJob>): Promise<TicketSyncJob | undefined> {
-    const [updated] = await db.update(ticketSyncJobs).set({ ...data, updatedAt: new Date() }).where(eq(ticketSyncJobs.id, id)).returning();
+    const [updated] = await db
+      .update(ticketSyncJobs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(ticketSyncJobs.id, id))
+      .returning();
     return updated;
   }
 
@@ -2979,7 +3798,9 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (orgId) conditions.push(eq(responseActionApprovals.orgId, orgId));
     if (status) conditions.push(eq(responseActionApprovals.status, status));
-    return db.select().from(responseActionApprovals)
+    return db
+      .select()
+      .from(responseActionApprovals)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(responseActionApprovals.requestedAt));
   }
@@ -2994,15 +3815,24 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateResponseActionApproval(id: string, data: Partial<ResponseActionApproval>): Promise<ResponseActionApproval | undefined> {
-    const [updated] = await db.update(responseActionApprovals).set(data).where(eq(responseActionApprovals.id, id)).returning();
+  async updateResponseActionApproval(
+    id: string,
+    data: Partial<ResponseActionApproval>,
+  ): Promise<ResponseActionApproval | undefined> {
+    const [updated] = await db
+      .update(responseActionApprovals)
+      .set(data)
+      .where(eq(responseActionApprovals.id, id))
+      .returning();
     return updated;
   }
 
   async getLegalHolds(orgId?: string): Promise<LegalHold[]> {
     const conditions = [];
     if (orgId) conditions.push(eq(legalHolds.orgId, orgId));
-    return db.select().from(legalHolds)
+    return db
+      .select()
+      .from(legalHolds)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(legalHolds.createdAt));
   }
@@ -3026,7 +3856,9 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (connectorId) conditions.push(eq(connectorSecretRotations.connectorId, connectorId));
     if (orgId) conditions.push(eq(connectorSecretRotations.orgId, orgId));
-    return db.select().from(connectorSecretRotations)
+    return db
+      .select()
+      .from(connectorSecretRotations)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(connectorSecretRotations.createdAt));
   }
@@ -3036,19 +3868,25 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateConnectorSecretRotation(id: string, data: Partial<ConnectorSecretRotation>): Promise<ConnectorSecretRotation | undefined> {
-    const [updated] = await db.update(connectorSecretRotations).set(data).where(eq(connectorSecretRotations.id, id)).returning();
+  async updateConnectorSecretRotation(
+    id: string,
+    data: Partial<ConnectorSecretRotation>,
+  ): Promise<ConnectorSecretRotation | undefined> {
+    const [updated] = await db
+      .update(connectorSecretRotations)
+      .set(data)
+      .where(eq(connectorSecretRotations.id, id))
+      .returning();
     return updated;
   }
 
   async getExpiringSecretRotations(daysAhead: number): Promise<ConnectorSecretRotation[]> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + daysAhead);
-    return db.select().from(connectorSecretRotations)
-      .where(and(
-        eq(connectorSecretRotations.status, "current"),
-        lte(connectorSecretRotations.nextRotationDue, cutoff)
-      ))
+    return db
+      .select()
+      .from(connectorSecretRotations)
+      .where(and(eq(connectorSecretRotations.status, "current"), lte(connectorSecretRotations.nextRotationDue, cutoff)))
       .orderBy(asc(connectorSecretRotations.nextRotationDue));
   }
 
@@ -3058,7 +3896,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertOrgPlanLimit(data: InsertOrgPlanLimit): Promise<OrgPlanLimit> {
-    const [result] = await db.insert(orgPlanLimits).values(data)
+    const [result] = await db
+      .insert(orgPlanLimits)
+      .values(data)
       .onConflictDoUpdate({
         target: [orgPlanLimits.orgId],
         set: { ...data, updatedAt: new Date() },
@@ -3068,14 +3908,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOrgPlanLimit(orgId: string, data: Partial<OrgPlanLimit>): Promise<OrgPlanLimit | undefined> {
-    const [updated] = await db.update(orgPlanLimits).set({ ...data, updatedAt: new Date() }).where(eq(orgPlanLimits.orgId, orgId)).returning();
+    const [updated] = await db
+      .update(orgPlanLimits)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(orgPlanLimits.orgId, orgId))
+      .returning();
     return updated;
   }
 
   async getUsageMeterSnapshots(orgId: string, metricType?: string): Promise<UsageMeterSnapshot[]> {
     const conditions = [eq(usageMeterSnapshots.orgId, orgId)];
     if (metricType) conditions.push(eq(usageMeterSnapshots.metricType, metricType));
-    return db.select().from(usageMeterSnapshots)
+    return db
+      .select()
+      .from(usageMeterSnapshots)
       .where(and(...conditions))
       .orderBy(desc(usageMeterSnapshots.snapshotAt))
       .limit(100);
@@ -3087,23 +3933,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOnboardingProgress(orgId: string): Promise<OnboardingProgressItem[]> {
-    return db.select().from(onboardingProgress)
+    return db
+      .select()
+      .from(onboardingProgress)
       .where(eq(onboardingProgress.orgId, orgId))
       .orderBy(asc(onboardingProgress.sortOrder));
   }
 
   async upsertOnboardingStep(data: InsertOnboardingProgress): Promise<OnboardingProgressItem> {
-    const [result] = await db.insert(onboardingProgress).values(data)
+    const [result] = await db
+      .insert(onboardingProgress)
+      .values(data)
       .onConflictDoUpdate({
         target: [onboardingProgress.orgId, onboardingProgress.stepKey],
-        set: { stepLabel: data.stepLabel, stepDescription: data.stepDescription, targetUrl: data.targetUrl, sortOrder: data.sortOrder },
+        set: {
+          stepLabel: data.stepLabel,
+          stepDescription: data.stepDescription,
+          targetUrl: data.targetUrl,
+          sortOrder: data.sortOrder,
+        },
       })
       .returning();
     return result;
   }
 
-  async completeOnboardingStep(orgId: string, stepKey: string, completedBy?: string): Promise<OnboardingProgressItem | undefined> {
-    const [updated] = await db.update(onboardingProgress)
+  async completeOnboardingStep(
+    orgId: string,
+    stepKey: string,
+    completedBy?: string,
+  ): Promise<OnboardingProgressItem | undefined> {
+    const [updated] = await db
+      .update(onboardingProgress)
       .set({ isCompleted: true, completedAt: new Date(), completedBy: completedBy || null })
       .where(and(eq(onboardingProgress.orgId, orgId), eq(onboardingProgress.stepKey, stepKey)))
       .returning();
@@ -3134,14 +3994,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPendingOutboxEvents(batchSize: number): Promise<OutboxEvent[]> {
-    return db.select().from(outboxEvents)
-      .where(and(
-        eq(outboxEvents.status, "pending"),
-        or(
-          isNull(outboxEvents.nextRetryAt),
-          lte(outboxEvents.nextRetryAt, new Date()),
+    return db
+      .select()
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.status, "pending"),
+          or(isNull(outboxEvents.nextRetryAt), lte(outboxEvents.nextRetryAt, new Date())),
         ),
-      ))
+      )
       .orderBy(asc(outboxEvents.createdAt))
       .limit(batchSize);
   }
@@ -3151,14 +4012,21 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getOutboxEvents(orgId?: string, status?: string, limitVal?: number, offsetVal?: number): Promise<{ items: OutboxEvent[]; total: number }> {
+  async getOutboxEvents(
+    orgId?: string,
+    status?: string,
+    limitVal?: number,
+    offsetVal?: number,
+  ): Promise<{ items: OutboxEvent[]; total: number }> {
     const conditions: any[] = [];
     if (orgId) conditions.push(eq(outboxEvents.orgId, orgId));
     if (status) conditions.push(eq(outboxEvents.status, status));
     const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
 
     const totalQuery = db.select({ total: count() }).from(outboxEvents);
-    const itemsQuery = db.select().from(outboxEvents)
+    const itemsQuery = db
+      .select()
+      .from(outboxEvents)
       .orderBy(desc(outboxEvents.createdAt))
       .limit(limitVal || 50)
       .offset(offsetVal || 0);
@@ -3169,24 +4037,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async replayOutboxEvent(id: string): Promise<OutboxEvent | undefined> {
-    const [updated] = await db.update(outboxEvents).set({
-      status: "pending",
-      attempts: 0,
-      lastError: null,
-      nextRetryAt: null,
-    }).where(and(
-      eq(outboxEvents.id, id),
-      or(eq(outboxEvents.status, "failed"), eq(outboxEvents.status, "dispatched")),
-    )).returning();
+    const [updated] = await db
+      .update(outboxEvents)
+      .set({
+        status: "pending",
+        attempts: 0,
+        lastError: null,
+        nextRetryAt: null,
+      })
+      .where(and(eq(outboxEvents.id, id), or(eq(outboxEvents.status, "failed"), eq(outboxEvents.status, "dispatched"))))
+      .returning();
     return updated;
   }
 
   async cleanupDispatchedOutboxEvents(olderThanDays: number): Promise<number> {
     const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
-    const result = await db.delete(outboxEvents).where(and(
-      eq(outboxEvents.status, "dispatched"),
-      lte(outboxEvents.createdAt, cutoff),
-    )).returning();
+    const result = await db
+      .delete(outboxEvents)
+      .where(and(eq(outboxEvents.status, "dispatched"), lte(outboxEvents.createdAt, cutoff)))
+      .returning();
     return result.length;
   }
 
@@ -3212,12 +4081,14 @@ export class DatabaseStorage implements IStorage {
     if (params.source) conditions.push(eq(alerts.source, params.source));
     if (params.search) {
       const pattern = `%${params.search}%`;
-      conditions.push(or(
-        ilike(alerts.title, pattern),
-        ilike(alerts.description, pattern),
-        ilike(alerts.hostname, pattern),
-        ilike(alerts.sourceIp, pattern),
-      ));
+      conditions.push(
+        or(
+          ilike(alerts.title, pattern),
+          ilike(alerts.description, pattern),
+          ilike(alerts.hostname, pattern),
+          ilike(alerts.sourceIp, pattern),
+        ),
+      );
     }
     const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -3258,10 +4129,7 @@ export class DatabaseStorage implements IStorage {
     else if (params.status) conditions.push(eq(incidents.status, params.status));
     if (params.search) {
       const pattern = `%${params.search}%`;
-      conditions.push(or(
-        ilike(incidents.title, pattern),
-        ilike(incidents.summary, pattern),
-      ));
+      conditions.push(or(ilike(incidents.title, pattern), ilike(incidents.summary, pattern)));
     }
     const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -3276,7 +4144,12 @@ export class DatabaseStorage implements IStorage {
     const orderFn = params.sortOrder === "asc" ? asc : desc;
 
     const totalQuery = db.select({ total: count() }).from(incidents);
-    const itemsQuery = db.select().from(incidents).orderBy(orderFn(sortColumn)).limit(params.limit).offset(params.offset);
+    const itemsQuery = db
+      .select()
+      .from(incidents)
+      .orderBy(orderFn(sortColumn))
+      .limit(params.limit)
+      .offset(params.offset);
 
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
@@ -3302,7 +4175,12 @@ export class DatabaseStorage implements IStorage {
     const orderFn = params.sortOrder === "asc" ? asc : desc;
 
     const totalQuery = db.select({ total: count() }).from(auditLogs);
-    const itemsQuery = db.select().from(auditLogs).orderBy(orderFn(auditLogs.createdAt)).limit(params.limit).offset(params.offset);
+    const itemsQuery = db
+      .select()
+      .from(auditLogs)
+      .orderBy(orderFn(auditLogs.createdAt))
+      .limit(params.limit)
+      .offset(params.offset);
 
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
@@ -3325,10 +4203,7 @@ export class DatabaseStorage implements IStorage {
     if (params.status) conditions.push(eq(connectors.status, params.status as any));
     if (params.search) {
       const pattern = `%${params.search}%`;
-      conditions.push(or(
-        ilike(connectors.name, pattern),
-        ilike(connectors.type, pattern),
-      ));
+      conditions.push(or(ilike(connectors.name, pattern), ilike(connectors.type, pattern)));
     }
     const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -3343,7 +4218,12 @@ export class DatabaseStorage implements IStorage {
     const orderFn = params.sortOrder === "asc" ? asc : desc;
 
     const totalQuery = db.select({ total: count() }).from(connectors);
-    const itemsQuery = db.select().from(connectors).orderBy(orderFn(sortColumn)).limit(params.limit).offset(params.offset);
+    const itemsQuery = db
+      .select()
+      .from(connectors)
+      .orderBy(orderFn(sortColumn))
+      .limit(params.limit)
+      .offset(params.offset);
 
     const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
     const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
@@ -3369,12 +4249,157 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateFeatureFlag(key: string, data: Partial<FeatureFlag>): Promise<FeatureFlag | undefined> {
-    const [updated] = await db.update(featureFlags).set({ ...data, updatedAt: new Date() }).where(eq(featureFlags.key, key)).returning();
+    const [updated] = await db
+      .update(featureFlags)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(featureFlags.key, key))
+      .returning();
     return updated;
   }
 
   async deleteFeatureFlag(key: string): Promise<boolean> {
     const result = await db.delete(featureFlags).where(eq(featureFlags.key, key)).returning();
+    return result.length > 0;
+  }
+
+  // Saved Views
+  async getSavedViews(orgId: string, resourceType?: string): Promise<SavedView[]> {
+    const conditions = [eq(savedViews.orgId, orgId)];
+    if (resourceType) conditions.push(eq(savedViews.resourceType, resourceType));
+    return db
+      .select()
+      .from(savedViews)
+      .where(and(...conditions))
+      .orderBy(desc(savedViews.updatedAt));
+  }
+
+  async getSavedView(id: string): Promise<SavedView | undefined> {
+    const [view] = await db.select().from(savedViews).where(eq(savedViews.id, id));
+    return view;
+  }
+
+  async createSavedView(view: InsertSavedView): Promise<SavedView> {
+    const [created] = await db.insert(savedViews).values(view).returning();
+    return created;
+  }
+
+  async updateSavedView(id: string, data: Partial<SavedView>): Promise<SavedView | undefined> {
+    const [updated] = await db
+      .update(savedViews)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(savedViews.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteSavedView(id: string): Promise<boolean> {
+    const result = await db.delete(savedViews).where(eq(savedViews.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Org Security Policies
+  async getOrgSecurityPolicy(orgId: string): Promise<OrgSecurityPolicy | undefined> {
+    const [policy] = await db.select().from(orgSecurityPolicies).where(eq(orgSecurityPolicies.orgId, orgId));
+    return policy;
+  }
+
+  async upsertOrgSecurityPolicy(policy: InsertOrgSecurityPolicy): Promise<OrgSecurityPolicy> {
+    const existing = await this.getOrgSecurityPolicy(policy.orgId);
+    if (existing) {
+      const [updated] = await db
+        .update(orgSecurityPolicies)
+        .set({ ...policy, updatedAt: new Date() })
+        .where(eq(orgSecurityPolicies.orgId, policy.orgId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(orgSecurityPolicies).values(policy).returning();
+    return created;
+  }
+
+  // Org Domain Verifications
+  async getOrgDomainVerifications(orgId: string): Promise<OrgDomainVerification[]> {
+    return db
+      .select()
+      .from(orgDomainVerifications)
+      .where(eq(orgDomainVerifications.orgId, orgId))
+      .orderBy(desc(orgDomainVerifications.createdAt));
+  }
+
+  async getOrgDomainVerification(id: string): Promise<OrgDomainVerification | undefined> {
+    const [verification] = await db.select().from(orgDomainVerifications).where(eq(orgDomainVerifications.id, id));
+    return verification;
+  }
+
+  async createOrgDomainVerification(verification: InsertOrgDomainVerification): Promise<OrgDomainVerification> {
+    const [created] = await db.insert(orgDomainVerifications).values(verification).returning();
+    return created;
+  }
+
+  async updateOrgDomainVerification(
+    id: string,
+    data: Partial<OrgDomainVerification>,
+  ): Promise<OrgDomainVerification | undefined> {
+    const [updated] = await db
+      .update(orgDomainVerifications)
+      .set(data)
+      .where(eq(orgDomainVerifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteOrgDomainVerification(id: string): Promise<boolean> {
+    const result = await db.delete(orgDomainVerifications).where(eq(orgDomainVerifications.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Org SSO Configs
+  async getOrgSsoConfig(orgId: string): Promise<OrgSsoConfig | undefined> {
+    const [config] = await db.select().from(orgSsoConfigs).where(eq(orgSsoConfigs.orgId, orgId));
+    return config;
+  }
+
+  async upsertOrgSsoConfig(config: InsertOrgSsoConfig): Promise<OrgSsoConfig> {
+    const existing = await this.getOrgSsoConfig(config.orgId);
+    if (existing) {
+      const [updated] = await db
+        .update(orgSsoConfigs)
+        .set({ ...config, updatedAt: new Date() })
+        .where(eq(orgSsoConfigs.orgId, config.orgId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(orgSsoConfigs).values(config).returning();
+    return created;
+  }
+
+  async deleteOrgSsoConfig(orgId: string): Promise<boolean> {
+    const result = await db.delete(orgSsoConfigs).where(eq(orgSsoConfigs.orgId, orgId)).returning();
+    return result.length > 0;
+  }
+
+  // Org SCIM Configs
+  async getOrgScimConfig(orgId: string): Promise<OrgScimConfig | undefined> {
+    const [config] = await db.select().from(orgScimConfigs).where(eq(orgScimConfigs.orgId, orgId));
+    return config;
+  }
+
+  async upsertOrgScimConfig(config: InsertOrgScimConfig): Promise<OrgScimConfig> {
+    const existing = await this.getOrgScimConfig(config.orgId);
+    if (existing) {
+      const [updated] = await db
+        .update(orgScimConfigs)
+        .set({ ...config, updatedAt: new Date() })
+        .where(eq(orgScimConfigs.orgId, config.orgId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(orgScimConfigs).values(config).returning();
+    return created;
+  }
+
+  async deleteOrgScimConfig(orgId: string): Promise<boolean> {
+    const result = await db.delete(orgScimConfigs).where(eq(orgScimConfigs.orgId, orgId)).returning();
     return result.length > 0;
   }
 }
