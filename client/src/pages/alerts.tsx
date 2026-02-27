@@ -593,14 +593,14 @@ export default function AlertsPage() {
   const applySavedView = useCallback((view: SavedView) => {
     const f = view.filters as Record<string, string> | null;
     if (!f) return;
-    if (f.severity) setSeverityFilter(f.severity);
-    if (f.status) setStatusFilter(f.status);
-    if (f.source) setSourceFilter(f.source);
-    if (f.category) setCategoryFilter(f.category);
-    if (f.search) setSearch(f.search);
-    if (f.queue) setQueueFilter(f.queue as "all" | "new" | "aging" | "breached");
-    if (f.dateFrom) setDateFrom(f.dateFrom);
-    if (f.dateTo) setDateTo(f.dateTo);
+    setSeverityFilter(f.severity ?? "all");
+    setStatusFilter(f.status ?? "all");
+    setSourceFilter(f.source ?? "all");
+    setCategoryFilter(f.category ?? "all");
+    setSearch(f.search ?? "");
+    setQueueFilter((f.queue as "all" | "new" | "aging" | "breached") ?? "all");
+    setDateFrom(f.dateFrom ?? "");
+    setDateTo(f.dateTo ?? "");
   }, []);
 
   useEffect(() => {

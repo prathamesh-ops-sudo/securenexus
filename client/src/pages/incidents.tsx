@@ -588,12 +588,12 @@ export default function IncidentsPage() {
   const applySavedView = useCallback((view: SavedView) => {
     const f = view.filters as Record<string, string> | null;
     if (!f) return;
-    if (f.status) setStatusFilter(f.status);
-    if (f.severity) setSeverityFilter(f.severity);
-    if (f.search) setSearch(f.search);
-    if (f.queue) setQueueTab(f.queue as QueueTab);
-    if (f.dateFrom) setDateFrom(f.dateFrom);
-    if (f.dateTo) setDateTo(f.dateTo);
+    setStatusFilter(f.status ?? "all");
+    setSeverityFilter(f.severity ?? "all");
+    setSearch(f.search ?? "");
+    setQueueTab((f.queue as QueueTab) ?? "all");
+    setDateFrom(f.dateFrom ?? "");
+    setDateTo(f.dateTo ?? "");
   }, []);
 
   useEffect(() => {

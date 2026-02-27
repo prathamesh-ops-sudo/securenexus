@@ -1,8 +1,13 @@
 import type { Express } from "express";
+import { createHash } from "crypto";
 import { logger, p, randomBytes, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { z } from "zod";
+
+function hashSecret(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 const MAX_CIDRS = 50;
 const MAX_DOMAIN_LENGTH = 253;
@@ -37,6 +42,7 @@ const ssoConfigSchema = z.object({
   ssoUrl: z.string().url().max(2000).optional(),
   certificate: z.string().max(10000).optional(),
   clientId: z.string().max(500).optional(),
+  clientSecret: z.string().max(1000).optional(),
   allowedDomains: z.array(z.string().max(MAX_DOMAIN_LENGTH)).max(20).optional(),
   autoProvision: z.boolean().optional(),
   defaultRole: z.enum(["admin", "analyst", "read_only"]).optional(),
@@ -324,10 +330,17 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       const orgId = p(req.params.orgId);
       const userOrgId = (req as any).orgId;
       if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
-      const parsed = ssoConfigSchema.safeParse(req.body);
+      const parsed = ssoConfigSchema.partial().safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
       const userId = (req as any).user?.id;
-      const config = await storage.upsertOrgSsoConfig({ orgId, ...parsed.data, createdBy: userId });
+      const ssoPayload: Record<string, unknown> = { orgId, ...parsed.data, createdBy: userId };
+      if (parsed.data.clientSecret) {
+        ssoPayload.clientSecret = hashSecret(parsed.data.clientSecret);
+      }
+      if (parsed.data.certificate) {
+        ssoPayload.certificate = hashSecret(parsed.data.certificate);
+      }
+      const config = await storage.upsertOrgSsoConfig(ssoPayload as Parameters<typeof storage.upsertOrgSsoConfig>[0]);
       await storage.createAuditLog({
         userId,
         userName: (req as any).user?.firstName
@@ -426,8 +439,7 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
       const token = `snx_scim_${randomBytes(32).toString("hex")}`;
       const prefix = token.slice(0, 16);
-      const { createHash } = await import("crypto");
-      const hash = createHash("sha256").update(token).digest("hex");
+      const hash = hashSecret(token);
       const userId = (req as any).user?.id;
       const existing = await storage.getOrgScimConfig(orgId);
       const endpointUrl = `/api/scim/v2/${orgId}`;
