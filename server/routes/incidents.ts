@@ -1106,19 +1106,32 @@ export function registerIncidentsRoutes(app: Express): void {
 
         const approval = await storage.createIncidentResponseApproval(parsed.data);
 
+        const approvalIncidentId = p(req.params.incidentId);
+        const approvalSeqNum = await storage.getNextSequenceNum(approvalIncidentId);
+        const approvalPrevHash = (await storage.getLatestChainHash(approvalIncidentId)) || "GENESIS";
+        const approvalHashPayload = JSON.stringify({
+          incidentId: approvalIncidentId,
+          sequenceNum: approvalSeqNum,
+          entryType: "approval_requested",
+          actorId: userId,
+          summary: `Approval requested: ${req.body.actionDescription}`,
+          details: { approvalId: approval.id, actionType: req.body.actionType },
+          previousHash: approvalPrevHash,
+          timestamp: new Date().toISOString(),
+        });
+        const approvalEntryHash = createHash("sha256").update(approvalHashPayload).digest("hex");
+
         await storage.createEvidenceChainEntry({
           orgId,
-          incidentId: p(req.params.incidentId),
-          sequenceNum: await storage.getNextSequenceNum(p(req.params.incidentId)),
+          incidentId: approvalIncidentId,
+          sequenceNum: approvalSeqNum,
           entryType: "approval_requested",
           actorId: userId,
           actorName: userName,
           summary: `Approval requested: ${req.body.actionDescription}`,
           details: { approvalId: approval.id, actionType: req.body.actionType },
-          entryHash: createHash("sha256")
-            .update(JSON.stringify({ approvalId: approval.id, ts: Date.now() }))
-            .digest("hex"),
-          previousHash: (await storage.getLatestChainHash(p(req.params.incidentId))) || "GENESIS",
+          entryHash: approvalEntryHash,
+          previousHash: approvalPrevHash,
         });
 
         res.status(201).json(approval);
@@ -1163,19 +1176,32 @@ export function registerIncidentsRoutes(app: Express): void {
 
         const incidentId = approval.incidentId;
         const orgId = approval.orgId || getOrgId(req);
+        const decisionSeqNum = await storage.getNextSequenceNum(incidentId);
+        const decisionPrevHash = (await storage.getLatestChainHash(incidentId)) || "GENESIS";
+        const decisionEntryType = decision === "approved" ? "approval_granted" : "approval_denied";
+        const decisionHashPayload = JSON.stringify({
+          incidentId,
+          sequenceNum: decisionSeqNum,
+          entryType: decisionEntryType,
+          actorId: userId,
+          summary: `Approval ${decision}: ${approval.actionDescription}`,
+          details: { approvalId: approval.id, decision, note },
+          previousHash: decisionPrevHash,
+          timestamp: new Date().toISOString(),
+        });
+        const decisionEntryHash = createHash("sha256").update(decisionHashPayload).digest("hex");
+
         await storage.createEvidenceChainEntry({
           orgId,
           incidentId,
-          sequenceNum: await storage.getNextSequenceNum(incidentId),
-          entryType: decision === "approved" ? "approval_granted" : "approval_denied",
+          sequenceNum: decisionSeqNum,
+          entryType: decisionEntryType,
           actorId: userId,
           actorName: userName,
           summary: `Approval ${decision}: ${approval.actionDescription}`,
           details: { approvalId: approval.id, decision, note },
-          entryHash: createHash("sha256")
-            .update(JSON.stringify({ approvalId: approval.id, decision, ts: Date.now() }))
-            .digest("hex"),
-          previousHash: (await storage.getLatestChainHash(incidentId)) || "GENESIS",
+          entryHash: decisionEntryHash,
+          previousHash: decisionPrevHash,
         });
 
         await storage.createAuditLog({

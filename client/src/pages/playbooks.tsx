@@ -988,7 +988,7 @@ export default function PlaybooksPage() {
   const { data: playbookVersions, isLoading: versionsLoading } = useQuery<PlaybookVersion[]>({
     queryKey: ["/api/playbook-versions", selectedGovernancePlaybook],
     queryFn: async () => {
-      const res = await fetch(`/api/playbook-versions/${selectedGovernancePlaybook}`, { credentials: "include" });
+      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/versions`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load versions");
       const body = await res.json();
       return body.data ?? body;
@@ -1033,7 +1033,7 @@ export default function PlaybooksPage() {
 
   const createVersionMutation = useMutation({
     mutationFn: async ({ playbookId, changelog }: { playbookId: string; changelog: string }) => {
-      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/versions`, { changelog });
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/versions`, { changeDescription: changelog });
       return res.json();
     },
     onSuccess: () => {
