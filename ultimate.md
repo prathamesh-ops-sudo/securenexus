@@ -1,513 +1,660 @@
-# SecureNexus: Ultimate Improvement / Upgrade / Enhancement Opportunities (Exhaustive)
+# SecureNexus: Next-Generation Improvement Roadmap (v2)
 
-This document is a comprehensive, codebase-driven catalog of improvement opportunities across SecureNexus. It is intentionally written as plain descriptive language (no code snippets, no schema definitions) and is meant to be a persistent backlog for product, engineering, security, and infrastructure work.
+This document replaces the original ultimate.md. Every item from v1 has been implemented and merged. This is a fresh, codebase-driven catalog of the next wave of improvements across SecureNexus, derived from a deep audit of the current 46K+ lines of server code, 31 frontend pages, 24 connector plugins, and full CI/CD + K8s infrastructure.
 
 For every item below, the structure is:
-- Current problem (what exists today / what is missing)
-- Why it matters (risk, cost, user impact, scalability)
+
+- Current state (what exists today)
+- Gap (what is missing or weak)
 - What to do (exactly what should be implemented or changed)
 
 Scope assumptions (based on current repo + infra conventions):
-- Backend: Node.js + Express, Drizzle ORM, PostgreSQL on RDS
-- Frontend: React + Vite + Tailwind + Radix
+
+- Backend: Node.js + Express, Drizzle ORM, PostgreSQL on RDS, ~46K server LOC
+- Frontend: React + Vite + Tailwind + Radix, 31 pages
 - Deploy: EKS (staging/uat/production), Argo Rollouts, GitHub Actions, AWS Secrets Manager, S3
-- Platform: Multi-tenant org model + RBAC + connectors + ingestion + correlation + AI-assisted workflows
+- Platform: Multi-tenant org model + RBAC + 24 connector plugins + AI (Bedrock) + job queue + outbox
 
 ---
 
-## 0) Cross-cutting "platform hygiene" (applies to everything)
+## 0) Type Safety and Code Hygiene
 
-### 0.1 Single source of truth for configuration
-- Current problem: Configuration is spread across environment variables, GitHub Actions, k8s manifests, and runtime defaults in code (examples: S3 bucket fallback in server/s3.ts; session secret fallback in server/auth/session.ts; region fixed in a few places).
-- Why it matters: Drift between environments causes production-only failures, security footguns (unsafe defaults), and makes onboarding new engineers/clients slower.
-- What to do:
-  - Create a centralized configuration module that validates all required runtime settings at startup (per environment).
-  - Eliminate insecure or environment-specific fallbacks (especially secrets).
-  - Clearly separate "required" vs "optional" configuration and document each setting’s purpose, allowed values, and owner.
+### 0.1 Eliminate `as any` epidemic across route handlers
 
-### 0.2 Standardize response envelopes and error formats
-- Current problem: The codebase has a mixture of legacy endpoints returning arrays and newer v1 endpoints returning enveloped responses; error bodies vary across routes.
-- Why it matters: Inconsistent API behavior increases frontend complexity, breaks typed clients, and complicates customer integration.
+- Current state: The server codebase contains 601 `as any` type casts, with the heaviest concentrations in route handlers (playbooks: 67, incidents: 43, integrations: 36, enterprise-org: 36, investigations: 34, threat-intel: 33, compliance: 28). The client has an additional 29 `as any` casts.
+- Gap: `as any` defeats TypeScript's type system entirely. Each cast is a potential runtime crash that the compiler cannot catch. Route handlers are the most dangerous location because they process untrusted user input.
 - What to do:
-  - Define one canonical API envelope and apply it consistently across all API versions.
-  - Standardize error codes, messages, and error metadata (validation errors, auth errors, rate limits, upstream provider errors).
-  - Provide explicit deprecation policy for legacy endpoints.
+  - Replace every `as any` with proper typed interfaces derived from the Drizzle schema or Zod-validated request shapes.
+  - Prioritize route handlers first (they process external input), then service modules, then internal utilities.
+  - Add an ESLint rule (`@typescript-eslint/no-explicit-any`) set to error, not warn, and enforce in CI.
+  - Target: zero `as any` casts remaining across the entire codebase.
 
-### 0.3 Remove implicit "default org" behavior everywhere
-- Current problem: Several subsystems fall back to orgId = "default" (examples: job-queue cache_refresh handler, outbox processor, etc.) instead of forcing explicit tenant context.
-- Why it matters: Default fallbacks are a recurring cross-tenant data leak risk and create hard-to-debug multi-tenant incidents.
-- What to do:
-  - Make orgId mandatory for every org-scoped operation and remove defaulting.
-  - Where truly global operations exist, represent them explicitly (orgId null) and handle them separately.
+### 0.2 Replace `error: any` catch blocks with narrowed `unknown`
 
-### 0.4 Replace console logging with structured, correlated logging
-- Current problem: Console logging is used broadly and often logs raw JSON payloads (server/index.ts request logging captures and truncates response bodies; many subsystems log errors with minimal context).
-- Why it matters: Debugging production incidents requires correlation (requestId, orgId, userId, route, trace id). Logging sensitive data creates compliance and data leakage risk.
+- Current state: Route handlers in admin.ts (22 occurrences), operations.ts (20), report-governance.ts (9), lifecycle.ts (8), connectors.ts (8) and many others use loose `catch (err)` or `catch (error: any)` patterns.
+- Gap: Catching `any` and accessing `.message` directly can crash on non-Error objects. This also prevents proper error classification and structured logging.
 - What to do:
-  - Implement structured logging with correlation IDs (requestId and jobId/outboxEventId) and consistent fields.
-  - Add centralized log redaction (secrets, auth tokens, credentials, cookies, PII).
-  - Emit logs in JSON format and standardize log levels.
+  - Replace all `catch (error: any)` with `catch (error: unknown)` and use `error instanceof Error ? error.message : String(error)` consistently.
+  - Create a shared `toErrorMessage(error: unknown): string` utility to centralize this pattern.
+  - Audit all catch blocks to ensure errors are classified (operational vs programmer) and surfaced appropriately.
 
-### 0.5 “Never silently swallow errors” policy
-- Current problem: Some flows catch and ignore errors (for example, org membership auto-provision helpers log to console but do not propagate; connector parsers and external fetches sometimes ignore parse errors).
-- Why it matters: Silent failures cause “it looks healthy but doesn’t work” behavior and degrade trust.
+### 0.3 Replace `Math.random()` with cryptographically secure alternatives where needed
+
+- Current state: `Math.random()` is used in 15+ server files for generating IDs (connector event IDs, CSPM scan IDs, DR drill durations, endpoint telemetry), shuffling arrays, and simulating probabilities.
+- Gap: `Math.random()` is not cryptographically secure and produces predictable output. When used for event IDs or identifiers in a security platform, this creates collision risk and potential ID prediction vectors.
 - What to do:
-  - Replace silent catches with explicit error classification and surfaced UI feedback.
-  - Ensure every failure results in at least one of: user-visible error, retry path, audit log entry, or alert.
+  - Replace all ID generation uses with `crypto.randomUUID()` or `crypto.randomBytes()`.
+  - For simulation/probability uses (CSPM scanner, endpoint telemetry, DR drills), document that these are intentionally non-cryptographic.
+  - Add a lint rule to flag new `Math.random()` usage in server code and require explicit justification.
+
+### 0.4 Centralize module-level mutable state inventory
+
+- Current state: At least 10 server modules maintain module-level `Map` instances for state (osint-feeds feedCache, slo-alerting lastBreachNotifications and recentIncidentKeys, tenant-throttle orgQuotaOverrides and orgUsage, connector-plugin registry, canary-analysis lastTriggerFired, and others).
+- Gap: Module-level mutable state does not survive pod restarts, is not shared across replicas in multi-pod EKS deployments, and creates inconsistent behavior under horizontal scaling.
+- What to do:
+  - Inventory every module-level Map/Set/object that holds runtime state.
+  - Classify each as: (a) acceptable per-instance cache with TTL, (b) must be moved to shared store (Redis or DB), or (c) can be eliminated entirely.
+  - For category (a), add TTL-based eviction and metrics. For category (b), implement a shared state abstraction backed by Redis or PostgreSQL advisory locks.
 
 ---
 
-## 1) Performance
+## 1) Storage Layer Maturity
 
-### 1.1 Database query performance and load shaping
-- Current problem: Many endpoints can become high-cardinality over time (alerts, incidents, entities, logs). Even with pagination added in places, the system lacks consistent query plans and guardrails.
-- Why it matters: As customers ingest more telemetry, the same queries will become the dominant cost driver (RDS CPU/IO, slow UI, timeouts).
-- What to do:
-  - Add explicit performance budgets per endpoint (p95 latency targets per environment).
-  - Add query plan review for top N endpoints (alerts listing, incident listing, entity graph, connectors sync history, audit logs).
-  - Ensure every high-cardinality endpoint enforces pagination with max limits, default sorting, and indexed filters.
+### 1.1 Decompose the monolithic storage module
 
-### 1.2 Index strategy and query patterns
-- Current problem: Indexing exists for many common lookups, but long-term scaling requires systematic index governance across the most written tables and time-series-ish tables.
-- Why it matters: Without the right composite indexes, RDS will degrade gradually and unpredictably.
+- Current state: `server/storage.ts` is 4,926 lines containing every database operation for every domain (alerts, incidents, connectors, orgs, compliance, AI, telemetry, DR drills, etc.) in a single class.
+- Gap: A single 5K-line storage file is a merge conflict magnet, makes domain ownership unclear, and prevents independent testing of storage operations per domain.
 - What to do:
-  - Maintain an “index contract” per high-write table: required composite indexes, rationale, and removal plan.
-  - Add continuous monitoring of slow queries and index hit rates.
+  - Split storage.ts into domain-specific storage modules (alert-storage.ts, incident-storage.ts, connector-storage.ts, org-storage.ts, compliance-storage.ts, etc.).
+  - Each module exports typed functions that operate on a shared database instance.
+  - Keep a thin storage barrel file (storage/index.ts) for backward compatibility during migration.
+  - Add per-domain storage unit tests with in-memory or test database.
 
-### 1.3 Caching strategy maturity
-- Current problem: There is an in-memory query cache module (server/query-cache.ts) and some cached metrics, but cache invalidation, tenancy scoping, stampede protection, and persistence are not fully systematized.
-- Why it matters: In-memory caches do not scale horizontally; stale caches can cause incorrect analyst decisions.
-- What to do:
-  - Decide and document cache tiers: per-instance memory cache vs shared cache (Redis or managed alternative).
-  - Implement cache stampede protection (single-flight for common expensive queries).
-  - Enforce tenant-aware cache keys and invalidation patterns.
-  - Add metrics: hit rate by key prefix, evictions, stale reads.
+### 1.2 Schema file decomposition
 
-### 1.4 Connector sync throughput and latency
-- Current problem: Connector engine performs many upstream calls serially; it also performs normalization and storage writes without batching strategy guarantees across all connectors.
-- Why it matters: Connector sync is the biggest external-latency component; it can also overload upstream APIs and your own DB.
+- Current state: `shared/schema.ts` is 4,505 lines containing all Drizzle table definitions, insert schemas, and type exports in a single file.
+- Gap: Same merge conflict and ownership issues as storage.ts. Changes to one domain's schema require touching the same massive file.
 - What to do:
-  - Implement per-connector concurrency controls, per-provider backoff, and adaptive scheduling.
-  - Batch inserts/updates where possible; avoid per-alert DB calls.
-  - Add incremental sync cursors and durable checkpoints per connector.
+  - Split schema.ts into domain-specific schema files (schema/alerts.ts, schema/incidents.ts, schema/orgs.ts, etc.).
+  - Re-export from a barrel file (shared/schema/index.ts) to avoid breaking imports.
+  - Each schema file should also export its Zod insert schemas and TypeScript types.
 
-### 1.5 Job worker scalability
-- Current problem: Job worker is a polling loop with small concurrency and uses per-instance in-memory dedup.
-- Why it matters: In multi-replica deployments, each replica competes to poll; dedup is not cross-instance; job storms are possible.
-- What to do:
-  - Introduce distributed job queue semantics (visibility timeouts, leases, worker heartbeats).
-  - Move dedup to the database (unique fingerprints with TTL) or a shared store.
-  - Add job prioritization semantics that are enforced at claim time.
+### 1.3 Database transaction boundaries
 
-### 1.6 Frontend bundle size, rendering, and hydration costs
-- Current problem: The dashboard and other pages are large, chart-heavy, and likely ship many libraries to all users.
-- Why it matters: Large JS bundles slow first paint and degrade adoption, especially for enterprise users behind restrictive networks.
+- Current state: Most storage operations are individual queries without explicit transaction boundaries.
+- Gap: Multi-step mutations (e.g., create incident + emit outbox event + update audit log) can partially succeed, leaving the database in an inconsistent state.
 - What to do:
-  - Add route-level code splitting and lazy loading for heavy pages.
-  - Add bundle analysis as a CI check with budgets.
-  - Reduce global imports of heavy charting dependencies where not needed.
+  - Identify all multi-step mutation flows and wrap them in explicit database transactions.
+  - Create a `withTransaction` helper that handles commit/rollback and integrates with structured logging.
+  - Ensure outbox events are always written in the same transaction as the mutation they represent.
 
-### 1.7 SSE/event stream performance
-- Current problem: SSE clients are kept in memory; broadcast iterates over all clients; no backpressure/slow-client handling beyond try/catch.
-- Why it matters: With many users and many events, broadcasts can become O(N) per event and block the event loop.
+### 1.4 Query builder type safety
+
+- Current state: Route handlers frequently cast query results with `as any` to work around Drizzle type inference gaps.
+- Gap: The 457 `as any` casts in route handlers are largely caused by untyped or loosely typed storage return values.
 - What to do:
-  - Add per-client buffering limits and drop/disconnect policy.
-  - Add event type filtering and subscription-based delivery.
-  - Consider a pub/sub backbone if cross-replica delivery is needed.
+  - Add explicit return types to every storage function using Drizzle's `InferSelectModel` and `InferInsertModel` types.
+  - Where joins or aggregates are used, define explicit result interfaces rather than casting.
+  - This will naturally eliminate most `as any` casts in route handlers.
 
 ---
 
-## 2) Security
+## 2) API Contract Hardening
 
-### 2.1 Session security and CSRF hardening
-- Current problem: Cookie-based sessions are used and some defaults are permissive (sameSite lax; secure depends on FORCE_HTTPS; a default session secret exists as a fallback).
-- Why it matters: Cookie sessions without robust CSRF protection are a common enterprise security blocker.
-- What to do:
-  - Remove any default/fallback secrets; require a strong secret per environment.
-  - Implement CSRF protection for state-changing endpoints and document how the frontend obtains/sends tokens.
-  - Move sameSite defaults toward stricter settings where feasible and document cross-domain implications.
+### 2.1 Request validation coverage for all endpoints
 
-### 2.2 Security middleware baseline
-- Current problem: Express hardening is partial (JSON body limits and x-powered-by disabled exist; other standard protections are missing or not uniformly enforced).
-- Why it matters: Enterprises expect baseline OWASP protections and security headers; gaps increase exploitability.
+- Current state: Some endpoints use Zod validation, but many route handlers extract `req.body`, `req.query`, and `req.params` without schema validation, relying on runtime assumptions.
+- Gap: Unvalidated input is the root cause of multiple Devin Review findings across PRs (TypeErrors from malformed payloads, cross-org bypasses from unscoped parameters).
 - What to do:
-  - Add a complete security middleware baseline (security headers, input sanitization, and consistent rate limiting strategy).
-  - Ensure middleware is applied before all routes.
+  - Create Zod schemas for every route handler's input (body, query, params).
+  - Create a shared `validateRequest` middleware that validates and types the request in one step.
+  - Ensure validated types flow through to storage calls, eliminating the need for `as any` casts.
 
-### 2.3 Input validation coverage
-- Current problem: Some endpoints use validation patterns, but validation is not universal and not always centralized. Some external provider configurations are accepted without strict validation.
-- Why it matters: Validation gaps lead to injection issues, operational incidents, and corrupted data.
-- What to do:
-  - Enforce schema validation for every request body, query parameter, and path parameter.
-  - Validate connector configs per connector type and explicitly validate URL formats, allowed protocols, and credential fields.
+### 2.2 Response type contracts
 
-### 2.4 Secrets handling and redaction
-- Current problem: Secrets are stored in AWS Secrets Manager and synced into Kubernetes secrets, but runtime redaction and “never log secrets” guardrails are not consistently enforced.
-- Why it matters: Leaked credentials are catastrophic; enterprises require strong guarantees.
+- Current state: API responses are built inline in route handlers with ad-hoc object shapes.
+- Gap: Frontend developers and external integrators cannot rely on stable response shapes. Changes to response shapes are not caught at compile time.
 - What to do:
-  - Implement centralized secret redaction at logging boundaries.
-  - Add automated scanning to prevent committing secrets and to catch accidental log leaks.
-  - Rotate secrets on a fixed schedule and build “rotate + verify” runbooks.
+  - Define explicit response interfaces per endpoint.
+  - Add response serialization that strips internal fields and enforces the contract.
+  - Consider adding response validation in development/staging mode to catch contract violations early.
 
-### 2.5 IAM and AWS credential model
-- Current problem: Some AWS clients are configured using access key env vars (example: server/ai.ts), which can accidentally encourage long-lived static credentials.
-- Why it matters: IRSA / role-based auth is the correct model on EKS; static keys increase blast radius.
-- What to do:
-  - Use IAM roles for service accounts and remove the requirement for AWS access keys inside pods.
-  - Ensure each subsystem uses least-privilege IAM policies (S3 read/write specific prefixes; Bedrock invoke model only; etc.).
+### 2.3 Rate limiting per tenant and per endpoint
 
-### 2.6 Multi-tenancy and org boundary enforcement
-- Current problem: Org context is derived from memberships and an x-org-id header. Any inconsistency across routes increases risk.
-- Why it matters: Cross-tenant data exposure is an existential risk for a SOC platform.
+- Current state: Global rate limiting exists, but per-tenant and per-endpoint rate limiting is not granular.
+- Gap: A single noisy tenant or a burst on a specific endpoint can degrade the entire platform.
 - What to do:
-  - Enforce an “orgId required” middleware for all org-scoped routes.
-  - Add automated tests for cross-tenant boundary violations across critical endpoints.
-  - Add audit logs for org context switches and denied access attempts.
+  - Implement tiered rate limits: global, per-tenant, per-endpoint, and per-user.
+  - Store rate limit state in Redis for cross-pod consistency.
+  - Return standard `Retry-After` headers and `429` responses with clear error messages.
+  - Add rate limit metrics and alerting for quota exhaustion.
 
-### 2.7 Webhook and outbound integration security
-- Current problem: Webhooks use HMAC signature, but broader security posture for outbound calls (allowlists, SSRF prevention, retries, idempotency) must be formalized.
-- Why it matters: Outbound webhooks are a common SSRF / data exfiltration vector.
-- What to do:
-  - Validate webhook URLs (scheme, hostname, deny internal ranges unless explicitly allowed).
-  - Add outbound request policies (timeouts, retries, circuit breakers) and per-webhook rate limits.
-  - Add webhook delivery logs with redaction.
+### 2.4 API documentation completeness
 
-### 2.8 Supply chain security
-- Current problem: Dependency management is active but the pipeline does not enforce vulnerability thresholds or license policies.
-- Why it matters: Enterprise security review will require a reproducible SBOM story and an upgrade cadence.
+- Current state: OpenAPI spec exists and CI validates it, but endpoint coverage may have drifted as new routes were added across 24+ route files.
+- Gap: Incomplete API documentation blocks SDK generation and enterprise integration onboarding.
 - What to do:
-  - Add continuous dependency vulnerability scanning with a policy.
-  - Add license scanning and a process for exceptions.
+  - Audit every route file and ensure every endpoint is documented in the OpenAPI spec.
+  - Add CI validation that compares registered Express routes against OpenAPI paths and fails on drift.
+  - Add example request/response bodies for every endpoint.
 
 ---
 
-## 3) Architecture
+## 3) Frontend Polish and Production Readiness
 
-### 3.1 Split the monolithic routes file
-- Current problem: server/routes.ts is very large and contains many unrelated domains (auth, alerts, incidents, connectors, AI, compliance, admin, etc.).
-- Why it matters: Large single files slow iteration, cause merge conflicts, and make ownership unclear.
-- What to do:
-  - Decompose routes into domain modules (alerts, incidents, connectors, ai, compliance, admin, operations).
-  - Implement a consistent routing composition pattern with shared middleware.
+### 3.1 Interactive feedback on all actionable elements
 
-### 3.2 Enforce layered boundaries (routes -> service -> storage)
-- Current problem: Some route handlers may mix concerns (validation, business logic, storage, integration calls).
-- Why it matters: Tight coupling blocks future extraction of services and makes correctness and testing harder.
+- Current state: Buttons and interactive elements exist across 31 pages, but hover/active/focus states are inconsistent.
+- Gap: Without clear interactive feedback, users cannot confirm their clicks registered, making the app feel unresponsive.
 - What to do:
-  - Introduce service layer modules per domain.
-  - Keep storage as persistence-only; keep routes as HTTP-only.
+  - Audit all Button, Card, and interactive elements across all 31 pages.
+  - Ensure every clickable element has distinct hover (color/shadow change), active (pressed state), and focus (ring/outline) styles.
+  - Standardize using Tailwind utility classes or a shared interactive component wrapper.
 
-### 3.3 Domain event model standardization
-- Current problem: There is an outbox processor and event patterns, but event taxonomy and versioning are not fully formalized.
-- Why it matters: Events become an integration contract; breaking changes must be managed.
-- What to do:
-  - Define an event catalog (names, payload shape contracts, versioning strategy, deprecation policy).
-  - Ensure every mutation emits a domain event consistently and idempotently.
+### 3.2 Loading skeletons and empty states consistency
 
-### 3.4 Connector framework abstraction
-- Current problem: Connector logic is implemented in a single large connector engine with many provider-specific branches.
-- Why it matters: Adding new connectors becomes risky; provider-specific bugs can impact others.
+- Current state: Loading skeletons and empty states exist on some pages but are not universal.
+- Gap: Pages that show blank space during loading or "0" values when data is absent feel broken to analysts during live SOC operations.
 - What to do:
-  - Create a connector plugin interface (auth, test, sync, cursor, normalize).
-  - Make each connector its own module with isolated dependencies.
+  - Audit every data-driven component and ensure it has three states: loading skeleton, populated, and empty (with illustration and next-best-action CTA).
+  - Create reusable `<DataState>` wrapper component that handles all three states consistently.
+  - Prioritize dashboard, alerts, incidents, and connectors pages first.
 
-### 3.5 AI subsystem as a product platform
-- Current problem: AI integrations (Bedrock/SageMaker) are embedded in application logic; prompt and schema contracts exist but could be more modular.
-- Why it matters: AI features will expand quickly; you need consistent model governance and cost controls.
+### 3.3 Form validation with real-time feedback
+
+- Current state: Form submissions exist across settings, connectors, playbooks, and other pages, but validation feedback varies.
+- Gap: Users submit invalid data and only learn about errors after a server round-trip, causing frustration.
 - What to do:
-  - Centralize model invocation, budgeting, caching, and error handling.
-  - Add a prompt registry with versioning and auditability.
+  - Implement client-side Zod validation (reusing server schemas where possible) with real-time field-level error messages.
+  - Show validation errors inline as users type (debounced), not just on submit.
+  - Add visual indicators (red borders, error text) immediately on invalid fields.
+
+### 3.4 Search UX completeness
+
+- Current state: Search functionality exists in navigation (command palette) and some list pages.
+- Gap: Search bars that return no results without feedback feel broken. Users need "No results found" states and search suggestions.
+- What to do:
+  - Ensure every search input shows: loading state during search, "No results found" with suggestions when empty, and result counts.
+  - Add recent searches and saved search functionality for analysts who repeatedly search the same patterns.
+
+### 3.5 Responsive layout for tablet breakpoints
+
+- Current state: The application is designed for desktop-first usage with a collapsible sidebar.
+- Gap: Enterprise users increasingly use tablets for SOC monitoring. Tablet breakpoints (768px-1024px) may cause sidebar/content overlap.
+- What to do:
+  - Test and fix all 31 pages at 768px, 1024px, and 1280px breakpoints.
+  - Ensure sidebar auto-collapses at tablet widths.
+  - Ensure data tables and charts reflow gracefully without horizontal scrolling.
+
+### 3.6 Breadcrumb navigation for deep flows
+
+- Current state: Navigation uses sidebar and command palette, but deep flows (alert detail, incident detail, investigation, playbook execution) lack breadcrumb trails.
+- Gap: Analysts lose context when navigating deep into detail views and have no clear path back.
+- What to do:
+  - Add breadcrumb components for all detail/nested pages (alert detail, incident detail, entity graph, investigation, playbook execution, connector config).
+  - Breadcrumbs should reflect the navigation hierarchy and support browser back/forward.
+
+### 3.7 Z-index layering audit
+
+- Current state: Multiple overlay components exist (profile menus, command palette, modals, dropdowns, toast notifications).
+- Gap: Overlapping z-index values can cause dropdowns to clip behind content or modals to appear behind other overlays.
+- What to do:
+  - Define a z-index scale (base: 0, dropdown: 50, modal: 100, toast: 150, command-palette: 200) and enforce it via CSS custom properties.
+  - Audit all overlay components for correct stacking behavior.
+
+### 3.8 Accessibility audit and WCAG 2.1 compliance
+
+- Current state: ARIA labels and semantic HTML improvements have been made. CI includes an accessibility audit.
+- Gap: Systematic contrast checking, focus order verification, and screen reader testing across all 31 pages has not been completed.
+- What to do:
+  - Run axe-core or Lighthouse accessibility audit on every page and fix all critical/serious violations.
+  - Ensure text contrast meets WCAG 2.1 AA standard (4.5:1 for normal text, 3:1 for large text).
+  - Audit and fix focus order for all interactive flows (triage, escalation, playbook execution).
+  - Add keyboard navigation testing to E2E test suite.
+
+### 3.9 Meta tags and SEO for landing page
+
+- Current state: The landing page exists with marketing content, but meta tags may still use default Vite framework values.
+- Gap: Poor meta tags hurt discoverability and look unprofessional when links are shared (Slack, email previews).
+- What to do:
+  - Set proper `<title>`, `<meta description>`, and Open Graph tags for the landing page and key public routes.
+  - Add favicon and apple-touch-icon that match the brand.
+
+### 3.10 Console error cleanup
+
+- Current state: The application may have 404 errors for missing resources (map files, icons, fonts) visible in browser console.
+- Gap: Console errors visible to technical evaluators during demos create an impression of poor quality.
+- What to do:
+  - Audit browser console on every page for 404s, deprecation warnings, and uncaught errors.
+  - Fix all missing resource references.
+  - Add a CI check that captures console errors during E2E tests and fails on unexpected errors.
+
+### 3.11 Consistent iconography and typography
+
+- Current state: Icons are used across all pages from Lucide React, but mixing filled vs outlined styles may occur.
+- Gap: Inconsistent icon styles and typography hierarchy between navigation and content areas reduce visual polish.
+- What to do:
+  - Standardize on one icon style (outlined recommended for Lucide) across all pages.
+  - Define and enforce a typography scale (headings, body, caption, mono) via Tailwind config.
+  - Audit card padding, spacing, and border radius for consistency across all pages.
 
 ---
 
-## 4) Scalability
+## 4) Testing Depth
 
-### 4.1 Horizontal scaling readiness
-- Current problem: Some state is per-process (in-memory caches, SSE clients, job dedup map).
-- Why it matters: Horizontal scaling is essential for enterprise loads; per-process state leads to inconsistencies.
-- What to do:
-  - Identify and eliminate non-essential in-memory state or move it to shared stores.
-  - Ensure statelessness for API pods (except short-lived in-memory optimizations).
+### 4.1 Storage layer unit tests
 
-### 4.2 Data lifecycle management
-- Current problem: Alerts and telemetry will grow rapidly; retention and archiving exist conceptually but need full lifecycle governance.
-- Why it matters: Storage cost and query performance will degrade; compliance requires controlled retention.
+- Current state: 7 test files exist covering correlation-engine, normalizer, RBAC, org-boundary, predictive-engine, connectors integration, and webhooks integration.
+- Gap: The 4,926-line storage module has zero dedicated unit tests. Storage bugs are only caught by integration tests or in production.
 - What to do:
-  - Implement tiered retention policies per data type and plan.
-  - Add cold storage (S3) export and rehydration paths.
-  - Add deletion workflows that are tenant-safe and auditable.
+  - Add unit tests for every critical storage function using a test database or mocked Drizzle instance.
+  - Prioritize: alert CRUD, incident lifecycle, connector sync state, org membership, audit log writes.
+  - Target: 80% statement coverage for storage module.
 
-### 4.3 Large tenant isolation
-- Current problem: Shared RDS for all orgs is simplest, but enterprise “noisy neighbor” scenarios are expected.
-- Why it matters: Large customers require predictable performance and sometimes dedicated storage.
+### 4.2 Route handler integration tests
+
+- Current state: No integration tests for HTTP route handlers (request in, response out).
+- Gap: Route handlers contain validation, authorization, business logic, and error handling. Without integration tests, regressions in any layer are only caught in production.
 - What to do:
-  - Add plan-driven isolation options: dedicated RDS instance, dedicated schema, or dedicated cluster.
-  - Add throttling and quotas (ingestion rate, AI tokens, connector sync frequency) with enforcement.
+  - Add supertest-based integration tests for critical routes: auth, alerts CRUD, incidents CRUD, connectors, playbook execution, DR drills.
+  - Test happy paths, validation errors, authorization failures, and edge cases.
+  - Run these in CI on every PR.
+
+### 4.3 Frontend component tests
+
+- Current state: No frontend component tests exist.
+- Gap: UI regressions (broken layouts, missing states, incorrect data display) are only caught by manual review or E2E tests.
+- What to do:
+  - Add React Testing Library tests for critical components: AlertsList, IncidentDetail, Dashboard widgets, ConnectorConfig forms, PlaybookEditor.
+  - Test loading states, empty states, error states, and user interactions.
+  - Add Storybook for design system components if the team grows.
+
+### 4.4 Contract tests for all 24 connector plugins
+
+- Current state: Connector integration tests exist for some connectors, but not all 24 plugins have dedicated contract tests.
+- Gap: Connector plugins normalize external provider data. Without per-connector contract tests, provider API changes cause silent data corruption.
+- What to do:
+  - Add snapshot-based contract tests for every connector plugin using captured provider response fixtures.
+  - Each test should verify: authentication flow, data fetch, normalization output shape, and error handling.
+  - Add a CI matrix that runs all 24 connector tests in parallel.
+
+### 4.5 Performance regression tests
+
+- Current state: No automated performance benchmarks exist.
+- Gap: Performance regressions (slow queries, large payloads, memory leaks) are only detected in production.
+- What to do:
+  - Add benchmark tests for top-10 most-called endpoints measuring p50/p95/p99 latency.
+  - Add memory usage checks for long-running processes (SSE connections, job workers).
+  - Run benchmarks in CI and alert on regressions beyond threshold.
 
 ---
 
-## 5) Developer Experience (DX)
+## 5) Security Hardening (Next Wave)
 
-### 5.1 Dev environment parity and reproducibility
-- Current problem: Local dev vs AWS dev parity depends on environment variables and ad-hoc configuration.
-- Why it matters: New engineers need quick onboarding; reproducibility is key for incident debugging.
-- What to do:
-  - Provide a single documented way to start the stack locally (DB, migrations, seed, mock integrations).
-  - Add “dev checks” scripts: formatting, linting, typecheck, unit tests, integration tests.
+### 5.1 Content Security Policy tightening
 
-### 5.2 CI signal quality
-- Current problem: CI builds Docker image on PR, deploys on main; deeper test suites are limited.
-- Why it matters: CI should prevent regressions and provide confidence for rapid shipping.
+- Current state: CSP headers are set but may be permissive to avoid breaking functionality.
+- Gap: Overly permissive CSP allows XSS vectors. Enterprise security reviews flag permissive CSP as a finding.
 - What to do:
-  - Add unit test and integration test stages to PR workflows.
-  - Add static analysis checks (security scanning, dependency scanning, secret scanning).
+  - Audit current CSP directives and tighten to allow only known origins.
+  - Add nonce-based script loading for inline scripts.
+  - Test CSP in report-only mode first, then enforce after verifying no breakage.
 
-### 5.3 Tooling consistency
-- Current problem: There is TypeScript strictness and build scripts, but missing standard lint/format workflows.
-- Why it matters: Consistent style reduces review overhead and defect rate.
+### 5.2 Dependency vulnerability SLA
+
+- Current state: Dependabot and GitGuardian scan dependencies. No formal SLA for vulnerability remediation.
+- Gap: Enterprise customers require documented vulnerability response times (critical: 24h, high: 7d, medium: 30d).
 - What to do:
-  - Add linting and formatting (ESLint + Prettier or equivalent) with CI enforcement.
-  - Add pre-commit hooks for fast feedback.
+  - Define and document vulnerability remediation SLAs by severity.
+  - Add automated PR creation for security updates with priority labels.
+  - Add a dashboard showing current vulnerability count and age.
+
+### 5.3 Secrets rotation automation
+
+- Current state: Secret rotation infrastructure exists (server/secret-rotation.ts), but automated rotation schedules and verification are not fully operational.
+- Gap: Static secrets that are never rotated are a ticking time bomb. Enterprise audits check rotation evidence.
+- What to do:
+  - Implement automated rotation for: database credentials (90-day cycle), session secrets (30-day cycle), API keys (quarterly).
+  - Add rotation verification (can the app authenticate with the new secret?) before committing the rotation.
+  - Add rotation audit log and alerting for failed rotations.
+
+### 5.4 Request signing for internal service calls
+
+- Current state: Internal service calls (job queue, outbox processor, scheduler) use the same Express server and shared storage instance.
+- Gap: If the architecture evolves to microservices, internal calls need authentication. Even now, spoofed internal requests could bypass authorization.
+- What to do:
+  - Add HMAC-based request signing for internal service calls.
+  - Verify signatures on receiving endpoints.
+  - This also prepares for future microservice extraction.
+
+### 5.5 Audit log immutability
+
+- Current state: Audit logs are written to PostgreSQL and are mutable (can be updated or deleted by anyone with database access).
+- Gap: Enterprise compliance frameworks (SOC 2, ISO 27001) require immutable audit trails.
+- What to do:
+  - Add append-only audit log table with no UPDATE or DELETE permissions for the application role.
+  - Implement periodic export of audit logs to S3 with write-once (Object Lock) policy.
+  - Add hash chain verification (each log entry includes hash of previous entry) for tamper detection.
 
 ---
 
-## 6) Testing
+## 6) Observability and Operations
 
-### 6.1 Unit tests for core business logic
-- Current problem: There are no conventional test files discovered by common patterns.
-- Why it matters: High-change areas (correlation scoring, normalization, RBAC) need regression safety.
-- What to do:
-  - Add unit test coverage for correlation-engine scoring, predictive-engine analytics, normalizer mappings, and RBAC permission checks.
+### 6.1 Structured error classification
 
-### 6.2 Integration/contract tests for connectors and webhooks
-- Current problem: Integration testing exists conceptually but needs comprehensive, deterministic harnesses.
-- Why it matters: Connectors break frequently due to provider API changes; contract tests catch drift early.
+- Current state: Errors are caught and logged, but there is no systematic classification of errors (operational vs programmer, transient vs permanent, user-facing vs internal).
+- Gap: Without classification, on-call engineers cannot distinguish between "retry will fix it" and "code is broken" from logs alone.
 - What to do:
-  - Build provider-mocked tests using captured fixtures and validated normalization outputs.
-  - Add replayable webhook delivery tests (signature correctness, retry behavior).
+  - Define error categories: OperationalError (retryable), ValidationError (user input), AuthorizationError (access denied), InternalError (programmer bug), UpstreamError (external dependency).
+  - Create typed error classes for each category with required metadata (isRetryable, httpStatus, errorCode).
+  - Ensure all catch blocks classify errors before logging or returning.
 
-### 6.3 End-to-end UI tests for workflows
-- Current problem: Complex SOC workflows (triage, escalation, playbook execution) likely lack E2E coverage.
-- Why it matters: UI regressions are costly and reduce analyst trust.
+### 6.2 Health check depth
+
+- Current state: Readiness and liveness probes exist. Readiness checks DB connectivity and server readiness flag.
+- Gap: Health checks do not verify dependent services (S3, Secrets Manager, Bedrock) or critical background processes (job worker, outbox processor, DR scheduler).
 - What to do:
-  - Add E2E tests for login, org selection, alert triage, incident creation, playbook execution, and connector setup.
+  - Add deep health check endpoint that verifies: DB connectivity, S3 access, Secrets Manager access, job worker status, outbox processor status, and SSE client count.
+  - Keep liveness probe shallow (process is alive). Make readiness probe medium (DB connected). Add a separate `/api/ops/health/deep` for operational dashboards.
+
+### 6.3 Alert fatigue reduction for SLO breaches
+
+- Current state: SLO evaluation creates incidents and dispatches notifications for breaches.
+- Gap: Repeated SLO breaches for the same target can create alert storms if cooldown/dedup logic is insufficient.
+- What to do:
+  - Implement sliding-window dedup for SLO breach notifications (only alert once per target per window).
+  - Add breach severity escalation (warn after 1 breach, page after 3 consecutive breaches).
+  - Add "SLO health" summary notification (daily digest of all SLO statuses) as an alternative to per-breach alerts.
+
+### 6.4 Distributed tracing completeness
+
+- Current state: OpenTelemetry tracing module exists (server/tracing.ts). Correlation IDs propagate through requests.
+- Gap: Tracing may not cover all code paths: job execution, outbox processing, connector sync, SSE broadcast, and DR drill execution.
+- What to do:
+  - Add trace spans for: job claim/execute/complete, outbox event process, connector sync cycle, SSE event broadcast, DR drill execution.
+  - Ensure parent-child span relationships are correct across async boundaries.
+  - Add trace sampling configuration to control cost in production.
 
 ---
 
-## 7) UI/UX
+## 7) Infrastructure and Deployment
 
-### 7.1 Consistent loading, empty, and error states
-- Current problem: Loading skeletons and empty states exist, but consistency across all pages and workflows is an ongoing need.
-- Why it matters: Analysts interpret missing UI states as “broken product”.
-- What to do:
-  - Ensure every data-driven panel has: loading skeleton, empty state with next best action, and error recovery action.
+### 7.1 Blue-green database migration strategy
 
-### 7.2 Workflow-first navigation
-- Current problem: Navigation is feature-rich but can still overwhelm new users without workflow guidance.
-- Why it matters: Enterprise adoption depends on fast time-to-value.
+- Current state: `npm run db:push` is used for schema changes, which applies changes directly without rollback capability.
+- Gap: Failed migrations in production can cause downtime with no rollback path. Enterprise change management requires reversible migrations.
 - What to do:
-  - Add role-based default landing pages.
-  - Add guided flows for first connector, first ingestion, first incident, first playbook.
+  - Migrate from `db:push` to versioned migration files (Drizzle Kit generates them).
+  - Add pre-deployment migration validation (dry-run against a clone of production schema).
+  - Add rollback migration for every forward migration.
+  - Add migration status to health checks.
 
-### 7.3 Accessibility as a continuous standard
-- Current problem: Accessibility improvements exist, but coverage should be systematic.
-- Why it matters: Enterprise procurement can require WCAG compliance.
-- What to do:
-  - Add automated a11y testing in CI.
-  - Audit focus order, semantic landmarks, and contrast in all major pages.
+### 7.2 Pod disruption budgets
 
-### 7.4 Information architecture for high-cardinality lists
-- Current problem: Alerts/incidents lists can become dense.
-- Why it matters: Analysts need speed and clarity.
+- Current state: EKS deployments exist for staging/uat/production with Argo Rollouts.
+- Gap: Without PodDisruptionBudgets, cluster maintenance or node scaling can take down all replicas simultaneously.
 - What to do:
-  - Add advanced filtering UX (saved filters, filter chips, query builder).
-  - Add bulk operations and keyboard-driven triage consistently.
+  - Add PodDisruptionBudgets for production deployments (minAvailable: 1 or maxUnavailable: 1).
+  - Add to staging and UAT as well for parity.
+
+### 7.3 Horizontal Pod Autoscaler tuning
+
+- Current state: Resource requests and limits are set in K8s manifests.
+- Gap: Without HPA, the deployment runs at fixed replica count regardless of load, either wasting resources or becoming overloaded.
+- What to do:
+  - Add HPA based on CPU and custom metrics (request rate, queue depth).
+  - Set appropriate min/max replicas per environment (staging: 1-2, production: 2-6).
+  - Add scale-down stabilization window to prevent flapping.
+
+### 7.4 Egress network policy tightening
+
+- Current state: Network policies exist in K8s manifests.
+- Gap: Egress policies may be too permissive, allowing pods to reach arbitrary internet destinations.
+- What to do:
+  - Restrict egress to known destinations: RDS endpoint, S3 endpoints, Secrets Manager endpoint, connector provider IPs/domains.
+  - Use AWS PrivateLink for AWS service access where possible.
+  - Add egress monitoring and alerting for unexpected destinations.
+
+### 7.5 Disaster recovery RTO improvement
+
+- Current state: DR drill scheduler exists with automated restore tests and RPO/RTO tracking.
+- Gap: RTO is bounded by RDS snapshot restore time, which can be slow for large databases.
+- What to do:
+  - Implement read replica promotion as a faster DR strategy (RTO less than 5 minutes vs 30+ minutes for snapshot restore).
+  - Add automated failover runbooks that promote read replicas.
+  - Add cross-region read replica for geographic redundancy.
 
 ---
 
-## 8) Features
+## 8) AI Platform Maturity
 
-### 8.1 Enterprise-grade org and identity lifecycle
-- Current problem: Org membership auto-provisioning exists, but enterprise onboarding requires richer workflows.
-- Why it matters: Enterprises need controlled invitations, approvals, SSO enforcement, and auditability.
-- What to do:
-  - Add invitation flows, domain verification, SCIM provisioning, and SSO enforcement options per org.
-  - Add policies: MFA required, device/session policies, IP allowlists.
+### 8.1 Prompt versioning and A/B testing
 
-### 8.2 Incident response lifecycle completeness
-- Current problem: Incident model exists with workflow states, but enterprise IR requires evidence, approvals, and postmortems.
-- Why it matters: SOC operations require traceability.
+- Current state: Prompt registry exists (server/ai/prompt-registry.ts) with versioning.
+- Gap: No mechanism to A/B test prompts in production or measure prompt quality metrics.
 - What to do:
-  - Add evidence timelines, immutable audit trails, approvals for response actions, and post-incident review workflows.
+  - Add prompt variant support with traffic splitting (e.g., 90% stable, 10% candidate).
+  - Add quality metrics per prompt variant (user feedback, accuracy, response time).
+  - Add automatic rollback if a prompt variant degrades quality below threshold.
 
-### 8.3 Automation and playbooks as a governed system
-- Current problem: Playbook execution exists; governance and safe rollbacks need continuous enhancement.
-- Why it matters: Automation without guardrails is dangerous.
-- What to do:
-  - Add approval gates, simulation mode, blast radius previews, and guaranteed rollback semantics.
+### 8.2 AI response caching
 
-### 8.4 Reporting and compliance as first-class products
-- Current problem: Report scheduler and compliance pages exist; enterprise requires template governance and evidence management.
-- Why it matters: Compliance is a major buyer driver.
+- Current state: AI model calls go through the model gateway with budget controls.
+- Gap: Identical or near-identical queries produce redundant model invocations, wasting cost.
 - What to do:
-  - Add report template versioning, evidence attachment workflows (S3-backed), and compliance control mapping helpers.
+  - Add semantic caching for AI responses (hash prompt + context, cache response with TTL).
+  - Add cache hit rate metrics and cost savings tracking.
+  - Ensure cache keys include org context to prevent cross-tenant data leakage.
+
+### 8.3 AI model fallback chain
+
+- Current state: AI integration uses AWS Bedrock.
+- Gap: Single model provider dependency means AI features are fully down during Bedrock outages.
+- What to do:
+  - Add model fallback chain: primary model, fallback model (different Bedrock model), and graceful degradation (cached/templated responses).
+  - Add circuit breaker for model calls with automatic fallback activation.
+  - Add model health monitoring and alerting.
+
+### 8.4 AI cost attribution per tenant
+
+- Current state: AI budget controls exist at the platform level.
+- Gap: Cannot attribute AI costs to individual tenants for usage-based billing or internal showback.
+- What to do:
+  - Add per-tenant AI token usage tracking (input tokens, output tokens, model, timestamp).
+  - Add cost calculation based on model pricing and expose in usage-billing page.
+  - Add per-tenant AI budget limits with enforcement.
 
 ---
 
-## 9) API Design
+## 9) Connector Ecosystem
 
-### 9.1 Versioning and deprecation policy
-- Current problem: Coexistence of /api and /api/v1 endpoints with mixed response shapes.
-- Why it matters: External customers need stable contracts.
-- What to do:
-  - Publish a version policy (v1 stability guarantees, v2 path for breaking changes).
-  - Add explicit deprecation headers and a migration guide for legacy endpoints.
+### 9.1 Connector health monitoring dashboard
 
-### 9.2 Pagination/filter/sort correctness contract
-- Current problem: Pagination exists but needs uniform semantics across domains.
-- Why it matters: Inconsistent pagination breaks UIs and integrations.
+- Current state: 24 connector plugins exist with sync capabilities.
+- Gap: No centralized view showing which connectors are healthy, which are failing, last sync time, and error rates.
 - What to do:
-  - Standardize offset/limit vs cursor pagination rules.
-  - Standardize filter operators and search behavior.
+  - Add connector health dashboard showing: last sync status, sync frequency, error count, data volume per connector.
+  - Add automated alerting for connectors that have not synced within their expected interval.
+  - Add connector-specific error classification (auth expired, rate limited, provider down, normalization error).
 
-### 9.3 OpenAPI completeness
-- Current problem: OpenAPI exists but must remain complete and reflect all routes.
-- Why it matters: Typed clients, SDKs, and integrations depend on it.
+### 9.2 Connector credential lifecycle
+
+- Current state: Connector credentials are stored and used for sync.
+- Gap: No automated detection of expired or soon-to-expire credentials. Expired credentials cause silent sync failures.
 - What to do:
-  - Ensure OpenAPI spec includes every endpoint, every error response, and authentication requirements.
-  - Add CI validation that spec is regenerated and consistent.
+  - Add credential expiry tracking per connector.
+  - Add proactive alerts 7 days before credential expiry.
+  - Add one-click credential rotation flow in the UI.
+  - Add credential validation test before saving (test connectivity with provided credentials).
+
+### 9.3 Connector data quality scoring
+
+- Current state: Connectors normalize external data into a common schema.
+- Gap: No visibility into normalization quality (missing fields, type mismatches, dropped records).
+- What to do:
+  - Add data quality scoring per connector sync: completeness (% of fields populated), accuracy (% of fields passing validation), freshness (time since last record).
+  - Surface data quality scores in the connector health dashboard.
+  - Alert on quality degradation (e.g., completeness drops below 80%).
+
+### 9.4 Bulk connector management
+
+- Current state: Connectors are managed individually.
+- Gap: Enterprises with 20+ connectors need bulk operations (enable/disable all, bulk credential update, bulk test).
+- What to do:
+  - Add bulk select and bulk action support on the connectors page.
+  - Add "test all connectors" one-click action.
+  - Add connector groups/tags for organizational management.
 
 ---
 
-## 10) Database
+## 10) Multi-Tenancy Depth
 
-### 10.1 Pool sizing and connection management
-- Current problem: Pool is created with default settings.
-- Why it matters: Under load, default pool behavior can saturate DB connections or cause request latency.
-- What to do:
-  - Configure pool max/min, idle timeouts, statement timeouts, and application_name.
-  - Add connection health metrics and alerts.
+### 10.1 Tenant data export (right to data portability)
 
-### 10.2 Migration discipline
-- Current problem: Drizzle push is used; long-term you need a formal migration history for enterprise change control.
-- Why it matters: Enterprises require repeatable, audited schema evolution.
+- Current state: Tenant data is stored in shared tables with orgId scoping.
+- Gap: Enterprise customers and GDPR/CCPA require the ability to export all tenant data on request.
 - What to do:
-  - Move toward migration files and a migration pipeline.
-  - Add safe rollback plans for schema changes.
+  - Add a tenant data export endpoint that generates a complete archive (JSON or CSV) of all data for an org.
+  - Include: alerts, incidents, entities, audit logs, playbooks, connectors config (redacted credentials), reports, compliance evidence.
+  - Add export job queue with progress tracking and download link.
 
-### 10.3 Large table strategies
-- Current problem: Alerts and telemetry tables will become huge.
-- Why it matters: Performance and cost.
+### 10.2 Tenant data deletion (right to erasure)
+
+- Current state: No systematic tenant data deletion workflow exists.
+- Gap: GDPR Article 17 requires the ability to delete all tenant data on request.
 - What to do:
-  - Add partitioning or sharding strategy (time-based partitions) for the largest tables.
-  - Add archival tables and background archival jobs.
+  - Add a tenant data deletion workflow that removes all org-scoped data across all tables.
+  - Add deletion verification (count records before and after).
+  - Add deletion audit log (retained separately from deleted data).
+  - Add soft-delete with retention period before hard deletion for accidental deletion recovery.
+
+### 10.3 Tenant resource usage visibility
+
+- Current state: Usage metering exists for plan limits.
+- Gap: Tenants cannot see their own resource usage breakdown (storage, API calls, AI tokens, connector syncs) in a self-service dashboard.
+- What to do:
+  - Add per-tenant usage dashboard showing: storage used, API calls (by endpoint), AI tokens consumed, connector sync volume, active users.
+  - Add usage trends (daily/weekly/monthly) with projections.
+  - Add usage alerts when approaching plan limits.
 
 ---
 
-## 11) Observability
+## 11) Operational Workflows
 
-### 11.1 Metrics storage and retention
-- Current problem: SLI metrics are flushed into storage; long-term retention and aggregation strategy is needed.
-- Why it matters: Observability data itself can become high-cardinality.
-- What to do:
-  - Decide what belongs in PostgreSQL vs time-series systems.
-  - Add rollups (minute/hour/day) and retention windows.
+### 11.1 Incident war room
 
-### 11.2 Tracing and correlation
-- Current problem: Request logs exist, but no distributed tracing across jobs/outbox/connector calls.
-- Why it matters: Root-cause analysis requires end-to-end traces.
+- Current state: Incident detail page exists with evidence, audit trails, and response actions.
+- Gap: During active incidents, analysts need a real-time collaborative view (live timeline, shared context, assigned actions).
 - What to do:
-  - Add OpenTelemetry instrumentation for HTTP, database, and outbound calls.
-  - Propagate correlation IDs through job payloads and outbox events.
+  - Add incident war room page with: real-time event timeline (SSE-powered), assigned responder list, live status updates, shared investigation notes.
+  - Add @mention support in incident notes for tagging responders.
+  - Add incident status change notifications via SSE to all war room participants.
 
-### 11.3 Alerting maturity
-- Current problem: SLO evaluation exists and logs breaches; external alert dispatch is limited.
-- Why it matters: Production operations require paging and incident creation.
+### 11.2 Playbook marketplace
+
+- Current state: Playbook editor and execution exist with governance controls.
+- Gap: Organizations start from scratch when building playbooks. No shared templates or community playbooks.
 - What to do:
-  - Integrate SLO breaches with notification channels (Slack, email, PagerDuty) and create incidents automatically when appropriate.
+  - Add curated playbook template library (phishing response, ransomware containment, data breach notification, insider threat investigation).
+  - Add "import from template" flow that creates a new playbook from a template with org-specific customization.
+  - Add playbook sharing between organizations (opt-in, anonymized).
+
+### 11.3 Investigation timeline visualization
+
+- Current state: Investigation agent and entity graph exist.
+- Gap: Complex investigations spanning multiple alerts, entities, and time ranges lack a visual timeline view.
+- What to do:
+  - Add investigation timeline component showing events, alerts, entity interactions, and analyst actions on a time axis.
+  - Add zoom, filter by entity/source, and annotation capabilities.
+  - Add timeline export for inclusion in incident reports.
 
 ---
 
-## 12) Dependency Management
+## 12) Compliance and Reporting
 
-### 12.1 Upgrade cadence and policy
-- Current problem: Dependencies are modern but need a policy for continuous upgrades.
-- Why it matters: Security vulnerabilities and ecosystem breaking changes.
-- What to do:
-  - Establish upgrade cadence (weekly minor, monthly patch, quarterly major review).
-  - Automate updates with CI gating.
+### 12.1 Evidence chain of custody
 
-### 12.2 Reduce bloat and isolate optional deps
-- Current problem: Many AWS clients and UI libraries are present; some may not be used in all deployments.
-- Why it matters: Bundle size and attack surface.
+- Current state: Compliance evidence management exists.
+- Gap: Enterprise auditors require proof that evidence was not tampered with after collection (chain of custody).
 - What to do:
-  - Audit actual imports and remove unused dependencies.
-  - Split optional integrations into separate packages or dynamic imports.
+  - Add cryptographic hashing of evidence at collection time.
+  - Add hash verification on evidence retrieval.
+  - Add chain of custody log showing who accessed/downloaded evidence and when.
+
+### 12.2 Automated compliance gap analysis
+
+- Current state: Compliance controls and frameworks are mapped.
+- Gap: No automated analysis of which controls are met, partially met, or not met based on actual system configuration and data.
+- What to do:
+  - Add automated compliance gap analysis engine that evaluates current system state against framework requirements.
+  - Generate gap reports with remediation recommendations.
+  - Track compliance posture score over time.
+
+### 12.3 Report scheduling with SLA tracking
+
+- Current state: Report scheduler exists for periodic report generation.
+- Gap: No visibility into whether scheduled reports were generated on time and whether recipients received them.
+- What to do:
+  - Add report generation SLA tracking (was the report generated within the scheduled window?).
+  - Add delivery confirmation (email sent, downloaded, viewed).
+  - Add alerting for failed or late report generations.
 
 ---
 
-## 13) Internationalization & Localization (i18n/l10n)
+## 13) Performance Optimization (Next Wave)
 
-### 13.1 UI text externalization
-- Current problem: Strings are embedded in UI components; date formatting is often hard-coded to en-US.
-- Why it matters: Enterprise customers often require localization.
-- What to do:
-  - Adopt an i18n framework and externalize all user-facing strings.
-  - Standardize date/number formatting with locale-aware utilities.
+### 13.1 Database connection pooling optimization
 
-### 13.2 Time zones and compliance reporting
-- Current problem: Some analytics and trend labels are generated with implicit time zone assumptions.
-- Why it matters: SOC reporting is time-sensitive and must be accurate per tenant.
+- Current state: Database pool exists with configured settings.
+- Gap: Pool settings may not be optimized for the specific RDS instance size and workload pattern.
 - What to do:
-  - Store and display times consistently with tenant-configurable time zones.
-  - Ensure reporting and SLA calculations are time zone safe.
+  - Profile connection usage patterns (peak concurrent connections, average query duration, connection idle time).
+  - Tune pool size based on RDS max_connections, replica count, and workload characteristics.
+  - Add connection pool metrics to observability dashboard.
+
+### 13.2 Frontend bundle analysis and optimization
+
+- Current state: Bundle size check exists in CI.
+- Gap: No detailed analysis of what contributes to bundle size and which chunks can be optimized.
+- What to do:
+  - Add webpack-bundle-analyzer (or vite-bundle-visualizer) output to CI artifacts.
+  - Identify top-5 largest chunks and evaluate lazy loading opportunities.
+  - Add tree-shaking verification for large dependencies (Radix, Recharts, Lucide icons).
+  - Set per-chunk size budgets in CI.
+
+### 13.3 API response compression
+
+- Current state: Express serves responses, but compression may not be optimized.
+- Gap: Large API responses (alert lists, entity graphs, compliance reports) without compression waste bandwidth and increase latency.
+- What to do:
+  - Verify gzip/brotli compression is enabled for all API responses above a threshold.
+  - Add ETags for cacheable responses.
+  - Add response size metrics to identify endpoints returning oversized payloads.
+
+### 13.4 Database query plan monitoring
+
+- Current state: Performance middleware and query budgets exist.
+- Gap: No continuous monitoring of actual query execution plans in production.
+- What to do:
+  - Add periodic EXPLAIN ANALYZE logging for top-N slowest queries.
+  - Add alerting when query plans change (e.g., index stops being used).
+  - Add query plan dashboard showing current vs expected execution strategies.
 
 ---
 
-## 14) Deployment & Infrastructure
+## Appendix A: Priority execution plan (next 30 days)
 
-### 14.1 Kubernetes manifests hardening
-- Current problem: Deployments exist for staging/uat/production; continuous hardening is needed.
-- Why it matters: Security posture and reliability.
-- What to do:
-  - Add pod security contexts, read-only root filesystem, drop capabilities, non-root user, and resource requests/limits.
-  - Add network policies to restrict egress/ingress.
+1. Type safety sweep: Eliminate all 601 `as any` casts (start with route handlers, then storage, then utilities)
+2. Storage decomposition: Split storage.ts and schema.ts into domain modules
+3. Request validation: Add Zod schemas for all route handler inputs
+4. Frontend polish: Interactive feedback, loading skeletons, empty states across all 31 pages
+5. Testing depth: Storage unit tests, route integration tests, all 24 connector contract tests
 
-### 14.2 Readiness/liveness and graceful shutdown
-- Current problem: Health checks exist but may not cover readiness vs liveness semantics.
-- Why it matters: Prevents traffic to unhealthy pods and ensures safe rollouts.
-- What to do:
-  - Implement readiness probes that verify DB connectivity and critical dependencies.
-  - Implement graceful shutdown hooks for in-flight requests, job processing, and SSE clients.
+## Appendix B: High-risk areas to monitor continuously
 
-### 14.3 Rollout safety and progressive delivery
-- Current problem: Argo Rollouts is used; further guardrails can reduce risk.
-- Why it matters: Enterprise environments require predictable release processes.
-- What to do:
-  - Add automated analysis steps during canary (error rates, latency, key business metrics).
-  - Add fast rollback triggers and runbooks.
-
-### 14.4 Backup/restore and DR drills
-- Current problem: Backup/restore strategy is documented; operationalization needs continuous drills.
-- Why it matters: DR readiness is a requirement.
-- What to do:
-  - Automate periodic restore tests to a non-prod environment.
-  - Track RPO/RTO in dashboards and treat regressions as incidents.
-
----
-
-## Appendix A: High-priority “next 30 days” execution plan
-
-1. Security baseline completion (CSRF, secure session secret requirements, strict validation everywhere, SSRF protections for webhooks)
-2. Architecture refactor of server/routes.ts into domain modules with consistent envelopes and error codes
-3. Testing foundation: unit tests for correlation/normalization/RBAC, plus connector contract tests
-4. Distributed state fixes: remove default org behavior; move dedup and cache strategy to shared stores
-5. Observability upgrade: structured logs + requestId correlation + OpenTelemetry baseline
-
-## Appendix B: High-risk areas to treat as “never regress”
-
-- Multi-tenant org boundary enforcement (orgId derivation, x-org-id handling, storage queries)
-- Connector credential handling and redaction
-- Webhook delivery (SSRF prevention, signature correctness, retries)
-- AI invocation safety (cost control, rate limiting, data exposure)
-- Incident/alert mutation handlers emitting correct outbox events and invalidating caches
+- Multi-tenant org boundary enforcement (every storage query must filter by orgId)
+- Module-level mutable state (Maps that drift across pods)
+- Error handling completeness (no silent catch blocks)
+- Connector credential lifecycle (expired credentials = blind spots)
+- AI cost controls (unbounded model calls = unbounded bills)
+- Database migration safety (irreversible schema changes)
