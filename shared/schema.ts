@@ -3645,6 +3645,39 @@ export const drRunbooks = pgTable(
   (table) => [index("idx_dr_runbooks_org").on(table.orgId), index("idx_dr_runbooks_category").on(table.category)],
 );
 
+export const drDrillResults = pgTable(
+  "dr_drill_results",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    runbookId: varchar("runbook_id").references(() => drRunbooks.id),
+    orgId: varchar("org_id"),
+    dryRun: boolean("dry_run").default(true),
+    status: text("status").notNull().default("pending"),
+    triggeredBy: text("triggered_by").notNull().default("scheduler"),
+    rtoTargetMinutes: integer("rto_target_minutes"),
+    rpoTargetMinutes: integer("rpo_target_minutes"),
+    rtoActualMinutes: real("rto_actual_minutes"),
+    rpoActualMinutes: real("rpo_actual_minutes"),
+    rtoMet: boolean("rto_met"),
+    rpoMet: boolean("rpo_met"),
+    stepResults: jsonb("step_results"),
+    totalDurationMs: integer("total_duration_ms"),
+    errorMessage: text("error_message"),
+    notes: text("notes"),
+    startedAt: timestamp("started_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_dr_drill_results_runbook").on(table.runbookId),
+    index("idx_dr_drill_results_org").on(table.orgId),
+    index("idx_dr_drill_results_status").on(table.status),
+    index("idx_dr_drill_results_created").on(table.createdAt),
+  ],
+);
+
 export const insertAlertsArchiveSchema = createInsertSchema(alertsArchive).omit({
   id: true,
   ingestedAt: true,
@@ -3669,6 +3702,10 @@ export const insertDrRunbooksSchema = createInsertSchema(drRunbooks).omit({
   createdAt: true,
   updatedAt: true,
 });
+export const insertDrDrillResultsSchema = createInsertSchema(drDrillResults).omit({
+  id: true,
+  createdAt: true,
+});
 
 export type AlertArchive = typeof alertsArchive.$inferSelect;
 export type InsertAlertArchive = z.infer<typeof insertAlertsArchiveSchema>;
@@ -3684,6 +3721,8 @@ export type SloTarget = typeof sloTargets.$inferSelect;
 export type InsertSloTarget = z.infer<typeof insertSloTargetsSchema>;
 export type DrRunbook = typeof drRunbooks.$inferSelect;
 export type InsertDrRunbook = z.infer<typeof insertDrRunbooksSchema>;
+export type DrDrillResult = typeof drDrillResults.$inferSelect;
+export type InsertDrDrillResult = z.infer<typeof insertDrDrillResultsSchema>;
 
 export const TICKET_SYNC_STATUSES = ["pending", "syncing", "synced", "error"] as const;
 export const TICKET_SYNC_DIRECTIONS = ["outbound", "inbound", "bidirectional"] as const;

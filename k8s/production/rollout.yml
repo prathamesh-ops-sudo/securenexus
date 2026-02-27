@@ -23,12 +23,29 @@ spec:
       canaryService: securenexus-canary
       stableService: securenexus-stable
       steps:
-        - setWeight: 20
-        - pause: { duration: 120s }
-        - setWeight: 50
-        - pause: { duration: 120s }
-        - setWeight: 80
+        - setWeight: 10
+        - analysis:
+            templates:
+              - templateName: securenexus-canary-analysis
+            args:
+              - name: error-rate-threshold
+                value: "5"
+              - name: latency-p95-threshold-ms
+                value: "800"
+        - setWeight: 25
         - pause: { duration: 60s }
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: securenexus-canary-analysis
+            args:
+              - name: error-rate-threshold
+                value: "3"
+              - name: latency-p95-threshold-ms
+                value: "600"
+        - setWeight: 75
+        - pause: { duration: 60s }
+        - setWeight: 100
       canaryMetadata:
         labels:
           role: canary
@@ -37,6 +54,10 @@ spec:
           role: stable
       maxSurge: 1
       maxUnavailable: 0
+      abortScaleDownDelaySeconds: 30
+      dynamicStableScale: true
+      rollbackWindow:
+        revisions: 3
   template:
     metadata:
       labels:

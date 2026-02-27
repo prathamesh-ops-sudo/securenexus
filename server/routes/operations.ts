@@ -6,6 +6,14 @@ import { evaluateAllFlags, evaluateFlag } from "../feature-flags";
 import { runAllContractTests, runAutomationIntegrationTests, runConnectorContractTests } from "../integration-tests";
 import { evaluateAndAlert, getBreachHistory, seedDefaultSloTargets } from "../slo-alerting";
 import { checkReadiness, checkLiveness, getInFlightCount } from "../request-lifecycle";
+import {
+  evaluateCanaryMetrics,
+  evaluateRollbackTriggers,
+  getRollbackTriggers,
+  getRollbackRunbook,
+  createRollbackIncident,
+} from "../canary-analysis";
+import { executeDrill, getDrillSchedulerStatus, getRpoRtoDashboard, runScheduledDrills } from "../dr-drill-scheduler";
 
 export function registerOperationsRoutes(app: Express): void {
   // === Job Queue ===
@@ -984,6 +992,170 @@ export function registerOperationsRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "DR_DRILL_FAILED", message: error?.message || "Failed to run DR drill" }],
+        });
+      }
+    },
+  );
+
+  // ============================
+  // Canary Analysis & Rollback Triggers (14.3)
+  // ============================
+  app.get("/api/ops/canary/analysis", isAuthenticated, async (req, res) => {
+    try {
+      const errorThreshold = parseFloat(req.query.errorThreshold as string) || 5;
+      const latencyThreshold = parseFloat(req.query.latencyThreshold as string) || 800;
+      const result = await evaluateCanaryMetrics(errorThreshold, latencyThreshold);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to evaluate canary metrics" });
+    }
+  });
+
+  app.get("/api/ops/canary/triggers", isAuthenticated, async (_req, res) => {
+    try {
+      const triggers = getRollbackTriggers();
+      res.json(triggers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch rollback triggers" });
+    }
+  });
+
+  app.post("/api/ops/canary/evaluate-triggers", isAuthenticated, async (req, res) => {
+    try {
+      const { metrics } = req.body;
+      if (!metrics) return res.status(400).json({ message: "metrics object required in body" });
+      const evaluations = await evaluateRollbackTriggers(metrics);
+      const firedTriggers = evaluations.filter((e) => e.fired);
+      res.json({
+        evaluations,
+        firedCount: firedTriggers.length,
+        recommendation: firedTriggers.some((t) => t.action === "auto_rollback")
+          ? "rollback"
+          : firedTriggers.some((t) => t.action === "pause_rollout")
+            ? "pause"
+            : "continue",
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to evaluate rollback triggers" });
+    }
+  });
+
+  app.get("/api/ops/canary/rollback-runbook", isAuthenticated, (_req, res) => {
+    try {
+      const runbook = getRollbackRunbook();
+      res.json(runbook);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch rollback runbook" });
+    }
+  });
+
+  app.post(
+    "/api/ops/canary/create-rollback-incident",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const { analysisResult, triggeredBy } = req.body;
+        if (!analysisResult) return res.status(400).json({ message: "analysisResult required" });
+        await createRollbackIncident(analysisResult, triggeredBy || "manual");
+        res.status(201).json({ created: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create rollback incident" });
+      }
+    },
+  );
+
+  // ============================
+  // DR Drill Results & RPO/RTO Dashboard (14.4)
+  // ============================
+  app.get("/api/ops/dr-drill-results", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = req.query.orgId as string;
+      const runbookId = req.query.runbookId as string;
+      const limit = parseInt(req.query.limit as string, 10) || 50;
+      const results = await storage.getDrDrillResults(orgId, runbookId, limit);
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch drill results" });
+    }
+  });
+
+  app.get("/api/ops/dr-drill-results/:id", isAuthenticated, async (req, res) => {
+    try {
+      const result = await storage.getDrDrillResult(p(req.params.id));
+      if (!result) return res.status(404).json({ message: "Drill result not found" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch drill result" });
+    }
+  });
+
+  app.get("/api/ops/rpo-rto-dashboard", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const dashboard = await getRpoRtoDashboard(orgId);
+      res.json(dashboard);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch RPO/RTO dashboard" });
+    }
+  });
+
+  app.get("/api/ops/dr-scheduler/status", isAuthenticated, (_req, res) => {
+    try {
+      const status = getDrillSchedulerStatus();
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch scheduler status" });
+    }
+  });
+
+  app.post(
+    "/api/ops/dr-scheduler/run-now",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        const results = await runScheduledDrills();
+        res.json({ drillsRun: results.length, results });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to run scheduled drills" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/dr/run-drill-persisted",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const { runbookId, dryRun } = req.body;
+        if (!runbookId) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_REQUEST", message: "runbookId is required" }],
+          });
+        }
+        const runbook = await storage.getDrRunbook(runbookId);
+        if (!runbook) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Runbook not found" }],
+          });
+        }
+        const orgId = getOrgId(req);
+        const result = await executeDrill(runbook, orgId, dryRun !== false);
+        return sendEnvelope(res, result, { status: 201 });
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "DR_DRILL_FAILED", message: error?.message || "Failed to run persisted DR drill" }],
         });
       }
     },

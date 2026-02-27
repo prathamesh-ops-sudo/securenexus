@@ -219,6 +219,9 @@ import {
   type DrRunbook,
   type InsertDrRunbook,
   drRunbooks,
+  type DrDrillResult,
+  type InsertDrDrillResult,
+  drDrillResults,
   type TicketSyncJob,
   type InsertTicketSyncJob,
   ticketSyncJobs,
@@ -809,6 +812,12 @@ export interface IStorage {
   createDrRunbook(runbook: InsertDrRunbook): Promise<DrRunbook>;
   updateDrRunbook(id: string, data: Partial<DrRunbook>): Promise<DrRunbook | undefined>;
   deleteDrRunbook(id: string): Promise<boolean>;
+
+  // DR Drill Results
+  getDrDrillResults(orgId?: string, runbookId?: string, limit?: number): Promise<DrDrillResult[]>;
+  getDrDrillResult(id: string): Promise<DrDrillResult | undefined>;
+  createDrDrillResult(result: InsertDrDrillResult): Promise<DrDrillResult>;
+  updateDrDrillResult(id: string, data: Partial<DrDrillResult>): Promise<DrDrillResult | undefined>;
 
   // Plan Limits
   getOrgPlanLimit(orgId: string): Promise<OrgPlanLimit | undefined>;
@@ -3867,6 +3876,33 @@ export class DatabaseStorage implements IStorage {
   async deleteDrRunbook(id: string): Promise<boolean> {
     const result = await db.delete(drRunbooks).where(eq(drRunbooks.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getDrDrillResults(orgId?: string, runbookId?: string, limit: number = 50): Promise<DrDrillResult[]> {
+    const conditions = [];
+    if (orgId) conditions.push(eq(drDrillResults.orgId, orgId));
+    if (runbookId) conditions.push(eq(drDrillResults.runbookId, runbookId));
+    return db
+      .select()
+      .from(drDrillResults)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(drDrillResults.createdAt))
+      .limit(limit);
+  }
+
+  async getDrDrillResult(id: string): Promise<DrDrillResult | undefined> {
+    const [result] = await db.select().from(drDrillResults).where(eq(drDrillResults.id, id));
+    return result;
+  }
+
+  async createDrDrillResult(result: InsertDrDrillResult): Promise<DrDrillResult> {
+    const [created] = await db.insert(drDrillResults).values(result).returning();
+    return created;
+  }
+
+  async updateDrDrillResult(id: string, data: Partial<DrDrillResult>): Promise<DrDrillResult | undefined> {
+    const [updated] = await db.update(drDrillResults).set(data).where(eq(drDrillResults.id, id)).returning();
+    return updated;
   }
 
   async getTicketSyncJobs(orgId?: string, integrationId?: string): Promise<TicketSyncJob[]> {
