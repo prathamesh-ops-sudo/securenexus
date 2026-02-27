@@ -2396,7 +2396,7 @@ export const iocMatches = pgTable(
     iocEntryId: varchar("ioc_entry_id")
       .notNull()
       .references(() => iocEntries.id),
-    alertId: varchar("alert_id").references(() => alerts.id),
+    alertId: varchar("alert_id").references(() => alerts.id, { onDelete: "set null" }),
     incidentId: varchar("incident_id").references(() => incidents.id),
     entityId: varchar("entity_id").references(() => entities.id),
     matchField: text("match_field").notNull(),
@@ -2851,7 +2851,7 @@ export const alertDedupClusters = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     orgId: varchar("org_id").references(() => organizations.id),
-    canonicalAlertId: varchar("canonical_alert_id").references(() => alerts.id),
+    canonicalAlertId: varchar("canonical_alert_id").references(() => alerts.id, { onDelete: "set null" }),
     matchReason: text("match_reason").notNull(),
     matchConfidence: real("match_confidence").default(0),
     alertCount: integer("alert_count").default(1),

@@ -58,8 +58,8 @@ export async function rollupToHourly(windowHours = 2): Promise<HourlyRollupResul
       GROUP BY service, metric, date_trunc('hour', recorded_at)
       ON CONFLICT (service, metric, hour)
       DO UPDATE SET
-        min_value = LEAST(sli_metrics_hourly.min_value, EXCLUDED.min_value),
-        max_value = GREATEST(sli_metrics_hourly.max_value, EXCLUDED.max_value),
+        min_value = EXCLUDED.min_value,
+        max_value = EXCLUDED.max_value,
         avg_value = EXCLUDED.avg_value,
         p50_value = EXCLUDED.p50_value,
         p95_value = EXCLUDED.p95_value,
@@ -123,8 +123,8 @@ export async function rollupToDaily(windowDays = 2): Promise<DailyRollupResult> 
       GROUP BY service, metric, date_trunc('day', hour)
       ON CONFLICT (service, metric, day)
       DO UPDATE SET
-        min_value = LEAST(sli_metrics_daily.min_value, EXCLUDED.min_value),
-        max_value = GREATEST(sli_metrics_daily.max_value, EXCLUDED.max_value),
+        min_value = EXCLUDED.min_value,
+        max_value = EXCLUDED.max_value,
         avg_value = EXCLUDED.avg_value,
         p50_value = EXCLUDED.p50_value,
         p95_value = EXCLUDED.p95_value,
