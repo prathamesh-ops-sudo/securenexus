@@ -1,15 +1,53 @@
-import { LayoutDashboard, AlertTriangle, FileWarning, Activity, Settings, LogOut, ArrowDownToLine, Plug, Brain, Zap, ChevronDown, BarChart3, Shield, Crosshair, Workflow, Network, GitBranch, Swords, Scale, Link2, TrendingUp, Bot, Gauge, Cloud, Monitor, Users, FileText, History, CreditCard } from "lucide-react";
+import {
+  LayoutDashboard,
+  AlertTriangle,
+  FileWarning,
+  Activity,
+  Settings,
+  LogOut,
+  ArrowDownToLine,
+  Plug,
+  Brain,
+  Zap,
+  ChevronDown,
+  BarChart3,
+  Shield,
+  Crosshair,
+  Workflow,
+  Network,
+  GitBranch,
+  Swords,
+  Scale,
+  Link2,
+  TrendingUp,
+  Bot,
+  Gauge,
+  Cloud,
+  Monitor,
+  Users,
+  FileText,
+  History,
+  CreditCard,
+  Building2,
+  Check,
+  ChevronsUpDown,
+} from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useOrgContext } from "@/hooks/use-org-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -94,17 +132,14 @@ const adminGroup: NavGroup = {
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Settings", url: "/settings", icon: Settings },
+    { title: "Org Settings", url: "/org-settings", icon: Building2 },
   ],
 };
 
 const ADMIN_ONLY_URLS = ["/team", "/onboarding", "/settings", "/compliance"];
 const ANALYST_HIDDEN_URLS = ["/team", "/onboarding"];
 
-const ALL_NAV_ITEMS: NavItem[] = [
-  ...coreItems,
-  ...navGroups.flatMap(g => g.items),
-  ...adminGroup.items,
-];
+const ALL_NAV_ITEMS: NavItem[] = [...coreItems, ...navGroups.flatMap((g) => g.items), ...adminGroup.items];
 
 const RECENT_PAGES_KEY = "securenexus.recentPages.v1";
 const MAX_RECENT = 5;
@@ -116,15 +151,17 @@ function useRecentPages(currentPath: string) {
     try {
       const raw = localStorage.getItem(RECENT_PAGES_KEY);
       if (raw) setRecent(JSON.parse(raw));
-    } catch { setRecent([]); }
+    } catch {
+      setRecent([]);
+    }
   }, []);
 
   useEffect(() => {
     if (!currentPath || currentPath.includes(":")) return;
-    const match = ALL_NAV_ITEMS.find(i => i.url === currentPath);
+    const match = ALL_NAV_ITEMS.find((i) => i.url === currentPath);
     if (!match) return;
-    setRecent(prev => {
-      const next = [currentPath, ...prev.filter(p => p !== currentPath)].slice(0, MAX_RECENT);
+    setRecent((prev) => {
+      const next = [currentPath, ...prev.filter((p) => p !== currentPath)].slice(0, MAX_RECENT);
       localStorage.setItem(RECENT_PAGES_KEY, JSON.stringify(next));
       return next;
     });
@@ -136,33 +173,32 @@ function useRecentPages(currentPath: string) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const { currentOrg, currentOrgId, memberships, switchOrg } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
 
   useEffect(() => {
     const initial: Record<string, boolean> = {};
-    [...navGroups, adminGroup].forEach(g => {
-      if (g.items.some(i => i.url === "/" ? location === "/" : location.startsWith(i.url))) {
+    [...navGroups, adminGroup].forEach((g) => {
+      if (g.items.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)))) {
         initial[g.label] = true;
       }
     });
-    setOpenGroups(prev => ({ ...prev, ...initial }));
+    setOpenGroups((prev) => ({ ...prev, ...initial }));
   }, []);
 
   const toggleGroup = (label: string) => {
-    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
+    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
   const userRole = (user as any)?.role || "analyst";
 
-  const initials = user
-    ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U"
-    : "U";
+  const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
 
   function filterItems(items: NavItem[]) {
     if (userRole === "owner" || userRole === "admin") return items;
-    if (userRole === "read_only") return items.filter(i => !ADMIN_ONLY_URLS.includes(i.url));
-    return items.filter(i => !ANALYST_HIDDEN_URLS.includes(i.url));
+    if (userRole === "read_only") return items.filter((i) => !ADMIN_ONLY_URLS.includes(i.url));
+    return items.filter((i) => !ANALYST_HIDDEN_URLS.includes(i.url));
   }
 
   function renderItem(item: NavItem) {
@@ -183,7 +219,7 @@ export function AppSidebar() {
     const filtered = filterItems(group.items);
     if (filtered.length === 0) return null;
     const isOpen = !!openGroups[group.label];
-    const hasActive = filtered.some(i => i.url === "/" ? location === "/" : location.startsWith(i.url));
+    const hasActive = filtered.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)));
 
     return (
       <Collapsible key={group.label} open={isOpen} onOpenChange={() => toggleGroup(group.label)}>
@@ -192,7 +228,9 @@ export function AppSidebar() {
             <SidebarMenuButton className="w-full" data-active={hasActive || undefined}>
               <group.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="truncate font-medium">{group.label}</span>
-              <ChevronDown className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+              />
             </SidebarMenuButton>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -214,10 +252,38 @@ export function AppSidebar() {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-bold tracking-tight gradient-text-brand">SecureNexus</span>
-            <span className="text-[10px] text-sidebar-foreground/40 leading-none font-medium">AI Security Platform</span>
+            <span className="text-[10px] text-sidebar-foreground/40 leading-none font-medium">
+              AI Security Platform
+            </span>
           </div>
         </Link>
-        <div className="mt-2 flex items-center gap-2 px-2 py-1 rounded-md glass-subtle">
+        {memberships.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-md glass-subtle hover:bg-sidebar-accent/50 transition-colors text-left">
+                <Building2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" aria-hidden="true" />
+                <span className="text-[11px] font-medium truncate flex-1">{currentOrg?.name || "Select org"}</span>
+                <ChevronsUpDown className="h-3 w-3 text-muted-foreground shrink-0" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="text-[10px] text-muted-foreground">Organizations</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {memberships.map((m) => (
+                <DropdownMenuItem
+                  key={m.orgId}
+                  onClick={() => switchOrg(m.orgId)}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <Building2 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate flex-1">{m.organization?.name || m.orgId}</span>
+                  {m.orgId === currentOrgId && <Check className="h-3.5 w-3.5 text-cyan-400 shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <div className="mt-1 flex items-center gap-2 px-2 py-1 rounded-md glass-subtle">
           <div className="flex items-center gap-1.5">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -237,9 +303,7 @@ export function AppSidebar() {
       <SidebarContent className="gap-0 [&>div]:py-0">
         <SidebarGroup className="px-2 py-1">
           <SidebarGroupContent>
-            <SidebarMenu>
-              {coreItems.map(renderItem)}
-            </SidebarMenu>
+            <SidebarMenu>{coreItems.map(renderItem)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
@@ -247,9 +311,7 @@ export function AppSidebar() {
 
         <SidebarGroup className="px-2 py-1">
           <SidebarGroupContent>
-            <SidebarMenu>
-              {navGroups.map(renderCollapsibleGroup)}
-            </SidebarMenu>
+            <SidebarMenu>{navGroups.map(renderCollapsibleGroup)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
@@ -257,9 +319,7 @@ export function AppSidebar() {
 
         <SidebarGroup className="px-2 py-1">
           <SidebarGroupContent>
-            <SidebarMenu>
-              {renderCollapsibleGroup(adminGroup)}
-            </SidebarMenu>
+            <SidebarMenu>{renderCollapsibleGroup(adminGroup)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
@@ -272,11 +332,13 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <div className="flex items-center gap-1.5 px-2 py-1">
                       <History className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
-                      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Recent</span>
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        Recent
+                      </span>
                     </div>
                   </SidebarMenuItem>
-                  {recentPages.map(path => {
-                    const item = ALL_NAV_ITEMS.find(i => i.url === path);
+                  {recentPages.map((path) => {
+                    const item = ALL_NAV_ITEMS.find((i) => i.url === path);
                     if (!item) return null;
                     return renderItem(item);
                   })}
@@ -293,10 +355,14 @@ export function AppSidebar() {
         <div className="flex items-center gap-2.5 px-1 mb-1.5">
           <Avatar className="h-7 w-7 border border-sidebar-border">
             <AvatarImage src={user?.profileImageUrl || ""} />
-            <AvatarFallback className="text-[10px] font-semibold bg-cyan-500/15 text-cyan-400">{initials}</AvatarFallback>
+            <AvatarFallback className="text-[10px] font-semibold bg-cyan-500/15 text-cyan-400">
+              {initials}
+            </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium truncate">{user?.firstName || "User"} {user?.lastName || ""}</p>
+            <p className="text-xs font-medium truncate">
+              {user?.firstName || "User"} {user?.lastName || ""}
+            </p>
             <p className="text-[10px] text-sidebar-foreground/40 truncate">Security Analyst</p>
           </div>
         </div>
