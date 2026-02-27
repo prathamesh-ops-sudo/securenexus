@@ -2171,7 +2171,7 @@ export function generateTypedClient(): string {
       let urlExpr = `"${path}"`;
       for (const pp of pathParams) {
         urlExpr = urlExpr.replace(`{${pp.name}}`, `\${${pp.name}}`);
-        urlExpr = urlExpr.replace('"', "`").replace(/"$/, "`");
+        urlExpr = urlExpr.replace(/"/g, "`");
       }
       if (pathParams.length > 0) {
         urlExpr = urlExpr.replace(/^"/, "`").replace(/"$/, "`");
