@@ -6,10 +6,7 @@ const log = logger.child("db-performance");
 
 const SLOW_QUERY_THRESHOLD_MS = 200;
 
-export const PERFORMANCE_BUDGETS: Record<
-  string,
-  { staging: number; production: number }
-> = {
+export const PERFORMANCE_BUDGETS: Record<string, { staging: number; production: number }> = {
   "GET /api/v1/alerts": { staging: 800, production: 500 },
   "GET /api/v1/incidents": { staging: 1000, production: 800 },
   "GET /api/v1/audit-logs": { staging: 600, production: 400 },
@@ -30,11 +27,14 @@ export const PERFORMANCE_BUDGETS: Record<
   "POST /api/v1/ingest/bulk": { staging: 3000, production: 2000 },
 };
 
+import { PAGINATION_CONTRACT, parseStandardPagination } from "./pagination-contract";
+import type { StandardPaginationParams } from "./pagination-contract";
+
 const PAGINATION_DEFAULTS = {
-  defaultLimit: 50,
-  maxLimit: 500,
-  defaultSortColumn: "createdAt",
-  defaultSortOrder: "desc" as const,
+  defaultLimit: PAGINATION_CONTRACT.defaultLimit,
+  maxLimit: PAGINATION_CONTRACT.maxLimit,
+  defaultSortColumn: PAGINATION_CONTRACT.defaultSortColumn,
+  defaultSortOrder: PAGINATION_CONTRACT.defaultSortOrder,
 };
 
 export function parsePaginationParams(query: Record<string, unknown>): {
@@ -42,11 +42,8 @@ export function parsePaginationParams(query: Record<string, unknown>): {
   limit: number;
   sortOrder: "asc" | "desc";
 } {
-  const offset = Math.max(0, Number(query.offset ?? 0) || 0);
-  const rawLimit = Number(query.limit ?? PAGINATION_DEFAULTS.defaultLimit) || PAGINATION_DEFAULTS.defaultLimit;
-  const limit = Math.min(Math.max(1, rawLimit), PAGINATION_DEFAULTS.maxLimit);
-  const sortOrder = query.sortOrder === "asc" ? "asc" as const : PAGINATION_DEFAULTS.defaultSortOrder;
-  return { offset, limit, sortOrder };
+  const parsed = parseStandardPagination(query);
+  return { offset: parsed.offset, limit: parsed.limit, sortOrder: parsed.sortOrder };
 }
 
 interface SlowQueryEntry {
@@ -203,7 +200,7 @@ export function performanceBudgetMiddleware(req: any, res: any, next: any): void
 
   res.on("finish", () => {
     const latency = Date.now() - start;
-    const routePath = (req.route && typeof req.route.path === "string") ? req.route.path : undefined;
+    const routePath = req.route && typeof req.route.path === "string" ? req.route.path : undefined;
     const baseUrl = typeof req.baseUrl === "string" ? req.baseUrl : "";
     const endpointKey = `${req.method} ${routePath ? `${baseUrl}${routePath}` : req.path}`;
 
