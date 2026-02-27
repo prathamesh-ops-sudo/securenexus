@@ -101,11 +101,13 @@ function useOrgContext() {
   }, []);
 
   const orgData = data || ensureOrg.data;
+  const needsOnboarding = orgData?.needsOnboarding === true;
 
   return {
-    orgId: orgData?.membership?.orgId || orgData?.organization?.id,
-    orgRole: orgData?.membership?.role,
-    organization: orgData?.organization,
+    orgId: needsOnboarding ? undefined : orgData?.membership?.orgId || orgData?.organization?.id,
+    orgRole: needsOnboarding ? undefined : orgData?.membership?.role,
+    organization: needsOnboarding ? undefined : orgData?.organization,
+    needsOnboarding,
     isLoading: ensureOrg.isPending || (!orgData && !ensureOrg.isError),
   };
 }

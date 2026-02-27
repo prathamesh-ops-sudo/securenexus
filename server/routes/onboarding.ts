@@ -157,6 +157,14 @@ export function registerOnboardingRoutes(app: Express): void {
           errors: [{ code: "AUTH_REQUIRED", message: "Not authenticated" }],
         });
 
+      const existingProgress = await storage.getWizardProgress(userId);
+      if (existingProgress?.orgId) {
+        const existingOrg = await storage.getOrganization(existingProgress.orgId);
+        if (existingOrg) {
+          return sendEnvelope(res, { organization: existingOrg, alreadyCreated: true });
+        }
+      }
+
       const { name, industry, companySize } = req.body;
       if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 100) {
         return sendEnvelope(res, null, {
@@ -232,18 +240,15 @@ export function registerOnboardingRoutes(app: Express): void {
         });
       }
 
-      const existing = await storage.getOrgPlanLimit(progress.orgId);
-      if (!existing) {
-        await storage.upsertOrgPlanLimit({
-          orgId: progress.orgId,
-          planTier: planId,
-          eventsPerMonth: planId === "free" ? 10000 : planId === "pro" ? 500000 : 9999999,
-          maxConnectors: planId === "free" ? 3 : planId === "pro" ? 20 : 999,
-          aiTokensPerMonth: planId === "free" ? 5000 : planId === "pro" ? 100000 : 9999999,
-          automationRunsPerMonth: planId === "free" ? 100 : planId === "pro" ? 5000 : 999999,
-          storageGb: planId === "free" ? 5 : planId === "pro" ? 50 : 500,
-        });
-      }
+      await storage.upsertOrgPlanLimit({
+        orgId: progress.orgId,
+        planTier: planId,
+        eventsPerMonth: planId === "free" ? 10000 : planId === "pro" ? 500000 : 9999999,
+        maxConnectors: planId === "free" ? 3 : planId === "pro" ? 20 : 999,
+        aiTokensPerMonth: planId === "free" ? 5000 : planId === "pro" ? 100000 : 9999999,
+        automationRunsPerMonth: planId === "free" ? 100 : planId === "pro" ? 5000 : 999999,
+        storageGb: planId === "free" ? 5 : planId === "pro" ? 50 : 500,
+      });
 
       const completedSteps = Array.isArray(progress.completedSteps) ? [...(progress.completedSteps as string[])] : [];
       if (!completedSteps.includes("choose_plan")) completedSteps.push("choose_plan");

@@ -396,7 +396,7 @@ function ConnectIntegrationStep({
   onSkip: () => void;
   isLoading: boolean;
 }) {
-  const [, navigate] = useLocation();
+  const [selected, setSelected] = useState<string | null>(null);
   const connectorTypes = [
     { name: "Splunk", category: "SIEM", icon: "S" },
     { name: "CrowdStrike", category: "EDR", icon: "C" },
@@ -421,11 +421,10 @@ function ConnectIntegrationStep({
         {connectorTypes.map((connector) => (
           <Card
             key={connector.name}
-            className="cursor-pointer hover:border-primary/50 transition-all hover:shadow-sm group"
-            onClick={() => {
-              onConnect();
-              navigate("/integrations");
-            }}
+            className={`cursor-pointer transition-all hover:shadow-sm group ${
+              selected === connector.name ? "border-primary ring-2 ring-primary/20" : "hover:border-primary/50"
+            }`}
+            onClick={() => setSelected(connector.name)}
           >
             <CardContent className="p-3 text-center">
               <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center mx-auto mb-2 text-xs font-bold text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
@@ -439,17 +438,9 @@ function ConnectIntegrationStep({
       </div>
 
       <div className="flex items-center gap-3">
-        <Button
-          variant="outline"
-          onClick={() => {
-            onConnect();
-            navigate("/integrations");
-          }}
-          disabled={isLoading}
-          className="flex-1"
-        >
-          <Plug className="h-4 w-4 mr-2" />
-          Browse All Integrations
+        <Button onClick={() => onConnect()} disabled={isLoading || !selected} className="flex-1">
+          {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plug className="h-4 w-4 mr-2" />}
+          {selected ? `Connect ${selected}` : "Select an integration"}
         </Button>
         <Button variant="ghost" size="sm" onClick={onSkip} disabled={isLoading}>
           <SkipForward className="h-4 w-4 mr-1" /> Skip
