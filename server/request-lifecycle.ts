@@ -33,12 +33,15 @@ export function inFlightMiddleware(req: Request, res: Response, next: NextFuncti
   }
 
   inFlightCount++;
-  res.on("finish", () => {
-    inFlightCount--;
-  });
-  res.on("close", () => {
-    if (inFlightCount > 0) inFlightCount--;
-  });
+  let decremented = false;
+  const decrement = () => {
+    if (!decremented) {
+      decremented = true;
+      inFlightCount--;
+    }
+  };
+  res.on("finish", decrement);
+  res.on("close", decrement);
   next();
 }
 
