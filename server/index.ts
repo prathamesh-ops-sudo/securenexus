@@ -12,7 +12,7 @@ import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middle
 import { config } from "./config";
 import { logger, correlationMiddleware, requestLogger } from "./logger";
 import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
-import { initializeScalingState, gracefulShutdown } from "./scaling-state";
+import { initializeScalingState, gracefulShutdown, registerShutdownHandler } from "./scaling-state";
 import { startPoolHealthMonitor, drainPool } from "./db";
 import { startRetentionScheduler } from "./retention-scheduler";
 import { initializeTenantIsolation } from "./tenant-isolation";
@@ -20,6 +20,8 @@ import { initializeTenantThrottle } from "./tenant-throttle";
 import { startArchivalScheduler } from "./partition-strategy";
 import { startMetricsRollupScheduler } from "./metrics-rollup";
 import { tracingMiddleware, startTracingFlush, stopTracingFlush } from "./tracing";
+import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFlightDrain } from "./request-lifecycle";
+import { stopJobWorker } from "./job-queue";
 
 const app = express();
 const httpServer = createServer(app);
@@ -47,6 +49,7 @@ app.use(express.urlencoded({ extended: false }));
 
 applyInputSanitization(app);
 
+app.use(inFlightMiddleware);
 app.use(sliMiddleware);
 app.use(performanceBudgetMiddleware);
 
@@ -125,30 +128,35 @@ export function log(message: string, source = "express") {
       startArchivalScheduler();
       startMetricsRollupScheduler();
       startTracingFlush();
+      registerShutdownHandler("job-worker", stopJobWorker);
+      markServerReady();
     },
   );
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       logger.child("express").info(`Received ${signal}, starting graceful shutdown`);
+      markServerNotReady();
       stopTracingFlush();
-      gracefulShutdown(signal).then(() => {
-        httpServer.close(() => {
-          drainPool()
-            .then(() => {
-              logger.child("express").info("HTTP server closed and pool drained");
-              process.exit(0);
-            })
-            .catch((err: unknown) => {
-              logger.child("express").error("Pool drain failed during shutdown", { error: String(err) });
-              process.exit(1);
-            });
+      waitForInFlightDrain(10_000)
+        .then(() => gracefulShutdown(signal))
+        .then(() => {
+          httpServer.close(() => {
+            drainPool()
+              .then(() => {
+                logger.child("express").info("HTTP server closed and pool drained");
+                process.exit(0);
+              })
+              .catch((err: unknown) => {
+                logger.child("express").error("Pool drain failed during shutdown", { error: String(err) });
+                process.exit(1);
+              });
+          });
+          setTimeout(() => {
+            logger.child("express").warn("Forced shutdown after timeout");
+            process.exit(1);
+          }, 25_000);
         });
-        setTimeout(() => {
-          logger.child("express").warn("Forced shutdown after timeout");
-          process.exit(1);
-        }, 15_000);
-      });
     });
   }
 })();
