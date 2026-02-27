@@ -1,15 +1,25 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
+import { requireOrgId, resolveOrgContext } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
 import { canRollback, createRollbackRecord } from "../rollback-engine";
+import {
+  insertPlaybookVersionSchema,
+  insertBlastRadiusPreviewSchema,
+  insertPlaybookSimulationSchema,
+  insertPlaybookRollbackPlanSchema,
+} from "@shared/schema";
 
 export function registerPlaybooksRoutes(app: Express): void {
   // Playbooks (Phase 13 - SOAR-Lite)
   app.get("/api/playbooks", isAuthenticated, async (_req, res) => {
-    try { res.json(await storage.getPlaybooks()); }
-    catch (error) { res.status(500).json({ message: "Failed to fetch playbooks" }); }
+    try {
+      res.json(await storage.getPlaybooks());
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch playbooks" });
+    }
   });
 
   app.get("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
@@ -17,25 +27,37 @@ export function registerPlaybooksRoutes(app: Express): void {
       const pb = await storage.getPlaybook(p(req.params.id));
       if (!pb) return res.status(404).json({ message: "Playbook not found" });
       res.json(pb);
-    } catch (error) { res.status(500).json({ message: "Failed to fetch playbook" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch playbook" });
+    }
   });
 
   app.post("/api/playbooks", isAuthenticated, validateBody(bodySchemas.playbookCreate), async (req, res) => {
     try {
       const { name, description, trigger, conditions, actions, status } = (req as any).validatedBody;
       const playbook = await storage.createPlaybook({
-        name, description, trigger, conditions, actions, status: status || "draft",
+        name,
+        description,
+        trigger,
+        conditions,
+        actions,
+        status: status || "draft",
         createdBy: (req as any).user?.id,
       });
       await storage.createAuditLog({
         userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
+        userName: (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Analyst",
         action: "playbook_created",
-        resourceType: "playbook", resourceId: playbook.id,
+        resourceType: "playbook",
+        resourceId: playbook.id,
         details: { name, trigger },
       });
       res.status(201).json(playbook);
-    } catch (error) { res.status(500).json({ message: "Failed to create playbook" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create playbook" });
+    }
   });
 
   app.patch("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
@@ -43,10 +65,13 @@ export function registerPlaybooksRoutes(app: Express): void {
       const existing = await storage.getPlaybook(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Playbook not found" });
       const updated = await storage.updatePlaybook(p(req.params.id), {
-        ...req.body, updatedAt: new Date(),
+        ...req.body,
+        updatedAt: new Date(),
       });
       res.json(updated);
-    } catch (error) { res.status(500).json({ message: "Failed to update playbook" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update playbook" });
+    }
   });
 
   app.delete("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
@@ -55,12 +80,17 @@ export function registerPlaybooksRoutes(app: Express): void {
       if (!deleted) return res.status(404).json({ message: "Playbook not found" });
       await storage.createAuditLog({
         userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
+        userName: (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Analyst",
         action: "playbook_deleted",
-        resourceType: "playbook", resourceId: p(req.params.id),
+        resourceType: "playbook",
+        resourceId: p(req.params.id),
       });
       res.json({ success: true });
-    } catch (error) { res.status(500).json({ message: "Failed to delete playbook" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete playbook" });
+    }
   });
 
   app.post("/api/playbooks/:id/execute", isAuthenticated, validatePathId("id"), async (req, res) => {
@@ -97,30 +127,30 @@ export function registerPlaybooksRoutes(app: Express): void {
 
       const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
       let pausedAtApproval = false;
-    
+
       if (isGraphFormat) {
         const graph = actionsArr[0] as any;
         const nodes = graph.nodes || [];
         const edges = graph.edges || [];
-      
+
         const adjacency: Record<string, string[]> = {};
         for (const edge of edges) {
           if (!adjacency[edge.source]) adjacency[edge.source] = [];
           adjacency[edge.source].push(edge.target);
         }
-      
+
         const targetNodes = new Set(edges.map((e: any) => e.target));
         const startNodes = nodes.filter((n: any) => !targetNodes.has(n.id) || n.type === "trigger");
-      
+
         const visited = new Set<string>();
         const queue = startNodes.map((n: any) => n.id);
         let execCount = 0;
-      
+
         while (queue.length > 0 && execCount < 50) {
           const nodeId = queue.shift()!;
           if (visited.has(nodeId)) continue;
           visited.add(nodeId);
-        
+
           const node = nodes.find((n: any) => n.id === nodeId);
           if (!node) continue;
 
@@ -144,10 +174,16 @@ export function registerPlaybooksRoutes(app: Express): void {
             pausedAtApproval = true;
             break;
           }
-        
+
           if (node.type === "action" && node.data?.actionType) {
             if (isDryRun) {
-              executedActions.push({ nodeId, actionType: node.data.actionType, status: "simulated", message: `[Dry Run] Would execute: ${node.data.label}`, executedAt: new Date().toISOString() });
+              executedActions.push({
+                nodeId,
+                actionType: node.data.actionType,
+                status: "simulated",
+                message: `[Dry Run] Would execute: ${node.data.label}`,
+                executedAt: new Date().toISOString(),
+              });
             } else {
               const result = await dispatchAction(node.data.actionType, node.data.config || {}, context);
               executedActions.push({ nodeId, ...result });
@@ -158,11 +194,17 @@ export function registerPlaybooksRoutes(app: Express): void {
             for (const edge of trueEdges) {
               queue.push(edge.target);
             }
-            executedActions.push({ nodeId, actionType: "condition", status: "completed", message: `Evaluated condition: ${node.data?.label || "check"}`, executedAt: new Date().toISOString() });
+            executedActions.push({
+              nodeId,
+              actionType: "condition",
+              status: "completed",
+              message: `Evaluated condition: ${node.data?.label || "check"}`,
+              executedAt: new Date().toISOString(),
+            });
             execCount++;
             continue;
           }
-        
+
           const children = adjacency[nodeId] || [];
           for (const child of children) {
             queue.push(child);
@@ -172,11 +214,23 @@ export function registerPlaybooksRoutes(app: Express): void {
         for (const action of actionsArr) {
           const actionObj = action as any;
           const actionType = actionObj.type || actionObj.actionType || "unknown";
-          const config = typeof actionObj.config === "string" ? 
-            (() => { try { return JSON.parse(actionObj.config); } catch { return { raw: actionObj.config }; } })() :
-            (actionObj.config || {});
+          const config =
+            typeof actionObj.config === "string"
+              ? (() => {
+                  try {
+                    return JSON.parse(actionObj.config);
+                  } catch {
+                    return { raw: actionObj.config };
+                  }
+                })()
+              : actionObj.config || {};
           if (isDryRun) {
-            executedActions.push({ actionType, status: "simulated", message: `[Dry Run] Would execute: ${actionType}`, executedAt: new Date().toISOString() });
+            executedActions.push({
+              actionType,
+              status: "simulated",
+              message: `[Dry Run] Would execute: ${actionType}`,
+              executedAt: new Date().toISOString(),
+            });
           } else {
             const result = await dispatchAction(actionType, config, context);
             executedActions.push(result);
@@ -188,19 +242,32 @@ export function registerPlaybooksRoutes(app: Express): void {
         await storage.updatePlaybookExecution(executionId, {
           status: "completed",
           actionsExecuted: executedActions,
-          result: { totalActions: executedActions.length, completedActions: executedActions.filter((a: any) => a.status === "completed" || a.status === "simulated").length },
+          result: {
+            totalActions: executedActions.length,
+            completedActions: executedActions.filter((a: any) => a.status === "completed" || a.status === "simulated")
+              .length,
+          },
           executionTimeMs: Date.now() - startTime,
         });
       }
 
-      await storage.updatePlaybook(pb.id, { lastTriggeredAt: new Date(), triggerCount: (pb.triggerCount || 0) + 1 } as any);
+      await storage.updatePlaybook(pb.id, {
+        lastTriggeredAt: new Date(),
+        triggerCount: (pb.triggerCount || 0) + 1,
+      } as any);
       await storage.createAuditLog({
         userId: user?.id,
         userName: context.userName,
         action: "playbook_executed",
         resourceType: "playbook",
         resourceId: pb.id,
-        details: { name: pb.name, trigger: "manual", actionsCount: executedActions.length, dryRun: isDryRun, paused: pausedAtApproval },
+        details: {
+          name: pb.name,
+          trigger: "manual",
+          actionsCount: executedActions.length,
+          dryRun: isDryRun,
+          paused: pausedAtApproval,
+        },
       });
       const updatedExecution = await storage.getPlaybookExecution(executionId);
       res.json(updatedExecution || execution);
@@ -210,12 +277,19 @@ export function registerPlaybooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/playbook-executions", isAuthenticated, validateQuery(querySchemas.playbookExecutions), async (req, res) => {
-    try {
-      const { playbookId, limit } = (req as any).validatedQuery;
-      res.json(await storage.getPlaybookExecutions(playbookId, limit));
-    } catch (error) { res.status(500).json({ message: "Failed to fetch executions" }); }
-  });
+  app.get(
+    "/api/playbook-executions",
+    isAuthenticated,
+    validateQuery(querySchemas.playbookExecutions),
+    async (req, res) => {
+      try {
+        const { playbookId, limit } = (req as any).validatedQuery;
+        res.json(await storage.getPlaybookExecutions(playbookId, limit));
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch executions" });
+      }
+    },
+  );
 
   app.get("/api/playbook-approvals", isAuthenticated, validateQuery(querySchemas.approvalStatus), async (req, res) => {
     try {
@@ -227,112 +301,141 @@ export function registerPlaybooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/playbook-approvals/:id/decide", isAuthenticated, validatePathId("id"), validateBody(bodySchemas.approvalDecision), async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const { decision, note } = (req as any).validatedBody;
+  app.post(
+    "/api/playbook-approvals/:id/decide",
+    isAuthenticated,
+    validatePathId("id"),
+    validateBody(bodySchemas.approvalDecision),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const { decision, note } = (req as any).validatedBody;
 
-      const approval = await storage.getPlaybookApproval(p(req.params.id));
-      if (!approval) return res.status(404).json({ message: "Approval not found" });
-      if (approval.status !== "pending") {
-        return res.status(400).json({ message: `Approval already ${approval.status}` });
-      }
-
-      // Validate linked resources exist
-      const execution = await storage.getPlaybookExecution(approval.executionId);
-      if (!execution) return res.status(404).json({ message: "Linked execution not found" });
-      const pb = await storage.getPlaybook(execution.playbookId);
-      if (!pb) return res.status(404).json({ message: "Linked playbook not found" });
-
-      const updatedApproval = await storage.updatePlaybookApproval(approval.id, {
-        status: decision,
-        decidedBy: userName,
-        decisionNote: note || null,
-        decidedAt: new Date(),
-      });
-
-      if (decision === "approved") {
-        if (execution.status === "awaiting_approval") {
-          const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
-          const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
-          if (isGraphFormat) {
-            const graph = actionsArr[0] as any;
-            const nodes = graph.nodes || [];
-            const edges = graph.edges || [];
-            const adjacency: Record<string, string[]> = {};
-            for (const edge of edges) {
-              if (!adjacency[edge.source]) adjacency[edge.source] = [];
-              adjacency[edge.source].push(edge.target);
-            }
-            const pausedNodeId = execution.pausedAtNodeId;
-            const resumeFrom = pausedNodeId ? (adjacency[pausedNodeId] || []) : [];
-            const existingActions = Array.isArray(execution.actionsExecuted) ? execution.actionsExecuted as any[] : [];
-            const visited = new Set<string>(existingActions.map((a: any) => a.nodeId).filter(Boolean));
-            if (pausedNodeId) visited.add(pausedNodeId);
-            const queue = [...resumeFrom];
-            const newActions: any[] = [];
-            let execCount = 0;
-            const isDryRun = execution.dryRun === true;
-            const context: ActionContext = {
-              orgId: user?.orgId || pb.orgId || undefined,
-              incidentId: execution.resourceId || undefined,
-              userId: user?.id,
-              userName,
-              storage,
-            };
-            while (queue.length > 0 && execCount < 50) {
-              const nodeId = queue.shift()!;
-              if (visited.has(nodeId)) continue;
-              visited.add(nodeId);
-              const node = nodes.find((n: any) => n.id === nodeId);
-              if (!node) continue;
-              if (node.type === "action" && node.data?.actionType) {
-                if (isDryRun) {
-                  newActions.push({ nodeId, actionType: node.data.actionType, status: "simulated", message: `[Dry Run] Would execute: ${node.data.label}`, executedAt: new Date().toISOString() });
-                } else {
-                  const result = await dispatchAction(node.data.actionType, node.data.config || {}, context);
-                  newActions.push({ nodeId, ...result });
-                }
-                execCount++;
-              } else if (node.type === "condition") {
-                const trueEdges = edges.filter((e: any) => e.source === nodeId && e.label !== "false");
-                for (const edge of trueEdges) { queue.push(edge.target); }
-                newActions.push({ nodeId, actionType: "condition", status: "completed", message: `Evaluated condition: ${node.data?.label || "check"}`, executedAt: new Date().toISOString() });
-                execCount++;
-                continue;
-              }
-              const children = adjacency[nodeId] || [];
-              for (const child of children) { queue.push(child); }
-            }
-            const mergedActions = [...existingActions, ...newActions];
-            await storage.updatePlaybookExecution(execution.id, {
-              status: "completed",
-              pausedAtNodeId: null,
-              actionsExecuted: mergedActions,
-              result: { totalActions: mergedActions.length, completedActions: mergedActions.filter((a: any) => a.status === "completed" || a.status === "simulated").length },
-            });
-          }
+        const approval = await storage.getPlaybookApproval(p(req.params.id));
+        if (!approval) return res.status(404).json({ message: "Approval not found" });
+        if (approval.status !== "pending") {
+          return res.status(400).json({ message: `Approval already ${approval.status}` });
         }
-      } else {
-        await storage.updatePlaybookExecution(approval.executionId, { status: "rejected" });
+
+        // Validate linked resources exist
+        const execution = await storage.getPlaybookExecution(approval.executionId);
+        if (!execution) return res.status(404).json({ message: "Linked execution not found" });
+        const pb = await storage.getPlaybook(execution.playbookId);
+        if (!pb) return res.status(404).json({ message: "Linked playbook not found" });
+
+        const updatedApproval = await storage.updatePlaybookApproval(approval.id, {
+          status: decision,
+          decidedBy: userName,
+          decisionNote: note || null,
+          decidedAt: new Date(),
+        });
+
+        if (decision === "approved") {
+          if (execution.status === "awaiting_approval") {
+            const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+            const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
+            if (isGraphFormat) {
+              const graph = actionsArr[0] as any;
+              const nodes = graph.nodes || [];
+              const edges = graph.edges || [];
+              const adjacency: Record<string, string[]> = {};
+              for (const edge of edges) {
+                if (!adjacency[edge.source]) adjacency[edge.source] = [];
+                adjacency[edge.source].push(edge.target);
+              }
+              const pausedNodeId = execution.pausedAtNodeId;
+              const resumeFrom = pausedNodeId ? adjacency[pausedNodeId] || [] : [];
+              const existingActions = Array.isArray(execution.actionsExecuted)
+                ? (execution.actionsExecuted as any[])
+                : [];
+              const visited = new Set<string>(existingActions.map((a: any) => a.nodeId).filter(Boolean));
+              if (pausedNodeId) visited.add(pausedNodeId);
+              const queue = [...resumeFrom];
+              const newActions: any[] = [];
+              let execCount = 0;
+              const isDryRun = execution.dryRun === true;
+              const context: ActionContext = {
+                orgId: user?.orgId || pb.orgId || undefined,
+                incidentId: execution.resourceId || undefined,
+                userId: user?.id,
+                userName,
+                storage,
+              };
+              while (queue.length > 0 && execCount < 50) {
+                const nodeId = queue.shift()!;
+                if (visited.has(nodeId)) continue;
+                visited.add(nodeId);
+                const node = nodes.find((n: any) => n.id === nodeId);
+                if (!node) continue;
+                if (node.type === "action" && node.data?.actionType) {
+                  if (isDryRun) {
+                    newActions.push({
+                      nodeId,
+                      actionType: node.data.actionType,
+                      status: "simulated",
+                      message: `[Dry Run] Would execute: ${node.data.label}`,
+                      executedAt: new Date().toISOString(),
+                    });
+                  } else {
+                    const result = await dispatchAction(node.data.actionType, node.data.config || {}, context);
+                    newActions.push({ nodeId, ...result });
+                  }
+                  execCount++;
+                } else if (node.type === "condition") {
+                  const trueEdges = edges.filter((e: any) => e.source === nodeId && e.label !== "false");
+                  for (const edge of trueEdges) {
+                    queue.push(edge.target);
+                  }
+                  newActions.push({
+                    nodeId,
+                    actionType: "condition",
+                    status: "completed",
+                    message: `Evaluated condition: ${node.data?.label || "check"}`,
+                    executedAt: new Date().toISOString(),
+                  });
+                  execCount++;
+                  continue;
+                }
+                const children = adjacency[nodeId] || [];
+                for (const child of children) {
+                  queue.push(child);
+                }
+              }
+              const mergedActions = [...existingActions, ...newActions];
+              await storage.updatePlaybookExecution(execution.id, {
+                status: "completed",
+                pausedAtNodeId: null,
+                actionsExecuted: mergedActions,
+                result: {
+                  totalActions: mergedActions.length,
+                  completedActions: mergedActions.filter(
+                    (a: any) => a.status === "completed" || a.status === "simulated",
+                  ).length,
+                },
+              });
+            }
+          }
+        } else {
+          await storage.updatePlaybookExecution(approval.executionId, { status: "rejected" });
+        }
+
+        await storage.createAuditLog({
+          userId: user?.id,
+          userName,
+          action: `playbook_approval_${decision}`,
+          resourceType: "playbook_approval",
+          resourceId: approval.id,
+          details: { executionId: approval.executionId, playbookId: approval.playbookId, decision, note },
+        });
+
+        res.json(updatedApproval);
+      } catch (error) {
+        logger.child("routes").error("Approval decision error", { error: String(error) });
+        res.status(500).json({ message: "Failed to process approval decision" });
       }
-
-      await storage.createAuditLog({
-        userId: user?.id,
-        userName,
-        action: `playbook_approval_${decision}`,
-        resourceType: "playbook_approval",
-        resourceId: approval.id,
-        details: { executionId: approval.executionId, playbookId: approval.playbookId, decision, note },
-      });
-
-      res.json(updatedApproval);
-    } catch (error) {
-      logger.child("routes").error("Approval decision error", { error: String(error) });
-      res.status(500).json({ message: "Failed to process approval decision" });
-    }
-  });
+    },
+  );
 
   app.post("/api/playbook-executions/:id/resume", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
@@ -363,8 +466,8 @@ export function registerPlaybooksRoutes(app: Express): void {
       }
 
       const pausedNodeId = execution.pausedAtNodeId;
-      const resumeFrom = pausedNodeId ? (adjacency[pausedNodeId] || []) : [];
-      const existingActions = Array.isArray(execution.actionsExecuted) ? execution.actionsExecuted as any[] : [];
+      const resumeFrom = pausedNodeId ? adjacency[pausedNodeId] || [] : [];
+      const existingActions = Array.isArray(execution.actionsExecuted) ? (execution.actionsExecuted as any[]) : [];
       const visited = new Set<string>(existingActions.map((a: any) => a.nodeId).filter(Boolean));
       if (pausedNodeId) visited.add(pausedNodeId);
       const queue = [...resumeFrom];
@@ -387,7 +490,13 @@ export function registerPlaybooksRoutes(app: Express): void {
         if (!node) continue;
         if (node.type === "action" && node.data?.actionType) {
           if (isDryRun) {
-            newActions.push({ nodeId, actionType: node.data.actionType, status: "simulated", message: `[Dry Run] Would execute: ${node.data.label}`, executedAt: new Date().toISOString() });
+            newActions.push({
+              nodeId,
+              actionType: node.data.actionType,
+              status: "simulated",
+              message: `[Dry Run] Would execute: ${node.data.label}`,
+              executedAt: new Date().toISOString(),
+            });
           } else {
             const result = await dispatchAction(node.data.actionType, node.data.config || {}, context);
             newActions.push({ nodeId, ...result });
@@ -395,13 +504,23 @@ export function registerPlaybooksRoutes(app: Express): void {
           execCount++;
         } else if (node.type === "condition") {
           const trueEdges = edges.filter((e: any) => e.source === nodeId && e.label !== "false");
-          for (const edge of trueEdges) { queue.push(edge.target); }
-          newActions.push({ nodeId, actionType: "condition", status: "completed", message: `Evaluated condition: ${node.data?.label || "check"}`, executedAt: new Date().toISOString() });
+          for (const edge of trueEdges) {
+            queue.push(edge.target);
+          }
+          newActions.push({
+            nodeId,
+            actionType: "condition",
+            status: "completed",
+            message: `Evaluated condition: ${node.data?.label || "check"}`,
+            executedAt: new Date().toISOString(),
+          });
           execCount++;
           continue;
         }
         const children = adjacency[nodeId] || [];
-        for (const child of children) { queue.push(child); }
+        for (const child of children) {
+          queue.push(child);
+        }
       }
 
       const mergedActions = [...existingActions, ...newActions];
@@ -409,7 +528,11 @@ export function registerPlaybooksRoutes(app: Express): void {
         status: "completed",
         pausedAtNodeId: null,
         actionsExecuted: mergedActions,
-        result: { totalActions: mergedActions.length, completedActions: mergedActions.filter((a: any) => a.status === "completed" || a.status === "simulated").length },
+        result: {
+          totalActions: mergedActions.length,
+          completedActions: mergedActions.filter((a: any) => a.status === "completed" || a.status === "simulated")
+            .length,
+        },
       });
 
       await storage.createAuditLog({
@@ -435,7 +558,7 @@ export function registerPlaybooksRoutes(app: Express): void {
       const execution = await storage.getPlaybookExecution(p(req.params.id));
       if (!execution) return res.status(404).json({ message: "Execution not found" });
 
-      const actionsExecuted = Array.isArray(execution.actionsExecuted) ? execution.actionsExecuted as any[] : [];
+      const actionsExecuted = Array.isArray(execution.actionsExecuted) ? (execution.actionsExecuted as any[]) : [];
       const rollbackEligible = actionsExecuted.filter((a: any) => canRollback(a.actionType));
 
       if (rollbackEligible.length === 0) {
@@ -445,7 +568,8 @@ export function registerPlaybooksRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const rollbacks = [];
       for (const action of rollbackEligible) {
-        const target = action.details?.target || action.details?.hostname || action.details?.ip || action.nodeId || "unknown";
+        const target =
+          action.details?.target || action.details?.hostname || action.details?.ip || action.nodeId || "unknown";
         const rollback = await createRollbackRecord(orgId, execution.id, action.actionType, target);
         rollbacks.push(rollback);
       }
@@ -461,10 +585,599 @@ export function registerPlaybooksRoutes(app: Express): void {
 
       res.json({ message: `Created ${rollbacks.length} rollback records`, rollbacks });
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       logger.child("routes").error("Rollback creation error", { error: String(error) });
       res.status(500).json({ message: "Failed to create rollback records" });
     }
   });
 
+  // ==========================================
+  // 8.3 — Playbook Versions
+  // ==========================================
+
+  app.get("/api/playbooks/:playbookId/versions", isAuthenticated, validatePathId("playbookId"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const versions = await storage.getPlaybookVersions(p(req.params.playbookId), orgId);
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch playbook versions" });
+    }
+  });
+
+  app.get("/api/playbook-versions/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const version = await storage.getPlaybookVersion(p(req.params.id));
+      if (!version) return res.status(404).json({ message: "Playbook version not found" });
+      res.json(version);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch playbook version" });
+    }
+  });
+
+  app.post(
+    "/api/playbooks/:playbookId/versions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const playbookId = p(req.params.playbookId);
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+
+        const playbook = await storage.getPlaybook(playbookId);
+        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+
+        const latest = await storage.getLatestPlaybookVersion(playbookId);
+        const nextVersion = latest ? latest.version + 1 : 1;
+
+        const parsed = insertPlaybookVersionSchema.safeParse({
+          ...req.body,
+          playbookId,
+          orgId,
+          version: nextVersion,
+          createdBy: userId,
+          createdByName: userName,
+          actions: req.body.actions || playbook.actions,
+          conditions: req.body.conditions || playbook.conditions,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid version data", errors: parsed.error.flatten() });
+        }
+
+        const version = await storage.createPlaybookVersion(parsed.data);
+
+        await storage.createAuditLog({
+          orgId,
+          userId,
+          userName,
+          action: "playbook_version_created",
+          resourceType: "playbook",
+          resourceId: playbookId,
+          details: { versionId: version.id, version: nextVersion, changeDescription: req.body.changeDescription },
+        });
+
+        res.status(201).json(version);
+      } catch (error) {
+        logger.child("routes").error("Playbook version creation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create playbook version" });
+      }
+    },
+  );
+
+  app.patch("/api/playbook-versions/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const updated = await storage.updatePlaybookVersion(p(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ message: "Playbook version not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update playbook version" });
+    }
+  });
+
+  app.post(
+    "/api/playbook-versions/:id/activate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const version = await storage.getPlaybookVersion(p(req.params.id));
+        if (!version) return res.status(404).json({ message: "Playbook version not found" });
+
+        const playbook = await storage.getPlaybook(version.playbookId);
+        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+
+        if (version.approvalRequired && !version.approvedBy) {
+          return res.status(400).json({ message: "This version requires approval before activation" });
+        }
+
+        await storage.updatePlaybook(version.playbookId, {
+          actions: version.actions as any,
+          conditions: version.conditions as any,
+          updatedAt: new Date(),
+        });
+
+        const allVersions = await storage.getPlaybookVersions(version.playbookId);
+        for (const v of allVersions) {
+          if (v.status === "active" && v.id !== version.id) {
+            await storage.updatePlaybookVersion(v.id, { status: "deprecated" });
+          }
+        }
+
+        const activated = await storage.updatePlaybookVersion(p(req.params.id), { status: "active" });
+
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+        await storage.createAuditLog({
+          orgId: getOrgId(req),
+          userId,
+          userName,
+          action: "playbook_version_activated",
+          resourceType: "playbook",
+          resourceId: version.playbookId,
+          details: { versionId: version.id, version: version.version },
+        });
+
+        res.json(activated);
+      } catch (error) {
+        logger.child("routes").error("Playbook version activation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to activate playbook version" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbook-versions/:id/rollback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const version = await storage.getPlaybookVersion(p(req.params.id));
+        if (!version) return res.status(404).json({ message: "Playbook version not found" });
+
+        const playbook = await storage.getPlaybook(version.playbookId);
+        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+
+        await storage.updatePlaybook(version.playbookId, {
+          actions: version.actions as any,
+          conditions: version.conditions as any,
+          updatedAt: new Date(),
+        });
+
+        const latest = await storage.getLatestPlaybookVersion(version.playbookId);
+        const rollbackVersion = await storage.createPlaybookVersion({
+          playbookId: version.playbookId,
+          orgId: version.orgId,
+          version: (latest?.version ?? 0) + 1,
+          status: "active",
+          actions: version.actions as any,
+          conditions: version.conditions as any,
+          changeDescription: `Rollback to version ${version.version}`,
+          rollbackToVersion: version.version,
+          createdBy: (req as any).user?.id,
+          createdByName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Unknown",
+        });
+
+        await storage.createAuditLog({
+          orgId: getOrgId(req),
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Unknown",
+          action: "playbook_version_rollback",
+          resourceType: "playbook",
+          resourceId: version.playbookId,
+          details: { rolledBackTo: version.version, newVersionId: rollbackVersion.id },
+        });
+
+        res.json(rollbackVersion);
+      } catch (error) {
+        logger.child("routes").error("Playbook version rollback error", { error: String(error) });
+        res.status(500).json({ message: "Failed to rollback playbook version" });
+      }
+    },
+  );
+
+  // ==========================================
+  // 8.3 — Blast Radius Previews
+  // ==========================================
+
+  app.get(
+    "/api/playbooks/:playbookId/blast-radius",
+    isAuthenticated,
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const previews = await storage.getBlastRadiusPreviews(p(req.params.playbookId), orgId);
+        res.json(previews);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch blast radius previews" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbooks/:playbookId/blast-radius",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const playbookId = p(req.params.playbookId);
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+
+        const playbook = await storage.getPlaybook(playbookId);
+        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+
+        const actionsArr = Array.isArray(playbook.actions) ? playbook.actions : [];
+        const affectedEntities: any[] = [];
+        const riskFactors: string[] = [];
+        let entityCount = 0;
+        let estimatedDurationMs = 0;
+        let reversible = true;
+
+        for (const action of actionsArr) {
+          const actionObj = action as any;
+          const actionType = actionObj.type || actionObj.actionType || "unknown";
+
+          if (actionType === "isolate_host" || actionType === "block_ip") {
+            affectedEntities.push({
+              type: "network",
+              identifier: actionObj.config?.target || actionObj.config?.ip || "unknown",
+              impact: "connectivity_disruption",
+            });
+            riskFactors.push("Network isolation may disrupt legitimate services");
+            estimatedDurationMs += 5000;
+            entityCount++;
+          } else if (actionType === "disable_user" || actionType === "revoke_session") {
+            affectedEntities.push({
+              type: "user",
+              identifier: actionObj.config?.userId || actionObj.config?.username || "unknown",
+              impact: "access_revoked",
+            });
+            riskFactors.push("User access disruption");
+            estimatedDurationMs += 3000;
+            entityCount++;
+          } else if (actionType === "quarantine_file" || actionType === "delete_file") {
+            affectedEntities.push({
+              type: "file",
+              identifier: actionObj.config?.path || actionObj.config?.hash || "unknown",
+              impact: actionType === "delete_file" ? "permanent_data_loss" : "temporary_quarantine",
+            });
+            if (actionType === "delete_file") {
+              reversible = false;
+              riskFactors.push("File deletion is irreversible");
+            }
+            estimatedDurationMs += 2000;
+            entityCount++;
+          } else {
+            affectedEntities.push({
+              type: "generic",
+              identifier: actionType,
+              impact: "action_execution",
+            });
+            estimatedDurationMs += 1000;
+            entityCount++;
+          }
+        }
+
+        const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
+        if (isGraphFormat) {
+          const graph = actionsArr[0] as any;
+          const nodes = (graph.nodes || []).filter((n: any) => n.type === "action");
+          entityCount = nodes.length;
+          for (const node of nodes) {
+            affectedEntities.push({
+              type: "action_node",
+              identifier: node.data?.label || node.id,
+              actionType: node.data?.actionType || "unknown",
+              impact: "playbook_action",
+            });
+          }
+          estimatedDurationMs = nodes.length * 3000;
+        }
+
+        const riskLevel = !reversible ? "critical" : entityCount > 10 ? "high" : entityCount > 5 ? "medium" : "low";
+
+        const parsed = insertBlastRadiusPreviewSchema.safeParse({
+          orgId,
+          playbookId,
+          executionContext: req.body.executionContext || {},
+          affectedEntities,
+          affectedEntityCount: entityCount,
+          riskLevel,
+          riskFactors,
+          estimatedDurationMs,
+          rollbackPlan: {
+            reversible,
+            steps: reversible ? ["Undo each action in reverse order"] : ["Manual intervention required"],
+          },
+          reversible,
+          previewedBy: userId,
+          previewedByName: userName,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid blast radius preview", errors: parsed.error.flatten() });
+        }
+
+        const preview = await storage.createBlastRadiusPreview(parsed.data);
+        res.status(201).json(preview);
+      } catch (error) {
+        logger.child("routes").error("Blast radius preview error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create blast radius preview" });
+      }
+    },
+  );
+
+  // ==========================================
+  // 8.3 — Playbook Simulations
+  // ==========================================
+
+  app.get("/api/playbooks/:playbookId/simulations", isAuthenticated, validatePathId("playbookId"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const simulations = await storage.getPlaybookSimulations(p(req.params.playbookId), orgId);
+      res.json(simulations);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch playbook simulations" });
+    }
+  });
+
+  app.get("/api/playbook-simulations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const simulation = await storage.getPlaybookSimulation(p(req.params.id));
+      if (!simulation) return res.status(404).json({ message: "Simulation not found" });
+      res.json(simulation);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch simulation" });
+    }
+  });
+
+  app.post(
+    "/api/playbooks/:playbookId/simulate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const playbookId = p(req.params.playbookId);
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+
+        const playbook = await storage.getPlaybook(playbookId);
+        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+
+        const simulation = await storage.createPlaybookSimulation({
+          playbookId,
+          orgId,
+          status: "running",
+          simulatedBy: userId,
+          simulatedByName: userName,
+        });
+
+        const actionsArr = Array.isArray(playbook.actions) ? playbook.actions : [];
+        const simulatedActions: any[] = [];
+        const startTime = Date.now();
+
+        const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
+        if (isGraphFormat) {
+          const graph = actionsArr[0] as any;
+          const nodes = graph.nodes || [];
+          for (const node of nodes) {
+            if (node.type === "action") {
+              simulatedActions.push({
+                nodeId: node.id,
+                actionType: node.data?.actionType || "unknown",
+                label: node.data?.label || node.id,
+                status: "simulated",
+                wouldExecute: true,
+                simulatedResult: {
+                  message: `[Simulation] Would execute: ${node.data?.label || node.data?.actionType}`,
+                },
+                simulatedAt: new Date().toISOString(),
+              });
+            } else if (node.type === "condition") {
+              simulatedActions.push({
+                nodeId: node.id,
+                actionType: "condition",
+                label: node.data?.label || "Condition check",
+                status: "simulated",
+                evaluatedTo: true,
+                simulatedAt: new Date().toISOString(),
+              });
+            } else if (node.type === "approval") {
+              simulatedActions.push({
+                nodeId: node.id,
+                actionType: "approval_gate",
+                label: node.data?.label || "Approval required",
+                status: "simulated",
+                wouldPause: true,
+                simulatedAt: new Date().toISOString(),
+              });
+            }
+          }
+        } else {
+          for (const action of actionsArr) {
+            const actionObj = action as any;
+            simulatedActions.push({
+              actionType: actionObj.type || actionObj.actionType || "unknown",
+              status: "simulated",
+              wouldExecute: true,
+              simulatedResult: { message: `[Simulation] Would execute: ${actionObj.type || actionObj.actionType}` },
+              simulatedAt: new Date().toISOString(),
+            });
+          }
+        }
+
+        const impactAnalysis = {
+          totalActions: simulatedActions.length,
+          approvalGates: simulatedActions.filter((a) => a.actionType === "approval_gate").length,
+          conditions: simulatedActions.filter((a) => a.actionType === "condition").length,
+          executionActions: simulatedActions.filter((a) => a.wouldExecute).length,
+          estimatedDurationMs: simulatedActions.length * 2000,
+        };
+
+        const updated = await storage.updatePlaybookSimulation(simulation.id, {
+          status: "completed",
+          simulatedActions,
+          impactAnalysis,
+          durationMs: Date.now() - startTime,
+          completedAt: new Date(),
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId,
+          userName,
+          action: "playbook_simulation_completed",
+          resourceType: "playbook",
+          resourceId: playbookId,
+          details: { simulationId: simulation.id, actionsSimulated: simulatedActions.length },
+        });
+
+        res.status(201).json(updated || simulation);
+      } catch (error) {
+        logger.child("routes").error("Playbook simulation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to run playbook simulation" });
+      }
+    },
+  );
+
+  // ==========================================
+  // 8.3 — Playbook Rollback Plans
+  // ==========================================
+
+  app.get(
+    "/api/playbooks/:playbookId/rollback-plans",
+    isAuthenticated,
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const plans = await storage.getPlaybookRollbackPlans(p(req.params.playbookId), orgId);
+        res.json(plans);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch rollback plans" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbooks/:playbookId/rollback-plans",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const playbookId = p(req.params.playbookId);
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+
+        const playbook = await storage.getPlaybook(playbookId);
+        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+
+        const parsed = insertPlaybookRollbackPlanSchema.safeParse({
+          ...req.body,
+          playbookId,
+          orgId,
+          createdBy: userId,
+          createdByName: userName,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid rollback plan data", errors: parsed.error.flatten() });
+        }
+
+        const plan = await storage.createPlaybookRollbackPlan(parsed.data);
+        res.status(201).json(plan);
+      } catch (error) {
+        logger.child("routes").error("Rollback plan creation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create rollback plan" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbook-rollback-plans/:id/execute",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const plan = await storage.getPlaybookRollbackPlan(p(req.params.id));
+        if (!plan) return res.status(404).json({ message: "Rollback plan not found" });
+
+        if (plan.executedAt) {
+          return res.status(400).json({ message: "Rollback plan has already been executed" });
+        }
+
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+
+        const steps = Array.isArray(plan.rollbackSteps) ? plan.rollbackSteps : [];
+        const executionResults: any[] = [];
+        for (const step of steps as any[]) {
+          executionResults.push({
+            step: step.description || step.action || "unknown",
+            status: "completed",
+            executedAt: new Date().toISOString(),
+            message: `[Rollback] Executed: ${step.description || step.action}`,
+          });
+        }
+
+        const updated = await storage.updatePlaybookRollbackPlan(p(req.params.id), {
+          status: "executed",
+          executedAt: new Date(),
+          executedBy: userId,
+          executedByName: userName,
+          result: { steps: executionResults, completedAt: new Date().toISOString() },
+        });
+
+        await storage.createAuditLog({
+          orgId: getOrgId(req),
+          userId,
+          userName,
+          action: "playbook_rollback_executed",
+          resourceType: "playbook",
+          resourceId: plan.playbookId,
+          details: { rollbackPlanId: plan.id, stepsExecuted: executionResults.length },
+        });
+
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Rollback plan execution error", { error: String(error) });
+        res.status(500).json({ message: "Failed to execute rollback plan" });
+      }
+    },
+  );
 }

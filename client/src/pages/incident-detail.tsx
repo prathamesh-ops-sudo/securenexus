@@ -1,6 +1,51 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { ArrowLeft, Shield, AlertTriangle, Clock, TrendingDown, CheckCircle2, MessageSquare, Tag, Send, ArrowUpRight, User, Brain, Loader2, Sparkles, Activity, ThumbsUp, ThumbsDown, Network, Server, Globe, Hash, Mail, Link2, Terminal, FileText, BarChart3, Target, Users, Crosshair, CheckCircle, Plus, Trash2, ClipboardList, BookOpen, Lightbulb, Download, Calendar, ListChecks, PlayCircle, Eye, ClipboardCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Shield,
+  AlertTriangle,
+  Clock,
+  TrendingDown,
+  CheckCircle2,
+  MessageSquare,
+  Tag,
+  Send,
+  ArrowUpRight,
+  User,
+  Brain,
+  Loader2,
+  Sparkles,
+  Activity,
+  ThumbsUp,
+  ThumbsDown,
+  Network,
+  Server,
+  Globe,
+  Hash,
+  Mail,
+  Link2,
+  Terminal,
+  FileText,
+  BarChart3,
+  Target,
+  Users,
+  Crosshair,
+  CheckCircle,
+  Plus,
+  Trash2,
+  ClipboardList,
+  BookOpen,
+  Lightbulb,
+  Download,
+  Calendar,
+  ListChecks,
+  PlayCircle,
+  Eye,
+  ClipboardCheck,
+  ShieldCheck,
+  Lock,
+  Fingerprint,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,13 +57,43 @@ import { Link } from "wouter";
 import { useState, useMemo, useEffect } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatTimestamp, formatRelativeTime } from "@/components/security-badges";
-import type { Incident, Alert, IncidentComment, Tag as TagType, AuditLog, PostIncidentReview } from "@shared/schema";
+import {
+  SeverityBadge,
+  IncidentStatusBadge,
+  PriorityBadge,
+  formatTimestamp,
+  formatRelativeTime,
+} from "@/components/security-badges";
+import type {
+  Incident,
+  Alert,
+  IncidentComment,
+  Tag as TagType,
+  AuditLog,
+  PostIncidentReview,
+  EvidenceChainEntry,
+  IncidentResponseApproval,
+} from "@shared/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
-const INCIDENT_STATUSES = ["open", "investigating", "contained", "eradicated", "recovered", "resolved", "closed"] as const;
+const INCIDENT_STATUSES = [
+  "open",
+  "investigating",
+  "contained",
+  "eradicated",
+  "recovered",
+  "resolved",
+  "closed",
+] as const;
 
 function formatActionDescription(action: string, details: any): string {
   if (!details) return action.replace(/_/g, " ");
@@ -59,7 +134,7 @@ export default function IncidentDetailPage() {
       const match = part.match(/^\[Alert ([^\]]+)\]$/);
       if (match) {
         const alertId = match[1];
-        const linkedAlert = alertList?.find(a => a.id === alertId || a.id.startsWith(alertId));
+        const linkedAlert = alertList?.find((a) => a.id === alertId || a.id.startsWith(alertId));
         return (
           <Link key={i} href={linkedAlert ? `/alerts/${linkedAlert.id}` : "#"}>
             <span
@@ -101,12 +176,28 @@ export default function IncidentDetailPage() {
     enabled: !!params.id,
   });
 
-  const { data: incidentEntities } = useQuery<{ id: string; type: string; value: string; displayName: string; riskScore: number; alertCount: number; role: string; alertId: string }[]>({
+  const { data: incidentEntities } = useQuery<
+    {
+      id: string;
+      type: string;
+      value: string;
+      displayName: string;
+      riskScore: number;
+      alertCount: number;
+      role: string;
+      alertId: string;
+    }[]
+  >({
     queryKey: ["/api/incidents", params.id, "entities"],
     enabled: !!params.id,
   });
 
-  const { data: rootCauseSummary } = useQuery<{ incidentId: string; summary: string; contributingSignals: { category: string; count: number }[]; impactedAssets: string[] }>({
+  const { data: rootCauseSummary } = useQuery<{
+    incidentId: string;
+    summary: string;
+    contributingSignals: { category: string; count: number }[];
+    impactedAssets: string[];
+  }>({
     queryKey: ["/api/incidents", params.id, "root-cause-summary"],
     enabled: !!params.id,
   });
@@ -176,7 +267,10 @@ export default function IncidentDetailPage() {
     onSuccess: (data: NarrativeResult) => {
       setNarrativeResult(data);
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id] });
-      toast({ title: "AI Narrative Generated", description: "Attack narrative and recommendations are ready for review" });
+      toast({
+        title: "AI Narrative Generated",
+        description: "Attack narrative and recommendations are ready for review",
+      });
     },
     onError: (error: any) => {
       toast({ title: "AI Narrative Failed", description: error.message, variant: "destructive" });
@@ -214,14 +308,19 @@ export default function IncidentDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "evidence"] });
       setShowAddEvidenceDialog(false);
-      setEvidenceTitle(""); setEvidenceType("note"); setEvidenceDescription(""); setEvidenceUrl("");
+      setEvidenceTitle("");
+      setEvidenceType("note");
+      setEvidenceDescription("");
+      setEvidenceUrl("");
       toast({ title: "Evidence Added" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const deleteEvidence = useMutation({
-    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/incidents/${params.id}/evidence/${id}`); },
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/incidents/${params.id}/evidence/${id}`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "evidence"] });
       toast({ title: "Evidence Removed" });
@@ -245,7 +344,8 @@ export default function IncidentDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "hypotheses"] });
       setShowAddHypothesisDialog(false);
-      setHypothesisTitle(""); setHypothesisDescription("");
+      setHypothesisTitle("");
+      setHypothesisDescription("");
       toast({ title: "Hypothesis Created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -263,7 +363,9 @@ export default function IncidentDetailPage() {
   });
 
   const deleteHypothesis = useMutation({
-    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/incidents/${params.id}/hypotheses/${id}`); },
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/incidents/${params.id}/hypotheses/${id}`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "hypotheses"] });
       toast({ title: "Hypothesis Removed" });
@@ -289,7 +391,10 @@ export default function IncidentDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "tasks"] });
       setShowAddTaskDialog(false);
-      setTaskTitle(""); setTaskDescription(""); setTaskAssignee(""); setTaskPriority("3");
+      setTaskTitle("");
+      setTaskDescription("");
+      setTaskAssignee("");
+      setTaskPriority("3");
       toast({ title: "Task Created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -307,7 +412,9 @@ export default function IncidentDetailPage() {
   });
 
   const deleteTask = useMutation({
-    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/incidents/${params.id}/tasks/${id}`); },
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/incidents/${params.id}/tasks/${id}`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "tasks"] });
       toast({ title: "Task Removed" });
@@ -387,7 +494,11 @@ export default function IncidentDetailPage() {
     return () => clearInterval(interval);
   }, []);
 
-  function formatSlaTimer(dueAt: string | Date | null | undefined, completedAt: string | Date | null | undefined, completedLabel: string) {
+  function formatSlaTimer(
+    dueAt: string | Date | null | undefined,
+    completedAt: string | Date | null | undefined,
+    completedLabel: string,
+  ) {
     if (completedAt) return completedLabel;
     if (!dueAt) return "Not set";
     const due = new Date(dueAt);
@@ -425,17 +536,117 @@ export default function IncidentDetailPage() {
   const [pirDate, setPirDate] = useState("");
   const [pirFormLoaded, setPirFormLoaded] = useState(false);
 
+  const { data: evidenceChain, isLoading: chainLoading } = useQuery<EvidenceChainEntry[]>({
+    queryKey: ["/api/incidents", params.id, "evidence-chain"],
+    enabled: !!params.id,
+  });
+
+  const { data: chainVerification, refetch: verifyChain } = useQuery<{
+    valid: boolean;
+    entryCount: number;
+    violations: { sequenceNum: number; reason: string }[];
+  }>({
+    queryKey: ["/api/incidents", params.id, "evidence-chain", "verify"],
+    enabled: false,
+  });
+
+  const addChainEntry = useMutation({
+    mutationFn: async (data: { entryType: string; summary: string; details?: Record<string, unknown> }) => {
+      const res = await apiRequest("POST", `/api/incidents/${params.id}/evidence-chain`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "evidence-chain"] });
+      setChainEntryType("action");
+      setChainEntrySummary("");
+      toast({ title: "Chain entry added" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const [chainEntryType, setChainEntryType] = useState("action");
+  const [chainEntrySummary, setChainEntrySummary] = useState("");
+  const [showAddChainEntryDialog, setShowAddChainEntryDialog] = useState(false);
+
+  const { data: responseApprovals, isLoading: approvalsLoading } = useQuery<IncidentResponseApproval[]>({
+    queryKey: ["/api/incidents", params.id, "approvals"],
+    enabled: !!params.id,
+  });
+
+  const createApproval = useMutation({
+    mutationFn: async (data: { actionType: string; actionDescription: string; riskLevel?: string }) => {
+      const res = await apiRequest("POST", `/api/incidents/${params.id}/approvals`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "evidence-chain"] });
+      setApprovalActionType("");
+      setApprovalDescription("");
+      setApprovalRiskLevel("medium");
+      setShowApprovalDialog(false);
+      toast({ title: "Approval requested" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const decideApproval = useMutation({
+    mutationFn: async ({ id, decision, note }: { id: string; decision: string; note?: string }) => {
+      const res = await apiRequest("POST", `/api/response-approvals/${id}/decide`, { decision, note });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "evidence-chain"] });
+      toast({ title: "Decision recorded" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [approvalActionType, setApprovalActionType] = useState("");
+  const [approvalDescription, setApprovalDescription] = useState("");
+  const [approvalRiskLevel, setApprovalRiskLevel] = useState("medium");
+  const [approvalDecisionNote, setApprovalDecisionNote] = useState("");
+
   useEffect(() => {
     if (existingPir && !pirFormLoaded) {
       setPirStatus(existingPir.status || "draft");
       setPirSummary(existingPir.summary || "");
-      setPirTimeline(existingPir.timeline || "");
-      setPirRootCause(existingPir.rootCause || "");
-      setPirLessons(existingPir.lessonsLearned || "");
-      setPirWell(existingPir.whatWentWell || "");
-      setPirWrong(existingPir.whatWentWrong || "");
+
+      const timelineValue =
+        typeof existingPir.timelineJson === "string"
+          ? existingPir.timelineJson
+          : existingPir.timelineJson &&
+              typeof existingPir.timelineJson === "object" &&
+              (existingPir.timelineJson as any).text
+            ? String((existingPir.timelineJson as any).text)
+            : existingPir.timelineJson
+              ? JSON.stringify(existingPir.timelineJson, null, 2)
+              : "";
+      setPirTimeline(timelineValue);
+
+      setPirRootCause(existingPir.rootCauseAnalysis || "");
+
+      const lessons = existingPir.lessonsLearned;
+      if (typeof lessons === "string") {
+        setPirLessons(lessons);
+        setPirWell("");
+        setPirWrong("");
+      } else if (lessons && typeof lessons === "object") {
+        setPirLessons(
+          typeof (lessons as any).text === "string" ? (lessons as any).text : JSON.stringify(lessons, null, 2),
+        );
+        setPirWell(typeof (lessons as any).whatWentWell === "string" ? (lessons as any).whatWentWell : "");
+        setPirWrong(typeof (lessons as any).whatWentWrong === "string" ? (lessons as any).whatWentWrong : "");
+      } else {
+        setPirLessons("");
+        setPirWell("");
+        setPirWrong("");
+      }
+
       setPirActionItems(Array.isArray(existingPir.actionItems) ? (existingPir.actionItems as string[]) : []);
-      setPirAttendees(Array.isArray(existingPir.attendees) ? existingPir.attendees : []);
+      setPirAttendees(Array.isArray(existingPir.participants) ? (existingPir.participants as string[]) : []);
       setPirDate(existingPir.reviewDate ? new Date(existingPir.reviewDate).toISOString().split("T")[0] : "");
       setPirFormLoaded(true);
     }
@@ -473,25 +684,51 @@ export default function IncidentDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "pir"] });
       setPirFormLoaded(false);
-      setPirStatus("draft"); setPirSummary(""); setPirTimeline(""); setPirRootCause("");
-      setPirLessons(""); setPirWell(""); setPirWrong(""); setPirActionItems([]);
-      setPirAttendees([]); setPirDate("");
+      setPirStatus("draft");
+      setPirSummary("");
+      setPirTimeline("");
+      setPirRootCause("");
+      setPirLessons("");
+      setPirWell("");
+      setPirWrong("");
+      setPirActionItems([]);
+      setPirAttendees([]);
+      setPirDate("");
       toast({ title: "Post-Incident Review Deleted" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   function handleSavePir() {
+    const pirTitle = incident?.title ? `Post-incident review: ${incident.title}` : `Post-incident review: ${params.id}`;
+
+    let timelineJson: unknown | undefined;
+    if (pirTimeline) {
+      try {
+        timelineJson = JSON.parse(pirTimeline);
+      } catch {
+        timelineJson = { text: pirTimeline };
+      }
+    }
+
+    const lessonsLearned =
+      pirLessons || pirWell || pirWrong
+        ? {
+            text: pirLessons || undefined,
+            whatWentWell: pirWell || undefined,
+            whatWentWrong: pirWrong || undefined,
+          }
+        : undefined;
+
     const data = {
       status: pirStatus,
+      title: pirTitle,
       summary: pirSummary || undefined,
-      timeline: pirTimeline || undefined,
-      rootCause: pirRootCause || undefined,
-      lessonsLearned: pirLessons || undefined,
-      whatWentWell: pirWell || undefined,
-      whatWentWrong: pirWrong || undefined,
+      timelineJson,
+      rootCauseAnalysis: pirRootCause || undefined,
+      lessonsLearned,
       actionItems: pirActionItems.length > 0 ? pirActionItems : undefined,
-      attendees: pirAttendees.length > 0 ? pirAttendees : undefined,
+      participants: pirAttendees.length > 0 ? pirAttendees : undefined,
       reviewDate: pirDate ? new Date(pirDate).toISOString() : undefined,
     };
     if (existingPir) {
@@ -516,22 +753,24 @@ export default function IncidentDetailPage() {
       <div className="p-4 md:p-6 text-center py-20">
         <p className="text-muted-foreground">Incident not found</p>
         <Link href="/incidents">
-          <Button variant="outline" className="mt-4" data-testid="button-back-incidents">Back to Incidents</Button>
+          <Button variant="outline" className="mt-4" data-testid="button-back-incidents">
+            Back to Incidents
+          </Button>
         </Link>
       </div>
     );
   }
 
   const mitigationSteps = incident.mitigationSteps
-    ? (typeof incident.mitigationSteps === "string"
-      ? JSON.parse(incident.mitigationSteps)
-      : incident.mitigationSteps) as string[]
+    ? ((typeof incident.mitigationSteps === "string"
+        ? JSON.parse(incident.mitigationSteps)
+        : incident.mitigationSteps) as string[])
     : [];
 
   const affectedAssets = incident.affectedAssets
-    ? (typeof incident.affectedAssets === "string"
-      ? JSON.parse(incident.affectedAssets)
-      : incident.affectedAssets) as string[]
+    ? ((typeof incident.affectedAssets === "string"
+        ? JSON.parse(incident.affectedAssets)
+        : incident.affectedAssets) as string[])
     : [];
 
   return (
@@ -545,7 +784,9 @@ export default function IncidentDetailPage() {
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold tracking-tight" data-testid="text-incident-title">{incident.title}</h1>
+              <h1 className="text-xl font-bold tracking-tight" data-testid="text-incident-title">
+                {incident.title}
+              </h1>
               <SeverityBadge severity={incident.severity} />
               <IncidentStatusBadge status={incident.status} />
               {incident.escalated && (
@@ -560,7 +801,17 @@ export default function IncidentDetailPage() {
             {incidentTags && incidentTags.length > 0 && (
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                 {incidentTags.map((tag) => (
-                  <Badge key={tag.id} variant="secondary" className="text-[10px]" style={{ borderColor: (tag.color || "#6366f1") + "40", backgroundColor: (tag.color || "#6366f1") + "15", color: tag.color || "#6366f1" }} data-testid={`tag-${tag.id}`}>
+                  <Badge
+                    key={tag.id}
+                    variant="secondary"
+                    className="text-[10px]"
+                    style={{
+                      borderColor: (tag.color || "#6366f1") + "40",
+                      backgroundColor: (tag.color || "#6366f1") + "15",
+                      color: tag.color || "#6366f1",
+                    }}
+                    data-testid={`tag-${tag.id}`}
+                  >
                     {tag.name}
                   </Badge>
                 ))}
@@ -584,10 +835,7 @@ export default function IncidentDetailPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Status:</span>
-            <Select
-              value={incident.status}
-              onValueChange={(value) => updateIncident.mutate({ status: value })}
-            >
+            <Select value={incident.status} onValueChange={(value) => updateIncident.mutate({ status: value })}>
               <SelectTrigger className="w-[140px]" data-testid="select-status">
                 <SelectValue />
               </SelectTrigger>
@@ -612,7 +860,9 @@ export default function IncidentDetailPage() {
               </SelectTrigger>
               <SelectContent>
                 {[1, 2, 3, 4, 5].map((p) => (
-                  <SelectItem key={p} value={String(p)}>P{p}</SelectItem>
+                  <SelectItem key={p} value={String(p)}>
+                    P{p}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -626,7 +876,9 @@ export default function IncidentDetailPage() {
               value={assigneeValue ?? incident.assignedTo ?? ""}
               onChange={(e) => setAssigneeValue(e.target.value)}
               onBlur={handleAssigneeSubmit}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAssigneeSubmit(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAssigneeSubmit();
+              }}
               data-testid="input-assignee"
             />
           </div>
@@ -646,14 +898,48 @@ export default function IncidentDetailPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <TabsList data-testid="tabs-investigation">
-            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-            <TabsTrigger value="evidence" data-testid="tab-evidence">Evidence</TabsTrigger>
-            <TabsTrigger value="hypotheses" data-testid="tab-hypotheses">Hypotheses</TabsTrigger>
-            <TabsTrigger value="tasks" data-testid="tab-tasks">Tasks</TabsTrigger>
-            <TabsTrigger value="runbooks" data-testid="tab-runbooks">Runbooks</TabsTrigger>
-            <TabsTrigger value="pir" data-testid="tab-pir">PIR</TabsTrigger>
+            <TabsTrigger value="overview" data-testid="tab-overview">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="evidence" data-testid="tab-evidence">
+              Evidence
+            </TabsTrigger>
+            <TabsTrigger value="hypotheses" data-testid="tab-hypotheses">
+              Hypotheses
+            </TabsTrigger>
+            <TabsTrigger value="tasks" data-testid="tab-tasks">
+              Tasks
+            </TabsTrigger>
+            <TabsTrigger value="runbooks" data-testid="tab-runbooks">
+              Runbooks
+            </TabsTrigger>
+            <TabsTrigger value="audit-chain" data-testid="tab-audit-chain">
+              <Lock className="h-3.5 w-3.5 mr-1" />
+              Audit Chain
+            </TabsTrigger>
+            <TabsTrigger value="approvals" data-testid="tab-approvals">
+              <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+              Approvals
+              {responseApprovals && responseApprovals.filter((a) => a.status === "pending").length > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="ml-1 text-[9px] no-default-hover-elevate no-default-active-elevate"
+                >
+                  {responseApprovals.filter((a) => a.status === "pending").length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="pir" data-testid="tab-pir">
+              PIR
+            </TabsTrigger>
           </TabsList>
-          <Button variant="outline" size="sm" onClick={() => exportEvidence.mutate()} disabled={exportEvidence.isPending} data-testid="button-export-evidence">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportEvidence.mutate()}
+            disabled={exportEvidence.isPending}
+            data-testid="button-export-evidence"
+          >
             <Download className="h-3.5 w-3.5 mr-1.5" />
             Export Package
           </Button>
@@ -669,13 +955,24 @@ export default function IncidentDetailPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {!incident.ackAt && incident.ackDueAt && (
-                    <Button size="sm" onClick={() => acknowledgeIncident.mutate()} disabled={acknowledgeIncident.isPending} data-testid="button-acknowledge">
+                    <Button
+                      size="sm"
+                      onClick={() => acknowledgeIncident.mutate()}
+                      disabled={acknowledgeIncident.isPending}
+                      data-testid="button-acknowledge"
+                    >
                       <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
                       Acknowledge
                     </Button>
                   )}
                   {!incident.ackDueAt && !incident.containDueAt && !incident.resolveDueAt && (
-                    <Button size="sm" variant="outline" onClick={() => applySla.mutate()} disabled={applySla.isPending} data-testid="button-apply-sla">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => applySla.mutate()}
+                      disabled={applySla.isPending}
+                      data-testid="button-apply-sla"
+                    >
                       <Clock className="h-3.5 w-3.5 mr-1.5" />
                       Apply SLA Policy
                     </Button>
@@ -689,7 +986,10 @@ export default function IncidentDetailPage() {
                   <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Acknowledge</div>
-                    <div className={`text-sm font-medium ${isSlaOverdue(incident.ackDueAt, incident.ackAt) ? "text-red-500" : incident.ackAt ? "text-green-500" : ""}`} data-testid="text-ack-timer">
+                    <div
+                      className={`text-sm font-medium ${isSlaOverdue(incident.ackDueAt, incident.ackAt) ? "text-red-500" : incident.ackAt ? "text-green-500" : ""}`}
+                      data-testid="text-ack-timer"
+                    >
                       {formatSlaTimer(incident.ackDueAt, incident.ackAt, "Acknowledged")}
                     </div>
                   </div>
@@ -698,7 +998,10 @@ export default function IncidentDetailPage() {
                   <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Containment</div>
-                    <div className={`text-sm font-medium ${isSlaOverdue(incident.containDueAt, incident.containedAt) ? "text-red-500" : incident.containedAt ? "text-green-500" : ""}`} data-testid="text-contain-timer">
+                    <div
+                      className={`text-sm font-medium ${isSlaOverdue(incident.containDueAt, incident.containedAt) ? "text-red-500" : incident.containedAt ? "text-green-500" : ""}`}
+                      data-testid="text-contain-timer"
+                    >
                       {formatSlaTimer(incident.containDueAt, incident.containedAt, "Contained")}
                     </div>
                   </div>
@@ -707,7 +1010,10 @@ export default function IncidentDetailPage() {
                   <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Resolution</div>
-                    <div className={`text-sm font-medium ${isSlaOverdue(incident.resolveDueAt, incident.resolvedAt) ? "text-red-500" : incident.resolvedAt ? "text-green-500" : ""}`} data-testid="text-resolve-timer">
+                    <div
+                      className={`text-sm font-medium ${isSlaOverdue(incident.resolveDueAt, incident.resolvedAt) ? "text-red-500" : incident.resolvedAt ? "text-green-500" : ""}`}
+                      data-testid="text-resolve-timer"
+                    >
                       {formatSlaTimer(incident.resolveDueAt, incident.resolvedAt, "Resolved")}
                     </div>
                   </div>
@@ -733,8 +1039,8 @@ export default function IncidentDetailPage() {
                         incident.confidence > 0.7
                           ? "text-green-500"
                           : incident.confidence >= 0.4
-                          ? "text-yellow-500"
-                          : "text-red-500"
+                            ? "text-yellow-500"
+                            : "text-red-500"
                       }`}
                       data-testid="text-incident-confidence"
                     >
@@ -746,8 +1052,8 @@ export default function IncidentDetailPage() {
                           incident.confidence > 0.7
                             ? "bg-green-500"
                             : incident.confidence >= 0.4
-                            ? "bg-yellow-500"
-                            : "bg-red-500"
+                              ? "bg-yellow-500"
+                              : "bg-red-500"
                         }`}
                         style={{ width: `${Math.round(incident.confidence * 100)}%` }}
                       />
@@ -759,21 +1065,26 @@ export default function IncidentDetailPage() {
                   <div>
                     <div className="text-xs font-medium mb-1.5">Reasoning Trace</div>
                     <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
-                      {String(incident.reasoningTrace).split("\n").map((line, i) => (
-                        <p key={i}>{line}</p>
-                      ))}
+                      {String(incident.reasoningTrace)
+                        .split("\n")
+                        .map((line, i) => (
+                          <p key={i}>{line}</p>
+                        ))}
                     </div>
                   </div>
                 )}
 
-                {incident.referencedAlertIds && Array.isArray(incident.referencedAlertIds) && incident.referencedAlertIds.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Referenced Alerts:</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {incident.referencedAlertIds.length} correlated alert{incident.referencedAlertIds.length !== 1 ? "s" : ""}
-                    </Badge>
-                  </div>
-                )}
+                {incident.referencedAlertIds &&
+                  Array.isArray(incident.referencedAlertIds) &&
+                  incident.referencedAlertIds.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Referenced Alerts:</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {incident.referencedAlertIds.length} correlated alert
+                        {incident.referencedAlertIds.length !== 1 ? "s" : ""}
+                      </Badge>
+                    </div>
+                  )}
               </CardContent>
             </Card>
           )}
@@ -785,13 +1096,19 @@ export default function IncidentDetailPage() {
                   <Sparkles className="h-4 w-4 text-primary" />
                   AI-Generated Analysis (Risk Score: {narrativeResult.riskScore}/100)
                   {narrativeResult.threatIntelSources && narrativeResult.threatIntelSources.length > 0 && (
-                    <Badge variant="outline" className="text-[10px] gap-1 border-green-500/50 text-green-500" data-testid="badge-narrative-intel-enriched">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] gap-1 border-green-500/50 text-green-500"
+                      data-testid="badge-narrative-intel-enriched"
+                    >
                       <Shield className="h-3 w-3" />
                       Intel-Enriched ({narrativeResult.threatIntelSources.length} sources)
                     </Badge>
                   )}
                 </CardTitle>
-                <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-gen-summary">{narrativeResult.summary}</p>
+                <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-gen-summary">
+                  {narrativeResult.summary}
+                </p>
               </CardHeader>
               <CardContent className="space-y-4">
                 {narrativeResult.attackTimeline.length > 0 && (
@@ -802,7 +1119,9 @@ export default function IncidentDetailPage() {
                         <div key={i} className="text-xs" data-testid={`timeline-event-${i}`}>
                           <span className="text-primary font-mono">{event.timestamp}</span>
                           {event.mitreTechnique && (
-                            <span className="ml-1 px-1 py-0.5 rounded bg-muted text-[9px] font-mono">{event.mitreTechnique}</span>
+                            <span className="ml-1 px-1 py-0.5 rounded bg-muted text-[9px] font-mono">
+                              {event.mitreTechnique}
+                            </span>
                           )}
                           <span className="text-muted-foreground ml-2">{event.description}</span>
                           {event.alertId && (
@@ -821,14 +1140,25 @@ export default function IncidentDetailPage() {
                 <div>
                   <div className="text-xs font-medium mb-1">Attacker Profile</div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-muted-foreground">Sophistication:</span> <span className="capitalize">{narrativeResult.attackerProfile.sophistication}</span></div>
-                    <div><span className="text-muted-foreground">Motivation:</span> <span className="capitalize">{narrativeResult.attackerProfile.likelyMotivation}</span></div>
-                    <div className="col-span-2"><span className="text-muted-foreground">Origin:</span> {narrativeResult.attackerProfile.estimatedOrigin}</div>
+                    <div>
+                      <span className="text-muted-foreground">Sophistication:</span>{" "}
+                      <span className="capitalize">{narrativeResult.attackerProfile.sophistication}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Motivation:</span>{" "}
+                      <span className="capitalize">{narrativeResult.attackerProfile.likelyMotivation}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Origin:</span>{" "}
+                      {narrativeResult.attackerProfile.estimatedOrigin}
+                    </div>
                   </div>
                   {narrativeResult.attackerProfile.ttps.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {narrativeResult.attackerProfile.ttps.map((ttp, i) => (
-                        <span key={i} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">{ttp}</span>
+                        <span key={i} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">
+                          {ttp}
+                        </span>
                       ))}
                     </div>
                   )}
@@ -838,7 +1168,13 @@ export default function IncidentDetailPage() {
                     <div className="text-xs font-medium mb-1">Indicators of Compromise</div>
                     <div className="flex flex-wrap gap-1">
                       {narrativeResult.iocs.map((ioc, i) => (
-                        <span key={i} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono" data-testid={`ioc-${i}`}>{typeof ioc === "string" ? ioc : `${(ioc as any).value} (${(ioc as any).type})`}</span>
+                        <span
+                          key={i}
+                          className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono"
+                          data-testid={`ioc-${i}`}
+                        >
+                          {typeof ioc === "string" ? ioc : `${(ioc as any).value} (${(ioc as any).type})`}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -848,13 +1184,19 @@ export default function IncidentDetailPage() {
                     <div className="text-xs font-medium mb-2">Kill Chain Analysis</div>
                     <div className="space-y-2">
                       {narrativeResult.killChainAnalysis.map((phase, i) => (
-                        <div key={i} className="p-2 rounded-md bg-muted/30 text-xs" data-testid={`killchain-phase-${i}`}>
+                        <div
+                          key={i}
+                          className="p-2 rounded-md bg-muted/30 text-xs"
+                          data-testid={`killchain-phase-${i}`}
+                        >
                           <div className="font-medium text-primary">{phase.phase}</div>
                           <div className="text-muted-foreground mt-0.5">{phase.description}</div>
                           {phase.evidence.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
                               {phase.evidence.map((ev, j) => (
-                                <span key={j} className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">{ev}</span>
+                                <span key={j} className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">
+                                  {ev}
+                                </span>
                               ))}
                             </div>
                           )}
@@ -866,16 +1208,30 @@ export default function IncidentDetailPage() {
                 {narrativeResult.nistPhase && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">NIST IR Phase:</span>
-                    <Badge variant="outline" className="text-[10px]">{narrativeResult.nistPhase}</Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {narrativeResult.nistPhase}
+                    </Badge>
                   </div>
                 )}
                 {!feedbackSubmitted && (
                   <div className="flex items-center gap-2 pt-2 border-t">
                     <span className="text-xs text-muted-foreground">Was this AI analysis helpful?</span>
-                    <Button size="icon" variant="ghost" data-testid="button-feedback-up" disabled={feedbackSubmitted || submitFeedback.isPending} onClick={() => submitFeedback.mutate(5)}>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      data-testid="button-feedback-up"
+                      disabled={feedbackSubmitted || submitFeedback.isPending}
+                      onClick={() => submitFeedback.mutate(5)}
+                    >
                       <ThumbsUp className="h-3 w-3" />
                     </Button>
-                    <Button size="icon" variant="ghost" data-testid="button-feedback-down" disabled={feedbackSubmitted || submitFeedback.isPending} onClick={() => submitFeedback.mutate(1)}>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      data-testid="button-feedback-down"
+                      disabled={feedbackSubmitted || submitFeedback.isPending}
+                      onClick={() => submitFeedback.mutate(1)}
+                    >
                       <ThumbsDown className="h-3 w-3" />
                     </Button>
                   </div>
@@ -900,7 +1256,9 @@ export default function IncidentDetailPage() {
             <Card>
               <CardContent className="p-3 text-center">
                 <TrendingDown className="h-4 w-4 mx-auto text-muted-foreground mb-1" />
-                <div className="text-lg font-bold">{incident.confidence ? `${Math.round(incident.confidence * 100)}%` : "N/A"}</div>
+                <div className="text-lg font-bold">
+                  {incident.confidence ? `${Math.round(incident.confidence * 100)}%` : "N/A"}
+                </div>
                 <div className="text-[10px] text-muted-foreground">Confidence</div>
               </CardContent>
             </Card>
@@ -934,11 +1292,15 @@ export default function IncidentDetailPage() {
                   <Shield className="h-4 w-4 text-primary" />
                   AI-Generated Narrative
                   {(incident as any).referencedAlertIds?.length > 0 && (
-                    <Badge variant="secondary" className="text-[9px]">{(incident as any).referencedAlertIds.length} citations</Badge>
+                    <Badge variant="secondary" className="text-[9px]">
+                      {(incident as any).referencedAlertIds.length} citations
+                    </Badge>
                   )}
                 </CardTitle>
                 {incident.aiSummary && (
-                  <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-summary">{incident.aiSummary}</p>
+                  <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-summary">
+                    {incident.aiSummary}
+                  </p>
                 )}
               </CardHeader>
               <CardContent className="space-y-3">
@@ -958,7 +1320,10 @@ export default function IncidentDetailPage() {
                       {showReasoningTrace ? "Hide" : "Show"} Reasoning Trace
                     </Button>
                     {showReasoningTrace && (
-                      <div className="mt-2 p-3 rounded-md bg-muted/50 border text-[11px] font-mono whitespace-pre-wrap text-muted-foreground" data-testid="reasoning-trace-content">
+                      <div
+                        className="mt-2 p-3 rounded-md bg-muted/50 border text-[11px] font-mono whitespace-pre-wrap text-muted-foreground"
+                        data-testid="reasoning-trace-content"
+                      >
                         {(incident as any).reasoningTrace}
                       </div>
                     )}
@@ -977,27 +1342,34 @@ export default function IncidentDetailPage() {
                       {showConfidenceBreakdown ? "Hide" : "Show"} Confidence Breakdown
                     </Button>
                     {showConfidenceBreakdown && (
-                      <div className="mt-2 p-3 rounded-md bg-muted/50 border space-y-2" data-testid="confidence-breakdown">
-                        <div className="text-[11px] font-medium">Correlation Confidence: {Math.round(incident.confidence * 100)}%</div>
+                      <div
+                        className="mt-2 p-3 rounded-md bg-muted/50 border space-y-2"
+                        data-testid="confidence-breakdown"
+                      >
+                        <div className="text-[11px] font-medium">
+                          Correlation Confidence: {Math.round(incident.confidence * 100)}%
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { label: "Shared Entities", weight: 0.25 },
                             { label: "Temporal Proximity", weight: 0.15 },
-                            { label: "MITRE Alignment", weight: 0.20 },
-                            { label: "Severity Pattern", weight: 0.10 },
+                            { label: "MITRE Alignment", weight: 0.2 },
+                            { label: "Severity Pattern", weight: 0.1 },
                             { label: "Source Correlation", weight: 0.05 },
                             { label: "Category Match", weight: 0.15 },
-                            { label: "Kill Chain Progression", weight: 0.10 },
+                            { label: "Kill Chain Progression", weight: 0.1 },
                           ].map((factor) => (
                             <div key={factor.label} className="flex items-center gap-2">
                               <span className="text-[10px] text-muted-foreground w-32 shrink-0">{factor.label}</span>
                               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-primary rounded-full" 
-                                  style={{ width: `${factor.weight * 100 * (incident.confidence || 0) / 0.25}%` }}
+                                <div
+                                  className="h-full bg-primary rounded-full"
+                                  style={{ width: `${(factor.weight * 100 * (incident.confidence || 0)) / 0.25}%` }}
                                 />
                               </div>
-                              <span className="text-[10px] text-muted-foreground w-8 text-right">{Math.round(factor.weight * 100)}%</span>
+                              <span className="text-[10px] text-muted-foreground w-8 text-right">
+                                {Math.round(factor.weight * 100)}%
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -1018,10 +1390,14 @@ export default function IncidentDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <p className="text-sm leading-relaxed text-muted-foreground" data-testid="text-root-cause-summary">{rootCauseSummary.summary}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground" data-testid="text-root-cause-summary">
+                  {rootCauseSummary.summary}
+                </p>
                 {rootCauseSummary.contributingSignals.length > 0 && (
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-1.5">Contributing Signal Categories</div>
+                    <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                      Contributing Signal Categories
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {rootCauseSummary.contributingSignals.map((signal) => (
                         <Badge key={signal.category} variant="secondary" className="text-[10px]">
@@ -1036,7 +1412,12 @@ export default function IncidentDetailPage() {
                     <div className="text-xs font-medium text-muted-foreground mb-1.5">Impacted Assets</div>
                     <div className="flex flex-wrap gap-1.5">
                       {rootCauseSummary.impactedAssets.map((asset) => (
-                        <span key={asset} className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-500 text-xs font-mono">{asset}</span>
+                        <span
+                          key={asset}
+                          className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-500 text-xs font-mono"
+                        >
+                          {asset}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -1056,7 +1437,9 @@ export default function IncidentDetailPage() {
                     <div className="text-xs text-muted-foreground mb-1.5">Tactics</div>
                     <div className="flex flex-wrap gap-1.5">
                       {incident.mitreTactics.map((tactic, i) => (
-                        <span key={i} className="px-2 py-1 rounded-md bg-primary/10 text-primary text-xs">{tactic}</span>
+                        <span key={i} className="px-2 py-1 rounded-md bg-primary/10 text-primary text-xs">
+                          {tactic}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -1065,7 +1448,9 @@ export default function IncidentDetailPage() {
                       <div className="text-xs text-muted-foreground mb-1.5">Techniques</div>
                       <div className="flex flex-wrap gap-1.5">
                         {incident.mitreTechniques.map((technique, i) => (
-                          <span key={i} className="px-2 py-1 rounded-md bg-muted text-xs font-mono">{technique}</span>
+                          <span key={i} className="px-2 py-1 rounded-md bg-muted text-xs font-mono">
+                            {technique}
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -1086,7 +1471,9 @@ export default function IncidentDetailPage() {
                   <ol className="space-y-2">
                     {mitigationSteps.map((step: string, i: number) => (
                       <li key={i} className="flex items-start gap-2 text-sm">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-medium flex-shrink-0 mt-0.5">{i + 1}</span>
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-medium flex-shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
                         <span className="text-muted-foreground">{step}</span>
                       </li>
                     ))}
@@ -1104,7 +1491,13 @@ export default function IncidentDetailPage() {
               <CardContent>
                 <div className="flex flex-wrap gap-2">
                   {affectedAssets.map((asset: string, i: number) => (
-                    <span key={i} className="px-2 py-1 rounded-md bg-muted text-xs font-mono" data-testid={`asset-${i}`}>{asset}</span>
+                    <span
+                      key={i}
+                      className="px-2 py-1 rounded-md bg-muted text-xs font-mono"
+                      data-testid={`asset-${i}`}
+                    >
+                      {asset}
+                    </span>
                   ))}
                 </div>
               </CardContent>
@@ -1123,7 +1516,10 @@ export default function IncidentDetailPage() {
                 <div className="space-y-1.5">
                   {incidentEntities.slice(0, 20).map((entity) => (
                     <Link key={entity.id} href="/entity-graph">
-                      <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-muted/20 hover-elevate cursor-pointer" data-testid={`incident-entity-${entity.id}`}>
+                      <div
+                        className="flex items-center gap-2 text-xs p-2 rounded-md bg-muted/20 hover-elevate cursor-pointer"
+                        data-testid={`incident-entity-${entity.id}`}
+                      >
                         {entity.type === "user" && <User className="h-3.5 w-3.5 text-blue-400 shrink-0" />}
                         {entity.type === "host" && <Server className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
                         {entity.type === "ip" && <Globe className="h-3.5 w-3.5 text-purple-400 shrink-0" />}
@@ -1133,13 +1529,25 @@ export default function IncidentDetailPage() {
                         {entity.type === "url" && <Link2 className="h-3.5 w-3.5 text-yellow-400 shrink-0" />}
                         {entity.type === "process" && <Terminal className="h-3.5 w-3.5 text-red-400 shrink-0" />}
                         <span className="font-mono truncate flex-1">{entity.displayName || entity.value}</span>
-                        <Badge variant="outline" className="text-[9px] shrink-0">{entity.type}</Badge>
-                        <Badge variant="outline" className="text-[9px] shrink-0">{entity.role}</Badge>
-                        <span className={`text-[10px] font-semibold shrink-0 ${
-                          (entity.riskScore || 0) >= 0.8 ? "text-red-400" :
-                          (entity.riskScore || 0) >= 0.6 ? "text-orange-400" :
-                          (entity.riskScore || 0) >= 0.4 ? "text-yellow-400" : "text-emerald-400"
-                        }`}>{((entity.riskScore || 0) * 100).toFixed(0)}%</span>
+                        <Badge variant="outline" className="text-[9px] shrink-0">
+                          {entity.type}
+                        </Badge>
+                        <Badge variant="outline" className="text-[9px] shrink-0">
+                          {entity.role}
+                        </Badge>
+                        <span
+                          className={`text-[10px] font-semibold shrink-0 ${
+                            (entity.riskScore || 0) >= 0.8
+                              ? "text-red-400"
+                              : (entity.riskScore || 0) >= 0.6
+                                ? "text-orange-400"
+                                : (entity.riskScore || 0) >= 0.4
+                                  ? "text-yellow-400"
+                                  : "text-emerald-400"
+                          }`}
+                        >
+                          {((entity.riskScore || 0) * 100).toFixed(0)}%
+                        </span>
                       </div>
                     </Link>
                   ))}
@@ -1161,7 +1569,11 @@ export default function IncidentDetailPage() {
               <CardContent>
                 <div className="space-y-2">
                   {relatedAlerts.map((alert) => (
-                    <div key={alert.id} className="flex items-center gap-3 p-2 rounded-md hover-elevate" data-testid={`related-alert-${alert.id}`}>
+                    <div
+                      key={alert.id}
+                      className="flex items-center gap-3 p-2 rounded-md hover-elevate"
+                      data-testid={`related-alert-${alert.id}`}
+                    >
                       <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium">{alert.title}</div>
@@ -1170,7 +1582,9 @@ export default function IncidentDetailPage() {
                           <SeverityBadge severity={alert.severity} />
                           {alert.sourceIp && <span>IP: {alert.sourceIp}</span>}
                           {alert.correlationScore && (
-                            <span className="text-primary">{Math.round(alert.correlationScore * 100)}% correlation</span>
+                            <span className="text-primary">
+                              {Math.round(alert.correlationScore * 100)}% correlation
+                            </span>
                           )}
                           {alert.detectedAt && <span>{formatTimestamp(alert.detectedAt)}</span>}
                         </div>
@@ -1193,14 +1607,20 @@ export default function IncidentDetailPage() {
               {comments && comments.length > 0 ? (
                 <div className="space-y-3">
                   {comments.map((comment) => (
-                    <div key={comment.id} className="flex items-start gap-3 p-3 rounded-md bg-muted/30" data-testid={`comment-${comment.id}`}>
+                    <div
+                      key={comment.id}
+                      className="flex items-start gap-3 p-3 rounded-md bg-muted/30"
+                      data-testid={`comment-${comment.id}`}
+                    >
                       <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted flex-shrink-0">
                         <User className="h-3 w-3 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-medium">{comment.userName || "Unknown"}</span>
-                          <span className="text-[10px] text-muted-foreground">{formatTimestamp(comment.createdAt)}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatTimestamp(comment.createdAt)}
+                          </span>
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">{comment.body}</p>
                       </div>
@@ -1249,14 +1669,10 @@ export default function IncidentDetailPage() {
                     >
                       <div className="flex flex-col items-center">
                         <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
-                        {index < activityLogs.length - 1 && (
-                          <div className="w-px flex-1 bg-border mt-1" />
-                        )}
+                        {index < activityLogs.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
                       </div>
                       <div className="flex-1 min-w-0 pb-1">
-                        <div className="text-sm">
-                          {formatActionDescription(log.action, log.details)}
-                        </div>
+                        <div className="text-sm">{formatActionDescription(log.action, log.details)}</div>
                         <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
                           {log.userName && <span>{log.userName}</span>}
                           <span>{formatRelativeTime(log.createdAt)}</span>
@@ -1293,9 +1709,14 @@ export default function IncidentDetailPage() {
                       { name: "Exploitation", tactics: ["execution"] },
                       { name: "Installation", tactics: ["persistence", "privilege_escalation", "defense_evasion"] },
                       { name: "Command & Control", tactics: ["command_and_control"] },
-                      { name: "Actions on Objectives", tactics: ["collection", "exfiltration", "impact", "lateral_movement"] },
+                      {
+                        name: "Actions on Objectives",
+                        tactics: ["collection", "exfiltration", "impact", "lateral_movement"],
+                      },
                     ];
-                    const incidentTactics = (incident.mitreTactics || []).map((t: string) => t.toLowerCase().replace(/\s+/g, "_"));
+                    const incidentTactics = (incident.mitreTactics || []).map((t: string) =>
+                      t.toLowerCase().replace(/\s+/g, "_"),
+                    );
                     return killChainStages.map((stage, idx) => {
                       const isActive = stage.tactics.some((t) => incidentTactics.includes(t));
                       return (
@@ -1331,12 +1752,20 @@ export default function IncidentDetailPage() {
                     <div className="text-xs">
                       {incident.attackerProfile ? (
                         <>
-                          <span className="font-medium">{(incident.attackerProfile as any)?.type || (incident.attackerProfile as any)?.sophistication || "Unknown"}</span>
+                          <span className="font-medium">
+                            {(incident.attackerProfile as any)?.type ||
+                              (incident.attackerProfile as any)?.sophistication ||
+                              "Unknown"}
+                          </span>
                           {(incident.attackerProfile as any)?.origin && (
-                            <span className="text-muted-foreground ml-1">({(incident.attackerProfile as any).origin})</span>
+                            <span className="text-muted-foreground ml-1">
+                              ({(incident.attackerProfile as any).origin})
+                            </span>
                           )}
                           {(incident.attackerProfile as any)?.estimatedOrigin && (
-                            <span className="text-muted-foreground ml-1">({(incident.attackerProfile as any).estimatedOrigin})</span>
+                            <span className="text-muted-foreground ml-1">
+                              ({(incident.attackerProfile as any).estimatedOrigin})
+                            </span>
                           )}
                         </>
                       ) : (
@@ -1372,7 +1801,10 @@ export default function IncidentDetailPage() {
                       {incident.mitreTechniques && incident.mitreTechniques.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {incident.mitreTechniques.slice(0, 4).map((tech: string, i: number) => (
-                            <span key={i} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-mono">
+                            <span
+                              key={i}
+                              className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-mono"
+                            >
                               {tech}
                             </span>
                           ))}
@@ -1422,7 +1854,9 @@ export default function IncidentDetailPage() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-muted-foreground">Alerts:</span>
-                    <span className="text-xs font-semibold" data-testid="text-exec-alert-count">{incident.alertCount}</span>
+                    <span className="text-xs font-semibold" data-testid="text-exec-alert-count">
+                      {incident.alertCount}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-muted-foreground">Time Span:</span>
@@ -1571,7 +2005,9 @@ export default function IncidentDetailPage() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold" data-testid="text-evidence-header">Evidence Timeline</h2>
+              <h2 className="text-sm font-semibold" data-testid="text-evidence-header">
+                Evidence Timeline
+              </h2>
             </div>
             <Button size="sm" onClick={() => setShowAddEvidenceDialog(true)} data-testid="button-add-evidence">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
@@ -1586,56 +2022,74 @@ export default function IncidentDetailPage() {
             </div>
           ) : evidenceItems && evidenceItems.length > 0 ? (
             <div className="relative space-y-0">
-              {[...evidenceItems].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((item: any, index: number) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-3 relative pb-4"
-                  data-testid={`evidence-item-${item.id}`}
-                >
-                  <div className="flex flex-col items-center">
-                    <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
-                    {index < evidenceItems.length - 1 && (
-                      <div className="w-px flex-1 bg-border mt-1" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-[9px] no-default-hover-elevate no-default-active-elevate" data-testid={`evidence-type-${item.id}`}>
-                        {item.type}
-                      </Badge>
-                      <span className="text-sm font-medium" data-testid={`evidence-title-${item.id}`}>{item.title}</span>
-                    </div>
-                    {item.description && (
-                      <p className="text-xs text-muted-foreground mt-1" data-testid={`evidence-desc-${item.id}`}>{item.description}</p>
-                    )}
-                    {item.url && (
-                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary mt-1 inline-flex items-center gap-1" data-testid={`evidence-url-${item.id}`}>
-                        <Link2 className="h-3 w-3" />
-                        {item.url}
-                      </a>
-                    )}
-                    <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
-                      {item.createdByName && <span>{item.createdByName}</span>}
-                      <span>{formatTimestamp(item.createdAt)}</span>
-                    </div>
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => deleteEvidence.mutate(item.id)}
-                    data-testid={`button-delete-evidence-${item.id}`}
+              {[...evidenceItems]
+                .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .map((item: any, index: number) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-3 relative pb-4"
+                    data-testid={`evidence-item-${item.id}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex flex-col items-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                      {index < evidenceItems.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                          data-testid={`evidence-type-${item.id}`}
+                        >
+                          {item.type}
+                        </Badge>
+                        <span className="text-sm font-medium" data-testid={`evidence-title-${item.id}`}>
+                          {item.title}
+                        </span>
+                      </div>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground mt-1" data-testid={`evidence-desc-${item.id}`}>
+                          {item.description}
+                        </p>
+                      )}
+                      {item.url && (
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary mt-1 inline-flex items-center gap-1"
+                          data-testid={`evidence-url-${item.id}`}
+                        >
+                          <Link2 className="h-3 w-3" />
+                          {item.url}
+                        </a>
+                      )}
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
+                        {item.createdByName && <span>{item.createdByName}</span>}
+                        <span>{formatTimestamp(item.createdAt)}</span>
+                      </div>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteEvidence.mutate(item.id)}
+                      data-testid={`button-delete-evidence-${item.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
             </div>
           ) : (
             <Card>
               <CardContent className="p-8 text-center">
                 <ClipboardList className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground" data-testid="text-evidence-empty">No evidence items yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Add notes, files, logs, or screenshots to build the evidence timeline</p>
+                <p className="text-sm text-muted-foreground" data-testid="text-evidence-empty">
+                  No evidence items yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add notes, files, logs, or screenshots to build the evidence timeline
+                </p>
               </CardContent>
             </Card>
           )}
@@ -1645,7 +2099,9 @@ export default function IncidentDetailPage() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <Lightbulb className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold" data-testid="text-hypotheses-header">Investigation Hypotheses</h2>
+              <h2 className="text-sm font-semibold" data-testid="text-hypotheses-header">
+                Investigation Hypotheses
+              </h2>
             </div>
             <Button size="sm" onClick={() => setShowAddHypothesisDialog(true)} data-testid="button-add-hypothesis">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
@@ -1666,9 +2122,19 @@ export default function IncidentDetailPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium" data-testid={`hypothesis-title-${hypothesis.id}`}>{hypothesis.title}</span>
+                          <span className="text-sm font-medium" data-testid={`hypothesis-title-${hypothesis.id}`}>
+                            {hypothesis.title}
+                          </span>
                           <Badge
-                            variant={hypothesis.status === "open" ? "outline" : hypothesis.status === "validated" ? "default" : hypothesis.status === "invalidated" ? "destructive" : "default"}
+                            variant={
+                              hypothesis.status === "open"
+                                ? "outline"
+                                : hypothesis.status === "validated"
+                                  ? "default"
+                                  : hypothesis.status === "invalidated"
+                                    ? "destructive"
+                                    : "default"
+                            }
                             className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${hypothesis.status === "validated" ? "bg-green-500/15 text-green-500 border-green-500/30" : ""}`}
                             data-testid={`hypothesis-status-${hypothesis.id}`}
                           >
@@ -1676,7 +2142,12 @@ export default function IncidentDetailPage() {
                           </Badge>
                         </div>
                         {hypothesis.description && (
-                          <p className="text-xs text-muted-foreground mt-1" data-testid={`hypothesis-desc-${hypothesis.id}`}>{hypothesis.description}</p>
+                          <p
+                            className="text-xs text-muted-foreground mt-1"
+                            data-testid={`hypothesis-desc-${hypothesis.id}`}
+                          >
+                            {hypothesis.description}
+                          </p>
                         )}
                       </div>
                       <Button
@@ -1692,15 +2163,22 @@ export default function IncidentDetailPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-muted-foreground">Confidence:</span>
                       <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-[200px]">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${hypothesis.confidence || 0}%` }} />
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{ width: `${hypothesis.confidence || 0}%` }}
+                        />
                       </div>
-                      <span className="text-[10px] font-medium" data-testid={`hypothesis-confidence-${hypothesis.id}`}>{hypothesis.confidence || 0}%</span>
+                      <span className="text-[10px] font-medium" data-testid={`hypothesis-confidence-${hypothesis.id}`}>
+                        {hypothesis.confidence || 0}%
+                      </span>
                     </div>
 
                     {hypothesis.mitreTactics && hypothesis.mitreTactics.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {hypothesis.mitreTactics.map((tactic: string, i: number) => (
-                          <span key={i} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px]">{tactic}</span>
+                          <span key={i} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px]">
+                            {tactic}
+                          </span>
                         ))}
                       </div>
                     )}
@@ -1709,7 +2187,9 @@ export default function IncidentDetailPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => updateHypothesis.mutate({ id: hypothesis.id, data: { status: "investigating" } })}
+                        onClick={() =>
+                          updateHypothesis.mutate({ id: hypothesis.id, data: { status: "investigating" } })
+                        }
                         disabled={hypothesis.status === "investigating"}
                         data-testid={`button-investigating-${hypothesis.id}`}
                       >
@@ -1719,7 +2199,9 @@ export default function IncidentDetailPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => updateHypothesis.mutate({ id: hypothesis.id, data: { status: "validated", confidence: 100 } })}
+                        onClick={() =>
+                          updateHypothesis.mutate({ id: hypothesis.id, data: { status: "validated", confidence: 100 } })
+                        }
                         disabled={hypothesis.status === "validated"}
                         data-testid={`button-validate-${hypothesis.id}`}
                       >
@@ -1729,7 +2211,9 @@ export default function IncidentDetailPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => updateHypothesis.mutate({ id: hypothesis.id, data: { status: "invalidated", confidence: 0 } })}
+                        onClick={() =>
+                          updateHypothesis.mutate({ id: hypothesis.id, data: { status: "invalidated", confidence: 0 } })
+                        }
                         disabled={hypothesis.status === "invalidated"}
                         data-testid={`button-invalidate-${hypothesis.id}`}
                       >
@@ -1750,8 +2234,12 @@ export default function IncidentDetailPage() {
             <Card>
               <CardContent className="p-8 text-center">
                 <Lightbulb className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground" data-testid="text-hypotheses-empty">No hypotheses yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Create hypotheses to track your investigation theories</p>
+                <p className="text-sm text-muted-foreground" data-testid="text-hypotheses-empty">
+                  No hypotheses yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Create hypotheses to track your investigation theories
+                </p>
               </CardContent>
             </Card>
           )}
@@ -1761,9 +2249,15 @@ export default function IncidentDetailPage() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <ListChecks className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold" data-testid="text-tasks-header">Investigation Tasks</h2>
+              <h2 className="text-sm font-semibold" data-testid="text-tasks-header">
+                Investigation Tasks
+              </h2>
               {taskStats.total > 0 && (
-                <Badge variant="outline" className="text-[9px] no-default-hover-elevate no-default-active-elevate" data-testid="badge-task-progress">
+                <Badge
+                  variant="outline"
+                  className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                  data-testid="badge-task-progress"
+                >
                   {taskStats.done}/{taskStats.total} done
                 </Badge>
               )}
@@ -1787,11 +2281,15 @@ export default function IncidentDetailPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium" data-testid={`task-title-${task.id}`}>{task.title}</span>
+                          <span className="text-sm font-medium" data-testid={`task-title-${task.id}`}>
+                            {task.title}
+                          </span>
                           <PriorityBadge priority={task.priority} />
                         </div>
                         {task.description && (
-                          <p className="text-xs text-muted-foreground mt-1" data-testid={`task-desc-${task.id}`}>{task.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1" data-testid={`task-desc-${task.id}`}>
+                            {task.description}
+                          </p>
                         )}
                       </div>
                       <Button
@@ -1827,14 +2325,18 @@ export default function IncidentDetailPage() {
                       {task.assignedToName && (
                         <div className="flex items-center gap-1">
                           <User className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground" data-testid={`task-assignee-${task.id}`}>{task.assignedToName}</span>
+                          <span className="text-xs text-muted-foreground" data-testid={`task-assignee-${task.id}`}>
+                            {task.assignedToName}
+                          </span>
                         </div>
                       )}
 
                       {task.dueDate && (
                         <div className="flex items-center gap-1">
                           <Calendar className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground" data-testid={`task-due-${task.id}`}>{formatTimestamp(task.dueDate)}</span>
+                          <span className="text-xs text-muted-foreground" data-testid={`task-due-${task.id}`}>
+                            {formatTimestamp(task.dueDate)}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -1851,8 +2353,12 @@ export default function IncidentDetailPage() {
             <Card>
               <CardContent className="p-8 text-center">
                 <ListChecks className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground" data-testid="text-tasks-empty">No tasks yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Create tasks to assign investigation work to team members</p>
+                <p className="text-sm text-muted-foreground" data-testid="text-tasks-empty">
+                  No tasks yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Create tasks to assign investigation work to team members
+                </p>
               </CardContent>
             </Card>
           )}
@@ -1862,9 +2368,17 @@ export default function IncidentDetailPage() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <BookOpen className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold" data-testid="text-runbooks-header">Runbook Templates</h2>
+              <h2 className="text-sm font-semibold" data-testid="text-runbooks-header">
+                Runbook Templates
+              </h2>
             </div>
-            <Button size="sm" variant="outline" onClick={() => seedRunbooks.mutate()} disabled={seedRunbooks.isPending} data-testid="button-seed-runbooks">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => seedRunbooks.mutate()}
+              disabled={seedRunbooks.isPending}
+              data-testid="button-seed-runbooks"
+            >
               <PlayCircle className="h-3.5 w-3.5 mr-1.5" />
               {seedRunbooks.isPending ? "Loading..." : "Load Built-in Runbooks"}
             </Button>
@@ -1878,15 +2392,23 @@ export default function IncidentDetailPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium" data-testid={`runbook-title-${runbook.id}`}>{runbook.title}</span>
+                          <span className="text-sm font-medium" data-testid={`runbook-title-${runbook.id}`}>
+                            {runbook.title}
+                          </span>
                           {runbook.isBuiltIn && (
-                            <Badge variant="secondary" className="text-[9px] no-default-hover-elevate no-default-active-elevate" data-testid={`runbook-builtin-${runbook.id}`}>
+                            <Badge
+                              variant="secondary"
+                              className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                              data-testid={`runbook-builtin-${runbook.id}`}
+                            >
                               Built-in
                             </Badge>
                           )}
                         </div>
                         {runbook.description && (
-                          <p className="text-xs text-muted-foreground mt-1" data-testid={`runbook-desc-${runbook.id}`}>{runbook.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1" data-testid={`runbook-desc-${runbook.id}`}>
+                            {runbook.description}
+                          </p>
                         )}
                       </div>
                       <Button
@@ -1901,13 +2423,15 @@ export default function IncidentDetailPage() {
 
                     <div className="flex items-center gap-2 flex-wrap">
                       {runbook.incidentType && (
-                        <Badge variant="outline" className="text-[9px] no-default-hover-elevate no-default-active-elevate" data-testid={`runbook-type-${runbook.id}`}>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                          data-testid={`runbook-type-${runbook.id}`}
+                        >
                           {runbook.incidentType}
                         </Badge>
                       )}
-                      {runbook.severity && (
-                        <SeverityBadge severity={runbook.severity} />
-                      )}
+                      {runbook.severity && <SeverityBadge severity={runbook.severity} />}
                       {runbook.estimatedDuration && (
                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3 w-3" />
@@ -1919,31 +2443,43 @@ export default function IncidentDetailPage() {
                     {expandedRunbook === runbook.id && runbook.steps && runbook.steps.length > 0 && (
                       <div className="mt-3 space-y-2 border-t pt-3">
                         <div className="text-xs font-medium">Steps</div>
-                        {[...runbook.steps].sort((a: any, b: any) => (a.stepOrder || 0) - (b.stepOrder || 0)).map((step: any, i: number) => (
-                          <div key={i} className="flex items-start gap-2 text-xs p-2 rounded-md bg-muted/30" data-testid={`runbook-step-${runbook.id}-${i}`}>
-                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-medium flex-shrink-0 mt-0.5">{step.stepOrder || i + 1}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium">{step.title}</span>
-                                {step.actionType && (
-                                  <Badge variant="outline" className="text-[8px] no-default-hover-elevate no-default-active-elevate">{step.actionType}</Badge>
+                        {[...runbook.steps]
+                          .sort((a: any, b: any) => (a.stepOrder || 0) - (b.stepOrder || 0))
+                          .map((step: any, i: number) => (
+                            <div
+                              key={i}
+                              className="flex items-start gap-2 text-xs p-2 rounded-md bg-muted/30"
+                              data-testid={`runbook-step-${runbook.id}-${i}`}
+                            >
+                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-medium flex-shrink-0 mt-0.5">
+                                {step.stepOrder || i + 1}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium">{step.title}</span>
+                                  {step.actionType && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[8px] no-default-hover-elevate no-default-active-elevate"
+                                    >
+                                      {step.actionType}
+                                    </Badge>
+                                  )}
+                                  {step.required && (
+                                    <span className="text-[9px] text-red-500 font-medium">Required</span>
+                                  )}
+                                </div>
+                                {step.instructions && (
+                                  <p className="text-muted-foreground mt-0.5">{step.instructions}</p>
                                 )}
-                                {step.required && (
-                                  <span className="text-[9px] text-red-500 font-medium">Required</span>
+                                {step.estimatedMinutes && (
+                                  <span className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+                                    <Clock className="h-2.5 w-2.5" />~{step.estimatedMinutes} min
+                                  </span>
                                 )}
                               </div>
-                              {step.instructions && (
-                                <p className="text-muted-foreground mt-0.5">{step.instructions}</p>
-                              )}
-                              {step.estimatedMinutes && (
-                                <span className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
-                                  <Clock className="h-2.5 w-2.5" />
-                                  ~{step.estimatedMinutes} min
-                                </span>
-                              )}
                             </div>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     )}
                   </CardContent>
@@ -1954,12 +2490,270 @@ export default function IncidentDetailPage() {
             <Card>
               <CardContent className="p-8 text-center">
                 <BookOpen className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground" data-testid="text-runbooks-empty">No runbook templates available</p>
+                <p className="text-sm text-muted-foreground" data-testid="text-runbooks-empty">
+                  No runbook templates available
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">Load built-in runbook templates to get started</p>
-                <Button size="sm" variant="outline" className="mt-3" onClick={() => seedRunbooks.mutate()} disabled={seedRunbooks.isPending} data-testid="button-seed-runbooks-empty">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => seedRunbooks.mutate()}
+                  disabled={seedRunbooks.isPending}
+                  data-testid="button-seed-runbooks-empty"
+                >
                   <PlayCircle className="h-3.5 w-3.5 mr-1.5" />
                   Load Built-in Runbooks
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="audit-chain" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Fingerprint className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold" data-testid="text-chain-header">
+                Immutable Evidence Chain
+              </h2>
+              {evidenceChain && evidenceChain.length > 0 && (
+                <Badge variant="outline" className="text-[9px] no-default-hover-elevate no-default-active-elevate">
+                  {evidenceChain.length} entries
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => verifyChain()} data-testid="button-verify-chain">
+                <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                Verify Integrity
+              </Button>
+              <Button size="sm" onClick={() => setShowAddChainEntryDialog(true)} data-testid="button-add-chain-entry">
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add Entry
+              </Button>
+            </div>
+          </div>
+
+          {chainVerification && (
+            <Card
+              className={
+                chainVerification.valid ? "border-green-500/30 bg-green-500/5" : "border-red-500/30 bg-red-500/5"
+              }
+              data-testid="card-chain-verification"
+            >
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2">
+                  {chainVerification.valid ? (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-red-500" />
+                  )}
+                  <span className="text-sm font-medium">
+                    {chainVerification.valid
+                      ? "Chain integrity verified"
+                      : `Chain integrity compromised (${chainVerification.violations.length} violations)`}
+                  </span>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {chainVerification.entryCount} entries checked
+                  </span>
+                </div>
+                {chainVerification.violations.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {chainVerification.violations.map((v, idx) => (
+                      <div key={idx} className="text-xs text-red-500">
+                        Seq #{v.sequenceNum}: {v.reason}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {chainLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : evidenceChain && evidenceChain.length > 0 ? (
+            <div className="relative space-y-0">
+              {[...evidenceChain]
+                .sort((a, b) => a.sequenceNum - b.sequenceNum)
+                .map((entry, index) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-start gap-3 relative pb-4"
+                    data-testid={`chain-entry-${entry.id}`}
+                  >
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5 ${entry.entryType === "approval_granted" ? "bg-green-500" : entry.entryType === "approval_denied" ? "bg-red-500" : "bg-primary"}`}
+                      />
+                      {index < evidenceChain.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                        >
+                          #{entry.sequenceNum}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                        >
+                          {entry.entryType.replace(/_/g, " ")}
+                        </Badge>
+                        <span className="text-sm font-medium">{entry.summary}</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
+                        {entry.actorName && <span>{entry.actorName}</span>}
+                        <span>{formatTimestamp(entry.createdAt)}</span>
+                        <span className="font-mono text-[9px] opacity-60" title={entry.entryHash || ""}>
+                          hash: {entry.entryHash?.slice(0, 12)}...
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Fingerprint className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground" data-testid="text-chain-empty">
+                  No evidence chain entries yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Evidence chain entries are created automatically for key actions and can also be added manually
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="approvals" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold" data-testid="text-approvals-header">
+                Response Approvals
+              </h2>
+            </div>
+            <Button size="sm" onClick={() => setShowApprovalDialog(true)} data-testid="button-request-approval">
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Request Approval
+            </Button>
+          </div>
+
+          {approvalsLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : responseApprovals && responseApprovals.length > 0 ? (
+            <div className="space-y-3">
+              {responseApprovals.map((approval) => (
+                <Card key={approval.id} data-testid={`approval-card-${approval.id}`}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{approval.actionDescription}</span>
+                          <Badge
+                            variant={
+                              approval.status === "pending"
+                                ? "outline"
+                                : approval.status === "approved"
+                                  ? "default"
+                                  : "destructive"
+                            }
+                            className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${approval.status === "approved" ? "bg-green-500/15 text-green-500 border-green-500/30" : ""}`}
+                          >
+                            {approval.status}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                          >
+                            Approver: {approval.requiredApproverRole}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Action: {approval.actionType.replace(/_/g, " ")}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
+                          <span>Requested by {approval.requestedByName || "Unknown"}</span>
+                          <span>{formatTimestamp(approval.requestedAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {approval.status === "pending" && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Input
+                          placeholder="Decision note (optional)..."
+                          value={approvalDecisionNote}
+                          onChange={(e) => setApprovalDecisionNote(e.target.value)}
+                          className="flex-1 h-8 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            decideApproval.mutate({
+                              id: approval.id,
+                              decision: "approved",
+                              note: approvalDecisionNote || undefined,
+                            });
+                            setApprovalDecisionNote("");
+                          }}
+                          disabled={decideApproval.isPending}
+                          data-testid={`button-approve-${approval.id}`}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            decideApproval.mutate({
+                              id: approval.id,
+                              decision: "rejected",
+                              note: approvalDecisionNote || undefined,
+                            });
+                            setApprovalDecisionNote("");
+                          }}
+                          disabled={decideApproval.isPending}
+                          data-testid={`button-reject-${approval.id}`}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                    {approval.decidedByName && (
+                      <div className="text-[10px] text-muted-foreground border-t pt-2">
+                        Decided by {approval.decidedByName}{" "}
+                        {approval.decidedAt && `on ${formatTimestamp(approval.decidedAt)}`}
+                        {approval.decisionNote && <span className="ml-2 italic">"{approval.decisionNote}"</span>}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <ShieldCheck className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground" data-testid="text-approvals-empty">
+                  No response approvals yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Request approval before executing high-risk response actions
+                </p>
               </CardContent>
             </Card>
           )}
@@ -1983,7 +2777,9 @@ export default function IncidentDetailPage() {
               <CardContent className="p-8 text-center">
                 <ClipboardCheck className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">No post-incident review yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Start a review to document lessons learned and action items</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Start a review to document lessons learned and action items
+                </p>
                 <Button
                   size="sm"
                   className="mt-3"
@@ -2093,7 +2889,9 @@ export default function IncidentDetailPage() {
                       <div className="space-y-1.5">
                         {pirActionItems.map((item, i) => (
                           <div key={i} className="flex items-center gap-2 text-sm">
-                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-medium shrink-0">{i + 1}</span>
+                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-medium shrink-0">
+                              {i + 1}
+                            </span>
                             <span className="flex-1 text-muted-foreground">{item}</span>
                             <Button
                               size="icon"
@@ -2189,7 +2987,11 @@ export default function IncidentDetailPage() {
                   disabled={createPir.isPending || updatePir.isPending}
                   data-testid="button-save-pir"
                 >
-                  {(createPir.isPending || updatePir.isPending) ? "Saving..." : existingPir ? "Update Review" : "Save Review"}
+                  {createPir.isPending || updatePir.isPending
+                    ? "Saving..."
+                    : existingPir
+                      ? "Update Review"
+                      : "Save Review"}
                 </Button>
                 {existingPir && (
                   <Button
@@ -2207,6 +3009,127 @@ export default function IncidentDetailPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={showAddChainEntryDialog} onOpenChange={setShowAddChainEntryDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Evidence Chain Entry</DialogTitle>
+            <DialogDescription>Add a tamper-proof entry to the immutable evidence chain</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Entry Type</Label>
+              <Select value={chainEntryType} onValueChange={setChainEntryType}>
+                <SelectTrigger data-testid="select-chain-entry-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="action">Response Action</SelectItem>
+                  <SelectItem value="observation">Observation</SelectItem>
+                  <SelectItem value="escalation">Escalation</SelectItem>
+                  <SelectItem value="containment">Containment</SelectItem>
+                  <SelectItem value="eradication">Eradication</SelectItem>
+                  <SelectItem value="recovery">Recovery</SelectItem>
+                  <SelectItem value="communication">Communication</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Summary</Label>
+              <Textarea
+                value={chainEntrySummary}
+                onChange={(e) => setChainEntrySummary(e.target.value)}
+                placeholder="Describe what happened..."
+                data-testid="input-chain-entry-summary"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddChainEntryDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                addChainEntry.mutate({ entryType: chainEntryType, summary: chainEntrySummary });
+                setShowAddChainEntryDialog(false);
+              }}
+              disabled={!chainEntrySummary.trim() || addChainEntry.isPending}
+              data-testid="button-submit-chain-entry"
+            >
+              {addChainEntry.isPending ? "Adding..." : "Add Entry"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Response Approval</DialogTitle>
+            <DialogDescription>Request approval before executing a high-risk response action</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Action Type</Label>
+              <Select value={approvalActionType} onValueChange={setApprovalActionType}>
+                <SelectTrigger data-testid="select-approval-action-type">
+                  <SelectValue placeholder="Select action type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="isolate_host">Isolate Host</SelectItem>
+                  <SelectItem value="block_ip">Block IP</SelectItem>
+                  <SelectItem value="disable_user">Disable User</SelectItem>
+                  <SelectItem value="quarantine_file">Quarantine File</SelectItem>
+                  <SelectItem value="revoke_session">Revoke Session</SelectItem>
+                  <SelectItem value="escalate">Escalate</SelectItem>
+                  <SelectItem value="custom">Custom Action</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={approvalDescription}
+                onChange={(e) => setApprovalDescription(e.target.value)}
+                placeholder="Describe what this action will do and why..."
+                data-testid="input-approval-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Risk Level</Label>
+              <Select value={approvalRiskLevel} onValueChange={setApprovalRiskLevel}>
+                <SelectTrigger data-testid="select-approval-risk">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowApprovalDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                createApproval.mutate({
+                  actionType: approvalActionType,
+                  actionDescription: approvalDescription,
+                  riskLevel: approvalRiskLevel,
+                })
+              }
+              disabled={!approvalActionType || !approvalDescription.trim() || createApproval.isPending}
+              data-testid="button-submit-approval"
+            >
+              {createApproval.isPending ? "Requesting..." : "Request Approval"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showAddEvidenceDialog} onOpenChange={setShowAddEvidenceDialog}>
         <DialogContent>
@@ -2263,9 +3186,22 @@ export default function IncidentDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddEvidenceDialog(false)} data-testid="button-cancel-evidence">Cancel</Button>
             <Button
-              onClick={() => createEvidence.mutate({ title: evidenceTitle, type: evidenceType, description: evidenceDescription, url: evidenceUrl || undefined })}
+              variant="outline"
+              onClick={() => setShowAddEvidenceDialog(false)}
+              data-testid="button-cancel-evidence"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                createEvidence.mutate({
+                  title: evidenceTitle,
+                  type: evidenceType,
+                  description: evidenceDescription,
+                  url: evidenceUrl || undefined,
+                })
+              }
               disabled={!evidenceTitle.trim() || createEvidence.isPending}
               data-testid="button-submit-evidence"
             >
@@ -2304,9 +3240,22 @@ export default function IncidentDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddHypothesisDialog(false)} data-testid="button-cancel-hypothesis">Cancel</Button>
             <Button
-              onClick={() => createHypothesis.mutate({ title: hypothesisTitle, description: hypothesisDescription, status: "open", confidence: 0 })}
+              variant="outline"
+              onClick={() => setShowAddHypothesisDialog(false)}
+              data-testid="button-cancel-hypothesis"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                createHypothesis.mutate({
+                  title: hypothesisTitle,
+                  description: hypothesisDescription,
+                  status: "open",
+                  confidence: 0,
+                })
+              }
               disabled={!hypothesisTitle.trim() || createHypothesis.isPending}
               data-testid="button-submit-hypothesis"
             >
@@ -2370,9 +3319,19 @@ export default function IncidentDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddTaskDialog(false)} data-testid="button-cancel-task">Cancel</Button>
+            <Button variant="outline" onClick={() => setShowAddTaskDialog(false)} data-testid="button-cancel-task">
+              Cancel
+            </Button>
             <Button
-              onClick={() => createTask.mutate({ title: taskTitle, description: taskDescription, assignedTo: taskAssignee || undefined, assignedToName: taskAssignee || undefined, priority: parseInt(taskPriority, 10) })}
+              onClick={() =>
+                createTask.mutate({
+                  title: taskTitle,
+                  description: taskDescription,
+                  assignedTo: taskAssignee || undefined,
+                  assignedToName: taskAssignee || undefined,
+                  priority: parseInt(taskPriority, 10),
+                })
+              }
               disabled={!taskTitle.trim() || createTask.isPending}
               data-testid="button-submit-task"
             >
@@ -2389,7 +3348,13 @@ interface NarrativeResult {
   narrative: string;
   summary: string;
   attackTimeline: { timestamp: string; description: string; alertId?: string; mitreTechnique?: string }[];
-  attackerProfile: { ttps: string[]; sophistication: string; likelyMotivation: string; estimatedOrigin: string; diamondModel?: { adversary: string; infrastructure: string[]; capability: string; victim: string[] } };
+  attackerProfile: {
+    ttps: string[];
+    sophistication: string;
+    likelyMotivation: string;
+    estimatedOrigin: string;
+    diamondModel?: { adversary: string; infrastructure: string[]; capability: string; victim: string[] };
+  };
   killChainAnalysis?: { phase: string; description: string; evidence: string[] }[];
   mitigationSteps: string[];
   iocs: (string | { type: string; value: string; context?: string })[];

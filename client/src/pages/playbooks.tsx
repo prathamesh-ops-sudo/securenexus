@@ -52,8 +52,22 @@ import {
   Gauge,
   Timer,
   Undo2,
+  GitBranch,
+  Beaker,
+  Crosshair,
+  RotateCcw,
+  Hash,
+  Fingerprint,
 } from "lucide-react";
-import type { Playbook, PlaybookExecution, PlaybookApproval } from "@shared/schema";
+import type {
+  Playbook,
+  PlaybookExecution,
+  PlaybookApproval,
+  PlaybookVersion,
+  PlaybookSimulation,
+  BlastRadiusPreview,
+  PlaybookRollbackPlan,
+} from "@shared/schema";
 
 interface FlowNode {
   id: string;
@@ -840,6 +854,16 @@ export default function PlaybooksPage() {
   const [proposalObjective, setProposalObjective] = useState("");
   const [proposalSeverity, setProposalSeverity] = useState("high");
   const [proposal, setProposal] = useState<any | null>(null);
+  const [selectedGovernancePlaybook, setSelectedGovernancePlaybook] = useState<string | null>(null);
+  const [showSimulationDialog, setShowSimulationDialog] = useState(false);
+  const [simParams, setSimParams] = useState("");
+  const [showBlastRadiusDialog, setShowBlastRadiusDialog] = useState(false);
+  const [blastRadiusContext, setBlastRadiusContext] = useState("");
+  const [showVersionDialog, setShowVersionDialog] = useState(false);
+  const [versionChangelog, setVersionChangelog] = useState("");
+  const [showRollbackPlanDialog, setShowRollbackPlanDialog] = useState(false);
+  const [rollbackPlanDesc, setRollbackPlanDesc] = useState("");
+  const [rollbackSteps, setRollbackSteps] = useState("");
 
   const {
     data: playbooks,
@@ -959,6 +983,159 @@ export default function PlaybooksPage() {
     onError: (err: any) => {
       toast({ title: "Rollback failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  const { data: playbookVersions, isLoading: versionsLoading } = useQuery<PlaybookVersion[]>({
+    queryKey: ["/api/playbook-versions", selectedGovernancePlaybook],
+    queryFn: async () => {
+      const res = await fetch(`/api/playbook-versions/${selectedGovernancePlaybook}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load versions");
+      const body = await res.json();
+      return body.data ?? body;
+    },
+    enabled: !!selectedGovernancePlaybook,
+  });
+
+  const { data: simulations, isLoading: simulationsLoading } = useQuery<PlaybookSimulation[]>({
+    queryKey: ["/api/playbooks", selectedGovernancePlaybook, "simulations"],
+    queryFn: async () => {
+      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/simulations`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load simulations");
+      const body = await res.json();
+      return body.data ?? body;
+    },
+    enabled: !!selectedGovernancePlaybook,
+  });
+
+  const { data: blastPreviews, isLoading: blastLoading } = useQuery<BlastRadiusPreview[]>({
+    queryKey: ["/api/playbooks", selectedGovernancePlaybook, "blast-radius"],
+    queryFn: async () => {
+      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/blast-radius`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load blast radius");
+      const body = await res.json();
+      return body.data ?? body;
+    },
+    enabled: !!selectedGovernancePlaybook,
+  });
+
+  const { data: rollbackPlans, isLoading: rollbackPlansLoading } = useQuery<PlaybookRollbackPlan[]>({
+    queryKey: ["/api/playbooks", selectedGovernancePlaybook, "rollback-plans"],
+    queryFn: async () => {
+      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/rollback-plans`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load rollback plans");
+      const body = await res.json();
+      return body.data ?? body;
+    },
+    enabled: !!selectedGovernancePlaybook,
+  });
+
+  const createVersionMutation = useMutation({
+    mutationFn: async ({ playbookId, changelog }: { playbookId: string; changelog: string }) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/versions`, { changelog });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbook-versions", selectedGovernancePlaybook] });
+      setShowVersionDialog(false);
+      setVersionChangelog("");
+      toast({ title: "Version created" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const activateVersionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/playbook-versions/${id}/activate`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbook-versions", selectedGovernancePlaybook] });
+      toast({ title: "Version activated" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const rollbackVersionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/playbook-versions/${id}/rollback`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbook-versions", selectedGovernancePlaybook] });
+      toast({ title: "Rolled back to this version" });
+    },
+    onError: (err: any) => toast({ title: "Rollback failed", description: err.message, variant: "destructive" }),
+  });
+
+  const runSimulationMutation = useMutation({
+    mutationFn: async ({ playbookId, parameters }: { playbookId: string; parameters?: Record<string, unknown> }) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/simulate`, { parameters });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks", selectedGovernancePlaybook, "simulations"] });
+      setShowSimulationDialog(false);
+      setSimParams("");
+      toast({ title: "Simulation complete" });
+    },
+    onError: (err: any) => toast({ title: "Simulation failed", description: err.message, variant: "destructive" }),
+  });
+
+  const createBlastRadiusMutation = useMutation({
+    mutationFn: async ({
+      playbookId,
+      triggerContext,
+    }: {
+      playbookId: string;
+      triggerContext?: Record<string, unknown>;
+    }) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/blast-radius`, { triggerContext });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks", selectedGovernancePlaybook, "blast-radius"] });
+      setShowBlastRadiusDialog(false);
+      setBlastRadiusContext("");
+      toast({ title: "Blast radius preview generated" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const createRollbackPlanMutation = useMutation({
+    mutationFn: async ({
+      playbookId,
+      description,
+      steps,
+    }: {
+      playbookId: string;
+      description: string;
+      steps: string[];
+    }) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/rollback-plans`, { description, steps });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks", selectedGovernancePlaybook, "rollback-plans"] });
+      setShowRollbackPlanDialog(false);
+      setRollbackPlanDesc("");
+      setRollbackSteps("");
+      toast({ title: "Rollback plan created" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const executeRollbackPlanMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/playbook-rollback-plans/${id}/execute`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks", selectedGovernancePlaybook, "rollback-plans"] });
+      toast({ title: "Rollback plan executed" });
+    },
+    onError: (err: any) => toast({ title: "Execution failed", description: err.message, variant: "destructive" }),
   });
 
   const proposePlaybookMutation = useMutation({
@@ -1193,7 +1370,11 @@ export default function PlaybooksPage() {
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <Activity className="h-4 w-4 mr-1.5" />
-            Execution History
+            History
+          </TabsTrigger>
+          <TabsTrigger value="governance" data-testid="tab-governance">
+            <Fingerprint className="h-4 w-4 mr-1.5" />
+            Governance
           </TabsTrigger>
         </TabsList>
 
@@ -1591,7 +1772,576 @@ export default function PlaybooksPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="governance" className="mt-4 space-y-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold" data-testid="text-governance-header">
+                Playbook Governance
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Version control, simulation, blast radius analysis, and rollback plans
+              </p>
+            </div>
+            <Select value={selectedGovernancePlaybook || ""} onValueChange={setSelectedGovernancePlaybook}>
+              <SelectTrigger className="w-[260px]" data-testid="select-governance-playbook">
+                <SelectValue placeholder="Select a playbook..." />
+              </SelectTrigger>
+              <SelectContent>
+                {playbooks?.map((pb) => (
+                  <SelectItem key={pb.id} value={pb.id}>
+                    {pb.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {!selectedGovernancePlaybook ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Fingerprint className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  Select a playbook above to manage its governance settings
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Tabs defaultValue="versions" data-testid="tabs-governance-sub">
+              <TabsList>
+                <TabsTrigger value="versions">
+                  <GitBranch className="h-3.5 w-3.5 mr-1" />
+                  Versions
+                </TabsTrigger>
+                <TabsTrigger value="simulations">
+                  <Beaker className="h-3.5 w-3.5 mr-1" />
+                  Simulations
+                </TabsTrigger>
+                <TabsTrigger value="blast-radius">
+                  <Crosshair className="h-3.5 w-3.5 mr-1" />
+                  Blast Radius
+                </TabsTrigger>
+                <TabsTrigger value="rollback-plans">
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  Rollback Plans
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="versions" className="mt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Version History</h3>
+                  <Button size="sm" onClick={() => setShowVersionDialog(true)} data-testid="button-create-version">
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Create Version
+                  </Button>
+                </div>
+                {versionsLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                ) : playbookVersions && playbookVersions.length > 0 ? (
+                  <div className="space-y-2">
+                    {playbookVersions.map((v) => (
+                      <Card key={v.id} data-testid={`version-card-${v.id}`}>
+                        <CardContent className="p-3 flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] font-mono no-default-hover-elevate no-default-active-elevate"
+                              >
+                                v{v.version}
+                              </Badge>
+                              {v.status === "active" && (
+                                <Badge className="text-[9px] bg-green-500/15 text-green-500 border-green-500/30 no-default-hover-elevate no-default-active-elevate">
+                                  Active
+                                </Badge>
+                              )}
+                              {v.changeDescription && (
+                                <span className="text-xs text-muted-foreground truncate">{v.changeDescription}</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground mt-1">
+                              {v.createdByName && <span>{v.createdByName} &middot; </span>}
+                              {formatRelativeTime(v.createdAt)}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {v.status !== "active" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => activateVersionMutation.mutate(v.id)}
+                                disabled={activateVersionMutation.isPending}
+                                data-testid={`button-activate-${v.id}`}
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Activate
+                              </Button>
+                            )}
+                            {v.status !== "active" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => rollbackVersionMutation.mutate(v.id)}
+                                disabled={rollbackVersionMutation.isPending}
+                                data-testid={`button-rollback-version-${v.id}`}
+                              >
+                                <Undo2 className="h-3 w-3 mr-1" />
+                                Rollback
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <GitBranch className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">No versions yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Create a version snapshot to track playbook changes
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="simulations" className="mt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Simulation (Dry Run)</h3>
+                  <Button size="sm" onClick={() => setShowSimulationDialog(true)} data-testid="button-run-simulation">
+                    <Beaker className="h-3.5 w-3.5 mr-1" />
+                    Run Simulation
+                  </Button>
+                </div>
+                {simulationsLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ) : simulations && simulations.length > 0 ? (
+                  <div className="space-y-2">
+                    {simulations.map((sim) => (
+                      <Card key={sim.id} data-testid={`simulation-card-${sim.id}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge
+                              variant={
+                                sim.status === "completed"
+                                  ? "default"
+                                  : sim.status === "failed"
+                                    ? "destructive"
+                                    : "outline"
+                              }
+                              className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${sim.status === "completed" ? "bg-green-500/15 text-green-500 border-green-500/30" : ""}`}
+                            >
+                              {sim.status}
+                            </Badge>
+                            {sim.durationMs && (
+                              <span className="text-xs font-mono text-muted-foreground">{sim.durationMs}ms</span>
+                            )}
+                            <span className="text-xs text-muted-foreground">{formatRelativeTime(sim.createdAt)}</span>
+                          </div>
+                          {sim.impactAnalysis !== null && typeof sim.impactAnalysis === "object" ? (
+                            <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 font-mono whitespace-pre-wrap">
+                              {String(JSON.stringify(sim.impactAnalysis, null, 2)).slice(0, 500)}
+                            </div>
+                          ) : null}
+                          {sim.simulatedByName && (
+                            <div className="text-[10px] text-muted-foreground">Simulated by {sim.simulatedByName}</div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <Beaker className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">No simulations run yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Run a simulation to preview playbook execution without making real changes
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="blast-radius" className="mt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Blast Radius Previews</h3>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowBlastRadiusDialog(true)}
+                    data-testid="button-create-blast-radius"
+                  >
+                    <Crosshair className="h-3.5 w-3.5 mr-1" />
+                    Generate Preview
+                  </Button>
+                </div>
+                {blastLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-24 w-full" />
+                  </div>
+                ) : blastPreviews && blastPreviews.length > 0 ? (
+                  <div className="space-y-3">
+                    {blastPreviews.map((bp) => (
+                      <Card key={bp.id} data-testid={`blast-radius-card-${bp.id}`}>
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${
+                                bp.riskLevel === "critical"
+                                  ? "border-red-500/30 text-red-500"
+                                  : bp.riskLevel === "high"
+                                    ? "border-orange-500/30 text-orange-500"
+                                    : bp.riskLevel === "medium"
+                                      ? "border-yellow-500/30 text-yellow-500"
+                                      : "border-green-500/30 text-green-500"
+                              }`}
+                            >
+                              Risk: {bp.riskLevel}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">{formatRelativeTime(bp.createdAt)}</span>
+                          </div>
+                          {bp.affectedEntityCount > 0 && bp.affectedEntities !== null ? (
+                            <div>
+                              <div className="text-xs font-medium mb-1">
+                                Affected Entities ({bp.affectedEntityCount})
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {Array.isArray(bp.affectedEntities) ? (
+                                  (bp.affectedEntities as unknown[]).map((entity, idx) => (
+                                    <Badge
+                                      key={idx}
+                                      variant="outline"
+                                      className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                                    >
+                                      {typeof entity === "string" ? entity : String(JSON.stringify(entity))}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    {String(JSON.stringify(bp.affectedEntities))}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                          {bp.riskFactors !== null && bp.riskFactors !== undefined ? (
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-medium">Risk Factors: </span>
+                              {String(JSON.stringify(bp.riskFactors))}
+                            </div>
+                          ) : null}
+                          {bp.rollbackPlan !== null && bp.rollbackPlan !== undefined ? (
+                            <div>
+                              <div className="text-xs font-medium mb-1">Rollback Plan</div>
+                              <div className="text-xs text-muted-foreground">
+                                {String(JSON.stringify(bp.rollbackPlan))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <Crosshair className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">No blast radius previews yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Generate a preview to see what resources would be affected by this playbook
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="rollback-plans" className="mt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Rollback Plans</h3>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowRollbackPlanDialog(true)}
+                    data-testid="button-create-rollback-plan"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Create Plan
+                  </Button>
+                </div>
+                {rollbackPlansLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ) : rollbackPlans && rollbackPlans.length > 0 ? (
+                  <div className="space-y-2">
+                    {rollbackPlans.map((rp) => (
+                      <Card key={rp.id} data-testid={`rollback-plan-card-${rp.id}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                variant={
+                                  rp.status === "executed"
+                                    ? "default"
+                                    : rp.status === "failed"
+                                      ? "destructive"
+                                      : "outline"
+                                }
+                                className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${rp.status === "executed" ? "bg-green-500/15 text-green-500 border-green-500/30" : ""}`}
+                              >
+                                {rp.status}
+                              </Badge>
+                              {rp.autoRollbackEnabled && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                                >
+                                  Auto
+                                </Badge>
+                              )}
+                            </div>
+                            {rp.status === "ready" && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      "Execute this rollback plan? This will attempt to reverse the playbook actions.",
+                                    )
+                                  ) {
+                                    executeRollbackPlanMutation.mutate(rp.id);
+                                  }
+                                }}
+                                disabled={executeRollbackPlanMutation.isPending}
+                                data-testid={`button-execute-rollback-${rp.id}`}
+                              >
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                                Execute
+                              </Button>
+                            )}
+                          </div>
+                          {Array.isArray(rp.rollbackSteps) && (rp.rollbackSteps as unknown[]).length > 0 ? (
+                            <ol className="text-xs text-muted-foreground list-decimal list-inside space-y-0.5">
+                              {(rp.rollbackSteps as unknown[]).map((step, idx) => (
+                                <li key={idx}>{typeof step === "string" ? step : String(JSON.stringify(step))}</li>
+                              ))}
+                            </ol>
+                          ) : null}
+                          <div className="text-[10px] text-muted-foreground">
+                            {rp.executedByName && <span>{rp.executedByName} &middot; </span>}
+                            {formatRelativeTime(rp.createdAt)}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <RotateCcw className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">No rollback plans yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Create a rollback plan to ensure safe reversal of playbook actions
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
+          )}
+        </TabsContent>
       </Tabs>
+
+      <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Version Snapshot</DialogTitle>
+            <DialogDescription>Snapshot the current playbook state as a new version</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Changelog</Label>
+              <Textarea
+                value={versionChangelog}
+                onChange={(e) => setVersionChangelog(e.target.value)}
+                placeholder="What changed in this version..."
+                data-testid="input-version-changelog"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowVersionDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedGovernancePlaybook)
+                  createVersionMutation.mutate({ playbookId: selectedGovernancePlaybook, changelog: versionChangelog });
+              }}
+              disabled={createVersionMutation.isPending}
+              data-testid="button-submit-version"
+            >
+              {createVersionMutation.isPending ? "Creating..." : "Create Version"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSimulationDialog} onOpenChange={setShowSimulationDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Run Simulation</DialogTitle>
+            <DialogDescription>Execute a dry run of the playbook without making real changes</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Parameters (JSON, optional)</Label>
+              <Textarea
+                value={simParams}
+                onChange={(e) => setSimParams(e.target.value)}
+                placeholder='{"alertId": "test-123"}'
+                className="font-mono text-xs"
+                data-testid="input-sim-params"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowSimulationDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedGovernancePlaybook) {
+                  let params: Record<string, unknown> | undefined;
+                  if (simParams.trim()) {
+                    try {
+                      params = JSON.parse(simParams);
+                    } catch {
+                      params = { raw: simParams };
+                    }
+                  }
+                  runSimulationMutation.mutate({ playbookId: selectedGovernancePlaybook, parameters: params });
+                }
+              }}
+              disabled={runSimulationMutation.isPending}
+              data-testid="button-submit-simulation"
+            >
+              {runSimulationMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Beaker className="h-4 w-4 mr-2" />
+              )}
+              Run Simulation
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBlastRadiusDialog} onOpenChange={setShowBlastRadiusDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generate Blast Radius Preview</DialogTitle>
+            <DialogDescription>See what resources would be affected before executing the playbook</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Trigger Context (JSON, optional)</Label>
+              <Textarea
+                value={blastRadiusContext}
+                onChange={(e) => setBlastRadiusContext(e.target.value)}
+                placeholder='{"targetIp": "10.0.0.1"}'
+                className="font-mono text-xs"
+                data-testid="input-blast-context"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowBlastRadiusDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedGovernancePlaybook) {
+                  let ctx: Record<string, unknown> | undefined;
+                  if (blastRadiusContext.trim()) {
+                    try {
+                      ctx = JSON.parse(blastRadiusContext);
+                    } catch {
+                      ctx = { raw: blastRadiusContext };
+                    }
+                  }
+                  createBlastRadiusMutation.mutate({ playbookId: selectedGovernancePlaybook, triggerContext: ctx });
+                }
+              }}
+              disabled={createBlastRadiusMutation.isPending}
+              data-testid="button-submit-blast-radius"
+            >
+              {createBlastRadiusMutation.isPending ? "Generating..." : "Generate Preview"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRollbackPlanDialog} onOpenChange={setShowRollbackPlanDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Rollback Plan</DialogTitle>
+            <DialogDescription>Define steps to safely reverse the playbook actions</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                value={rollbackPlanDesc}
+                onChange={(e) => setRollbackPlanDesc(e.target.value)}
+                placeholder="Rollback plan for..."
+                data-testid="input-rollback-desc"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Steps (one per line)</Label>
+              <Textarea
+                value={rollbackSteps}
+                onChange={(e) => setRollbackSteps(e.target.value)}
+                placeholder="Step 1: Remove firewall rule\nStep 2: Re-enable user account"
+                data-testid="input-rollback-steps"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowRollbackPlanDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedGovernancePlaybook && rollbackPlanDesc.trim()) {
+                  const steps = rollbackSteps
+                    .split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  createRollbackPlanMutation.mutate({
+                    playbookId: selectedGovernancePlaybook,
+                    description: rollbackPlanDesc,
+                    steps,
+                  });
+                }
+              }}
+              disabled={!rollbackPlanDesc.trim() || createRollbackPlanMutation.isPending}
+              data-testid="button-submit-rollback-plan"
+            >
+              {createRollbackPlanMutation.isPending ? "Creating..." : "Create Plan"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!executeDialogId}

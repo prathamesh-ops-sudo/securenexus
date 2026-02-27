@@ -1166,6 +1166,283 @@ export const responseActionRollbacks = pgTable("response_action_rollbacks", {
   executedAt: timestamp("executed_at"),
 });
 
+// ==========================================
+// 8.2 — Incident Response Lifecycle
+// ==========================================
+
+export const EVIDENCE_CHAIN_ENTRY_TYPES = [
+  "evidence_added",
+  "evidence_removed",
+  "status_change",
+  "assignment_change",
+  "escalation",
+  "containment",
+  "approval_requested",
+  "approval_granted",
+  "approval_denied",
+  "response_action",
+  "comment",
+  "attachment",
+  "external_update",
+] as const;
+
+export const RESPONSE_APPROVAL_STATUSES = ["pending", "approved", "rejected", "expired", "bypassed"] as const;
+
+export const PIR_STATUSES = ["draft", "in_review", "published", "archived"] as const;
+
+export const evidenceChainEntries = pgTable(
+  "evidence_chain_entries",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    sequenceNum: integer("sequence_num").notNull(),
+    entryType: text("entry_type").notNull(),
+    actorId: varchar("actor_id"),
+    actorName: text("actor_name"),
+    summary: text("summary").notNull(),
+    details: jsonb("details"),
+    relatedResourceType: text("related_resource_type"),
+    relatedResourceId: varchar("related_resource_id"),
+    entryHash: text("entry_hash").notNull(),
+    previousHash: text("previous_hash"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_evidence_chain_incident").on(table.incidentId),
+    index("idx_evidence_chain_org").on(table.orgId),
+    index("idx_evidence_chain_seq").on(table.incidentId, table.sequenceNum),
+    index("idx_evidence_chain_type").on(table.entryType),
+  ],
+);
+
+export const incidentResponseApprovals = pgTable(
+  "incident_response_approvals",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    actionType: text("action_type").notNull(),
+    actionDescription: text("action_description").notNull(),
+    actionPayload: jsonb("action_payload"),
+    status: text("status").notNull().default("pending"),
+    requestedBy: varchar("requested_by"),
+    requestedByName: text("requested_by_name"),
+    requiredApproverRole: text("required_approver_role").notNull().default("admin"),
+    decidedBy: varchar("decided_by"),
+    decidedByName: text("decided_by_name"),
+    decisionNote: text("decision_note"),
+    expiresAt: timestamp("expires_at"),
+    requestedAt: timestamp("requested_at").defaultNow(),
+    decidedAt: timestamp("decided_at"),
+  },
+  (table) => [
+    index("idx_ir_approvals_incident").on(table.incidentId),
+    index("idx_ir_approvals_org").on(table.orgId),
+    index("idx_ir_approvals_status").on(table.status),
+    index("idx_ir_approvals_org_status").on(table.orgId, table.status),
+  ],
+);
+
+export const postIncidentReviews = pgTable(
+  "post_incident_reviews",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    status: text("status").notNull().default("draft"),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    timelineJson: jsonb("timeline_json"),
+    rootCauseAnalysis: text("root_cause_analysis"),
+    impactAssessment: text("impact_assessment"),
+    lessonsLearned: jsonb("lessons_learned"),
+    actionItems: jsonb("action_items"),
+    participants: text("participants").array(),
+    reviewDate: timestamp("review_date"),
+    leadReviewer: varchar("lead_reviewer"),
+    leadReviewerName: text("lead_reviewer_name"),
+    createdBy: varchar("created_by"),
+    createdByName: text("created_by_name"),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pir_incident").on(table.incidentId),
+    index("idx_pir_org").on(table.orgId),
+    index("idx_pir_status").on(table.status),
+    index("idx_pir_org_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const pirActionItems = pgTable(
+  "pir_action_items",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    reviewId: varchar("review_id")
+      .notNull()
+      .references(() => postIncidentReviews.id),
+    orgId: varchar("org_id").references(() => organizations.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    assigneeId: varchar("assignee_id"),
+    assigneeName: text("assignee_name"),
+    priority: text("priority").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pir_action_items_review").on(table.reviewId),
+    index("idx_pir_action_items_org").on(table.orgId),
+    index("idx_pir_action_items_status").on(table.status),
+  ],
+);
+
+// ==========================================
+// 8.3 — Playbook Governance
+// ==========================================
+
+export const PLAYBOOK_VERSION_STATUSES = ["draft", "active", "deprecated", "archived"] as const;
+export const SIMULATION_STATUSES = ["pending", "running", "completed", "failed"] as const;
+
+export const playbookVersions = pgTable(
+  "playbook_versions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    playbookId: varchar("playbook_id")
+      .notNull()
+      .references(() => playbooks.id),
+    orgId: varchar("org_id").references(() => organizations.id),
+    version: integer("version").notNull(),
+    status: text("status").notNull().default("draft"),
+    actions: jsonb("actions").notNull(),
+    conditions: jsonb("conditions"),
+    changeDescription: text("change_description"),
+    approvalRequired: boolean("approval_required").default(false),
+    approvedBy: varchar("approved_by"),
+    approvedByName: text("approved_by_name"),
+    approvedAt: timestamp("approved_at"),
+    rollbackToVersion: integer("rollback_to_version"),
+    createdBy: varchar("created_by"),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pb_versions_playbook").on(table.playbookId),
+    index("idx_pb_versions_org").on(table.orgId),
+    index("idx_pb_versions_status").on(table.status),
+    index("idx_pb_versions_playbook_version").on(table.playbookId, table.version),
+  ],
+);
+
+export const blastRadiusPreviews = pgTable(
+  "blast_radius_previews",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    playbookId: varchar("playbook_id")
+      .notNull()
+      .references(() => playbooks.id),
+    executionContext: jsonb("execution_context"),
+    affectedEntities: jsonb("affected_entities"),
+    affectedEntityCount: integer("affected_entity_count").notNull().default(0),
+    riskLevel: text("risk_level").notNull().default("low"),
+    riskFactors: jsonb("risk_factors"),
+    estimatedDurationMs: integer("estimated_duration_ms"),
+    rollbackPlan: jsonb("rollback_plan"),
+    reversible: boolean("reversible").default(true),
+    previewedBy: varchar("previewed_by"),
+    previewedByName: text("previewed_by_name"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_blast_radius_playbook").on(table.playbookId),
+    index("idx_blast_radius_org").on(table.orgId),
+    index("idx_blast_radius_risk").on(table.riskLevel),
+  ],
+);
+
+export const playbookSimulations = pgTable(
+  "playbook_simulations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    playbookId: varchar("playbook_id")
+      .notNull()
+      .references(() => playbooks.id),
+    executionId: varchar("execution_id").references(() => playbookExecutions.id),
+    status: text("status").notNull().default("pending"),
+    simulatedActions: jsonb("simulated_actions"),
+    impactAnalysis: jsonb("impact_analysis"),
+    predictedOutcome: text("predicted_outcome"),
+    riskScore: real("risk_score"),
+    warnings: jsonb("warnings"),
+    simulatedBy: varchar("simulated_by"),
+    simulatedByName: text("simulated_by_name"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_pb_simulations_playbook").on(table.playbookId),
+    index("idx_pb_simulations_org").on(table.orgId),
+    index("idx_pb_simulations_status").on(table.status),
+  ],
+);
+
+export const playbookRollbackPlans = pgTable(
+  "playbook_rollback_plans",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    playbookId: varchar("playbook_id")
+      .notNull()
+      .references(() => playbooks.id),
+    executionId: varchar("execution_id").references(() => playbookExecutions.id),
+    rollbackSteps: jsonb("rollback_steps").notNull(),
+    status: text("status").notNull().default("ready"),
+    autoRollbackEnabled: boolean("auto_rollback_enabled").default(false),
+    triggerConditions: jsonb("trigger_conditions"),
+    executedAt: timestamp("executed_at"),
+    executedBy: varchar("executed_by"),
+    executedByName: text("executed_by_name"),
+    result: jsonb("result"),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pb_rollback_playbook").on(table.playbookId),
+    index("idx_pb_rollback_execution").on(table.executionId),
+    index("idx_pb_rollback_org").on(table.orgId),
+    index("idx_pb_rollback_status").on(table.status),
+  ],
+);
+
 // Relations
 export const connectorsRelations = relations(connectors, ({ one }) => ({
   organization: one(organizations, { fields: [connectors.orgId], references: [organizations.id] }),
@@ -1308,6 +1585,55 @@ export const hardeningRecommendationsRelations = relations(hardeningRecommendati
   organization: one(organizations, { fields: [hardeningRecommendations.orgId], references: [organizations.id] }),
 }));
 
+export const evidenceChainEntriesRelations = relations(evidenceChainEntries, ({ one }) => ({
+  organization: one(organizations, { fields: [evidenceChainEntries.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [evidenceChainEntries.incidentId], references: [incidents.id] }),
+}));
+
+export const incidentResponseApprovalsRelations = relations(incidentResponseApprovals, ({ one }) => ({
+  organization: one(organizations, { fields: [incidentResponseApprovals.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [incidentResponseApprovals.incidentId], references: [incidents.id] }),
+}));
+
+export const postIncidentReviewsRelations = relations(postIncidentReviews, ({ one, many }) => ({
+  organization: one(organizations, { fields: [postIncidentReviews.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [postIncidentReviews.incidentId], references: [incidents.id] }),
+  actionItemsList: many(pirActionItems),
+}));
+
+export const pirActionItemsRelations = relations(pirActionItems, ({ one }) => ({
+  review: one(postIncidentReviews, { fields: [pirActionItems.reviewId], references: [postIncidentReviews.id] }),
+  organization: one(organizations, { fields: [pirActionItems.orgId], references: [organizations.id] }),
+}));
+
+export const playbookVersionsRelations = relations(playbookVersions, ({ one }) => ({
+  playbook: one(playbooks, { fields: [playbookVersions.playbookId], references: [playbooks.id] }),
+  organization: one(organizations, { fields: [playbookVersions.orgId], references: [organizations.id] }),
+}));
+
+export const blastRadiusPreviewsRelations = relations(blastRadiusPreviews, ({ one }) => ({
+  playbook: one(playbooks, { fields: [blastRadiusPreviews.playbookId], references: [playbooks.id] }),
+  organization: one(organizations, { fields: [blastRadiusPreviews.orgId], references: [organizations.id] }),
+}));
+
+export const playbookSimulationsRelations = relations(playbookSimulations, ({ one }) => ({
+  playbook: one(playbooks, { fields: [playbookSimulations.playbookId], references: [playbooks.id] }),
+  organization: one(organizations, { fields: [playbookSimulations.orgId], references: [organizations.id] }),
+  execution: one(playbookExecutions, {
+    fields: [playbookSimulations.executionId],
+    references: [playbookExecutions.id],
+  }),
+}));
+
+export const playbookRollbackPlansRelations = relations(playbookRollbackPlans, ({ one }) => ({
+  playbook: one(playbooks, { fields: [playbookRollbackPlans.playbookId], references: [playbooks.id] }),
+  organization: one(organizations, { fields: [playbookRollbackPlans.orgId], references: [organizations.id] }),
+  execution: one(playbookExecutions, {
+    fields: [playbookRollbackPlans.executionId],
+    references: [playbookExecutions.id],
+  }),
+}));
+
 // Insert schemas
 export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true, ingestedAt: true });
 export const insertIncidentSchema = createInsertSchema(incidents).omit({ id: true, createdAt: true, updatedAt: true });
@@ -1443,6 +1769,45 @@ export const insertPlaybookApprovalSchema = createInsertSchema(playbookApprovals
   requestedAt: true,
   decidedAt: true,
 });
+export const insertEvidenceChainEntrySchema = createInsertSchema(evidenceChainEntries).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertIncidentResponseApprovalSchema = createInsertSchema(incidentResponseApprovals).omit({
+  id: true,
+  requestedAt: true,
+  decidedAt: true,
+});
+export const insertPostIncidentReviewSchema = createInsertSchema(postIncidentReviews).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  publishedAt: true,
+});
+export const insertPirActionItemSchema = createInsertSchema(pirActionItems).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+export const insertPlaybookVersionSchema = createInsertSchema(playbookVersions).omit({
+  id: true,
+  createdAt: true,
+  approvedAt: true,
+});
+export const insertBlastRadiusPreviewSchema = createInsertSchema(blastRadiusPreviews).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertPlaybookSimulationSchema = createInsertSchema(playbookSimulations).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+export const insertPlaybookRollbackPlanSchema = createInsertSchema(playbookRollbackPlans).omit({
+  id: true,
+  createdAt: true,
+  executedAt: true,
+});
 
 // Types
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
@@ -1521,6 +1886,22 @@ export type ResponseActionRollback = typeof responseActionRollbacks.$inferSelect
 export type InsertResponseActionRollback = z.infer<typeof insertResponseActionRollbackSchema>;
 export type PlaybookApproval = typeof playbookApprovals.$inferSelect;
 export type InsertPlaybookApproval = z.infer<typeof insertPlaybookApprovalSchema>;
+export type EvidenceChainEntry = typeof evidenceChainEntries.$inferSelect;
+export type InsertEvidenceChainEntry = z.infer<typeof insertEvidenceChainEntrySchema>;
+export type IncidentResponseApproval = typeof incidentResponseApprovals.$inferSelect;
+export type InsertIncidentResponseApproval = z.infer<typeof insertIncidentResponseApprovalSchema>;
+export type PostIncidentReview = typeof postIncidentReviews.$inferSelect;
+export type InsertPostIncidentReview = z.infer<typeof insertPostIncidentReviewSchema>;
+export type PirActionItem = typeof pirActionItems.$inferSelect;
+export type InsertPirActionItem = z.infer<typeof insertPirActionItemSchema>;
+export type PlaybookVersion = typeof playbookVersions.$inferSelect;
+export type InsertPlaybookVersion = z.infer<typeof insertPlaybookVersionSchema>;
+export type BlastRadiusPreview = typeof blastRadiusPreviews.$inferSelect;
+export type InsertBlastRadiusPreview = z.infer<typeof insertBlastRadiusPreviewSchema>;
+export type PlaybookSimulation = typeof playbookSimulations.$inferSelect;
+export type InsertPlaybookSimulation = z.infer<typeof insertPlaybookSimulationSchema>;
+export type PlaybookRollbackPlan = typeof playbookRollbackPlans.$inferSelect;
+export type InsertPlaybookRollbackPlan = z.infer<typeof insertPlaybookRollbackPlanSchema>;
 
 export const CLOUD_PROVIDERS = ["aws", "azure", "gcp"] as const;
 export const CSPM_SCAN_STATUSES = ["pending", "running", "completed", "failed"] as const;
@@ -2505,36 +2886,6 @@ export const incidentSlaPolicies = pgTable(
   (table) => [index("idx_sla_policies_org").on(table.orgId), index("idx_sla_policies_severity").on(table.severity)],
 );
 
-export const PIR_STATUSES = ["draft", "in_review", "finalized"] as const;
-
-export const postIncidentReviews = pgTable(
-  "post_incident_reviews",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    orgId: varchar("org_id").references(() => organizations.id),
-    incidentId: varchar("incident_id")
-      .notNull()
-      .references(() => incidents.id, { onDelete: "cascade" }),
-    status: text("status").notNull().default("draft"),
-    summary: text("summary"),
-    timeline: text("timeline"),
-    rootCause: text("root_cause"),
-    lessonsLearned: text("lessons_learned"),
-    whatWentWell: text("what_went_well"),
-    whatWentWrong: text("what_went_wrong"),
-    actionItems: jsonb("action_items"),
-    attendees: text("attendees").array(),
-    reviewDate: timestamp("review_date"),
-    createdBy: varchar("created_by"),
-    createdByName: text("created_by_name"),
-    createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
-  },
-  (table) => [index("idx_pir_incident").on(table.incidentId), index("idx_pir_org").on(table.orgId)],
-);
-
 export const connectorJobRuns = pgTable(
   "connector_job_runs",
   {
@@ -2639,11 +2990,6 @@ export const insertIncidentSlaPolicySchema = createInsertSchema(incidentSlaPolic
   createdAt: true,
   updatedAt: true,
 });
-export const insertPostIncidentReviewSchema = createInsertSchema(postIncidentReviews).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
 export const insertConnectorJobRunSchema = createInsertSchema(connectorJobRuns).omit({
   id: true,
   startedAt: true,
@@ -2660,8 +3006,6 @@ export type AlertDedupCluster = typeof alertDedupClusters.$inferSelect;
 export type InsertAlertDedupCluster = z.infer<typeof insertAlertDedupClusterSchema>;
 export type IncidentSlaPolicy = typeof incidentSlaPolicies.$inferSelect;
 export type InsertIncidentSlaPolicy = z.infer<typeof insertIncidentSlaPolicySchema>;
-export type PostIncidentReview = typeof postIncidentReviews.$inferSelect;
-export type InsertPostIncidentReview = z.infer<typeof insertPostIncidentReviewSchema>;
 export type ConnectorJobRun = typeof connectorJobRuns.$inferSelect;
 export type InsertConnectorJobRun = z.infer<typeof insertConnectorJobRunSchema>;
 export type ConnectorHealthCheck = typeof connectorHealthChecks.$inferSelect;
@@ -3237,8 +3581,6 @@ export const ticketSyncJobs = pgTable(
     index("idx_ticket_sync_incident").on(table.incidentId),
   ],
 );
-
-export const RESPONSE_APPROVAL_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
 
 export const responseActionApprovals = pgTable(
   "response_action_approvals",
