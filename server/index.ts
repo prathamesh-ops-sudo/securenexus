@@ -22,6 +22,7 @@ import { startMetricsRollupScheduler } from "./metrics-rollup";
 import { tracingMiddleware, startTracingFlush, stopTracingFlush } from "./tracing";
 import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFlightDrain } from "./request-lifecycle";
 import { stopJobWorker } from "./job-queue";
+import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -128,7 +129,9 @@ export function log(message: string, source = "express") {
       startArchivalScheduler();
       startMetricsRollupScheduler();
       startTracingFlush();
+      startDrillScheduler();
       registerShutdownHandler("job-worker", stopJobWorker);
+      registerShutdownHandler("dr-drill-scheduler", async () => stopDrillScheduler());
       markServerReady();
     },
   );

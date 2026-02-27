@@ -1,0 +1,132 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: securenexus-canary-analysis
+  namespace: production
+  labels:
+    app.kubernetes.io/name: securenexus
+    app.kubernetes.io/part-of: securenexus
+    app.kubernetes.io/component: canary-analysis
+spec:
+  args:
+    - name: canary-service
+      value: securenexus-canary.production.svc.cluster.local
+    - name: stable-service
+      value: securenexus-stable.production.svc.cluster.local
+    - name: error-rate-threshold
+      value: "5"
+    - name: latency-p95-threshold-ms
+      value: "800"
+    - name: min-request-count
+      value: "50"
+  metrics:
+    - name: error-rate
+      interval: 60s
+      count: 3
+      successCondition: result < {{args.error-rate-threshold}}
+      failureLimit: 1
+      provider:
+        job:
+          spec:
+            backoffLimit: 1
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: canary-error-check
+                    image: curlimages/curl:8.5.0
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        CANARY_HEALTH=$(curl -sf "http://{{args.canary-service}}/api/ops/health" 2>/dev/null)
+                        if [ $? -ne 0 ]; then
+                          echo "100"
+                          exit 0
+                        fi
+                        ERROR_RATE=$(echo "$CANARY_HEALTH" | grep -o '"error_rate":[0-9.]*' | head -1 | cut -d: -f2)
+                        if [ -z "$ERROR_RATE" ]; then
+                          READY=$(curl -sf "http://{{args.canary-service}}/api/ops/ready" 2>/dev/null)
+                          if echo "$READY" | grep -q '"ready":true'; then
+                            echo "0"
+                          else
+                            echo "100"
+                          fi
+                        else
+                          echo "$ERROR_RATE"
+                        fi
+
+    - name: latency-p95
+      interval: 60s
+      count: 3
+      successCondition: result < {{args.latency-p95-threshold-ms}}
+      failureLimit: 1
+      provider:
+        job:
+          spec:
+            backoffLimit: 1
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: canary-latency-check
+                    image: curlimages/curl:8.5.0
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        TOTAL_MS=0
+                        COUNT=10
+                        FAILURES=0
+                        for i in $(seq 1 $COUNT); do
+                          START=$(date +%s%N)
+                          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "http://{{args.canary-service}}/api/ops/ready" 2>/dev/null)
+                          END=$(date +%s%N)
+                          if [ "$HTTP_CODE" = "200" ]; then
+                            DURATION_MS=$(( (END - START) / 1000000 ))
+                            TOTAL_MS=$((TOTAL_MS + DURATION_MS))
+                          else
+                            FAILURES=$((FAILURES + 1))
+                          fi
+                          sleep 1
+                        done
+                        SUCCESSFUL=$((COUNT - FAILURES))
+                        if [ "$SUCCESSFUL" -gt 0 ]; then
+                          AVG=$((TOTAL_MS / SUCCESSFUL))
+                          P95_ESTIMATE=$((AVG * 150 / 100))
+                          echo "$P95_ESTIMATE"
+                        else
+                          echo "99999"
+                        fi
+
+    - name: readiness-health
+      interval: 30s
+      count: 5
+      successCondition: result == 1
+      failureLimit: 2
+      provider:
+        job:
+          spec:
+            backoffLimit: 1
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: canary-readiness-check
+                    image: curlimages/curl:8.5.0
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        READY=$(curl -sf "http://{{args.canary-service}}/api/ops/ready" 2>/dev/null)
+                        if echo "$READY" | grep -q '"ready":true'; then
+                          DB_OK=$(echo "$READY" | grep -q '"connected":true' && echo "1" || echo "0")
+                          POOL_OK=$(echo "$READY" | grep -q '"healthy":true' && echo "1" || echo "0")
+                          if [ "$DB_OK" = "1" ] && [ "$POOL_OK" = "1" ]; then
+                            echo "1"
+                          else
+                            echo "0"
+                          fi
+                        else
+                          echo "0"
+                        fi
