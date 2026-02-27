@@ -104,6 +104,12 @@
     "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-apprunner": "^3.990.0",
+    "@aws-sdk/client-ec2": "^3.991.0",
+    "@aws-sdk/client-ecr": "^3.990.0",
+    "@aws-sdk/client-iam": "^3.991.0",
+    "@aws-sdk/client-rds": "^3.990.0",
+    "@aws-sdk/client-sts": "^3.990.0",
     "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^9.39.3",
     "@playwright/test": "^1.58.2",
