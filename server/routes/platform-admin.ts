@@ -770,8 +770,11 @@ export function registerPlatformAdminRoutes(app: Express): void {
       let dbLatencyMs = 0;
       try {
         const start = Date.now();
-        await checkPoolConnectivity();
+        const connectivity = await checkPoolConnectivity();
         dbLatencyMs = Date.now() - start;
+        if (!connectivity.connected) {
+          dbStatus = "unhealthy";
+        }
       } catch {
         dbStatus = "unhealthy";
       }
