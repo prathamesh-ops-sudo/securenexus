@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -297,9 +298,9 @@ function CurrentLimitsTab() {
           <CardTitle className="text-sm">Current Plan Limits</CardTitle>
           <CardDescription className="text-xs">
             To change your plan or view pricing, go to{" "}
-            <a href="/billing" className="text-primary underline underline-offset-2 hover:text-primary/80">
+            <Link href="/billing" className="text-primary underline underline-offset-2 hover:text-primary/80">
               Billing
-            </a>
+            </Link>
             .
           </CardDescription>
         </CardHeader>
