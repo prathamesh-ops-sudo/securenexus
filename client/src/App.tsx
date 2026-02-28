@@ -51,6 +51,7 @@ const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const UsageBillingPage = lazy(() => import("@/pages/usage-billing"));
 const OrgSettingsPage = lazy(() => import("@/pages/org-settings"));
 const OnboardingWizardPage = lazy(() => import("@/pages/onboarding-wizard"));
+const BillingPage = lazy(() => import("@/pages/billing"));
 
 function PageSkeleton() {
   return (
@@ -167,6 +168,7 @@ function AuthenticatedApp() {
                     <Route path="/onboarding" component={OnboardingPage} />
                     <Route path="/onboarding-wizard" component={OnboardingWizardPage} />
                     <Route path="/usage-billing" component={UsageBillingPage} />
+                    <Route path="/billing" component={BillingPage} />
                     <Route path="/org-settings" component={OrgSettingsPage} />
                     <Route component={NotFound} />
                   </Switch>
