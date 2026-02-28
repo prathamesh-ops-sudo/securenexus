@@ -169,8 +169,17 @@ function sanitizeString(input: string): string {
   return input.replace(/\0/g, "");
 }
 
+function permissionsPolicy(_req: Request, res: Response, next: NextFunction): void {
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
+  );
+  next();
+}
+
 export function applySecurityMiddleware(app: Express): void {
   app.use(configureHelmet());
+  app.use(permissionsPolicy);
 
   app.use("/api/login", authRateLimiter());
   app.use("/api/register", authRateLimiter());
@@ -179,7 +188,7 @@ export function applySecurityMiddleware(app: Express): void {
   app.use("/api/auth/forgot-password", authRateLimiter());
   app.use("/api/auth/reset-password", authRateLimiter());
 
-  logger.child("security").info("Security middleware applied: helmet, auth rate limiting");
+  logger.child("security").info("Security middleware applied: helmet, permissions-policy, auth rate limiting");
 }
 
 export function applyInputSanitization(app: Express): void {

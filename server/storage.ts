@@ -322,6 +322,7 @@ import {
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
 import { createHash } from "crypto";
+import { currentContext } from "./logger";
 
 export interface IStorage {
   getAlerts(orgId?: string): Promise<Alert[]>;
@@ -361,7 +362,7 @@ export interface IStorage {
 
   createAuditLog(log: Partial<AuditLog>): Promise<AuditLog>;
   getAuditLogs(orgId?: string): Promise<AuditLog[]>;
-  getAuditLogsByResource(resourceType: string, resourceId: string): Promise<AuditLog[]>;
+  getAuditLogsByResource(resourceType: string, resourceId: string, orgId?: string): Promise<AuditLog[]>;
 
   getComments(incidentId: string): Promise<IncidentComment[]>;
   createComment(comment: InsertComment): Promise<IncidentComment>;
@@ -1298,7 +1299,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAuditLog(log: Partial<AuditLog>): Promise<AuditLog> {
-    const orgId = log.orgId ?? null;
+    const ctx = currentContext();
+    const enrichedLog = {
+      ...log,
+      userAgent: log.userAgent ?? ctx.userAgent ?? null,
+      requestId: log.requestId ?? ctx.requestId ?? null,
+      impersonatedBy: log.impersonatedBy ?? ctx.impersonatedBy ?? null,
+    };
+    const orgId = enrichedLog.orgId ?? null;
     const lastSeq = await this.getLatestAuditLogSequence(orgId);
     const sequenceNum = lastSeq ? lastSeq.sequenceNum + 1 : 1;
     const prevHash = lastSeq ? lastSeq.entryHash : "genesis";
@@ -1306,11 +1314,11 @@ export class DatabaseStorage implements IStorage {
       .update(
         JSON.stringify({
           prevHash,
-          action: log.action,
-          userId: log.userId,
-          resourceType: log.resourceType,
-          resourceId: log.resourceId,
-          details: log.details,
+          action: enrichedLog.action,
+          userId: enrichedLog.userId,
+          resourceType: enrichedLog.resourceType,
+          resourceId: enrichedLog.resourceId,
+          details: enrichedLog.details,
           sequenceNum,
         }),
       )
@@ -1318,7 +1326,7 @@ export class DatabaseStorage implements IStorage {
     const [created] = await db
       .insert(auditLogs)
       .values({
-        ...log,
+        ...enrichedLog,
         sequenceNum,
         prevHash,
         entryHash,
@@ -1334,11 +1342,15 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt));
   }
 
-  async getAuditLogsByResource(resourceType: string, resourceId: string): Promise<AuditLog[]> {
+  async getAuditLogsByResource(resourceType: string, resourceId: string, orgId?: string): Promise<AuditLog[]> {
+    const conditions = [eq(auditLogs.resourceType, resourceType), eq(auditLogs.resourceId, resourceId)];
+    if (orgId) {
+      conditions.push(eq(auditLogs.orgId, orgId));
+    }
     return db
       .select()
       .from(auditLogs)
-      .where(and(eq(auditLogs.resourceType, resourceType), eq(auditLogs.resourceId, resourceId)))
+      .where(and(...conditions))
       .orderBy(desc(auditLogs.createdAt));
   }
 

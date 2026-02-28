@@ -21,10 +21,7 @@ export async function hashPassword(password: string): Promise<string> {
   return `${buf.toString("hex")}.${salt}`;
 }
 
-export async function comparePasswords(
-  supplied: string,
-  stored: string
-): Promise<boolean> {
+export async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
   const [hashedPassword, salt] = stored.split(".");
   const buf = (await scryptAsync(supplied, salt, 64)) as Buffer;
   return timingSafeEqual(Buffer.from(hashedPassword, "hex"), buf);
@@ -48,7 +45,7 @@ export function getSession() {
       httpOnly: true,
       secure: config.session.forceHttps,
       maxAge: sessionTtl,
-      sameSite: "lax",
+      sameSite: config.session.forceHttps ? "strict" : "lax",
     },
   });
 }
@@ -60,24 +57,21 @@ export async function setupAuth(app: Express) {
   app.use(passport.session());
 
   passport.use(
-    new LocalStrategy(
-      { usernameField: "email", passwordField: "password" },
-      async (email, password, done) => {
-        try {
-          const user = await authStorage.getUserByEmail(email);
-          if (!user || !user.passwordHash) {
-            return done(null, false, { message: "Invalid email or password" });
-          }
-          const isValid = await comparePasswords(password, user.passwordHash);
-          if (!isValid) {
-            return done(null, false, { message: "Invalid email or password" });
-          }
-          return done(null, user);
-        } catch (err) {
-          return done(err);
+    new LocalStrategy({ usernameField: "email", passwordField: "password" }, async (email, password, done) => {
+      try {
+        const user = await authStorage.getUserByEmail(email);
+        if (!user || !user.passwordHash) {
+          return done(null, false, { message: "Invalid email or password" });
         }
+        const isValid = await comparePasswords(password, user.passwordHash);
+        if (!isValid) {
+          return done(null, false, { message: "Invalid email or password" });
+        }
+        return done(null, user);
+      } catch (err) {
+        return done(err);
       }
-    )
+    }),
   );
 
   if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
@@ -105,8 +99,8 @@ export async function setupAuth(app: Express) {
           } catch (err) {
             return done(err);
           }
-        }
-      )
+        },
+      ),
     );
     logger.child("auth-session").info("Google OAuth strategy configured");
   }
@@ -136,8 +130,8 @@ export async function setupAuth(app: Express) {
           } catch (err) {
             return done(err);
           }
-        }
-      )
+        },
+      ),
     );
     logger.child("auth-session").info("GitHub OAuth strategy configured");
   }
@@ -148,7 +142,7 @@ export async function setupAuth(app: Express) {
       const user = await authStorage.getUser(id);
       if (!user) return cb(null, null);
       const memberships = await storage.getUserMemberships(user.id);
-      const active = memberships.find(m => m.status === "active");
+      const active = memberships.find((m) => m.status === "active");
       (user as any).orgId = active?.orgId || null;
       (user as any).orgRole = active?.role || null;
       cb(null, user);

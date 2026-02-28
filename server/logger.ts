@@ -12,6 +12,8 @@ interface LogContext {
   method?: string;
   jobId?: string;
   outboxEventId?: string;
+  userAgent?: string;
+  impersonatedBy?: string;
   [key: string]: unknown;
 }
 
@@ -31,9 +33,7 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 const MIN_LEVEL: LogLevel =
-  process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test"
-    ? "debug"
-    : "info";
+  process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test" ? "debug" : "info";
 
 const REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /("?password"?\s*[:=]\s*)"[^"]*"/gi, replacement: '$1"[REDACTED]"' },
@@ -58,11 +58,27 @@ const REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
 ];
 
 const SENSITIVE_KEYS = new Set([
-  "password", "secret", "token", "authorization", "cookie",
-  "apikey", "api_key", "x-api-key", "webhooksecret", "sessionsecret",
-  "databaseurl", "database_url", "accesskeyid", "secretaccesskey",
-  "clientsecret", "refreshtoken", "privatekey", "private_key",
-  "credentials", "connectionstring", "connection_string",
+  "password",
+  "secret",
+  "token",
+  "authorization",
+  "cookie",
+  "apikey",
+  "api_key",
+  "x-api-key",
+  "webhooksecret",
+  "sessionsecret",
+  "databaseurl",
+  "database_url",
+  "accesskeyid",
+  "secretaccesskey",
+  "clientsecret",
+  "refreshtoken",
+  "privatekey",
+  "private_key",
+  "credentials",
+  "connectionstring",
+  "connection_string",
 ]);
 
 function redactDeep(obj: unknown, depth: number = 0): unknown {
@@ -70,7 +86,7 @@ function redactDeep(obj: unknown, depth: number = 0): unknown {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj === "string") return redact(obj);
   if (typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(item => redactDeep(item, depth + 1));
+  if (Array.isArray(obj)) return obj.map((item) => redactDeep(item, depth + 1));
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     if (SENSITIVE_KEYS.has(key.toLowerCase())) {
@@ -168,10 +184,15 @@ export function correlationMiddleware(req: Request, res: Response, next: NextFun
 
   res.setHeader("x-request-id", requestId);
 
+  const userAgent = req.headers["user-agent"] || undefined;
+  const impersonatedBy: string | undefined = (req as any).impersonatedBy;
+
   const ctx: LogContext = {
     requestId,
     ...(orgId ? { orgId } : {}),
     ...(userId ? { userId } : {}),
+    ...(userAgent ? { userAgent } : {}),
+    ...(impersonatedBy ? { impersonatedBy } : {}),
     route: req.path,
     method: req.method,
   };
