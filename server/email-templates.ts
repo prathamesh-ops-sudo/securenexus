@@ -5,6 +5,19 @@ const TEXT_COLOR = "#e4e4e7";
 const MUTED_COLOR = "#a1a1aa";
 const BORDER_COLOR = "#27272a";
 
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escUrl(url: string): string {
+  return esc(url).replace(/javascript:/gi, "");
+}
+
 function baseLayout(content: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -50,7 +63,7 @@ function button(text: string, url: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
     <tr>
       <td style="background-color:${BRAND_COLOR};border-radius:8px;">
-        <a href="${url}" target="_blank" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">${text}</a>
+        <a href="${escUrl(url)}" target="_blank" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">${esc(text)}</a>
       </td>
     </tr>
   </table>`;
@@ -64,7 +77,7 @@ export function invitationEmail(params: {
   acceptUrl: string;
   expiresAt: Date;
 }): { subject: string; html: string; text: string } {
-  const greeting = params.recipientName ? `Hi ${params.recipientName},` : "Hi,";
+  const greeting = params.recipientName ? `Hi ${esc(params.recipientName)},` : "Hi,";
   const expiryStr = params.expiresAt.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
@@ -77,12 +90,12 @@ export function invitationEmail(params: {
       ${greeting}
     </p>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
-      <strong>${params.inviterName}</strong> has invited you to join <strong>${params.orgName}</strong> as a
-      <strong>${params.role}</strong> on SecureNexus.
+      <strong>${esc(params.inviterName)}</strong> has invited you to join <strong>${esc(params.orgName)}</strong> as a
+      <strong>${esc(params.role)}</strong> on SecureNexus.
     </p>
     ${button("Accept Invitation", params.acceptUrl)}
     <p style="margin:0;font-size:13px;color:${MUTED_COLOR};">
-      This invitation expires on ${expiryStr}. If you didn't expect this, you can safely ignore it.
+      This invitation expires on ${esc(expiryStr)}. If you didn't expect this, you can safely ignore it.
     </p>
   `);
 
@@ -96,7 +109,7 @@ export function welcomeEmail(params: { firstName?: string; email: string; loginU
   html: string;
   text: string;
 } {
-  const greeting = params.firstName ? `Welcome, ${params.firstName}!` : "Welcome!";
+  const greeting = params.firstName ? `Welcome, ${esc(params.firstName)}!` : "Welcome!";
 
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:${TEXT_COLOR};">${greeting}</h1>
@@ -105,7 +118,7 @@ export function welcomeEmail(params: { firstName?: string; email: string; loginU
     </p>
     ${button("Sign In to SecureNexus", params.loginUrl)}
     <p style="margin:0;font-size:13px;color:${MUTED_COLOR};">
-      Account: ${params.email}
+      Account: ${esc(params.email)}
     </p>
   `);
 
@@ -119,7 +132,7 @@ export function passwordResetEmail(params: { firstName?: string; resetUrl: strin
   html: string;
   text: string;
 } {
-  const greeting = params.firstName ? `Hi ${params.firstName},` : "Hi,";
+  const greeting = params.firstName ? `Hi ${esc(params.firstName)},` : "Hi,";
 
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:${TEXT_COLOR};">Reset your password</h1>
@@ -152,9 +165,9 @@ export function paymentFailedEmail(params: {
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:#ef4444;">Payment Failed</h1>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
-      We were unable to process the payment of <strong>${params.amountDue}</strong> for <strong>${params.orgName}</strong>.
+      We were unable to process the payment of <strong>${esc(params.amountDue)}</strong> for <strong>${esc(params.orgName)}</strong>.
     </p>
-    ${params.retryDate ? `<p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">We will automatically retry on <strong>${params.retryDate}</strong>.</p>` : ""}
+    ${params.retryDate ? `<p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">We will automatically retry on <strong>${esc(params.retryDate)}</strong>.</p>` : ""}
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
       Please update your payment method to avoid service interruption.
     </p>
@@ -174,7 +187,7 @@ export function trialEndingEmail(params: { orgName: string; trialEndDate: string
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:${TEXT_COLOR};">Your trial is ending soon</h1>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
-      The trial for <strong>${params.orgName}</strong> ends on <strong>${params.trialEndDate}</strong>.
+      The trial for <strong>${esc(params.orgName)}</strong> ends on <strong>${esc(params.trialEndDate)}</strong>.
     </p>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
       To continue using SecureNexus without interruption, choose a plan before your trial expires.
@@ -195,7 +208,7 @@ export function subscriptionCancelledEmail(params: { orgName: string; accessEndD
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:${TEXT_COLOR};">Subscription cancelled</h1>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
-      The subscription for <strong>${params.orgName}</strong> has been cancelled. You will retain access to all features until <strong>${params.accessEndDate}</strong>.
+      The subscription for <strong>${esc(params.orgName)}</strong> has been cancelled. You will retain access to all features until <strong>${esc(params.accessEndDate)}</strong>.
     </p>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
       After that date, your organization will be downgraded to the Free plan with reduced limits.
@@ -213,7 +226,7 @@ export function memberSuspendedEmail(params: { memberName?: string; orgName: str
   html: string;
   text: string;
 } {
-  const greeting = params.memberName ? `Hi ${params.memberName},` : "Hi,";
+  const greeting = params.memberName ? `Hi ${esc(params.memberName)},` : "Hi,";
 
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:#ef4444;">Account Suspended</h1>
@@ -221,7 +234,7 @@ export function memberSuspendedEmail(params: { memberName?: string; orgName: str
       ${greeting}
     </p>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
-      Your access to <strong>${params.orgName}</strong> on SecureNexus has been suspended${params.reason ? `: ${params.reason}` : "."}.
+      Your access to <strong>${esc(params.orgName)}</strong> on SecureNexus has been suspended${params.reason ? `: ${esc(params.reason)}` : "."}.
     </p>
     <p style="margin:0;font-size:13px;color:${MUTED_COLOR};">
       Contact your organization administrator for more information.
@@ -239,7 +252,7 @@ export function memberRoleChangedEmail(params: {
   oldRole: string;
   newRole: string;
 }): { subject: string; html: string; text: string } {
-  const greeting = params.memberName ? `Hi ${params.memberName},` : "Hi,";
+  const greeting = params.memberName ? `Hi ${esc(params.memberName)},` : "Hi,";
 
   const html = baseLayout(`
     <h1 style="margin:0 0 16px;font-size:22px;color:${TEXT_COLOR};">Role Updated</h1>
@@ -247,7 +260,7 @@ export function memberRoleChangedEmail(params: {
       ${greeting}
     </p>
     <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
-      Your role in <strong>${params.orgName}</strong> has been changed from <strong>${params.oldRole}</strong> to <strong>${params.newRole}</strong>.
+      Your role in <strong>${esc(params.orgName)}</strong> has been changed from <strong>${esc(params.oldRole)}</strong> to <strong>${esc(params.newRole)}</strong>.
     </p>
     <p style="margin:0;font-size:13px;color:${MUTED_COLOR};">
       Your permissions have been updated accordingly.

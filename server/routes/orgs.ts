@@ -308,9 +308,8 @@ export function registerOrgsRoutes(app: Express): void {
         });
 
         const org = await storage.getOrganization(orgId);
-        const proto = req.get("x-forwarded-proto") || req.protocol || "https";
-        const host = req.get("x-forwarded-host") || req.get("host") || "nexus.aricatech.xyz";
-        const acceptUrl = `${proto}://${host}/accept-invitation?token=${token}`;
+        const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+        const acceptUrl = `${appBaseUrl}/accept-invitation?token=${token}`;
         const inviterName = (req as any).user?.firstName
           ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
           : "An administrator";

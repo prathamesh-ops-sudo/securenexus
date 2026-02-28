@@ -173,6 +173,7 @@ function AuthenticatedApp() {
                     <Route path="/usage-billing" component={UsageBillingPage} />
                     <Route path="/billing" component={BillingPage} />
                     <Route path="/org-settings" component={OrgSettingsPage} />
+                    <Route path="/accept-invitation" component={AcceptInvitationPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
@@ -189,6 +190,16 @@ function AuthenticatedApp() {
 
 function AppContent() {
   const { user, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!user || isLoading) return;
+    const pendingToken = sessionStorage.getItem("pendingInvitationToken");
+    if (pendingToken) {
+      sessionStorage.removeItem("pendingInvitationToken");
+      setLocation(`/accept-invitation?token=${pendingToken}`);
+    }
+  }, [user, isLoading, setLocation]);
 
   if (isLoading) {
     return (

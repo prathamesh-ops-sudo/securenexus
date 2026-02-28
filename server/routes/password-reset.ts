@@ -24,10 +24,8 @@ function isValidEmail(email: string): boolean {
   return true;
 }
 
-function getAppBaseUrl(req: any): string {
-  const proto = req.get("x-forwarded-proto") || req.protocol || "https";
-  const host = req.get("x-forwarded-host") || req.get("host") || "nexus.aricatech.xyz";
-  return `${proto}://${host}`;
+function getAppBaseUrl(): string {
+  return process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
 }
 
 export function registerPasswordResetRoutes(app: Express): void {
@@ -58,7 +56,7 @@ export function registerPasswordResetRoutes(app: Express): void {
         expiresAt,
       });
 
-      const baseUrl = getAppBaseUrl(req);
+      const baseUrl = getAppBaseUrl();
       const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
       const emailContent = passwordResetEmail({
