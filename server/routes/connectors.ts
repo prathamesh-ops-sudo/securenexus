@@ -80,6 +80,7 @@ export function registerConnectorsRoutes(app: Express): void {
           config,
           pollingIntervalMin: pollingIntervalMin || 5,
           createdBy: (req as any).user?.id,
+          orgId: (req as any).orgId,
         });
         await storage.createAuditLog({
           userId: (req as any).user?.id,

@@ -51,6 +51,7 @@ export function registerPlaybooksRoutes(app: Express): void {
           actions,
           status: status || "draft",
           createdBy: (req as any).user?.id,
+          orgId: (req as any).orgId,
         });
         await storage.createAuditLog({
           userId: (req as any).user?.id,
