@@ -96,18 +96,10 @@ export function registerPasswordResetRoutes(app: Express): void {
         ]);
       }
 
-      const resetToken = await storage.getPasswordResetToken(token);
+      const resetToken = await storage.consumePasswordResetToken(token);
 
       if (!resetToken) {
-        return replyBadRequest(res, "Invalid or expired reset token");
-      }
-
-      if (resetToken.usedAt) {
-        return replyBadRequest(res, "This reset token has already been used");
-      }
-
-      if (new Date(resetToken.expiresAt) < new Date()) {
-        return replyBadRequest(res, "This reset token has expired. Please request a new one.");
+        return replyBadRequest(res, "Invalid, expired, or already used reset token");
       }
 
       const user = await authStorage.getUser(resetToken.userId);

@@ -314,7 +314,7 @@ import {
   passwordResetTokens,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
+import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
 import { createHash } from "crypto";
 
 export interface IStorage {
@@ -1065,6 +1065,7 @@ export interface IStorage {
   createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   markPasswordResetTokenAsUsed(token: string): Promise<void>;
+  consumePasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   invalidateAllUserPasswordResetTokens(userId: string): Promise<void>;
   deleteExpiredPasswordResetTokens(): Promise<number>;
 }
@@ -5140,6 +5141,21 @@ export class DatabaseStorage implements IStorage {
 
   async markPasswordResetTokenAsUsed(token: string): Promise<void> {
     await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.token, token));
+  }
+
+  async consumePasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [row] = await db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(passwordResetTokens.token, token),
+          isNull(passwordResetTokens.usedAt),
+          gt(passwordResetTokens.expiresAt, new Date()),
+        ),
+      )
+      .returning();
+    return row;
   }
 
   async invalidateAllUserPasswordResetTokens(userId: string): Promise<void> {
