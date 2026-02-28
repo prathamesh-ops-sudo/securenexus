@@ -52,6 +52,9 @@ const UsageBillingPage = lazy(() => import("@/pages/usage-billing"));
 const OrgSettingsPage = lazy(() => import("@/pages/org-settings"));
 const OnboardingWizardPage = lazy(() => import("@/pages/onboarding-wizard"));
 const BillingPage = lazy(() => import("@/pages/billing"));
+const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
+const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
+const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
 
 function PageSkeleton() {
   return (
@@ -170,6 +173,7 @@ function AuthenticatedApp() {
                     <Route path="/usage-billing" component={UsageBillingPage} />
                     <Route path="/billing" component={BillingPage} />
                     <Route path="/org-settings" component={OrgSettingsPage} />
+                    <Route path="/accept-invitation" component={AcceptInvitationPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
@@ -186,6 +190,16 @@ function AuthenticatedApp() {
 
 function AppContent() {
   const { user, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!user || isLoading) return;
+    const pendingToken = sessionStorage.getItem("pendingInvitationToken");
+    if (pendingToken) {
+      sessionStorage.removeItem("pendingInvitationToken");
+      setLocation(`/accept-invitation?token=${pendingToken}`);
+    }
+  }, [user, isLoading, setLocation]);
 
   if (isLoading) {
     return (
@@ -199,7 +213,18 @@ function AppContent() {
   }
 
   if (!user) {
-    return <LandingPage />;
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <Switch>
+          <Route path="/forgot-password" component={ForgotPasswordPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
+          <Route path="/accept-invitation" component={AcceptInvitationPage} />
+          <Route>
+            <LandingPage />
+          </Route>
+        </Switch>
+      </Suspense>
+    );
   }
 
   return <AuthenticatedApp />;

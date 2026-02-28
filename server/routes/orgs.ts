@@ -5,6 +5,8 @@ import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, requireOrgRole, resolveOrgContext } from "../rbac";
 import { bodySchemas, validateBody, validatePathId } from "../request-validator";
 import { uploadFile, getSignedUrl, deleteFile } from "../s3";
+import { sendEmail } from "../email-service";
+import { invitationEmail } from "../email-templates";
 
 const LOGO_MAX_SIZE = 2 * 1024 * 1024;
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -303,6 +305,30 @@ export function registerOrgsRoutes(app: Express): void {
           resourceType: "invitation",
           resourceId: invitation.id,
           details: { email, role: role || "analyst" },
+        });
+
+        const org = await storage.getOrganization(orgId);
+        const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+        const acceptUrl = `${appBaseUrl}/accept-invitation?token=${token}`;
+        const inviterName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "An administrator";
+
+        const emailContent = invitationEmail({
+          orgName: org?.name || "an organization",
+          inviterName,
+          role: role || "analyst",
+          acceptUrl,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        });
+
+        sendEmail({
+          to: email,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        }).catch((err) => {
+          logger.child("orgs").error("Failed to send invitation email", { error: String(err), email });
         });
 
         res.status(201).json({ ...invitation, token });

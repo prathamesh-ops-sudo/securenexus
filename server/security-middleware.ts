@@ -19,6 +19,8 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/ops/live",
   "/api/auth/google/callback",
   "/api/auth/github/callback",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
 ]);
 
 const CSRF_EXEMPT_PREFIXES = ["/api/v1/ingest", "/api/v1/webhooks"];
@@ -174,6 +176,8 @@ export function applySecurityMiddleware(app: Express): void {
   app.use("/api/register", authRateLimiter());
   app.use("/api/auth/google", authRateLimiter());
   app.use("/api/auth/github", authRateLimiter());
+  app.use("/api/auth/forgot-password", authRateLimiter());
+  app.use("/api/auth/reset-password", authRateLimiter());
 
   logger.child("security").info("Security middleware applied: helmet, auth rate limiting");
 }
