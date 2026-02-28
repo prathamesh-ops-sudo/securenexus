@@ -4,7 +4,24 @@ import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validateQuery } from "../request-validator";
 import { insertAiDeploymentConfigSchema } from "@shared/schema";
-import { buildThreatIntelContext, checkModelHealth, correlateAlerts, generateIncidentNarrative, getInferenceMetrics, getModelConfig, triageAlert, getPromptCatalogSummary, getAllRegisteredPrompts, getPromptAuditLog, getPromptVersionHistory, getAiOrgUsage, getAllAiOrgUsage, setAiOrgBudget, clearModelCache } from "../ai";
+import {
+  buildThreatIntelContext,
+  checkModelHealth,
+  correlateAlerts,
+  generateIncidentNarrative,
+  getInferenceMetrics,
+  getModelConfig,
+  triageAlert,
+  getPromptCatalogSummary,
+  getAllRegisteredPrompts,
+  getPromptAuditLog,
+  getPromptVersionHistory,
+  getAiOrgUsage,
+  getAllAiOrgUsage,
+  setAiOrgBudget,
+  clearModelCache,
+} from "../ai";
+import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
 export function registerAiRoutes(app: Express): void {
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
@@ -26,103 +43,137 @@ export function registerAiRoutes(app: Express): void {
     res.json(getInferenceMetrics());
   });
 
-  app.post("/api/ai/correlate", isAuthenticated, strictLimiter, async (req, res) => {
-    try {
-      const { alertIds } = req.body;
-      let alertsToCorrelate;
-      if (alertIds && Array.isArray(alertIds) && alertIds.length > 0) {
-        const allAlerts = await storage.getAlerts();
-        alertsToCorrelate = allAlerts.filter(a => alertIds.includes(a.id));
-      } else {
-        alertsToCorrelate = (await storage.getAlerts()).filter(a => a.status === "new" || a.status === "triaged");
+  app.post(
+    "/api/ai/correlate",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const { alertIds } = req.body;
+        let alertsToCorrelate;
+        if (alertIds && Array.isArray(alertIds) && alertIds.length > 0) {
+          const allAlerts = await storage.getAlerts();
+          alertsToCorrelate = allAlerts.filter((a) => alertIds.includes(a.id));
+        } else {
+          alertsToCorrelate = (await storage.getAlerts()).filter((a) => a.status === "new" || a.status === "triaged");
+        }
+        if (alertsToCorrelate.length === 0) {
+          return res.status(400).json({ message: "No alerts to correlate" });
+        }
+        const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
+        const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx);
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_correlation",
+          resourceType: "alerts",
+          details: { alertCount: alertsToCorrelate.length, groupsFound: result.correlatedGroups.length },
+        });
+        storage.incrementUsage((req as any).user?.orgId, "ai_analyses").catch(() => {});
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("AI correlation error", { error: String(error) });
+        res.status(500).json({ message: "AI correlation failed. Please try again." });
       }
-      if (alertsToCorrelate.length === 0) {
-        return res.status(400).json({ message: "No alerts to correlate" });
-      }
-      const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
-      const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx);
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
-        action: "ai_correlation",
-        resourceType: "alerts",
-        details: { alertCount: alertsToCorrelate.length, groupsFound: result.correlatedGroups.length },
-      });
-      res.json(result);
-    } catch (error: any) {
-      logger.child("ai").error("AI correlation error", { error: String(error) });
-      res.status(500).json({ message: "AI correlation failed. Please try again." });
-    }
-  });
+    },
+  );
 
-  app.post("/api/ai/narrative/:incidentId", isAuthenticated, strictLimiter, async (req, res) => {
-    try {
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
-      const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
-      const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx);
-      if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
-          (result as any).threatIntelSources = 
-            Array.from(new Set([
-              ...threatIntelCtx.enrichmentResults.map(r => r.provider),
-              ...threatIntelCtx.osintMatches.map(r => r.feedName),
-            ]));
+  app.post(
+    "/api/ai/narrative/:incidentId",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
+        const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
+        const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx);
+        if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
+          (result as any).threatIntelSources = Array.from(
+            new Set([
+              ...threatIntelCtx.enrichmentResults.map((r) => r.provider),
+              ...threatIntelCtx.osintMatches.map((r) => r.feedName),
+            ]),
+          );
+        }
+        const storedIocs = Array.isArray(result.iocs)
+          ? result.iocs.map((ioc: any) =>
+              typeof ioc === "string" ? ioc : `${ioc.value} (${ioc.type}: ${ioc.context})`,
+            )
+          : [];
+        const { diamondModel: _dm, ...storedAttackerProfile } = result.attackerProfile || ({} as any);
+        await storage.updateIncident(p(req.params.incidentId), {
+          aiNarrative: result.narrative,
+          aiSummary: result.summary,
+          mitigationSteps: result.mitigationSteps as any,
+          iocs: storedIocs as any,
+          attackerProfile: storedAttackerProfile as any,
+          referencedAlertIds: Array.isArray(result.citedAlertIds) ? result.citedAlertIds : [],
+        });
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_narrative_generated",
+          resourceType: "incident",
+          resourceId: p(req.params.incidentId),
+          details: { riskScore: result.riskScore },
+        });
+        storage.incrementUsage((req as any).user?.orgId, "ai_analyses").catch(() => {});
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("AI narrative error", { error: String(error) });
+        res.status(500).json({ message: "AI narrative generation failed. Please try again." });
       }
-      const storedIocs = Array.isArray(result.iocs)
-        ? result.iocs.map((ioc: any) => typeof ioc === "string" ? ioc : `${ioc.value} (${ioc.type}: ${ioc.context})`)
-        : [];
-      const { diamondModel: _dm, ...storedAttackerProfile } = result.attackerProfile || {} as any;
-      await storage.updateIncident(p(req.params.incidentId), {
-        aiNarrative: result.narrative,
-        aiSummary: result.summary,
-        mitigationSteps: result.mitigationSteps as any,
-        iocs: storedIocs as any,
-        attackerProfile: storedAttackerProfile as any,
-        referencedAlertIds: Array.isArray(result.citedAlertIds) ? result.citedAlertIds : [],
-      });
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
-        action: "ai_narrative_generated",
-        resourceType: "incident",
-        resourceId: p(req.params.incidentId),
-        details: { riskScore: result.riskScore },
-      });
-      res.json(result);
-    } catch (error: any) {
-      logger.child("ai").error("AI narrative error", { error: String(error) });
-      res.status(500).json({ message: "AI narrative generation failed. Please try again." });
-    }
-  });
+    },
+  );
 
-  app.post("/api/ai/triage/:alertId", isAuthenticated, strictLimiter, async (req, res) => {
-    try {
-      const alert = await storage.getAlert(p(req.params.alertId));
-      if (!alert) return res.status(404).json({ message: "Alert not found" });
-      const threatIntelCtx = await buildThreatIntelContext([alert]);
-      const result = await triageAlert(alert, threatIntelCtx);
-      if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
-          result.threatIntelSources = 
-            Array.from(new Set([
-              ...threatIntelCtx.enrichmentResults.map(r => r.provider),
-              ...threatIntelCtx.osintMatches.map(r => r.feedName),
-            ]));
+  app.post(
+    "/api/ai/triage/:alertId",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const alert = await storage.getAlert(p(req.params.alertId));
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        const threatIntelCtx = await buildThreatIntelContext([alert]);
+        const result = await triageAlert(alert, threatIntelCtx);
+        if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
+          result.threatIntelSources = Array.from(
+            new Set([
+              ...threatIntelCtx.enrichmentResults.map((r) => r.provider),
+              ...threatIntelCtx.osintMatches.map((r) => r.feedName),
+            ]),
+          );
+        }
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_triage",
+          resourceType: "alert",
+          resourceId: p(req.params.alertId),
+          details: { severity: result.severity, priority: result.priority },
+        });
+        storage.incrementUsage((req as any).user?.orgId, "ai_analyses").catch(() => {});
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("AI triage error", { error: String(error) });
+        res.status(500).json({ message: "AI triage failed. Please try again." });
       }
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
-        action: "ai_triage",
-        resourceType: "alert",
-        resourceId: p(req.params.alertId),
-        details: { severity: result.severity, priority: result.priority },
-      });
-      res.json(result);
-    } catch (error: any) {
-      logger.child("ai").error("AI triage error", { error: String(error) });
-      res.status(500).json({ message: "AI triage failed. Please try again." });
-    }
-  });
+    },
+  );
 
   app.post("/api/ai/correlate/apply", isAuthenticated, async (req, res) => {
     try {
@@ -149,8 +200,12 @@ export function registerAiRoutes(app: Express): void {
         status: "investigating",
         priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
         confidence: typeof group.confidence === "number" ? Math.min(Math.max(group.confidence, 0), 1) : 0.5,
-        mitreTactics: Array.isArray(group.mitreTactics) ? group.mitreTactics.filter((t: any) => typeof t === "string") : [],
-        mitreTechniques: Array.isArray(group.mitreTechniques) ? group.mitreTechniques.filter((t: any) => typeof t === "string") : [],
+        mitreTactics: Array.isArray(group.mitreTactics)
+          ? group.mitreTactics.filter((t: any) => typeof t === "string")
+          : [],
+        mitreTechniques: Array.isArray(group.mitreTechniques)
+          ? group.mitreTechniques.filter((t: any) => typeof t === "string")
+          : [],
         alertCount: validAlertIds.length,
       });
       for (const alertId of validAlertIds) {
@@ -158,7 +213,9 @@ export function registerAiRoutes(app: Express): void {
       }
       await storage.createAuditLog({
         userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
+        userName: (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Analyst",
         action: "ai_correlation_applied",
         resourceType: "incident",
         resourceId: incident.id,
@@ -174,11 +231,26 @@ export function registerAiRoutes(app: Express): void {
   // AI Feedback (Phase 7+12)
   app.post("/api/ai/feedback", isAuthenticated, validateBody(bodySchemas.aiFeedback), async (req, res) => {
     try {
-      const { resourceType, resourceId, rating, comment, aiOutput, correctionReason, correctedSeverity, correctedCategory } = (req as any).validatedBody;
+      const {
+        resourceType,
+        resourceId,
+        rating,
+        comment,
+        aiOutput,
+        correctionReason,
+        correctedSeverity,
+        correctedCategory,
+      } = (req as any).validatedBody;
       const feedbackData: any = {
         userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
-        resourceType, resourceId, rating, comment, aiOutput,
+        userName: (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Analyst",
+        resourceType,
+        resourceId,
+        rating,
+        comment,
+        aiOutput,
       };
       if (correctionReason) feedbackData.correctionReason = correctionReason;
       if (correctedSeverity) feedbackData.correctedSeverity = correctedSeverity;
@@ -186,29 +258,43 @@ export function registerAiRoutes(app: Express): void {
       const feedback = await storage.createAiFeedback(feedbackData);
       await storage.createAuditLog({
         userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim() : "Analyst",
+        userName: (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Analyst",
         action: "ai_feedback_submitted",
-        resourceType, resourceId,
+        resourceType,
+        resourceId,
         details: { rating, hasComment: !!comment, correctionReason, correctedSeverity, correctedCategory },
       });
       res.status(201).json(feedback);
-    } catch (error) { res.status(500).json({ message: "Failed to submit feedback" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to submit feedback" });
+    }
   });
 
-  app.get("/api/ai/feedback/metrics", isAuthenticated, validateQuery(querySchemas.feedbackMetrics), async (req, res) => {
-    try {
-      const orgId = (req as any).user?.organizationId;
-      const { days } = (req as any).validatedQuery;
-      const metrics = await storage.getAiFeedbackMetrics(orgId, days);
-      res.json(metrics);
-    } catch (error) { res.status(500).json({ message: "Failed to fetch feedback metrics" }); }
-  });
+  app.get(
+    "/api/ai/feedback/metrics",
+    isAuthenticated,
+    validateQuery(querySchemas.feedbackMetrics),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.organizationId;
+        const { days } = (req as any).validatedQuery;
+        const metrics = await storage.getAiFeedbackMetrics(orgId, days);
+        res.json(metrics);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch feedback metrics" });
+      }
+    },
+  );
 
   app.get("/api/ai/feedback/:resourceType/:resourceId", isAuthenticated, async (req, res) => {
     try {
       const feedback = await storage.getAiFeedbackByResource(p(req.params.resourceType), p(req.params.resourceId));
       res.json(feedback);
-    } catch (error) { res.status(500).json({ message: "Failed to fetch feedback for resource" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feedback for resource" });
+    }
   });
 
   app.get("/api/ai/feedback", isAuthenticated, validateQuery(querySchemas.aiFeedbackByQuery), async (req, res) => {
@@ -216,7 +302,9 @@ export function registerAiRoutes(app: Express): void {
       const { resourceType, resourceId } = (req as any).validatedQuery;
       const feedback = await storage.getAiFeedback(resourceType as string, resourceId as string);
       res.json(feedback);
-    } catch (error) { res.status(500).json({ message: "Failed to fetch feedback" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feedback" });
+    }
   });
 
   app.post("/api/ai/playbook-authoring/propose", isAuthenticated, async (req, res) => {
@@ -237,7 +325,9 @@ export function registerAiRoutes(app: Express): void {
         proposedActions: actions,
         requiresAnalystApproval: true,
       });
-    } catch (error) { res.status(500).json({ message: "Failed to generate playbook proposal" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate playbook proposal" });
+    }
   });
 
   // ── AI Platform Introspection Routes (3.5) ──
@@ -251,30 +341,43 @@ export function registerAiRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/ai/budget/usage/all", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
-    try {
-      res.json(getAllAiOrgUsage());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch all AI budget usage" });
-    }
-  });
+  app.get(
+    "/api/ai/budget/usage/all",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        res.json(getAllAiOrgUsage());
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch all AI budget usage" });
+      }
+    },
+  );
 
-  app.put("/api/ai/budget", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { dailyBudgetUsd, dailyInvocationCap } = req.body;
-      if (typeof dailyBudgetUsd !== "number" || dailyBudgetUsd <= 0 || dailyBudgetUsd > 10000) {
-        return res.status(400).json({ message: "dailyBudgetUsd must be a number between 0 and 10000" });
+  app.put(
+    "/api/ai/budget",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { dailyBudgetUsd, dailyInvocationCap } = req.body;
+        if (typeof dailyBudgetUsd !== "number" || dailyBudgetUsd <= 0 || dailyBudgetUsd > 10000) {
+          return res.status(400).json({ message: "dailyBudgetUsd must be a number between 0 and 10000" });
+        }
+        if (typeof dailyInvocationCap !== "number" || dailyInvocationCap <= 0 || dailyInvocationCap > 100000) {
+          return res.status(400).json({ message: "dailyInvocationCap must be a number between 0 and 100000" });
+        }
+        setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
+        res.json({ orgId, dailyBudgetUsd, dailyInvocationCap, updated: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update AI budget" });
       }
-      if (typeof dailyInvocationCap !== "number" || dailyInvocationCap <= 0 || dailyInvocationCap > 100000) {
-        return res.status(400).json({ message: "dailyInvocationCap must be a number between 0 and 100000" });
-      }
-      setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
-      res.json({ orgId, dailyBudgetUsd, dailyInvocationCap, updated: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update AI budget" });
-    }
-  });
+    },
+  );
 
   app.get("/api/ai/prompts", isAuthenticated, async (_req, res) => {
     try {
@@ -289,7 +392,7 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/prompts/:id", isAuthenticated, async (req, res) => {
     try {
       const prompts = getAllRegisteredPrompts();
-      const prompt = prompts.find(pt => pt.id === p(req.params.id));
+      const prompt = prompts.find((pt) => pt.id === p(req.params.id));
       if (!prompt) return res.status(404).json({ message: "Prompt not found" });
       res.json(prompt);
     } catch (error) {
@@ -348,18 +451,24 @@ export function registerAiRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/ai-deployment/config", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const parsed = insertAiDeploymentConfigSchema.safeParse({ ...req.body, orgId });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid AI deployment config data", errors: parsed.error.flatten() });
+  app.put(
+    "/api/ai-deployment/config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const parsed = insertAiDeploymentConfigSchema.safeParse({ ...req.body, orgId });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid AI deployment config data", errors: parsed.error.flatten() });
+        }
+        const config = await storage.upsertAiDeploymentConfig(parsed.data);
+        res.json(config);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to upsert AI deployment config" });
       }
-      const config = await storage.upsertAiDeploymentConfig(parsed.data);
-      res.json(config);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to upsert AI deployment config" });
-    }
-  });
-
+    },
+  );
 }

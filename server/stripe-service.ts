@@ -358,50 +358,29 @@ async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void>
 
 export async function getUsageVsLimits(orgId: string): Promise<{
   plan: { name: string; displayName: string; tier: string };
-  usage: Record<string, { current: number; limit: number; pct: number }>;
+  usage: Record<string, { current: number; limit: number; pct: number; status: string }>;
 }> {
-  const sub = await storage.getSubscription(orgId);
-  const planLimit = await storage.getOrgPlanLimit(orgId);
+  const { getUsageSummary } = await import("./middleware/plan-enforcement");
+  const summary = await getUsageSummary(orgId);
 
-  let planInfo = { name: "free", displayName: "Free", tier: "free" };
+  const sub = await storage.getSubscription(orgId);
+  let planInfo = { name: "free", displayName: "Free", tier: summary.tier };
   if (sub) {
     const plan = await storage.getPlan(sub.planId);
     if (plan) {
-      planInfo = { name: plan.name, displayName: plan.displayName, tier: plan.name };
+      planInfo = { name: plan.name, displayName: plan.displayName, tier: summary.tier };
     }
   }
 
-  const limits = planLimit || {
-    eventsPerMonth: 10000,
-    maxConnectors: 3,
-    aiTokensPerMonth: 5000,
-    automationRunsPerMonth: 100,
-    apiCallsPerMonth: 10000,
-    storageGb: 5,
-  };
+  const usage: Record<string, { current: number; limit: number; pct: number; status: string }> = {};
+  for (const [metric, data] of Object.entries(summary.metrics)) {
+    usage[metric] = {
+      current: data.current,
+      limit: data.limit,
+      pct: data.pct,
+      status: data.status,
+    };
+  }
 
-  const [connectorList, aiFeedbackCount, automationRunCount, ingestionStats] = await Promise.all([
-    storage.getConnectors(orgId),
-    storage.countAiFeedbackByOrg(orgId),
-    storage.countPlaybookExecutionsByOrg(orgId),
-    storage.getIngestionStats(orgId),
-  ]);
-
-  const totalEvents = ingestionStats.totalIngested ?? 0;
-
-  const mkMetric = (current: number, limit: number) => ({
-    current,
-    limit,
-    pct: limit > 0 ? Math.round((current / limit) * 100) : 0,
-  });
-
-  return {
-    plan: planInfo,
-    usage: {
-      events: mkMetric(totalEvents, limits.eventsPerMonth),
-      connectors: mkMetric(connectorList.length, limits.maxConnectors),
-      aiTokens: mkMetric(aiFeedbackCount, limits.aiTokensPerMonth),
-      automationRuns: mkMetric(automationRunCount, limits.automationRunsPerMonth),
-    },
-  };
+  return { plan: planInfo, usage };
 }

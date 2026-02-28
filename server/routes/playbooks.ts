@@ -4,6 +4,7 @@ import { isAuthenticated } from "../auth";
 import { requireOrgId, resolveOrgContext } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
+import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { canRollback, createRollbackRecord } from "../rollback-engine";
 import {
   insertPlaybookVersionSchema,
@@ -32,33 +33,42 @@ export function registerPlaybooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/playbooks", isAuthenticated, validateBody(bodySchemas.playbookCreate), async (req, res) => {
-    try {
-      const { name, description, trigger, conditions, actions, status } = (req as any).validatedBody;
-      const playbook = await storage.createPlaybook({
-        name,
-        description,
-        trigger,
-        conditions,
-        actions,
-        status: status || "draft",
-        createdBy: (req as any).user?.id,
-      });
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "playbook_created",
-        resourceType: "playbook",
-        resourceId: playbook.id,
-        details: { name, trigger },
-      });
-      res.status(201).json(playbook);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create playbook" });
-    }
-  });
+  app.post(
+    "/api/playbooks",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    enforcePlanLimit("playbooks"),
+    validateBody(bodySchemas.playbookCreate),
+    async (req, res) => {
+      try {
+        const { name, description, trigger, conditions, actions, status } = (req as any).validatedBody;
+        const playbook = await storage.createPlaybook({
+          name,
+          description,
+          trigger,
+          conditions,
+          actions,
+          status: status || "draft",
+          createdBy: (req as any).user?.id,
+        });
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "playbook_created",
+          resourceType: "playbook",
+          resourceId: playbook.id,
+          details: { name, trigger },
+        });
+        storage.incrementUsage((req as any).user?.orgId, "playbooks").catch(() => {});
+        res.status(201).json(playbook);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create playbook" });
+      }
+    },
+  );
 
   app.patch("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {

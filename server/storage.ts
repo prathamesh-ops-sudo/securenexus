@@ -315,6 +315,9 @@ import {
   type MsspAccessGrant,
   type InsertMsspAccessGrant,
   msspAccessGrants,
+  type UsageRecord,
+  type InsertUsageRecord,
+  usageRecords,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -1089,6 +1092,12 @@ export interface IStorage {
     totalConnectors: number;
     perOrg: { orgId: string; orgName: string; alertCount: number; incidentCount: number; connectorCount: number }[];
   }>;
+
+  // Phase 8: Usage Metering & Plan Enforcement
+  getUsageRecord(orgId: string, metric: string, periodStart: Date): Promise<UsageRecord | undefined>;
+  getUsageRecords(orgId: string, periodStart?: Date): Promise<UsageRecord[]>;
+  incrementUsage(orgId: string, metric: string, amount?: number): Promise<UsageRecord>;
+  resetUsagePeriod(orgId: string, oldPeriodStart: Date, newPeriodStart: Date, newPeriodEnd: Date): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5316,6 +5325,60 @@ export class DatabaseStorage implements IStorage {
       totalConnectors: connectorTotals.total,
       perOrg,
     };
+  }
+
+  async getUsageRecord(orgId: string, metric: string, periodStart: Date): Promise<UsageRecord | undefined> {
+    const [record] = await db
+      .select()
+      .from(usageRecords)
+      .where(
+        and(eq(usageRecords.orgId, orgId), eq(usageRecords.metric, metric), eq(usageRecords.periodStart, periodStart)),
+      )
+      .limit(1);
+    return record;
+  }
+
+  async getUsageRecords(orgId: string, periodStart?: Date): Promise<UsageRecord[]> {
+    if (periodStart) {
+      return db
+        .select()
+        .from(usageRecords)
+        .where(and(eq(usageRecords.orgId, orgId), eq(usageRecords.periodStart, periodStart)));
+    }
+    return db.select().from(usageRecords).where(eq(usageRecords.orgId, orgId)).orderBy(desc(usageRecords.periodStart));
+  }
+
+  async incrementUsage(orgId: string, metric: string, amount: number = 1): Promise<UsageRecord> {
+    const now = new Date();
+    const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+    const [result] = await db
+      .insert(usageRecords)
+      .values({ orgId, metric, value: amount, periodStart, periodEnd })
+      .onConflictDoUpdate({
+        target: [usageRecords.orgId, usageRecords.metric, usageRecords.periodStart],
+        set: {
+          value: sql`${usageRecords.value} + ${amount}`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async resetUsagePeriod(orgId: string, oldPeriodStart: Date, newPeriodStart: Date, newPeriodEnd: Date): Promise<void> {
+    const oldRecords = await db
+      .select()
+      .from(usageRecords)
+      .where(and(eq(usageRecords.orgId, orgId), eq(usageRecords.periodStart, oldPeriodStart)));
+
+    for (const record of oldRecords) {
+      await db
+        .insert(usageRecords)
+        .values({ orgId, metric: record.metric, value: 0, periodStart: newPeriodStart, periodEnd: newPeriodEnd })
+        .onConflictDoNothing();
+    }
   }
 }
 
