@@ -150,10 +150,8 @@ export function registerOrgsRoutes(app: Express): void {
           details: { newRole: role, oldRole, targetUserId: target.userId },
         });
 
-        const org = await storage.getOrganization(orgId);
-        authStorage
-          .getUser(target.userId)
-          .then((targetUser) => {
+        Promise.all([storage.getOrganization(orgId), authStorage.getUser(target.userId)])
+          .then(([org, targetUser]) => {
             if (!targetUser?.email) return;
             const emailContent = memberRoleChangedEmail({
               memberName: targetUser.firstName || undefined,
@@ -161,14 +159,14 @@ export function registerOrgsRoutes(app: Express): void {
               oldRole: oldRole || "member",
               newRole: role,
             });
-            sendEmail({
+            return sendEmail({
               to: targetUser.email,
               subject: emailContent.subject,
               html: emailContent.html,
               text: emailContent.text,
-            }).catch((err) => logger.child("orgs").error("Failed to send role-changed email", { error: String(err) }));
+            });
           })
-          .catch(() => {});
+          .catch((err) => logger.child("orgs").error("Failed to send role-changed email", { error: String(err) }));
 
         res.json(updated);
       } catch (error) {
@@ -210,26 +208,27 @@ export function registerOrgsRoutes(app: Express): void {
           details: { targetUserId: target.userId },
         });
 
-        const org = await storage.getOrganization(orgId);
-        authStorage
-          .getUser(target.userId)
-          .then((targetUser) => {
+        const suspendReason =
+          typeof req.body === "object" && req.body !== null
+            ? String((req.body as Record<string, unknown>).reason || "")
+            : undefined;
+
+        Promise.all([storage.getOrganization(orgId), authStorage.getUser(target.userId)])
+          .then(([org, targetUser]) => {
             if (!targetUser?.email) return;
             const emailContent = memberSuspendedEmail({
               memberName: targetUser.firstName || undefined,
               orgName: org?.name || "your organization",
-              reason: (req.body as Record<string, unknown>).reason as string | undefined,
+              reason: suspendReason || undefined,
             });
-            sendEmail({
+            return sendEmail({
               to: targetUser.email,
               subject: emailContent.subject,
               html: emailContent.html,
               text: emailContent.text,
-            }).catch((err) =>
-              logger.child("orgs").error("Failed to send member-suspended email", { error: String(err) }),
-            );
+            });
           })
-          .catch(() => {});
+          .catch((err) => logger.child("orgs").error("Failed to send member-suspended email", { error: String(err) }));
 
         res.json(updated);
       } catch (error) {
