@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: retention-cleanup
+  namespace: securenexus
+  labels:
+    app: securenexus
+    component: retention-cleanup
+spec:
+  schedule: "0 2 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: securenexus
+            component: retention-cleanup
+        spec:
+          serviceAccountName: securenexus-sa
+          restartPolicy: OnFailure
+          containers:
+            - name: retention-cleanup
+              image: 557845624595.dkr.ecr.us-east-1.amazonaws.com/securenexus:latest
+              command:
+                [
+                  "node",
+                  "-e",
+                  "require('./dist/server/retention-scheduler').runRetentionCleanup().then(r => { console.log(JSON.stringify(r)); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })",
+                ]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              envFrom:
+                - secretRef:
+                    name: securenexus-secrets
+              env:
+                - name: NODE_ENV
+                  value: production
+                - name: RETENTION_CRON_MODE
+                  value: "true"
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL

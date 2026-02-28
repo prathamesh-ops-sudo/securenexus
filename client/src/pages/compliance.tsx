@@ -28,6 +28,9 @@ import {
   BarChart3,
   ArrowRightLeft,
   Eye,
+  Globe,
+  LayoutDashboard,
+  Archive,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -222,6 +225,291 @@ const DSAR_STATUS_COLORS: Record<string, string> = {
 };
 
 const REQUEST_TYPES = ["access", "erasure", "portability", "rectification"];
+
+const FRAMEWORK_DISPLAY: Record<string, { label: string; color: string }> = {
+  soc2: { label: "SOC 2", color: "text-orange-400 border-orange-500/30" },
+  iso_27001: { label: "ISO 27001", color: "text-purple-400 border-purple-500/30" },
+  nist_csf: { label: "NIST CSF", color: "text-blue-400 border-blue-500/30" },
+  pci_dss: { label: "PCI DSS", color: "text-red-400 border-red-500/30" },
+  gdpr: { label: "GDPR", color: "text-green-400 border-green-500/30" },
+  hipaa: { label: "HIPAA", color: "text-cyan-400 border-cyan-500/30" },
+};
+
+interface ComplianceCenterData {
+  overview: {
+    enabledFrameworks: string[];
+    totalControls: number;
+    totalMappings: number;
+    evidenceCount: number;
+    dsarStats: { total: number; pending: number; overdue: number; fulfilled: number };
+    retentionPolicy: {
+      alertDays: number;
+      incidentDays: number;
+      auditLogDays: number;
+      lastCleanupAt: string | null;
+      lastDeletedCount: number;
+    };
+    dataResidency: string;
+  };
+  frameworkCoverage: Record<
+    string,
+    {
+      total: number;
+      compliant: number;
+      partial: number;
+      nonCompliant: number;
+      notAssessed: number;
+      coveragePercent: number;
+    }
+  >;
+}
+
+function ComplianceCenterTab() {
+  const { toast } = useToast();
+  const {
+    data: centerData,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<ComplianceCenterData>({
+    queryKey: ["/api/compliance/center"],
+  });
+
+  const [csvStartDate, setCsvStartDate] = useState("");
+  const [csvEndDate, setCsvEndDate] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (csvStartDate) params.set("startDate", csvStartDate);
+      if (csvEndDate) params.set("endDate", csvEndDate);
+      const url = `/api/compliance/audit/export/csv${params.toString() ? `?${params}` : ""}`;
+      const resp = await fetch(url, { credentials: "include" });
+      if (!resp.ok) throw new Error("Export failed");
+      const blob = await resp.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast({ title: "Export complete", description: "Audit log CSV downloaded." });
+    } catch (err: any) {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const archiveLogs = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/compliance/audit/archive");
+    },
+    onSuccess: () => {
+      toast({ title: "Archive initiated", description: "Audit logs archived to S3." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Archive failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isError || !centerData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load compliance center</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  const { overview, frameworkCoverage } = centerData;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="h-4 w-4 text-green-400" aria-hidden="true" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Controls</span>
+            </div>
+            <div className="text-2xl font-bold">{overview.totalControls}</div>
+            <p className="text-xs text-muted-foreground">{overview.totalMappings} mappings assessed</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Lock className="h-4 w-4 text-blue-400" aria-hidden="true" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Evidence</span>
+            </div>
+            <div className="text-2xl font-bold">{overview.evidenceCount}</div>
+            <p className="text-xs text-muted-foreground">artifacts in locker</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-4 w-4 text-amber-400" aria-hidden="true" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">DSARs</span>
+            </div>
+            <div className="text-2xl font-bold">{overview.dsarStats.total}</div>
+            <p className="text-xs text-muted-foreground">
+              {overview.dsarStats.pending} pending
+              {overview.dsarStats.overdue > 0 && (
+                <span className="text-red-400 ml-1">({overview.dsarStats.overdue} overdue)</span>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Globe className="h-4 w-4 text-cyan-400" aria-hidden="true" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Data Residency
+              </span>
+            </div>
+            <div className="text-2xl font-bold">{overview.dataResidency}</div>
+            <p className="text-xs text-muted-foreground">primary data region</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Framework Coverage
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(frameworkCoverage).map(([fw, data]) => {
+              const display = FRAMEWORK_DISPLAY[fw] || { label: fw, color: "text-gray-400 border-gray-500/30" };
+              return (
+                <div key={fw} className="p-3 rounded-lg bg-muted/30 border border-border/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className={display.color}>
+                      {display.label}
+                    </Badge>
+                    <span className="text-lg font-bold">{data.coveragePercent}%</span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="h-2 rounded-full bg-gradient-to-r from-green-500 to-emerald-400 transition-all"
+                      style={{ width: `${Math.min(data.coveragePercent, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{data.compliant} compliant</span>
+                    <span>{data.partial} partial</span>
+                    <span>{data.total} total</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {Object.keys(frameworkCoverage).length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No framework controls configured. Seed controls from the Controls tab.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Database className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              Retention Policy
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-2 rounded bg-muted/30 text-center">
+                <div className="text-lg font-bold">{overview.retentionPolicy.alertDays}</div>
+                <div className="text-xs text-muted-foreground">Alert days</div>
+              </div>
+              <div className="p-2 rounded bg-muted/30 text-center">
+                <div className="text-lg font-bold">{overview.retentionPolicy.incidentDays}</div>
+                <div className="text-xs text-muted-foreground">Incident days</div>
+              </div>
+              <div className="p-2 rounded bg-muted/30 text-center">
+                <div className="text-lg font-bold">{overview.retentionPolicy.auditLogDays}</div>
+                <div className="text-xs text-muted-foreground">Audit log days</div>
+              </div>
+            </div>
+            {overview.retentionPolicy.lastCleanupAt && (
+              <p className="text-xs text-muted-foreground">
+                Last cleanup: {formatDateTime(overview.retentionPolicy.lastCleanupAt)}
+                {overview.retentionPolicy.lastDeletedCount > 0 && (
+                  <span className="text-red-400 ml-1">
+                    ({overview.retentionPolicy.lastDeletedCount} records deleted)
+                  </span>
+                )}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Download className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              Audit Export
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Start Date</Label>
+                <Input type="date" value={csvStartDate} onChange={(e) => setCsvStartDate(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">End Date</Label>
+                <Input type="date" value={csvEndDate} onChange={(e) => setCsvEndDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={exportCsv} disabled={exporting}>
+                {exporting ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Export CSV
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => archiveLogs.mutate()} disabled={archiveLogs.isPending}>
+                {archiveLogs.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Archive className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Archive to S3
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function PoliciesTab() {
   const { toast } = useToast();
@@ -2794,8 +3082,12 @@ export default function CompliancePage() {
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
 
-      <Tabs defaultValue="policies" data-testid="tabs-compliance">
+      <Tabs defaultValue="center" data-testid="tabs-compliance">
         <TabsList className="flex-wrap" data-testid="tabs-list">
+          <TabsTrigger value="center" data-testid="tab-center">
+            <LayoutDashboard className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+            Overview
+          </TabsTrigger>
           <TabsTrigger value="policies" data-testid="tab-policies">
             <Scale className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Policies
@@ -2838,6 +3130,9 @@ export default function CompliancePage() {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="center">
+          <ComplianceCenterTab />
+        </TabsContent>
         <TabsContent value="policies">
           <PoliciesTab />
         </TabsContent>
