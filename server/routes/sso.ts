@@ -1,5 +1,8 @@
 import type { Express } from "express";
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
+import { SignedXml } from "xml-crypto";
+import { DOMParser } from "@xmldom/xmldom";
+import * as jose from "jose";
 import { storage, logger, p } from "./shared";
 import { isAuthenticated } from "../auth";
 import { authStorage } from "../auth/storage";
@@ -96,6 +99,37 @@ function extractSamlNameId(xml: string): string | null {
   if (valueEnd === -1 || valueEnd <= valueStart) return null;
   const value = xml.substring(valueStart, valueEnd).trim();
   if (value.length > 0 && value.length < 512) return value;
+  return null;
+}
+
+function verifySamlSignature(xml: string, pemCert: string): boolean {
+  try {
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const signatureNode = findSignatureNode(doc);
+    if (!signatureNode) {
+      return false;
+    }
+    const sig = new SignedXml();
+    sig.publicCert = pemCert;
+    sig.loadSignature(signatureNode);
+    return sig.checkSignature(xml);
+  } catch (err) {
+    logger.child("sso").warn("SAML signature check threw", { error: String(err) });
+    return false;
+  }
+}
+
+function findSignatureNode(node: globalThis.Node): globalThis.Node | null {
+  const el = node as globalThis.Element;
+  if (el.localName === "Signature" && (el.namespaceURI === "http://www.w3.org/2000/09/xmldsig#" || !el.namespaceURI)) {
+    return node;
+  }
+  const children = node.childNodes;
+  if (!children) return null;
+  for (let i = 0; i < children.length; i++) {
+    const found = findSignatureNode(children[i]);
+    if (found) return found;
+  }
   return null;
 }
 
@@ -419,6 +453,10 @@ export function registerSsoRoutes(app: Express): void {
         }
 
         const state = `${slug}:${randomBytes(16).toString("hex")}`;
+        const session = (req as any).session;
+        if (session) {
+          session.oidcState = state;
+        }
         const callbackUrl = `${appBaseUrl}/api/sso/${slug}/callback`;
         const params = new URLSearchParams({
           response_type: "code",
@@ -462,6 +500,24 @@ export function registerSsoRoutes(app: Express): void {
         const decoded = Buffer.from(SAMLResponse, "base64").toString("utf8");
         if (decoded.length > 1_000_000) {
           return res.status(400).json({ error: "SAML response too large" });
+        }
+
+        if (config.certificate) {
+          let idpCert: string;
+          try {
+            idpCert = decrypt(config.certificate);
+          } catch {
+            return res.status(500).json({ error: "Failed to decrypt IdP certificate" });
+          }
+          const signatureValid = verifySamlSignature(decoded, idpCert);
+          if (!signatureValid) {
+            logger.child("sso").warn("SAML signature verification failed", { orgId: org.id });
+            return res.status(400).json({ error: "SAML response signature verification failed" });
+          }
+        } else {
+          logger
+            .child("sso")
+            .warn("No IdP certificate stored — skipping SAML signature verification", { orgId: org.id });
         }
 
         email = extractSamlAttributeValue(decoded, SAML_ATTRIBUTE_NAMES.email)?.toLowerCase() || null;
@@ -513,7 +569,7 @@ export function registerSsoRoutes(app: Express): void {
         return res.redirect("/?error=oidc_not_configured");
       }
 
-      const { code, error: oauthError } = req.query;
+      const { code, state, error: oauthError } = req.query;
       if (oauthError) {
         return res.redirect(`/?error=sso_denied&details=${encodeURIComponent(String(oauthError))}`);
       }
@@ -521,17 +577,27 @@ export function registerSsoRoutes(app: Express): void {
         return res.redirect("/?error=missing_auth_code");
       }
 
+      const session = (req as any).session;
+      const expectedState = session?.oidcState;
+      if (!state || state !== expectedState) {
+        logger.child("sso").warn("OIDC state mismatch — possible CSRF", { slug });
+        return res.redirect("/?error=sso_state_mismatch");
+      }
+      delete session.oidcState;
+
       if (!config.metadataUrl || !config.clientId || !config.clientSecret) {
         return res.redirect("/?error=oidc_config_incomplete");
       }
 
       let tokenEndpoint: string;
       let userinfoEndpoint: string;
+      let jwksUri: string | undefined;
       try {
         const metaRes = await fetch(config.metadataUrl, { signal: AbortSignal.timeout(5000) });
         const metadata = (await metaRes.json()) as Record<string, any>;
         tokenEndpoint = metadata.token_endpoint;
         userinfoEndpoint = metadata.userinfo_endpoint;
+        jwksUri = metadata.jwks_uri;
         if (!tokenEndpoint) throw new Error("Missing token_endpoint");
       } catch {
         return res.redirect("/?error=oidc_metadata_failed");
@@ -572,15 +638,24 @@ export function registerSsoRoutes(app: Express): void {
       let firstName: string | null = null;
       let lastName: string | null = null;
 
-      if (tokenData.id_token) {
+      if (tokenData.id_token && jwksUri) {
         try {
-          const payload = JSON.parse(Buffer.from(tokenData.id_token.split(".")[1], "base64url").toString());
-          email = payload.email?.toLowerCase() || null;
-          firstName = payload.given_name || null;
-          lastName = payload.family_name || null;
-        } catch {
-          /* fall through to userinfo */
+          const JWKS = jose.createRemoteJWKSet(new URL(jwksUri));
+          const { payload } = await jose.jwtVerify(tokenData.id_token, JWKS, {
+            issuer: config.metadataUrl.replace(/\/\.well-known\/openid-configuration$/, ""),
+          });
+          email = (payload.email as string)?.toLowerCase() || null;
+          firstName = (payload.given_name as string) || null;
+          lastName = (payload.family_name as string) || null;
+        } catch (jwtErr) {
+          logger
+            .child("sso")
+            .warn("OIDC id_token verification failed, falling back to userinfo", { error: String(jwtErr) });
         }
+      } else if (tokenData.id_token) {
+        logger
+          .child("sso")
+          .warn("No JWKS URI in OIDC metadata — cannot verify id_token signature, falling back to userinfo");
       }
 
       if (!email && userinfoEndpoint) {
