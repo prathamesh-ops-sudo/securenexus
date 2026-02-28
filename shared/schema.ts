@@ -4734,7 +4734,7 @@ export const msspAccessGrants = pgTable(
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => [
-    uniqueIndex("idx_mssp_grant_parent_child").on(table.parentOrgId, table.childOrgId),
+    index("idx_mssp_grant_parent_child").on(table.parentOrgId, table.childOrgId),
     index("idx_mssp_grant_parent").on(table.parentOrgId),
     index("idx_mssp_grant_child").on(table.childOrgId),
   ],

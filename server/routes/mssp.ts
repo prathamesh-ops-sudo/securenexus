@@ -286,10 +286,31 @@ export function registerMsspRoutes(app: Express): void {
     requireMinRole("owner"),
     async (req, res) => {
       try {
-        const orgId = getOrgId(req);
-        const org = await storage.getOrganization(orgId);
-        if (!org) {
-          return replyError(res, 404, [{ code: "ORG_NOT_FOUND", message: "Organization not found" }]);
+        const user = (req as any).user;
+        if (!user?.isSuperAdmin) {
+          return replyForbidden(
+            res,
+            "Only platform super-admins can change organization type",
+            ERROR_CODES.PERMISSION_DENIED,
+          );
+        }
+
+        const callerOrgId = getOrgId(req);
+        const callerOrg = await storage.getOrganization(callerOrgId);
+        if (!callerOrg || callerOrg.orgType !== "mssp_parent") {
+          return replyForbidden(res, "Organization is not an MSSP parent", ERROR_CODES.ORG_ACCESS_DENIED);
+        }
+
+        const targetOrgId = String(req.params.id);
+        if (!targetOrgId) {
+          return replyError(res, 400, [{ code: "MISSING_PARAM", message: "Target org ID is required" }]);
+        }
+
+        const targetOrg = await storage.getOrganization(targetOrgId);
+        if (!targetOrg || targetOrg.parentOrgId !== callerOrgId) {
+          return replyError(res, 404, [
+            { code: "CHILD_NOT_FOUND", message: "Child organization not found or not owned by this MSSP parent" },
+          ]);
         }
 
         const targetOrgType = z.enum(["mssp_parent", "standard"]).safeParse(req.body.orgType);
@@ -299,24 +320,28 @@ export function registerMsspRoutes(app: Express): void {
           ]);
         }
 
-        const updated = await storage.updateOrganization(orgId, { orgType: targetOrgType.data });
+        const updated = await storage.updateOrganization(targetOrgId, { orgType: targetOrgType.data });
         if (!updated) {
-          return replyError(res, 404, [{ code: "ORG_NOT_FOUND", message: "Organization not found" }]);
+          return replyError(res, 404, [{ code: "ORG_NOT_FOUND", message: "Target organization not found" }]);
         }
 
-        const userId = (req as any).user?.id;
-        const userName = (req as any).user?.email || "unknown";
+        const userId = String(user.id || "");
+        const userName = String(user.email || "unknown");
         await storage.createAuditLog({
-          orgId,
+          orgId: callerOrgId,
           userId,
           userName,
           action: "org_type_changed",
           resourceType: "organization",
-          resourceId: orgId,
-          details: { previousType: org.orgType, newType: targetOrgType.data },
+          resourceId: targetOrgId,
+          details: { targetOrgId, previousType: targetOrg.orgType, newType: targetOrgType.data },
         });
 
-        log.info("Organization type changed", { orgId, newType: targetOrgType.data });
+        log.info("Child organization type changed", {
+          parentOrgId: callerOrgId,
+          targetOrgId,
+          newType: targetOrgType.data,
+        });
         return sendEnvelope(res, updated);
       } catch (err) {
         log.error("Failed to change org type", { error: String(err) });
