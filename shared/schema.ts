@@ -4553,3 +4553,127 @@ export type ConnectorJobRunsArchive = typeof connectorJobRunsArchive.$inferSelec
 export type TablePartition = typeof tablePartitions.$inferSelect;
 export type SliMetricHourly = typeof sliMetricsHourly.$inferSelect;
 export type SliMetricDaily = typeof sliMetricsDaily.$inferSelect;
+
+// ============================
+// Subscription & Billing (Phase 3)
+// ============================
+
+export const BILLING_PLAN_TIERS = ["free", "pro", "enterprise", "custom"] as const;
+export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "cancelled", "paused"] as const;
+export const BILLING_CYCLES = ["monthly", "annual"] as const;
+export const INVOICE_STATUSES = ["draft", "open", "paid", "void", "uncollectible"] as const;
+
+export const plans = pgTable(
+  "plans",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    name: text("name").notNull().unique(),
+    displayName: text("display_name").notNull(),
+    description: text("description"),
+    monthlyPriceCents: integer("monthly_price_cents").notNull().default(0),
+    annualPriceCents: integer("annual_price_cents").notNull().default(0),
+    stripePriceIdMonthly: text("stripe_price_id_monthly"),
+    stripePriceIdAnnual: text("stripe_price_id_annual"),
+    features: jsonb("features").notNull().default({}),
+    isActive: boolean("is_active").default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_plans_active").on(table.isActive), index("idx_plans_sort").on(table.sortOrder)],
+);
+
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    planId: varchar("plan_id")
+      .notNull()
+      .references(() => plans.id),
+    status: text("status").notNull().default("active"),
+    billingCycle: text("billing_cycle").notNull().default("monthly"),
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    trialEndDate: timestamp("trial_end_date"),
+    currentPeriodStart: timestamp("current_period_start"),
+    currentPeriodEnd: timestamp("current_period_end"),
+    cancelledAt: timestamp("cancelled_at"),
+    cancelReason: text("cancel_reason"),
+    customOverrides: jsonb("custom_overrides"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_subscriptions_org").on(table.orgId),
+    index("idx_subscriptions_stripe_customer").on(table.stripeCustomerId),
+    index("idx_subscriptions_status").on(table.status),
+  ],
+);
+
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    subscriptionId: varchar("subscription_id").references(() => subscriptions.id),
+    stripeInvoiceId: text("stripe_invoice_id").unique(),
+    amountDueCents: integer("amount_due_cents").notNull().default(0),
+    amountPaidCents: integer("amount_paid_cents").notNull().default(0),
+    currency: text("currency").notNull().default("usd"),
+    status: text("status").notNull().default("draft"),
+    pdfUrl: text("pdf_url"),
+    hostedUrl: text("hosted_url"),
+    periodStart: timestamp("period_start"),
+    periodEnd: timestamp("period_end"),
+    paidAt: timestamp("paid_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_invoices_org").on(table.orgId),
+    index("idx_invoices_subscription").on(table.subscriptionId),
+    index("idx_invoices_stripe").on(table.stripeInvoiceId),
+  ],
+);
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  organization: one(organizations, { fields: [subscriptions.orgId], references: [organizations.id] }),
+  plan: one(plans, { fields: [subscriptions.planId], references: [plans.id] }),
+}));
+
+export const invoicesRelations = relations(invoices, ({ one }) => ({
+  organization: one(organizations, { fields: [invoices.orgId], references: [organizations.id] }),
+  subscription: one(subscriptions, { fields: [invoices.subscriptionId], references: [subscriptions.id] }),
+}));
+
+export const insertPlanSchema = createInsertSchema(plans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Plan = typeof plans.$inferSelect;
+export type InsertPlan = z.infer<typeof insertPlanSchema>;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;

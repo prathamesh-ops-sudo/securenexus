@@ -300,6 +300,15 @@ import {
   type ComplianceControlHelper,
   type InsertComplianceControlHelper,
   complianceControlHelpers,
+  type Plan,
+  type InsertPlan,
+  plans,
+  type Subscription,
+  type InsertSubscription,
+  subscriptions,
+  type Invoice,
+  type InsertInvoice,
+  invoices,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
@@ -1027,6 +1036,27 @@ export interface IStorage {
     id: string,
     data: Partial<ComplianceControlHelper>,
   ): Promise<ComplianceControlHelper | undefined>;
+
+  // Plans (Phase 3)
+  getPlans(activeOnly?: boolean): Promise<Plan[]>;
+  getPlan(id: string): Promise<Plan | undefined>;
+  getPlanByName(name: string): Promise<Plan | undefined>;
+  createPlan(plan: InsertPlan): Promise<Plan>;
+  updatePlan(id: string, data: Partial<Plan>): Promise<Plan | undefined>;
+
+  // Subscriptions (Phase 3)
+  getSubscription(orgId: string): Promise<Subscription | undefined>;
+  getSubscriptionById(id: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeCustomerId(stripeCustomerId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeSubId(stripeSubscriptionId: string): Promise<Subscription | undefined>;
+  createSubscription(sub: InsertSubscription): Promise<Subscription>;
+  updateSubscription(id: string, data: Partial<Subscription>): Promise<Subscription | undefined>;
+
+  // Invoices (Phase 3)
+  getInvoices(orgId: string, limit?: number): Promise<Invoice[]>;
+  getInvoiceByStripeId(stripeInvoiceId: string): Promise<Invoice | undefined>;
+  createInvoice(invoice: InsertInvoice): Promise<Invoice>;
+  updateInvoice(id: string, data: Partial<Invoice>): Promise<Invoice | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4993,6 +5023,97 @@ export class DatabaseStorage implements IStorage {
       .set(data)
       .where(eq(complianceControlHelpers.id, id))
       .returning();
+    return updated;
+  }
+
+  async getPlans(activeOnly?: boolean): Promise<Plan[]> {
+    if (activeOnly) {
+      return db.select().from(plans).where(eq(plans.isActive, true)).orderBy(asc(plans.sortOrder));
+    }
+    return db.select().from(plans).orderBy(asc(plans.sortOrder));
+  }
+
+  async getPlan(id: string): Promise<Plan | undefined> {
+    const [plan] = await db.select().from(plans).where(eq(plans.id, id));
+    return plan;
+  }
+
+  async getPlanByName(name: string): Promise<Plan | undefined> {
+    const [plan] = await db.select().from(plans).where(eq(plans.name, name));
+    return plan;
+  }
+
+  async createPlan(plan: InsertPlan): Promise<Plan> {
+    const [created] = await db.insert(plans).values(plan).returning();
+    return created;
+  }
+
+  async updatePlan(id: string, data: Partial<Plan>): Promise<Plan | undefined> {
+    const [updated] = await db
+      .update(plans)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(plans.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getSubscription(orgId: string): Promise<Subscription | undefined> {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.orgId, orgId));
+    return sub;
+  }
+
+  async getSubscriptionById(id: string): Promise<Subscription | undefined> {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, id));
+    return sub;
+  }
+
+  async getSubscriptionByStripeCustomerId(stripeCustomerId: string): Promise<Subscription | undefined> {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.stripeCustomerId, stripeCustomerId));
+    return sub;
+  }
+
+  async getSubscriptionByStripeSubId(stripeSubscriptionId: string): Promise<Subscription | undefined> {
+    const [sub] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId));
+    return sub;
+  }
+
+  async createSubscription(sub: InsertSubscription): Promise<Subscription> {
+    const [created] = await db.insert(subscriptions).values(sub).returning();
+    return created;
+  }
+
+  async updateSubscription(id: string, data: Partial<Subscription>): Promise<Subscription | undefined> {
+    const [updated] = await db
+      .update(subscriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(subscriptions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getInvoices(orgId: string, limit?: number): Promise<Invoice[]> {
+    const query = db.select().from(invoices).where(eq(invoices.orgId, orgId)).orderBy(desc(invoices.createdAt));
+    if (limit) {
+      return query.limit(limit);
+    }
+    return query;
+  }
+
+  async getInvoiceByStripeId(stripeInvoiceId: string): Promise<Invoice | undefined> {
+    const [inv] = await db.select().from(invoices).where(eq(invoices.stripeInvoiceId, stripeInvoiceId));
+    return inv;
+  }
+
+  async createInvoice(invoice: InsertInvoice): Promise<Invoice> {
+    const [created] = await db.insert(invoices).values(invoice).returning();
+    return created;
+  }
+
+  async updateInvoice(id: string, data: Partial<Invoice>): Promise<Invoice | undefined> {
+    const [updated] = await db.update(invoices).set(data).where(eq(invoices.id, id)).returning();
     return updated;
   }
 }
