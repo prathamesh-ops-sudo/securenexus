@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { SignedXml } from "xml-crypto";
+import { DOMParser } from "@xmldom/xmldom";
 import * as jose from "jose";
 import { storage, logger, p } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -103,19 +104,33 @@ function extractSamlNameId(xml: string): string | null {
 
 function verifySamlSignature(xml: string, pemCert: string): boolean {
   try {
-    const sig = new SignedXml();
-    sig.publicCert = pemCert;
-    const signatureStart = xml.indexOf("<ds:Signature");
-    const altSignatureStart = signatureStart === -1 ? xml.indexOf("<Signature") : signatureStart;
-    if (altSignatureStart === -1) {
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const signatureNode = findSignatureNode(doc);
+    if (!signatureNode) {
       return false;
     }
-    sig.loadSignature(xml);
+    const sig = new SignedXml();
+    sig.publicCert = pemCert;
+    sig.loadSignature(signatureNode);
     return sig.checkSignature(xml);
   } catch (err) {
     logger.child("sso").warn("SAML signature check threw", { error: String(err) });
     return false;
   }
+}
+
+function findSignatureNode(node: globalThis.Node): globalThis.Node | null {
+  const el = node as globalThis.Element;
+  if (el.localName === "Signature" && (el.namespaceURI === "http://www.w3.org/2000/09/xmldsig#" || !el.namespaceURI)) {
+    return node;
+  }
+  const children = node.childNodes;
+  if (!children) return null;
+  for (let i = 0; i < children.length; i++) {
+    const found = findSignatureNode(children[i]);
+    if (found) return found;
+  }
+  return null;
 }
 
 function sanitizeSsoConfig(config: any): any {
