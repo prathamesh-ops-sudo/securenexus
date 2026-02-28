@@ -89,6 +89,16 @@ const SECRET_REGISTRY: SecretEntry[] = [
     rotationIntervalDays: 90,
     owner: "platform-team",
   },
+  {
+    name: "STRIPE_WEBHOOK_SECRET",
+    source: "secrets_manager",
+    lastRotated: null,
+    rotationIntervalDays: 180,
+    owner: "platform-team",
+    verifyFn: async () => {
+      return !process.env.STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET.startsWith("whsec_");
+    },
+  },
 ];
 
 const log = logger.child("secret-rotation");
@@ -229,6 +239,17 @@ export function getRotationRunbook(secretName: string): string {
       "5. Revoke the old token",
       "6. Update the lastRotated date in the secret registry",
     ].join("\n"),
+    STRIPE_WEBHOOK_SECRET: [
+      "1. Go to Stripe Dashboard > Developers > Webhooks",
+      "2. Select the webhook endpoint for this environment",
+      "3. Click 'Reveal' to copy the current signing secret, then click 'Roll secret'",
+      "4. Stripe provides a grace period where both old and new secrets are valid",
+      "5. Update STRIPE_WEBHOOK_SECRET in AWS Secrets Manager with the new whsec_ value",
+      "6. Deploy with rolling restart to pick up the new secret",
+      "7. Verify webhook delivery in Stripe Dashboard (check for 200 responses)",
+      "8. After confirming all environments use the new secret, the old one expires automatically",
+      "9. Update the lastRotated date in the secret registry",
+    ].join("\n"),
   };
 
   return runbooks[secretName] ?? `No runbook available for ${secretName}. Contact the platform team.`;
@@ -236,36 +257,36 @@ export function getRotationRunbook(secretName: string): string {
 
 export function logRotationAudit(): void {
   const results = checkRotationStatus();
-  const overdue = results.filter(r => r.status === "overdue");
-  const due = results.filter(r => r.status === "due");
-  const unverified = results.filter(r => r.status === "unverified");
+  const overdue = results.filter((r) => r.status === "overdue");
+  const due = results.filter((r) => r.status === "due");
+  const unverified = results.filter((r) => r.status === "unverified");
 
   if (overdue.length > 0) {
     log.error("Secret rotation OVERDUE", {
       count: overdue.length,
-      secrets: overdue.map(r => r.name),
+      secrets: overdue.map((r) => r.name),
     });
   }
 
   if (due.length > 0) {
     log.warn("Secrets due for rotation", {
       count: due.length,
-      secrets: due.map(r => r.name),
+      secrets: due.map((r) => r.name),
     });
   }
 
   if (unverified.length > 0) {
     log.warn("Secrets with no rotation history", {
       count: unverified.length,
-      secrets: unverified.map(r => r.name),
+      secrets: unverified.map((r) => r.name),
     });
   }
 
-  const ok = results.filter(r => r.status === "ok");
+  const ok = results.filter((r) => r.status === "ok");
   if (ok.length > 0) {
     log.info("Secrets rotation status OK", {
       count: ok.length,
-      secrets: ok.map(r => r.name),
+      secrets: ok.map((r) => r.name),
     });
   }
 }
@@ -275,9 +296,12 @@ let rotationCheckInterval: ReturnType<typeof setInterval> | null = null;
 export function startRotationScheduler(intervalHours: number = 24): void {
   logRotationAudit();
 
-  rotationCheckInterval = setInterval(() => {
-    logRotationAudit();
-  }, intervalHours * 60 * 60 * 1000);
+  rotationCheckInterval = setInterval(
+    () => {
+      logRotationAudit();
+    },
+    intervalHours * 60 * 60 * 1000,
+  );
 
   log.info("Secret rotation scheduler started", { intervalHours });
 }
