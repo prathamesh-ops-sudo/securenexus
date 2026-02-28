@@ -5283,7 +5283,7 @@ export class DatabaseStorage implements IStorage {
     const perOrgIncidents = await db
       .select({ orgId: incidents.orgId, total: count() })
       .from(incidents)
-      .where(inArray(incidents.orgId, childOrgIds))
+      .where(and(inArray(incidents.orgId, childOrgIds), eq(incidents.status, "open")))
       .groupBy(incidents.orgId);
 
     const perOrgConnectors = await db
