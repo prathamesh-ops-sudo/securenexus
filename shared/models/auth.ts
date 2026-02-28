@@ -38,8 +38,12 @@ export const impersonationSessions = pgTable(
     id: varchar("id")
       .primaryKey()
       .default(sql`gen_random_uuid()`),
-    superAdminId: varchar("super_admin_id").notNull(),
-    targetUserId: varchar("target_user_id").notNull(),
+    superAdminId: varchar("super_admin_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    targetUserId: varchar("target_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     sessionSid: varchar("session_sid").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     endedAt: timestamp("ended_at"),

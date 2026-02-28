@@ -38,7 +38,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
       const mrrResult = await db
         .select({
-          totalMrr: sql<number>`COALESCE(SUM(CASE WHEN ${subscriptions.billingCycle} = 'monthly' THEN ${plans.monthlyPriceCents} WHEN ${subscriptions.billingCycle} = 'yearly' THEN ${plans.monthlyPriceCents} ELSE ${plans.monthlyPriceCents} END), 0)`,
+          totalMrr: sql<number>`COALESCE(SUM(CASE WHEN ${subscriptions.billingCycle} = 'monthly' THEN ${plans.monthlyPriceCents} WHEN ${subscriptions.billingCycle} = 'yearly' THEN ROUND(${plans.annualPriceCents}::numeric / 12) ELSE ${plans.monthlyPriceCents} END), 0)`,
         })
         .from(subscriptions)
         .innerJoin(plans, eq(subscriptions.planId, plans.id))
@@ -685,13 +685,19 @@ export function registerPlatformAdminRoutes(app: Express): void {
           planName: plans.name,
           count: count(),
           monthlyPriceCents: plans.monthlyPriceCents,
+          annualPriceCents: plans.annualPriceCents,
+          billingCycle: subscriptions.billingCycle,
         })
         .from(subscriptions)
         .innerJoin(plans, eq(subscriptions.planId, plans.id))
         .where(eq(subscriptions.status, "active"))
-        .groupBy(plans.name, plans.monthlyPriceCents);
+        .groupBy(plans.name, plans.monthlyPriceCents, plans.annualPriceCents, subscriptions.billingCycle);
 
-      const totalMrr = planDistribution.reduce((sum, p) => sum + (p.monthlyPriceCents ?? 0) * p.count, 0);
+      const totalMrr = planDistribution.reduce((sum, p) => {
+        const perSubMrr =
+          p.billingCycle === "yearly" ? Math.round((p.annualPriceCents ?? 0) / 12) : (p.monthlyPriceCents ?? 0);
+        return sum + perSubMrr * p.count;
+      }, 0);
 
       const [cancelledCount] = await db
         .select({ value: count() })
