@@ -38,7 +38,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
       const mrrResult = await db
         .select({
-          totalMrr: sql<number>`COALESCE(SUM(CASE WHEN ${subscriptions.billingCycle} = 'monthly' THEN ${plans.monthlyPriceCents} WHEN ${subscriptions.billingCycle} = 'yearly' THEN ROUND(${plans.annualPriceCents}::numeric / 12) ELSE ${plans.monthlyPriceCents} END), 0)`,
+          totalMrr: sql<number>`COALESCE(SUM(CASE WHEN ${subscriptions.billingCycle} = 'monthly' THEN ${plans.monthlyPriceCents} WHEN ${subscriptions.billingCycle} = 'annual' THEN ROUND(${plans.annualPriceCents}::numeric / 12) ELSE ${plans.monthlyPriceCents} END), 0)`,
         })
         .from(subscriptions)
         .innerJoin(plans, eq(subscriptions.planId, plans.id))
@@ -695,7 +695,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
       const totalMrr = planDistribution.reduce((sum, p) => {
         const perSubMrr =
-          p.billingCycle === "yearly" ? Math.round((p.annualPriceCents ?? 0) / 12) : (p.monthlyPriceCents ?? 0);
+          p.billingCycle === "annual" ? Math.round((p.annualPriceCents ?? 0) / 12) : (p.monthlyPriceCents ?? 0);
         return sum + perSubMrr * p.count;
       }, 0);
 
@@ -802,6 +802,101 @@ export function registerPlatformAdminRoutes(app: Express): void {
   });
 
   app.post(
+    "/api/platform-admin/impersonate/end",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const { impersonationToken } = req.body;
+        if (!impersonationToken || typeof impersonationToken !== "string") {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "MISSING_TOKEN", message: "Impersonation token is required" }],
+          });
+        }
+
+        const [session] = await db
+          .update(impersonationSessions)
+          .set({ endedAt: new Date() })
+          .where(and(eq(impersonationSessions.sessionSid, impersonationToken), isNull(impersonationSessions.endedAt)))
+          .returning();
+
+        if (!session) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Active impersonation session not found" }],
+          });
+        }
+
+        await storage.createAuditLog({
+          userId: session.superAdminId,
+          userName: (req as any).user.email,
+          action: "impersonation_ended",
+          resourceType: "user",
+          resourceId: session.targetUserId,
+          details: { impersonationSessionId: session.id },
+        });
+
+        return sendEnvelope(res, { message: "Impersonation session ended" });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "END_IMPERSONATE_FAILED", message: "Failed to end impersonation", details: message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/platform-admin/impersonate/validate",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const token = typeof req.query.token === "string" ? req.query.token : undefined;
+        if (!token) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "MISSING_TOKEN", message: "Token query parameter is required" }],
+          });
+        }
+
+        const [session] = await db
+          .select()
+          .from(impersonationSessions)
+          .where(and(eq(impersonationSessions.sessionSid, token), isNull(impersonationSessions.endedAt)))
+          .limit(1);
+
+        if (!session || new Date(session.expiresAt) < new Date()) {
+          return sendEnvelope(res, { valid: false });
+        }
+
+        const [targetUser] = await db.select().from(users).where(eq(users.id, session.targetUserId)).limit(1);
+
+        return sendEnvelope(res, {
+          valid: true,
+          targetUser: targetUser
+            ? {
+                id: targetUser.id,
+                email: targetUser.email,
+                firstName: targetUser.firstName,
+                lastName: targetUser.lastName,
+              }
+            : null,
+          expiresAt: session.expiresAt,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "VALIDATE_FAILED", message: "Failed to validate impersonation", details: message }],
+        });
+      }
+    },
+  );
+
+  app.post(
     "/api/platform-admin/impersonate/:userId",
     isAuthenticated,
     requireSuperAdmin,
@@ -894,101 +989,6 @@ export function registerPlatformAdminRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "IMPERSONATE_FAILED", message: "Failed to create impersonation session", details: message }],
-        });
-      }
-    },
-  );
-
-  app.post(
-    "/api/platform-admin/impersonate/end",
-    isAuthenticated,
-    requireSuperAdmin,
-    async (req: Request, res: Response) => {
-      try {
-        const { impersonationToken } = req.body;
-        if (!impersonationToken || typeof impersonationToken !== "string") {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "MISSING_TOKEN", message: "Impersonation token is required" }],
-          });
-        }
-
-        const [session] = await db
-          .update(impersonationSessions)
-          .set({ endedAt: new Date() })
-          .where(and(eq(impersonationSessions.sessionSid, impersonationToken), isNull(impersonationSessions.endedAt)))
-          .returning();
-
-        if (!session) {
-          return sendEnvelope(res, null, {
-            status: 404,
-            errors: [{ code: "NOT_FOUND", message: "Active impersonation session not found" }],
-          });
-        }
-
-        await storage.createAuditLog({
-          userId: session.superAdminId,
-          userName: (req as any).user.email,
-          action: "impersonation_ended",
-          resourceType: "user",
-          resourceId: session.targetUserId,
-          details: { impersonationSessionId: session.id },
-        });
-
-        return sendEnvelope(res, { message: "Impersonation session ended" });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "END_IMPERSONATE_FAILED", message: "Failed to end impersonation", details: message }],
-        });
-      }
-    },
-  );
-
-  app.get(
-    "/api/platform-admin/impersonate/validate",
-    isAuthenticated,
-    requireSuperAdmin,
-    async (req: Request, res: Response) => {
-      try {
-        const token = typeof req.query.token === "string" ? req.query.token : undefined;
-        if (!token) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "MISSING_TOKEN", message: "Token query parameter is required" }],
-          });
-        }
-
-        const [session] = await db
-          .select()
-          .from(impersonationSessions)
-          .where(and(eq(impersonationSessions.sessionSid, token), isNull(impersonationSessions.endedAt)))
-          .limit(1);
-
-        if (!session || new Date(session.expiresAt) < new Date()) {
-          return sendEnvelope(res, { valid: false });
-        }
-
-        const [targetUser] = await db.select().from(users).where(eq(users.id, session.targetUserId)).limit(1);
-
-        return sendEnvelope(res, {
-          valid: true,
-          targetUser: targetUser
-            ? {
-                id: targetUser.id,
-                email: targetUser.email,
-                firstName: targetUser.firstName,
-                lastName: targetUser.lastName,
-              }
-            : null,
-          expiresAt: session.expiresAt,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "VALIDATE_FAILED", message: "Failed to validate impersonation", details: message }],
         });
       }
     },

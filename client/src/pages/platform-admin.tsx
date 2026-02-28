@@ -82,7 +82,13 @@ interface SubscriptionListItem {
 interface RevenueData {
   mrr: number;
   arr: number;
-  planDistribution: { planName: string; count: number; priceMonthly: number | null }[];
+  planDistribution: {
+    planName: string;
+    count: number;
+    monthlyPriceCents: number | null;
+    annualPriceCents: number | null;
+    billingCycle: string;
+  }[];
   churnRate: number;
   totalSubscriptions: number;
   cancelledSubscriptions: number;
@@ -676,7 +682,7 @@ function RevenueTab() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">{plan.planName}</span>
                       <span className="text-muted-foreground">
-                        {plan.count} subs &middot; ${((plan.priceMonthly ?? 0) / 100).toFixed(0)}/mo each
+                        {plan.count} subs &middot; ${((plan.monthlyPriceCents ?? 0) / 100).toFixed(0)}/mo each
                       </span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
