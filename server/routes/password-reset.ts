@@ -127,7 +127,7 @@ export function registerPasswordResetRoutes(app: Express): void {
         passwordHash: hashedPassword,
       });
 
-      await storage.markPasswordResetTokenAsUsed(token);
+      await storage.invalidateAllUserPasswordResetTokens(user.id);
 
       await storage.createAuditLog({
         userId: user.id,

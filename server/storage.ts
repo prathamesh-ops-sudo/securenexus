@@ -1065,6 +1065,7 @@ export interface IStorage {
   createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   markPasswordResetTokenAsUsed(token: string): Promise<void>;
+  invalidateAllUserPasswordResetTokens(userId: string): Promise<void>;
   deleteExpiredPasswordResetTokens(): Promise<number>;
 }
 
@@ -5139,6 +5140,13 @@ export class DatabaseStorage implements IStorage {
 
   async markPasswordResetTokenAsUsed(token: string): Promise<void> {
     await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.token, token));
+  }
+
+  async invalidateAllUserPasswordResetTokens(userId: string): Promise<void> {
+    await db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt)));
   }
 
   async deleteExpiredPasswordResetTokens(): Promise<number> {

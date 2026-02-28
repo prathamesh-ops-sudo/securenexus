@@ -15,7 +15,13 @@ function esc(str: string): string {
 }
 
 function escUrl(url: string): string {
-  return esc(url).replace(/javascript:/gi, "");
+  try {
+    const parsed = new URL(url);
+    if (!["https:", "http:", "mailto:"].includes(parsed.protocol)) return "";
+    return esc(url);
+  } catch {
+    return esc(url);
+  }
 }
 
 function baseLayout(content: string): string {
