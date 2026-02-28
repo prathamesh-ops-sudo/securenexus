@@ -30,6 +30,7 @@ import { registerReportGovernanceRoutes } from "./report-governance";
 import { registerApiVersioningRoutes } from "./api-versioning";
 import { registerBillingRoutes } from "./billing";
 import { registerPasswordResetRoutes } from "./password-reset";
+import { registerPlatformAdminRoutes } from "./platform-admin";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -64,4 +65,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerApiVersioningRoutes(app);
   registerBillingRoutes(app);
   registerPasswordResetRoutes(app);
+  registerPlatformAdminRoutes(app);
 }
