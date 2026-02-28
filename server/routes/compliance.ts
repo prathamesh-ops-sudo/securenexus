@@ -1220,7 +1220,7 @@ export function registerComplianceRoutes(app: Express): void {
           partial,
           nonCompliant,
           notAssessed: Math.max(0, notAssessed),
-          coveragePercent: total > 0 ? Math.round(((compliant + partial * 0.5) / total) * 100) : 0,
+          coveragePercent: total > 0 ? Math.min(100, Math.round(((compliant + partial * 0.5) / total) * 100)) : 0,
         };
       }
 
@@ -1335,22 +1335,28 @@ export function registerComplianceRoutes(app: Express): void {
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(csvRows.join("\n"));
 
-      await storage.createAuditLog({
-        orgId,
-        userId: user.id,
-        userName: user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
-        action: "audit_log_csv_export",
-        resourceType: "audit_log",
-        details: {
-          format: "csv",
-          totalEntries: filtered.length,
-          startDate: startDate?.toISOString() ?? null,
-          endDate: endDate?.toISOString() ?? null,
-        },
-      });
+      try {
+        await storage.createAuditLog({
+          orgId,
+          userId: user.id,
+          userName: user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+          action: "audit_log_csv_export",
+          resourceType: "audit_log",
+          details: {
+            format: "csv",
+            totalEntries: filtered.length,
+            startDate: startDate?.toISOString() ?? null,
+            endDate: endDate?.toISOString() ?? null,
+          },
+        });
+      } catch (auditErr) {
+        logger.child("routes").error("Failed to create audit log for CSV export", { error: String(auditErr) });
+      }
     } catch (error) {
       logger.child("routes").error("CSV export error", { error: String(error) });
-      res.status(500).json({ message: "Failed to export audit logs as CSV" });
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to export audit logs as CSV" });
+      }
     }
   });
 
