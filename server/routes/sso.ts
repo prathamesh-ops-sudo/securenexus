@@ -48,6 +48,57 @@ function decrypt(encryptedText: string): string {
 const VALID_PROVIDERS = ["saml", "oidc"] as const;
 const VALID_ROLES = ["owner", "admin", "analyst", "read_only"];
 
+const SAML_ATTRIBUTE_NAMES: Record<string, string[]> = {
+  email: [
+    'Name="email"',
+    'Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"',
+    'Name="urn:oid:0.9.2342.19200300.100.1.3"',
+  ],
+  firstName: [
+    'Name="firstName"',
+    'Name="givenName"',
+    'Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"',
+  ],
+  lastName: [
+    'Name="lastName"',
+    'Name="surname"',
+    'Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"',
+  ],
+};
+
+function extractSamlAttributeValue(xml: string, nameVariants: string[]): string | null {
+  for (const nameAttr of nameVariants) {
+    const attrIdx = xml.indexOf(nameAttr);
+    if (attrIdx === -1) continue;
+    const valueOpenTag = "AttributeValue";
+    const searchFrom = attrIdx + nameAttr.length;
+    const valueTagStart = xml.indexOf(valueOpenTag, searchFrom);
+    if (valueTagStart === -1) continue;
+    const gtAfterTag = xml.indexOf(">", valueTagStart);
+    if (gtAfterTag === -1) continue;
+    const valueStart = gtAfterTag + 1;
+    const valueEnd = xml.indexOf("<", valueStart);
+    if (valueEnd === -1 || valueEnd <= valueStart) continue;
+    const value = xml.substring(valueStart, valueEnd).trim();
+    if (value.length > 0 && value.length < 512) return value;
+  }
+  return null;
+}
+
+function extractSamlNameId(xml: string): string | null {
+  const tag = "NameID";
+  const idx = xml.indexOf(tag);
+  if (idx === -1) return null;
+  const gt = xml.indexOf(">", idx);
+  if (gt === -1) return null;
+  const valueStart = gt + 1;
+  const valueEnd = xml.indexOf("<", valueStart);
+  if (valueEnd === -1 || valueEnd <= valueStart) return null;
+  const value = xml.substring(valueStart, valueEnd).trim();
+  if (value.length > 0 && value.length < 512) return value;
+  return null;
+}
+
 function sanitizeSsoConfig(config: any): any {
   if (!config) return config;
   const safe = { ...config };
@@ -409,27 +460,21 @@ export function registerSsoRoutes(app: Express): void {
 
       try {
         const decoded = Buffer.from(SAMLResponse, "base64").toString("utf8");
-        const emailMatch = decoded.match(
-          /<(?:saml2?:)?Attribute[^>]*Name="(?:email|http:\/\/schemas\.xmlsoap\.org\/ws\/2005\/05\/identity\/claims\/emailaddress|urn:oid:0\.9\.2342\.19200300\.100\.1\.3)"[^>]*>[\s\S]*?<(?:saml2?:)?AttributeValue[^>]*>([^<]+)<\/(?:saml2?:)?AttributeValue>/,
-        );
-        if (emailMatch) email = emailMatch[1].trim().toLowerCase();
+        if (decoded.length > 1_000_000) {
+          return res.status(400).json({ error: "SAML response too large" });
+        }
+
+        email = extractSamlAttributeValue(decoded, SAML_ATTRIBUTE_NAMES.email)?.toLowerCase() || null;
 
         if (!email) {
-          const nameIdMatch = decoded.match(/<(?:saml2?:)?NameID[^>]*>([^<]+)<\/(?:saml2?:)?NameID>/);
-          if (nameIdMatch && nameIdMatch[1].includes("@")) {
-            email = nameIdMatch[1].trim().toLowerCase();
+          const nameIdValue = extractSamlNameId(decoded);
+          if (nameIdValue && nameIdValue.includes("@")) {
+            email = nameIdValue.toLowerCase();
           }
         }
 
-        const firstNameMatch = decoded.match(
-          /<(?:saml2?:)?Attribute[^>]*Name="(?:firstName|givenName|http:\/\/schemas\.xmlsoap\.org\/ws\/2005\/05\/identity\/claims\/givenname)"[^>]*>[\s\S]*?<(?:saml2?:)?AttributeValue[^>]*>([^<]+)<\/(?:saml2?:)?AttributeValue>/,
-        );
-        if (firstNameMatch) firstName = firstNameMatch[1].trim();
-
-        const lastNameMatch = decoded.match(
-          /<(?:saml2?:)?Attribute[^>]*Name="(?:lastName|surname|http:\/\/schemas\.xmlsoap\.org\/ws\/2005\/05\/identity\/claims\/surname)"[^>]*>[\s\S]*?<(?:saml2?:)?AttributeValue[^>]*>([^<]+)<\/(?:saml2?:)?AttributeValue>/,
-        );
-        if (lastNameMatch) lastName = lastNameMatch[1].trim();
+        firstName = extractSamlAttributeValue(decoded, SAML_ATTRIBUTE_NAMES.firstName);
+        lastName = extractSamlAttributeValue(decoded, SAML_ATTRIBUTE_NAMES.lastName);
       } catch {
         return res.status(400).json({ error: "Failed to parse SAML assertion" });
       }
