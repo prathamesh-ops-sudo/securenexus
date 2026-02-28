@@ -51,6 +51,7 @@ export function registerPlaybooksRoutes(app: Express): void {
           actions,
           status: status || "draft",
           createdBy: (req as any).user?.id,
+          orgId: (req as any).orgId,
         });
         await storage.createAuditLog({
           userId: (req as any).user?.id,
@@ -62,7 +63,7 @@ export function registerPlaybooksRoutes(app: Express): void {
           resourceId: playbook.id,
           details: { name, trigger },
         });
-        storage.incrementUsage((req as any).user?.orgId, "playbooks").catch(() => {});
+        // playbooks is a resource-count metric — enforcement queries active count directly
         res.status(201).json(playbook);
       } catch (error) {
         res.status(500).json({ message: "Failed to create playbook" });

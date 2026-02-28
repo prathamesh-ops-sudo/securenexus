@@ -1098,6 +1098,9 @@ export interface IStorage {
   getUsageRecords(orgId: string, periodStart?: Date): Promise<UsageRecord[]>;
   incrementUsage(orgId: string, metric: string, amount?: number): Promise<UsageRecord>;
   resetUsagePeriod(orgId: string, oldPeriodStart: Date, newPeriodStart: Date, newPeriodEnd: Date): Promise<void>;
+  countActiveConnectors(orgId: string): Promise<number>;
+  countActiveApiKeys(orgId: string): Promise<number>;
+  countActivePlaybooks(orgId: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5379,6 +5382,30 @@ export class DatabaseStorage implements IStorage {
         .values({ orgId, metric: record.metric, value: 0, periodStart: newPeriodStart, periodEnd: newPeriodEnd })
         .onConflictDoNothing();
     }
+  }
+
+  async countActiveConnectors(orgId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(connectors)
+      .where(eq(connectors.orgId, orgId));
+    return Number(result?.count ?? 0);
+  }
+
+  async countActiveApiKeys(orgId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(apiKeys)
+      .where(and(eq(apiKeys.orgId, orgId), eq(apiKeys.isActive, true)));
+    return Number(result?.count ?? 0);
+  }
+
+  async countActivePlaybooks(orgId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(playbooks)
+      .where(eq(playbooks.orgId, orgId));
+    return Number(result?.count ?? 0);
   }
 }
 

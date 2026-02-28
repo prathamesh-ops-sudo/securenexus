@@ -80,6 +80,7 @@ export function registerConnectorsRoutes(app: Express): void {
           config,
           pollingIntervalMin: pollingIntervalMin || 5,
           createdBy: (req as any).user?.id,
+          orgId: (req as any).orgId,
         });
         await storage.createAuditLog({
           userId: (req as any).user?.id,
@@ -95,7 +96,7 @@ export function registerConnectorsRoutes(app: Express): void {
           type,
           name,
         });
-        storage.incrementUsage(connector.orgId || (req as any).user?.orgId, "connectors").catch(() => {});
+        // connectors is a resource-count metric — enforcement queries active count directly
         res.status(201).json(connector);
       } catch (error: any) {
         logger.child("routes").error("Route error", { error: String(error) });

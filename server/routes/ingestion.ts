@@ -130,7 +130,7 @@ export function registerIngestionRoutes(app: Express): void {
           resourceId: apiKey.id,
           details: { name, keyPrefix: prefix },
         });
-        storage.incrementUsage(orgId, "api_keys").catch(() => {});
+        // api_keys is a resource-count metric — enforcement queries active count directly
         res.status(201).json({
           id: apiKey.id,
           name: apiKey.name,
