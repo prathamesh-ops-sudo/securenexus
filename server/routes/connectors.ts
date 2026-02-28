@@ -95,7 +95,7 @@ export function registerConnectorsRoutes(app: Express): void {
           type,
           name,
         });
-        storage.incrementUsage(connector.orgId || (req as any).user?.orgId, "connectors").catch(() => {});
+        // connectors is a resource-count metric — enforcement queries active count directly
         res.status(201).json(connector);
       } catch (error: any) {
         logger.child("routes").error("Route error", { error: String(error) });

@@ -71,10 +71,28 @@ async function resolveOrgLimits(orgId: string): Promise<{ tier: string; limits: 
   return { tier, limits: baseLimits };
 }
 
+const RESOURCE_COUNT_METRICS = new Set(["connectors", "api_keys", "playbooks"]);
+
 async function getCurrentUsage(orgId: string, metric: string): Promise<number> {
+  if (RESOURCE_COUNT_METRICS.has(metric)) {
+    return getActiveResourceCount(orgId, metric);
+  }
   const periodStart = getCurrentPeriodStart();
   const record = await storage.getUsageRecord(orgId, metric, periodStart);
   return record?.value ?? 0;
+}
+
+async function getActiveResourceCount(orgId: string, metric: string): Promise<number> {
+  switch (metric) {
+    case "connectors":
+      return storage.countActiveConnectors(orgId);
+    case "api_keys":
+      return storage.countActiveApiKeys(orgId);
+    case "playbooks":
+      return storage.countActivePlaybooks(orgId);
+    default:
+      return 0;
+  }
 }
 
 export function enforcePlanLimit(metric: string) {
@@ -128,11 +146,13 @@ export async function getUsageSummary(orgId: string): Promise<{
   > = {};
 
   for (const [metric, limit] of Object.entries(limits)) {
+    const current = RESOURCE_COUNT_METRICS.has(metric)
+      ? await getActiveResourceCount(orgId, metric)
+      : (recordMap.get(metric) ?? 0);
     if (limit === -1) {
-      metrics[metric] = { current: recordMap.get(metric) ?? 0, limit: -1, pct: 0, status: "ok" };
+      metrics[metric] = { current, limit: -1, pct: 0, status: "ok" };
       continue;
     }
-    const current = recordMap.get(metric) ?? 0;
     const pct = limit > 0 ? Math.round((current / limit) * 100) : 0;
     let status: "ok" | "warning" | "critical" = "ok";
     if (pct >= 100) status = "critical";
