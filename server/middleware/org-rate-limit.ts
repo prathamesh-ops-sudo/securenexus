@@ -20,7 +20,11 @@ interface BucketEntry {
   resetAt: number;
 }
 
-const buckets = new Map<string, BucketEntry>();
+interface BucketEntryWithLimit extends BucketEntry {
+  limit: number;
+}
+
+const buckets = new Map<string, BucketEntryWithLimit>();
 
 function cleanupBuckets(): void {
   const now = Date.now();
@@ -60,18 +64,19 @@ export async function orgRateLimitMiddleware(req: Request, res: Response, next: 
   const now = Date.now();
   let bucket = buckets.get(key);
 
-  if (!bucket || bucket.resetAt <= now) {
-    bucket = { count: 0, resetAt: now + WINDOW_MS };
-    buckets.set(key, bucket);
-  }
-
-  bucket.count++;
-
   let limit = PLAN_REQUEST_LIMITS.free;
   if (orgId) {
     const plan = await resolveOrgPlan(orgId);
     limit = PLAN_REQUEST_LIMITS[plan];
   }
+
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + WINDOW_MS, limit };
+    buckets.set(key, bucket);
+  }
+
+  bucket.limit = limit;
+  bucket.count++;
 
   const remaining = Math.max(0, limit - bucket.count);
   const resetSeconds = Math.ceil((bucket.resetAt - now) / 1000);
@@ -110,7 +115,7 @@ export function getOrgRateLimitStats(): {
       details.push({
         key: key.slice(0, 8) + "...",
         count: entry.count,
-        remaining: Math.max(0, PLAN_REQUEST_LIMITS.free - entry.count),
+        remaining: Math.max(0, entry.limit - entry.count),
         resetAt: new Date(entry.resetAt).toISOString(),
       });
     }

@@ -45,7 +45,7 @@ export function getSession() {
       httpOnly: true,
       secure: config.session.forceHttps,
       maxAge: sessionTtl,
-      sameSite: config.session.forceHttps ? "strict" : "lax",
+      sameSite: "lax",
     },
   });
 }
