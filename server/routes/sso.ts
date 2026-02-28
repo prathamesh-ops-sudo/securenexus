@@ -643,6 +643,7 @@ export function registerSsoRoutes(app: Express): void {
           const JWKS = jose.createRemoteJWKSet(new URL(jwksUri));
           const { payload } = await jose.jwtVerify(tokenData.id_token, JWKS, {
             issuer: config.metadataUrl.replace(/\/\.well-known\/openid-configuration$/, ""),
+            audience: config.clientId,
           });
           email = (payload.email as string)?.toLowerCase() || null;
           firstName = (payload.given_name as string) || null;
