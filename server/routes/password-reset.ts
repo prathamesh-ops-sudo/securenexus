@@ -30,58 +30,53 @@ function getAppBaseUrl(): string {
 
 export function registerPasswordResetRoutes(app: Express): void {
   app.post("/api/auth/forgot-password", async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email || typeof email !== "string" || !isValidEmail(email.trim())) {
-        return replyValidation(res, [{ message: "A valid email address is required", field: "email" }]);
-      }
-
-      const normalizedEmail = email.trim().toLowerCase();
-      const user = await authStorage.getUserByEmail(normalizedEmail);
-
-      if (!user) {
-        return reply(res, { message: "If an account with that email exists, a password reset link has been sent." });
-      }
-
-      if (!user.passwordHash) {
-        return reply(res, { message: "If an account with that email exists, a password reset link has been sent." });
-      }
-
-      const token = randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
-
-      await storage.createPasswordResetToken({
-        userId: user.id,
-        token,
-        expiresAt,
-      });
-
-      const baseUrl = getAppBaseUrl();
-      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-
-      const emailContent = passwordResetEmail({
-        firstName: user.firstName || undefined,
-        resetUrl,
-        expiresInMinutes: RESET_TOKEN_EXPIRY_MINUTES,
-      });
-
-      await sendEmail({
-        to: normalizedEmail,
-        subject: emailContent.subject,
-        html: emailContent.html,
-        text: emailContent.text,
-      });
-
-      logger.child("password-reset").info("Password reset token created", {
-        userId: user.id,
-        email: normalizedEmail,
-      });
-
-      return reply(res, { message: "If an account with that email exists, a password reset link has been sent." });
-    } catch (error) {
-      logger.child("password-reset").error("Failed to process forgot-password request", { error: String(error) });
-      return replyInternal(res, "Failed to process password reset request");
+    const { email } = req.body;
+    if (!email || typeof email !== "string" || !isValidEmail(email.trim())) {
+      return replyValidation(res, [{ message: "A valid email address is required", field: "email" }]);
     }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    reply(res, { message: "If an account with that email exists, a password reset link has been sent." });
+
+    (async () => {
+      try {
+        const user = await authStorage.getUserByEmail(normalizedEmail);
+        if (!user || !user.passwordHash) return;
+
+        const token = randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
+
+        await storage.createPasswordResetToken({
+          userId: user.id,
+          token,
+          expiresAt,
+        });
+
+        const baseUrl = getAppBaseUrl();
+        const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+        const emailContent = passwordResetEmail({
+          firstName: user.firstName || undefined,
+          resetUrl,
+          expiresInMinutes: RESET_TOKEN_EXPIRY_MINUTES,
+        });
+
+        await sendEmail({
+          to: normalizedEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        });
+
+        logger.child("password-reset").info("Password reset token created", {
+          userId: user.id,
+          email: normalizedEmail,
+        });
+      } catch (error) {
+        logger.child("password-reset").error("Background forgot-password failed", { error: String(error) });
+      }
+    })();
   });
 
   app.post("/api/auth/reset-password", async (req, res) => {

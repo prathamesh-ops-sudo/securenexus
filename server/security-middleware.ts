@@ -19,6 +19,8 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/ops/live",
   "/api/auth/google/callback",
   "/api/auth/github/callback",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
 ]);
 
 const CSRF_EXEMPT_PREFIXES = ["/api/v1/ingest", "/api/v1/webhooks"];

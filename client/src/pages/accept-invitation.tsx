@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 import atsLogo from "@/assets/logo.jpg";
 
 export default function AcceptInvitationPage() {
@@ -26,24 +27,13 @@ export default function AcceptInvitationPage() {
       setIsAccepting(true);
       setError(null);
       try {
-        const res = await fetch("/api/invitations/accept", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-        });
-
+        const res = await apiRequest("POST", "/api/invitations/accept", { token });
         const body = await res.json();
-
-        if (!res.ok) {
-          const msg = body.error || body.message || "Failed to accept invitation";
-          setError(msg);
-          return;
-        }
-
         setOrgName(body.organization?.name || null);
         setIsSuccess(true);
-      } catch {
-        setError("Network error. Please try again.");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to accept invitation";
+        setError(msg);
       } finally {
         setIsAccepting(false);
       }
