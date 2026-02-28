@@ -16,6 +16,7 @@ interface OrgMembership {
     slug: string;
     logoUrl?: string | null;
     industry?: string | null;
+    orgType?: string | null;
   } | null;
 }
 

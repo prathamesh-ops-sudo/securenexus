@@ -33,6 +33,7 @@ import { registerPasswordResetRoutes } from "./password-reset";
 import { registerPlatformAdminRoutes } from "./platform-admin";
 import { registerDomainAutoJoinRoutes } from "./domain-autojoin";
 import { registerSsoRoutes } from "./sso";
+import { registerMsspRoutes } from "./mssp";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -70,4 +71,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerPlatformAdminRoutes(app);
   registerDomainAutoJoinRoutes(app);
   registerSsoRoutes(app);
+  registerMsspRoutes(app);
 }

@@ -135,6 +135,7 @@ const adminGroup: NavGroup = {
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
+    { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
   ],
 };
 
