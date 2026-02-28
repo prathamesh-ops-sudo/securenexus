@@ -2,6 +2,9 @@ import Stripe from "stripe";
 import { storage } from "./storage";
 import { logger } from "./logger";
 import { config } from "./config";
+import { sendEmail } from "./email-service";
+import { paymentFailedEmail, trialEndingEmail, subscriptionCancelledEmail } from "./email-templates";
+import { authStorage } from "./auth/storage";
 
 const log = logger.child("stripe");
 
@@ -304,6 +307,22 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
   }
 
   log.warn("Invoice payment failed", { orgId: sub.orgId, invoiceId: invoice.id });
+
+  sendOrgOwnerEmail(sub.orgId, (ownerEmail, org) => {
+    const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+    return paymentFailedEmail({
+      orgName: org?.name || "your organization",
+      amountDue: `$${(invoice.amount_due / 100).toFixed(2)}`,
+      retryDate: invoice.next_payment_attempt
+        ? new Date(invoice.next_payment_attempt * 1000).toLocaleDateString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          })
+        : undefined,
+      billingUrl: `${appBaseUrl}/billing`,
+    });
+  }).catch((err) => log.error("Failed to send payment-failed email", { error: String(err) }));
 }
 
 async function handleSubscriptionUpdated(stripeSub: Stripe.Subscription): Promise<void> {
@@ -344,6 +363,23 @@ async function handleSubscriptionDeleted(stripeSub: Stripe.Subscription): Promis
   });
 
   log.info("Subscription cancelled via Stripe", { orgId: sub.orgId });
+
+  sendOrgOwnerEmail(sub.orgId, (ownerEmail, org) => {
+    const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+    const periodEnd = (stripeSub as any).current_period_end as number | null;
+    const accessEndDate = periodEnd
+      ? new Date(periodEnd * 1000).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "end of current billing period";
+    return subscriptionCancelledEmail({
+      orgName: org?.name || "your organization",
+      accessEndDate,
+      reactivateUrl: `${appBaseUrl}/billing`,
+    });
+  }).catch((err) => log.error("Failed to send subscription-cancelled email", { error: String(err) }));
 }
 
 async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void> {
@@ -353,6 +389,50 @@ async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void>
   log.info("Trial ending soon", {
     orgId: sub.orgId,
     trialEnd: stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000).toISOString() : "unknown",
+  });
+
+  sendOrgOwnerEmail(sub.orgId, (ownerEmail, org) => {
+    const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+    const trialEndDate = stripeSub.trial_end
+      ? new Date(stripeSub.trial_end * 1000).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "soon";
+    return trialEndingEmail({
+      orgName: org?.name || "your organization",
+      trialEndDate,
+      billingUrl: `${appBaseUrl}/billing`,
+    });
+  }).catch((err) => log.error("Failed to send trial-ending email", { error: String(err) }));
+}
+
+async function sendOrgOwnerEmail(
+  orgId: string,
+  buildEmail: (
+    ownerEmail: string,
+    org: { name: string } | undefined,
+  ) => { subject: string; html: string; text: string },
+): Promise<void> {
+  const memberships = await storage.getOrgMemberships(orgId);
+  const ownerMembership = memberships.find((m) => m.role === "owner" && m.status === "active");
+  if (!ownerMembership) {
+    log.warn("No active owner found for org — skipping email", { orgId });
+    return;
+  }
+  const ownerUser = await authStorage.getUser(ownerMembership.userId);
+  if (!ownerUser?.email) {
+    log.warn("Owner has no email — skipping email", { orgId, userId: ownerMembership.userId });
+    return;
+  }
+  const org = await storage.getOrganization(orgId);
+  const emailContent = buildEmail(ownerUser.email, org);
+  await sendEmail({
+    to: ownerUser.email,
+    subject: emailContent.subject,
+    html: emailContent.html,
+    text: emailContent.text,
   });
 }
 

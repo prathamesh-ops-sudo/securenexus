@@ -15,6 +15,8 @@ import {
   ERROR_CODES,
 } from "../api-response";
 import { logger } from "../logger";
+import { sendEmail } from "../email-service";
+import { welcomeEmail } from "../email-templates";
 
 async function ensureOrgMembership(user: any): Promise<boolean> {
   try {
@@ -145,6 +147,22 @@ export function registerAuthRoutes(app: Express): void {
       req.login(user, async (err) => {
         if (err) return next(err);
         await ensureOrgMembership(user);
+
+        const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+        const emailContent = welcomeEmail({
+          firstName: firstName || undefined,
+          email,
+          loginUrl: appBaseUrl,
+        });
+        sendEmail({
+          to: email,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        }).catch((emailErr) => {
+          logger.child("auth").error("Failed to send welcome email", { error: String(emailErr), email });
+        });
+
         const { passwordHash: _, ...safeUser } = user;
         return reply(res, safeUser, {}, 201);
       });
