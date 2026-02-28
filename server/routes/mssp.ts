@@ -166,6 +166,18 @@ export function registerMsspRoutes(app: Express): void {
           ]);
         }
 
+        const existingGrants = await storage.getMsspAccessGrants(orgId);
+        const alreadyGranted = existingGrants.find((g) => g.childOrgId === childOrgId);
+        if (alreadyGranted) {
+          return replyError(res, 409, [
+            {
+              code: "GRANT_ALREADY_EXISTS",
+              message:
+                "An active access grant already exists for this child organization. Revoke it first to change the role.",
+            },
+          ]);
+        }
+
         const userId = (req as any).user?.id;
         const userName = (req as any).user?.email || "unknown";
 
