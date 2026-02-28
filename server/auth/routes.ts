@@ -21,6 +21,39 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
     const memberships = await storage.getUserMemberships(user.id);
     if (memberships.length > 0) return true;
 
+    if (user.email) {
+      const emailDomain = user.email.split("@")[1]?.toLowerCase();
+      if (emailDomain) {
+        const domainMatch = await storage.getVerifiedAutoJoinDomain(emailDomain);
+        if (domainMatch) {
+          await storage.createOrgMembership({
+            orgId: domainMatch.orgId,
+            userId: user.id,
+            role: domainMatch.defaultRole || "analyst",
+            status: "active",
+            joinedAt: new Date(),
+          });
+          storage
+            .createAuditLog({
+              userId: user.id,
+              userName: user.email,
+              action: "domain_auto_join",
+              resourceType: "membership",
+              resourceId: user.id,
+              details: { domain: emailDomain, orgId: domainMatch.orgId, role: domainMatch.defaultRole },
+            })
+            .catch(() => {});
+          logger.child("auth").info("User auto-joined org via domain match", {
+            userId: user.id,
+            email: user.email,
+            domain: emailDomain,
+            orgId: domainMatch.orgId,
+          });
+          return true;
+        }
+      }
+    }
+
     const orgs = await storage.getOrganizations();
     if (orgs.length > 0) {
       await storage.createOrgMembership({
