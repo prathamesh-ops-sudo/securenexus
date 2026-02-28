@@ -7,6 +7,15 @@ import { sendEmail, isEmailEnabled } from "../email-service";
 
 const log = logger.child("usage");
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export function registerUsageRoutes(app: Express): void {
   app.get(
     "/api/usage/summary",
@@ -78,27 +87,27 @@ export function registerUsageRoutes(app: Express): void {
               .map((m) => m.invitedEmail)
               .filter((e): e is string => Boolean(e));
 
+            const safeName = escapeHtml(org.name);
+            const appUrl = (process.env.APP_URL || "https://staging.aricatech.xyz").replace(/[^a-zA-Z0-9:/.\-_]/g, "");
             if (adminEmails.length > 0 && critical.length > 0) {
-              const metricList = critical.map((c) => `${c.metric}: ${c.current}/${c.limit} (${c.pct}%)`).join(", ");
               sendEmail({
                 to: adminEmails,
                 subject: `[SecureNexus] Plan limit reached for ${org.name}`,
                 html: `<h2>Plan Limit Reached</h2>
-                  <p>The following limits have been reached for <strong>${org.name}</strong>:</p>
-                  <ul>${critical.map((c) => `<li><strong>${c.metric}</strong>: ${c.current} / ${c.limit} (${c.pct}%)</li>`).join("")}</ul>
+                  <p>The following limits have been reached for <strong>${safeName}</strong>:</p>
+                  <ul>${critical.map((c) => `<li><strong>${escapeHtml(c.metric)}</strong>: ${Number(c.current)} / ${Number(c.limit)} (${Number(c.pct)}%)</li>`).join("")}</ul>
                   <p>New operations for these resources will be blocked until you upgrade your plan.</p>
-                  <p><a href="${process.env.APP_URL || "https://staging.aricatech.xyz"}/billing">Upgrade Plan</a></p>`,
+                  <p><a href="${appUrl}/billing">Upgrade Plan</a></p>`,
               }).catch((err) => log.warn("Failed to send limit-reached email", { error: String(err) }));
             } else if (adminEmails.length > 0 && warnings.length > 0) {
-              const metricList = warnings.map((w) => `${w.metric}: ${w.current}/${w.limit} (${w.pct}%)`).join(", ");
               sendEmail({
                 to: adminEmails,
                 subject: `[SecureNexus] Approaching plan limits for ${org.name}`,
                 html: `<h2>Approaching Plan Limits</h2>
-                  <p>The following metrics are approaching limits for <strong>${org.name}</strong>:</p>
-                  <ul>${warnings.map((w) => `<li><strong>${w.metric}</strong>: ${w.current} / ${w.limit} (${w.pct}%)</li>`).join("")}</ul>
+                  <p>The following metrics are approaching limits for <strong>${safeName}</strong>:</p>
+                  <ul>${warnings.map((w) => `<li><strong>${escapeHtml(w.metric)}</strong>: ${Number(w.current)} / ${Number(w.limit)} (${Number(w.pct)}%)</li>`).join("")}</ul>
                   <p>Consider upgrading your plan to avoid disruptions.</p>
-                  <p><a href="${process.env.APP_URL || "https://staging.aricatech.xyz"}/billing">Upgrade Plan</a></p>`,
+                  <p><a href="${appUrl}/billing">Upgrade Plan</a></p>`,
               }).catch((err) => log.warn("Failed to send usage-warning email", { error: String(err) }));
             }
           }
