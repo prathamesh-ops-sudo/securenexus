@@ -241,6 +241,7 @@ export const organizations = pgTable("organizations", {
   timezone: text("timezone").default("UTC"),
   orgType: text("org_type").notNull().default("standard"),
   parentOrgId: varchar("parent_org_id"),
+  dataResidency: text("data_residency").default("us-east-1"),
   deletedAt: timestamp("deleted_at"),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),

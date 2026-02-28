@@ -1181,6 +1181,251 @@ export function registerComplianceRoutes(app: Express): void {
     },
   );
 
+  app.get("/api/compliance/center", isAuthenticated, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const orgId = user?.orgId;
+      if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+
+      const policy = await storage.getCompliancePolicy(orgId);
+      const dsarReqs = await storage.getDsarRequests(orgId);
+      const evidenceItems = await storage.getEvidenceLockerItems(orgId);
+      const controls = await storage.getComplianceControls(orgId);
+      const mappings = await storage.getComplianceControlMappings(orgId);
+
+      const enabledFrameworks = (policy?.enabledFrameworks as string[]) || [];
+      const frameworkCoverage: Record<
+        string,
+        {
+          total: number;
+          compliant: number;
+          partial: number;
+          nonCompliant: number;
+          notAssessed: number;
+          coveragePercent: number;
+        }
+      > = {};
+
+      for (const fw of ["soc2", "iso_27001", "nist_csf", "pci_dss", "gdpr", "hipaa"]) {
+        const fwControls = controls.filter((c: any) => c.framework === fw);
+        const fwMappings = mappings.filter((m: any) => fwControls.some((c: any) => c.id === m.controlId));
+        const compliant = fwMappings.filter((m: any) => m.status === "compliant").length;
+        const partial = fwMappings.filter((m: any) => m.status === "partial").length;
+        const nonCompliant = fwMappings.filter((m: any) => m.status === "non_compliant").length;
+        const notAssessed = fwControls.length - fwMappings.length;
+        const total = fwControls.length;
+        frameworkCoverage[fw] = {
+          total,
+          compliant,
+          partial,
+          nonCompliant,
+          notAssessed: Math.max(0, notAssessed),
+          coveragePercent: total > 0 ? Math.round(((compliant + partial * 0.5) / total) * 100) : 0,
+        };
+      }
+
+      const pendingDsars = dsarReqs.filter((r) => r.status === "pending" || r.status === "in_progress");
+      const overdueDsars = pendingDsars.filter((r) => r.dueDate && new Date(r.dueDate) < new Date());
+
+      const org = await storage.getOrganization(orgId);
+
+      res.json({
+        overview: {
+          enabledFrameworks,
+          totalControls: controls.length,
+          totalMappings: mappings.length,
+          evidenceCount: evidenceItems.length,
+          dsarStats: {
+            total: dsarReqs.length,
+            pending: pendingDsars.length,
+            overdue: overdueDsars.length,
+            fulfilled: dsarReqs.filter((r) => r.status === "fulfilled").length,
+          },
+          retentionPolicy: {
+            alertDays: policy?.alertRetentionDays ?? 365,
+            incidentDays: policy?.incidentRetentionDays ?? 730,
+            auditLogDays: policy?.auditLogRetentionDays ?? 2555,
+            lastCleanupAt: policy?.retentionLastRunAt?.toISOString() ?? null,
+            lastDeletedCount: policy?.retentionLastDeletedCount ?? 0,
+          },
+          dataResidency: (org as any)?.dataResidency ?? "us-east-1",
+        },
+        frameworkCoverage,
+      });
+    } catch (error) {
+      logger.child("routes").error("Compliance center error", { error: String(error) });
+      res.status(500).json({ message: "Failed to load compliance center" });
+    }
+  });
+
+  app.get("/api/compliance/audit/export/csv", isAuthenticated, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const orgId = user?.orgId;
+      if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+
+      const startDate = typeof req.query.startDate === "string" ? new Date(req.query.startDate) : undefined;
+      const endDate = typeof req.query.endDate === "string" ? new Date(req.query.endDate) : undefined;
+
+      if (startDate && isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: "Invalid startDate format" });
+      }
+      if (endDate && isNaN(endDate.getTime())) {
+        return res.status(400).json({ message: "Invalid endDate format" });
+      }
+
+      const logs = await storage.getAuditLogs(orgId);
+      let filtered = logs;
+      if (startDate) {
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
+      }
+      if (endDate) {
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endDate);
+      }
+      filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+
+      const csvHeaders = [
+        "id",
+        "sequenceNum",
+        "action",
+        "userId",
+        "userName",
+        "resourceType",
+        "resourceId",
+        "ipAddress",
+        "userAgent",
+        "requestId",
+        "impersonatedBy",
+        "createdAt",
+        "entryHash",
+      ];
+
+      const escapeCSV = (val: string | null | undefined): string => {
+        if (val === null || val === undefined) return "";
+        const str = String(val);
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const csvRows = [csvHeaders.join(",")];
+      for (const log of filtered) {
+        csvRows.push(
+          [
+            escapeCSV(log.id),
+            escapeCSV(String(log.sequenceNum ?? "")),
+            escapeCSV(log.action),
+            escapeCSV(log.userId),
+            escapeCSV(log.userName),
+            escapeCSV(log.resourceType),
+            escapeCSV(log.resourceId),
+            escapeCSV(log.ipAddress),
+            escapeCSV(log.userAgent),
+            escapeCSV(log.requestId),
+            escapeCSV(log.impersonatedBy),
+            escapeCSV(log.createdAt?.toISOString() ?? ""),
+            escapeCSV(log.entryHash),
+          ].join(","),
+        );
+      }
+
+      const filename = `audit-logs-${orgId}-${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csvRows.join("\n"));
+
+      await storage.createAuditLog({
+        orgId,
+        userId: user.id,
+        userName: user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+        action: "audit_log_csv_export",
+        resourceType: "audit_log",
+        details: {
+          format: "csv",
+          totalEntries: filtered.length,
+          startDate: startDate?.toISOString() ?? null,
+          endDate: endDate?.toISOString() ?? null,
+        },
+      });
+    } catch (error) {
+      logger.child("routes").error("CSV export error", { error: String(error) });
+      res.status(500).json({ message: "Failed to export audit logs as CSV" });
+    }
+  });
+
+  app.post(
+    "/api/compliance/audit/archive",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const orgId = user?.orgId;
+        if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+
+        const logs = await storage.getAuditLogs(orgId);
+        const sortedLogs = logs.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const archivePath = `audit-archives/${orgId}/${year}/${month}.json.gz`;
+
+        const archivePayload = {
+          exportedAt: now.toISOString(),
+          organization: orgId,
+          totalEntries: sortedLogs.length,
+          archivePath,
+          entries: sortedLogs.map((l) => ({
+            id: l.id,
+            sequenceNum: l.sequenceNum,
+            prevHash: l.prevHash,
+            entryHash: l.entryHash,
+            action: l.action,
+            userId: l.userId,
+            userName: l.userName,
+            resourceType: l.resourceType,
+            resourceId: l.resourceId,
+            details: l.details,
+            ipAddress: l.ipAddress,
+            userAgent: l.userAgent,
+            requestId: l.requestId,
+            impersonatedBy: l.impersonatedBy,
+            createdAt: l.createdAt?.toISOString(),
+          })),
+        };
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user.id,
+          userName: user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
+          action: "audit_log_archived",
+          resourceType: "audit_log",
+          details: {
+            archivePath,
+            totalEntries: sortedLogs.length,
+            s3Bucket: "securenexus-platform-557845624595",
+          },
+        });
+
+        res.json({
+          success: true,
+          archivePath,
+          s3Bucket: "securenexus-platform-557845624595",
+          totalEntries: sortedLogs.length,
+          exportedAt: now.toISOString(),
+          note: "Archive prepared. S3 upload requires AWS SDK integration in production.",
+        });
+      } catch (error) {
+        logger.child("routes").error("Audit archive error", { error: String(error) });
+        res.status(500).json({ message: "Failed to archive audit logs" });
+      }
+    },
+  );
+
   app.get("/api/v1/audit-logs", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
