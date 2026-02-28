@@ -4764,3 +4764,50 @@ export const insertMsspAccessGrantSchema = createInsertSchema(msspAccessGrants).
 
 export type MsspAccessGrant = typeof msspAccessGrants.$inferSelect;
 export type InsertMsspAccessGrant = z.infer<typeof insertMsspAccessGrantSchema>;
+
+// Phase 8: Usage Metering & Plan Enforcement
+export const USAGE_METRIC_NAMES = [
+  "alerts_ingested",
+  "api_calls",
+  "ai_analyses",
+  "storage_bytes",
+  "connector_syncs",
+  "connectors",
+  "users",
+  "api_keys",
+  "playbooks",
+] as const;
+
+export const usageRecords = pgTable(
+  "usage_records",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    metric: text("metric").notNull(),
+    value: integer("value").notNull().default(0),
+    periodStart: timestamp("period_start").notNull(),
+    periodEnd: timestamp("period_end").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_usage_records_org_metric_period").on(table.orgId, table.metric, table.periodStart),
+    index("idx_usage_records_org").on(table.orgId),
+    index("idx_usage_records_period").on(table.periodStart, table.periodEnd),
+  ],
+);
+
+export const usageRecordsRelations = relations(usageRecords, ({ one }) => ({
+  organization: one(organizations, { fields: [usageRecords.orgId], references: [organizations.id] }),
+}));
+
+export const insertUsageRecordSchema = createInsertSchema(usageRecords).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export type UsageRecord = typeof usageRecords.$inferSelect;
+export type InsertUsageRecord = z.infer<typeof insertUsageRecordSchema>;

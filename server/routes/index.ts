@@ -34,6 +34,7 @@ import { registerPlatformAdminRoutes } from "./platform-admin";
 import { registerDomainAutoJoinRoutes } from "./domain-autojoin";
 import { registerSsoRoutes } from "./sso";
 import { registerMsspRoutes } from "./mssp";
+import { registerUsageRoutes } from "./usage";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -72,4 +73,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerDomainAutoJoinRoutes(app);
   registerSsoRoutes(app);
   registerMsspRoutes(app);
+  registerUsageRoutes(app);
 }

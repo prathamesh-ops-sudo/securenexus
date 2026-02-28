@@ -60,14 +60,22 @@ function statusBadge(status: string) {
 
 function usageIcon(metric: string) {
   switch (metric) {
-    case "events":
+    case "alerts_ingested":
       return <Activity className="h-4 w-4" />;
     case "connectors":
       return <Plug className="h-4 w-4" />;
-    case "aiTokens":
+    case "ai_analyses":
       return <Brain className="h-4 w-4" />;
-    case "automationRuns":
+    case "api_calls":
       return <Zap className="h-4 w-4" />;
+    case "playbooks":
+      return <FileText className="h-4 w-4" />;
+    case "api_keys":
+      return <Shield className="h-4 w-4" />;
+    case "users":
+      return <Building2 className="h-4 w-4" />;
+    case "connector_syncs":
+      return <RefreshCw className="h-4 w-4" />;
     default:
       return <Activity className="h-4 w-4" />;
   }
@@ -75,16 +83,24 @@ function usageIcon(metric: string) {
 
 function usageLabel(metric: string) {
   switch (metric) {
-    case "events":
-      return "Events Ingested";
+    case "alerts_ingested":
+      return "Alerts Ingested";
     case "connectors":
       return "Active Connectors";
-    case "aiTokens":
-      return "AI Tokens Used";
-    case "automationRuns":
-      return "Automation Runs";
+    case "ai_analyses":
+      return "AI Analyses";
+    case "api_calls":
+      return "API Calls";
+    case "playbooks":
+      return "Playbooks";
+    case "api_keys":
+      return "API Keys";
+    case "users":
+      return "Team Members";
+    case "connector_syncs":
+      return "Connector Syncs";
     default:
-      return metric;
+      return metric.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
 
@@ -164,30 +180,108 @@ function CurrentPlanSection() {
       </Card>
 
       {usage?.usage && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.entries(usage.usage as Record<string, { current: number; limit: number; pct: number }>).map(
-            ([key, metric]) => (
-              <Card key={key} className="glass-card border-border/50">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-muted-foreground">{usageIcon(key)}</span>
-                    <span className="text-sm font-medium">{usageLabel(key)}</span>
-                    <span className="ml-auto text-xs text-muted-foreground">{metric.pct}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${progressColor(metric.pct)}`}
-                      style={{ width: `${Math.min(metric.pct, 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {metric.current.toLocaleString()} / {metric.limit.toLocaleString()}
-                  </p>
-                </CardContent>
-              </Card>
-            ),
+        <>
+          {Object.values(
+            usage.usage as Record<string, { current: number; limit: number; pct: number; status: string }>,
+          ).some((m) => m.status === "critical") && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-red-400">Plan limit reached</p>
+                <p className="text-xs text-red-400/70">
+                  Some resources have hit their plan limits. New operations will be blocked until you upgrade.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto border-red-500/30 text-red-400 hover:bg-red-500/10 shrink-0"
+                onClick={() => document.getElementById("plans-tab")?.click()}
+              >
+                Upgrade <ArrowRight className="h-3 w-3 ml-1" />
+              </Button>
+            </div>
           )}
-        </div>
+          {!Object.values(
+            usage.usage as Record<string, { current: number; limit: number; pct: number; status: string }>,
+          ).some((m) => m.status === "critical") &&
+            Object.values(
+              usage.usage as Record<string, { current: number; limit: number; pct: number; status: string }>,
+            ).some((m) => m.status === "warning") && (
+              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-yellow-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-yellow-400">Approaching plan limits</p>
+                  <p className="text-xs text-yellow-400/70">
+                    Some resources are nearing their plan limits. Consider upgrading to avoid disruptions.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 shrink-0"
+                  onClick={() => document.getElementById("plans-tab")?.click()}
+                >
+                  Upgrade <ArrowRight className="h-3 w-3 ml-1" />
+                </Button>
+              </div>
+            )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {Object.entries(
+              usage.usage as Record<string, { current: number; limit: number; pct: number; status: string }>,
+            )
+              .filter(([_, m]) => m.limit !== -1)
+              .map(([key, metric]) => (
+                <Card
+                  key={key}
+                  className={`glass-card border-border/50 ${
+                    metric.status === "critical"
+                      ? "border-red-500/30"
+                      : metric.status === "warning"
+                        ? "border-yellow-500/30"
+                        : ""
+                  }`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span
+                        className={`${
+                          metric.status === "critical"
+                            ? "text-red-400"
+                            : metric.status === "warning"
+                              ? "text-yellow-400"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {usageIcon(key)}
+                      </span>
+                      <span className="text-sm font-medium">{usageLabel(key)}</span>
+                      <span
+                        className={`ml-auto text-xs ${
+                          metric.status === "critical"
+                            ? "text-red-400 font-semibold"
+                            : metric.status === "warning"
+                              ? "text-yellow-400"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {metric.pct}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${progressColor(metric.pct)}`}
+                        style={{ width: `${Math.min(metric.pct, 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {metric.current.toLocaleString()} / {metric.limit.toLocaleString()}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+          </div>
+        </>
       )}
     </div>
   );

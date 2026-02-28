@@ -7,6 +7,7 @@ import { insertAlertSchema } from "@shared/schema";
 import { parsePaginationParams } from "../db-performance";
 import { findRelatedAlertsByEntity, getEntitiesForAlert } from "../entity-resolver";
 import { cacheInvalidate } from "../query-cache";
+import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
 export function registerAlertsRoutes(app: Express): void {
   // Alerts
@@ -84,6 +85,7 @@ export function registerAlertsRoutes(app: Express): void {
     resolveOrgContext,
     requireOrgId,
     requirePermission("incidents", "write"),
+    enforcePlanLimit("alerts_ingested"),
     async (req, res) => {
       try {
         const parsed = insertAlertSchema.safeParse(req.body);
@@ -98,6 +100,7 @@ export function registerAlertsRoutes(app: Express): void {
           status: alert.status,
         });
         cacheInvalidate("dashboard:");
+        if (alert.orgId) storage.incrementUsage(alert.orgId, "alerts_ingested").catch(() => {});
         res.status(201).json(alert);
       } catch (error) {
         logger.child("routes").error("Error creating alert", { error: String(error) });
