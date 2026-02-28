@@ -31,6 +31,7 @@ import {
   Building2,
   Check,
   ChevronsUpDown,
+  ShieldCheck,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -323,6 +324,30 @@ export function AppSidebar() {
             <SidebarMenu>{renderCollapsibleGroup(adminGroup)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {user?.isSuperAdmin && (
+          <>
+            <SidebarSeparator className="my-0" />
+            <SidebarGroup className="px-2 py-1">
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === "/platform-admin"}
+                      aria-label="Navigate to Platform Admin"
+                    >
+                      <Link href="/platform-admin">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-yellow-500" aria-hidden="true" />
+                        <span className="truncate font-medium text-yellow-500">Platform Admin</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
 
         {recentPages.length > 0 && (
           <>

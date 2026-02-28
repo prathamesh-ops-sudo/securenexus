@@ -18,6 +18,7 @@ import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
+import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -55,6 +56,7 @@ const BillingPage = lazy(() => import("@/pages/billing"));
 const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
 const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
 const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
+const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 
 function PageSkeleton() {
   return (
@@ -130,6 +132,7 @@ function AuthenticatedApp() {
               Skip to main content
             </a>
             <div className="flex flex-col flex-1 min-w-0 relative z-10">
+              <ImpersonationBanner />
               <PlanLimitBanner />
               <header className="flex items-center justify-between gap-4 px-3 py-2 border-b border-border/50 sticky top-0 z-40 glass-strong gradient-bg-red-subtle">
                 <div className="flex items-center gap-2">
@@ -174,6 +177,7 @@ function AuthenticatedApp() {
                     <Route path="/billing" component={BillingPage} />
                     <Route path="/org-settings" component={OrgSettingsPage} />
                     <Route path="/accept-invitation" component={AcceptInvitationPage} />
+                    <Route path="/platform-admin" component={PlatformAdminPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
