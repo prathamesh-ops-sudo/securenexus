@@ -342,6 +342,21 @@ export function registerMsspRoutes(app: Express): void {
 
         const userId = String(user.id || "");
         const userName = String(user.email || "unknown");
+
+        if (targetOrgType.data === "mssp_parent") {
+          const parentGrants = await storage.getMsspAccessGrants(callerOrgId);
+          const grantsToRevoke = parentGrants.filter((g) => g.childOrgId === targetOrgId);
+          for (const grant of grantsToRevoke) {
+            await storage.revokeMsspAccessGrant(grant.id, userId);
+          }
+          if (grantsToRevoke.length > 0) {
+            log.info("Auto-revoked access grants for promoted org", {
+              parentOrgId: callerOrgId,
+              targetOrgId,
+              revokedCount: grantsToRevoke.length,
+            });
+          }
+        }
         await storage.createAuditLog({
           orgId: callerOrgId,
           userId,
