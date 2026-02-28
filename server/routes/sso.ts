@@ -5,10 +5,20 @@ import { isAuthenticated } from "../auth";
 import { authStorage } from "../auth/storage";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 
-const SSO_ENCRYPTION_KEY = process.env.SSO_ENCRYPTION_KEY || randomBytes(32).toString("hex");
+const SSO_ENCRYPTION_KEY = process.env.SSO_ENCRYPTION_KEY;
+if (!SSO_ENCRYPTION_KEY || SSO_ENCRYPTION_KEY.length < 64) {
+  logger
+    .child("sso")
+    .warn(
+      "SSO_ENCRYPTION_KEY env var is missing or too short (need 64 hex chars / 32 bytes). SSO encryption will fail at runtime.",
+    );
+}
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 
 function encrypt(text: string): string {
+  if (!SSO_ENCRYPTION_KEY || SSO_ENCRYPTION_KEY.length < 64) {
+    throw new Error("SSO_ENCRYPTION_KEY is not configured. Cannot encrypt SSO secrets.");
+  }
   const key = Buffer.from(SSO_ENCRYPTION_KEY.slice(0, 64), "hex");
   const iv = randomBytes(16);
   const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
@@ -21,6 +31,9 @@ function encrypt(text: string): string {
 function decrypt(encryptedText: string): string {
   const parts = encryptedText.split(":");
   if (parts.length !== 3) throw new Error("Invalid encrypted format");
+  if (!SSO_ENCRYPTION_KEY || SSO_ENCRYPTION_KEY.length < 64) {
+    throw new Error("SSO_ENCRYPTION_KEY is not configured. Cannot decrypt SSO secrets.");
+  }
   const key = Buffer.from(SSO_ENCRYPTION_KEY.slice(0, 64), "hex");
   const iv = Buffer.from(parts[0], "hex");
   const authTag = Buffer.from(parts[1], "hex");

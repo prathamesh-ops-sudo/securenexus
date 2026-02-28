@@ -1072,8 +1072,7 @@ function SsoConfigSection({ orgId, toast }: { orgId: string; toast: any }) {
   const hasSsoFeature =
     subscription?.plan?.features?.sso ||
     subscription?.plan?.name === "enterprise" ||
-    subscription?.plan?.name === "custom" ||
-    true;
+    subscription?.plan?.name === "custom";
 
   const saveSsoConfig = useMutation({
     mutationFn: async (data: Record<string, any>) => {
