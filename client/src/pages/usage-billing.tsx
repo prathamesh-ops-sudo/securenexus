@@ -277,190 +277,31 @@ function UsageMeteringTab() {
   );
 }
 
-function PlanLimitsTab() {
-  const { toast } = useToast();
-  const [_selectedTier, _setSelectedTier] = useState<string>("");
-
-  const {
-    data: plan,
-    isLoading,
-    isError: _planError,
-    refetch: _refetchPlan,
-  } = useQuery<PlanData>({
+function CurrentLimitsTab() {
+  const { data: plan, isLoading } = useQuery<PlanData>({
     queryKey: ["/api/plan-limits"],
-  });
-
-  const upgradeMutation = useMutation({
-    mutationFn: async (tier: string) => {
-      const tierLimits: Record<string, any> = {
-        free: {
-          planTier: "free",
-          eventsPerMonth: 10000,
-          maxConnectors: 3,
-          aiTokensPerMonth: 5000,
-          automationRunsPerMonth: 100,
-        },
-        starter: {
-          planTier: "starter",
-          eventsPerMonth: 50000,
-          maxConnectors: 10,
-          aiTokensPerMonth: 25000,
-          automationRunsPerMonth: 500,
-        },
-        professional: {
-          planTier: "professional",
-          eventsPerMonth: 500000,
-          maxConnectors: 50,
-          aiTokensPerMonth: 100000,
-          automationRunsPerMonth: 5000,
-        },
-        enterprise: {
-          planTier: "enterprise",
-          eventsPerMonth: 5000000,
-          maxConnectors: 500,
-          aiTokensPerMonth: 1000000,
-          automationRunsPerMonth: 50000,
-        },
-      };
-      const res = await apiRequest("PUT", "/api/plan-limits", tierLimits[tier]);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/plan-limits"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/usage-metering"] });
-      toast({ title: "Plan updated successfully" });
-    },
   });
 
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-48 w-full rounded-lg" />
-        ))}
+        <Skeleton className="h-48 w-full rounded-lg" />
       </div>
     );
   }
 
-  const plans = [
-    {
-      tier: "free",
-      name: "Free",
-      price: "$0",
-      desc: "For evaluation and small teams",
-      events: "10K",
-      connectors: "3",
-      ai: "5K",
-      automation: "100",
-      color: "border-zinc-500/30",
-    },
-    {
-      tier: "starter",
-      name: "Starter",
-      price: "$299/mo",
-      desc: "For growing security teams",
-      events: "50K",
-      connectors: "10",
-      ai: "25K",
-      automation: "500",
-      color: "border-blue-500/30",
-    },
-    {
-      tier: "professional",
-      name: "Professional",
-      price: "$999/mo",
-      desc: "For mature SOC operations",
-      events: "500K",
-      connectors: "50",
-      ai: "100K",
-      automation: "5K",
-      color: "border-purple-500/30",
-      popular: true,
-    },
-    {
-      tier: "enterprise",
-      name: "Enterprise",
-      price: "Custom",
-      desc: "Unlimited scale with SLA",
-      events: "5M+",
-      connectors: "500+",
-      ai: "1M+",
-      automation: "50K+",
-      color: "border-amber-500/30",
-    },
-  ];
-
-  const currentTier = plan?.planTier || "free";
-
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold">Plan & Pricing</h3>
-        <p className="text-sm text-muted-foreground">Choose the right plan for your organization's needs</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {plans.map((p) => (
-          <Card
-            key={p.tier}
-            className={`glass border relative ${p.color} ${currentTier === p.tier ? "ring-2 ring-primary" : ""}`}
-          >
-            {(p as any).popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-purple-600 text-white text-xs">Most Popular</Badge>
-              </div>
-            )}
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <Badge variant="outline" className={tierBadge(p.tier)}>
-                  {p.name}
-                </Badge>
-                {currentTier === p.tier && <Badge className="bg-primary/20 text-primary text-xs">Current</Badge>}
-              </div>
-              <CardTitle className="text-2xl mt-2">{p.price}</CardTitle>
-              <CardDescription>{p.desc}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Events/mo</span>
-                  <span className="font-medium">{p.events}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Connectors</span>
-                  <span className="font-medium">{p.connectors}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">AI Tokens</span>
-                  <span className="font-medium">{p.ai}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Automation</span>
-                  <span className="font-medium">{p.automation}</span>
-                </div>
-              </div>
-              {currentTier !== p.tier && (
-                <Button
-                  size="sm"
-                  className="w-full mt-3"
-                  variant={currentTier === p.tier ? "outline" : "default"}
-                  disabled={upgradeMutation.isPending}
-                  onClick={() => upgradeMutation.mutate(p.tier)}
-                >
-                  {upgradeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                  {plans.findIndex((x) => x.tier === p.tier) > plans.findIndex((x) => x.tier === currentTier)
-                    ? "Upgrade"
-                    : "Downgrade"}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       <Card className="glass">
         <CardHeader>
-          <CardTitle className="text-sm">Current Limits</CardTitle>
+          <CardTitle className="text-sm">Current Plan Limits</CardTitle>
+          <CardDescription className="text-xs">
+            To change your plan or view pricing, go to{" "}
+            <a href="/billing" className="text-primary underline underline-offset-2 hover:text-primary/80">
+              Billing
+            </a>
+            .
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -665,9 +506,9 @@ export default function UsageBillingPage() {
             <BarChart3 className="h-3.5 w-3.5" />
             Usage
           </TabsTrigger>
-          <TabsTrigger value="plans" className="gap-1.5">
+          <TabsTrigger value="limits" className="gap-1.5">
             <CreditCard className="h-3.5 w-3.5" />
-            Plans
+            Limits
           </TabsTrigger>
           <TabsTrigger value="templates" className="gap-1.5">
             <Package className="h-3.5 w-3.5" />
@@ -678,8 +519,8 @@ export default function UsageBillingPage() {
         <TabsContent value="usage">
           <UsageMeteringTab />
         </TabsContent>
-        <TabsContent value="plans">
-          <PlanLimitsTab />
+        <TabsContent value="limits">
+          <CurrentLimitsTab />
         </TabsContent>
         <TabsContent value="templates">
           <WorkspaceTemplatesTab />

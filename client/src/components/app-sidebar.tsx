@@ -128,9 +128,9 @@ const adminGroup: NavGroup = {
   icon: Settings,
   items: [
     { title: "Onboarding", url: "/onboarding", icon: Activity },
-    { title: "Team Management", url: "/team", icon: Users },
-    { title: "Usage & Billing", url: "/usage-billing", icon: CreditCard },
-    { title: "Subscription & Billing", url: "/billing", icon: CreditCard },
+    { title: "Team & Invites", url: "/team", icon: Users },
+    { title: "Billing", url: "/billing", icon: CreditCard },
+    { title: "Usage", url: "/usage-billing", icon: BarChart3 },
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Settings", url: "/settings", icon: Settings },
