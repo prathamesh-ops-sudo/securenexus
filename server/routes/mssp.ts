@@ -332,7 +332,10 @@ export function registerMsspRoutes(app: Express): void {
           ]);
         }
 
-        const updated = await storage.updateOrganization(targetOrgId, { orgType: targetOrgType.data });
+        const updated = await storage.updateOrganization(targetOrgId, {
+          orgType: targetOrgType.data,
+          parentOrgId: targetOrgType.data === "mssp_parent" ? null : targetOrg.parentOrgId,
+        });
         if (!updated) {
           return replyError(res, 404, [{ code: "ORG_NOT_FOUND", message: "Target organization not found" }]);
         }
