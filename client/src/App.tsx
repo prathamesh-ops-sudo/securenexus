@@ -52,6 +52,9 @@ const UsageBillingPage = lazy(() => import("@/pages/usage-billing"));
 const OrgSettingsPage = lazy(() => import("@/pages/org-settings"));
 const OnboardingWizardPage = lazy(() => import("@/pages/onboarding-wizard"));
 const BillingPage = lazy(() => import("@/pages/billing"));
+const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
+const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
+const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
 
 function PageSkeleton() {
   return (
@@ -199,7 +202,18 @@ function AppContent() {
   }
 
   if (!user) {
-    return <LandingPage />;
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <Switch>
+          <Route path="/forgot-password" component={ForgotPasswordPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
+          <Route path="/accept-invitation" component={AcceptInvitationPage} />
+          <Route>
+            <LandingPage />
+          </Route>
+        </Switch>
+      </Suspense>
+    );
   }
 
   return <AuthenticatedApp />;

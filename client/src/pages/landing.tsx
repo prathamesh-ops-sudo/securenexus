@@ -1,17 +1,42 @@
 import { useState, useRef } from "react";
 import {
-  Zap, Brain, Eye, ArrowRight, Lock, Activity,
-  Layers, Shield, ShieldCheck, Radar, Cloud, Search,
-  AlertTriangle, Database, Clock, TrendingDown, Users,
-  CheckCircle2, ChevronDown, ChevronUp,
-  Timer, BarChart3, Workflow, Target, Lightbulb,
+  Zap,
+  Brain,
+  Eye,
+  ArrowRight,
+  Lock,
+  Activity,
+  Layers,
+  Shield,
+  ShieldCheck,
+  Radar,
+  Cloud,
+  Search,
+  AlertTriangle,
+  Database,
+  Clock,
+  TrendingDown,
+  Users,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Timer,
+  BarChart3,
+  Workflow,
+  Target,
+  Lightbulb,
   Star,
 } from "lucide-react";
 import { FaGoogle, FaGithub } from "react-icons/fa";
 import {
-  SiSplunk, SiPaloaltosoftware, SiAmazon,
-  SiElastic, SiFortinet,
-  SiCisco, SiOkta, SiTrendmicro,
+  SiSplunk,
+  SiPaloaltosoftware,
+  SiAmazon,
+  SiElastic,
+  SiFortinet,
+  SiCisco,
+  SiOkta,
+  SiTrendmicro,
 } from "react-icons/si";
 import atsLogo from "@/assets/logo.jpg";
 import { Input } from "@/components/ui/input";
@@ -53,19 +78,22 @@ const howItWorks = [
   {
     step: "01",
     title: "Connect your tools",
-    description: "Plug in your EDR, SIEM, and cloud security tools via read-only API keys. No agents, no infrastructure changes. Under 30 minutes.",
+    description:
+      "Plug in your EDR, SIEM, and cloud security tools via read-only API keys. No agents, no infrastructure changes. Under 30 minutes.",
     icon: Workflow,
   },
   {
     step: "02",
     title: "AI correlates everything",
-    description: "Our engine clusters alerts by attacker behavior, maps to MITRE ATT&CK, and scores each threat. What took your team hours happens in seconds.",
+    description:
+      "Our engine clusters alerts by attacker behavior, maps to MITRE ATT&CK, and scores each threat. What took your team hours happens in seconds.",
     icon: Brain,
   },
   {
     step: "03",
     title: "Respond with confidence",
-    description: "Get actionable incident narratives, automated playbooks, and one-click response actions. Your analysts focus on decisions, not data wrangling.",
+    description:
+      "Get actionable incident narratives, automated playbooks, and one-click response actions. Your analysts focus on decisions, not data wrangling.",
     icon: Zap,
   },
 ];
@@ -74,37 +102,43 @@ const features = [
   {
     icon: Brain,
     title: "Cut triage time by 90%",
-    description: "AI clusters alerts by attacker behavior and generates incident narratives automatically. What took 45 minutes now takes under 5.",
+    description:
+      "AI clusters alerts by attacker behavior and generates incident narratives automatically. What took 45 minutes now takes under 5.",
     color: "bg-cyan-100 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
   },
   {
     icon: Eye,
     title: "See the full attack story",
-    description: "Map campaigns to MITRE ATT&CK techniques with confidence scores. Stop chasing individual alerts and start tracking adversaries.",
+    description:
+      "Map campaigns to MITRE ATT&CK techniques with confidence scores. Stop chasing individual alerts and start tracking adversaries.",
     color: "bg-violet-100 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400",
   },
   {
     icon: TrendingDown,
     title: "Eliminate 70% of false positives",
-    description: "Behavioral correlation separates real threats from noise. Your team stops wasting hours on alerts that don\u0027t matter.",
+    description:
+      "Behavioral correlation separates real threats from noise. Your team stops wasting hours on alerts that don\u0027t matter.",
     color: "bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400",
   },
   {
     icon: Lock,
     title: "Deploy without disruption",
-    description: "Read-only API connectors to your existing stack. No rip-and-replace, no new agents, no infrastructure changes. Live in 30 minutes.",
+    description:
+      "Read-only API connectors to your existing stack. No rip-and-replace, no new agents, no infrastructure changes. Live in 30 minutes.",
     color: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   },
   {
     icon: BarChart3,
     title: "Prove compliance in minutes",
-    description: "Automated evidence collection for SOC 2, ISO 27001, NIST CSF, and GDPR. Generate audit-ready reports instead of building them manually.",
+    description:
+      "Automated evidence collection for SOC 2, ISO 27001, NIST CSF, and GDPR. Generate audit-ready reports instead of building them manually.",
     color: "bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400",
   },
   {
     icon: Lightbulb,
     title: "Make every analyst a senior",
-    description: "AI-generated investigation guides and response playbooks give junior analysts the decision-making capability of a 10-year veteran.",
+    description:
+      "AI-generated investigation guides and response playbooks give junior analysts the decision-making capability of a 10-year veteran.",
     color: "bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
   },
 ];
@@ -118,21 +152,24 @@ const metrics = [
 
 const testimonials = [
   {
-    quote: "SecureNexus cut our alert triage time from 45 minutes to under 5. The AI correlation is genuinely useful, not just a buzzword.",
+    quote:
+      "SecureNexus cut our alert triage time from 45 minutes to under 5. The AI correlation is genuinely useful, not just a buzzword.",
     name: "Sarah Chen",
     role: "SOC Lead",
     company: "Series B Fintech",
     rating: 5,
   },
   {
-    quote: "We replaced three separate tools with SecureNexus. The attacker-centric view changed how our team thinks about incidents.",
+    quote:
+      "We replaced three separate tools with SecureNexus. The attacker-centric view changed how our team thinks about incidents.",
     name: "Marcus Rivera",
     role: "CISO",
     company: "Healthcare SaaS",
     rating: 5,
   },
   {
-    quote: "The MITRE ATT&CK mapping and automated narratives save my analysts 2+ hours per incident. ROI was obvious in week one.",
+    quote:
+      "The MITRE ATT&CK mapping and automated narratives save my analysts 2+ hours per incident. ROI was obvious in week one.",
     name: "David Kim",
     role: "Director of Security",
     company: "E-commerce Platform",
@@ -211,7 +248,9 @@ export default function LandingPage() {
         return;
       }
       if (res.status === 501) {
-        setOauthError(`${provider === "google" ? "Google" : "GitHub"} login is not configured yet. Please use email login.`);
+        setOauthError(
+          `${provider === "google" ? "Google" : "GitHub"} login is not configured yet. Please use email login.`,
+        );
       } else {
         window.location.href = `/api/auth/${provider}`;
       }
@@ -238,15 +277,24 @@ export default function LandingPage() {
   const authError = authMode === "register" ? registerError : loginError;
   const isSubmitting = authMode === "register" ? isRegistering : isLoggingIn;
 
-  const brutBtn = "border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all";
-  const brutCard = "bg-white dark:bg-[#111827] border-[2.5px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.15)]";
-  const brutCardHover = "hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.15)] hover:translate-x-[2px] hover:translate-y-[2px]";
+  const brutBtn =
+    "border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all";
+  const brutCard =
+    "bg-white dark:bg-[#111827] border-[2.5px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.15)]";
+  const brutCardHover =
+    "hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.15)] hover:translate-x-[2px] hover:translate-y-[2px]";
 
   return (
     <div className="min-h-screen bg-[#FFF8F0] dark:bg-[#0a0f1e] text-[#1e293b] dark:text-[#e2e8f0] font-sans">
       {authMode && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setAuthMode(null)}>
-          <div className="w-full max-w-md mx-4 bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_#0ea5e9]" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setAuthMode(null)}
+        >
+          <div
+            className="w-full max-w-md mx-4 bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_#0ea5e9]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-8">
               <div className="flex items-center gap-2.5 mb-6">
                 <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/30 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-500/10 dark:to-transparent">
@@ -254,8 +302,12 @@ export default function LandingPage() {
                 </div>
                 <span className="font-bold text-lg tracking-tight">SecureNexus</span>
               </div>
-              <h2 className="text-xl font-extrabold mb-1">{authMode === "register" ? "Start your free trial" : "Welcome back"}</h2>
-              <p className="text-sm text-[#64748b] dark:text-[#94a3b8] mb-6">{authMode === "register" ? "14 days free. No credit card required." : "Log in to your account"}</p>
+              <h2 className="text-xl font-extrabold mb-1">
+                {authMode === "register" ? "Start your free trial" : "Welcome back"}
+              </h2>
+              <p className="text-sm text-[#64748b] dark:text-[#94a3b8] mb-6">
+                {authMode === "register" ? "14 days free. No credit card required." : "Log in to your account"}
+              </p>
               {authError && (
                 <div className="mb-4 p-3 rounded-xl border-2 border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium">
                   {authError.message}
@@ -284,30 +336,88 @@ export default function LandingPage() {
                   {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
                 </button>
                 <div className="relative my-3">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-[#e2e8f0] dark:border-[#334155]" /></div>
-                  <div className="relative flex justify-center text-xs"><span className="bg-white dark:bg-[#111827] px-3 text-[#94a3b8] font-medium">or continue with email</span></div>
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t-2 border-[#e2e8f0] dark:border-[#334155]" />
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white dark:bg-[#111827] px-3 text-[#94a3b8] font-medium">
+                      or continue with email
+                    </span>
+                  </div>
                 </div>
               </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 {authMode === "register" && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="firstName" className="text-xs font-bold uppercase tracking-wider">First name</Label>
-                      <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="John" className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400" />
+                      <Label htmlFor="firstName" className="text-xs font-bold uppercase tracking-wider">
+                        First name
+                      </Label>
+                      <Input
+                        id="firstName"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="John"
+                        className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400"
+                      />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="lastName" className="text-xs font-bold uppercase tracking-wider">Last name</Label>
-                      <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Doe" className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400" />
+                      <Label htmlFor="lastName" className="text-xs font-bold uppercase tracking-wider">
+                        Last name
+                      </Label>
+                      <Input
+                        id="lastName"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Doe"
+                        className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400"
+                      />
                     </div>
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider">Email</Label>
-                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400" />
+                  <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider">
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    required
+                    className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="password" className="text-xs font-bold uppercase tracking-wider">Password</Label>
-                  <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400" />
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password" className="text-xs font-bold uppercase tracking-wider">
+                      Password
+                    </Label>
+                    {authMode === "login" && (
+                      <a
+                        href="/forgot-password"
+                        className="text-xs font-semibold text-[#0ea5e9] hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setAuthMode(null);
+                          window.location.href = "/forgot-password";
+                        }}
+                      >
+                        Forgot password?
+                      </a>
+                    )}
+                  </div>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min 6 characters"
+                    required
+                    minLength={6}
+                    className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400"
+                  />
                 </div>
                 <button
                   type="submit"
@@ -319,9 +429,22 @@ export default function LandingPage() {
               </form>
               <p className="text-sm text-center text-[#64748b] dark:text-[#94a3b8] mt-4 font-medium">
                 {authMode === "register" ? (
-                  <>Already have an account? <button onClick={() => setAuthMode("login")} className="text-[#0ea5e9] font-bold hover:underline">Log in</button></>
+                  <>
+                    Already have an account?{" "}
+                    <button onClick={() => setAuthMode("login")} className="text-[#0ea5e9] font-bold hover:underline">
+                      Log in
+                    </button>
+                  </>
                 ) : (
-                  <>Don&apos;t have an account? <button onClick={() => setAuthMode("register")} className="text-[#0ea5e9] font-bold hover:underline">Sign up</button></>
+                  <>
+                    Don&apos;t have an account?{" "}
+                    <button
+                      onClick={() => setAuthMode("register")}
+                      className="text-[#0ea5e9] font-bold hover:underline"
+                    >
+                      Sign up
+                    </button>
+                  </>
                 )}
               </p>
             </div>
@@ -338,15 +461,36 @@ export default function LandingPage() {
             <span className="font-extrabold text-base tracking-tight">SecureNexus</span>
           </div>
           <div className="hidden md:flex items-center gap-6">
-            <button onClick={scrollToHowItWorks} className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors">How it works</button>
-            <a href="#features" className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors">Features</a>
-            <a href="#faq" className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors">FAQ</a>
+            <button
+              onClick={scrollToHowItWorks}
+              className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
+            >
+              How it works
+            </button>
+            <a
+              href="#features"
+              className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
+            >
+              Features
+            </a>
+            <a
+              href="#faq"
+              className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
+            >
+              FAQ
+            </a>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setAuthMode("login")} className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors px-3 py-1.5">
+            <button
+              onClick={() => setAuthMode("login")}
+              className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors px-3 py-1.5"
+            >
               Log In
             </button>
-            <button onClick={() => setAuthMode("register")} className="text-sm font-bold text-white bg-[#0ea5e9] px-5 py-2 rounded-xl border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.4)] hover:shadow-[1px_1px_0px_#1e293b] dark:hover:shadow-[1px_1px_0px_rgba(6,182,212,0.4)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all">
+            <button
+              onClick={() => setAuthMode("register")}
+              className="text-sm font-bold text-white bg-[#0ea5e9] px-5 py-2 rounded-xl border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.4)] hover:shadow-[1px_1px_0px_#1e293b] dark:hover:shadow-[1px_1px_0px_rgba(6,182,212,0.4)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all"
+            >
               Start Free
             </button>
           </div>
@@ -368,17 +512,26 @@ export default function LandingPage() {
                 <br />
                 Start Stopping
                 <br />
-                <span className="bg-[#0ea5e9] text-white px-3 py-0.5 rounded-lg inline-block mt-1 border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)]">Attackers.</span>
+                <span className="bg-[#0ea5e9] text-white px-3 py-0.5 rounded-lg inline-block mt-1 border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)]">
+                  Attackers.
+                </span>
               </h1>
               <p className="text-base md:text-lg text-[#475569] dark:text-[#94a3b8] max-w-lg mb-8 leading-relaxed font-medium">
-                SecureNexus uses AI to correlate thousands of alerts into actionable incidents, cutting triage time by 90% and false positives by 70%.
+                SecureNexus uses AI to correlate thousands of alerts into actionable incidents, cutting triage time by
+                90% and false positives by 70%.
               </p>
               <div className="flex flex-wrap items-center gap-3 mb-8">
-                <button onClick={() => setAuthMode("register")} className={`inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}>
+                <button
+                  onClick={() => setAuthMode("register")}
+                  className={`inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}
+                >
                   Start Free Trial
                   <ArrowRight className="h-4 w-4" />
                 </button>
-                <button onClick={scrollToHowItWorks} className="inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all">
+                <button
+                  onClick={scrollToHowItWorks}
+                  className="inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
+                >
                   How It Works
                 </button>
               </div>
@@ -426,7 +579,9 @@ export default function LandingPage() {
                       </div>
                       <div>
                         <div className="text-xs font-extrabold">Threat Detection</div>
-                        <div className="text-[10px] text-[#94a3b8] font-medium">24 active alerts &bull; 3 incidents</div>
+                        <div className="text-[10px] text-[#94a3b8] font-medium">
+                          24 active alerts &bull; 3 incidents
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/20">
@@ -441,24 +596,45 @@ export default function LandingPage() {
                       <span className="text-sm font-black text-[#0ea5e9]">87%</span>
                     </div>
                     <div className="w-full h-3 rounded-full bg-[#e2e8f0] dark:bg-[#1e293b] border border-[#cbd5e1] dark:border-[#334155] overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-[#0ea5e9] to-[#06b6d4]" style={{ width: "87%" }} />
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#0ea5e9] to-[#06b6d4]"
+                        style={{ width: "87%" }}
+                      />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: "Critical", val: "3", cls: "bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20" },
-                      { label: "High", val: "12", cls: "bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20" },
-                      { label: "Resolved", val: "156", cls: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20" },
+                      {
+                        label: "Critical",
+                        val: "3",
+                        cls: "bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20",
+                      },
+                      {
+                        label: "High",
+                        val: "12",
+                        cls: "bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
+                      },
+                      {
+                        label: "Resolved",
+                        val: "156",
+                        cls: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
+                      },
                     ].map((item) => (
-                      <div key={item.label} className={`flex flex-col items-center p-2 rounded-lg border-2 ${item.cls}`}>
+                      <div
+                        key={item.label}
+                        className={`flex flex-col items-center p-2 rounded-lg border-2 ${item.cls}`}
+                      >
                         <span className="text-lg font-black">{item.val}</span>
                         <span className="text-[9px] font-bold">{item.label}</span>
                       </div>
                     ))}
                   </div>
 
-                  <button onClick={() => setAuthMode("register")} className="w-full py-2.5 rounded-xl font-bold text-white bg-[#0ea5e9] border-2 border-[#1e293b] dark:border-cyan-500/30 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)] hover:shadow-[1px_1px_0px_#1e293b] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all text-sm">
+                  <button
+                    onClick={() => setAuthMode("register")}
+                    className="w-full py-2.5 rounded-xl font-bold text-white bg-[#0ea5e9] border-2 border-[#1e293b] dark:border-cyan-500/30 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)] hover:shadow-[1px_1px_0px_#1e293b] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all text-sm"
+                  >
                     View Full Dashboard
                   </button>
                 </div>
@@ -498,12 +674,16 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {painPoints.map((point) => (
               <div key={point.label} className={`${brutCard} p-6 text-center ${brutCardHover} transition-all`}>
-                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-3 ${point.color}`}>
+                <div
+                  className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-3 ${point.color}`}
+                >
                   <point.icon className="h-6 w-6" />
                 </div>
                 <div className="text-3xl font-black tracking-tight mb-0.5">{point.stat}</div>
                 <div className="text-xs font-bold text-[#0ea5e9] mb-2 uppercase tracking-wider">{point.label}</div>
-                <p className="text-xs text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">{point.description}</p>
+                <p className="text-xs text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
+                  {point.description}
+                </p>
               </div>
             ))}
           </div>
@@ -532,13 +712,18 @@ export default function LandingPage() {
                     <step.icon className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
                   </div>
                   <h3 className="font-extrabold text-lg mb-2">{step.title}</h3>
-                  <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">{step.description}</p>
+                  <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
+                    {step.description}
+                  </p>
                 </div>
               </div>
             ))}
           </div>
           <div className="text-center mt-10">
-            <button onClick={() => setAuthMode("register")} className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] ${brutBtn}`}>
+            <button
+              onClick={() => setAuthMode("register")}
+              className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] ${brutBtn}`}
+            >
               Start Free Trial
               <ArrowRight className="h-4 w-4" />
             </button>
@@ -552,16 +737,23 @@ export default function LandingPage() {
             Integrations
           </div>
           <h2 className="text-2xl md:text-3xl font-black mb-2">Works with Your Existing Stack</h2>
-          <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">24+ connectors. Read-only. No agents required.</p>
+          <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">
+            24+ connectors. Read-only. No agents required.
+          </p>
         </div>
         <div className="relative">
           <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-[#f1f5f9] dark:from-[#0f172a] to-transparent z-10 pointer-events-none" />
           <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-[#f1f5f9] dark:from-[#0f172a] to-transparent z-10 pointer-events-none" />
           <div className="flex animate-marquee gap-4">
             {[...integrations, ...integrations].map((item, i) => (
-              <div key={`${item.name}-${i}`} className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white dark:bg-[#111827] border-2 border-[#1e293b] dark:border-[#334155] shadow-[2px_2px_0px_#1e293b] dark:shadow-[2px_2px_0px_rgba(6,182,212,0.1)] flex-shrink-0">
+              <div
+                key={`${item.name}-${i}`}
+                className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white dark:bg-[#111827] border-2 border-[#1e293b] dark:border-[#334155] shadow-[2px_2px_0px_#1e293b] dark:shadow-[2px_2px_0px_rgba(6,182,212,0.1)] flex-shrink-0"
+              >
                 <item.icon className="h-4 w-4 text-[#475569] dark:text-[#94a3b8] flex-shrink-0" />
-                <span className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] whitespace-nowrap">{item.name}</span>
+                <span className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] whitespace-nowrap">
+                  {item.name}
+                </span>
               </div>
             ))}
           </div>
@@ -582,11 +774,15 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {features.map((feature, index) => (
               <div key={index} className={`${brutCard} p-6 ${brutCardHover} transition-all group`}>
-                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-4 ${feature.color}`}>
+                <div
+                  className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-4 ${feature.color}`}
+                >
                   <feature.icon className="h-6 w-6" />
                 </div>
                 <h3 className="font-extrabold text-lg mb-2">{feature.title}</h3>
-                <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">{feature.description}</p>
+                <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
+                  {feature.description}
+                </p>
               </div>
             ))}
           </div>
@@ -609,14 +805,21 @@ export default function LandingPage() {
                     <Star key={si} className="h-4 w-4 fill-amber-400 text-amber-400" />
                   ))}
                 </div>
-                <p className="text-sm text-[#475569] dark:text-[#cbd5e1] leading-relaxed flex-1 mb-5 font-medium">&ldquo;{t.quote}&rdquo;</p>
+                <p className="text-sm text-[#475569] dark:text-[#cbd5e1] leading-relaxed flex-1 mb-5 font-medium">
+                  &ldquo;{t.quote}&rdquo;
+                </p>
                 <div className="flex items-center gap-3 pt-4 border-t-2 border-[#e2e8f0] dark:border-[#1e293b]">
                   <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/20 bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-500/15 dark:to-cyan-500/5 flex items-center justify-center text-sm font-black text-cyan-600 dark:text-cyan-400">
-                    {t.name.split(" ").map(n => n[0]).join("")}
+                    {t.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")}
                   </div>
                   <div>
                     <p className="text-sm font-bold">{t.name}</p>
-                    <p className="text-xs text-[#94a3b8] font-medium">{t.role}, {t.company}</p>
+                    <p className="text-xs text-[#94a3b8] font-medium">
+                      {t.role}, {t.company}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -646,20 +849,33 @@ export default function LandingPage() {
           <div className="bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl p-10 shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.25)]">
             <h2 className="text-3xl md:text-4xl font-black mb-4">Ready to Transform Your SOC?</h2>
             <p className="text-[#64748b] dark:text-[#94a3b8] mb-8 max-w-lg mx-auto font-medium">
-              Join 50+ security teams that cut triage time by 90% and false positives by 70%. See results in your first week.
+              Join 50+ security teams that cut triage time by 90% and false positives by 70%. See results in your first
+              week.
             </p>
             <div className="flex flex-wrap justify-center gap-3 mb-6">
-              <button onClick={() => setAuthMode("register")} className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}>
+              <button
+                onClick={() => setAuthMode("register")}
+                className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}
+              >
                 Start Free Trial
                 <ArrowRight className="h-4 w-4" />
               </button>
-              <button onClick={() => setAuthMode("login")} className="inline-flex items-center px-8 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all">
+              <button
+                onClick={() => setAuthMode("login")}
+                className="inline-flex items-center px-8 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
+              >
                 Log In
               </button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-[#64748b] dark:text-[#94a3b8] font-semibold">
-              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />No credit card required</span>
-              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />Cancel anytime</span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                No credit card required
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                Cancel anytime
+              </span>
             </div>
           </div>
         </div>
@@ -679,7 +895,10 @@ export default function LandingPage() {
             </div>
             <div className="flex flex-wrap items-center gap-4">
               {["SOC 2 Type II", "ISO 27001", "GDPR"].map((cert) => (
-                <span key={cert} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-[#e2e8f0] dark:border-[#334155] text-xs font-bold text-[#475569] dark:text-[#94a3b8]">
+                <span
+                  key={cert}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-[#e2e8f0] dark:border-[#334155] text-xs font-bold text-[#475569] dark:text-[#94a3b8]"
+                >
                   <Shield className="h-3 w-3" />
                   {cert}
                 </span>
@@ -689,10 +908,26 @@ export default function LandingPage() {
           <div className="pt-6 border-t-2 border-[#e2e8f0] dark:border-[#1e293b] flex flex-wrap items-center justify-between gap-4 text-xs text-[#94a3b8] font-medium">
             <span>&copy; {new Date().getFullYear()} Arica Technologies. All rights reserved.</span>
             <div className="flex items-center gap-4">
-              <a href="#" className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold">Privacy</a>
-              <a href="#" className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold">Terms</a>
-              <a href="mailto:security@aricatech.com" className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold">Contact</a>
-              <a href="https://github.com/prathamesh-ops-sudo/securenexus" target="_blank" rel="noopener noreferrer" className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold">GitHub</a>
+              <a href="#" className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold">
+                Privacy
+              </a>
+              <a href="#" className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold">
+                Terms
+              </a>
+              <a
+                href="mailto:security@aricatech.com"
+                className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold"
+              >
+                Contact
+              </a>
+              <a
+                href="https://github.com/prathamesh-ops-sudo/securenexus"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#1e293b] dark:hover:text-white transition-colors font-semibold"
+              >
+                GitHub
+              </a>
             </div>
           </div>
         </div>
@@ -711,7 +946,11 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
         aria-expanded={open}
       >
         <span className="text-sm font-bold pr-4">{question}</span>
-        {open ? <ChevronUp className="h-4 w-4 text-[#94a3b8] flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-[#94a3b8] flex-shrink-0" />}
+        {open ? (
+          <ChevronUp className="h-4 w-4 text-[#94a3b8] flex-shrink-0" />
+        ) : (
+          <ChevronDown className="h-4 w-4 text-[#94a3b8] flex-shrink-0" />
+        )}
       </button>
       {open && (
         <div className="px-5 pb-5 border-t-2 border-[#e2e8f0] dark:border-[#1e293b] pt-4">

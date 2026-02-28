@@ -309,6 +309,9 @@ import {
   type Invoice,
   type InsertInvoice,
   invoices,
+  type PasswordResetToken,
+  type InsertPasswordResetToken,
+  passwordResetTokens,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, ne } from "drizzle-orm";
@@ -1057,6 +1060,12 @@ export interface IStorage {
   getInvoiceByStripeId(stripeInvoiceId: string): Promise<Invoice | undefined>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   updateInvoice(id: string, data: Partial<Invoice>): Promise<Invoice | undefined>;
+
+  // Password Reset Tokens (Phase 4)
+  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
+  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markPasswordResetTokenAsUsed(token: string): Promise<void>;
+  deleteExpiredPasswordResetTokens(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5115,6 +5124,26 @@ export class DatabaseStorage implements IStorage {
   async updateInvoice(id: string, data: Partial<Invoice>): Promise<Invoice | undefined> {
     const [updated] = await db.update(invoices).set(data).where(eq(invoices.id, id)).returning();
     return updated;
+  }
+
+  // Password Reset Tokens (Phase 4)
+  async createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
+    const [created] = await db.insert(passwordResetTokens).values(token).returning();
+    return created;
+  }
+
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [row] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.token, token));
+    return row;
+  }
+
+  async markPasswordResetTokenAsUsed(token: string): Promise<void> {
+    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.token, token));
+  }
+
+  async deleteExpiredPasswordResetTokens(): Promise<number> {
+    const result = await db.delete(passwordResetTokens).where(lte(passwordResetTokens.expiresAt, new Date()));
+    return result.rowCount ?? 0;
   }
 }
 
