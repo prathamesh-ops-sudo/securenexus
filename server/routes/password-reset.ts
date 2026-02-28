@@ -10,8 +10,19 @@ import { reply, replyValidation, replyBadRequest, replyInternal } from "../api-r
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const RESET_TOKEN_EXPIRY_MINUTES = 60;
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
+const EMAIL_MAX_LENGTH = 254;
+
+function isValidEmail(email: string): boolean {
+  if (email.length > EMAIL_MAX_LENGTH) return false;
+  const atIndex = email.indexOf("@");
+  if (atIndex < 1 || atIndex !== email.lastIndexOf("@")) return false;
+  const domain = email.slice(atIndex + 1);
+  if (domain.length < 3 || !domain.includes(".")) return false;
+  const dotIndex = domain.lastIndexOf(".");
+  if (dotIndex < 1 || dotIndex >= domain.length - 1) return false;
+  return true;
+}
 
 function getAppBaseUrl(req: any): string {
   const proto = req.get("x-forwarded-proto") || req.protocol || "https";
@@ -23,7 +34,7 @@ export function registerPasswordResetRoutes(app: Express): void {
   app.post("/api/auth/forgot-password", async (req, res) => {
     try {
       const { email } = req.body;
-      if (!email || typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
+      if (!email || typeof email !== "string" || !isValidEmail(email.trim())) {
         return replyValidation(res, [{ message: "A valid email address is required", field: "email" }]);
       }
 
