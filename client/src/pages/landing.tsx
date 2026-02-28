@@ -236,6 +236,10 @@ export default function LandingPage() {
   const [lastName, setLastName] = useState("");
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
+  const [ssoMode, setSsoMode] = useState(false);
+  const [ssoSlug, setSsoSlug] = useState("");
+  const [ssoLoading, setSsoLoading] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
   const howItWorksRef = useRef<HTMLElement>(null);
 
   const handleOAuth = async (provider: "google" | "github") => {
@@ -267,6 +271,26 @@ export default function LandingPage() {
       await register({ email, password, firstName, lastName });
     } else {
       await login({ email, password });
+    }
+  };
+
+  const handleSsoLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ssoSlug.trim()) return;
+    setSsoLoading(true);
+    setSsoError(null);
+    try {
+      const res = await fetch(`/api/sso/check/${encodeURIComponent(ssoSlug.trim())}`);
+      const data = await res.json();
+      if (!data.ssoEnabled) {
+        setSsoError("SSO is not enabled for this organization.");
+        return;
+      }
+      window.location.href = `/api/sso/${encodeURIComponent(ssoSlug.trim())}/login`;
+    } catch {
+      setSsoError("Failed to check SSO configuration.");
+    } finally {
+      setSsoLoading(false);
     }
   };
 
@@ -447,6 +471,51 @@ export default function LandingPage() {
                   </>
                 )}
               </p>
+              {authMode === "login" && !ssoMode && (
+                <div className="mt-3 pt-3 border-t-2 border-[#e2e8f0] dark:border-[#334155]">
+                  <button
+                    onClick={() => setSsoMode(true)}
+                    className="w-full text-sm font-semibold text-[#64748b] dark:text-[#94a3b8] hover:text-[#0ea5e9] transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Lock className="h-3.5 w-3.5" />
+                    Sign in with SSO
+                  </button>
+                </div>
+              )}
+              {ssoMode && (
+                <div className="mt-3 pt-3 border-t-2 border-[#e2e8f0] dark:border-[#334155]">
+                  <form onSubmit={handleSsoLogin} className="space-y-2">
+                    <Label className="text-xs font-bold uppercase tracking-wider">Organization Slug</Label>
+                    <Input
+                      value={ssoSlug}
+                      onChange={(e) => setSsoSlug(e.target.value)}
+                      placeholder="your-org-slug"
+                      required
+                      className="border-2 border-[#cbd5e1] dark:border-[#334155] rounded-xl h-10 font-medium focus:border-cyan-500 dark:focus:border-cyan-400"
+                    />
+                    {ssoError && <p className="text-xs text-red-500 font-medium">{ssoError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSsoMode(false);
+                          setSsoError(null);
+                        }}
+                        className="flex-1 h-9 rounded-xl text-sm font-semibold border-2 border-[#cbd5e1] dark:border-[#334155] hover:bg-gray-50 dark:hover:bg-[#1e293b] transition-colors"
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={ssoLoading || !ssoSlug.trim()}
+                        className={`flex-1 h-9 rounded-xl text-sm font-bold text-white bg-[#0ea5e9] ${brutBtn} disabled:opacity-50 disabled:pointer-events-none`}
+                      >
+                        {ssoLoading ? "Checking..." : "Continue with SSO"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
             </div>
           </div>
         </div>

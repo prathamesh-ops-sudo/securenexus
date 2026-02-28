@@ -1068,6 +1068,10 @@ export interface IStorage {
   consumePasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   invalidateAllUserPasswordResetTokens(userId: string): Promise<void>;
   deleteExpiredPasswordResetTokens(): Promise<number>;
+
+  // Phase 6: Domain Auto-Join & SSO helpers
+  getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
+  getVerifiedAutoJoinDomain(domain: string): Promise<OrgDomainVerification | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4637,6 +4641,25 @@ export class DatabaseStorage implements IStorage {
   async deleteOrgSsoConfig(orgId: string): Promise<boolean> {
     const result = await db.delete(orgSsoConfigs).where(eq(orgSsoConfigs.orgId, orgId)).returning();
     return result.length > 0;
+  }
+
+  async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.slug, slug));
+    return org;
+  }
+
+  async getVerifiedAutoJoinDomain(domain: string): Promise<OrgDomainVerification | undefined> {
+    const [result] = await db
+      .select()
+      .from(orgDomainVerifications)
+      .where(
+        and(
+          eq(orgDomainVerifications.domain, domain.toLowerCase()),
+          eq(orgDomainVerifications.status, "verified"),
+          eq(orgDomainVerifications.autoJoin, true),
+        ),
+      );
+    return result;
   }
 
   // Org SCIM Configs

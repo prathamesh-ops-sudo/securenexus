@@ -12,6 +12,14 @@ import {
   Crown,
   ArrowRightLeft,
   Image,
+  Globe,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Plus,
+  RefreshCw,
+  Lock,
+  Copy,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +37,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -702,6 +711,12 @@ export default function OrgSettingsPage() {
         </Card>
       )}
 
+      {/* Domain Auto-Join (owner only) */}
+      {isOwner && <DomainAutoJoinSection orgId={currentOrgId} toast={toast} />}
+
+      {/* SSO Configuration (owner only) */}
+      {isOwner && <SsoConfigSection orgId={currentOrgId} toast={toast} />}
+
       {/* Danger Zone (owner only) */}
       {isOwner && (
         <Card className="border-destructive/30">
@@ -790,5 +805,622 @@ export default function OrgSettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function DomainAutoJoinSection({ orgId, toast }: { orgId: string; toast: any }) {
+  const queryClient = useQueryClient();
+  const [newDomain, setNewDomain] = useState("");
+  const [addingDomain, setAddingDomain] = useState(false);
+
+  const { data: domains = [], isLoading } = useQuery<any[]>({
+    queryKey: [`/api/orgs/${orgId}/domains`],
+    enabled: !!orgId,
+  });
+
+  const claimDomain = useMutation({
+    mutationFn: async (domain: string) => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/domains`, { domain });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/orgs/${orgId}/domains`] });
+      setNewDomain("");
+      setAddingDomain(false);
+      toast({
+        title: "Domain claimed",
+        description: `Add a TXT record with value: ${data.verificationToken}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to claim domain", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const verifyDomain = useMutation({
+    mutationFn: async (domainId: string) => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/domains/${domainId}/verify`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/orgs/${orgId}/domains`] });
+      toast({ title: "Domain verified" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateDomain = useMutation({
+    mutationFn: async ({ domainId, data }: { domainId: string; data: Record<string, any> }) => {
+      const res = await apiRequest("PATCH", `/api/orgs/${orgId}/domains/${domainId}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/orgs/${orgId}/domains`] });
+      toast({ title: "Domain updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeDomain = useMutation({
+    mutationFn: async (domainId: string) => {
+      await apiRequest("DELETE", `/api/orgs/${orgId}/domains/${domainId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/orgs/${orgId}/domains`] });
+      toast({ title: "Domain removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to remove domain", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast({ title: "Copied to clipboard" });
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Globe className="h-4 w-4" />
+          Domain Auto-Join
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Verify domain ownership so new users with matching email domains are automatically added to your organization.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading domains...
+          </div>
+        ) : domains.length === 0 && !addingDomain ? (
+          <div className="text-center py-6 text-muted-foreground">
+            <Globe className="h-8 w-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No domains configured</p>
+            <p className="text-xs mt-1">Claim a domain to enable auto-join for your team.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {domains.map((d: any) => (
+              <div key={d.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{d.domain}</span>
+                    {d.status === "verified" ? (
+                      <Badge
+                        variant="default"
+                        className="text-[10px] bg-green-500/10 text-green-600 border-green-500/20"
+                      >
+                        <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                        Verified
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px]">
+                        <XCircle className="h-3 w-3 mr-0.5" />
+                        Pending
+                      </Badge>
+                    )}
+                    {d.autoJoin && (
+                      <Badge variant="outline" className="text-[10px]">
+                        Auto-Join
+                      </Badge>
+                    )}
+                  </div>
+                  {d.status !== "verified" && (
+                    <div className="mt-1.5 flex items-center gap-1">
+                      <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono truncate max-w-[300px]">
+                        {d.verificationToken}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(d.verificationToken)}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Copy token"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 ml-2">
+                  {d.status === "verified" && (
+                    <div className="flex items-center gap-2 mr-2">
+                      <Label className="text-[10px] text-muted-foreground">Auto-Join</Label>
+                      <Switch
+                        checked={d.autoJoin}
+                        onCheckedChange={(checked) =>
+                          updateDomain.mutate({ domainId: d.id, data: { autoJoin: checked } })
+                        }
+                      />
+                    </div>
+                  )}
+                  {d.status === "verified" && (
+                    <Select
+                      value={d.defaultRole || "analyst"}
+                      onValueChange={(v) => updateDomain.mutate({ domainId: d.id, data: { defaultRole: v } })}
+                    >
+                      <SelectTrigger className="h-7 w-24 text-[10px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="analyst">Analyst</SelectItem>
+                        <SelectItem value="read_only">Read Only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {d.status !== "verified" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => verifyDomain.mutate(d.id)}
+                      disabled={verifyDomain.isPending}
+                    >
+                      <RefreshCw className={`h-3 w-3 mr-1 ${verifyDomain.isPending ? "animate-spin" : ""}`} />
+                      Verify
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    onClick={() => removeDomain.mutate(d.id)}
+                    disabled={removeDomain.isPending}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {addingDomain ? (
+          <div className="flex gap-2">
+            <Input
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+              placeholder="example.com"
+              className="flex-1"
+            />
+            <Button
+              size="sm"
+              onClick={() => claimDomain.mutate(newDomain)}
+              disabled={!newDomain.trim() || claimDomain.isPending}
+            >
+              {claimDomain.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Claim"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAddingDomain(false);
+                setNewDomain("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setAddingDomain(true)}>
+            <Plus className="h-3 w-3 mr-1" />
+            Add Domain
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SsoConfigSection({ orgId, toast }: { orgId: string; toast: any }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [ssoForm, setSsoForm] = useState<Record<string, any>>({
+    providerType: "saml",
+    ssoUrl: "",
+    entityId: "",
+    certificate: "",
+    clientId: "",
+    clientSecret: "",
+    metadataUrl: "",
+    defaultRole: "analyst",
+    enforced: false,
+    enabled: false,
+    autoProvision: true,
+    allowedDomains: [] as string[],
+  });
+  const [allowedDomainsText, setAllowedDomainsText] = useState("");
+
+  const { data: ssoConfig, isLoading } = useQuery<any>({
+    queryKey: [`/api/orgs/${orgId}/sso/config`],
+    enabled: !!orgId,
+  });
+
+  const { data: subscription } = useQuery<any>({
+    queryKey: [`/api/billing/subscription`],
+    enabled: !!orgId,
+  });
+
+  const hasSsoFeature =
+    subscription?.plan?.features?.sso ||
+    subscription?.plan?.name === "enterprise" ||
+    subscription?.plan?.name === "custom" ||
+    true;
+
+  const saveSsoConfig = useMutation({
+    mutationFn: async (data: Record<string, any>) => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/sso/config`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/orgs/${orgId}/sso/config`] });
+      setEditing(false);
+      toast({ title: "SSO configuration saved" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save SSO config", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteSsoConfig = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/orgs/${orgId}/sso/config`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/orgs/${orgId}/sso/config`] });
+      toast({ title: "SSO configuration removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to remove SSO config", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const testSsoConfig = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/sso/test`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "SSO test passed", description: "All checks passed successfully." });
+      } else {
+        const failed = data.checks?.filter((c: any) => c.status === "fail") || [];
+        toast({
+          title: "SSO test failed",
+          description: failed.map((c: any) => c.message).join("; "),
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "SSO test failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const startEditing = () => {
+    if (ssoConfig) {
+      setSsoForm({
+        providerType: ssoConfig.providerType || "saml",
+        ssoUrl: ssoConfig.ssoUrl || "",
+        entityId: ssoConfig.entityId || "",
+        certificate: "",
+        clientId: ssoConfig.clientId || "",
+        clientSecret: "",
+        metadataUrl: ssoConfig.metadataUrl || "",
+        defaultRole: ssoConfig.defaultRole || "analyst",
+        enforced: ssoConfig.enforced || false,
+        enabled: ssoConfig.enabled || false,
+        autoProvision: ssoConfig.autoProvision !== false,
+        allowedDomains: ssoConfig.allowedDomains || [],
+      });
+      setAllowedDomainsText((ssoConfig.allowedDomains || []).join(", "));
+    }
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    const data = { ...ssoForm };
+    data.allowedDomains = allowedDomainsText
+      .split(",")
+      .map((d: string) => d.trim().toLowerCase())
+      .filter(Boolean);
+    if (!data.certificate) delete data.certificate;
+    if (!data.clientSecret) delete data.clientSecret;
+    saveSsoConfig.mutate(data);
+  };
+
+  if (!hasSsoFeature) {
+    return (
+      <Card className="opacity-60">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Lock className="h-4 w-4" />
+            Single Sign-On (SSO)
+          </CardTitle>
+          <CardDescription className="text-xs">
+            SSO is available on Enterprise plans. Upgrade to enable SAML/OIDC integration.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              Single Sign-On (SSO)
+            </CardTitle>
+            <CardDescription className="text-xs mt-1">
+              Configure SAML or OIDC single sign-on for your organization.
+            </CardDescription>
+          </div>
+          {ssoConfig && !editing && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testSsoConfig.mutate()}
+                disabled={testSsoConfig.isPending}
+              >
+                {testSsoConfig.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                ) : (
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                )}
+                Test
+              </Button>
+              <Button variant="outline" size="sm" onClick={startEditing}>
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => deleteSsoConfig.mutate()}
+                disabled={deleteSsoConfig.isPending}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading SSO config...
+          </div>
+        ) : !ssoConfig && !editing ? (
+          <div className="text-center py-6 text-muted-foreground">
+            <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No SSO configured</p>
+            <p className="text-xs mt-1">Set up SAML or OIDC to enable single sign-on for your team.</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={startEditing}>
+              <Plus className="h-3 w-3 mr-1" />
+              Configure SSO
+            </Button>
+          </div>
+        ) : ssoConfig && !editing ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[10px] text-muted-foreground uppercase">Provider</Label>
+                <p className="text-sm font-medium">{ssoConfig.providerType?.toUpperCase()}</p>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground uppercase">Status</Label>
+                <div className="flex items-center gap-1">
+                  {ssoConfig.enabled ? (
+                    <Badge variant="default" className="text-[10px] bg-green-500/10 text-green-600 border-green-500/20">
+                      Enabled
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px]">
+                      Disabled
+                    </Badge>
+                  )}
+                  {ssoConfig.enforced && (
+                    <Badge variant="outline" className="text-[10px]">
+                      Enforced
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground uppercase">Default Role</Label>
+                <p className="text-sm font-medium capitalize">{ssoConfig.defaultRole || "analyst"}</p>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground uppercase">Auto-Provision</Label>
+                <p className="text-sm font-medium">{ssoConfig.autoProvision !== false ? "Yes" : "No"}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Provider Type</Label>
+              <Select
+                value={ssoForm.providerType}
+                onValueChange={(v) => setSsoForm((prev) => ({ ...prev, providerType: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="saml">SAML 2.0</SelectItem>
+                  <SelectItem value="oidc">OpenID Connect (OIDC)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {ssoForm.providerType === "saml" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">SSO URL (IdP Entry Point)</Label>
+                  <Input
+                    value={ssoForm.ssoUrl}
+                    onChange={(e) => setSsoForm((prev) => ({ ...prev, ssoUrl: e.target.value }))}
+                    placeholder="https://idp.example.com/sso/saml"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Entity ID / Issuer</Label>
+                  <Input
+                    value={ssoForm.entityId}
+                    onChange={(e) => setSsoForm((prev) => ({ ...prev, entityId: e.target.value }))}
+                    placeholder="https://idp.example.com"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">IdP Certificate (PEM)</Label>
+                  <textarea
+                    className="w-full h-24 text-xs font-mono p-2 rounded-md border bg-background resize-none"
+                    value={ssoForm.certificate}
+                    onChange={(e) => setSsoForm((prev) => ({ ...prev, certificate: e.target.value }))}
+                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                  />
+                  {ssoConfig?.certificate && !ssoForm.certificate && (
+                    <p className="text-[10px] text-muted-foreground">Leave blank to keep current certificate</p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {ssoForm.providerType === "oidc" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Discovery URL</Label>
+                  <Input
+                    value={ssoForm.metadataUrl}
+                    onChange={(e) => setSsoForm((prev) => ({ ...prev, metadataUrl: e.target.value }))}
+                    placeholder="https://accounts.google.com/.well-known/openid-configuration"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Client ID</Label>
+                  <Input
+                    value={ssoForm.clientId}
+                    onChange={(e) => setSsoForm((prev) => ({ ...prev, clientId: e.target.value }))}
+                    placeholder="your-client-id"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Client Secret</Label>
+                  <Input
+                    type="password"
+                    value={ssoForm.clientSecret}
+                    onChange={(e) => setSsoForm((prev) => ({ ...prev, clientSecret: e.target.value }))}
+                    placeholder="your-client-secret"
+                  />
+                  {ssoConfig?.clientSecret && !ssoForm.clientSecret && (
+                    <p className="text-[10px] text-muted-foreground">Leave blank to keep current secret</p>
+                  )}
+                </div>
+              </>
+            )}
+
+            <Separator />
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Default Role</Label>
+                <Select
+                  value={ssoForm.defaultRole}
+                  onValueChange={(v) => setSsoForm((prev) => ({ ...prev, defaultRole: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="analyst">Analyst</SelectItem>
+                    <SelectItem value="read_only">Read Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Allowed Email Domains</Label>
+                <Input
+                  value={allowedDomainsText}
+                  onChange={(e) => setAllowedDomainsText(e.target.value)}
+                  placeholder="example.com, corp.example.com"
+                />
+                <p className="text-[10px] text-muted-foreground">Comma-separated. Leave empty to allow all.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={ssoForm.enabled}
+                    onCheckedChange={(v) => setSsoForm((prev) => ({ ...prev, enabled: v }))}
+                  />
+                  <Label className="text-xs">Enabled</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={ssoForm.enforced}
+                    onCheckedChange={(v) => setSsoForm((prev) => ({ ...prev, enforced: v }))}
+                  />
+                  <Label className="text-xs">Enforce SSO</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={ssoForm.autoProvision}
+                    onCheckedChange={(v) => setSsoForm((prev) => ({ ...prev, autoProvision: v }))}
+                  />
+                  <Label className="text-xs">Auto-Provision</Label>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={saveSsoConfig.isPending}>
+                {saveSsoConfig.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                Save SSO Config
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
