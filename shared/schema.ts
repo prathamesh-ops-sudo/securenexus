@@ -220,6 +220,8 @@ export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
   },
 };
 
+export const ORG_TYPES = ["standard", "mssp_parent", "mssp_child"] as const;
+
 export const organizations = pgTable("organizations", {
   id: varchar("id")
     .primaryKey()
@@ -237,6 +239,8 @@ export const organizations = pgTable("organizations", {
   maxUsers: integer("max_users").default(10),
   locale: text("locale").default("en-US"),
   timezone: text("timezone").default("UTC"),
+  orgType: text("org_type").notNull().default("standard"),
+  parentOrgId: varchar("parent_org_id"),
   deletedAt: timestamp("deleted_at"),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -4704,3 +4708,59 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
 
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+
+// Phase 7: MSSP / Parent-Child Organizations
+export const MSSP_ACCESS_GRANT_ROLES = ["viewer", "analyst", "manager", "admin"] as const;
+
+export const msspAccessGrants = pgTable(
+  "mssp_access_grants",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    grantedRole: text("granted_role").notNull().default("viewer"),
+    scope: jsonb("scope").notNull().default({}),
+    grantedBy: varchar("granted_by").notNull(),
+    grantedAt: timestamp("granted_at").defaultNow(),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: varchar("revoked_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_mssp_grant_parent_child").on(table.parentOrgId, table.childOrgId),
+    index("idx_mssp_grant_parent").on(table.parentOrgId),
+    index("idx_mssp_grant_child").on(table.childOrgId),
+  ],
+);
+
+export const msspAccessGrantsRelations = relations(msspAccessGrants, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspAccessGrants.parentOrgId],
+    references: [organizations.id],
+    relationName: "msspParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspAccessGrants.childOrgId],
+    references: [organizations.id],
+    relationName: "msspChild",
+  }),
+}));
+
+export const insertMsspAccessGrantSchema = createInsertSchema(msspAccessGrants).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  grantedAt: true,
+  revokedAt: true,
+  revokedBy: true,
+});
+
+export type MsspAccessGrant = typeof msspAccessGrants.$inferSelect;
+export type InsertMsspAccessGrant = z.infer<typeof insertMsspAccessGrantSchema>;

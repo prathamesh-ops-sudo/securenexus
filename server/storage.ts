@@ -312,6 +312,9 @@ import {
   type PasswordResetToken,
   type InsertPasswordResetToken,
   passwordResetTokens,
+  type MsspAccessGrant,
+  type InsertMsspAccessGrant,
+  msspAccessGrants,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -1072,6 +1075,20 @@ export interface IStorage {
   // Phase 6: Domain Auto-Join & SSO helpers
   getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
   getVerifiedAutoJoinDomain(domain: string): Promise<OrgDomainVerification | undefined>;
+
+  // Phase 7: MSSP / Parent-Child Organizations
+  getChildOrganizations(parentOrgId: string): Promise<Organization[]>;
+  createMsspAccessGrant(grant: InsertMsspAccessGrant): Promise<MsspAccessGrant>;
+  getMsspAccessGrants(parentOrgId: string): Promise<MsspAccessGrant[]>;
+  getMsspAccessGrant(id: string): Promise<MsspAccessGrant | undefined>;
+  revokeMsspAccessGrant(id: string, revokedBy: string): Promise<MsspAccessGrant | undefined>;
+  getMsspAggregatedStats(childOrgIds: string[]): Promise<{
+    totalAlerts: number;
+    criticalAlerts: number;
+    openIncidents: number;
+    totalConnectors: number;
+    perOrg: { orgId: string; orgName: string; alertCount: number; incidentCount: number; connectorCount: number }[];
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5191,6 +5208,114 @@ export class DatabaseStorage implements IStorage {
   async deleteExpiredPasswordResetTokens(): Promise<number> {
     const result = await db.delete(passwordResetTokens).where(lte(passwordResetTokens.expiresAt, new Date()));
     return result.rowCount ?? 0;
+  }
+
+  // Phase 7: MSSP / Parent-Child Organizations
+  async getChildOrganizations(parentOrgId: string): Promise<Organization[]> {
+    return db
+      .select()
+      .from(organizations)
+      .where(and(eq(organizations.parentOrgId, parentOrgId), isNull(organizations.deletedAt)))
+      .orderBy(asc(organizations.name));
+  }
+
+  async createMsspAccessGrant(grant: InsertMsspAccessGrant): Promise<MsspAccessGrant> {
+    const [created] = await db.insert(msspAccessGrants).values(grant).returning();
+    return created;
+  }
+
+  async getMsspAccessGrants(parentOrgId: string): Promise<MsspAccessGrant[]> {
+    return db
+      .select()
+      .from(msspAccessGrants)
+      .where(and(eq(msspAccessGrants.parentOrgId, parentOrgId), isNull(msspAccessGrants.revokedAt)))
+      .orderBy(desc(msspAccessGrants.grantedAt));
+  }
+
+  async getMsspAccessGrant(id: string): Promise<MsspAccessGrant | undefined> {
+    const [grant] = await db.select().from(msspAccessGrants).where(eq(msspAccessGrants.id, id));
+    return grant;
+  }
+
+  async revokeMsspAccessGrant(id: string, revokedBy: string): Promise<MsspAccessGrant | undefined> {
+    const [updated] = await db
+      .update(msspAccessGrants)
+      .set({ revokedAt: new Date(), revokedBy, updatedAt: new Date() })
+      .where(eq(msspAccessGrants.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getMsspAggregatedStats(childOrgIds: string[]): Promise<{
+    totalAlerts: number;
+    criticalAlerts: number;
+    openIncidents: number;
+    totalConnectors: number;
+    perOrg: { orgId: string; orgName: string; alertCount: number; incidentCount: number; connectorCount: number }[];
+  }> {
+    if (childOrgIds.length === 0) {
+      return { totalAlerts: 0, criticalAlerts: 0, openIncidents: 0, totalConnectors: 0, perOrg: [] };
+    }
+
+    const [alertTotals] = await db.select({ total: count() }).from(alerts).where(inArray(alerts.orgId, childOrgIds));
+
+    const [criticalTotals] = await db
+      .select({ total: count() })
+      .from(alerts)
+      .where(and(inArray(alerts.orgId, childOrgIds), eq(alerts.severity, "critical")));
+
+    const [incidentTotals] = await db
+      .select({ total: count() })
+      .from(incidents)
+      .where(and(inArray(incidents.orgId, childOrgIds), eq(incidents.status, "open")));
+
+    const [connectorTotals] = await db
+      .select({ total: count() })
+      .from(connectors)
+      .where(inArray(connectors.orgId, childOrgIds));
+
+    const perOrgAlerts = await db
+      .select({ orgId: alerts.orgId, total: count() })
+      .from(alerts)
+      .where(inArray(alerts.orgId, childOrgIds))
+      .groupBy(alerts.orgId);
+
+    const perOrgIncidents = await db
+      .select({ orgId: incidents.orgId, total: count() })
+      .from(incidents)
+      .where(inArray(incidents.orgId, childOrgIds))
+      .groupBy(incidents.orgId);
+
+    const perOrgConnectors = await db
+      .select({ orgId: connectors.orgId, total: count() })
+      .from(connectors)
+      .where(inArray(connectors.orgId, childOrgIds))
+      .groupBy(connectors.orgId);
+
+    const childOrgs = await db
+      .select({ id: organizations.id, name: organizations.name })
+      .from(organizations)
+      .where(inArray(organizations.id, childOrgIds));
+
+    const alertMap = new Map(perOrgAlerts.map((r) => [r.orgId, r.total]));
+    const incidentMap = new Map(perOrgIncidents.map((r) => [r.orgId, r.total]));
+    const connectorMap = new Map(perOrgConnectors.map((r) => [r.orgId, r.total]));
+
+    const perOrg = childOrgs.map((org) => ({
+      orgId: org.id,
+      orgName: org.name,
+      alertCount: alertMap.get(org.id) ?? 0,
+      incidentCount: incidentMap.get(org.id) ?? 0,
+      connectorCount: connectorMap.get(org.id) ?? 0,
+    }));
+
+    return {
+      totalAlerts: alertTotals.total,
+      criticalAlerts: criticalTotals.total,
+      openIncidents: incidentTotals.total,
+      totalConnectors: connectorTotals.total,
+      perOrg,
+    };
   }
 }
 
