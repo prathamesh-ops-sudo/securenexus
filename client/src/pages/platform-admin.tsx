@@ -678,11 +678,17 @@ function RevenueTab() {
                 const maxCount = Math.max(...data.planDistribution.map((p) => p.count));
                 const pct = maxCount > 0 ? (plan.count / maxCount) * 100 : 0;
                 return (
-                  <div key={plan.planName} className="space-y-1">
+                  <div key={`${plan.planName}-${plan.billingCycle}`} className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">{plan.planName}</span>
                       <span className="text-muted-foreground">
-                        {plan.count} subs &middot; ${((plan.monthlyPriceCents ?? 0) / 100).toFixed(0)}/mo each
+                        {plan.count} subs &middot; $
+                        {(
+                          (plan.billingCycle === "annual"
+                            ? Math.round((plan.annualPriceCents ?? 0) / 12)
+                            : (plan.monthlyPriceCents ?? 0)) / 100
+                        ).toFixed(0)}
+                        /mo each
                       </span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
