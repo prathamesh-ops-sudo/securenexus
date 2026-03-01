@@ -10,6 +10,27 @@ import { buildOpenApiSpec } from "../openapi";
 
 const log = logger.child("dev-portal");
 
+const BLOCKED_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "0.0.0.0",
+  "[::1]",
+  "169.254.169.254",
+  "metadata.google.internal",
+]);
+
+function isPrivateIp(hostname: string): boolean {
+  if (BLOCKED_HOSTS.has(hostname.toLowerCase())) return true;
+  const ipv4 = hostname.replace(/^\[|\]$/g, "");
+  if (/^10\./.test(ipv4)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ipv4)) return true;
+  if (/^192\.168\./.test(ipv4)) return true;
+  if (/^fc00:|^fd/.test(ipv4)) return true;
+  if (/^fe80:/.test(ipv4)) return true;
+  return false;
+}
+
 const READ_ONLY_PATTERN = /^\s*(SELECT|EXPLAIN|SHOW|DESCRIBE|WITH)\s/i;
 const DANGEROUS_PATTERN = /;\s*(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|CREATE|GRANT|REVOKE)/i;
 const MAX_QUERY_LENGTH = 2000;
@@ -97,16 +118,22 @@ export function registerDevPortalRoutes(app: Express): void {
           });
         }
 
-        if (!String(path).startsWith("/api/")) {
+        const sanitizedPath = String(path);
+        if (!sanitizedPath.startsWith("/api/")) {
           return sendEnvelope(res, null, {
             status: 400,
             errors: [{ code: "INVALID_PATH", message: "Path must start with /api/" }],
           });
         }
 
-        const protocol = req.protocol;
-        const host = req.get("host");
-        const url = `${protocol}://${host}${path}`;
+        if (/\.\.|%2e%2e|%00/i.test(sanitizedPath)) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_PATH", message: "Path contains invalid characters" }],
+          });
+        }
+
+        const url = `http://127.0.0.1:${config.port}${sanitizedPath}`;
 
         const fetchHeaders: Record<string, string> = {
           "Content-Type": "application/json",
@@ -203,13 +230,39 @@ export function registerDevPortalRoutes(app: Express): void {
 
   app.post("/api/dev-portal/webhooks/test", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const { url, event, payload } = req.body;
-      if (!url || !event) {
+      const { url: rawUrl, event, payload } = req.body;
+      if (!rawUrl || !event) {
         return sendEnvelope(res, null, {
           status: 400,
           errors: [{ code: "MISSING_PARAMS", message: "url and event are required" }],
         });
       }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(String(rawUrl));
+      } catch {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_URL", message: "Invalid URL format" }],
+        });
+      }
+
+      if (!parsedUrl.protocol.startsWith("https")) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "HTTPS_REQUIRED", message: "Only HTTPS URLs are allowed for webhook testing" }],
+        });
+      }
+
+      if (isPrivateIp(parsedUrl.hostname)) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "PRIVATE_IP_BLOCKED", message: "Requests to private/internal IPs are not allowed" }],
+        });
+      }
+
+      const url = parsedUrl.toString();
 
       const testPayload = payload || {
         event,
