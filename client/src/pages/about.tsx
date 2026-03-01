@@ -109,6 +109,19 @@ const orgSchema = {
   sameAs: ["https://github.com/prathamesh-ops-sudo/securenexus"],
 };
 
+const aboutPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "About Arica Technologies",
+  url: "https://nexus.aricatech.xyz/about",
+  description:
+    "Arica Technologies is an Indian cybersecurity company building SecureNexus, the Agentic SOC platform with AI-powered threat detection and automated incident response.",
+  speakable: {
+    "@type": "SpeakableSpecification",
+    cssSelector: ["article > header > p", "article > header > h1"],
+  },
+};
+
 export default function AboutPage() {
   const brutCard =
     "bg-white dark:bg-[#111827] border-[2.5px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.15)]";
@@ -118,12 +131,12 @@ export default function AboutPage() {
       title="About Arica Technologies"
       breadcrumbs={[{ label: "Home", href: "/" }, { label: "About" }]}
       faqs={faqs}
-      jsonLd={[orgSchema]}
+      jsonLd={[orgSchema, aboutPageSchema]}
     >
       <article>
         <header className="mb-12">
           <h1 className="text-3xl md:text-5xl font-black mb-4 leading-tight">About Arica Technologies</h1>
-          <p className="text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
+          <p className="speakable-summary text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
             Arica Technologies is an Indian cybersecurity company building SecureNexus — the Agentic SOC platform that
             uses AI to autonomously detect, investigate, and respond to security threats. Founded with the mission to
             make enterprise-grade security operations accessible to organizations of every size.
