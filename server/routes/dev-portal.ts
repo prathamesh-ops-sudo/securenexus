@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { lookup } from "dns/promises";
 import { isAuthenticated } from "../auth";
 import { requireSuperAdmin } from "../middleware/super-admin";
 import { sendEnvelope } from "./shared";
@@ -31,10 +32,10 @@ function isPrivateIp(hostname: string): boolean {
   return false;
 }
 
-const READ_ONLY_PATTERN = /^\s*(SELECT|EXPLAIN|SHOW|DESCRIBE|WITH)\s/i;
-const DANGEROUS_PATTERN = /;\s*(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|CREATE|GRANT|REVOKE)/i;
-const MAX_QUERY_LENGTH = 2000;
 const MAX_QUERY_ROWS = 500;
+const DEFAULT_QUERY_ROWS = 100;
+const MAX_WHERE_CLAUSES = 20;
+const MAX_IN_VALUES = 200;
 
 export function registerDevPortalRoutes(app: Express): void {
   app.get("/api/dev-portal/openapi", isAuthenticated, requireSuperAdmin, (_req: Request, res: Response) => {
@@ -262,6 +263,21 @@ export function registerDevPortalRoutes(app: Express): void {
         });
       }
 
+      try {
+        const resolved = await lookup(parsedUrl.hostname, { all: true, verbatim: true });
+        if (resolved.some((r) => isPrivateIp(r.address))) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "PRIVATE_IP_BLOCKED", message: "URL resolves to a private/internal IP" }],
+          });
+        }
+      } catch {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "DNS_FAILED", message: "Failed to resolve hostname" }],
+        });
+      }
+
       const url = parsedUrl.toString();
 
       const testPayload = payload || {
@@ -375,52 +391,195 @@ export function registerDevPortalRoutes(app: Express): void {
 
   app.post("/api/dev-portal/db/query", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const { query } = req.body;
-      if (!query || typeof query !== "string") {
+      const { table, where, limit, offset, orderBy, orderDir } = req.body as {
+        table?: unknown;
+        where?: unknown;
+        limit?: unknown;
+        offset?: unknown;
+        orderBy?: unknown;
+        orderDir?: unknown;
+      };
+
+      const tableName = String(table || "");
+      if (!tableName || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
         return sendEnvelope(res, null, {
           status: 400,
-          errors: [{ code: "MISSING_QUERY", message: "query is required" }],
+          errors: [{ code: "INVALID_TABLE", message: "Invalid table name" }],
         });
       }
 
-      if (query.length > MAX_QUERY_LENGTH) {
+      const limitNumberRaw = Number(limit ?? DEFAULT_QUERY_ROWS);
+      const limitNumber = Number.isFinite(limitNumberRaw)
+        ? Math.max(1, Math.min(MAX_QUERY_ROWS, Math.floor(limitNumberRaw)))
+        : DEFAULT_QUERY_ROWS;
+
+      const offsetNumberRaw = Number(offset ?? 0);
+      const offsetNumber = Number.isFinite(offsetNumberRaw) ? Math.max(0, Math.floor(offsetNumberRaw)) : 0;
+
+      const orderByColumn = orderBy ? String(orderBy) : null;
+      const orderDirection = String(orderDir || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+
+      const existsResult = await db.execute(
+        sql`SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_type = 'BASE TABLE'
+              AND table_name = ${tableName}
+            LIMIT 1`,
+      );
+
+      if (!existsResult.rows?.length) {
         return sendEnvelope(res, null, {
-          status: 400,
-          errors: [{ code: "QUERY_TOO_LONG", message: `Query must be under ${MAX_QUERY_LENGTH} characters` }],
+          status: 404,
+          errors: [{ code: "TABLE_NOT_FOUND", message: "Table not found" }],
         });
       }
 
-      if (!READ_ONLY_PATTERN.test(query)) {
+      const columnsResult = await db.execute(
+        sql`SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ${tableName}`,
+      );
+
+      const validColumns = new Set(
+        (columnsResult.rows || []).map((row) => String((row as { column_name: unknown }).column_name)),
+      );
+
+      if (orderByColumn && !validColumns.has(orderByColumn)) {
         return sendEnvelope(res, null, {
           status: 400,
-          errors: [
-            { code: "READ_ONLY", message: "Only SELECT, EXPLAIN, SHOW, DESCRIBE, and WITH queries are allowed" },
-          ],
+          errors: [{ code: "INVALID_ORDER_BY", message: "Invalid orderBy column" }],
         });
       }
 
-      if (DANGEROUS_PATTERN.test(query)) {
+      const whereClauses = Array.isArray(where) ? where : [];
+      if (whereClauses.length > MAX_WHERE_CLAUSES) {
         return sendEnvelope(res, null, {
           status: 400,
-          errors: [{ code: "DANGEROUS_QUERY", message: "Query contains potentially dangerous statements" }],
+          errors: [{ code: "TOO_MANY_FILTERS", message: `Too many filters (max ${MAX_WHERE_CLAUSES})` }],
         });
       }
 
-      log.info("Dev portal SQL query executed", {
+      const conditionSql: any[] = [];
+
+      for (const clause of whereClauses) {
+        if (!clause || typeof clause !== "object") {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_FILTER", message: "Invalid filter clause" }],
+          });
+        }
+
+        const column = String((clause as any).column || "");
+        const op = String((clause as any).op || "=").toLowerCase();
+        const value = (clause as any).value as unknown;
+
+        if (!column || !validColumns.has(column)) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_FILTER_COLUMN", message: "Invalid filter column" }],
+          });
+        }
+
+        const col = sql.identifier(column);
+
+        if (value === null || value === undefined) {
+          if (op === "=" || op === "eq") {
+            conditionSql.push(sql`${col} IS NULL`);
+            continue;
+          }
+          if (op === "!=" || op === "neq") {
+            conditionSql.push(sql`${col} IS NOT NULL`);
+            continue;
+          }
+
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_FILTER", message: "NULL filters only support = or !=" }],
+          });
+        }
+
+        if (op === "in") {
+          if (!Array.isArray(value) || value.length === 0 || value.length > MAX_IN_VALUES) {
+            return sendEnvelope(res, null, {
+              status: 400,
+              errors: [
+                { code: "INVALID_FILTER", message: `IN filters must be a non-empty array (max ${MAX_IN_VALUES})` },
+              ],
+            });
+          }
+
+          if (value.some((v) => typeof v === "object")) {
+            return sendEnvelope(res, null, {
+              status: 400,
+              errors: [{ code: "INVALID_FILTER", message: "IN filter values must be primitives" }],
+            });
+          }
+
+          conditionSql.push(sql`${col} = ANY(${value as any})`);
+          continue;
+        }
+
+        if (typeof value === "object") {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_FILTER", message: "Filter value must be a primitive" }],
+          });
+        }
+
+        if (op === "=" || op === "eq") {
+          conditionSql.push(sql`${col} = ${value}`);
+        } else if (op === "!=" || op === "neq") {
+          conditionSql.push(sql`${col} <> ${value}`);
+        } else if (op === ">" || op === "gt") {
+          conditionSql.push(sql`${col} > ${value}`);
+        } else if (op === ">=" || op === "gte") {
+          conditionSql.push(sql`${col} >= ${value}`);
+        } else if (op === "<" || op === "lt") {
+          conditionSql.push(sql`${col} < ${value}`);
+        } else if (op === "<=" || op === "lte") {
+          conditionSql.push(sql`${col} <= ${value}`);
+        } else if (op === "like") {
+          conditionSql.push(sql`${col} LIKE ${String(value)}`);
+        } else if (op === "ilike") {
+          conditionSql.push(sql`${col} ILIKE ${String(value)}`);
+        } else {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_FILTER", message: `Unsupported operator: ${op}` }],
+          });
+        }
+      }
+
+      const whereSql = conditionSql.length ? sql` WHERE ${sql.join(conditionSql, sql` AND `)}` : sql``;
+      const orderSql = orderByColumn
+        ? sql` ORDER BY ${sql.identifier(orderByColumn)} ${sql.raw(orderDirection)}`
+        : sql``;
+
+      log.info("Dev portal DB query executed", {
         userId: (req as any).user?.id,
-        queryPreview: query.slice(0, 100),
+        table: tableName,
+        limit: limitNumber,
+        offset: offsetNumber,
+        orderBy: orderByColumn,
+        orderDir: orderDirection,
+        filters: conditionSql.length,
       });
 
       const startTime = Date.now();
-      const wrappedQuery = `SELECT * FROM (${query.replace(/;+\s*$/, "")}) AS _devportal_q LIMIT ${MAX_QUERY_ROWS}`;
-      const result = await db.execute(sql.raw(wrappedQuery));
+      const result = await db.execute(
+        sql`SELECT * FROM ${sql.identifier(tableName)}${whereSql}${orderSql} LIMIT ${limitNumber} OFFSET ${offsetNumber}`,
+      );
       const elapsed = Date.now() - startTime;
 
+      const rows = result.rows || [];
+
       return sendEnvelope(res, {
-        rows: result.rows || [],
-        rowCount: (result.rows || []).length,
+        rows,
+        rowCount: rows.length,
         elapsed,
-        truncated: (result.rows || []).length >= MAX_QUERY_ROWS,
+        truncated: limitNumber === MAX_QUERY_ROWS && rows.length >= MAX_QUERY_ROWS,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
