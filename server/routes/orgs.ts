@@ -6,7 +6,8 @@ import { requireMinRole, requireOrgId, requireOrgRole, resolveOrgContext } from 
 import { bodySchemas, validateBody, validatePathId } from "../request-validator";
 import { uploadFile, getSignedUrl, deleteFile } from "../s3";
 import { sendEmail } from "../email-service";
-import { invitationEmail } from "../email-templates";
+import { invitationEmail, memberSuspendedEmail, memberRoleChangedEmail } from "../email-templates";
+import { authStorage } from "../auth/storage";
 
 const LOGO_MAX_SIZE = 2 * 1024 * 1024;
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -136,6 +137,7 @@ export function registerOrgsRoutes(app: Express): void {
           return res.status(400).json({ error: "Cannot change your own role" });
         }
 
+        const oldRole = target.role;
         const updated = await storage.updateOrgMembership(memberId, { role });
         await storage.createAuditLog({
           userId,
@@ -145,8 +147,27 @@ export function registerOrgsRoutes(app: Express): void {
           action: "member_role_changed",
           resourceType: "membership",
           resourceId: memberId,
-          details: { newRole: role, targetUserId: target.userId },
+          details: { newRole: role, oldRole, targetUserId: target.userId },
         });
+
+        Promise.all([storage.getOrganization(orgId), authStorage.getUser(target.userId)])
+          .then(([org, targetUser]) => {
+            if (!targetUser?.email) return;
+            const emailContent = memberRoleChangedEmail({
+              memberName: targetUser.firstName || undefined,
+              orgName: org?.name || "your organization",
+              oldRole: oldRole || "member",
+              newRole: role,
+            });
+            return sendEmail({
+              to: targetUser.email,
+              subject: emailContent.subject,
+              html: emailContent.html,
+              text: emailContent.text,
+            });
+          })
+          .catch((err) => logger.child("orgs").error("Failed to send role-changed email", { error: String(err) }));
+
         res.json(updated);
       } catch (error) {
         res.status(500).json({ message: "Failed to update member role" });
@@ -186,6 +207,29 @@ export function registerOrgsRoutes(app: Express): void {
           resourceId: memberId,
           details: { targetUserId: target.userId },
         });
+
+        const suspendReason =
+          typeof req.body === "object" && req.body !== null
+            ? String((req.body as Record<string, unknown>).reason || "")
+            : undefined;
+
+        Promise.all([storage.getOrganization(orgId), authStorage.getUser(target.userId)])
+          .then(([org, targetUser]) => {
+            if (!targetUser?.email) return;
+            const emailContent = memberSuspendedEmail({
+              memberName: targetUser.firstName || undefined,
+              orgName: org?.name || "your organization",
+              reason: suspendReason || undefined,
+            });
+            return sendEmail({
+              to: targetUser.email,
+              subject: emailContent.subject,
+              html: emailContent.html,
+              text: emailContent.text,
+            });
+          })
+          .catch((err) => logger.child("orgs").error("Failed to send member-suspended email", { error: String(err) }));
+
         res.json(updated);
       } catch (error) {
         res.status(500).json({ message: "Failed to suspend member" });
