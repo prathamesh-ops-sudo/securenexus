@@ -416,9 +416,12 @@ export function registerComplianceRoutes(app: Express): void {
         filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
       }
       if (endDate) {
-        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endDate);
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endOfDay);
       }
       const sortedLogs = filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+      const isFiltered = !!(startDate || endDate);
 
       res.json({
         exportedAt: new Date().toISOString(),
@@ -426,7 +429,7 @@ export function registerComplianceRoutes(app: Express): void {
         totalEntries: sortedLogs.length,
         startDate: startDate?.toISOString() ?? null,
         endDate: endDate?.toISOString() ?? null,
-        hashChainIntact: true,
+        hashChainIntact: isFiltered ? null : true,
         entries: sortedLogs.map((l) => ({
           id: l.id,
           sequenceNum: l.sequenceNum,
@@ -1301,7 +1304,9 @@ export function registerComplianceRoutes(app: Express): void {
         filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
       }
       if (endDate) {
-        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endDate);
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endOfDay);
       }
       filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
 
