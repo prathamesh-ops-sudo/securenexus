@@ -59,6 +59,13 @@ const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 const MsspDashboardPage = lazy(() => import("@/pages/mssp-dashboard"));
 const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
+const ProductOverviewPage = lazy(() => import("@/pages/product-overview"));
+const AgenticSocPage = lazy(() => import("@/pages/agentic-soc"));
+const AiSocAnalystPage = lazy(() => import("@/pages/ai-soc-analyst"));
+const SolutionsIndiaPage = lazy(() => import("@/pages/solutions-india"));
+const SolutionsMsspPage = lazy(() => import("@/pages/solutions-mssp"));
+const SolutionsCompliancePage = lazy(() => import("@/pages/solutions-compliance"));
+const AboutPage = lazy(() => import("@/pages/about"));
 
 function PageSkeleton() {
   return (
@@ -95,6 +102,12 @@ export function useEventStreamContext() {
   return useContext(EventStreamContext);
 }
 
+const CONTENT_PAGE_PREFIXES = ["/product", "/solutions", "/about"];
+
+function isContentPageRoute(path: string): boolean {
+  return CONTENT_PAGE_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+}
+
 function AuthenticatedApp() {
   useRoleLanding();
   const { connected, connectionState, eventCount, events, lastEvent } = useEventStream({ enabled: true });
@@ -102,10 +115,27 @@ function AuthenticatedApp() {
   const [location, navigate] = useLocation();
 
   useEffect(() => {
-    if (orgContext.needsOnboarding && location !== "/onboarding-wizard") {
+    if (orgContext.needsOnboarding && location !== "/onboarding-wizard" && !isContentPageRoute(location)) {
       navigate("/onboarding-wizard");
     }
   }, [orgContext.needsOnboarding, location, navigate]);
+
+  if (isContentPageRoute(location)) {
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <Switch>
+          <Route path="/product/agentic-soc" component={AgenticSocPage} />
+          <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/product" component={ProductOverviewPage} />
+          <Route path="/solutions/india" component={SolutionsIndiaPage} />
+          <Route path="/solutions/mssp" component={SolutionsMsspPage} />
+          <Route path="/solutions/compliance" component={SolutionsCompliancePage} />
+          <Route path="/about" component={AboutPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
+    );
+  }
 
   const style = {
     "--sidebar-width": "16rem",
@@ -227,6 +257,13 @@ function AppContent() {
           <Route path="/forgot-password" component={ForgotPasswordPage} />
           <Route path="/reset-password" component={ResetPasswordPage} />
           <Route path="/accept-invitation" component={AcceptInvitationPage} />
+          <Route path="/product/agentic-soc" component={AgenticSocPage} />
+          <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/product" component={ProductOverviewPage} />
+          <Route path="/solutions/india" component={SolutionsIndiaPage} />
+          <Route path="/solutions/mssp" component={SolutionsMsspPage} />
+          <Route path="/solutions/compliance" component={SolutionsCompliancePage} />
+          <Route path="/about" component={AboutPage} />
           <Route>
             <LandingPage />
           </Route>

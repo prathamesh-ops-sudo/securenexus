@@ -1,20 +1,24 @@
-# SecureNexus
+# SecureNexus — Agentic SOC Platform
 
-**AI-Powered Security Orchestration & Intelligence Platform**
+**AI-Powered Security Orchestration, Automated Threat Detection & Incident Response**
 
-SecureNexus is a full-stack SaaS platform that unifies alerts from multiple cybersecurity tools (EDR, SIEM, IDS/IPS, cloud security), correlates them using AI, and produces attacker-centric incident narratives for security operations teams.
+SecureNexus is an **Agentic SOC** (Security Operations Center) platform that uses **AI SOC Analyst** agents to autonomously detect, investigate, and respond to security threats. Built by **Arica Technologies** (India), it unifies alerts from 24+ cybersecurity tools (EDR, SIEM, IDS/IPS, cloud security), correlates them using AI, and produces attacker-centric incident narratives — reducing Tier-1 analyst workload by 80%+.
+
+**Key capabilities:** Agentic SOC | AI SOC Analyst | SOAR Automation | MITRE ATT&CK Mapping | Multi-Tenant RBAC | Automated Compliance (SOC 2, ISO 27001, NIST CSF) | MSSP Multi-Tenancy | Indian Data Residency
 
 ---
 
 ## Key Features
 
 ### AI-Driven Correlation Engine
+
 - Powered by **Mistral Large 2 Instruct** on AWS Bedrock
 - Automatic alert correlation with confidence scoring
 - AI-generated incident narratives and triage recommendations
 - Framework-aware analysis: MITRE ATT&CK, Kill Chain, Diamond Model, NIST IR
 
 ### Dual Alert Ingestion
+
 - **Push-based API**: RESTful endpoints with X-API-Key authentication (SHA-256 hashed) for real-time alert ingestion from any source
 - **Pull-based Connectors**: Scheduled polling engine that actively fetches from 8 security tool APIs:
   - CrowdStrike Falcon
@@ -27,17 +31,20 @@ SecureNexus is a full-stack SaaS platform that unifies alerts from multiple cybe
   - SentinelOne
 
 ### Alert Normalization
+
 - 6 source-specific transformers that normalize raw alerts into a unified schema
 - Automatic MITRE ATT&CK tactic/technique mapping
 - Deduplication via unique index on (orgId, source, sourceEventId)
 
 ### Enhanced SOC Dashboard
+
 - Real-time security operations overview with 6 stat cards
 - Interactive charts: severity distribution, alerts by source, 7-day trend
 - MITRE ATT&CK tactics widget with progress bars
 - Threat category breakdown, connector health status, ingestion rate monitoring
 
 ### Incident Management
+
 - Full incident lifecycle tracking (open through resolved/closed)
 - Comments, tags, affected assets, IOCs
 - AI-generated summaries and mitigation steps
@@ -48,6 +55,7 @@ SecureNexus is a full-stack SaaS platform that unifies alerts from multiple cybe
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js 20+
 - PostgreSQL database
 - AWS credentials (for Bedrock AI features)
@@ -77,13 +85,16 @@ The application will be available at `http://localhost:5000`.
 ## API Overview
 
 ### Alert Ingestion (Push)
+
 ```
 POST /api/ingest/alert        - Single alert ingestion
 POST /api/ingest/alerts/bulk  - Bulk alert ingestion (up to 100)
 ```
+
 All ingestion endpoints require an `X-API-Key` header.
 
 ### Core Resources
+
 ```
 GET    /api/alerts             - List alerts
 GET    /api/alerts/:id         - Get alert details
@@ -96,6 +107,7 @@ GET    /api/dashboard/analytics - Analytics data (charts, trends)
 ```
 
 ### Connectors
+
 ```
 GET    /api/connectors         - List connectors
 POST   /api/connectors         - Create connector
@@ -107,15 +119,15 @@ POST   /api/connectors/:id/sync  - Trigger sync
 
 ## Development Phases
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 0 | Complete | Foundation - Auth, DB, UI shell, dashboard, basic CRUD |
-| 1 | Complete | Data Models & Alert Schema refinements |
-| 2 | Complete | Alert Ingestion System with API key auth |
-| 3 | Complete | Normalization Engine (6 source transformers) |
-| 4 | Complete | Enhanced SOC Dashboard with Recharts analytics |
-| 5 | Complete | AI Correlation Engine (AWS Bedrock) |
-| 6-16 | Planned | Incident Management, MITRE ATT&CK, Threat Intel, RBAC, SOAR, Billing |
+| Phase | Status   | Description                                                          |
+| ----- | -------- | -------------------------------------------------------------------- |
+| 0     | Complete | Foundation - Auth, DB, UI shell, dashboard, basic CRUD               |
+| 1     | Complete | Data Models & Alert Schema refinements                               |
+| 2     | Complete | Alert Ingestion System with API key auth                             |
+| 3     | Complete | Normalization Engine (6 source transformers)                         |
+| 4     | Complete | Enhanced SOC Dashboard with Recharts analytics                       |
+| 5     | Complete | AI Correlation Engine (AWS Bedrock)                                  |
+| 6-16  | Planned  | Incident Management, MITRE ATT&CK, Threat Intel, RBAC, SOAR, Billing |
 
 ---
 
@@ -213,6 +225,7 @@ AWS Account (us-east-1)
 ```
 
 **Manual rollout controls:**
+
 ```bash
 # Check canary rollout status
 kubectl argo rollouts status securenexus -n production
@@ -228,16 +241,16 @@ kubectl argo rollouts promote securenexus -n production
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React, TypeScript, Vite, TailwindCSS, shadcn/ui, Recharts |
-| Backend | Express.js, TypeScript, Drizzle ORM |
-| Database | PostgreSQL (AWS RDS) |
-| AI/ML | AWS Bedrock (Mistral Large 2), AWS SageMaker |
-| Storage | AWS S3 |
-| Infrastructure | AWS EKS (Kubernetes), Docker, Argo Rollouts |
-| CI/CD | GitHub Actions → ECR → EKS (staging → uat → canary production) |
-| Monitoring | Prometheus + Grafana |
+| Layer               | Technology                                                                |
+| ------------------- | ------------------------------------------------------------------------- |
+| Frontend            | React, TypeScript, Vite, TailwindCSS, shadcn/ui, Recharts                 |
+| Backend             | Express.js, TypeScript, Drizzle ORM                                       |
+| Database            | PostgreSQL (AWS RDS)                                                      |
+| AI/ML               | AWS Bedrock (Mistral Large 2), AWS SageMaker                              |
+| Storage             | AWS S3                                                                    |
+| Infrastructure      | AWS EKS (Kubernetes), Docker, Argo Rollouts                               |
+| CI/CD               | GitHub Actions → ECR → EKS (staging → uat → canary production)            |
+| Monitoring          | Prometheus + Grafana                                                      |
 | Security Frameworks | MITRE ATT&CK v15, NIST SP 800-61r2, Cyber Kill Chain, Diamond Model, OCSF |
 
 ---
