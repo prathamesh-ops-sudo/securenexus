@@ -45,6 +45,15 @@ SecureNexus is an Agentic SOC platform that uses AI agents to autonomously detec
 - Built-in compliance: Automated SOC 2, ISO 27001, NIST CSF evidence collection
 - Indian-built: Indigenous cybersecurity product by Arica Technologies
 
+## Content Pages
+- Product Overview: https://nexus.aricatech.xyz/product
+- What is an Agentic SOC?: https://nexus.aricatech.xyz/product/agentic-soc
+- AI SOC Analyst: https://nexus.aricatech.xyz/product/ai-soc-analyst
+- Solutions for Indian Enterprises: https://nexus.aricatech.xyz/solutions/india
+- MSSP Multi-Tenant SOC: https://nexus.aricatech.xyz/solutions/mssp
+- Compliance Automation: https://nexus.aricatech.xyz/solutions/compliance
+- About Arica Technologies: https://nexus.aricatech.xyz/about
+
 ## Documentation
 - Product: https://nexus.aricatech.xyz
 - GitHub: https://github.com/prathamesh-ops-sudo/securenexus
