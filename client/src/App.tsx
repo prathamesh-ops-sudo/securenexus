@@ -102,6 +102,12 @@ export function useEventStreamContext() {
   return useContext(EventStreamContext);
 }
 
+const CONTENT_PAGE_PREFIXES = ["/product", "/solutions", "/about"];
+
+function isContentPageRoute(path: string): boolean {
+  return CONTENT_PAGE_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+}
+
 function AuthenticatedApp() {
   useRoleLanding();
   const { connected, connectionState, eventCount, events, lastEvent } = useEventStream({ enabled: true });
@@ -109,10 +115,26 @@ function AuthenticatedApp() {
   const [location, navigate] = useLocation();
 
   useEffect(() => {
-    if (orgContext.needsOnboarding && location !== "/onboarding-wizard") {
+    if (orgContext.needsOnboarding && location !== "/onboarding-wizard" && !isContentPageRoute(location)) {
       navigate("/onboarding-wizard");
     }
   }, [orgContext.needsOnboarding, location, navigate]);
+
+  if (isContentPageRoute(location)) {
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <Switch>
+          <Route path="/product/agentic-soc" component={AgenticSocPage} />
+          <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/product" component={ProductOverviewPage} />
+          <Route path="/solutions/india" component={SolutionsIndiaPage} />
+          <Route path="/solutions/mssp" component={SolutionsMsspPage} />
+          <Route path="/solutions/compliance" component={SolutionsCompliancePage} />
+          <Route path="/about" component={AboutPage} />
+        </Switch>
+      </Suspense>
+    );
+  }
 
   const style = {
     "--sidebar-width": "16rem",
@@ -189,13 +211,6 @@ function AuthenticatedApp() {
                     <Route path="/platform-admin" component={PlatformAdminPage} />
                     <Route path="/mssp-dashboard" component={MsspDashboardPage} />
                     <Route path="/dev-portal" component={DevPortalPage} />
-                    <Route path="/product/agentic-soc" component={AgenticSocPage} />
-                    <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
-                    <Route path="/product" component={ProductOverviewPage} />
-                    <Route path="/solutions/india" component={SolutionsIndiaPage} />
-                    <Route path="/solutions/mssp" component={SolutionsMsspPage} />
-                    <Route path="/solutions/compliance" component={SolutionsCompliancePage} />
-                    <Route path="/about" component={AboutPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
