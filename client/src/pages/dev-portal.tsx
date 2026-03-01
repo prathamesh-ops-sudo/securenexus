@@ -588,7 +588,11 @@ function DatabaseTab() {
   });
 
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [query, setQuery] = useState("SELECT count(*) FROM alerts");
+  const [limit, setLimit] = useState(100);
+  const [offsetVal, setOffsetVal] = useState(0);
+  const [orderBy, setOrderBy] = useState("");
+  const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
+  const [filtersJson, setFiltersJson] = useState("[]");
   const [queryResult, setQueryResult] = useState<{
     rows: unknown[];
     rowCount: number;
@@ -610,7 +614,29 @@ function DatabaseTab() {
 
   const queryMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/dev-portal/db/query", { query });
+      if (!selectedTable) {
+        throw new Error("Select a table first");
+      }
+
+      let parsedFilters: unknown;
+      try {
+        parsedFilters = filtersJson ? JSON.parse(filtersJson) : [];
+      } catch {
+        throw new Error("Filters must be valid JSON");
+      }
+
+      if (!Array.isArray(parsedFilters)) {
+        throw new Error("Filters JSON must be an array");
+      }
+
+      const res = await apiRequest("POST", "/api/dev-portal/db/query", {
+        table: selectedTable,
+        where: parsedFilters,
+        limit,
+        offset: offsetVal,
+        orderBy: orderBy || undefined,
+        orderDir,
+      });
       return await res.json();
     },
     onSuccess: (data) => setQueryResult(data as any),
@@ -728,21 +754,87 @@ function DatabaseTab() {
 
       <Card className="glass-card border-border/40">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">SQL Query (Read-Only)</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            Query Runner (Read-Only){selectedTable ? `: ${selectedTable}` : ""}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Textarea
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="SELECT * FROM alerts LIMIT 10"
-              className="font-mono text-sm min-h-[60px] flex-1"
-            />
-            <Button onClick={() => queryMutation.mutate()} disabled={queryMutation.isPending} className="self-end">
-              <Play className="h-4 w-4 mr-1" />
-              {queryMutation.isPending ? "Running..." : "Run"}
-            </Button>
-          </div>
+          {!selectedTable ? (
+            <div className="text-center py-4 text-muted-foreground text-sm">
+              <Database className="h-6 w-6 mx-auto mb-1.5 opacity-40" />
+              Select a table from the list above to query it
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2">
+              <div className="lg:col-span-2">
+                <label className="text-[11px] text-muted-foreground">Filters (JSON array)</label>
+                <Textarea
+                  value={filtersJson}
+                  onChange={(e) => setFiltersJson(e.target.value)}
+                  placeholder={'[{"column":"org_id","op":"=","value":"..."}]'}
+                  className="font-mono text-xs min-h-[56px]"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground">Limit</label>
+                <Input
+                  type="number"
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  className="h-9 text-xs"
+                  min={1}
+                  max={500}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground">Offset</label>
+                <Input
+                  type="number"
+                  value={offsetVal}
+                  onChange={(e) => setOffsetVal(Number(e.target.value))}
+                  className="h-9 text-xs"
+                  min={0}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground">Order By</label>
+                <Input
+                  value={orderBy}
+                  onChange={(e) => setOrderBy(e.target.value)}
+                  className="h-9 text-xs font-mono"
+                  placeholder="created_at"
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={orderDir === "desc" ? "default" : "outline"}
+                    onClick={() => setOrderDir("desc")}
+                  >
+                    DESC
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={orderDir === "asc" ? "default" : "outline"}
+                    onClick={() => setOrderDir("asc")}
+                  >
+                    ASC
+                  </Button>
+                </div>
+                <Button
+                  onClick={() => queryMutation.mutate()}
+                  disabled={queryMutation.isPending || !selectedTable}
+                  className="ml-auto"
+                >
+                  <Play className="h-4 w-4 mr-1" />
+                  {queryMutation.isPending ? "Running..." : "Run"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {queryResult && (
             <div>
