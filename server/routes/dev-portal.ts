@@ -23,12 +23,20 @@ const BLOCKED_HOSTS = new Set([
 
 function isPrivateIp(hostname: string): boolean {
   if (BLOCKED_HOSTS.has(hostname.toLowerCase())) return true;
-  const ipv4 = hostname.replace(/^\[|\]$/g, "");
-  if (/^10\./.test(ipv4)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ipv4)) return true;
-  if (/^192\.168\./.test(ipv4)) return true;
-  if (/^fc00:|^fd/.test(ipv4)) return true;
-  if (/^fe80:/.test(ipv4)) return true;
+  let normalized = hostname.replace(/^\[|\]$/g, "");
+  if (/^::ffff:/i.test(normalized)) {
+    normalized = normalized.replace(/^::ffff:/i, "");
+  }
+  if (/^127\./.test(normalized)) return true;
+  if (/^0\./.test(normalized)) return true;
+  if (/^10\./.test(normalized)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(normalized)) return true;
+  if (/^192\.168\./.test(normalized)) return true;
+  if (/^169\.254\./.test(normalized)) return true;
+  if (/^fc00:|^fd/i.test(normalized)) return true;
+  if (/^fe80:/i.test(normalized)) return true;
+  if (/^::$/i.test(normalized)) return true;
+  if (/^::1$/i.test(normalized)) return true;
   return false;
 }
 
