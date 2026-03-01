@@ -138,6 +138,10 @@ const articleSchema = {
     "AI-powered security operations",
     "automated threat detection",
   ],
+  speakable: {
+    "@type": "SpeakableSpecification",
+    cssSelector: ["article > header > p", "article > section:first-of-type > p"],
+  },
 };
 
 export default function AiSocAnalystPage() {
@@ -161,7 +165,7 @@ export default function AiSocAnalystPage() {
             <br />
             <span className="text-violet-600 dark:text-violet-400">How AI is Replacing Tier-1 Security Operations</span>
           </h1>
-          <p className="text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
+          <p className="speakable-summary text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
             An AI SOC Analyst is an AI system that performs Tier-1 security analyst tasks: alert triage, threat
             correlation, MITRE ATT&CK mapping, and incident enrichment. SecureNexus provides AI SOC analyst capabilities
             that process thousands of alerts per day, surfacing only validated incidents that require human judgment.

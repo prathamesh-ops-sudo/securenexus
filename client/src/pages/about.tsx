@@ -107,6 +107,10 @@ const orgSchema = {
     name: "SecureNexus",
   },
   sameAs: ["https://github.com/prathamesh-ops-sudo/securenexus"],
+  speakable: {
+    "@type": "SpeakableSpecification",
+    cssSelector: ["article > header > p", "article > header > h1"],
+  },
 };
 
 export default function AboutPage() {
@@ -123,7 +127,7 @@ export default function AboutPage() {
       <article>
         <header className="mb-12">
           <h1 className="text-3xl md:text-5xl font-black mb-4 leading-tight">About Arica Technologies</h1>
-          <p className="text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
+          <p className="speakable-summary text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
             Arica Technologies is an Indian cybersecurity company building SecureNexus — the Agentic SOC platform that
             uses AI to autonomously detect, investigate, and respond to security threats. Founded with the mission to
             make enterprise-grade security operations accessible to organizations of every size.

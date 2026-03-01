@@ -66,6 +66,7 @@ const SolutionsIndiaPage = lazy(() => import("@/pages/solutions-india"));
 const SolutionsMsspPage = lazy(() => import("@/pages/solutions-mssp"));
 const SolutionsCompliancePage = lazy(() => import("@/pages/solutions-compliance"));
 const AboutPage = lazy(() => import("@/pages/about"));
+const ProductComparisonPage = lazy(() => import("@/pages/product-comparison"));
 
 function PageSkeleton() {
   return (
@@ -126,6 +127,7 @@ function AuthenticatedApp() {
         <Switch>
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/product/comparison" component={ProductComparisonPage} />
           <Route path="/product" component={ProductOverviewPage} />
           <Route path="/solutions/india" component={SolutionsIndiaPage} />
           <Route path="/solutions/mssp" component={SolutionsMsspPage} />
@@ -259,6 +261,7 @@ function AppContent() {
           <Route path="/accept-invitation" component={AcceptInvitationPage} />
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/product/comparison" component={ProductComparisonPage} />
           <Route path="/product" component={ProductOverviewPage} />
           <Route path="/solutions/india" component={SolutionsIndiaPage} />
           <Route path="/solutions/mssp" component={SolutionsMsspPage} />
