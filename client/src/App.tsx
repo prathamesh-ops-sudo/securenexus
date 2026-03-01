@@ -189,6 +189,13 @@ function AuthenticatedApp() {
                     <Route path="/platform-admin" component={PlatformAdminPage} />
                     <Route path="/mssp-dashboard" component={MsspDashboardPage} />
                     <Route path="/dev-portal" component={DevPortalPage} />
+                    <Route path="/product/agentic-soc" component={AgenticSocPage} />
+                    <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+                    <Route path="/product" component={ProductOverviewPage} />
+                    <Route path="/solutions/india" component={SolutionsIndiaPage} />
+                    <Route path="/solutions/mssp" component={SolutionsMsspPage} />
+                    <Route path="/solutions/compliance" component={SolutionsCompliancePage} />
+                    <Route path="/about" component={AboutPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
