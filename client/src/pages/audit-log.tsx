@@ -174,8 +174,8 @@ export default function AuditLogPage() {
     setExporting(true);
     try {
       const params = new URLSearchParams();
-      if (dateFrom) params.set("from", dateFrom);
-      if (dateTo) params.set("to", dateTo);
+      if (dateFrom) params.set("startDate", dateFrom);
+      if (dateTo) params.set("endDate", dateTo);
       const url = `/api/compliance/audit/export/csv${params.toString() ? `?${params}` : ""}`;
       const res = await apiRequest("GET", url);
       const text = await res.text();
@@ -201,8 +201,8 @@ export default function AuditLogPage() {
     setExporting(true);
     try {
       const params = new URLSearchParams();
-      if (dateFrom) params.set("from", dateFrom);
-      if (dateTo) params.set("to", dateTo);
+      if (dateFrom) params.set("startDate", dateFrom);
+      if (dateTo) params.set("endDate", dateTo);
       const url = `/api/compliance/audit/export${params.toString() ? `?${params}` : ""}`;
       const res = await apiRequest("GET", url);
       const data = await res.json();
