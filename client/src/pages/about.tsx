@@ -107,6 +107,15 @@ const orgSchema = {
     name: "SecureNexus",
   },
   sameAs: ["https://github.com/prathamesh-ops-sudo/securenexus"],
+};
+
+const aboutPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "About Arica Technologies",
+  url: "https://nexus.aricatech.xyz/about",
+  description:
+    "Arica Technologies is an Indian cybersecurity company building SecureNexus, the Agentic SOC platform with AI-powered threat detection and automated incident response.",
   speakable: {
     "@type": "SpeakableSpecification",
     cssSelector: ["article > header > p", "article > header > h1"],
@@ -122,7 +131,7 @@ export default function AboutPage() {
       title="About Arica Technologies"
       breadcrumbs={[{ label: "Home", href: "/" }, { label: "About" }]}
       faqs={faqs}
-      jsonLd={[orgSchema]}
+      jsonLd={[orgSchema, aboutPageSchema]}
     >
       <article>
         <header className="mb-12">
