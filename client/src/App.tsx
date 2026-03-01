@@ -131,6 +131,7 @@ function AuthenticatedApp() {
           <Route path="/solutions/mssp" component={SolutionsMsspPage} />
           <Route path="/solutions/compliance" component={SolutionsCompliancePage} />
           <Route path="/about" component={AboutPage} />
+          <Route component={NotFound} />
         </Switch>
       </Suspense>
     );
