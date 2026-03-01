@@ -26,6 +26,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/i18n";
 import { useAuth } from "@/hooks/use-auth";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ interface OutboundWebhookLog {
 }
 
 export default function SettingsPage() {
+  usePageTitle("Settings");
   const { user } = useAuth();
   const { toast } = useToast();
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});

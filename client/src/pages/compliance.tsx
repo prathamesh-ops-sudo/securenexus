@@ -53,6 +53,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort as formatDate, formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 interface CompliancePolicy {
   id: string;
@@ -3066,6 +3067,7 @@ function ComplianceHelpersTab() {
 }
 
 export default function CompliancePage() {
+  usePageTitle("Compliance & Governance");
   return (
     <div
       className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto"

@@ -55,6 +55,7 @@ import { SeverityBadge } from "@/components/security-badges";
 import { formatTimestamp, formatRelativeTime as formatRelativeTimestamp } from "@/lib/i18n";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import type { Alert, Incident } from "@shared/schema";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 interface ProviderStatus {
   name: string;
@@ -188,6 +189,7 @@ const FEED_STATUS_DOT: Record<string, string> = {
 };
 
 export default function ThreatIntelPage() {
+  usePageTitle("Threat Intelligence");
   const [search, setSearch] = useState("");
   const [selectedIOCIdx, setSelectedIOCIdx] = useState<number | null>(null);
   const [expandedFeed, setExpandedFeed] = useState<string | null>(null);

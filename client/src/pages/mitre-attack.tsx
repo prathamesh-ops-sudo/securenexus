@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Alert } from "@shared/schema";
 import { formatDateFull } from "@/lib/i18n";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 const MITRE_TACTICS = [
   "Reconnaissance",
@@ -97,6 +98,7 @@ function StatCard({
 }
 
 export default function MitreAttackPage() {
+  usePageTitle("MITRE ATT&CK Coverage");
   const {
     data: alerts,
     isLoading,

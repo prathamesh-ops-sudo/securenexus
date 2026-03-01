@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import {
   Shield,
   AlertTriangle,
@@ -906,6 +907,7 @@ function WidgetCustomizer({
 }
 
 export default function Dashboard() {
+  usePageTitle("Dashboard");
   const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);

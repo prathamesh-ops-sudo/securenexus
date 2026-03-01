@@ -31,6 +31,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -351,6 +352,7 @@ function SlaPolicyDialog() {
 }
 
 export default function IncidentsPage() {
+  usePageTitle("Incidents");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [search, setSearch] = useState("");

@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { formatRelativeTime, formatDateShort } from "@/lib/i18n";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -850,6 +851,7 @@ export default function PlaybooksPage() {
   const [rollbackPlanDesc, setRollbackPlanDesc] = useState("");
   const [rollbackSteps, setRollbackSteps] = useState("");
 
+  usePageTitle("Playbooks");
   const {
     data: playbooks,
     isLoading: playbooksLoading,
