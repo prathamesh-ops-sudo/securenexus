@@ -58,6 +58,7 @@ const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
 const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 const MsspDashboardPage = lazy(() => import("@/pages/mssp-dashboard"));
+const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
 
 function PageSkeleton() {
   return (
@@ -180,6 +181,7 @@ function AuthenticatedApp() {
                     <Route path="/accept-invitation" component={AcceptInvitationPage} />
                     <Route path="/platform-admin" component={PlatformAdminPage} />
                     <Route path="/mssp-dashboard" component={MsspDashboardPage} />
+                    <Route path="/dev-portal" component={DevPortalPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

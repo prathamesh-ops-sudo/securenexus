@@ -32,6 +32,7 @@ import {
   Check,
   ChevronsUpDown,
   ShieldCheck,
+  Code2,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -341,6 +342,18 @@ export function AppSidebar() {
                       <Link href="/platform-admin">
                         <ShieldCheck className="h-4 w-4 shrink-0 text-yellow-500" aria-hidden="true" />
                         <span className="truncate font-medium text-yellow-500">Platform Admin</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === "/dev-portal"}
+                      aria-label="Navigate to Developer Portal"
+                    >
+                      <Link href="/dev-portal">
+                        <Code2 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
+                        <span className="truncate font-medium text-cyan-400">Dev Portal</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
