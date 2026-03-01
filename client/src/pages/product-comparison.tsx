@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { CheckCircle2, XCircle, Minus } from "lucide-react";
 import ContentLayout from "./content-layout";
 
@@ -270,8 +271,8 @@ const comparisonSchema = {
     url: "https://aricatech.xyz",
   },
   url: "https://nexus.aricatech.xyz/product/comparison",
-  datePublished: "2026-03-01",
-  dateModified: "2026-03-01",
+  datePublished: "2026-02-17",
+  dateModified: "2026-02-17",
   keywords: [
     "SecureNexus vs Sentinel",
     "SecureNexus vs Splunk",
@@ -336,7 +337,7 @@ export default function ProductComparisonPage() {
               </thead>
               <tbody>
                 {categories.map((category) => (
-                  <>
+                  <Fragment key={category}>
                     <tr key={`cat-${category}`}>
                       <td
                         colSpan={5}
@@ -392,7 +393,7 @@ export default function ProductComparisonPage() {
                           </td>
                         </tr>
                       ))}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
