@@ -18,6 +18,7 @@ import {
   Area,
 } from "recharts";
 import { formatChartDateLabel } from "@/lib/i18n";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#ef4444",
@@ -389,6 +390,7 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
 }
 
 export default function Analytics() {
+  usePageTitle("Security Analytics");
   const {
     data: analytics,
     isLoading,

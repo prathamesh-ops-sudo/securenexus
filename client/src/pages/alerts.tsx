@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
@@ -149,6 +150,7 @@ const SCOPE_OPTIONS = [
 ] as const;
 
 export default function AlertsPage() {
+  usePageTitle("Alerts");
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
