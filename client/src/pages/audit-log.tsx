@@ -1,10 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, User, Shield, AlertTriangle, FileWarning, Search, X } from "lucide-react";
+import {
+  Activity,
+  User,
+  Shield,
+  AlertTriangle,
+  FileWarning,
+  Search,
+  X,
+  Download,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Globe,
+  FileJson,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { AuditLog } from "@shared/schema";
 import { formatDateTime } from "@/lib/i18n";
 
@@ -69,9 +85,20 @@ const ACTION_TO_CATEGORY: Record<string, string> = {
   incident_assignment_change: "escalations",
 };
 
+const ITEMS_PER_PAGE = 50;
+
+function formatDateForInput(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
 export default function AuditLogPage() {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   const {
     data: logs,
@@ -105,36 +132,142 @@ export default function AuditLogPage() {
           !search ||
           (log.userName && log.userName.toLowerCase().includes(search.toLowerCase())) ||
           (log.resourceId && log.resourceId.toLowerCase().includes(search.toLowerCase())) ||
-          log.action.toLowerCase().includes(search.toLowerCase());
-        return matchesCategory && matchesSearch;
+          log.action.toLowerCase().includes(search.toLowerCase()) ||
+          (log.ipAddress && log.ipAddress.toLowerCase().includes(search.toLowerCase()));
+
+        let matchesDateRange = true;
+        if (dateFrom && log.createdAt) {
+          matchesDateRange = new Date(log.createdAt) >= new Date(dateFrom);
+        }
+        if (dateTo && log.createdAt && matchesDateRange) {
+          const toDate = new Date(dateTo);
+          toDate.setHours(23, 59, 59, 999);
+          matchesDateRange = new Date(log.createdAt) <= toDate;
+        }
+
+        return matchesCategory && matchesSearch && matchesDateRange;
       })
       .sort((a, b) => {
         const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return bDate - aDate;
       });
-  }, [logs, search, categoryFilter]);
+  }, [logs, search, categoryFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const paginatedLogs = useMemo(() => {
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return filtered.slice(start, start + ITEMS_PER_PAGE);
+  }, [filtered, page]);
 
   const handleClearFilters = () => {
     setSearch("");
     setCategoryFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setPage(1);
   };
+
+  const hasActiveFilters = search || categoryFilter !== "all" || dateFrom || dateTo;
+
+  const handleExportCSV = useCallback(async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("from", dateFrom);
+      if (dateTo) params.set("to", dateTo);
+      const url = `/api/compliance/audit/export/csv${params.toString() ? `?${params}` : ""}`;
+      const res = await apiRequest("GET", url);
+      const text = await res.text();
+      const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `audit-log-${formatDateForInput(new Date())}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast({ title: "Export complete", description: "Audit log CSV downloaded." });
+    } catch (err: unknown) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }, [dateFrom, dateTo, toast]);
+
+  const handleExportJSON = useCallback(async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("from", dateFrom);
+      if (dateTo) params.set("to", dateTo);
+      const url = `/api/compliance/audit/export${params.toString() ? `?${params}` : ""}`;
+      const res = await apiRequest("GET", url);
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `audit-log-${formatDateForInput(new Date())}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast({ title: "Export complete", description: "Audit log JSON downloaded." });
+    } catch (err: unknown) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }, [dateFrom, dateTo, toast]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
-          <span className="gradient-text-red">Audit Log</span>
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">All platform activities and changes</p>
-        <div className="gradient-accent-line w-24 mt-2" />
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+            <span className="gradient-text-red">Audit Log</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">All platform activities and changes</p>
+          <div className="gradient-accent-line w-24 mt-2" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            disabled={exporting || !logs?.length}
+            data-testid="button-export-csv"
+            className="gap-1.5"
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportJSON}
+            disabled={exporting || !logs?.length}
+            data-testid="button-export-json"
+            className="gap-1.5"
+          >
+            <FileJson className="h-3.5 w-3.5" />
+            JSON
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-1 flex-wrap">
         {(Object.keys(ACTION_CATEGORIES) as Array<keyof typeof ACTION_CATEGORIES>).map((category) => (
           <button
             key={category}
-            onClick={() => setCategoryFilter(category)}
+            onClick={() => {
+              setCategoryFilter(category);
+              setPage(1);
+            }}
             className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
               categoryFilter === category ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
             }`}
@@ -145,33 +278,90 @@ export default function AuditLogPage() {
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by user, resource ID, or action..."
+            placeholder="Search by user, resource, action, or IP..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="pl-9"
             data-testid="input-search-audit-logs"
           />
         </div>
-        {(search || categoryFilter !== "all") && (
+        <div className="flex items-center gap-1.5">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPage(1);
+            }}
+            className="w-[140px] text-xs"
+            aria-label="Date from"
+            data-testid="input-date-from"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPage(1);
+            }}
+            className="w-[140px] text-xs"
+            aria-label="Date to"
+            data-testid="input-date-to"
+          />
+        </div>
+        {hasActiveFilters && (
           <Button
             variant="outline"
-            size="default"
+            size="sm"
             onClick={handleClearFilters}
             data-testid="button-clear-filters"
-            className="flex items-center gap-2"
+            className="gap-1.5"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
             Clear
           </Button>
         )}
       </div>
 
-      <div className="text-sm text-muted-foreground" data-testid="text-result-count">
-        Showing {filtered.length} of {logs?.length || 0} entries
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span data-testid="text-result-count">
+          Showing {paginatedLogs.length} of {filtered.length} entries
+          {filtered.length !== (logs?.length || 0) && ` (${logs?.length || 0} total)`}
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-xs">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
@@ -199,13 +389,16 @@ export default function AuditLogPage() {
                 Try Again
               </Button>
             </div>
-          ) : filtered && filtered.length > 0 ? (
+          ) : paginatedLogs.length > 0 ? (
             <div className="space-y-0">
-              {filtered.map((log) => {
+              {paginatedLogs.map((log) => {
                 const Icon = ACTION_ICONS[log.action] || Activity;
                 const label = ACTION_LABELS[log.action] || log.action;
                 const details = log.details
-                  ? ((typeof log.details === "string" ? JSON.parse(log.details) : log.details) as Record<string, any>)
+                  ? ((typeof log.details === "string" ? JSON.parse(log.details) : log.details) as Record<
+                      string,
+                      unknown
+                    >)
                   : null;
 
                 return (
@@ -225,6 +418,11 @@ export default function AuditLogPage() {
                             {log.resourceType}
                           </span>
                         )}
+                        {log.resourceId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/50 text-[10px] font-mono text-muted-foreground">
+                            {log.resourceId}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
                         {log.userName && (
@@ -233,16 +431,23 @@ export default function AuditLogPage() {
                             {log.userName}
                           </span>
                         )}
+                        {log.ipAddress && (
+                          <span className="flex items-center gap-1">
+                            <Globe className="h-3 w-3" />
+                            {log.ipAddress}
+                          </span>
+                        )}
                         {log.createdAt && <span>{formatDateTime(log.createdAt)}</span>}
                       </div>
                       {details && (
                         <div className="mt-1.5 text-xs text-muted-foreground/80">
-                          {details.reason && <span>{details.reason}</span>}
-                          {details.action && <span>{details.action}</span>}
-                          {details.newStatus && <span>Status changed to: {details.newStatus}</span>}
-                          {details.alertsCorrelated && (
+                          {typeof details.reason === "string" && <span>{details.reason}</span>}
+                          {typeof details.action === "string" && <span>{details.action}</span>}
+                          {typeof details.newStatus === "string" && <span>Status changed to: {details.newStatus}</span>}
+                          {typeof details.alertsCorrelated === "number" && (
                             <span>
-                              {details.alertsCorrelated} alerts correlated via {details.method}
+                              {details.alertsCorrelated} alerts correlated via{" "}
+                              {typeof details.method === "string" ? details.method : "unknown"}
                             </span>
                           )}
                         </div>
@@ -261,6 +466,34 @@ export default function AuditLogPage() {
           )}
         </CardContent>
       </Card>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            aria-label="Next page"
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
