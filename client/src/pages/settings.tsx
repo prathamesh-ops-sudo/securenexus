@@ -9,6 +9,7 @@ import {
   Users,
   Shield,
   Zap,
+  CreditCard,
   RefreshCw,
   Trash2,
   Loader2,
@@ -29,7 +30,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -46,42 +46,6 @@ const ROLES = [
     color: "text-yellow-400",
   },
   { name: "Viewer", description: "Read-only access to dashboards, alerts, and incidents", color: "text-blue-400" },
-];
-
-const PLANS = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "/month",
-    alerts: "100",
-    connectors: "2",
-    users: "1",
-    ai: false,
-    soar: false,
-    current: false,
-  },
-  {
-    name: "Pro",
-    price: "$49",
-    period: "/month",
-    alerts: "10,000",
-    connectors: "10",
-    users: "5",
-    ai: true,
-    soar: false,
-    current: true,
-  },
-  {
-    name: "Enterprise",
-    price: "$199",
-    period: "/month",
-    alerts: "Unlimited",
-    connectors: "Unlimited",
-    users: "Unlimited",
-    ai: true,
-    soar: true,
-    current: false,
-  },
 ];
 
 const THREAT_INTEL_PROVIDERS = [
@@ -138,23 +102,11 @@ export default function SettingsPage() {
   const [expandedWebhookId, setExpandedWebhookId] = useState<string | null>(null);
 
   const {
-    data: stats,
-    isError: statsError,
-    refetch: refetchStats,
-  } = useQuery<any>({
-    queryKey: ["/api/dashboard/stats"],
-  });
-
-  const {
     data: apiKeys,
     isError: apiKeysError,
     refetch: refetchApiKeys,
   } = useQuery<any[]>({
     queryKey: ["/api/api-keys"],
-  });
-
-  const { data: connectorsData } = useQuery<any[]>({
-    queryKey: ["/api/connectors"],
   });
 
   const { data: threatIntelConfigs } = useQuery<any[]>({
@@ -290,7 +242,7 @@ export default function SettingsPage() {
 
   const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
 
-  if (statsError || apiKeysError || webhooksError) {
+  if (apiKeysError || webhooksError) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
         <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
@@ -303,7 +255,6 @@ export default function SettingsPage() {
           size="sm"
           className="mt-3"
           onClick={() => {
-            refetchStats();
             refetchApiKeys();
             refetchWebhooks();
           }}
@@ -383,80 +334,19 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
-          <CardTitle className="text-sm font-semibold">Plan & Usage</CardTitle>
-          <Badge className="text-[10px] bg-red-500/10 text-red-400 border-red-500/20" data-testid="badge-current-plan">
-            <Zap className="h-2.5 w-2.5 mr-0.5" />
-            Pro Plan
-          </Badge>
+          <CardTitle className="text-sm font-semibold">Billing & Usage</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-1 text-xs text-muted-foreground">
-                <span>Alerts</span>
-                <span className="tabular-nums">{stats?.totalAlerts || 0} / 10,000</span>
-              </div>
-              <Progress
-                value={Math.min(((stats?.totalAlerts || 0) / 10000) * 100, 100)}
-                className="h-1.5"
-                data-testid="progress-alerts"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-1 text-xs text-muted-foreground">
-                <span>Connectors</span>
-                <span className="tabular-nums">{connectorsData?.length || 0} / 10</span>
-              </div>
-              <Progress
-                value={Math.min(((connectorsData?.length || 0) / 10) * 100, 100)}
-                className="h-1.5"
-                data-testid="progress-connectors"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-1 text-xs text-muted-foreground">
-                <span>API Keys</span>
-                <span className="tabular-nums">{apiKeys?.length || 0} / 20</span>
-              </div>
-              <Progress
-                value={Math.min(((apiKeys?.length || 0) / 20) * 100, 100)}
-                className="h-1.5"
-                data-testid="progress-api-keys"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            {PLANS.map((plan) => (
-              <div
-                key={plan.name}
-                className={`p-3 rounded-md border text-center space-y-2 ${plan.current ? "border-red-500/40 bg-red-500/5" : "border-border"}`}
-                data-testid={`plan-${plan.name.toLowerCase()}`}
-              >
-                <div className="text-xs font-medium">{plan.name}</div>
-                <div className="text-lg font-bold">
-                  {plan.price}
-                  <span className="text-xs font-normal text-muted-foreground">{plan.period}</span>
-                </div>
-                <div className="space-y-1 text-[10px] text-muted-foreground">
-                  <div>{plan.alerts} alerts</div>
-                  <div>{plan.connectors} connectors</div>
-                  <div>{plan.users} users</div>
-                  <div>{plan.ai ? "AI Engine" : "—"}</div>
-                  <div>{plan.soar ? "SOAR Automation" : "—"}</div>
-                </div>
-                {plan.current ? (
-                  <Badge variant="outline" className="text-[9px]">
-                    Current
-                  </Badge>
-                ) : plan.name === "Enterprise" ? (
-                  <Button size="sm" className="text-[10px] h-6" data-testid="button-upgrade-enterprise">
-                    Upgrade
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-          </div>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-3">
+            View your current plan, usage limits, invoices, and manage your subscription.
+          </p>
+          <Link href="/billing">
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <CreditCard className="h-3.5 w-3.5" />
+              Manage Billing
+              <ArrowUpRight className="h-3 w-3" />
+            </Button>
+          </Link>
         </CardContent>
       </Card>
 
