@@ -399,13 +399,37 @@ export function registerComplianceRoutes(app: Express): void {
       const user = (req as any).user;
       const orgId = user?.orgId;
       if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+
+      const startDate = typeof req.query.startDate === "string" ? new Date(req.query.startDate) : undefined;
+      const endDate = typeof req.query.endDate === "string" ? new Date(req.query.endDate) : undefined;
+
+      if (startDate && isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: "Invalid startDate format" });
+      }
+      if (endDate && isNaN(endDate.getTime())) {
+        return res.status(400).json({ message: "Invalid endDate format" });
+      }
+
       const logs = await storage.getAuditLogs(orgId);
-      const sortedLogs = logs.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+      let filtered = logs;
+      if (startDate) {
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
+      }
+      if (endDate) {
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endOfDay);
+      }
+      const sortedLogs = filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+      const isFiltered = !!(startDate || endDate);
+
       res.json({
         exportedAt: new Date().toISOString(),
         organization: orgId,
         totalEntries: sortedLogs.length,
-        hashChainIntact: true,
+        startDate: startDate?.toISOString() ?? null,
+        endDate: endDate?.toISOString() ?? null,
+        hashChainIntact: isFiltered ? null : true,
         entries: sortedLogs.map((l) => ({
           id: l.id,
           sequenceNum: l.sequenceNum,
@@ -1280,7 +1304,9 @@ export function registerComplianceRoutes(app: Express): void {
         filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
       }
       if (endDate) {
-        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endDate);
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endOfDay);
       }
       filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
 
