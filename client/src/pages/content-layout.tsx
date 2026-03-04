@@ -132,6 +132,9 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
             >
               AI SOC Analyst
             </Link>
+            <Link href="/product/comparison" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
+              Compare
+            </Link>
             <Link href="/about" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
               About
             </Link>
@@ -205,6 +208,14 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
                     className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
                   >
                     AI SOC Analyst
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/product/comparison"
+                    className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
+                  >
+                    Comparison
                   </Link>
                 </li>
               </ul>
