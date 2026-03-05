@@ -191,6 +191,80 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
+  // OSINT Feed Subscription Management
+  app.get("/api/osint-feeds/subscriptions", isAuthenticated, async (_req, res) => {
+    try {
+      const { getAllSubscriptions, getOsintFeedStatuses } = await import("../osint-feeds");
+      res.json({ subscriptions: getAllSubscriptions(), statuses: getOsintFeedStatuses() });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch OSINT feed subscriptions" });
+    }
+  });
+
+  app.post("/api/osint-feeds/:feedSlug/subscribe", isAuthenticated, async (req, res) => {
+    try {
+      const { updateFeedSubscription } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const result = updateFeedSubscription(slug, { enabled: true });
+      if (!result) return res.status(404).json({ message: "Unknown feed slug" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to subscribe to feed" });
+    }
+  });
+
+  app.post("/api/osint-feeds/:feedSlug/unsubscribe", isAuthenticated, async (req, res) => {
+    try {
+      const { updateFeedSubscription } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const result = updateFeedSubscription(slug, { enabled: false });
+      if (!result) return res.status(404).json({ message: "Unknown feed slug" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsubscribe from feed" });
+    }
+  });
+
+  app.patch("/api/osint-feeds/:feedSlug/config", isAuthenticated, async (req, res) => {
+    try {
+      const { updateFeedSubscription } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const { refreshIntervalMinutes } = req.body;
+      if (refreshIntervalMinutes === undefined || typeof refreshIntervalMinutes !== "number") {
+        return res.status(400).json({ message: "refreshIntervalMinutes is required and must be a number" });
+      }
+      if (refreshIntervalMinutes < 5 || refreshIntervalMinutes > 1440) {
+        return res.status(400).json({ message: "refreshIntervalMinutes must be between 5 and 1440" });
+      }
+      const result = updateFeedSubscription(slug, { refreshIntervalMinutes });
+      if (!result) return res.status(404).json({ message: "Unknown feed slug" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update feed config" });
+    }
+  });
+
+  app.get("/api/osint-feeds/:feedSlug/health", isAuthenticated, async (req, res) => {
+    try {
+      const { getFeedHealthHistory } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const history = getFeedHealthHistory(slug);
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed health history" });
+    }
+  });
+
+  app.post("/api/osint-feeds/refresh-all", isAuthenticated, async (_req, res) => {
+    try {
+      const { refreshAllFeedsWithProgress } = await import("../osint-feeds");
+      const result = await refreshAllFeedsWithProgress();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to refresh all feeds" });
+    }
+  });
+
   // Threat Intel Fusion Layer - IOC Feeds, Entries, Watchlists, Match Rules, Matches
   app.get("/api/ioc-feeds", isAuthenticated, async (req, res) => {
     try {
