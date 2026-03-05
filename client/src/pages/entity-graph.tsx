@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -484,6 +484,15 @@ function EntityMergeDialog({
   const [sourceId, setSourceId] = useState("");
   const [confirmText, setConfirmText] = useState("");
   const [mergeSearch, setMergeSearch] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setTargetId(selectedEntityId || "");
+      setSourceId("");
+      setConfirmText("");
+      setMergeSearch("");
+    }
+  }, [open, selectedEntityId]);
 
   const mergeMutation = useMutation({
     mutationFn: async (data: { targetId: string; sourceId: string }) => {
