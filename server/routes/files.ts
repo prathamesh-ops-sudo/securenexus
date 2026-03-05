@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import multer from "multer";
 import { getOrgId, logger } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -7,12 +7,84 @@ import { deleteFile, getSignedUrl, listFiles, uploadFile } from "../s3";
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE_BYTES } });
 
+const BLOCKED_EXTENSIONS = new Set([
+  "exe",
+  "bat",
+  "cmd",
+  "com",
+  "msi",
+  "scr",
+  "pif",
+  "vbs",
+  "vbe",
+  "js",
+  "jse",
+  "wsf",
+  "wsh",
+  "ps1",
+  "psm1",
+  "sh",
+  "bash",
+  "dll",
+  "sys",
+  "drv",
+]);
+
+function sanitizePrefix(raw: string, opts?: { allowEmpty?: boolean }): string | null {
+  const allowEmpty = opts?.allowEmpty ?? false;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+
+  let s = decoded.replace(/\\/g, "/").replace(/^\/+/, "");
+  s = s.replace(/\/{2,}/g, "/");
+
+  if (!s) return allowEmpty ? "" : null;
+  if (s.length > 200) return null;
+  if (s.includes("..") || s.includes("\u0000")) return null;
+  if (s.startsWith("orgs/")) return null;
+  if (!/^[a-zA-Z0-9/_-]+\/?$/.test(s)) return null;
+
+  if (!s.endsWith("/")) s += "/";
+  return s;
+}
+
+function sanitizeFilename(raw: string): string {
+  const base = raw.split(/[\\/\\\\]/).pop() || "file";
+  const cleaned = base
+    .replace(/[\u0000-\u001F\u007F]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\.{2,}/g, ".")
+    .replace(/[^a-zA-Z0-9._\- ]/g, "_")
+    .slice(0, 255);
+
+  return cleaned || "file";
+}
+
 export function registerFilesRoutes(app: Express): void {
   app.post("/api/files/upload", isAuthenticated, upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file provided" });
       const orgId = getOrgId(req);
-      const key = `orgs/${orgId}/uploads/${Date.now()}-${req.file.originalname}`;
+      const rawPrefix = (req.query.prefix as string) || (req.body?.prefix as string) || "uploads/";
+      const prefix = sanitizePrefix(rawPrefix);
+      if (!prefix) {
+        return res.status(400).json({ message: "Invalid prefix" });
+      }
+
+      const baseName = req.file.originalname.split(/[\/\\]/).pop() || req.file.originalname;
+      const ext = baseName.split(".").pop()?.toLowerCase() || "";
+      if (BLOCKED_EXTENSIONS.has(ext)) {
+        return res.status(400).json({ message: `File type .${ext} is not allowed` });
+      }
+
+      const safeName = sanitizeFilename(baseName);
+      const key = `orgs/${orgId}/${prefix}${Date.now()}-${safeName}`;
       const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
       res.status(201).json(result);
     } catch (error) {
@@ -24,8 +96,12 @@ export function registerFilesRoutes(app: Express): void {
   app.get("/api/files", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const subPrefix = req.query.prefix as string | undefined;
-      const prefix = `orgs/${orgId}/${subPrefix || ""}`;
+      const rawSub = (req.query.prefix as string) || "";
+      const subPrefix = sanitizePrefix(rawSub, { allowEmpty: true });
+      if (subPrefix === null) {
+        return res.status(400).json({ message: "Invalid prefix" });
+      }
+      const prefix = `orgs/${orgId}/${subPrefix}`;
       const files = await listFiles(prefix);
       res.json(files);
     } catch (error) {

@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FileManager } from "@/components/file-manager";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -2093,6 +2094,8 @@ export default function IncidentDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          <FileManager prefix={`incidents/${params.id}/`} title="Incident Attachments" compact />
         </TabsContent>
 
         <TabsContent value="hypotheses" className="space-y-4 mt-4">

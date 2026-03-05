@@ -36,6 +36,7 @@ import {
   Mail,
   Rss,
   Send,
+  FolderOpen,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -116,6 +117,7 @@ const navGroups: NavGroup[] = [
       { title: "Connectors", url: "/connectors", icon: Plug },
       { title: "Integrations", url: "/integrations", icon: Link2 },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
+      { title: "File Manager", url: "/file-manager", icon: FolderOpen },
     ],
   },
   {
