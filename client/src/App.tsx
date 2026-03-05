@@ -69,6 +69,7 @@ const SolutionsCompliancePage = lazy(() => import("@/pages/solutions-compliance"
 const AboutPage = lazy(() => import("@/pages/about"));
 const ProductComparisonPage = lazy(() => import("@/pages/product-comparison"));
 const EngineControlsPage = lazy(() => import("@/pages/engine-controls"));
+const EmailTemplatesPage = lazy(() => import("@/pages/email-templates"));
 
 function PageSkeleton() {
   return (
@@ -222,6 +223,7 @@ function AuthenticatedApp() {
                     <Route path="/mssp-dashboard" component={MsspDashboardPage} />
                     <Route path="/dev-portal" component={DevPortalPage} />
                     <Route path="/engine-controls" component={EngineControlsPage} />
+                    <Route path="/email-templates" component={EmailTemplatesPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

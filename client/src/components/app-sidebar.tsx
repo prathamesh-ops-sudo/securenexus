@@ -33,6 +33,7 @@ import {
   ChevronsUpDown,
   ShieldCheck,
   Code2,
+  Mail,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -355,6 +356,18 @@ export function AppSidebar() {
                       <Link href="/dev-portal">
                         <Code2 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
                         <span className="truncate font-medium text-cyan-400">Dev Portal</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === "/email-templates"}
+                      aria-label="Navigate to Email Templates"
+                    >
+                      <Link href="/email-templates">
+                        <Mail className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
+                        <span className="truncate font-medium text-cyan-400">Email Templates</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
