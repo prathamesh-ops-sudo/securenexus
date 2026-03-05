@@ -371,6 +371,18 @@ export function AppSidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === "/metrics-rollup"}
+                      aria-label="Navigate to Metrics Rollup"
+                    >
+                      <Link href="/metrics-rollup">
+                        <BarChart3 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
+                        <span className="truncate font-medium text-cyan-400">Metrics Rollup</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
