@@ -100,7 +100,7 @@ export function registerApiVersioningRoutes(app: Express): void {
             description: "Paginated alerts with text search, severity/status filters",
           },
           changes: [
-            "Added offset/limit pagination (default limit: 50, max: 200)",
+            "Added offset/limit pagination (default limit: 50, max: 500)",
             "Added search query parameter for full-text search",
             "Added severity and status filters",
             "Response includes meta.total for total count",
@@ -195,18 +195,32 @@ export function registerApiVersioningRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 500);
       const search = typeof req.query.search === "string" ? req.query.search : undefined;
+      const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const source = typeof req.query.source === "string" ? req.query.source : undefined;
 
-      const { items, total } = await storage.getAlertsPaginated({
+      const { items, total } = await storage.getAlertsPaginatedWithSort({
         orgId,
         offset,
         limit,
         search,
+        severity,
+        status,
+        source,
       });
 
       return sendEnvelope(res, items, {
-        meta: { offset, limit, total, search: search ?? null },
+        meta: {
+          offset,
+          limit,
+          total,
+          search: search ?? null,
+          severity: severity ?? null,
+          status: status ?? null,
+          source: source ?? null,
+        },
       });
     } catch (error: any) {
       if (error.message === "ORG_CONTEXT_MISSING")
@@ -226,18 +240,32 @@ export function registerApiVersioningRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 500);
       const queue = typeof req.query.queue === "string" ? req.query.queue : undefined;
+      const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
-      const { items, total } = await storage.getIncidentsPaginated({
+      const { items, total } = await storage.getIncidentsPaginatedWithSort({
         orgId,
         offset,
         limit,
+        search,
+        severity,
+        status,
         queue,
       });
 
       return sendEnvelope(res, items, {
-        meta: { offset, limit, total, queue: queue ?? null },
+        meta: {
+          offset,
+          limit,
+          total,
+          queue: queue ?? null,
+          severity: severity ?? null,
+          status: status ?? null,
+          search: search ?? null,
+        },
       });
     } catch (error: any) {
       if (error.message === "ORG_CONTEXT_MISSING")
@@ -257,7 +285,7 @@ export function registerApiVersioningRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 500);
 
       const { items, total } = await storage.getConnectorsPaginated({ orgId, offset, limit });
 

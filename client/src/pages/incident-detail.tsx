@@ -208,7 +208,7 @@ export default function IncidentDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id, "activity"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       toast({ title: "Incident Updated", description: "Changes saved successfully" });

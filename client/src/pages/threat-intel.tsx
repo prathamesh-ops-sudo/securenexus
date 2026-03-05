@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -197,17 +197,21 @@ export default function ThreatIntelPage() {
   const { toast } = useToast();
 
   const {
-    data: alerts,
+    data: alertsResponse,
     isLoading: alertsLoading,
     isError: _alertsError,
     refetch: _refetchAlerts,
-  } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts"],
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
   });
+  const alerts = alertsResponse?.items;
 
-  const { data: incidents, isLoading: incidentsLoading } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+  const { data: incidentsResponse, isLoading: incidentsLoading } = useQuery<PaginatedResponse<Incident>>({
+    queryKey: ["/api/v1/incidents"],
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const {
     data: providers,

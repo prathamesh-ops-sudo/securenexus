@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useMemo } from "react";
 import { Shield, Crosshair, Grid3X3, AlertTriangle, Clock, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -100,13 +101,15 @@ function StatCard({
 export default function MitreAttackPage() {
   usePageTitle("MITRE ATT&CK Coverage");
   const {
-    data: alerts,
+    data: alertsResponse,
     isLoading,
     isError: alertsError,
     refetch: refetchAlerts,
-  } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts"],
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
   });
+  const alerts = alertsResponse?.items;
 
   const {
     techniqueMap: _techniqueMap,

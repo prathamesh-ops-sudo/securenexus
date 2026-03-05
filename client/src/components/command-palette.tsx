@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   CommandDialog,
@@ -100,13 +100,17 @@ export function CommandPalette() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const { data: alerts } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  const { data: alertsResponse } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts"],
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
   });
+  const alerts = alertsResponse?.items;
 
-  const { data: incidents } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+  const { data: incidentsResponse } = useQuery<PaginatedResponse<Incident>>({
+    queryKey: ["/api/v1/incidents"],
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const recentRecords = useMemo(() => loadRecentRecords(), [open]);
 
@@ -135,7 +139,7 @@ export function CommandPalette() {
       status: "open",
     })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
         toast({ title: "Incident created", description: title.trim() });
         navigate("/incidents");
       })
@@ -154,7 +158,7 @@ export function CommandPalette() {
     if (!name?.trim()) return;
     apiRequest("PATCH", `/api/alerts/${alerts[0].id}`, { assignedTo: name.trim() })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Alert assigned", description: `Assigned to ${name.trim()}` });
       })
       .catch(() => {
