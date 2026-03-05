@@ -29,7 +29,8 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.get("/api/v1/alerts", isAuthenticated, validateQuery(querySchemas.alertsList), async (req, res) => {
     try {
-      const { offset, limit, search, severity, status, source, sortBy, sortOrder } = (req as any).validatedQuery;
+      const { offset, limit, search, severity, status, source, suppressed, sortBy, sortOrder } = (req as any)
+        .validatedQuery;
 
       const { items, total } = await storage.getAlertsPaginatedWithSort({
         offset,
@@ -38,6 +39,7 @@ export function registerAlertsRoutes(app: Express): void {
         severity,
         status,
         source,
+        suppressed,
         sortBy,
         sortOrder,
       });
@@ -51,6 +53,7 @@ export function registerAlertsRoutes(app: Express): void {
           severity: severity ?? null,
           status: status ?? null,
           source: source ?? null,
+          suppressed: suppressed ?? null,
           sortBy: sortBy ?? "createdAt",
           sortOrder,
         },

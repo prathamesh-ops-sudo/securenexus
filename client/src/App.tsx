@@ -79,6 +79,8 @@ const ApiVersioningPage = lazy(() => import("@/pages/api-versioning"));
 const FileManagerPage = lazy(() => import("@/pages/file-manager"));
 const SecretRotationOverviewPage = lazy(() => import("@/pages/secret-rotation-overview"));
 const EvidenceChainViewerPage = lazy(() => import("@/pages/evidence-chain-viewer"));
+const AiFeedbackFormPage = lazy(() => import("@/pages/ai-feedback-form"));
+const SuppressedAlertsPage = lazy(() => import("@/pages/suppressed-alerts"));
 
 function PageSkeleton() {
   return (
@@ -241,6 +243,8 @@ function AuthenticatedApp() {
                     <Route path="/file-manager" component={FileManagerPage} />
                     <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />
                     <Route path="/evidence-chain-viewer" component={EvidenceChainViewerPage} />
+                    <Route path="/ai-feedback" component={AiFeedbackFormPage} />
+                    <Route path="/suppressed-alerts" component={SuppressedAlertsPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
