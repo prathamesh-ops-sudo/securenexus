@@ -368,7 +368,14 @@ export default function WebhookSecurityCenterPage() {
   } = useQuery<OutboundWebhook[]>({
     queryKey: ["/api/v1/webhooks"],
     queryFn: async () => {
-      const res = await fetch("/api/v1/webhooks", { credentials: "include" });
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch("/api/v1/webhooks", { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch webhooks");
       const envelope = await res.json();
       return envelope.data ?? [];
@@ -380,7 +387,17 @@ export default function WebhookSecurityCenterPage() {
   const { data: webhookLogs, isLoading: isLoadingLogs } = useQuery<WebhookLog[]>({
     queryKey: ["/api/v1/webhooks", selectedWebhookId, "logs"],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/webhooks/${selectedWebhookId}/logs?limit=50`, { credentials: "include" });
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch(`/api/v1/webhooks/${selectedWebhookId}/logs?limit=50`, {
+        credentials: "include",
+        headers,
+      });
       if (!res.ok) return [];
       const envelope = await res.json();
       return envelope.data ?? [];

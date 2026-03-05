@@ -367,7 +367,14 @@ export default function AiPromptRegistryPage() {
   const { data: versionHistory, isLoading: isLoadingHistory } = useQuery<PromptTemplate[]>({
     queryKey: ["/api/ai/prompts", selectedPromptId, "history"],
     queryFn: async () => {
-      const res = await fetch(`/api/ai/prompts/${selectedPromptId}/history`, { credentials: "include" });
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch(`/api/ai/prompts/${selectedPromptId}/history`, { credentials: "include", headers });
       if (!res.ok) return [];
       return res.json();
     },
@@ -377,7 +384,17 @@ export default function AiPromptRegistryPage() {
   const { data: auditLog, isLoading: isLoadingAudit } = useQuery<PromptAuditEntry[]>({
     queryKey: ["/api/ai/prompts", selectedPromptId, "audit"],
     queryFn: async () => {
-      const res = await fetch(`/api/ai/prompts/${selectedPromptId}/audit?limit=50`, { credentials: "include" });
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch(`/api/ai/prompts/${selectedPromptId}/audit?limit=50`, {
+        credentials: "include",
+        headers,
+      });
       if (!res.ok) return [];
       return res.json();
     },
@@ -387,7 +404,14 @@ export default function AiPromptRegistryPage() {
   const { data: globalAudit, isLoading: isLoadingGlobalAudit } = useQuery<PromptAuditEntry[]>({
     queryKey: ["/api/ai/audit"],
     queryFn: async () => {
-      const res = await fetch("/api/ai/audit?limit=100", { credentials: "include" });
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch("/api/ai/audit?limit=100", { credentials: "include", headers });
       if (!res.ok) return [];
       return res.json();
     },
