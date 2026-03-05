@@ -591,15 +591,14 @@ export default function SeoMeasurementPage() {
                 <ol className="text-[11px] text-muted-foreground space-y-1.5 list-decimal list-inside">
                   <li>
                     <strong>Google Search Console</strong>: Verify ownership of{" "}
-                    <code className="text-[10px] bg-muted px-1 rounded">nexus.aricatech.xyz</code> using the HTML meta
-                    tag (already added to index.html — replace{" "}
-                    <code className="text-[10px] bg-muted px-1 rounded">VERIFICATION_TOKEN_HERE</code> with your actual
-                    verification token)
+                    <code className="text-[10px] bg-muted px-1 rounded">nexus.aricatech.xyz</code>, then set{" "}
+                    <code className="text-[10px] bg-muted px-1 rounded">VITE_GSC_VERIFICATION_TOKEN</code> env var with
+                    your verification token — the meta tag is injected dynamically at runtime
                   </li>
                   <li>
                     <strong>Google Analytics 4</strong>: Create a GA4 property, copy the Measurement ID (G-XXXXXXX), and
-                    replace the placeholder in{" "}
-                    <code className="text-[10px] bg-muted px-1 rounded">client/index.html</code>
+                    set <code className="text-[10px] bg-muted px-1 rounded">VITE_GA4_MEASUREMENT_ID</code> env var — the
+                    gtag script is loaded dynamically only when this var is present
                   </li>
                   <li>
                     <strong>Ahrefs / SEMrush</strong>: Optional paid tools for competitive analysis — set up keyword
