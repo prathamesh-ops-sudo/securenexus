@@ -23,6 +23,13 @@ import {
   ThumbsUp,
   ThumbsDown,
   Link2,
+  Settings2,
+  ScrollText,
+  ChevronLeft,
+  ChevronRight,
+  Moon,
+  Mail,
+  Save,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +45,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import type { IntegrationConfig, NotificationChannel, ResponseAction } from "@shared/schema";
+import type {
+  IntegrationConfig,
+  NotificationChannel,
+  NotificationUserPreferences,
+  ResponseAction,
+} from "@shared/schema";
 
 const INTEGRATION_TYPES = [
   { value: "jira", label: "Jira" },
@@ -1708,6 +1720,492 @@ function ResponseApprovalsTab() {
   );
 }
 
+const SEVERITY_OPTIONS = [
+  { value: "info", label: "Info", color: "border-blue-500/30 text-blue-400" },
+  { value: "warning", label: "Warning", color: "border-yellow-500/30 text-yellow-400" },
+  { value: "critical", label: "Critical", color: "border-red-500/30 text-red-400" },
+] as const;
+
+const PREFERENCE_EVENT_OPTIONS = [
+  { value: "incident_created", label: "Incident Created" },
+  { value: "incident_escalated", label: "Incident Escalated" },
+  { value: "incident_closed", label: "Incident Closed" },
+  { value: "alert_created", label: "Alert Created" },
+  { value: "alert_critical", label: "Alert Critical" },
+  { value: "playbook_completed", label: "Playbook Completed" },
+  { value: "compliance_violation", label: "Compliance Violation" },
+] as const;
+
+const QUIET_HOURS = Array.from({ length: 24 }, (_, i) => ({
+  value: i,
+  label: `${i.toString().padStart(2, "0")}:00`,
+}));
+
+function NotificationPreferencesTab() {
+  const { toast } = useToast();
+
+  const { data: preferences, isLoading: prefsLoading } = useQuery<NotificationUserPreferences | null>({
+    queryKey: ["/api/notification-preferences"],
+  });
+
+  const { data: channels } = useQuery<NotificationChannel[]>({
+    queryKey: ["/api/notification-channels"],
+  });
+
+  const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
+  const [selectedEventTypes, setSelectedEventTypes] = useState<string[]>(["incident_created"]);
+  const [minSeverity, setMinSeverity] = useState<string>("info");
+  const [quietStart, setQuietStart] = useState<number | null>(null);
+  const [quietEnd, setQuietEnd] = useState<number | null>(null);
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestFrequency, setDigestFrequency] = useState(24);
+  const [initialized, setInitialized] = useState(false);
+
+  if (preferences && !initialized) {
+    setSelectedChannelIds(preferences.channelIds ?? []);
+    setSelectedEventTypes(preferences.eventTypes ?? ["incident_created"]);
+    setMinSeverity(preferences.minSeverity ?? "info");
+    setQuietStart(preferences.quietHoursStart ?? null);
+    setQuietEnd(preferences.quietHoursEnd ?? null);
+    setDigestEnabled(preferences.digestEnabled ?? false);
+    setDigestFrequency(preferences.digestFrequencyHours ?? 24);
+    setInitialized(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", "/api/notification-preferences", {
+        channelIds: selectedChannelIds,
+        eventTypes: selectedEventTypes,
+        minSeverity,
+        quietHoursStart: quietStart,
+        quietHoursEnd: quietEnd,
+        digestEnabled,
+        digestFrequencyHours: digestFrequency,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
+      toast({ title: "Preferences saved", description: "Notification preferences updated successfully." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save preferences", description: err.message, variant: "destructive" });
+    },
+  });
+
+  function toggleChannel(channelId: string) {
+    setSelectedChannelIds((prev) =>
+      prev.includes(channelId) ? prev.filter((id) => id !== channelId) : [...prev, channelId],
+    );
+  }
+
+  function toggleEventType(event: string) {
+    setSelectedEventTypes((prev) => (prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]));
+  }
+
+  if (prefsLoading) {
+    return (
+      <div className="space-y-4" role="status" aria-label="Loading preferences">
+        <Card>
+          <CardContent className="py-6 space-y-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-8 w-48" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <span className="sr-only">Loading notification preferences...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <Settings2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            My Notification Preferences
+          </CardTitle>
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+            data-testid="button-save-preferences"
+          >
+            {saveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1.5" />
+            )}
+            Save Preferences
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Preferred Channels</Label>
+            <p className="text-xs text-muted-foreground">Select which channels you want to receive notifications on</p>
+            {!channels?.length ? (
+              <div className="p-3 rounded-md bg-muted/30 text-center">
+                <p className="text-xs text-muted-foreground">
+                  No channels configured yet. Add channels in the Notification Channels tab first.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {channels.map((ch) => (
+                  <Badge
+                    key={ch.id}
+                    variant="outline"
+                    className={`cursor-pointer toggle-elevate ${
+                      selectedChannelIds.includes(ch.id) ? "toggle-elevated border-cyan-500/40 text-cyan-400" : ""
+                    }`}
+                    onClick={() => toggleChannel(ch.id)}
+                    data-testid={`badge-pref-channel-${ch.id}`}
+                  >
+                    {selectedChannelIds.includes(ch.id) && <CheckCircle className="h-3 w-3 mr-1" />}
+                    {ch.name}
+                    <span className="ml-1 text-[9px] opacity-60">({ch.type})</span>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Event Types</Label>
+            <p className="text-xs text-muted-foreground">Choose which events trigger notifications for you</p>
+            <div className="flex flex-wrap gap-2">
+              {PREFERENCE_EVENT_OPTIONS.map((ev) => (
+                <Badge
+                  key={ev.value}
+                  variant="outline"
+                  className={`cursor-pointer toggle-elevate ${
+                    selectedEventTypes.includes(ev.value) ? "toggle-elevated border-cyan-500/40 text-cyan-400" : ""
+                  }`}
+                  onClick={() => toggleEventType(ev.value)}
+                  data-testid={`badge-pref-event-${ev.value}`}
+                >
+                  {selectedEventTypes.includes(ev.value) && <CheckCircle className="h-3 w-3 mr-1" />}
+                  {ev.label}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Minimum Severity</Label>
+            <p className="text-xs text-muted-foreground">Only receive notifications at or above this severity level</p>
+            <div className="flex flex-wrap gap-2">
+              {SEVERITY_OPTIONS.map((sev) => (
+                <Badge
+                  key={sev.value}
+                  variant="outline"
+                  className={`cursor-pointer toggle-elevate ${
+                    minSeverity === sev.value ? `toggle-elevated ${sev.color}` : ""
+                  }`}
+                  onClick={() => setMinSeverity(sev.value)}
+                  data-testid={`badge-pref-severity-${sev.value}`}
+                >
+                  {minSeverity === sev.value && <CheckCircle className="h-3 w-3 mr-1" />}
+                  {sev.label}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-sm font-medium flex items-center gap-2">
+              <Moon className="h-4 w-4" aria-hidden="true" />
+              Quiet Hours
+            </Label>
+            <p className="text-xs text-muted-foreground">Suppress notifications during these hours (UTC)</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
+                <Select
+                  value={quietStart !== null ? String(quietStart) : "none"}
+                  onValueChange={(val) => setQuietStart(val === "none" ? null : Number(val))}
+                >
+                  <SelectTrigger className="w-[100px]" data-testid="select-quiet-start">
+                    <SelectValue placeholder="Off" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Off</SelectItem>
+                    {QUIET_HOURS.map((h) => (
+                      <SelectItem key={h.value} value={String(h.value)}>
+                        {h.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
+                <Select
+                  value={quietEnd !== null ? String(quietEnd) : "none"}
+                  onValueChange={(val) => setQuietEnd(val === "none" ? null : Number(val))}
+                >
+                  <SelectTrigger className="w-[100px]" data-testid="select-quiet-end">
+                    <SelectValue placeholder="Off" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Off</SelectItem>
+                    {QUIET_HOURS.map((h) => (
+                      <SelectItem key={h.value} value={String(h.value)}>
+                        {h.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
+                <div>
+                  <div className="text-sm font-medium">Digest Mode</div>
+                  <div className="text-xs text-muted-foreground">
+                    Bundle notifications into periodic summaries instead of real-time delivery
+                  </div>
+                </div>
+              </div>
+              <Switch checked={digestEnabled} onCheckedChange={setDigestEnabled} data-testid="switch-digest" />
+            </div>
+            {digestEnabled && (
+              <div className="flex items-center gap-3 pl-3">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Every</Label>
+                <Select value={String(digestFrequency)} onValueChange={(val) => setDigestFrequency(Number(val))}>
+                  <SelectTrigger className="w-[120px]" data-testid="select-digest-frequency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 hour</SelectItem>
+                    <SelectItem value="4">4 hours</SelectItem>
+                    <SelectItem value="8">8 hours</SelectItem>
+                    <SelectItem value="12">12 hours</SelectItem>
+                    <SelectItem value="24">24 hours</SelectItem>
+                    <SelectItem value="48">48 hours</SelectItem>
+                    <SelectItem value="168">Weekly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface DeliveryLogEntry {
+  id: string;
+  channelId: string;
+  channelName: string;
+  channelType: string;
+  orgId: string | null;
+  eventType: string;
+  title: string;
+  severity: string;
+  success: boolean;
+  errorMessage: string | null;
+  deliveredAt: string;
+  metadata: unknown;
+}
+
+function DeliveryLogTab() {
+  const [page, setPage] = useState(0);
+  const [channelFilter, setChannelFilter] = useState<string>("");
+  const pageSize = 25;
+
+  const { data: channels } = useQuery<NotificationChannel[]>({
+    queryKey: ["/api/notification-channels"],
+  });
+
+  const { data: logData, isLoading } = useQuery<{ items: DeliveryLogEntry[]; total: number }>({
+    queryKey: ["/api/notification-delivery-log", channelFilter, page],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (channelFilter) params.set("channelId", channelFilter);
+      params.set("offset", String(page * pageSize));
+      params.set("limit", String(pageSize));
+      const res = await fetch(`/api/notification-delivery-log?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch delivery log");
+      return res.json();
+    },
+  });
+
+  const totalPages = logData ? Math.ceil(logData.total / pageSize) : 0;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3 py-6" role="status" aria-label="Loading delivery log">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-0">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        ))}
+        <span className="sr-only">Loading delivery log...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+            <ScrollText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Delivery Log
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Select
+              value={channelFilter || "all"}
+              onValueChange={(val) => {
+                setChannelFilter(val === "all" ? "" : val);
+                setPage(0);
+              }}
+            >
+              <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-log-channel-filter">
+                <SelectValue placeholder="All channels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All channels</SelectItem>
+                {channels?.map((ch) => (
+                  <SelectItem key={ch.id} value={ch.id}>
+                    {ch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!logData?.items.length ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <ScrollText className="h-10 w-10 mb-3" aria-hidden="true" />
+              <p className="text-sm">No delivery log entries yet</p>
+              <p className="text-xs mt-1">Notification dispatches will appear here once channels are active</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto border rounded-md">
+                <Table data-testid="table-delivery-log">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Channel</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Event</TableHead>
+                      <TableHead className="text-xs">Title</TableHead>
+                      <TableHead className="text-xs">Severity</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs">Delivered</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logData.items.map((entry) => (
+                      <TableRow key={entry.id} data-testid={`row-log-${entry.id}`}>
+                        <TableCell>
+                          <span className="text-sm font-medium">{entry.channelName}</span>
+                        </TableCell>
+                        <TableCell>{typeBadge(entry.channelType)}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className="no-default-hover-elevate no-default-active-elevate text-[10px]"
+                          >
+                            {entry.eventType.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm max-w-[200px] truncate block" title={entry.title}>
+                            {entry.title}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={`no-default-hover-elevate no-default-active-elevate text-[10px] uppercase ${
+                              entry.severity === "critical"
+                                ? "border-red-500/30 text-red-400"
+                                : entry.severity === "warning"
+                                  ? "border-yellow-500/30 text-yellow-400"
+                                  : "border-blue-500/30 text-blue-400"
+                            }`}
+                          >
+                            {entry.severity}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {entry.success ? (
+                            <Badge variant="default" className="border-green-500/30 text-green-400">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Delivered
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive" title={entry.errorMessage ?? undefined}>
+                              <XCircle className="h-3 w-3 mr-1" />
+                              Failed
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground">{formatDateTime(entry.deliveredAt)}</span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-3">
+                  <span className="text-xs text-muted-foreground">
+                    Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, logData.total)} of {logData.total}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      aria-label="Previous page"
+                      data-testid="button-log-prev"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-xs px-2">
+                      Page {page + 1} of {totalPages}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((p) => p + 1)}
+                      aria-label="Next page"
+                      data-testid="button-log-next"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function IntegrationsPage() {
   return (
     <div
@@ -1747,6 +2245,14 @@ export default function IntegrationsPage() {
             <ShieldCheck className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
             Approvals
           </TabsTrigger>
+          <TabsTrigger value="preferences" data-testid="tab-preferences">
+            <Settings2 className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+            My Preferences
+          </TabsTrigger>
+          <TabsTrigger value="delivery-log" data-testid="tab-delivery-log">
+            <ScrollText className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+            Delivery Log
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="integrations">
@@ -1763,6 +2269,12 @@ export default function IntegrationsPage() {
         </TabsContent>
         <TabsContent value="approvals">
           <ResponseApprovalsTab />
+        </TabsContent>
+        <TabsContent value="preferences">
+          <NotificationPreferencesTab />
+        </TabsContent>
+        <TabsContent value="delivery-log">
+          <DeliveryLogTab />
         </TabsContent>
       </Tabs>
     </div>
