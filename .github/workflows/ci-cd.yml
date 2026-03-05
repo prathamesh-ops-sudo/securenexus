@@ -178,8 +178,13 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Build application
+        run: npx vite build
+
       - name: Run a11y tests
         run: npx playwright test e2e/a11y.spec.ts --reporter=list
+        env:
+          CI: true
 
   unit-tests:
     name: Unit Tests
