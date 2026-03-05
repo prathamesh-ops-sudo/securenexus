@@ -48,7 +48,7 @@ export function registerMetricsRollupRoutes(app: Express): void {
 
   app.get("/api/metrics-rollup/metrics", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const service = req.query.service ? sanitizeIdentifier(String(req.query.service)) : null;
+      const service = req.query.service ? String(req.query.service).slice(0, 128) : null;
       let query = `SELECT DISTINCT service, metric FROM sli_metrics_hourly`;
       const params: string[] = [];
       if (service) {
@@ -95,8 +95,8 @@ export function registerMetricsRollupRoutes(app: Express): void {
         });
       }
 
-      const svc = sanitizeIdentifier(service);
-      const met = sanitizeIdentifier(metric);
+      const svc = service.slice(0, 128);
+      const met = metric.slice(0, 128);
       const limit = parseLimit(limitStr);
 
       const now = new Date();
