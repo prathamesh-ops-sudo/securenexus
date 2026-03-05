@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   Network,
@@ -14,6 +14,11 @@ import {
   Shield,
   AlertTriangle,
   Activity,
+  Merge,
+  Plus,
+  Trash2,
+  Loader2,
+  Tag,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,7 +28,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { formatRelativeTime } from "@/components/security-badges";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { usePageTitle } from "@/hooks/use-page-title";
 import type { Entity } from "@shared/schema";
 
 interface GraphNode extends Entity {
@@ -287,7 +304,410 @@ function EntityCard({
   );
 }
 
-function EntityDetailPanel({ entityId }: { entityId: string }) {
+interface EntityAlias {
+  id: string;
+  aliasType: string;
+  aliasValue: string;
+  source: string;
+}
+
+const ALIAS_TYPES = ["ip", "domain", "hostname", "email", "url", "file_hash", "user", "process"];
+
+function EntityAliasManager({ entityId }: { entityId: string }) {
+  const { toast } = useToast();
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [aliasType, setAliasType] = useState("");
+  const [aliasValue, setAliasValue] = useState("");
+
+  const { data: aliases, isLoading } = useQuery<EntityAlias[]>({
+    queryKey: ["/api/entities", entityId, "aliases"],
+    enabled: !!entityId,
+  });
+
+  const addAliasMutation = useMutation({
+    mutationFn: async (data: { aliasType: string; aliasValue: string }) => {
+      const res = await apiRequest("POST", `/api/entities/${encodeURIComponent(entityId)}/aliases`, {
+        aliasType: data.aliasType.trim(),
+        aliasValue: data.aliasValue.trim(),
+        source: "manual",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/entities", entityId, "aliases"] });
+      toast({ title: "Alias added", description: "Entity alias created successfully" });
+      setAliasType("");
+      setAliasValue("");
+      setShowAddForm(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add alias", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAddAlias = () => {
+    const trimmedType = aliasType.trim();
+    const trimmedValue = aliasValue.trim();
+    if (!trimmedType || !trimmedValue) return;
+    if (trimmedValue.length > 500) {
+      toast({
+        title: "Validation error",
+        description: "Alias value must be under 500 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+    addAliasMutation.mutate({ aliasType: trimmedType, aliasValue: trimmedValue });
+  };
+
+  return (
+    <Card data-testid="entity-aliases-panel">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-1.5">
+            <Tag className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            Aliases ({aliases?.length || 0})
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px]"
+            onClick={() => setShowAddForm(!showAddForm)}
+            data-testid="button-toggle-add-alias"
+            aria-label="Add alias"
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            Add
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {showAddForm && (
+          <div
+            className="space-y-2 p-2 rounded-md border border-dashed border-cyan-500/30 bg-cyan-500/5"
+            data-testid="add-alias-form"
+          >
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Type</Label>
+              <Select value={aliasType} onValueChange={setAliasType}>
+                <SelectTrigger className="h-7 text-xs" data-testid="select-alias-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALIAS_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {ENTITY_TYPE_CONFIG[t]?.label || t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Value</Label>
+              <Input
+                value={aliasValue}
+                onChange={(e) => setAliasValue(e.target.value)}
+                placeholder="e.g. 192.168.1.100"
+                className="h-7 text-xs"
+                maxLength={500}
+                data-testid="input-alias-value"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                className="h-6 text-[10px] flex-1"
+                onClick={handleAddAlias}
+                disabled={!aliasType.trim() || !aliasValue.trim() || addAliasMutation.isPending}
+                data-testid="button-submit-alias"
+              >
+                {addAliasMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add Alias"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[10px]"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setAliasType("");
+                  setAliasValue("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="space-y-1.5">
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-7 w-full" />
+          </div>
+        ) : aliases && aliases.length > 0 ? (
+          <div className="space-y-1.5">
+            {aliases.map((alias) => (
+              <div key={alias.id} className="flex items-center justify-between gap-2 text-xs p-1.5 rounded bg-muted/20">
+                <span className="font-mono truncate flex-1">{alias.aliasValue}</span>
+                <Badge variant="outline" className="text-[9px] shrink-0">
+                  {alias.aliasType}
+                </Badge>
+                <Badge variant="secondary" className="text-[8px] shrink-0 opacity-60">
+                  {alias.source}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground text-center py-2">
+            No aliases. Add one to link alternate identifiers.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EntityMergeDialog({
+  open,
+  onOpenChange,
+  allNodes,
+  selectedEntityId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  allNodes: GraphNode[];
+  selectedEntityId: string | null;
+}) {
+  const { toast } = useToast();
+  const [targetId, setTargetId] = useState("");
+  const [sourceId, setSourceId] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const [mergeSearch, setMergeSearch] = useState("");
+
+  const mergeMutation = useMutation({
+    mutationFn: async (data: { targetId: string; sourceId: string }) => {
+      const res = await apiRequest("POST", "/api/entities/merge", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/entity-graph"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entities"] });
+      toast({ title: "Entities merged", description: "Source entity absorbed into target successfully" });
+      onOpenChange(false);
+      setTargetId("");
+      setSourceId("");
+      setConfirmText("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Merge failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const suggestions = useMemo(() => {
+    if (!selectedEntityId || allNodes.length < 2) return [];
+    const selected = allNodes.find((n) => n.id === selectedEntityId);
+    if (!selected) return [];
+    return allNodes
+      .filter((n) => {
+        if (n.id === selectedEntityId) return false;
+        if (n.type !== selected.type) return false;
+        const selVal = (selected.displayName || selected.value).toLowerCase();
+        const nVal = (n.displayName || n.value).toLowerCase();
+        return (
+          selVal.includes(nVal.substring(0, Math.min(8, nVal.length))) ||
+          nVal.includes(selVal.substring(0, Math.min(8, selVal.length)))
+        );
+      })
+      .slice(0, 5);
+  }, [allNodes, selectedEntityId]);
+
+  const filteredNodes = useMemo(() => {
+    if (!mergeSearch.trim()) return allNodes.slice(0, 20);
+    const q = mergeSearch.toLowerCase();
+    return allNodes
+      .filter((n) => n.value.toLowerCase().includes(q) || (n.displayName || "").toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [allNodes, mergeSearch]);
+
+  const targetEntity = allNodes.find((n) => n.id === targetId);
+  const sourceEntity = allNodes.find((n) => n.id === sourceId);
+  const canMerge = targetId && sourceId && targetId !== sourceId && confirmText === "MERGE";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Merge className="h-4 w-4 text-cyan-400" />
+            Merge Entities
+          </DialogTitle>
+          <DialogDescription>
+            Merge a source entity into a target. The source will be deleted and its alerts, aliases, and relationships
+            transferred to the target.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {suggestions.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                Merge Suggestions (similar to selected)
+              </p>
+              <div className="space-y-1">
+                {suggestions.map((s) => {
+                  const cfg = ENTITY_TYPE_CONFIG[s.type] || ENTITY_TYPE_CONFIG.ip;
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex items-center gap-2 text-xs p-2 rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors"
+                      onClick={() => {
+                        setSourceId(s.id);
+                        setTargetId(selectedEntityId || "");
+                      }}
+                      data-testid={`merge-suggestion-${s.id}`}
+                    >
+                      <EntityTypeIcon type={s.type} className="h-3.5 w-3.5 shrink-0" />
+                      <span className="font-mono truncate flex-1">{s.displayName || s.value}</span>
+                      <Badge variant="outline" className={`text-[8px] ${cfg.bgColor} ${cfg.color}`}>
+                        {cfg.label}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Target Entity (keep)</Label>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+              <Input
+                value={mergeSearch}
+                onChange={(e) => setMergeSearch(e.target.value)}
+                placeholder="Search entities..."
+                className="h-8 text-xs pl-7"
+              />
+            </div>
+            <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-1.5">
+              {filteredNodes.map((n) => (
+                <div
+                  key={`target-${n.id}`}
+                  className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${
+                    targetId === n.id ? "bg-cyan-500/15 border border-cyan-500/30" : "hover:bg-muted/40"
+                  }`}
+                  onClick={() => setTargetId(n.id)}
+                  data-testid={`merge-target-${n.id}`}
+                >
+                  <EntityTypeIcon type={n.type} className="h-3 w-3 shrink-0" />
+                  <span className="font-mono truncate">{n.displayName || n.value}</span>
+                </div>
+              ))}
+              {filteredNodes.length === 0 && (
+                <p className="text-[10px] text-muted-foreground text-center py-2">No entities found</p>
+              )}
+            </div>
+            {targetEntity && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-cyan-500/10 border border-cyan-500/20">
+                <EntityTypeIcon type={targetEntity.type} className="h-3.5 w-3.5" />
+                <span className="font-mono font-medium">{targetEntity.displayName || targetEntity.value}</span>
+                <Badge variant="outline" className="text-[8px] ml-auto">
+                  Target
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Source Entity (will be deleted)</Label>
+            <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-1.5">
+              {filteredNodes
+                .filter((n) => n.id !== targetId)
+                .map((n) => (
+                  <div
+                    key={`source-${n.id}`}
+                    className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${
+                      sourceId === n.id ? "bg-red-500/15 border border-red-500/30" : "hover:bg-muted/40"
+                    }`}
+                    onClick={() => setSourceId(n.id)}
+                    data-testid={`merge-source-${n.id}`}
+                  >
+                    <EntityTypeIcon type={n.type} className="h-3 w-3 shrink-0" />
+                    <span className="font-mono truncate">{n.displayName || n.value}</span>
+                  </div>
+                ))}
+            </div>
+            {sourceEntity && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-red-500/10 border border-red-500/20">
+                <EntityTypeIcon type={sourceEntity.type} className="h-3.5 w-3.5" />
+                <span className="font-mono font-medium">{sourceEntity.displayName || sourceEntity.value}</span>
+                <Badge variant="destructive" className="text-[8px] ml-auto">
+                  Source (deleted)
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          {targetId && sourceId && targetId !== sourceId && (
+            <div className="space-y-2 p-3 rounded-md border border-destructive/30 bg-destructive/5">
+              <div className="flex items-center gap-2 text-xs">
+                <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                <span className="font-medium text-destructive">This action is irreversible</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                All alerts, aliases, and relationships from the source entity will be transferred to the target. The
+                source entity will be permanently deleted.
+              </p>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">
+                  Type <span className="font-bold text-foreground">MERGE</span> to confirm
+                </Label>
+                <Input
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder="Type MERGE"
+                  className="h-7 text-xs mt-1"
+                  data-testid="input-merge-confirm"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => mergeMutation.mutate({ targetId, sourceId })}
+            disabled={!canMerge || mergeMutation.isPending}
+            data-testid="button-confirm-merge"
+          >
+            {mergeMutation.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                Merging...
+              </>
+            ) : (
+              <>
+                <Merge className="h-3.5 w-3.5 mr-1.5" />
+                Merge Entities
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes: GraphNode[] }) {
+  const { toast } = useToast();
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+
   const {
     data: entity,
     isLoading: entityLoading,
@@ -308,12 +728,7 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
     enabled: !!entityId,
   });
 
-  const { data: aliases } = useQuery<{ id: string; aliasType: string; aliasValue: string; source: string }[]>({
-    queryKey: ["/api/entities", entityId, "aliases"],
-    enabled: !!entityId,
-  });
-
-  const { data: entityAlerts } = useQuery<any[]>({
+  const { data: entityAlerts } = useQuery<{ id: string; title: string; severity: string }[]>({
     queryKey: ["/api/entities", entityId, "alerts"],
     enabled: !!entityId,
   });
@@ -386,31 +801,21 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
               <p className="text-xs font-mono break-all bg-muted/30 p-2 rounded-md">{entity.value}</p>
             </div>
           )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            onClick={() => setShowMergeDialog(true)}
+            data-testid="button-open-merge"
+          >
+            <Merge className="h-3.5 w-3.5 mr-1.5" />
+            Merge with Another Entity
+          </Button>
         </CardContent>
       </Card>
 
-      {aliases && aliases.length > 0 && (
-        <Card data-testid="entity-aliases-panel">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Aliases ({aliases.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1.5">
-              {aliases.map((alias) => (
-                <div
-                  key={alias.id}
-                  className="flex items-center justify-between gap-2 text-xs p-1.5 rounded bg-muted/20"
-                >
-                  <span className="font-mono truncate">{alias.aliasValue}</span>
-                  <Badge variant="outline" className="text-[9px] shrink-0">
-                    {alias.aliasType}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <EntityAliasManager entityId={entityId} />
 
       {relationships && relationships.length > 0 && (
         <Card data-testid="entity-relationships-panel">
@@ -448,7 +853,7 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {entityAlerts.slice(0, 10).map((alert: any) => (
+              {entityAlerts.slice(0, 10).map((alert) => (
                 <Link key={alert.id} href={`/alerts/${alert.id}`}>
                   <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-muted/20 hover-elevate cursor-pointer">
                     <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -473,6 +878,13 @@ function EntityDetailPanel({ entityId }: { entityId: string }) {
           </CardContent>
         </Card>
       )}
+
+      <EntityMergeDialog
+        open={showMergeDialog}
+        onOpenChange={setShowMergeDialog}
+        allNodes={allNodes}
+        selectedEntityId={entityId}
+      />
     </div>
   );
 }
@@ -636,6 +1048,7 @@ function VisualGraph({
 }
 
 export default function EntityGraphPage() {
+  usePageTitle("Entity Graph");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [riskFilter, setRiskFilter] = useState<string>("all");
@@ -871,7 +1284,7 @@ export default function EntityGraphPage() {
 
         {selectedEntityId && (
           <div className="w-80 shrink-0 hidden lg:block">
-            <EntityDetailPanel entityId={selectedEntityId} />
+            <EntityDetailPanel entityId={selectedEntityId} allNodes={graph?.nodes || []} />
           </div>
         )}
       </div>
