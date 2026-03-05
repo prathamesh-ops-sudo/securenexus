@@ -279,7 +279,7 @@ export default function IocIngestionMatchingPage() {
 
   const ingestMutation = useMutation({
     mutationFn: async ({ feedId, rawData }: { feedId: string; rawData: unknown }) => {
-      const res = await apiRequest("POST", `/api/ioc-feeds/${feedId}/ingest`, { rawData });
+      const res = await apiRequest("POST", `/api/ioc-feeds/${feedId}/ingest`, { data: rawData });
       return res.json();
     },
     onSuccess: (data: { newEntries?: number; totalParsed?: number }) => {
@@ -300,7 +300,7 @@ export default function IocIngestionMatchingPage() {
 
   const manualUploadMutation = useMutation({
     mutationFn: async (data: { feedId: string; rawData: string }) => {
-      const res = await apiRequest("POST", `/api/ioc-feeds/${data.feedId}/ingest`, { rawData: data.rawData });
+      const res = await apiRequest("POST", `/api/ioc-feeds/${data.feedId}/ingest`, { data: data.rawData });
       return res.json();
     },
     onSuccess: (data: { newEntries?: number; totalParsed?: number }) => {
