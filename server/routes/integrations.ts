@@ -179,6 +179,73 @@ export function registerIntegrationsRoutes(app: Express): void {
     } catch (error) { res.status(500).json({ message: "Failed to test notification" }); }
   });
 
+  // Per-user notification preferences
+  app.get("/api/notification-preferences", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      const orgId = (req as any).user?.orgId;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const prefs = await storage.getNotificationUserPreferences(userId, orgId);
+      if (!prefs) return res.json(null);
+      res.json(prefs);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch notification preferences" });
+    }
+  });
+
+  app.put(
+    "/api/notification-preferences",
+    isAuthenticated,
+    validateBody(bodySchemas.notificationPreferencesUpdate),
+    async (req, res) => {
+      try {
+        const userId = (req as any).user?.id;
+        const orgId = (req as any).user?.orgId ?? null;
+        if (!userId) return res.status(401).json({ message: "Unauthorized" });
+        const body = (req as any).validatedBody;
+        const existing = await storage.getNotificationUserPreferences(userId, orgId ?? undefined);
+        const merged = {
+          userId,
+          orgId,
+          channelIds: body.channelIds !== undefined ? body.channelIds : existing?.channelIds,
+          eventTypes: body.eventTypes !== undefined ? body.eventTypes : existing?.eventTypes,
+          minSeverity: body.minSeverity !== undefined ? body.minSeverity : existing?.minSeverity,
+          quietHoursStart: body.quietHoursStart !== undefined ? body.quietHoursStart : existing?.quietHoursStart,
+          quietHoursEnd: body.quietHoursEnd !== undefined ? body.quietHoursEnd : existing?.quietHoursEnd,
+          digestEnabled: body.digestEnabled !== undefined ? body.digestEnabled : existing?.digestEnabled,
+          digestFrequencyHours:
+            body.digestFrequencyHours !== undefined ? body.digestFrequencyHours : existing?.digestFrequencyHours,
+        };
+        const prefs = await storage.upsertNotificationUserPreferences(merged);
+        res.json(prefs);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update notification preferences" });
+      }
+    },
+  );
+
+  // Notification delivery log (org-scoped, paginated)
+  app.get(
+    "/api/notification-delivery-log",
+    isAuthenticated,
+    validateQuery(querySchemas.notificationDeliveryLogList),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const { channelId, offset, limit } = (req as any).validatedQuery;
+        const { items, total } = await storage.getNotificationDeliveryLog({
+          orgId,
+          channelId,
+          offset,
+          limit,
+        });
+        res.json({ items, total });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch delivery log" });
+      }
+    },
+  );
+
   // ============================
   // Phase 7: Response Actions
   // ============================

@@ -52,6 +52,12 @@ import {
   type NotificationChannel,
   type InsertNotificationChannel,
   notificationChannels,
+  type NotificationUserPreferences,
+  type InsertNotificationUserPreferences,
+  notificationUserPreferences,
+  type NotificationDeliveryLog,
+  type InsertNotificationDeliveryLog,
+  notificationDeliveryLog,
   type ResponseAction,
   type InsertResponseAction,
   responseActions,
@@ -499,6 +505,16 @@ export interface IStorage {
   createNotificationChannel(channel: InsertNotificationChannel): Promise<NotificationChannel>;
   updateNotificationChannel(id: string, data: Partial<NotificationChannel>): Promise<NotificationChannel | undefined>;
   deleteNotificationChannel(id: string): Promise<boolean>;
+
+  getNotificationUserPreferences(userId: string, orgId?: string | null): Promise<NotificationUserPreferences | undefined>;
+  upsertNotificationUserPreferences(data: InsertNotificationUserPreferences): Promise<NotificationUserPreferences>;
+  createNotificationDeliveryLog(entry: InsertNotificationDeliveryLog): Promise<NotificationDeliveryLog>;
+  getNotificationDeliveryLog(params: {
+    orgId?: string;
+    channelId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: NotificationDeliveryLog[]; total: number }>;
 
   getResponseActions(orgId?: string, incidentId?: string): Promise<ResponseAction[]>;
   getResponseAction(id: string): Promise<ResponseAction | undefined>;
@@ -2115,6 +2131,84 @@ export class DatabaseStorage implements IStorage {
   async deleteNotificationChannel(id: string): Promise<boolean> {
     const result = await db.delete(notificationChannels).where(eq(notificationChannels.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getNotificationUserPreferences(
+    userId: string,
+    orgId?: string | null,
+  ): Promise<NotificationUserPreferences | undefined> {
+    const conditions = [eq(notificationUserPreferences.userId, userId)];
+    if (orgId != null) conditions.push(eq(notificationUserPreferences.orgId, orgId));
+    else conditions.push(isNull(notificationUserPreferences.orgId));
+    const [row] = await db
+      .select()
+      .from(notificationUserPreferences)
+      .where(and(...conditions));
+    return row;
+  }
+
+  async upsertNotificationUserPreferences(
+    data: InsertNotificationUserPreferences,
+  ): Promise<NotificationUserPreferences> {
+    const existing = await this.getNotificationUserPreferences(data.userId, data.orgId ?? undefined);
+    const updatePayload = {
+      channelIds: data.channelIds,
+      eventTypes: data.eventTypes,
+      minSeverity: data.minSeverity,
+      quietHoursStart: data.quietHoursStart,
+      quietHoursEnd: data.quietHoursEnd,
+      digestEnabled: data.digestEnabled,
+      digestFrequencyHours: data.digestFrequencyHours,
+      updatedAt: new Date(),
+    };
+    if (existing) {
+      const [updated] = await db
+        .update(notificationUserPreferences)
+        .set(updatePayload)
+        .where(eq(notificationUserPreferences.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(notificationUserPreferences)
+      .values({ ...data, updatedAt: new Date() })
+      .returning();
+    return created;
+  }
+
+  async createNotificationDeliveryLog(
+    entry: InsertNotificationDeliveryLog,
+  ): Promise<NotificationDeliveryLog> {
+    const [created] = await db.insert(notificationDeliveryLog).values(entry).returning();
+    return created;
+  }
+
+  async getNotificationDeliveryLog(params: {
+    orgId?: string;
+    channelId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: NotificationDeliveryLog[]; total: number }> {
+    const { orgId, channelId, limit = 50, offset = 0 } = params;
+    const conditions = [];
+    if (orgId) conditions.push(eq(notificationDeliveryLog.orgId, orgId));
+    if (channelId) conditions.push(eq(notificationDeliveryLog.channelId, channelId));
+    const condition = conditions.length > 0 ? and(...conditions) : undefined;
+    const baseQuery = db.select().from(notificationDeliveryLog).where(condition);
+    const [items, countResult] = await Promise.all([
+      db
+        .select()
+        .from(notificationDeliveryLog)
+        .where(condition)
+        .orderBy(desc(notificationDeliveryLog.deliveredAt))
+        .limit(Math.min(limit, 200))
+        .offset(offset),
+      condition
+        ? db.select({ count: count() }).from(notificationDeliveryLog).where(condition)
+        : db.select({ count: count() }).from(notificationDeliveryLog),
+    ]);
+    const total = Number(countResult[0]?.count ?? 0);
+    return { items, total };
   }
 
   async getResponseActions(orgId?: string, incidentId?: string): Promise<ResponseAction[]> {

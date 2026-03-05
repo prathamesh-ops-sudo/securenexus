@@ -980,6 +980,56 @@ export const notificationChannels = pgTable(
   ],
 );
 
+export const notificationUserPreferences = pgTable(
+  "notification_user_preferences",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull(),
+    orgId: varchar("org_id").references(() => organizations.id),
+    channelIds: text("channel_ids").array().default(sql`ARRAY[]::text[]`),
+    eventTypes: text("event_types").array().default(sql`ARRAY['incident_created']`),
+    minSeverity: text("min_severity").default("info"),
+    quietHoursStart: integer("quiet_hours_start"),
+    quietHoursEnd: integer("quiet_hours_end"),
+    digestEnabled: boolean("digest_enabled").default(false),
+    digestFrequencyHours: integer("digest_frequency_hours").default(24),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_notification_user_prefs_user").on(table.userId),
+    index("idx_notification_user_prefs_org").on(table.orgId),
+    uniqueIndex("idx_notification_user_prefs_user_org").on(table.userId, table.orgId),
+  ],
+);
+
+export const notificationDeliveryLog = pgTable(
+  "notification_delivery_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    channelId: varchar("channel_id").notNull(),
+    channelName: text("channel_name").notNull(),
+    channelType: text("channel_type").notNull(),
+    orgId: varchar("org_id").references(() => organizations.id),
+    eventType: text("event_type").notNull(),
+    title: text("title").notNull(),
+    severity: text("severity").notNull(),
+    success: boolean("success").notNull(),
+    errorMessage: text("error_message"),
+    deliveredAt: timestamp("delivered_at").defaultNow(),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [
+    index("idx_notification_delivery_log_channel").on(table.channelId),
+    index("idx_notification_delivery_log_org_delivered").on(table.orgId, table.deliveredAt),
+    index("idx_notification_delivery_log_delivered").on(table.deliveredAt),
+  ],
+);
+
 export const responseActions = pgTable(
   "response_actions",
   {
@@ -1609,6 +1659,14 @@ export const notificationChannelsRelations = relations(notificationChannels, ({ 
   organization: one(organizations, { fields: [notificationChannels.orgId], references: [organizations.id] }),
 }));
 
+export const notificationUserPreferencesRelations = relations(notificationUserPreferences, ({ one }) => ({
+  organization: one(organizations, { fields: [notificationUserPreferences.orgId], references: [organizations.id] }),
+}));
+
+export const notificationDeliveryLogRelations = relations(notificationDeliveryLog, ({ one }) => ({
+  organization: one(organizations, { fields: [notificationDeliveryLog.orgId], references: [organizations.id] }),
+}));
+
 export const responseActionsRelations = relations(responseActions, ({ one }) => ({
   organization: one(organizations, { fields: [responseActions.orgId], references: [organizations.id] }),
   incident: one(incidents, { fields: [responseActions.incidentId], references: [incidents.id] }),
@@ -1768,6 +1826,15 @@ export const insertNotificationChannelSchema = createInsertSchema(notificationCh
   updatedAt: true,
   lastNotifiedAt: true,
 });
+export const insertNotificationUserPreferencesSchema = createInsertSchema(notificationUserPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertNotificationDeliveryLogSchema = createInsertSchema(notificationDeliveryLog).omit({
+  id: true,
+  deliveredAt: true,
+});
 export const insertResponseActionSchema = createInsertSchema(responseActions).omit({
   id: true,
   createdAt: true,
@@ -1915,6 +1982,10 @@ export type IntegrationConfig = typeof integrationConfigs.$inferSelect;
 export type InsertIntegrationConfig = z.infer<typeof insertIntegrationConfigSchema>;
 export type NotificationChannel = typeof notificationChannels.$inferSelect;
 export type InsertNotificationChannel = z.infer<typeof insertNotificationChannelSchema>;
+export type NotificationUserPreferences = typeof notificationUserPreferences.$inferSelect;
+export type InsertNotificationUserPreferences = z.infer<typeof insertNotificationUserPreferencesSchema>;
+export type NotificationDeliveryLog = typeof notificationDeliveryLog.$inferSelect;
+export type InsertNotificationDeliveryLog = z.infer<typeof insertNotificationDeliveryLogSchema>;
 export type ResponseAction = typeof responseActions.$inferSelect;
 export type InsertResponseAction = z.infer<typeof insertResponseActionSchema>;
 export type PredictiveAnomaly = typeof predictiveAnomalies.$inferSelect;

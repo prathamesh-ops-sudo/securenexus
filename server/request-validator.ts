@@ -91,6 +91,12 @@ export const querySchemas = {
     incidentId: z.string().max(255).optional(),
   }),
 
+  notificationDeliveryLogList: z.object({
+    channelId: z.string().max(255).optional(),
+    offset: z.coerce.number().int().min(0).max(MAX_OFFSET).default(0),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  }),
+
   aiFeedbackByQuery: z.object({
     resourceType: z.string().max(64).optional(),
     resourceId: z.string().max(255).optional(),
@@ -130,6 +136,16 @@ export const bodySchemas = {
     config: z.record(z.unknown()),
     events: z.array(z.string().max(64)).optional(),
     isDefault: z.boolean().optional(),
+  }),
+
+  notificationPreferencesUpdate: z.object({
+    channelIds: z.array(z.string().max(255)).optional(),
+    eventTypes: z.array(z.string().max(64)).optional(),
+    minSeverity: z.enum(["info", "warning", "critical"]).optional(),
+    quietHoursStart: z.number().int().min(0).max(23).nullable().optional(),
+    quietHoursEnd: z.number().int().min(0).max(23).nullable().optional(),
+    digestEnabled: z.boolean().optional(),
+    digestFrequencyHours: z.number().int().min(1).max(168).optional(),
   }),
 
   responseActionCreate: z.object({
