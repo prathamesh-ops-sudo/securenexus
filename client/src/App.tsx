@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
 import { useRoleLanding } from "@/hooks/use-role-landing";
+import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useEventStream } from "@/hooks/use-event-stream";
 import type { StreamEvent } from "@/hooks/use-event-stream";
 import { OrgContext, useOrgContextProvider } from "@/hooks/use-org-context";
@@ -75,6 +76,7 @@ const ModelGatewayPage = lazy(() => import("@/pages/model-gateway"));
 const OsintFeedsConfigPage = lazy(() => import("@/pages/osint-feeds-config"));
 const OutboxMonitoringPage = lazy(() => import("@/pages/outbox-monitoring"));
 const ApiVersioningPage = lazy(() => import("@/pages/api-versioning"));
+const SeoMeasurementPage = lazy(() => import("@/pages/seo-measurement"));
 
 function PageSkeleton() {
   return (
@@ -123,6 +125,7 @@ function isContentPageRoute(path: string): boolean {
 
 function AuthenticatedApp() {
   useRoleLanding();
+  usePageTracking();
   const { connected, connectionState, eventCount, events, lastEvent } = useEventStream({ enabled: true });
   const orgContext = useOrgContextProvider();
   const [location, navigate] = useLocation();
@@ -234,6 +237,7 @@ function AuthenticatedApp() {
                     <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
                     <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
                     <Route path="/api-versioning" component={ApiVersioningPage} />
+                    <Route path="/seo-measurement" component={SeoMeasurementPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

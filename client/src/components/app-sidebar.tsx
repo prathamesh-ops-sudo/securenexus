@@ -36,6 +36,7 @@ import {
   Mail,
   Rss,
   Send,
+  LineChart,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -128,6 +129,7 @@ const navGroups: NavGroup[] = [
       { title: "Operations", url: "/operations", icon: Zap },
       { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
       { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
+      { title: "SEO Measurement", url: "/seo-measurement", icon: LineChart },
     ],
   },
 ];
