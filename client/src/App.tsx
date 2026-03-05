@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
 import { useRoleLanding } from "@/hooks/use-role-landing";
+import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useEventStream } from "@/hooks/use-event-stream";
 import type { StreamEvent } from "@/hooks/use-event-stream";
 import { OrgContext, useOrgContextProvider } from "@/hooks/use-org-context";
@@ -249,6 +250,7 @@ function AuthenticatedApp() {
 }
 
 function AppContent() {
+  usePageTracking();
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 
