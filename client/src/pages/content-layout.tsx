@@ -64,10 +64,15 @@ function ShareButtons({ title }: { title: string }) {
   const fullUrl = `https://nexus.aricatech.xyz${location}`;
 
   const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(fullUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard.writeText(fullUrl).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      () => {
+        // Clipboard access denied or unavailable
+      },
+    );
   }, [fullUrl]);
 
   const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(fullUrl)}`;
