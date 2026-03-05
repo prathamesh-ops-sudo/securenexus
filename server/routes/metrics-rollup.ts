@@ -50,11 +50,17 @@ export function registerMetricsRollupRoutes(app: Express): void {
     try {
       const rawService = req.query.service ? String(req.query.service) : null;
       const service = rawService ? sanitizeIdentifier(rawService) : null;
+      if (rawService && !service) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_SERVICE", message: "service contains invalid characters" }],
+        });
+      }
       let query = `SELECT DISTINCT service, metric FROM sli_metrics_hourly`;
       const params: string[] = [];
-      if (rawService) {
+      if (service) {
         query += ` WHERE service = $1`;
-        params.push(service || rawService.slice(0, 128));
+        params.push(service);
       }
       query += ` ORDER BY service, metric`;
       const result = await pool.query(query, params);
@@ -96,8 +102,14 @@ export function registerMetricsRollupRoutes(app: Express): void {
         });
       }
 
-      const svc = sanitizeIdentifier(service) || service.slice(0, 128);
-      const met = sanitizeIdentifier(metric) || metric.slice(0, 128);
+      const svc = sanitizeIdentifier(service);
+      const met = sanitizeIdentifier(metric);
+      if (!svc || !met) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_PARAMS", message: "service and metric contain invalid characters" }],
+        });
+      }
       const limit = parseLimit(limitStr);
 
       const now = new Date();
