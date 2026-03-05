@@ -30,7 +30,6 @@ import {
   Save,
   BookmarkPlus,
   Keyboard,
-  Zap,
   GitBranch,
   Network,
 } from "lucide-react";
