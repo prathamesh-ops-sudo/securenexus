@@ -37,6 +37,7 @@ import { registerMsspRoutes } from "./mssp";
 import { registerUsageRoutes } from "./usage";
 import { registerDevPortalRoutes } from "./dev-portal";
 import { registerEngineControlsRoutes } from "./engine-controls";
+import { registerEmailTemplateRoutes } from "./email-templates";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -78,4 +79,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerUsageRoutes(app);
   registerDevPortalRoutes(app);
   registerEngineControlsRoutes(app);
+  registerEmailTemplateRoutes(app);
 }
