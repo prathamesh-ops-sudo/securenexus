@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchPaginated } from "@/lib/queryClient";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,6 +134,10 @@ export default function KillChainPage() {
     refetch: refetchAlerts,
   } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const {
@@ -142,6 +147,10 @@ export default function KillChainPage() {
     refetch: refetchIncidents,
   } = useQuery<Incident[]>({
     queryKey: ["/api/v1/incidents"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const isLoading = alertsLoading || incidentsLoading;

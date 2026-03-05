@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchPaginated } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Plug, ArrowDownToLine, FileWarning, Workflow, CheckCircle2, ArrowRight, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,10 @@ const GUIDED_COMPLETED_KEY = "securenexus.guidedWorkflow.completed";
 function useGuidedProgress() {
   const { data: connectors } = useQuery<unknown[]>({
     queryKey: ["/api/v1/connectors"],
+    queryFn: async () => {
+      const res = await fetchPaginated<unknown>("/api/v1/connectors", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const { data: stats } = useQuery<{ totalAlerts?: number }>({
@@ -71,6 +76,10 @@ function useGuidedProgress() {
 
   const { data: incidents } = useQuery<unknown[]>({
     queryKey: ["/api/v1/incidents"],
+    queryFn: async () => {
+      const res = await fetchPaginated<unknown>("/api/v1/incidents", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const { data: playbooks } = useQuery<unknown[]>({

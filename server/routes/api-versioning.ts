@@ -195,18 +195,36 @@ export function registerApiVersioningRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 500);
       const search = typeof req.query.search === "string" ? req.query.search : undefined;
+      const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const source = typeof req.query.source === "string" ? req.query.source : undefined;
 
-      const { items, total } = await storage.getAlertsPaginated({
+      const { items: rawItems, total: rawTotal } = await storage.getAlertsPaginated({
         orgId,
-        offset,
-        limit,
+        offset: severity || status || source ? 0 : offset,
+        limit: severity || status || source ? 10000 : limit,
         search,
       });
 
+      let filtered = rawItems;
+      if (severity) filtered = filtered.filter((a: any) => a.severity === severity);
+      if (status) filtered = filtered.filter((a: any) => a.status === status);
+      if (source) filtered = filtered.filter((a: any) => a.source === source);
+      const total = severity || status || source ? filtered.length : rawTotal;
+      const items = severity || status || source ? filtered.slice(offset, offset + limit) : filtered;
+
       return sendEnvelope(res, items, {
-        meta: { offset, limit, total, search: search ?? null },
+        meta: {
+          offset,
+          limit,
+          total,
+          search: search ?? null,
+          severity: severity ?? null,
+          status: status ?? null,
+          source: source ?? null,
+        },
       });
     } catch (error: any) {
       if (error.message === "ORG_CONTEXT_MISSING")
@@ -226,18 +244,41 @@ export function registerApiVersioningRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 500);
       const queue = typeof req.query.queue === "string" ? req.query.queue : undefined;
+      const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
-      const { items, total } = await storage.getIncidentsPaginated({
+      const { items: rawItems, total: rawTotal } = await storage.getIncidentsPaginated({
         orgId,
-        offset,
-        limit,
+        offset: severity || status || search ? 0 : offset,
+        limit: severity || status || search ? 10000 : limit,
         queue,
       });
 
+      let filtered = rawItems;
+      if (severity) filtered = filtered.filter((i: any) => i.severity === severity);
+      if (status) filtered = filtered.filter((i: any) => i.status === status);
+      if (search) {
+        const q = search.toLowerCase();
+        filtered = filtered.filter(
+          (i: any) => i.title?.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q),
+        );
+      }
+      const total = severity || status || search ? filtered.length : rawTotal;
+      const items = severity || status || search ? filtered.slice(offset, offset + limit) : filtered;
+
       return sendEnvelope(res, items, {
-        meta: { offset, limit, total, queue: queue ?? null },
+        meta: {
+          offset,
+          limit,
+          total,
+          queue: queue ?? null,
+          severity: severity ?? null,
+          status: status ?? null,
+          search: search ?? null,
+        },
       });
     } catch (error: any) {
       if (error.message === "ORG_CONTEXT_MISSING")
@@ -257,7 +298,7 @@ export function registerApiVersioningRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 500);
 
       const { items, total } = await storage.getConnectorsPaginated({ orgId, offset, limit });
 

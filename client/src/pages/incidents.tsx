@@ -373,7 +373,15 @@ export default function IncidentsPage() {
   const [dateTo, setDateTo] = useState("");
 
   // Optimistic update helper for incident status changes
-  const optimisticStatusUpdate = useCallback((_incidentId: string, _updates: Partial<Incident>) => {}, []);
+  const optimisticStatusUpdate = useCallback((incidentId: string, updates: Partial<Incident>) => {
+    queryClient.setQueriesData<PaginatedResponse<Incident>>({ queryKey: ["/api/v1/incidents"] }, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        items: old.items.map((inc) => (inc.id === incidentId ? ({ ...inc, ...updates } as Incident) : inc)),
+      };
+    });
+  }, []);
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
     queryKey: ["/api/orgs/default/saved-views", "incidents"],

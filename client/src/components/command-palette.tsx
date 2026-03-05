@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   CommandDialog,
@@ -102,10 +102,18 @@ export function CommandPalette() {
 
   const { data: alerts } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const { data: incidents } = useQuery<Incident[]>({
     queryKey: ["/api/v1/incidents"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const recentRecords = useMemo(() => loadRecentRecords(), [open]);

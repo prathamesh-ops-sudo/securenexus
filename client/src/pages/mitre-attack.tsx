@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchPaginated } from "@/lib/queryClient";
 import { useMemo } from "react";
 import { Shield, Crosshair, Grid3X3, AlertTriangle, Clock, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,6 +107,10 @@ export default function MitreAttackPage() {
     refetch: refetchAlerts,
   } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const {

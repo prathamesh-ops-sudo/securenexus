@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -203,10 +203,18 @@ export default function ThreatIntelPage() {
     refetch: _refetchAlerts,
   } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const { data: incidents, isLoading: incidentsLoading } = useQuery<Incident[]>({
     queryKey: ["/api/v1/incidents"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const {

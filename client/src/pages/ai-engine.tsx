@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Brain,
@@ -188,6 +188,10 @@ export default function AIEnginePage() {
 
   const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts"],
+    queryFn: async () => {
+      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
+      return res.items;
+    },
   });
 
   const { data: feedbackMetrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
