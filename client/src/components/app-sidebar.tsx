@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   Code2,
   Mail,
+  Rss,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -80,6 +81,7 @@ const navGroups: NavGroup[] = [
     icon: Crosshair,
     items: [
       { title: "Threat Intel", url: "/threat-intel", icon: Shield },
+      { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
       { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
       { title: "Entity Graph", url: "/entity-graph", icon: Network },
       { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
