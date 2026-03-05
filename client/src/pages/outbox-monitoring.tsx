@@ -20,7 +20,6 @@ import {
   Eye,
   X,
   Activity,
-  Zap,
   Hash,
   Layers,
   ArrowUpDown,
@@ -199,15 +198,7 @@ function ProcessorStatusCard({ status }: { status: ProcessorStatus }) {
   );
 }
 
-function StatsCards({
-  total,
-  status,
-  processorStatus,
-}: {
-  total: number;
-  status: ProcessorStatus | undefined;
-  processorStatus: ProcessorStatus | undefined;
-}) {
+function StatsCards({ total, processorStatus }: { total: number; processorStatus: ProcessorStatus | undefined }) {
   const processed = processorStatus?.processedCount ?? 0;
   const failed = processorStatus?.failedCount ?? 0;
 
@@ -243,8 +234,8 @@ function StatsCards({
           <p className="text-[10px] text-muted-foreground mt-1">Permanently failed</p>
         </CardContent>
       </Card>
-      {status ? (
-        <ProcessorStatusCard status={status} />
+      {processorStatus ? (
+        <ProcessorStatusCard status={processorStatus} />
       ) : (
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
@@ -600,12 +591,18 @@ export default function OutboxMonitoringPage() {
       params.set("limit", String(pageSize));
       params.set("offset", String(page * pageSize));
       const res = await apiRequest("GET", `/api/v1/outbox/events?${params.toString()}`);
-      return await res.json();
+      const envelope = await res.json();
+      return { items: envelope.data ?? [], total: envelope.meta?.total ?? 0 };
     },
   });
 
   const { data: processorStatus, refetch: refetchStatus } = useQuery<ProcessorStatus>({
     queryKey: ["/api/v1/outbox/status"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/v1/outbox/status");
+      const envelope = await res.json();
+      return envelope.data;
+    },
   });
 
   const events = eventsData?.items ?? [];
@@ -645,11 +642,12 @@ export default function OutboxMonitoringPage() {
       const res = await apiRequest("POST", "/api/v1/outbox/replay-batch", { eventIds });
       return await res.json();
     },
-    onSuccess: (data: { id: string; replayed: boolean }[]) => {
-      const replayedCount = data.filter((r) => r.replayed).length;
+    onSuccess: (envelope: { data: { id: string; replayed: boolean }[] }) => {
+      const results = envelope.data ?? [];
+      const replayedCount = results.filter((r) => r.replayed).length;
       toast({
         title: "Batch replay complete",
-        description: `${replayedCount} of ${data.length} events replayed`,
+        description: `${replayedCount} of ${results.length} events replayed`,
       });
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["/api/v1/outbox/events"] });
@@ -723,7 +721,7 @@ export default function OutboxMonitoringPage() {
         </Button>
       </div>
 
-      <StatsCards total={total} status={processorStatus} processorStatus={processorStatus} />
+      <StatsCards total={total} processorStatus={processorStatus} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between gap-4 flex-wrap">
