@@ -11,7 +11,6 @@ import {
   FileText,
   FileImage,
   FileArchive,
-  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +30,29 @@ import { useToast } from "@/hooks/use-toast";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const MAX_FILE_SIZE_LABEL = "50 MB";
+
+const BLOCKED_EXTENSIONS = new Set([
+  "exe",
+  "bat",
+  "cmd",
+  "com",
+  "msi",
+  "scr",
+  "pif",
+  "vbs",
+  "vbe",
+  "js",
+  "jse",
+  "wsf",
+  "wsh",
+  "ps1",
+  "psm1",
+  "sh",
+  "bash",
+  "dll",
+  "sys",
+  "drv",
+]);
 
 interface FileEntry {
   key: string | undefined;
@@ -76,27 +98,10 @@ export function FileManager({ prefix, title, compact }: { prefix?: string; title
   const [deleteTarget, setDeleteTarget] = useState<FileEntry | null>(null);
 
   const queryPrefix = prefix || "uploads/";
-  const {
-    data: files,
-    isLoading,
-    refetch,
-  } = useQuery<FileEntry[]>({
+  const { data: files, isLoading } = useQuery<FileEntry[]>({
     queryKey: ["/api/files", queryPrefix],
     queryFn: async () => {
-      const res = await fetch(`/api/files?prefix=${encodeURIComponent(queryPrefix)}`, {
-        credentials: "include",
-        headers: (() => {
-          const h: Record<string, string> = {};
-          try {
-            const orgId = localStorage.getItem("securenexus.activeOrgId");
-            if (orgId) h["X-Org-Id"] = orgId;
-          } catch {
-            /* SSR */
-          }
-          return h;
-        })(),
-      });
-      if (!res.ok) throw new Error("Failed to list files");
+      const res = await apiRequest("GET", `/api/files?prefix=${encodeURIComponent(queryPrefix)}`);
       const body = await res.json();
       if (body && typeof body === "object" && "data" in body) {
         return (body as { data: FileEntry[] }).data;
@@ -182,6 +187,15 @@ export function FileManager({ prefix, title, compact }: { prefix?: string; title
         toast({
           title: "File too large",
           description: `Maximum file size is ${MAX_FILE_SIZE_LABEL}. Selected file is ${formatFileSize(file.size)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      if (BLOCKED_EXTENSIONS.has(ext)) {
+        toast({
+          title: "File type blocked",
+          description: `Files with .${ext} extension are not allowed for security reasons.`,
           variant: "destructive",
         });
         return;
