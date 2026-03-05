@@ -62,6 +62,7 @@ export function usePageTracking() {
   useEffect(() => {
     if (location === previousLocation.current) return;
     previousLocation.current = location;
-    sendPageView(location);
+    const id = requestAnimationFrame(() => sendPageView(location));
+    return () => cancelAnimationFrame(id);
   }, [location]);
 }
