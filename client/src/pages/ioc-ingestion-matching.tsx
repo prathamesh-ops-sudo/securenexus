@@ -319,7 +319,7 @@ export default function IocIngestionMatchingPage() {
     },
   });
 
-  if (isLoadingFeeds && isLoadingStats) return <LoadingSkeleton />;
+  if (isLoadingFeeds || isLoadingStats) return <LoadingSkeleton />;
   if (isErrorFeeds) return <ErrorState onRetry={() => refetchFeeds()} />;
 
   const allFeeds = Array.isArray(feeds) ? feeds : [];

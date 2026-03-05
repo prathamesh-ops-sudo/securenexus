@@ -419,8 +419,19 @@ export default function ReportTemplateVersioningPage() {
   });
 
   const rollbackMutation = useMutation({
-    mutationFn: async (versionId: string) => {
-      const res = await apiRequest("PATCH", `/api/report-template-versions/${versionId}`, { status: "active" });
+    mutationFn: async ({
+      targetVersionId,
+      currentActiveVersionId,
+    }: {
+      targetVersionId: string;
+      currentActiveVersionId?: string;
+    }) => {
+      if (currentActiveVersionId) {
+        await apiRequest("PATCH", `/api/report-template-versions/${currentActiveVersionId}`, {
+          status: "deprecated",
+        });
+      }
+      const res = await apiRequest("PATCH", `/api/report-template-versions/${targetVersionId}`, { status: "active" });
       return res.json();
     },
     onSuccess: () => {
@@ -634,7 +645,13 @@ export default function ReportTemplateVersioningPage() {
                   isLoadingVersions={isLoadingVersions}
                   onCreateVersion={() => setShowCreateDialog(true)}
                   onApproveVersion={(id) => approveVersionMutation.mutate(id)}
-                  onRollback={(id) => rollbackMutation.mutate(id)}
+                  onRollback={(id) => {
+                    const currentActive = (Array.isArray(versions) ? versions : []).find((v) => v.status === "active");
+                    rollbackMutation.mutate({
+                      targetVersionId: id,
+                      currentActiveVersionId: currentActive?.id,
+                    });
+                  }}
                 />
               </CardContent>
             </Card>
