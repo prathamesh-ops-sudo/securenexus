@@ -41,6 +41,8 @@ import {
   Fingerprint,
   MessageSquare,
   EyeOff,
+  BookOpen,
+  Webhook as WebhookIcon,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -122,6 +124,7 @@ const navGroups: NavGroup[] = [
       { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
       { title: "Connectors", url: "/connectors", icon: Plug },
       { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
+      { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
       { title: "Integrations", url: "/integrations", icon: Link2 },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
       { title: "File Manager", url: "/file-manager", icon: FolderOpen },
@@ -133,6 +136,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "AI Engine", url: "/ai-engine", icon: Brain },
       { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
+      { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
       { title: "Engine Controls", url: "/engine-controls", icon: Settings },
       { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
       { title: "Operations", url: "/operations", icon: Zap },
