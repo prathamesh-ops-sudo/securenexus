@@ -87,6 +87,7 @@ function recordCircuitFailure(key: string): void {
   state.lastFailure = Date.now();
   if (state.failures >= CIRCUIT_FAILURE_THRESHOLD) {
     state.openUntil = Date.now() + CIRCUIT_RESET_MS;
+    gatewayMetrics.circuitBreakerTrips++;
     log.warn("Circuit breaker opened for model", { key, failures: state.failures, resetMs: CIRCUIT_RESET_MS });
   }
   circuitBreakers.set(key, state);
@@ -104,6 +105,60 @@ interface CacheEntry {
 const responseCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 200;
+
+interface GatewayMetrics {
+  totalRequests: number;
+  cacheHits: number;
+  cacheMisses: number;
+  totalErrors: number;
+  retries: number;
+  circuitBreakerTrips: number;
+  latencyHistory: { timestamp: number; modelId: string; backend: ModelBackend; latencyMs: number; cached: boolean }[];
+  errorHistory: { timestamp: number; modelId: string; backend: ModelBackend; error: string; retryable: boolean }[];
+  modelStats: Map<string, { requests: number; errors: number; totalLatencyMs: number; cacheHits: number }>;
+  startedAt: number;
+}
+
+const gatewayMetrics: GatewayMetrics = {
+  totalRequests: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  totalErrors: 0,
+  retries: 0,
+  circuitBreakerTrips: 0,
+  latencyHistory: [],
+  errorHistory: [],
+  modelStats: new Map(),
+  startedAt: Date.now(),
+};
+
+const MAX_HISTORY_ENTRIES = 200;
+
+function getOrCreateModelStats(modelId: string) {
+  let stats = gatewayMetrics.modelStats.get(modelId);
+  if (!stats) {
+    stats = { requests: 0, errors: 0, totalLatencyMs: 0, cacheHits: 0 };
+    gatewayMetrics.modelStats.set(modelId, stats);
+  }
+  return stats;
+}
+
+function recordLatency(modelId: string, backend: ModelBackend, latencyMs: number, cached: boolean): void {
+  gatewayMetrics.latencyHistory.push({ timestamp: Date.now(), modelId, backend, latencyMs, cached });
+  if (gatewayMetrics.latencyHistory.length > MAX_HISTORY_ENTRIES) {
+    gatewayMetrics.latencyHistory.splice(0, gatewayMetrics.latencyHistory.length - MAX_HISTORY_ENTRIES);
+  }
+}
+
+function recordGatewayError(modelId: string, backend: ModelBackend, error: string, retryable: boolean): void {
+  gatewayMetrics.totalErrors++;
+  gatewayMetrics.errorHistory.push({ timestamp: Date.now(), modelId, backend, error, retryable });
+  if (gatewayMetrics.errorHistory.length > MAX_HISTORY_ENTRIES) {
+    gatewayMetrics.errorHistory.splice(0, gatewayMetrics.errorHistory.length - MAX_HISTORY_ENTRIES);
+  }
+  const stats = getOrCreateModelStats(modelId);
+  stats.errors++;
+}
 
 function buildCacheKey(opts: ModelInvokeOptions): string {
   const raw = `${opts.modelId}|${opts.systemPrompt}|${opts.userMessage}|${opts.maxTokens}|${opts.temperature}`;
@@ -256,10 +311,19 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
   if (!opts.skipCache) {
     const cached = getCached(cacheKey);
     if (cached) {
+      gatewayMetrics.cacheHits++;
+      const stats = getOrCreateModelStats(opts.modelId);
+      stats.cacheHits++;
+      recordLatency(opts.modelId, opts.backend, 0, true);
       log.info("Model response served from cache", { modelId: opts.modelId, promptId: opts.promptId });
       return cached;
     }
   }
+
+  gatewayMetrics.totalRequests++;
+  gatewayMetrics.cacheMisses++;
+  const modelStats = getOrCreateModelStats(opts.modelId);
+  modelStats.requests++;
 
   let lastError: Error | undefined;
 
@@ -267,6 +331,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
     if (attempt > 0) {
       const delayMs = RETRY_BASE_MS * Math.pow(2, attempt - 1);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+      gatewayMetrics.retries++;
       log.warn("Retrying model invocation", { modelId: opts.modelId, attempt, delayMs });
     }
 
@@ -280,6 +345,8 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
       const costEstimateUsd = estimateCost(opts.modelId, inputTokensEstimate, outputTokensEstimate, opts.tier);
 
       recordCircuitSuccess(circuitKey);
+      modelStats.totalLatencyMs += latencyMs;
+      recordLatency(opts.modelId, opts.backend, latencyMs, false);
 
       const result: ModelInvokeResult = {
         text,
@@ -312,6 +379,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
     } catch (error: unknown) {
       const classified = classifyModelError(error);
       lastError = new Error(classified.message);
+      recordGatewayError(opts.modelId, opts.backend, classified.message, classified.retryable);
       if (classified.retryable) recordCircuitFailure(circuitKey);
 
       if (!classified.retryable || attempt >= MAX_RETRIES) {
@@ -342,4 +410,94 @@ export function getCircuitBreakerStatus(): Record<
     };
   }
   return result;
+}
+
+export interface GatewayDashboardData {
+  uptime: number;
+  totalRequests: number;
+  cacheHits: number;
+  cacheMisses: number;
+  cacheHitRate: number;
+  cacheSize: number;
+  cacheMaxSize: number;
+  totalErrors: number;
+  errorRate: number;
+  retries: number;
+  circuitBreakerTrips: number;
+  circuitBreakers: Record<string, { failures: number; isOpen: boolean; resetAt: string | null }>;
+  latencyHistory: { timestamp: number; modelId: string; backend: ModelBackend; latencyMs: number; cached: boolean }[];
+  errorHistory: { timestamp: number; modelId: string; backend: ModelBackend; error: string; retryable: boolean }[];
+  modelStats: Record<
+    string,
+    { requests: number; errors: number; avgLatencyMs: number; cacheHits: number; errorRate: number }
+  >;
+  config: {
+    circuitBreakerThreshold: number;
+    circuitBreakerResetMs: number;
+    cacheTtlMs: number;
+    maxCacheEntries: number;
+    maxRetries: number;
+    retryBaseMs: number;
+    costTable: Record<string, { input: number; output: number }>;
+  };
+}
+
+export function getGatewayDashboardData(): GatewayDashboardData {
+  const totalAttempts = gatewayMetrics.cacheHits + gatewayMetrics.cacheMisses;
+  const cacheHitRate = totalAttempts > 0 ? gatewayMetrics.cacheHits / totalAttempts : 0;
+  const errorRate = gatewayMetrics.totalRequests > 0 ? gatewayMetrics.totalErrors / gatewayMetrics.totalRequests : 0;
+
+  const modelStatsObj: Record<
+    string,
+    { requests: number; errors: number; avgLatencyMs: number; cacheHits: number; errorRate: number }
+  > = {};
+  for (const [modelId, stats] of Array.from(gatewayMetrics.modelStats.entries())) {
+    modelStatsObj[modelId] = {
+      requests: stats.requests,
+      errors: stats.errors,
+      avgLatencyMs: stats.requests > 0 ? Math.round(stats.totalLatencyMs / stats.requests) : 0,
+      cacheHits: stats.cacheHits,
+      errorRate: stats.requests > 0 ? Math.round((stats.errors / stats.requests) * 10000) / 100 : 0,
+    };
+  }
+
+  return {
+    uptime: Date.now() - gatewayMetrics.startedAt,
+    totalRequests: gatewayMetrics.totalRequests,
+    cacheHits: gatewayMetrics.cacheHits,
+    cacheMisses: gatewayMetrics.cacheMisses,
+    cacheHitRate: Math.round(cacheHitRate * 10000) / 100,
+    cacheSize: responseCache.size,
+    cacheMaxSize: MAX_CACHE_ENTRIES,
+    totalErrors: gatewayMetrics.totalErrors,
+    errorRate: Math.round(errorRate * 10000) / 100,
+    retries: gatewayMetrics.retries,
+    circuitBreakerTrips: gatewayMetrics.circuitBreakerTrips,
+    circuitBreakers: getCircuitBreakerStatus(),
+    latencyHistory: gatewayMetrics.latencyHistory.slice(-100),
+    errorHistory: gatewayMetrics.errorHistory.slice(-50),
+    modelStats: modelStatsObj,
+    config: {
+      circuitBreakerThreshold: CIRCUIT_FAILURE_THRESHOLD,
+      circuitBreakerResetMs: CIRCUIT_RESET_MS,
+      cacheTtlMs: CACHE_TTL_MS,
+      maxCacheEntries: MAX_CACHE_ENTRIES,
+      maxRetries: MAX_RETRIES,
+      retryBaseMs: RETRY_BASE_MS,
+      costTable: COST_TABLE,
+    },
+  };
+}
+
+export function resetGatewayMetrics(): void {
+  gatewayMetrics.totalRequests = 0;
+  gatewayMetrics.cacheHits = 0;
+  gatewayMetrics.cacheMisses = 0;
+  gatewayMetrics.totalErrors = 0;
+  gatewayMetrics.retries = 0;
+  gatewayMetrics.circuitBreakerTrips = 0;
+  gatewayMetrics.latencyHistory = [];
+  gatewayMetrics.errorHistory = [];
+  gatewayMetrics.modelStats.clear();
+  gatewayMetrics.startedAt = Date.now();
 }

@@ -121,6 +121,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "AI Engine", url: "/ai-engine", icon: Brain },
       { title: "Engine Controls", url: "/engine-controls", icon: Settings },
+      { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
       { title: "Operations", url: "/operations", icon: Zap },
     ],
   },
