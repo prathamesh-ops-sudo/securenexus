@@ -254,7 +254,7 @@ export default function IocIngestionMatchingPage() {
   const [uploadData, setUploadData] = useState("");
   const [selectedFeedId, setSelectedFeedId] = useState<string | null>(null);
   const [entryTypeFilter, setEntryTypeFilter] = useState<string>("all");
-  const [ingestingFeedId, setIngestingFeedId] = useState<string | null>(null);
+  const [ingestingFeedIds, setIngestingFeedIds] = useState<Set<string>>(new Set());
 
   const {
     data: feeds,
@@ -282,7 +282,7 @@ export default function IocIngestionMatchingPage() {
       const res = await apiRequest("POST", `/api/ioc-feeds/${feedId}/ingest`, { data: rawData });
       return res.json();
     },
-    onSuccess: (data: { newEntries?: number; totalParsed?: number }) => {
+    onSuccess: (data: { newEntries?: number; totalParsed?: number }, variables) => {
       toast({
         title: "Ingestion Complete",
         description: `Parsed ${data.totalParsed || 0} entries, ${data.newEntries || 0} new`,
@@ -290,11 +290,19 @@ export default function IocIngestionMatchingPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-stats"] });
-      setIngestingFeedId(null);
+      setIngestingFeedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.feedId);
+        return next;
+      });
     },
-    onError: (err: Error) => {
+    onError: (err: Error, variables) => {
       toast({ title: "Ingestion Failed", description: err.message, variant: "destructive" });
-      setIngestingFeedId(null);
+      setIngestingFeedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.feedId);
+        return next;
+      });
     },
   });
 
@@ -569,12 +577,12 @@ export default function IocIngestionMatchingPage() {
                               size="sm"
                               className="gap-1 h-7"
                               onClick={() => {
-                                setIngestingFeedId(feed.id);
+                                setIngestingFeedIds((prev) => new Set(prev).add(feed.id));
                                 ingestMutation.mutate({ feedId: feed.id, rawData: {} });
                               }}
-                              disabled={ingestMutation.isPending && ingestingFeedId === feed.id}
+                              disabled={ingestingFeedIds.has(feed.id)}
                             >
-                              {ingestMutation.isPending && ingestingFeedId === feed.id ? (
+                              {ingestingFeedIds.has(feed.id) ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               ) : (
                                 <Play className="h-3 w-3" />
