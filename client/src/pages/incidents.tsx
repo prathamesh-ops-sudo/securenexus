@@ -430,23 +430,11 @@ export default function IncidentsPage() {
     isError: incidentsError,
     refetch: refetchIncidents,
   } = useQuery<PaginatedResponse<Incident>>({
-    queryKey: [
-      "/api/v1/incidents",
-      {
-        offset: 0,
-        limit: 500,
-        search: search || undefined,
-        severity: severityFilter !== "all" ? severityFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
-      },
-    ],
+    queryKey: ["/api/v1/incidents"],
     queryFn: () =>
       fetchPaginated<Incident>("/api/v1/incidents", {
         offset: 0,
         limit: 500,
-        search: search || undefined,
-        severity: severityFilter !== "all" ? severityFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
       }),
   });
   const incidents = incidentsResponse?.items;

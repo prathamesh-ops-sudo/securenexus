@@ -255,25 +255,11 @@ export default function AlertsPage() {
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<PaginatedResponse<Alert>>({
-    queryKey: [
-      "/api/v1/alerts",
-      {
-        offset: 0,
-        limit: 500,
-        search: search || undefined,
-        severity: severityFilter !== "all" ? severityFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        source: sourceFilter !== "all" ? sourceFilter : undefined,
-      },
-    ],
+    queryKey: ["/api/v1/alerts"],
     queryFn: () =>
       fetchPaginated<Alert>("/api/v1/alerts", {
         offset: 0,
         limit: 500,
-        search: search || undefined,
-        severity: severityFilter !== "all" ? severityFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        source: sourceFilter !== "all" ? sourceFilter : undefined,
       }),
   });
   const alerts = alertsResponse?.items;
