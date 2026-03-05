@@ -20,10 +20,10 @@ const EVENT_TYPES = [
 ] as const;
 
 const INVALIDATION_MAP: Record<string, string[][]> = {
-  "alert:created": [["/api/alerts"], ["/api/dashboard/stats"], ["/api/dashboard/analytics"]],
-  "alert:updated": [["/api/alerts"], ["/api/dashboard/stats"]],
-  "incident:created": [["/api/incidents"], ["/api/dashboard/stats"]],
-  "incident:updated": [["/api/incidents"], ["/api/dashboard/stats"]],
+  "alert:created": [["/api/v1/alerts"], ["/api/dashboard/stats"], ["/api/dashboard/analytics"]],
+  "alert:updated": [["/api/v1/alerts"], ["/api/dashboard/stats"]],
+  "incident:created": [["/api/v1/incidents"], ["/api/dashboard/stats"]],
+  "incident:updated": [["/api/v1/incidents"], ["/api/dashboard/stats"]],
   "correlation:found": [["/api/correlation/clusters"], ["/api/dashboard/stats"]],
   "entity:resolved": [["/api/entities"]],
 };
