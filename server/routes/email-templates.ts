@@ -225,6 +225,15 @@ export function registerEmailTemplateRoutes(app: Express): void {
     return sendEnvelope(res, TEMPLATE_CATALOG);
   });
 
+  app.get("/api/email-templates/status", isAuthenticated, requireSuperAdmin, (_req: Request, res: Response) => {
+    return sendEnvelope(res, {
+      emailEnabled: isEmailEnabled(),
+      fromAddress: "noreply@aricatech.xyz",
+      templateCount: TEMPLATE_CATALOG.length,
+      categories: Array.from(new Set(TEMPLATE_CATALOG.map((t) => t.category))),
+    });
+  });
+
   app.get("/api/email-templates/:id", isAuthenticated, requireSuperAdmin, (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!VALID_TEMPLATE_IDS.has(id)) {
@@ -345,13 +354,4 @@ export function registerEmailTemplateRoutes(app: Express): void {
       }
     },
   );
-
-  app.get("/api/email-templates/status", isAuthenticated, requireSuperAdmin, (_req: Request, res: Response) => {
-    return sendEnvelope(res, {
-      emailEnabled: isEmailEnabled(),
-      fromAddress: "noreply@aricatech.xyz",
-      templateCount: TEMPLATE_CATALOG.length,
-      categories: Array.from(new Set(TEMPLATE_CATALOG.map((t) => t.category))),
-    });
-  });
 }
