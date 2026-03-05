@@ -248,7 +248,7 @@ export function registerMetricsRollupRoutes(app: Express): void {
       try {
         const result = await pool.query(`
         SELECT service, metric, SUM(sample_count)::int AS total_samples,
-          AVG(avg_value) AS overall_avg,
+          SUM(avg_value * sample_count) / NULLIF(SUM(sample_count), 0) AS overall_avg,
           MAX(max_value) AS overall_max,
           MIN(min_value) AS overall_min
         FROM sli_metrics_hourly
