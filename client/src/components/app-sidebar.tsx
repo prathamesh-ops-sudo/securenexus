@@ -37,6 +37,8 @@ import {
   Rss,
   Send,
   FolderOpen,
+  KeyRound,
+  Fingerprint,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -106,6 +108,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
       { title: "Playbooks", url: "/playbooks", icon: Workflow },
+      { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
     ],
   },
   {
@@ -115,6 +118,7 @@ const navGroups: NavGroup[] = [
       { title: "CSPM", url: "/cspm", icon: Cloud },
       { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
       { title: "Connectors", url: "/connectors", icon: Plug },
+      { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
       { title: "Integrations", url: "/integrations", icon: Link2 },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
       { title: "File Manager", url: "/file-manager", icon: FolderOpen },

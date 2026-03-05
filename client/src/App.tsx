@@ -77,6 +77,8 @@ const OsintFeedsConfigPage = lazy(() => import("@/pages/osint-feeds-config"));
 const OutboxMonitoringPage = lazy(() => import("@/pages/outbox-monitoring"));
 const ApiVersioningPage = lazy(() => import("@/pages/api-versioning"));
 const FileManagerPage = lazy(() => import("@/pages/file-manager"));
+const SecretRotationOverviewPage = lazy(() => import("@/pages/secret-rotation-overview"));
+const EvidenceChainViewerPage = lazy(() => import("@/pages/evidence-chain-viewer"));
 
 function PageSkeleton() {
   return (
@@ -237,6 +239,8 @@ function AuthenticatedApp() {
                     <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
                     <Route path="/api-versioning" component={ApiVersioningPage} />
                     <Route path="/file-manager" component={FileManagerPage} />
+                    <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />
+                    <Route path="/evidence-chain-viewer" component={EvidenceChainViewerPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

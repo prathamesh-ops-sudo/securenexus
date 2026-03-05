@@ -997,6 +997,8 @@ export interface IStorage {
 
   // Evidence Chain Entries (8.2)
   getEvidenceChainEntries(incidentId: string, orgId?: string): Promise<EvidenceChainEntry[]>;
+  getEvidenceChainEntriesByOrg(orgId: string, limit?: number, offset?: number): Promise<EvidenceChainEntry[]>;
+  countEvidenceChainEntriesByOrg(orgId: string): Promise<number>;
   getEvidenceChainEntry(id: string): Promise<EvidenceChainEntry | undefined>;
   createEvidenceChainEntry(entry: InsertEvidenceChainEntry): Promise<EvidenceChainEntry>;
   getNextSequenceNum(incidentId: string): Promise<number>;
@@ -4854,6 +4856,28 @@ export class DatabaseStorage implements IStorage {
       .from(evidenceChainEntries)
       .where(and(...conditions))
       .orderBy(asc(evidenceChainEntries.sequenceNum));
+  }
+
+  async getEvidenceChainEntriesByOrg(
+    orgId: string,
+    limit: number = 100,
+    offset: number = 0,
+  ): Promise<EvidenceChainEntry[]> {
+    return db
+      .select()
+      .from(evidenceChainEntries)
+      .where(eq(evidenceChainEntries.orgId, orgId))
+      .orderBy(desc(evidenceChainEntries.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async countEvidenceChainEntriesByOrg(orgId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(evidenceChainEntries)
+      .where(eq(evidenceChainEntries.orgId, orgId));
+    return Number(result?.count ?? 0);
   }
 
   async getEvidenceChainEntry(id: string): Promise<EvidenceChainEntry | undefined> {
