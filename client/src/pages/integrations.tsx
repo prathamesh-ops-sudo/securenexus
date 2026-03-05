@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plug,
@@ -48,6 +48,7 @@ import { useToast } from "@/hooks/use-toast";
 import type {
   IntegrationConfig,
   NotificationChannel,
+  NotificationDeliveryLog,
   NotificationUserPreferences,
   ResponseAction,
 } from "@shared/schema";
@@ -1761,16 +1762,18 @@ function NotificationPreferencesTab() {
   const [digestFrequency, setDigestFrequency] = useState(24);
   const [initialized, setInitialized] = useState(false);
 
-  if (preferences && !initialized) {
-    setSelectedChannelIds(preferences.channelIds ?? []);
-    setSelectedEventTypes(preferences.eventTypes ?? ["incident_created"]);
-    setMinSeverity(preferences.minSeverity ?? "info");
-    setQuietStart(preferences.quietHoursStart ?? null);
-    setQuietEnd(preferences.quietHoursEnd ?? null);
-    setDigestEnabled(preferences.digestEnabled ?? false);
-    setDigestFrequency(preferences.digestFrequencyHours ?? 24);
-    setInitialized(true);
-  }
+  useEffect(() => {
+    if (preferences && !initialized) {
+      setSelectedChannelIds(preferences.channelIds ?? []);
+      setSelectedEventTypes(preferences.eventTypes ?? ["incident_created"]);
+      setMinSeverity(preferences.minSeverity ?? "info");
+      setQuietStart(preferences.quietHoursStart ?? null);
+      setQuietEnd(preferences.quietHoursEnd ?? null);
+      setDigestEnabled(preferences.digestEnabled ?? false);
+      setDigestFrequency(preferences.digestFrequencyHours ?? 24);
+      setInitialized(true);
+    }
+  }, [preferences, initialized]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -2003,21 +2006,6 @@ function NotificationPreferencesTab() {
   );
 }
 
-interface DeliveryLogEntry {
-  id: string;
-  channelId: string;
-  channelName: string;
-  channelType: string;
-  orgId: string | null;
-  eventType: string;
-  title: string;
-  severity: string;
-  success: boolean;
-  errorMessage: string | null;
-  deliveredAt: string;
-  metadata: unknown;
-}
-
 function DeliveryLogTab() {
   const [page, setPage] = useState(0);
   const [channelFilter, setChannelFilter] = useState<string>("");
@@ -2027,14 +2015,19 @@ function DeliveryLogTab() {
     queryKey: ["/api/notification-channels"],
   });
 
-  const { data: logData, isLoading } = useQuery<{ items: DeliveryLogEntry[]; total: number }>({
+  const {
+    data: logData,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<{ items: NotificationDeliveryLog[]; total: number }>({
     queryKey: ["/api/notification-delivery-log", channelFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (channelFilter) params.set("channelId", channelFilter);
       params.set("offset", String(page * pageSize));
       params.set("limit", String(pageSize));
-      const res = await fetch(`/api/notification-delivery-log?${params.toString()}`);
+      const res = await apiRequest("GET", `/api/notification-delivery-log?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch delivery log");
       return res.json();
     },
@@ -2056,6 +2049,21 @@ function DeliveryLogTab() {
         ))}
         <span className="sr-only">Loading delivery log...</span>
       </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+          <AlertTriangle className="h-10 w-10 mb-3 text-destructive" aria-hidden="true" />
+          <p className="text-sm font-medium">Failed to load delivery log</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
