@@ -76,7 +76,6 @@ const ModelGatewayPage = lazy(() => import("@/pages/model-gateway"));
 const OsintFeedsConfigPage = lazy(() => import("@/pages/osint-feeds-config"));
 const OutboxMonitoringPage = lazy(() => import("@/pages/outbox-monitoring"));
 const ApiVersioningPage = lazy(() => import("@/pages/api-versioning"));
-const SeoMeasurementPage = lazy(() => import("@/pages/seo-measurement"));
 
 function PageSkeleton() {
   return (
@@ -236,7 +235,6 @@ function AuthenticatedApp() {
                     <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
                     <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
                     <Route path="/api-versioning" component={ApiVersioningPage} />
-                    <Route path="/seo-measurement" component={SeoMeasurementPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
