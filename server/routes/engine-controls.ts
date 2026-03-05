@@ -213,6 +213,9 @@ export function registerEngineControlsRoutes(app: Express): void {
         executedBy: userId,
       });
 
+      const savedConfig = await storage.getEngineConfig(orgId, engineName);
+      const activePolicy = (savedConfig?.policyConfig as Record<string, unknown>) ?? DEFAULT_POLICIES[engineName];
+
       let simulatedResult: Record<string, unknown> = {};
       let status = "completed";
 
@@ -226,7 +229,7 @@ export function registerEngineControlsRoutes(app: Express): void {
                 anomalies: alerts.filter((a) => a.status === "new").length,
                 riskForecasts: alerts.filter((a) => a.mitreTactic).length > 0 ? "yes" : "no",
               },
-              currentThresholds: DEFAULT_POLICIES.predictive,
+              currentThresholds: activePolicy,
               note: "Dry-run preview: no anomalies/forecasts were persisted",
             };
 
@@ -238,8 +241,8 @@ export function registerEngineControlsRoutes(app: Express): void {
               decisionOutcome: `Would analyze ${alerts.length} alerts`,
               drivers: [
                 { factor: "alert_count", value: alerts.length, weight: 1.0 },
-                { factor: "z_score_threshold", value: 2.5, weight: 0.8 },
-                { factor: "volume_spike_multiplier", value: 2.5, weight: 0.7 },
+                { factor: "z_score_threshold", value: activePolicy.anomalyZScoreThreshold ?? 2.5, weight: 0.8 },
+                { factor: "volume_spike_multiplier", value: activePolicy.volumeSpikeMultiplier ?? 2.5, weight: 0.7 },
               ],
               confidence: 85,
               inputSnapshot: { alertCount: alerts.length, engineName },
@@ -280,7 +283,7 @@ export function registerEngineControlsRoutes(app: Express): void {
             const scoreResult = await calculatePostureScore(orgId);
             simulatedResult = {
               currentScore: scoreResult,
-              weights: DEFAULT_POLICIES.posture,
+              weights: activePolicy,
               note: "Dry-run preview: posture score calculated with current settings",
             };
 
@@ -291,10 +294,26 @@ export function registerEngineControlsRoutes(app: Express): void {
               decisionType: "posture_scoring",
               decisionOutcome: `Overall score: ${scoreResult.overallScore}`,
               drivers: [
-                { factor: "cspm_weight", value: 35, weight: 0.35 },
-                { factor: "endpoint_weight", value: 30, weight: 0.3 },
-                { factor: "incident_weight", value: 20, weight: 0.2 },
-                { factor: "compliance_weight", value: 15, weight: 0.15 },
+                {
+                  factor: "cspm_weight",
+                  value: activePolicy.cspmWeight ?? 35,
+                  weight: ((activePolicy.cspmWeight as number) ?? 35) / 100,
+                },
+                {
+                  factor: "endpoint_weight",
+                  value: activePolicy.endpointWeight ?? 30,
+                  weight: ((activePolicy.endpointWeight as number) ?? 30) / 100,
+                },
+                {
+                  factor: "incident_weight",
+                  value: activePolicy.incidentWeight ?? 20,
+                  weight: ((activePolicy.incidentWeight as number) ?? 20) / 100,
+                },
+                {
+                  factor: "compliance_weight",
+                  value: activePolicy.complianceWeight ?? 15,
+                  weight: ((activePolicy.complianceWeight as number) ?? 15) / 100,
+                },
               ],
               confidence: 95,
               inputSnapshot: { orgId, engineName },
@@ -309,7 +328,7 @@ export function registerEngineControlsRoutes(app: Express): void {
             }));
             simulatedResult = {
               rollbackability,
-              currentSettings: DEFAULT_POLICIES.rollback,
+              currentSettings: activePolicy,
               note: "Dry-run preview: no rollback actions were executed",
             };
 

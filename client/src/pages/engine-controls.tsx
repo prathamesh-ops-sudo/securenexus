@@ -300,7 +300,8 @@ function PolicyFieldControl({
   }
 
   const numVal = typeof value === "number" ? value : (field.min ?? 0);
-  const displayVal = field.unit === "%" && field.max === 1 ? `${(numVal * 100).toFixed(0)}%` : `${numVal}`;
+  const displayVal =
+    field.unit === "%" ? (field.max === 1 ? `${(numVal * 100).toFixed(0)}%` : `${numVal}%`) : `${numVal}`;
 
   return (
     <div className="space-y-2 py-2">
