@@ -83,6 +83,8 @@ const AiFeedbackFormPage = lazy(() => import("@/pages/ai-feedback-form"));
 const SuppressedAlertsPage = lazy(() => import("@/pages/suppressed-alerts"));
 const AiPromptRegistryPage = lazy(() => import("@/pages/ai-prompt-registry"));
 const WebhookSecurityCenterPage = lazy(() => import("@/pages/webhook-security-center"));
+const ReportTemplateVersioningPage = lazy(() => import("@/pages/report-template-versioning"));
+const IocIngestionMatchingPage = lazy(() => import("@/pages/ioc-ingestion-matching"));
 
 function PageSkeleton() {
   return (
@@ -249,6 +251,8 @@ function AuthenticatedApp() {
                     <Route path="/suppressed-alerts" component={SuppressedAlertsPage} />
                     <Route path="/ai-prompt-registry" component={AiPromptRegistryPage} />
                     <Route path="/webhook-security-center" component={WebhookSecurityCenterPage} />
+                    <Route path="/report-template-versioning" component={ReportTemplateVersioningPage} />
+                    <Route path="/ioc-ingestion-matching" component={IocIngestionMatchingPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

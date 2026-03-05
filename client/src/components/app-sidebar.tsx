@@ -43,6 +43,7 @@ import {
   EyeOff,
   BookOpen,
   Webhook as WebhookIcon,
+  Upload,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -91,6 +92,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Threat Intel", url: "/threat-intel", icon: Shield },
       { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
+      { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
       { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
       { title: "Entity Graph", url: "/entity-graph", icon: Network },
       { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
@@ -103,6 +105,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Analytics", url: "/analytics", icon: BarChart3 },
       { title: "Reports", url: "/reports", icon: FileText },
+      { title: "Template Versioning", url: "/report-template-versioning", icon: GitBranch },
       { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
       { title: "Security Posture", url: "/security-posture", icon: Gauge },
     ],
