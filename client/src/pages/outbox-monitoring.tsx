@@ -590,7 +590,18 @@ export default function OutboxMonitoringPage() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       params.set("limit", String(pageSize));
       params.set("offset", String(page * pageSize));
-      const res = await apiRequest("GET", `/api/v1/outbox/events?${params.toString()}`);
+      const reqHeaders: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) reqHeaders["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* SSR / privacy mode */
+      }
+      const res = await fetch(`/api/v1/outbox/events?${params.toString()}`, {
+        credentials: "include",
+        headers: reqHeaders,
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       const envelope = await res.json();
       return { items: envelope.data ?? [], total: envelope.meta?.total ?? 0 };
     },
@@ -600,8 +611,7 @@ export default function OutboxMonitoringPage() {
     queryKey: ["/api/v1/outbox/status"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/v1/outbox/status");
-      const envelope = await res.json();
-      return envelope.data;
+      return await res.json();
     },
   });
 
@@ -642,8 +652,8 @@ export default function OutboxMonitoringPage() {
       const res = await apiRequest("POST", "/api/v1/outbox/replay-batch", { eventIds });
       return await res.json();
     },
-    onSuccess: (envelope: { data: { id: string; replayed: boolean }[] }) => {
-      const results = envelope.data ?? [];
+    onSuccess: (data: { id: string; replayed: boolean }[]) => {
+      const results = Array.isArray(data) ? data : [];
       const replayedCount = results.filter((r) => r.replayed).length;
       toast({
         title: "Batch replay complete",
