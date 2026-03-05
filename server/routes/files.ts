@@ -77,8 +77,8 @@ export function registerFilesRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid prefix" });
       }
 
-      const baseName = req.file.originalname.split(/[\/\\]/).pop() || req.file.originalname;
-      const ext = baseName.split(".").pop()?.toLowerCase() || "";
+      const baseName = req.file.originalname.split(/[/\\]/).pop() || req.file.originalname;
+      const ext = baseName.split(".").pop()?.toLowerCase().trim() || "";
       if (BLOCKED_EXTENSIONS.has(ext)) {
         return res.status(400).json({ message: `File type .${ext} is not allowed` });
       }
