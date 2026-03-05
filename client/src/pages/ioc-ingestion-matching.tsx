@@ -254,6 +254,7 @@ export default function IocIngestionMatchingPage() {
   const [uploadData, setUploadData] = useState("");
   const [selectedFeedId, setSelectedFeedId] = useState<string | null>(null);
   const [entryTypeFilter, setEntryTypeFilter] = useState<string>("all");
+  const [ingestingFeedId, setIngestingFeedId] = useState<string | null>(null);
 
   const {
     data: feeds,
@@ -289,9 +290,11 @@ export default function IocIngestionMatchingPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ioc-stats"] });
+      setIngestingFeedId(null);
     },
     onError: (err: Error) => {
       toast({ title: "Ingestion Failed", description: err.message, variant: "destructive" });
+      setIngestingFeedId(null);
     },
   });
 
@@ -482,7 +485,7 @@ export default function IocIngestionMatchingPage() {
             <Database className="h-4 w-4" /> IOC Entries ({allEntries.length})
           </TabsTrigger>
           <TabsTrigger value="matches" className="gap-1">
-            <Target className="h-4 w-4" /> Matches ({filteredMatches.length})
+            <Target className="h-4 w-4" /> Matches ({allMatches.length})
           </TabsTrigger>
           <TabsTrigger value="enrichment" className="gap-1">
             <BarChart3 className="h-4 w-4" /> Enrichment
@@ -565,10 +568,13 @@ export default function IocIngestionMatchingPage() {
                               variant="outline"
                               size="sm"
                               className="gap-1 h-7"
-                              onClick={() => ingestMutation.mutate({ feedId: feed.id, rawData: {} })}
-                              disabled={ingestMutation.isPending}
+                              onClick={() => {
+                                setIngestingFeedId(feed.id);
+                                ingestMutation.mutate({ feedId: feed.id, rawData: {} });
+                              }}
+                              disabled={ingestMutation.isPending && ingestingFeedId === feed.id}
                             >
-                              {ingestMutation.isPending ? (
+                              {ingestMutation.isPending && ingestingFeedId === feed.id ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               ) : (
                                 <Play className="h-3 w-3" />
