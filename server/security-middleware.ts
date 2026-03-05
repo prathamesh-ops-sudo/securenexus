@@ -97,11 +97,24 @@ function configureHelmet(): ReturnType<typeof helmet> {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          "https://www.googletagmanager.com",
+          "https://www.google-analytics.com",
+        ],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
-        connectSrc: ["'self'", "https://accounts.google.com", "https://github.com"],
+        connectSrc: [
+          "'self'",
+          "https://accounts.google.com",
+          "https://github.com",
+          "https://www.google-analytics.com",
+          "https://analytics.google.com",
+          "https://region1.google-analytics.com",
+        ],
         frameSrc: ["'self'", "https://accounts.google.com"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: config.session.forceHttps ? [] : null,
