@@ -125,7 +125,6 @@ function isContentPageRoute(path: string): boolean {
 
 function AuthenticatedApp() {
   useRoleLanding();
-  usePageTracking();
   const { connected, connectionState, eventCount, events, lastEvent } = useEventStream({ enabled: true });
   const orgContext = useOrgContextProvider();
   const [location, navigate] = useLocation();
@@ -253,6 +252,7 @@ function AuthenticatedApp() {
 }
 
 function AppContent() {
+  usePageTracking();
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 

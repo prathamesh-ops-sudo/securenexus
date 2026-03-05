@@ -8,20 +8,23 @@ declare global {
   }
 }
 
+function sendPageView(path: string) {
+  if (typeof window.gtag === "function") {
+    window.gtag("event", "page_view", {
+      page_path: path,
+      page_title: document.title,
+      page_location: window.location.origin + path,
+    });
+  }
+}
+
 export function usePageTracking() {
   const [location] = useLocation();
-  const previousLocation = useRef(location);
+  const previousLocation = useRef<string | null>(null);
 
   useEffect(() => {
     if (location === previousLocation.current) return;
     previousLocation.current = location;
-
-    if (typeof window.gtag === "function") {
-      window.gtag("event", "page_view", {
-        page_path: location,
-        page_title: document.title,
-        page_location: window.location.origin + location,
-      });
-    }
+    sendPageView(location);
   }, [location]);
 }
