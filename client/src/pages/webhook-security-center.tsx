@@ -161,7 +161,7 @@ function WebhookDetailPanel({
   const successCount = logs.filter((l) => l.success).length;
   const failureCount = logs.filter((l) => !l.success).length;
   const successRate = logs.length > 0 ? Math.round((successCount / logs.length) * 100) : 0;
-  const lastDelivery = logs.length > 0 ? logs[logs.length - 1] : null;
+  const lastDelivery = logs.length > 0 ? logs[0] : null;
 
   return (
     <div className="space-y-4">

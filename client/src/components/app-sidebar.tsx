@@ -42,7 +42,7 @@ import {
   MessageSquare,
   EyeOff,
   BookOpen,
-  ShieldCheck as ShieldCheckIcon,
+  Webhook as WebhookIcon,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -124,7 +124,7 @@ const navGroups: NavGroup[] = [
       { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
       { title: "Connectors", url: "/connectors", icon: Plug },
       { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
-      { title: "Webhook Security", url: "/webhook-security-center", icon: ShieldCheckIcon },
+      { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
       { title: "Integrations", url: "/integrations", icon: Link2 },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
       { title: "File Manager", url: "/file-manager", icon: FolderOpen },
