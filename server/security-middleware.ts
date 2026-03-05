@@ -114,6 +114,7 @@ function configureHelmet(): ReturnType<typeof helmet> {
           "https://www.google-analytics.com",
           "https://analytics.google.com",
           "https://region1.google-analytics.com",
+          "https://*.google-analytics.com",
         ],
         frameSrc: ["'self'", "https://accounts.google.com"],
         objectSrc: ["'none'"],
