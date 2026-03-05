@@ -39,6 +39,8 @@ import {
   FolderOpen,
   KeyRound,
   Fingerprint,
+  MessageSquare,
+  EyeOff,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -74,6 +76,7 @@ type NavItem = { title: string; url: string; icon: any };
 const coreItems: NavItem[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Alerts", url: "/alerts", icon: AlertTriangle },
+  { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
   { title: "Incidents", url: "/incidents", icon: FileWarning },
 ];
 
@@ -129,6 +132,7 @@ const navGroups: NavGroup[] = [
     icon: Brain,
     items: [
       { title: "AI Engine", url: "/ai-engine", icon: Brain },
+      { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
       { title: "Engine Controls", url: "/engine-controls", icon: Settings },
       { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
       { title: "Operations", url: "/operations", icon: Zap },
