@@ -405,7 +405,18 @@ export default function ReportTemplateVersioningPage() {
   });
 
   const approveVersionMutation = useMutation({
-    mutationFn: async (versionId: string) => {
+    mutationFn: async ({
+      versionId,
+      currentActiveVersionId,
+    }: {
+      versionId: string;
+      currentActiveVersionId?: string;
+    }) => {
+      if (currentActiveVersionId) {
+        await apiRequest("PATCH", `/api/report-template-versions/${currentActiveVersionId}`, {
+          status: "deprecated",
+        });
+      }
       const res = await apiRequest("PATCH", `/api/report-template-versions/${versionId}`, { status: "active" });
       return res.json();
     },
@@ -644,7 +655,13 @@ export default function ReportTemplateVersioningPage() {
                   versions={Array.isArray(versions) ? versions : []}
                   isLoadingVersions={isLoadingVersions}
                   onCreateVersion={() => setShowCreateDialog(true)}
-                  onApproveVersion={(id) => approveVersionMutation.mutate(id)}
+                  onApproveVersion={(id) => {
+                    const currentActive = (Array.isArray(versions) ? versions : []).find((v) => v.status === "active");
+                    approveVersionMutation.mutate({
+                      versionId: id,
+                      currentActiveVersionId: currentActive?.id,
+                    });
+                  }}
                   onRollback={(id) => {
                     const currentActive = (Array.isArray(versions) ? versions : []).find((v) => v.status === "active");
                     rollbackMutation.mutate({
