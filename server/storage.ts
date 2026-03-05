@@ -930,6 +930,7 @@ export interface IStorage {
     severity?: string;
     status?: string;
     source?: string;
+    suppressed?: boolean;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
   }): Promise<{ items: Alert[]; total: number }>;
@@ -4493,6 +4494,7 @@ export class DatabaseStorage implements IStorage {
     severity?: string;
     status?: string;
     source?: string;
+    suppressed?: boolean;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
   }): Promise<{ items: Alert[]; total: number }> {
@@ -4501,6 +4503,7 @@ export class DatabaseStorage implements IStorage {
     if (params.severity) conditions.push(eq(alerts.severity, params.severity));
     if (params.status) conditions.push(eq(alerts.status, params.status));
     if (params.source) conditions.push(eq(alerts.source, params.source));
+    if (typeof params.suppressed === "boolean") conditions.push(eq(alerts.suppressed, params.suppressed));
     if (params.search) {
       const pattern = `%${params.search}%`;
       conditions.push(

@@ -79,23 +79,24 @@ export default function SuppressedAlertsPage() {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
 
   const {
-    data: allAlerts,
+    data: suppressedAlerts,
     isLoading,
     isError,
     refetch,
     isFetching,
   } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/v1/alerts", "suppressed"],
     queryFn: async () => {
-      const res = await fetch("/api/alerts?limit=500", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch alerts");
-      return res.json();
+      const res = await fetch("/api/v1/alerts?suppressed=true&limit=200&sortOrder=desc", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch suppressed alerts");
+      const envelope = await res.json();
+      return envelope.data ?? [];
     },
   });
 
-  const suppressedAlerts = (allAlerts ?? []).filter((a) => a.suppressed === true);
-
-  const filtered = suppressedAlerts.filter((a) => {
+  const filtered = (suppressedAlerts ?? []).filter((a) => {
     if (severityFilter !== "all" && a.severity?.toLowerCase() !== severityFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -122,7 +123,7 @@ export default function SuppressedAlertsPage() {
     },
     onSuccess: () => {
       toast({ title: "Alert unsuppressed", description: "The alert is now active again." });
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts", "suppressed"] });
       setSelectedAlert(null);
     },
     onError: (err: Error) => {
@@ -130,7 +131,7 @@ export default function SuppressedAlertsPage() {
     },
   });
 
-  const severityCounts = suppressedAlerts.reduce(
+  const severityCounts = (suppressedAlerts ?? []).reduce(
     (acc, a) => {
       const sev = a.severity?.toLowerCase() ?? "informational";
       acc[sev] = (acc[sev] || 0) + 1;
@@ -167,7 +168,7 @@ export default function SuppressedAlertsPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums">
-                {isLoading ? <Skeleton className="h-7 w-8 inline-block" /> : suppressedAlerts.length}
+                {isLoading ? <Skeleton className="h-7 w-8 inline-block" /> : (suppressedAlerts ?? []).length}
               </p>
               <p className="text-[11px] text-muted-foreground">Total Suppressed</p>
             </div>

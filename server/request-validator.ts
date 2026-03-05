@@ -45,6 +45,10 @@ export const querySchemas = {
     severity: z.enum(ALERT_SEVERITIES).optional(),
     status: z.enum(ALERT_STATUSES).optional(),
     source: z.string().max(MAX_NAME).optional(),
+    suppressed: z
+      .enum(["true", "false"])
+      .transform((v) => v === "true")
+      .optional(),
   }),
 
   incidentsList: searchSchema.extend({
