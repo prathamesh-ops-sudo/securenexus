@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -301,12 +301,18 @@ function MetricsBrowser() {
     metrics: { service: string; metric: string }[];
   }>({
     queryKey: ["/api/metrics-rollup/metrics", selectedService],
-    enabled: true,
+    queryFn: async () => {
+      const url = selectedService
+        ? `/api/metrics-rollup/metrics?service=${encodeURIComponent(selectedService)}`
+        : "/api/metrics-rollup/metrics";
+      const res = await apiRequest("GET", url);
+      if (!res.ok) throw new Error("Failed to fetch metrics");
+      const json = await res.json();
+      return json.data ?? json;
+    },
   });
 
-  const filteredMetrics = selectedService
-    ? metricsListData?.metrics?.filter((m) => m.service === selectedService)
-    : metricsListData?.metrics;
+  const filteredMetrics = metricsListData?.metrics;
 
   const { data: metricsData, isLoading: dataLoading } = useQuery<{
     granularity: string;
