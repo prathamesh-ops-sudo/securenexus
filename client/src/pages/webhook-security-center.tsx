@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -390,11 +390,7 @@ export default function WebhookSecurityCenterPage() {
 
   const testMutation = useMutation({
     mutationFn: async (webhookId: number) => {
-      const res = await fetch(`/api/outbound-webhooks/${webhookId}/test`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Test delivery failed");
+      const res = await apiRequest("POST", `/api/outbound-webhooks/${webhookId}/test`);
       return res.json() as Promise<TestResult>;
     },
     onSuccess: (data) => {
