@@ -73,6 +73,7 @@ const EmailTemplatesPage = lazy(() => import("@/pages/email-templates"));
 const MetricsRollupPage = lazy(() => import("@/pages/metrics-rollup"));
 const ModelGatewayPage = lazy(() => import("@/pages/model-gateway"));
 const OsintFeedsConfigPage = lazy(() => import("@/pages/osint-feeds-config"));
+const OutboxMonitoringPage = lazy(() => import("@/pages/outbox-monitoring"));
 
 function PageSkeleton() {
   return (
@@ -230,6 +231,7 @@ function AuthenticatedApp() {
                     <Route path="/metrics-rollup" component={MetricsRollupPage} />
                     <Route path="/model-gateway" component={ModelGatewayPage} />
                     <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
+                    <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
