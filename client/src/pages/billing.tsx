@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -184,24 +185,24 @@ function CurrentPlanSection() {
           {Object.values(
             usage.usage as Record<string, { current: number; limit: number; pct: number; status: string }>,
           ).some((m) => m.status === "critical") && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-red-400">Plan limit reached</p>
-                <p className="text-xs text-red-400/70">
-                  Some resources have hit their plan limits. New operations will be blocked until you upgrade.
-                </p>
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-400">Plan limit reached</p>
+                  <p className="text-xs text-red-400/70">
+                    Some resources have hit their plan limits. New operations will be blocked until you upgrade.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto border-red-500/30 text-red-400 hover:bg-red-500/10 shrink-0"
+                  onClick={() => document.getElementById("plans-tab")?.click()}
+                >
+                  Upgrade <ArrowRight className="h-3 w-3 ml-1" />
+                </Button>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="ml-auto border-red-500/30 text-red-400 hover:bg-red-500/10 shrink-0"
-                onClick={() => document.getElementById("plans-tab")?.click()}
-              >
-                Upgrade <ArrowRight className="h-3 w-3 ml-1" />
-              </Button>
-            </div>
-          )}
+            )}
           {!Object.values(
             usage.usage as Record<string, { current: number; limit: number; pct: number; status: string }>,
           ).some((m) => m.status === "critical") &&
@@ -234,36 +235,33 @@ function CurrentPlanSection() {
               .map(([key, metric]) => (
                 <Card
                   key={key}
-                  className={`glass-card border-border/50 ${
-                    metric.status === "critical"
+                  className={`glass-card border-border/50 ${metric.status === "critical"
                       ? "border-red-500/30"
                       : metric.status === "warning"
                         ? "border-yellow-500/30"
                         : ""
-                  }`}
+                    }`}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <span
-                        className={`${
-                          metric.status === "critical"
+                        className={`${metric.status === "critical"
                             ? "text-red-400"
                             : metric.status === "warning"
                               ? "text-yellow-400"
                               : "text-muted-foreground"
-                        }`}
+                          }`}
                       >
                         {usageIcon(key)}
                       </span>
                       <span className="text-sm font-medium">{usageLabel(key)}</span>
                       <span
-                        className={`ml-auto text-xs ${
-                          metric.status === "critical"
+                        className={`ml-auto text-xs ${metric.status === "critical"
                             ? "text-red-400 font-semibold"
                             : metric.status === "warning"
                               ? "text-yellow-400"
                               : "text-muted-foreground"
-                        }`}
+                          }`}
                       >
                         {metric.pct}%
                       </span>
@@ -742,6 +740,7 @@ function DangerZoneSection() {
 }
 
 export default function BillingPage() {
+  usePageTitle("Pricing — SecureNexus AI SOC Platform | Free, Pro & Enterprise", true);
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">

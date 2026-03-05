@@ -85,17 +85,17 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
 
   const faqJsonLd = faqs
     ? {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        mainEntity: faqs.map((faq) => ({
-          "@type": "Question",
-          name: faq.q,
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: faq.a,
-          },
-        })),
-      }
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.q,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: faq.a,
+        },
+      })),
+    }
     : null;
 
   return (
@@ -187,7 +187,7 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
             <div>
-              <h3 className="font-extrabold text-xs mb-3 text-[#1e293b] dark:text-white">Product</h3>
+              <h3 className="font-extrabold text-xs mb-3 text-[#1e293b] dark:text-white">Product & Resources</h3>
               <ul className="space-y-2 text-xs text-[#64748b] dark:text-[#94a3b8] font-medium">
                 <li>
                   <Link href="/product" className="hover:text-[#1e293b] dark:hover:text-white transition-colors">
@@ -199,7 +199,7 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
                     href="/product/agentic-soc"
                     className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
                   >
-                    Agentic SOC
+                    What is Agentic SOC?
                   </Link>
                 </li>
                 <li>
@@ -212,10 +212,18 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
                 </li>
                 <li>
                   <Link
+                    href="/blog/automated-secops"
+                    className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
+                  >
+                    Automated SecOps Guide
+                  </Link>
+                </li>
+                <li>
+                  <Link
                     href="/product/comparison"
                     className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
                   >
-                    Comparison
+                    Compare SIEMs
                   </Link>
                 </li>
               </ul>

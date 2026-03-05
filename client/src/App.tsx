@@ -62,6 +62,7 @@ const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
 const ProductOverviewPage = lazy(() => import("@/pages/product-overview"));
 const AgenticSocPage = lazy(() => import("@/pages/agentic-soc"));
 const AiSocAnalystPage = lazy(() => import("@/pages/ai-soc-analyst"));
+const AutomatedSecopsPage = lazy(() => import("@/pages/automated-secops"));
 const SolutionsIndiaPage = lazy(() => import("@/pages/solutions-india"));
 const SolutionsMsspPage = lazy(() => import("@/pages/solutions-mssp"));
 const SolutionsCompliancePage = lazy(() => import("@/pages/solutions-compliance"));
@@ -99,11 +100,15 @@ const EventStreamContext = createContext<EventStreamContextType>({
   lastEvent: null,
 });
 
-export function useEventStreamContext() {
-  return useContext(EventStreamContext);
-}
+const EVENT_STREAM_CONTEXT_DEFAULT = {
+  connected: false,
+  connectionState: "disconnected",
+  eventCount: 0,
+  events: [],
+  lastEvent: null,
+};
 
-const CONTENT_PAGE_PREFIXES = ["/product", "/solutions", "/about"];
+const CONTENT_PAGE_PREFIXES = ["/product", "/solutions", "/about", "/blog"];
 
 function isContentPageRoute(path: string): boolean {
   return CONTENT_PAGE_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
@@ -127,6 +132,7 @@ function AuthenticatedApp() {
         <Switch>
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/blog/automated-secops" component={AutomatedSecopsPage} />
           <Route path="/product/comparison" component={ProductComparisonPage} />
           <Route path="/product" component={ProductOverviewPage} />
           <Route path="/solutions/india" component={SolutionsIndiaPage} />
@@ -261,6 +267,7 @@ function AppContent() {
           <Route path="/accept-invitation" component={AcceptInvitationPage} />
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/blog/automated-secops" component={AutomatedSecopsPage} />
           <Route path="/product/comparison" component={ProductComparisonPage} />
           <Route path="/product" component={ProductOverviewPage} />
           <Route path="/solutions/india" component={SolutionsIndiaPage} />

@@ -2,11 +2,15 @@ import { useEffect } from "react";
 
 const BASE_TITLE = "SecureNexus — Agentic SOC Platform";
 
-export function usePageTitle(pageTitle?: string) {
+export function usePageTitle(pageTitle?: string, exact: boolean = false) {
   useEffect(() => {
-    document.title = pageTitle ? `${pageTitle} — SecureNexus` : BASE_TITLE;
+    if (!pageTitle) {
+      document.title = BASE_TITLE;
+    } else {
+      document.title = exact ? pageTitle : `${pageTitle} — SecureNexus`;
+    }
     return () => {
       document.title = BASE_TITLE;
     };
-  }, [pageTitle]);
+  }, [pageTitle, exact]);
 }

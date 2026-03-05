@@ -704,15 +704,15 @@ function AnomalyBanners({
   stats,
 }: {
   stats:
-    | {
-        totalAlerts: number;
-        openIncidents: number;
-        criticalAlerts: number;
-        resolvedIncidents: number;
-        newAlertsToday: number;
-        escalatedIncidents: number;
-      }
-    | undefined;
+  | {
+    totalAlerts: number;
+    openIncidents: number;
+    criticalAlerts: number;
+    resolvedIncidents: number;
+    newAlertsToday: number;
+    escalatedIncidents: number;
+  }
+  | undefined;
 }) {
   const banners: { message: string; severity: "critical" | "warning" | "info"; href: string }[] = [];
   if ((stats?.criticalAlerts ?? 0) >= 5) {
@@ -770,15 +770,15 @@ function WhatChangedWidget({
   stats,
 }: {
   stats:
-    | {
-        totalAlerts: number;
-        openIncidents: number;
-        criticalAlerts: number;
-        resolvedIncidents: number;
-        newAlertsToday: number;
-        escalatedIncidents: number;
-      }
-    | undefined;
+  | {
+    totalAlerts: number;
+    openIncidents: number;
+    criticalAlerts: number;
+    resolvedIncidents: number;
+    newAlertsToday: number;
+    escalatedIncidents: number;
+  }
+  | undefined;
 }) {
   const metrics = useMemo(() => {
     if (!stats) return [];
@@ -907,7 +907,7 @@ function WidgetCustomizer({
 }
 
 export default function Dashboard() {
-  usePageTitle("Dashboard");
+  usePageTitle("Security Dashboard — SecureNexus Agentic SOC", true);
   const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);

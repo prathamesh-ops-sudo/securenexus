@@ -950,6 +950,46 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="py-20 px-6 bg-white dark:bg-[#0a0f1e] border-t-[2.5px] border-[#1e293b] dark:border-[#334155]">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-black mb-3">Further Reading</h2>
+            <p className="text-[#64748b] dark:text-[#94a3b8] font-medium">
+              Dive deeper into the future of security operations.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <a href="/blog/automated-secops" className={`block ${brutCard} p-6 ${brutCardHover} transition-all`}>
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 border-2 border-[#1e293b] dark:border-indigo-500/20 flex items-center justify-center mb-4">
+                <Brain className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <h3 className="font-extrabold text-lg mb-2">Automated SecOps Guide</h3>
+              <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium leading-relaxed">
+                Discover the evolution from SIEM to Agentic SOC and how to eliminate alert fatigue.
+              </p>
+            </a>
+            <a href="/product/agentic-soc" className={`block ${brutCard} p-6 ${brutCardHover} transition-all`}>
+              <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center mb-4">
+                <Workflow className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <h3 className="font-extrabold text-lg mb-2">What is an Agentic SOC?</h3>
+              <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium leading-relaxed">
+                Learn how AI agents are transforming Tier-1 triage and incident correlation.
+              </p>
+            </a>
+            <a href="/product/comparison" className={`block ${brutCard} p-6 ${brutCardHover} transition-all`}>
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 border-2 border-[#1e293b] dark:border-emerald-500/20 flex items-center justify-center mb-4">
+                <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <h3 className="font-extrabold text-lg mb-2">Compare SIEMs</h3>
+              <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium leading-relaxed">
+                See how SecureNexus compares against Microsoft Sentinel, Splunk, and IBM QRadar.
+              </p>
+            </a>
+          </div>
+        </div>
+      </section>
+
       <footer className="border-t-[2.5px] border-[#1e293b] dark:border-[#334155] py-10 px-6 bg-white dark:bg-[#0a0f1e]">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
