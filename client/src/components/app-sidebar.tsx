@@ -127,6 +127,7 @@ const navGroups: NavGroup[] = [
       { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
       { title: "Operations", url: "/operations", icon: Zap },
       { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
+      { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
     ],
   },
 ];
