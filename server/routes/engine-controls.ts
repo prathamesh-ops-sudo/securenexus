@@ -271,8 +271,8 @@ export function registerEngineControlsRoutes(app: Express): void {
               decisionOutcome: `Scanned ${sample.length} alerts, found PII in ${detections.filter((d) => d.piiFields.length > 0).length}`,
               drivers: [
                 { factor: "sample_size", value: sample.length, weight: 1.0 },
-                { factor: "ip_masking", value: true, weight: 0.9 },
-                { factor: "email_masking", value: true, weight: 0.8 },
+                { factor: "ip_masking", value: activePolicy.maskIps ?? true, weight: 0.9 },
+                { factor: "email_masking", value: activePolicy.maskEmails ?? true, weight: 0.8 },
               ],
               confidence: 92,
               inputSnapshot: { sampleSize: sample.length, engineName },
