@@ -71,6 +71,7 @@ const ProductComparisonPage = lazy(() => import("@/pages/product-comparison"));
 const EngineControlsPage = lazy(() => import("@/pages/engine-controls"));
 const EmailTemplatesPage = lazy(() => import("@/pages/email-templates"));
 const MetricsRollupPage = lazy(() => import("@/pages/metrics-rollup"));
+const ModelGatewayPage = lazy(() => import("@/pages/model-gateway"));
 
 function PageSkeleton() {
   return (
@@ -226,6 +227,7 @@ function AuthenticatedApp() {
                     <Route path="/engine-controls" component={EngineControlsPage} />
                     <Route path="/email-templates" component={EmailTemplatesPage} />
                     <Route path="/metrics-rollup" component={MetricsRollupPage} />
+                    <Route path="/model-gateway" component={ModelGatewayPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
