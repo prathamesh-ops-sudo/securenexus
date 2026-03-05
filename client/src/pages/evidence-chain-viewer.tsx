@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useLocation } from "wouter";
 import {
   Fingerprint,
   RefreshCw,
@@ -96,7 +95,6 @@ function truncateHash(hash: string | null): string {
 
 export default function EvidenceChainViewerPage() {
   usePageTitle("Evidence Chain Viewer");
-  const [, navigate] = useLocation();
   const [incidentId, setIncidentId] = useState("");
   const [activeIncidentId, setActiveIncidentId] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<EvidenceChainEntry | null>(null);

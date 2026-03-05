@@ -359,7 +359,7 @@ export default function SecretRotationOverviewPage() {
                           </span>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {rotation.rotationIntervalDays ?? "—"}d
+                          {rotation.rotationIntervalDays != null ? `${rotation.rotationIntervalDays}d` : "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{rotation.rotatedByName || "—"}</TableCell>
                         <TableCell>
