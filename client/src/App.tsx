@@ -81,6 +81,8 @@ const SecretRotationOverviewPage = lazy(() => import("@/pages/secret-rotation-ov
 const EvidenceChainViewerPage = lazy(() => import("@/pages/evidence-chain-viewer"));
 const AiFeedbackFormPage = lazy(() => import("@/pages/ai-feedback-form"));
 const SuppressedAlertsPage = lazy(() => import("@/pages/suppressed-alerts"));
+const AiPromptRegistryPage = lazy(() => import("@/pages/ai-prompt-registry"));
+const WebhookSecurityCenterPage = lazy(() => import("@/pages/webhook-security-center"));
 
 function PageSkeleton() {
   return (
@@ -245,6 +247,8 @@ function AuthenticatedApp() {
                     <Route path="/evidence-chain-viewer" component={EvidenceChainViewerPage} />
                     <Route path="/ai-feedback" component={AiFeedbackFormPage} />
                     <Route path="/suppressed-alerts" component={SuppressedAlertsPage} />
+                    <Route path="/ai-prompt-registry" component={AiPromptRegistryPage} />
+                    <Route path="/webhook-security-center" component={WebhookSecurityCenterPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
