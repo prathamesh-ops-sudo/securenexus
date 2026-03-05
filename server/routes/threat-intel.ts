@@ -144,12 +144,22 @@ export function registerThreatIntelRoutes(app: Express): void {
   });
 
   // OSINT Threat Intelligence Feeds (no API keys required)
+  // Static routes MUST be registered before parameterized routes to avoid shadowing
   app.get("/api/osint-feeds/status", isAuthenticated, async (_req, res) => {
     try {
       const { getOsintFeedStatuses } = await import("../osint-feeds");
       res.json(getOsintFeedStatuses());
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch OSINT feed statuses" });
+    }
+  });
+
+  app.get("/api/osint-feeds/subscriptions", isAuthenticated, async (_req, res) => {
+    try {
+      const { getAllSubscriptions, getOsintFeedStatuses } = await import("../osint-feeds");
+      res.json({ subscriptions: getAllSubscriptions(), statuses: getOsintFeedStatuses() });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch OSINT feed subscriptions" });
     }
   });
 
@@ -177,30 +187,18 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/osint-feeds/:feedName/refresh", isAuthenticated, async (req, res) => {
+  // Static POST routes before parameterized POST routes
+  app.post("/api/osint-feeds/refresh-all", isAuthenticated, async (_req, res) => {
     try {
-      const { fetchOsintFeed } = await import("../osint-feeds");
-      const feedName = decodeURIComponent(p(req.params.feedName));
-      const result = await fetchOsintFeed(feedName, true);
-      if (result.status === "error" && result.errorMessage?.startsWith("Unknown feed")) {
-        return res.status(404).json({ message: result.errorMessage });
-      }
+      const { refreshAllFeedsWithProgress } = await import("../osint-feeds");
+      const result = await refreshAllFeedsWithProgress();
       res.json(result);
     } catch (error) {
-      res.status(500).json({ message: "Failed to refresh OSINT feed" });
+      res.status(500).json({ message: "Failed to refresh all feeds" });
     }
   });
 
-  // OSINT Feed Subscription Management
-  app.get("/api/osint-feeds/subscriptions", isAuthenticated, async (_req, res) => {
-    try {
-      const { getAllSubscriptions, getOsintFeedStatuses } = await import("../osint-feeds");
-      res.json({ subscriptions: getAllSubscriptions(), statuses: getOsintFeedStatuses() });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch OSINT feed subscriptions" });
-    }
-  });
-
+  // OSINT Feed Subscription Management (parameterized routes)
   app.post("/api/osint-feeds/:feedSlug/subscribe", isAuthenticated, async (req, res) => {
     try {
       const { updateFeedSubscription } = await import("../osint-feeds");
@@ -244,14 +242,17 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/osint-feeds/:feedSlug/refresh", isAuthenticated, async (req, res) => {
+  app.post("/api/osint-feeds/:feedName/refresh", isAuthenticated, async (req, res) => {
     try {
       const { fetchOsintFeed } = await import("../osint-feeds");
-      const slug = p(req.params.feedSlug);
-      const result = await fetchOsintFeed(slug, true);
+      const feedName = decodeURIComponent(p(req.params.feedName));
+      const result = await fetchOsintFeed(feedName, true);
+      if (result.status === "error" && result.errorMessage?.startsWith("Unknown feed")) {
+        return res.status(404).json({ message: result.errorMessage });
+      }
       res.json(result);
     } catch (error) {
-      res.status(500).json({ message: "Failed to refresh feed" });
+      res.status(500).json({ message: "Failed to refresh OSINT feed" });
     }
   });
 
@@ -263,16 +264,6 @@ export function registerThreatIntelRoutes(app: Express): void {
       res.json(history);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch feed health history" });
-    }
-  });
-
-  app.post("/api/osint-feeds/refresh-all", isAuthenticated, async (_req, res) => {
-    try {
-      const { refreshAllFeedsWithProgress } = await import("../osint-feeds");
-      const result = await refreshAllFeedsWithProgress();
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to refresh all feeds" });
     }
   });
 
