@@ -30,6 +30,8 @@ import {
   Save,
   BookmarkPlus,
   Keyboard,
+  GitBranch,
+  Network,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -108,6 +110,21 @@ function FilterChips({
   );
 }
 
+interface EntityCorrelationResult {
+  clusterId: string;
+  confidence: number;
+  method: string;
+  alertIds: string[];
+  sharedEntities: { type: string; value: string; count: number }[];
+  reasoningTrace: string;
+}
+
+interface EntityCorrelationScanResponse {
+  scanned: boolean;
+  correlations: number;
+  results: EntityCorrelationResult[];
+}
+
 interface CorrelationGroup {
   groupName: string;
   alertIds: string[];
@@ -155,6 +172,7 @@ export default function AlertsPage() {
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [correlationResult, setCorrelationResult] = useState<CorrelationResult | null>(null);
+  const [entityScanResult, setEntityScanResult] = useState<EntityCorrelationScanResponse | null>(null);
   const [selectedAlertForTriage, setSelectedAlertForTriage] = useState<string | null>(null);
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [showSuppressionRules, setShowSuppressionRules] = useState(false);
@@ -392,6 +410,24 @@ export default function AlertsPage() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to update confidence", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const correlationScan = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/correlation/scan", {});
+      return res.json();
+    },
+    onSuccess: (data: EntityCorrelationScanResponse) => {
+      setEntityScanResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      toast({
+        title: "Correlation Scan Complete",
+        description: `Scanned alerts — found ${data.correlations} correlation(s)`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Correlation Scan Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -699,6 +735,20 @@ export default function AlertsPage() {
               <Brain className="h-4 w-4 mr-2" aria-hidden="true" />
             )}
             {correlate.isPending ? "Analyzing..." : "AI Correlate Alerts"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => correlationScan.mutate()}
+            disabled={correlationScan.isPending}
+            aria-label="Run entity-based correlation scan on uncorrelated alerts"
+            data-testid="button-correlation-scan"
+          >
+            {correlationScan.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+            ) : (
+              <Network className="h-4 w-4 mr-2" aria-hidden="true" />
+            )}
+            {correlationScan.isPending ? "Scanning..." : "Correlation Scan"}
           </Button>
         </div>
       </div>
@@ -1197,6 +1247,85 @@ export default function AlertsPage() {
               ))
             ) : (
               <p className="text-xs text-muted-foreground">No suppression rules configured</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {entityScanResult && (
+        <Card className="border-cyan-500/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Network className="h-4 w-4 text-cyan-400" />
+                Entity Correlation Scan Results
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEntityScanResult(null)}
+                data-testid="button-dismiss-entity-scan"
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Found {entityScanResult.correlations} correlation cluster(s) from uncorrelated alerts
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {entityScanResult.results.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">
+                No new correlations found. All recent alerts are either already correlated or lack shared entities.
+              </p>
+            ) : (
+              entityScanResult.results.map((result) => (
+                <div
+                  key={result.clusterId}
+                  className="p-3 rounded-md bg-muted/30 space-y-2"
+                  data-testid={`entity-scan-cluster-${result.clusterId}`}
+                >
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <GitBranch className="h-3.5 w-3.5 text-cyan-400" />
+                        Cluster {result.clusterId.slice(0, 8)}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{result.method}</div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge variant="outline" className="text-xs bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
+                        {Math.round(result.confidence * 100)}% confidence
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{result.alertIds.length} alerts</span>
+                    </div>
+                  </div>
+                  {result.sharedEntities.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground">Shared:</span>
+                      {result.sharedEntities.slice(0, 5).map((ent, j) => (
+                        <Badge
+                          key={`${ent.type}-${ent.value}-${j}`}
+                          variant="secondary"
+                          className="text-[10px] font-mono"
+                        >
+                          {ent.type}:{ent.value} ({ent.count})
+                        </Badge>
+                      ))}
+                      {result.sharedEntities.length > 5 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{result.sharedEntities.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {result.reasoningTrace && (
+                    <p className="text-xs text-muted-foreground border-l-2 border-cyan-500/30 pl-2 mt-1">
+                      {result.reasoningTrace}
+                    </p>
+                  )}
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
