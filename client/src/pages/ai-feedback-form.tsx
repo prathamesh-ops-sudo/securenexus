@@ -213,7 +213,7 @@ export default function AiFeedbackFormPage() {
     if (resourceId.trim()) payload.resourceId = resourceId.trim();
     if (comment.trim()) payload.comment = comment.trim();
     if (correctionReason.trim()) payload.correctionReason = correctionReason.trim();
-    if (correctedSeverity) payload.correctedSeverity = correctedSeverity;
+    if (correctedSeverity && correctedSeverity !== "none") payload.correctedSeverity = correctedSeverity;
     if (correctedCategory.trim()) payload.correctedCategory = correctedCategory.trim();
     submitMutation.mutate(payload as Parameters<typeof submitMutation.mutate>[0]);
   };
@@ -380,7 +380,7 @@ export default function AiFeedbackFormPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Corrected Severity</Label>
-                  <Select value={correctedSeverity} onValueChange={setCorrectedSeverity}>
+                  <Select value={correctedSeverity} onValueChange={(v) => setCorrectedSeverity(v === "none" ? "" : v)}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
