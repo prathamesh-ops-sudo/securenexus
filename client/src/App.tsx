@@ -93,7 +93,7 @@ interface EventStreamContextType {
   lastEvent: StreamEvent | null;
 }
 
-const EventStreamContext = createContext<EventStreamContextType>({
+export const EventStreamContext = createContext<EventStreamContextType>({
   connected: false,
   connectionState: "disconnected",
   eventCount: 0,
