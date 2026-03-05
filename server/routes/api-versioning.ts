@@ -100,7 +100,7 @@ export function registerApiVersioningRoutes(app: Express): void {
             description: "Paginated alerts with text search, severity/status filters",
           },
           changes: [
-            "Added offset/limit pagination (default limit: 50, max: 200)",
+            "Added offset/limit pagination (default limit: 50, max: 500)",
             "Added search query parameter for full-text search",
             "Added severity and status filters",
             "Response includes meta.total for total count",
@@ -263,7 +263,7 @@ export function registerApiVersioningRoutes(app: Express): void {
       if (search) {
         const q = search.toLowerCase();
         filtered = filtered.filter(
-          (i: any) => i.title?.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q),
+          (i: any) => i.title?.toLowerCase().includes(q) || i.summary?.toLowerCase().includes(q),
         );
       }
       const total = severity || status || search ? filtered.length : rawTotal;
