@@ -115,6 +115,41 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     return unwrapEnvelope(body) as Awaited<ReturnType<QueryFunction<any>>>;
   };
 
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+}
+
+export async function fetchPaginated<T>(
+  basePath: string,
+  params: Record<string, string | number | undefined>,
+): Promise<PaginatedResponse<T>> {
+  const reqHeaders: Record<string, string> = {};
+  try {
+    const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+    if (activeOrgId) reqHeaders["X-Org-Id"] = activeOrgId;
+  } catch {
+    /* SSR / privacy mode */
+  }
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") qs.set(k, String(v));
+  }
+  const url = qs.toString() ? `${basePath}?${qs.toString()}` : basePath;
+  const res = await fetch(url, { credentials: "include", headers: reqHeaders });
+  await throwIfResNotOk(res);
+  const body = await res.json();
+  if (isEnvelope(body)) {
+    const meta = body.meta as Record<string, unknown>;
+    return {
+      items: (body.data ?? []) as T[],
+      total: typeof meta.total === "number" ? meta.total : 0,
+    };
+  }
+  const arr = Array.isArray(body) ? body : [];
+  return { items: arr as T[], total: arr.length };
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

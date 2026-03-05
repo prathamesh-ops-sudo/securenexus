@@ -101,11 +101,11 @@ export function CommandPalette() {
   const { toast } = useToast();
 
   const { data: alerts } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/v1/alerts"],
   });
 
   const { data: incidents } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+    queryKey: ["/api/v1/incidents"],
   });
 
   const recentRecords = useMemo(() => loadRecentRecords(), [open]);
@@ -135,7 +135,7 @@ export function CommandPalette() {
       status: "open",
     })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
         toast({ title: "Incident created", description: title.trim() });
         navigate("/incidents");
       })
@@ -154,7 +154,7 @@ export function CommandPalette() {
     if (!name?.trim()) return;
     apiRequest("PATCH", `/api/alerts/${alerts[0].id}`, { assignedTo: name.trim() })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Alert assigned", description: `Assigned to ${name.trim()}` });
       })
       .catch(() => {

@@ -132,7 +132,7 @@ export default function KillChainPage() {
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/v1/alerts"],
   });
 
   const {
@@ -141,7 +141,7 @@ export default function KillChainPage() {
     isError: incidentsError,
     refetch: refetchIncidents,
   } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+    queryKey: ["/api/v1/incidents"],
   });
 
   const isLoading = alertsLoading || incidentsLoading;

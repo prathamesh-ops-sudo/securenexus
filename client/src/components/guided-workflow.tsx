@@ -25,7 +25,7 @@ const GUIDED_STEPS: GuidedStep[] = [
     description: "Set up a connector to start pulling security events from your SIEM, EDR, or cloud provider.",
     icon: Plug,
     targetUrl: "/connectors",
-    checkEndpoint: "/api/connectors",
+    checkEndpoint: "/api/v1/connectors",
     completedField: "hasConnectors",
   },
   {
@@ -43,7 +43,7 @@ const GUIDED_STEPS: GuidedStep[] = [
     description: "Review incoming alerts, correlate related events, and escalate to an incident for tracking.",
     icon: FileWarning,
     targetUrl: "/incidents",
-    checkEndpoint: "/api/incidents",
+    checkEndpoint: "/api/v1/incidents",
     completedField: "hasIncidents",
   },
   {
@@ -62,7 +62,7 @@ const GUIDED_COMPLETED_KEY = "securenexus.guidedWorkflow.completed";
 
 function useGuidedProgress() {
   const { data: connectors } = useQuery<unknown[]>({
-    queryKey: ["/api/connectors"],
+    queryKey: ["/api/v1/connectors"],
   });
 
   const { data: stats } = useQuery<{ totalAlerts?: number }>({
@@ -70,7 +70,7 @@ function useGuidedProgress() {
   });
 
   const { data: incidents } = useQuery<unknown[]>({
-    queryKey: ["/api/incidents"],
+    queryKey: ["/api/v1/incidents"],
   });
 
   const { data: playbooks } = useQuery<unknown[]>({

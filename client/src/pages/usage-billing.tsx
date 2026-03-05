@@ -352,7 +352,7 @@ function WorkspaceTemplatesTab() {
         title: `Template "${data.templateName}" applied`,
         description: `${data.applied.length} items configured`,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/playbooks"] });
     },
     onError: () => {

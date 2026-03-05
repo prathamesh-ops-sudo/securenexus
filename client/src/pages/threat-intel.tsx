@@ -202,11 +202,11 @@ export default function ThreatIntelPage() {
     isError: _alertsError,
     refetch: _refetchAlerts,
   } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/v1/alerts"],
   });
 
   const { data: incidents, isLoading: incidentsLoading } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+    queryKey: ["/api/v1/incidents"],
   });
 
   const {

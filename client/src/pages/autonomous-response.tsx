@@ -417,7 +417,7 @@ function InvestigationsTab() {
   });
 
   const { data: incidents } = useQuery<any[]>({
-    queryKey: ["/api/incidents"],
+    queryKey: ["/api/v1/incidents"],
   });
 
   const { data: expandedRunData } = useQuery<any>({

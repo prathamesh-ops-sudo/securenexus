@@ -51,7 +51,7 @@ export function GlobalQuickCreate() {
     try {
       if (noteAlertId.trim()) {
         await apiRequest("PATCH", `/api/alerts/${noteAlertId.trim()}`, { notes: noteContent.trim() });
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Note added to alert" });
       } else {
         toast({ title: "Note saved", description: "Navigate to an alert to attach the note" });
@@ -72,7 +72,7 @@ export function GlobalQuickCreate() {
     setIsSubmitting(true);
     try {
       await apiRequest("POST", "/api/incidents", { title: taskTitle.trim(), severity: taskSeverity, status: "open" });
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       toast({ title: "Incident created", description: taskTitle.trim() });
       resetForm();
       navigate("/incidents");

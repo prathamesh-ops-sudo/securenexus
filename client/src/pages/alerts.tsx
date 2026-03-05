@@ -43,7 +43,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule, SavedView } from "@shared/schema";
@@ -250,13 +250,33 @@ export default function AlertsPage() {
   });
 
   const {
-    data: alerts,
+    data: alertsResponse,
     isLoading,
     isError: alertsError,
     refetch: refetchAlerts,
-  } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: [
+      "/api/v1/alerts",
+      {
+        offset: 0,
+        limit: 500,
+        search: search || undefined,
+        severity: severityFilter !== "all" ? severityFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        source: sourceFilter !== "all" ? sourceFilter : undefined,
+      },
+    ],
+    queryFn: () =>
+      fetchPaginated<Alert>("/api/v1/alerts", {
+        offset: 0,
+        limit: 500,
+        search: search || undefined,
+        severity: severityFilter !== "all" ? severityFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        source: sourceFilter !== "all" ? sourceFilter : undefined,
+      }),
   });
+  const alerts = alertsResponse?.items;
 
   const { data: suppressionRules, isLoading: rulesLoading } = useQuery<SuppressionRule[]>({
     queryKey: ["/api/suppression-rules"],
@@ -301,8 +321,8 @@ export default function AlertsPage() {
     },
     onSuccess: (data) => {
       toast({ title: "Incident Created", description: `Created incident: ${data.title}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     },
     onError: (error: any) => {
@@ -316,7 +336,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Alert Suppressed" });
     },
     onError: (error: any) => {
@@ -330,7 +350,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Alert Unsuppressed" });
     },
     onError: (error: any) => {
@@ -404,7 +424,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Confidence Updated" });
       setCalibratingAlertId(null);
     },
@@ -420,7 +440,7 @@ export default function AlertsPage() {
     },
     onSuccess: (data: EntityCorrelationScanResponse) => {
       setEntityScanResult(data);
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({
         title: "Correlation Scan Complete",
         description: `Scanned alerts — found ${data.correlations} correlation(s)`,
@@ -437,7 +457,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Duplicate Scan Complete", description: `Found ${data.clustersCreated ?? 0} cluster(s)` });
     },
     onError: (error: any) => {
@@ -451,7 +471,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Bulk update complete", description: `Updated ${data.updatedCount || 0} alert(s)` });
       setSelectedIds([]);
     },
@@ -537,7 +557,7 @@ export default function AlertsPage() {
     if (name && name.trim()) {
       apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { assignedTo: name.trim() })
         .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
           toast({ title: "Assigned", description: `Alert assigned to ${name.trim()}` });
         })
         .catch((err: Error) => {
@@ -550,7 +570,7 @@ export default function AlertsPage() {
     if (!focusedAlertId) return;
     apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "triaged", assignedTo: "Tier 2" })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Escalated", description: "Alert escalated to Tier 2" });
       })
       .catch((err: Error) => {
@@ -562,7 +582,7 @@ export default function AlertsPage() {
     if (!focusedAlertId) return;
     apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "resolved" })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Resolved" });
       })
       .catch((err: Error) => {

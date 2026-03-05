@@ -187,7 +187,7 @@ export default function AIEnginePage() {
   });
 
   const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/v1/alerts"],
   });
 
   const { data: feedbackMetrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
@@ -246,8 +246,8 @@ export default function AIEnginePage() {
     },
     onSuccess: (data) => {
       toast({ title: "Incident Created", description: `Created incident: ${data.title}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     },
     onError: (error: any) => {

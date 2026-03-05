@@ -105,7 +105,7 @@ export default function MitreAttackPage() {
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/v1/alerts"],
   });
 
   const {

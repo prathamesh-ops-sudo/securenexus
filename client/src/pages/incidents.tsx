@@ -36,7 +36,7 @@ import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { CardHeader, CardTitle } from "@/components/ui/card";
 import type { Incident, IncidentSlaPolicy, SavedView } from "@shared/schema";
@@ -373,12 +373,7 @@ export default function IncidentsPage() {
   const [dateTo, setDateTo] = useState("");
 
   // Optimistic update helper for incident status changes
-  const optimisticStatusUpdate = useCallback((incidentId: string, updates: Partial<Incident>) => {
-    queryClient.setQueryData<Incident[]>(["/api/incidents"], (old) => {
-      if (!old) return old;
-      return old.map((inc) => (inc.id === incidentId ? ({ ...inc, ...updates } as Incident) : inc));
-    });
-  }, []);
+  const optimisticStatusUpdate = useCallback((_incidentId: string, _updates: Partial<Incident>) => {}, []);
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
     queryKey: ["/api/orgs/default/saved-views", "incidents"],
@@ -422,13 +417,31 @@ export default function IncidentsPage() {
   });
 
   const {
-    data: incidents,
+    data: incidentsResponse,
     isLoading,
     isError: incidentsError,
     refetch: refetchIncidents,
-  } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+  } = useQuery<PaginatedResponse<Incident>>({
+    queryKey: [
+      "/api/v1/incidents",
+      {
+        offset: 0,
+        limit: 500,
+        search: search || undefined,
+        severity: severityFilter !== "all" ? severityFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+      },
+    ],
+    queryFn: () =>
+      fetchPaginated<Incident>("/api/v1/incidents", {
+        offset: 0,
+        limit: 500,
+        search: search || undefined,
+        severity: severityFilter !== "all" ? severityFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+      }),
   });
+  const incidents = incidentsResponse?.items;
 
   const { data: queues, isLoading: queuesLoading } = useQuery<QueuesResponse>({
     queryKey: ["/api/incidents/queues"],
@@ -441,7 +454,7 @@ export default function IncidentsPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/incidents/queues"] });
       toast({ title: "Bulk update complete", description: `Updated ${data.updatedCount || 0} incident(s)` });
       setSelectedIds([]);
@@ -522,7 +535,7 @@ export default function IncidentsPage() {
     if (name && name.trim()) {
       apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { assignedTo: name.trim() })
         .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
           toast({ title: "Assigned", description: `Incident assigned to ${name.trim()}` });
         })
         .catch((err: Error) => {
@@ -536,11 +549,11 @@ export default function IncidentsPage() {
     optimisticStatusUpdate(focusedIncidentId, { escalated: true });
     apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { escalated: true })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
         toast({ title: "Escalated" });
       })
       .catch(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       });
   }, [focusedIncidentId, toast, optimisticStatusUpdate]);
 
@@ -549,11 +562,11 @@ export default function IncidentsPage() {
     optimisticStatusUpdate(focusedIncidentId, { status: "resolved" } as Partial<Incident>);
     apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { status: "resolved" })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
         toast({ title: "Resolved" });
       })
       .catch(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       });
   }, [focusedIncidentId, toast, optimisticStatusUpdate]);
 
