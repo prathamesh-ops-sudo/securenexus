@@ -988,8 +988,12 @@ export const notificationUserPreferences = pgTable(
       .default(sql`gen_random_uuid()`),
     userId: varchar("user_id").notNull(),
     orgId: varchar("org_id").references(() => organizations.id),
-    channelIds: text("channel_ids").array().default(sql`ARRAY[]::text[]`),
-    eventTypes: text("event_types").array().default(sql`ARRAY['incident_created']`),
+    channelIds: text("channel_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    eventTypes: text("event_types")
+      .array()
+      .default(sql`ARRAY['incident_created']`),
     minSeverity: text("min_severity").default("info"),
     quietHoursStart: integer("quiet_hours_start"),
     quietHoursEnd: integer("quiet_hours_end"),
@@ -4886,3 +4890,115 @@ export const insertUsageRecordSchema = createInsertSchema(usageRecords).omit({
 
 export type UsageRecord = typeof usageRecords.$inferSelect;
 export type InsertUsageRecord = z.infer<typeof insertUsageRecordSchema>;
+
+// Engine Controls: per-org, per-engine policy tuning, dry-run, explainability
+export const ENGINE_NAMES = ["predictive", "pii", "posture", "rollback"] as const;
+
+export const engineConfigs = pgTable(
+  "engine_configs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    engineName: text("engine_name").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    dryRunMode: boolean("dry_run_mode").notNull().default(false),
+    policyConfig: jsonb("policy_config").notNull().default({}),
+    lastDryRunAt: timestamp("last_dry_run_at"),
+    lastDryRunResult: jsonb("last_dry_run_result"),
+    updatedBy: varchar("updated_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_engine_configs_org_engine").on(table.orgId, table.engineName),
+    index("idx_engine_configs_org").on(table.orgId),
+  ],
+);
+
+export const engineConfigsRelations = relations(engineConfigs, ({ one }) => ({
+  organization: one(organizations, { fields: [engineConfigs.orgId], references: [organizations.id] }),
+}));
+
+export const insertEngineConfigSchema = createInsertSchema(engineConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type EngineConfig = typeof engineConfigs.$inferSelect;
+export type InsertEngineConfig = z.infer<typeof insertEngineConfigSchema>;
+
+export const engineDryRuns = pgTable(
+  "engine_dry_runs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    engineName: text("engine_name").notNull(),
+    inputParams: jsonb("input_params").notNull().default({}),
+    simulatedResult: jsonb("simulated_result"),
+    status: text("status").notNull().default("pending"),
+    durationMs: integer("duration_ms"),
+    executedBy: varchar("executed_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_engine_dry_runs_org").on(table.orgId),
+    index("idx_engine_dry_runs_engine").on(table.orgId, table.engineName),
+  ],
+);
+
+export const engineDryRunsRelations = relations(engineDryRuns, ({ one }) => ({
+  organization: one(organizations, { fields: [engineDryRuns.orgId], references: [organizations.id] }),
+}));
+
+export const insertEngineDryRunSchema = createInsertSchema(engineDryRuns).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type EngineDryRun = typeof engineDryRuns.$inferSelect;
+export type InsertEngineDryRun = z.infer<typeof insertEngineDryRunSchema>;
+
+export const engineExplainabilityLogs = pgTable(
+  "engine_explainability_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    engineName: text("engine_name").notNull(),
+    executionId: varchar("execution_id"),
+    decisionType: text("decision_type").notNull(),
+    decisionOutcome: text("decision_outcome").notNull(),
+    drivers: jsonb("drivers").notNull().default([]),
+    confidence: integer("confidence"),
+    inputSnapshot: jsonb("input_snapshot"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_engine_explain_org").on(table.orgId),
+    index("idx_engine_explain_engine").on(table.orgId, table.engineName),
+  ],
+);
+
+export const engineExplainabilityLogsRelations = relations(engineExplainabilityLogs, ({ one }) => ({
+  organization: one(organizations, { fields: [engineExplainabilityLogs.orgId], references: [organizations.id] }),
+}));
+
+export const insertEngineExplainabilityLogSchema = createInsertSchema(engineExplainabilityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type EngineExplainabilityLog = typeof engineExplainabilityLogs.$inferSelect;
+export type InsertEngineExplainabilityLog = z.infer<typeof insertEngineExplainabilityLogSchema>;

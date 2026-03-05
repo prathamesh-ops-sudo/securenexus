@@ -324,6 +324,15 @@ import {
   type UsageRecord,
   type InsertUsageRecord,
   usageRecords,
+  type EngineConfig,
+  type InsertEngineConfig,
+  engineConfigs,
+  type EngineDryRun,
+  type InsertEngineDryRun,
+  engineDryRuns,
+  type EngineExplainabilityLog,
+  type InsertEngineExplainabilityLog,
+  engineExplainabilityLogs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -506,7 +515,10 @@ export interface IStorage {
   updateNotificationChannel(id: string, data: Partial<NotificationChannel>): Promise<NotificationChannel | undefined>;
   deleteNotificationChannel(id: string): Promise<boolean>;
 
-  getNotificationUserPreferences(userId: string, orgId?: string | null): Promise<NotificationUserPreferences | undefined>;
+  getNotificationUserPreferences(
+    userId: string,
+    orgId?: string | null,
+  ): Promise<NotificationUserPreferences | undefined>;
   upsertNotificationUserPreferences(data: InsertNotificationUserPreferences): Promise<NotificationUserPreferences>;
   createNotificationDeliveryLog(entry: InsertNotificationDeliveryLog): Promise<NotificationDeliveryLog>;
   getNotificationDeliveryLog(params: {
@@ -1118,6 +1130,16 @@ export interface IStorage {
   countActiveConnectors(orgId: string): Promise<number>;
   countActiveApiKeys(orgId: string): Promise<number>;
   countActivePlaybooks(orgId: string): Promise<number>;
+
+  // Engine Controls
+  getEngineConfigs(orgId: string): Promise<EngineConfig[]>;
+  getEngineConfig(orgId: string, engineName: string): Promise<EngineConfig | undefined>;
+  upsertEngineConfig(orgId: string, engineName: string, data: Partial<InsertEngineConfig>): Promise<EngineConfig>;
+  createEngineDryRun(run: InsertEngineDryRun): Promise<EngineDryRun>;
+  getEngineDryRuns(orgId: string, engineName: string, limit?: number): Promise<EngineDryRun[]>;
+  updateEngineDryRun(id: string, data: Partial<EngineDryRun>): Promise<EngineDryRun | undefined>;
+  createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog>;
+  getEngineExplainabilityLogs(orgId: string, engineName: string, limit?: number): Promise<EngineExplainabilityLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2176,9 +2198,7 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async createNotificationDeliveryLog(
-    entry: InsertNotificationDeliveryLog,
-  ): Promise<NotificationDeliveryLog> {
+  async createNotificationDeliveryLog(entry: InsertNotificationDeliveryLog): Promise<NotificationDeliveryLog> {
     const [created] = await db.insert(notificationDeliveryLog).values(entry).returning();
     return created;
   }
@@ -5512,6 +5532,67 @@ export class DatabaseStorage implements IStorage {
       .from(playbooks)
       .where(eq(playbooks.orgId, orgId));
     return Number(result?.count ?? 0);
+  }
+
+  async getEngineConfigs(orgId: string): Promise<EngineConfig[]> {
+    return db.select().from(engineConfigs).where(eq(engineConfigs.orgId, orgId)).orderBy(asc(engineConfigs.engineName));
+  }
+
+  async getEngineConfig(orgId: string, engineName: string): Promise<EngineConfig | undefined> {
+    const [row] = await db
+      .select()
+      .from(engineConfigs)
+      .where(and(eq(engineConfigs.orgId, orgId), eq(engineConfigs.engineName, engineName)));
+    return row;
+  }
+
+  async upsertEngineConfig(
+    orgId: string,
+    engineName: string,
+    data: Partial<InsertEngineConfig>,
+  ): Promise<EngineConfig> {
+    const [result] = await db
+      .insert(engineConfigs)
+      .values({ orgId, engineName, ...data })
+      .onConflictDoUpdate({
+        target: [engineConfigs.orgId, engineConfigs.engineName],
+        set: { ...data, updatedAt: new Date() },
+      })
+      .returning();
+    return result;
+  }
+
+  async createEngineDryRun(run: InsertEngineDryRun): Promise<EngineDryRun> {
+    const [created] = await db.insert(engineDryRuns).values(run).returning();
+    return created;
+  }
+
+  async getEngineDryRuns(orgId: string, engineName: string, limit = 20): Promise<EngineDryRun[]> {
+    return db
+      .select()
+      .from(engineDryRuns)
+      .where(and(eq(engineDryRuns.orgId, orgId), eq(engineDryRuns.engineName, engineName)))
+      .orderBy(desc(engineDryRuns.createdAt))
+      .limit(limit);
+  }
+
+  async updateEngineDryRun(id: string, data: Partial<EngineDryRun>): Promise<EngineDryRun | undefined> {
+    const [updated] = await db.update(engineDryRuns).set(data).where(eq(engineDryRuns.id, id)).returning();
+    return updated;
+  }
+
+  async createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog> {
+    const [created] = await db.insert(engineExplainabilityLogs).values(log).returning();
+    return created;
+  }
+
+  async getEngineExplainabilityLogs(orgId: string, engineName: string, limit = 50): Promise<EngineExplainabilityLog[]> {
+    return db
+      .select()
+      .from(engineExplainabilityLogs)
+      .where(and(eq(engineExplainabilityLogs.orgId, orgId), eq(engineExplainabilityLogs.engineName, engineName)))
+      .orderBy(desc(engineExplainabilityLogs.createdAt))
+      .limit(limit);
   }
 }
 
