@@ -381,7 +381,10 @@ export default function ReportTemplateVersioningPage() {
         headers,
       });
       if (!res.ok) return [];
-      return res.json();
+      const body = await res.json();
+      return body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body
+        ? body.data
+        : body;
     },
     enabled: !!selectedTemplateId,
   });

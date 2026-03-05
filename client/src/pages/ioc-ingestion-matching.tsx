@@ -578,7 +578,7 @@ export default function IocIngestionMatchingPage() {
                               className="gap-1 h-7"
                               onClick={() => {
                                 setIngestingFeedIds((prev) => new Set(prev).add(feed.id));
-                                ingestMutation.mutate({ feedId: feed.id, rawData: {} });
+                                ingestMutation.mutate({ feedId: feed.id, rawData: null });
                               }}
                               disabled={ingestingFeedIds.has(feed.id)}
                             >
