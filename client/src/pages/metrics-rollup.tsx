@@ -307,8 +307,7 @@ function MetricsBrowser() {
         : "/api/metrics-rollup/metrics";
       const res = await apiRequest("GET", url);
       if (!res.ok) throw new Error("Failed to fetch metrics");
-      const json = await res.json();
-      return json.data ?? json;
+      return await res.json();
     },
   });
 
@@ -331,8 +330,7 @@ function MetricsBrowser() {
       });
       const res = await apiRequest("GET", `/api/metrics-rollup/data?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch data");
-      const json = await res.json();
-      return json.data ?? json;
+      return await res.json();
     },
     enabled: !!selectedService && !!selectedMetric,
   });
