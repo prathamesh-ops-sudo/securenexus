@@ -97,8 +97,14 @@ interface IocMatch {
   matchField: string;
   matchValue: string;
   confidence: number;
-  enrichmentData: Record<string, unknown> | null;
+  enrichmentData: EnrichmentData | null;
   createdAt: string;
+}
+
+interface EnrichmentData {
+  malwareFamily?: string;
+  campaignName?: string;
+  [key: string]: unknown;
 }
 
 interface IocStats {
@@ -339,6 +345,17 @@ export default function IocIngestionMatchingPage() {
     return matchesSearch && matchesType;
   });
 
+  const filteredMatches = allMatches.filter((m) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      m.matchValue.toLowerCase().includes(q) ||
+      m.matchField.toLowerCase().includes(q) ||
+      (m.enrichmentData?.malwareFamily || "").toLowerCase().includes(q) ||
+      (m.enrichmentData?.campaignName || "").toLowerCase().includes(q)
+    );
+  });
+
   const feedTypes = Array.from(new Set(allFeeds.map((f) => f.feedType)));
   const entryTypes = Array.from(new Set(allEntries.map((e) => e.iocType)));
   const enabledFeeds = allFeeds.filter((f) => f.enabled).length;
@@ -465,7 +482,7 @@ export default function IocIngestionMatchingPage() {
             <Database className="h-4 w-4" /> IOC Entries ({allEntries.length})
           </TabsTrigger>
           <TabsTrigger value="matches" className="gap-1">
-            <Target className="h-4 w-4" /> Matches ({allMatches.length})
+            <Target className="h-4 w-4" /> Matches ({filteredMatches.length})
           </TabsTrigger>
           <TabsTrigger value="enrichment" className="gap-1">
             <BarChart3 className="h-4 w-4" /> Enrichment
@@ -667,12 +684,16 @@ export default function IocIngestionMatchingPage() {
         <TabsContent value="matches" className="mt-4">
           {isLoadingMatches ? (
             <Skeleton className="h-64" />
-          ) : allMatches.length === 0 ? (
+          ) : filteredMatches.length === 0 ? (
             <Card className="glass-card">
               <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Target className="h-10 w-10 mb-3 opacity-40" />
-                <p className="text-sm">No IOC matches yet</p>
-                <p className="text-xs mt-1">Matches appear when IOCs are found in alerts or incidents</p>
+                <p className="text-sm">No IOC matches found</p>
+                {searchQuery ? (
+                  <p className="text-xs mt-1">Try adjusting your search</p>
+                ) : (
+                  <p className="text-xs mt-1">Matches appear when IOCs are found in alerts or incidents</p>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -690,8 +711,8 @@ export default function IocIngestionMatchingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {allMatches.slice(0, 100).map((match) => {
-                      const enrichment = match.enrichmentData || {};
+                    {filteredMatches.slice(0, 100).map((match) => {
+                      const enrichment: EnrichmentData = match.enrichmentData || {};
                       return (
                         <TableRow key={match.id}>
                           <TableCell>
@@ -724,26 +745,25 @@ export default function IocIngestionMatchingPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
-                              {String((enrichment as Record<string, unknown>).malwareFamily || "") !== "" && (
+                              {enrichment.malwareFamily && (
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] bg-red-500/10 text-red-400 border-red-500/20"
                                 >
-                                  {String((enrichment as Record<string, unknown>).malwareFamily)}
+                                  {enrichment.malwareFamily}
                                 </Badge>
                               )}
-                              {String((enrichment as Record<string, unknown>).campaignName || "") !== "" && (
+                              {enrichment.campaignName && (
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/20"
                                 >
-                                  {String((enrichment as Record<string, unknown>).campaignName)}
+                                  {enrichment.campaignName}
                                 </Badge>
                               )}
-                              {String((enrichment as Record<string, unknown>).malwareFamily || "") === "" &&
-                                String((enrichment as Record<string, unknown>).campaignName || "") === "" && (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                )}
+                              {!enrichment.malwareFamily && !enrichment.campaignName && (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -757,9 +777,9 @@ export default function IocIngestionMatchingPage() {
                   </TableBody>
                 </Table>
               </ScrollArea>
-              {allMatches.length > 100 && (
+              {filteredMatches.length > 100 && (
                 <div className="px-4 py-2 border-t border-border/50 text-xs text-muted-foreground">
-                  Showing first 100 of {allMatches.length} matches
+                  Showing first 100 of {filteredMatches.length} matches
                 </div>
               )}
             </Card>
