@@ -125,7 +125,7 @@ export function FileManager({ prefix, title, compact }: { prefix?: string; title
       if (csrfMatch) headers["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
 
       setUploadProgress(10);
-      const res = await fetch("/api/files/upload", {
+      const res = await fetch(`/api/files/upload?prefix=${encodeURIComponent(queryPrefix)}`, {
         method: "POST",
         body: formData,
         credentials: "include",

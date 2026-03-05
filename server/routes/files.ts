@@ -12,7 +12,12 @@ export function registerFilesRoutes(app: Express): void {
     try {
       if (!req.file) return res.status(400).json({ message: "No file provided" });
       const orgId = getOrgId(req);
-      const key = `orgs/${orgId}/uploads/${Date.now()}-${req.file.originalname}`;
+      const rawPrefix = (req.query.prefix as string) || (req.body?.prefix as string) || "uploads/";
+      const sanitized = rawPrefix.replace(/\.\./g, "").replace(/\/\//g, "/");
+      if (!sanitized || /\.\./.test(sanitized)) {
+        return res.status(400).json({ message: "Invalid prefix" });
+      }
+      const key = `orgs/${orgId}/${sanitized}${Date.now()}-${req.file.originalname}`;
       const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
       res.status(201).json(result);
     } catch (error) {
@@ -24,8 +29,9 @@ export function registerFilesRoutes(app: Express): void {
   app.get("/api/files", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const subPrefix = req.query.prefix as string | undefined;
-      const prefix = `orgs/${orgId}/${subPrefix || ""}`;
+      const rawSub = (req.query.prefix as string) || "";
+      const subPrefix = rawSub.replace(/\.\./g, "").replace(/\/\//g, "/");
+      const prefix = `orgs/${orgId}/${subPrefix}`;
       const files = await listFiles(prefix);
       res.json(files);
     } catch (error) {
