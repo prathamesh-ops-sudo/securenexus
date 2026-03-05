@@ -197,25 +197,21 @@ export default function ThreatIntelPage() {
   const { toast } = useToast();
 
   const {
-    data: alerts,
+    data: alertsResponse,
     isLoading: alertsLoading,
     isError: _alertsError,
     refetch: _refetchAlerts,
-  } = useQuery<Alert[]>({
+  } = useQuery<PaginatedResponse<Alert>>({
     queryKey: ["/api/v1/alerts"],
-    queryFn: async () => {
-      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
   });
+  const alerts = alertsResponse?.items;
 
-  const { data: incidents, isLoading: incidentsLoading } = useQuery<Incident[]>({
+  const { data: incidentsResponse, isLoading: incidentsLoading } = useQuery<PaginatedResponse<Incident>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: async () => {
-      const res = await fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const {
     data: providers,

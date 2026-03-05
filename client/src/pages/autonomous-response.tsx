@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient, fetchPaginated } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import {
   Bot,
@@ -416,13 +416,11 @@ function InvestigationsTab() {
     queryKey: ["/api/autonomous/investigations"],
   });
 
-  const { data: incidents } = useQuery<any[]>({
+  const { data: incidentsResponse } = useQuery<PaginatedResponse<any>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: async () => {
-      const res = await fetchPaginated<any>("/api/v1/incidents", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<any>("/api/v1/incidents", { offset: 0, limit: 500 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const { data: expandedRunData } = useQuery<any>({
     queryKey: ["/api/autonomous/investigations", expandedRun],

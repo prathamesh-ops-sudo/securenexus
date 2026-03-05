@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient, fetchPaginated } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   CommandDialog,
@@ -100,21 +100,17 @@ export function CommandPalette() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const { data: alerts } = useQuery<Alert[]>({
+  const { data: alertsResponse } = useQuery<PaginatedResponse<Alert>>({
     queryKey: ["/api/v1/alerts"],
-    queryFn: async () => {
-      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
   });
+  const alerts = alertsResponse?.items;
 
-  const { data: incidents } = useQuery<Incident[]>({
+  const { data: incidentsResponse } = useQuery<PaginatedResponse<Incident>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: async () => {
-      const res = await fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const recentRecords = useMemo(() => loadRecentRecords(), [open]);
 

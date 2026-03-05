@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { fetchPaginated } from "@/lib/queryClient";
+import { fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Plug, ArrowDownToLine, FileWarning, Workflow, CheckCircle2, ArrowRight, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,25 +62,21 @@ const GUIDED_DISMISSED_KEY = "securenexus.guidedWorkflow.dismissed";
 const GUIDED_COMPLETED_KEY = "securenexus.guidedWorkflow.completed";
 
 function useGuidedProgress() {
-  const { data: connectors } = useQuery<unknown[]>({
+  const { data: connectorsResponse } = useQuery<PaginatedResponse<unknown>>({
     queryKey: ["/api/v1/connectors"],
-    queryFn: async () => {
-      const res = await fetchPaginated<unknown>("/api/v1/connectors", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<unknown>("/api/v1/connectors", { offset: 0, limit: 500 }),
   });
+  const connectors = connectorsResponse?.items;
 
   const { data: stats } = useQuery<{ totalAlerts?: number }>({
     queryKey: ["/api/dashboard/stats"],
   });
 
-  const { data: incidents } = useQuery<unknown[]>({
+  const { data: incidentsResponse } = useQuery<PaginatedResponse<unknown>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: async () => {
-      const res = await fetchPaginated<unknown>("/api/v1/incidents", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<unknown>("/api/v1/incidents", { offset: 0, limit: 500 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const { data: playbooks } = useQuery<unknown[]>({
     queryKey: ["/api/playbooks"],

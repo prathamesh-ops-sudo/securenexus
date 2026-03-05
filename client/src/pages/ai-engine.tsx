@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, fetchPaginated } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Brain,
@@ -186,13 +186,11 @@ export default function AIEnginePage() {
     queryKey: ["/api/ai/health"],
   });
 
-  const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
+  const { data: alertsResponse, isLoading: alertsLoading } = useQuery<PaginatedResponse<Alert>>({
     queryKey: ["/api/v1/alerts"],
-    queryFn: async () => {
-      const res = await fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 });
-      return res.items;
-    },
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
   });
+  const alerts = alertsResponse?.items;
 
   const { data: feedbackMetrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
     queryKey: ["/api/ai/feedback/metrics", driftDays],
