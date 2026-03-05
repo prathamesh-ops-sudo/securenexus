@@ -60,6 +60,7 @@ const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 const MsspDashboardPage = lazy(() => import("@/pages/mssp-dashboard"));
 const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
 const ProductOverviewPage = lazy(() => import("@/pages/product-overview"));
+const EngineControlsPage = lazy(() => import("@/pages/engine-controls"));
 const AgenticSocPage = lazy(() => import("@/pages/agentic-soc"));
 const AiSocAnalystPage = lazy(() => import("@/pages/ai-soc-analyst"));
 const SolutionsIndiaPage = lazy(() => import("@/pages/solutions-india"));
@@ -186,6 +187,7 @@ function AuthenticatedApp() {
                     <Route path="/ingestion" component={IngestionPage} />
                     <Route path="/connectors" component={ConnectorsPage} />
                     <Route path="/ai-engine" component={AIEnginePage} />
+                    <Route path="/engine-controls" component={EngineControlsPage} />
                     <Route path="/analytics" component={AnalyticsPage} />
                     <Route path="/threat-intel" component={ThreatIntelPage} />
                     <Route path="/mitre-attack" component={MitreAttackPage} />
