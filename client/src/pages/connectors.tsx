@@ -822,7 +822,7 @@ export default function ConnectorsPage() {
     isError: connectorsError,
     refetch: refetchConnectors,
   } = useQuery<PaginatedResponse<ConnectorItem>>({
-    queryKey: ["/api/v1/connectors", { offset: 0, limit: 500 }],
+    queryKey: ["/api/v1/connectors"],
     queryFn: () => fetchPaginated<ConnectorItem>("/api/v1/connectors", { offset: 0, limit: 500 }),
   });
   const existingConnectors = connectorsResponse?.items;
