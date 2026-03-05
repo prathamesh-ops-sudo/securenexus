@@ -45,7 +45,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ReportTemplate {
-  id: number;
+  id: string;
   orgId: string;
   name: string;
   description: string | null;
@@ -61,7 +61,7 @@ interface ReportTemplate {
 interface TemplateVersion {
   id: string;
   orgId: string;
-  templateId: number;
+  templateId: string;
   version: number;
   changeDescription: string;
   config: string | null;
@@ -349,7 +349,7 @@ function TemplateDetailPanel({
 export default function ReportTemplateVersioningPage() {
   usePageTitle("Report Template Versioning");
   const { toast } = useToast();
-  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
