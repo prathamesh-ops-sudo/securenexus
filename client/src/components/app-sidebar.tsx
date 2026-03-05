@@ -35,6 +35,7 @@ import {
   Code2,
   Mail,
   Rss,
+  Send,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -125,6 +126,7 @@ const navGroups: NavGroup[] = [
       { title: "Engine Controls", url: "/engine-controls", icon: Settings },
       { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
       { title: "Operations", url: "/operations", icon: Zap },
+      { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
     ],
   },
 ];
