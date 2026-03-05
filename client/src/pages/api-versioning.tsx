@@ -646,11 +646,11 @@ export default function ApiVersioningPage() {
   const isError = policyError || guideError;
 
   const handleRefresh = async () => {
-    try {
-      await Promise.all([refetchPolicy(), refetchGuide()]);
-      toast({ title: "Refreshed", description: "API versioning data refreshed" });
-    } catch {
+    const [policyResult, guideResult] = await Promise.all([refetchPolicy(), refetchGuide()]);
+    if (policyResult.isError || guideResult.isError) {
       toast({ title: "Refresh failed", description: "Could not refresh API versioning data", variant: "destructive" });
+    } else {
+      toast({ title: "Refreshed", description: "API versioning data refreshed" });
     }
   };
 
