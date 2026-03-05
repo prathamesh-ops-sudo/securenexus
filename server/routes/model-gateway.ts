@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { logger } from "./shared";
+import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import {
@@ -82,8 +82,7 @@ export function registerModelGatewayRoutes(app: Express): void {
 
   app.get("/api/model-gateway/usage", ...authChain, async (req, res) => {
     try {
-      const rbac = (req as unknown as { rbac?: { orgId?: string } }).rbac;
-      const orgId = rbac?.orgId ?? "";
+      const orgId = getOrgId(req);
       if (orgId) {
         res.json(getOrgUsageSummary(orgId));
       } else {

@@ -86,8 +86,10 @@ function recordCircuitFailure(key: string): void {
   state.failures++;
   state.lastFailure = Date.now();
   if (state.failures >= CIRCUIT_FAILURE_THRESHOLD) {
+    if (state.openUntil < Date.now()) {
+      gatewayMetrics.circuitBreakerTrips++;
+    }
     state.openUntil = Date.now() + CIRCUIT_RESET_MS;
-    gatewayMetrics.circuitBreakerTrips++;
     log.warn("Circuit breaker opened for model", { key, failures: state.failures, resetMs: CIRCUIT_RESET_MS });
   }
   circuitBreakers.set(key, state);
@@ -321,7 +323,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
   }
 
   gatewayMetrics.totalRequests++;
-  gatewayMetrics.cacheMisses++;
+  if (!opts.skipCache) gatewayMetrics.cacheMisses++;
   const modelStats = getOrCreateModelStats(opts.modelId);
   modelStats.requests++;
 
