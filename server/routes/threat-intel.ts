@@ -244,6 +244,17 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/osint-feeds/:feedSlug/refresh", isAuthenticated, async (req, res) => {
+    try {
+      const { fetchOsintFeed } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const result = await fetchOsintFeed(slug, true);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to refresh feed" });
+    }
+  });
+
   app.get("/api/osint-feeds/:feedSlug/health", isAuthenticated, async (req, res) => {
     try {
       const { getFeedHealthHistory } = await import("../osint-feeds");
