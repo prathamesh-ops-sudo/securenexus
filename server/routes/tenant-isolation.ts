@@ -28,7 +28,12 @@ import { storage } from "../storage";
 
 const log = logger.child("tenant-isolation-routes");
 
-const VALID_ISOLATION_LEVELS: ReadonlySet<string> = new Set(["shared", "dedicated-schema", "dedicated-instance", "dedicated-cluster"]);
+const VALID_ISOLATION_LEVELS: ReadonlySet<string> = new Set([
+  "shared",
+  "dedicated-schema",
+  "dedicated-instance",
+  "dedicated-cluster",
+]);
 const VALID_PLANS: ReadonlySet<string> = new Set(["free", "pro", "enterprise"]);
 
 function isValidPlan(v: unknown): v is PlanTier {
@@ -52,148 +57,214 @@ async function detectOrgPlan(orgId: string): Promise<PlanTier> {
 }
 
 export function registerTenantIsolationRoutes(app: Express): void {
-  app.get("/api/tenant-isolation/config", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const plan = await detectOrgPlan(orgId);
-      const config = getTenantIsolationConfig(orgId, plan);
-      res.json(config);
-    } catch (error) {
-      log.error("Failed to get tenant isolation config", { error: String(error) });
-      res.status(500).json({ message: "Failed to get tenant isolation config" });
-    }
-  });
-
-  app.put("/api/tenant-isolation/config", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const user = (req as any).user;
-      const { isolationLevel, connectionPoolSize, maxConnectionsPerOrg, resourceGroup } = req.body;
-
-      if (isolationLevel !== undefined && !isValidIsolationLevel(isolationLevel)) {
-        return replyBadRequest(res, "Invalid isolation level. Must be: shared, dedicated-schema, dedicated-instance, dedicated-cluster");
+  app.get(
+    "/api/tenant-isolation/config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const plan = await detectOrgPlan(orgId);
+        const config = getTenantIsolationConfig(orgId, plan);
+        res.json(config);
+      } catch (error) {
+        log.error("Failed to get tenant isolation config", { error: String(error) });
+        res.status(500).json({ message: "Failed to get tenant isolation config" });
       }
+    },
+  );
 
-      if (connectionPoolSize !== undefined && (typeof connectionPoolSize !== "number" || connectionPoolSize < 1 || connectionPoolSize > 200)) {
-        return replyBadRequest(res, "connectionPoolSize must be between 1 and 200");
+  app.put(
+    "/api/tenant-isolation/config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const user = (req as any).user;
+        const { isolationLevel, connectionPoolSize, maxConnectionsPerOrg, resourceGroup } = req.body;
+
+        if (isolationLevel !== undefined && !isValidIsolationLevel(isolationLevel)) {
+          return replyBadRequest(
+            res,
+            "Invalid isolation level. Must be: shared, dedicated-schema, dedicated-instance, dedicated-cluster",
+          );
+        }
+
+        if (
+          connectionPoolSize !== undefined &&
+          (typeof connectionPoolSize !== "number" || connectionPoolSize < 1 || connectionPoolSize > 200)
+        ) {
+          return replyBadRequest(res, "connectionPoolSize must be between 1 and 200");
+        }
+
+        if (
+          maxConnectionsPerOrg !== undefined &&
+          (typeof maxConnectionsPerOrg !== "number" || maxConnectionsPerOrg < 1 || maxConnectionsPerOrg > 500)
+        ) {
+          return replyBadRequest(res, "maxConnectionsPerOrg must be between 1 and 500");
+        }
+
+        const updates: Record<string, unknown> = {};
+        if (isolationLevel !== undefined) updates.isolationLevel = isolationLevel;
+        if (connectionPoolSize !== undefined) updates.connectionPoolSize = connectionPoolSize;
+        if (maxConnectionsPerOrg !== undefined) updates.maxConnectionsPerOrg = maxConnectionsPerOrg;
+        if (resourceGroup !== undefined && typeof resourceGroup === "string") updates.resourceGroup = resourceGroup;
+
+        const plan = await detectOrgPlan(orgId);
+        const config = setTenantIsolationConfig(orgId, updates as any, plan);
+
+        await storage
+          .createAuditLog({
+            orgId,
+            userId: user?.id,
+            userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
+            action: "tenant_isolation_config_updated",
+            resourceType: "tenant_isolation",
+            details: updates,
+          })
+          .catch((err) => log.error("Failed to create audit log", { error: String(err) }));
+
+        res.json(config);
+      } catch (error) {
+        log.error("Failed to update tenant isolation config", { error: String(error) });
+        res.status(500).json({ message: "Failed to update tenant isolation config" });
       }
+    },
+  );
 
-      if (maxConnectionsPerOrg !== undefined && (typeof maxConnectionsPerOrg !== "number" || maxConnectionsPerOrg < 1 || maxConnectionsPerOrg > 500)) {
-        return replyBadRequest(res, "maxConnectionsPerOrg must be between 1 and 500");
+  app.get(
+    "/api/tenant-isolation/noisy-neighbor",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const metrics = assessNoisyNeighbor(orgId);
+        res.json(metrics);
+      } catch (error) {
+        log.error("Failed to assess noisy neighbor", { error: String(error) });
+        res.status(500).json({ message: "Failed to assess noisy neighbor metrics" });
       }
+    },
+  );
 
-      const updates: Record<string, unknown> = {};
-      if (isolationLevel !== undefined) updates.isolationLevel = isolationLevel;
-      if (connectionPoolSize !== undefined) updates.connectionPoolSize = connectionPoolSize;
-      if (maxConnectionsPerOrg !== undefined) updates.maxConnectionsPerOrg = maxConnectionsPerOrg;
-      if (resourceGroup !== undefined && typeof resourceGroup === "string") updates.resourceGroup = resourceGroup;
-
-      const plan = await detectOrgPlan(orgId);
-      const config = setTenantIsolationConfig(orgId, updates as any, plan);
-
-      await storage.createAuditLog({
-        orgId,
-        userId: user?.id,
-        userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
-        action: "tenant_isolation_config_updated",
-        resourceType: "tenant_isolation",
-        details: updates,
-      }).catch((err) => log.error("Failed to create audit log", { error: String(err) }));
-
-      res.json(config);
-    } catch (error) {
-      log.error("Failed to update tenant isolation config", { error: String(error) });
-      res.status(500).json({ message: "Failed to update tenant isolation config" });
-    }
-  });
-
-  app.get("/api/tenant-isolation/noisy-neighbor", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const metrics = assessNoisyNeighbor(orgId);
-      res.json(metrics);
-    } catch (error) {
-      log.error("Failed to assess noisy neighbor", { error: String(error) });
-      res.status(500).json({ message: "Failed to assess noisy neighbor metrics" });
-    }
-  });
-
-  app.post("/api/tenant-isolation/provision-schema", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const plan = await detectOrgPlan(orgId);
-      const result = await provisionDedicatedSchema(orgId, plan);
-      res.json(result);
-    } catch (error) {
-      log.error("Failed to provision dedicated schema", { error: String(error) });
-      res.status(500).json({ message: "Failed to provision dedicated schema" });
-    }
-  });
-
-  app.post("/api/tenant-isolation/register-instance", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const { instanceIdentifier, endpoint, port, instanceClass, allocatedStorageGb } = req.body;
-
-      if (!instanceIdentifier || typeof instanceIdentifier !== "string") {
-        return replyBadRequest(res, "instanceIdentifier is required");
+  app.post(
+    "/api/tenant-isolation/provision-schema",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const plan = await detectOrgPlan(orgId);
+        const result = await provisionDedicatedSchema(orgId, plan);
+        res.json(result);
+      } catch (error) {
+        log.error("Failed to provision dedicated schema", { error: String(error) });
+        res.status(500).json({ message: "Failed to provision dedicated schema" });
       }
-      if (!endpoint || typeof endpoint !== "string") {
-        return replyBadRequest(res, "endpoint is required");
+    },
+  );
+
+  app.post(
+    "/api/tenant-isolation/register-instance",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const { instanceIdentifier, endpoint, port, instanceClass, allocatedStorageGb } = req.body;
+
+        if (!instanceIdentifier || typeof instanceIdentifier !== "string") {
+          return replyBadRequest(res, "instanceIdentifier is required");
+        }
+        if (!endpoint || typeof endpoint !== "string") {
+          return replyBadRequest(res, "endpoint is required");
+        }
+        if (!port || typeof port !== "number" || port < 1 || port > 65535) {
+          return replyBadRequest(res, "port must be a valid port number (1-65535)");
+        }
+
+        const plan = await detectOrgPlan(orgId);
+        const config = registerDedicatedInstance(
+          orgId,
+          {
+            instanceIdentifier,
+            endpoint,
+            port,
+            status: "available",
+            instanceClass: instanceClass || "db.r6g.large",
+            allocatedStorageGb: allocatedStorageGb || 100,
+          },
+          plan,
+        );
+
+        await storage
+          .createAuditLog({
+            orgId,
+            userId: (req as any).user?.id,
+            userName: "Admin",
+            action: "dedicated_instance_registered",
+            resourceType: "tenant_isolation",
+            details: { instanceIdentifier, endpoint },
+          })
+          .catch((err) => log.error("Failed to create audit log", { error: String(err) }));
+
+        res.json(config);
+      } catch (error) {
+        log.error("Failed to register dedicated instance", { error: String(error) });
+        res.status(500).json({ message: "Failed to register dedicated instance" });
       }
-      if (!port || typeof port !== "number" || port < 1 || port > 65535) {
-        return replyBadRequest(res, "port must be a valid port number (1-65535)");
+    },
+  );
+
+  app.get(
+    "/api/tenant-isolation/dedicated-instance",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const instance = getDedicatedInstance(orgId);
+        if (!instance) {
+          return res.json({ configured: false, message: "No dedicated instance configured for this organization" });
+        }
+        res.json({ configured: true, instance });
+      } catch (error) {
+        log.error("Failed to get dedicated instance", { error: String(error) });
+        res.status(500).json({ message: "Failed to get dedicated instance info" });
       }
+    },
+  );
 
-      const plan = await detectOrgPlan(orgId);
-      const config = registerDedicatedInstance(orgId, {
-        instanceIdentifier,
-        endpoint,
-        port,
-        status: "available",
-        instanceClass: instanceClass || "db.r6g.large",
-        allocatedStorageGb: allocatedStorageGb || 100,
-      }, plan);
-
-      await storage.createAuditLog({
-        orgId,
-        userId: (req as any).user?.id,
-        userName: "Admin",
-        action: "dedicated_instance_registered",
-        resourceType: "tenant_isolation",
-        details: { instanceIdentifier, endpoint },
-      }).catch((err) => log.error("Failed to create audit log", { error: String(err) }));
-
-      res.json(config);
-    } catch (error) {
-      log.error("Failed to register dedicated instance", { error: String(error) });
-      res.status(500).json({ message: "Failed to register dedicated instance" });
-    }
-  });
-
-  app.get("/api/tenant-isolation/dedicated-instance", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const instance = getDedicatedInstance(orgId);
-      if (!instance) {
-        return res.json({ configured: false, message: "No dedicated instance configured for this organization" });
+  app.get(
+    "/api/tenant-isolation/report",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const report = getTenantIsolationReport();
+        res.json(report);
+      } catch (error) {
+        log.error("Failed to get tenant isolation report", { error: String(error) });
+        res.status(500).json({ message: "Failed to get tenant isolation report" });
       }
-      res.json({ configured: true, instance });
-    } catch (error) {
-      log.error("Failed to get dedicated instance", { error: String(error) });
-      res.status(500).json({ message: "Failed to get dedicated instance info" });
-    }
-  });
-
-  app.get("/api/tenant-isolation/report", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const report = getTenantIsolationReport();
-      res.json(report);
-    } catch (error) {
-      log.error("Failed to get tenant isolation report", { error: String(error) });
-      res.status(500).json({ message: "Failed to get tenant isolation report" });
-    }
-  });
+    },
+  );
 
   app.get("/api/tenant-quotas", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -219,76 +290,101 @@ export function registerTenantIsolationRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/tenant-quotas/override", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const user = (req as any).user;
-      const overrides = req.body;
+  app.put(
+    "/api/tenant-quotas/override",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const user = (req as any).user;
+        const overrides = req.body;
 
-      if (!overrides || typeof overrides !== "object") {
-        return replyBadRequest(res, "Request body must be an object with quota overrides");
-      }
-
-      const allowedFields: ReadonlySet<string> = new Set([
-        "ingestionEventsPerMinute", "ingestionEventsPerDay", "aiTokensPerDay",
-        "aiInvocationsPerMinute", "connectorSyncsPerHour", "connectorMaxConcurrent",
-        "apiCallsPerMinute", "apiCallsPerDay", "maxStorageGb", "maxSseConnections",
-      ]);
-
-      const sanitized: Record<string, number> = {};
-      for (const [key, value] of Object.entries(overrides)) {
-        if (!allowedFields.has(key)) continue;
-        if (typeof value !== "number" || value < 0 || !Number.isFinite(value)) {
-          return replyBadRequest(res, `Invalid value for ${key}: must be a non-negative finite number`);
+        if (!overrides || typeof overrides !== "object") {
+          return replyBadRequest(res, "Request body must be an object with quota overrides");
         }
-        sanitized[key] = Math.floor(value);
+
+        const allowedFields: ReadonlySet<string> = new Set([
+          "ingestionEventsPerMinute",
+          "ingestionEventsPerDay",
+          "aiTokensPerDay",
+          "aiInvocationsPerMinute",
+          "connectorSyncsPerHour",
+          "connectorMaxConcurrent",
+          "apiCallsPerMinute",
+          "apiCallsPerDay",
+          "maxStorageGb",
+          "maxSseConnections",
+        ]);
+
+        const sanitized: Record<string, number> = {};
+        for (const [key, value] of Object.entries(overrides)) {
+          if (!allowedFields.has(key)) continue;
+          if (typeof value !== "number" || value < 0 || !Number.isFinite(value)) {
+            return replyBadRequest(res, `Invalid value for ${key}: must be a non-negative finite number`);
+          }
+          sanitized[key] = Math.floor(value);
+        }
+
+        if (Object.keys(sanitized).length === 0) {
+          return replyBadRequest(res, "No valid quota overrides provided");
+        }
+
+        setOrgQuotaOverride(orgId, sanitized as any);
+
+        await storage
+          .createAuditLog({
+            orgId,
+            userId: user?.id,
+            userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
+            action: "tenant_quota_override_set",
+            resourceType: "tenant_quotas",
+            details: sanitized,
+          })
+          .catch((err) => log.error("Failed to create audit log", { error: String(err) }));
+
+        const plan = await detectOrgPlan(orgId);
+        const status = getOrgQuotaStatus(orgId, plan as ThrottlePlanTier);
+        res.json(status);
+      } catch (error) {
+        log.error("Failed to set quota override", { error: String(error) });
+        res.status(500).json({ message: "Failed to set quota override" });
       }
+    },
+  );
 
-      if (Object.keys(sanitized).length === 0) {
-        return replyBadRequest(res, "No valid quota overrides provided");
+  app.delete(
+    "/api/tenant-quotas/override",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        clearOrgQuotaOverride(orgId);
+
+        await storage
+          .createAuditLog({
+            orgId,
+            userId: (req as any).user?.id,
+            userName: "Admin",
+            action: "tenant_quota_override_cleared",
+            resourceType: "tenant_quotas",
+          })
+          .catch((err) => log.error("Failed to create audit log", { error: String(err) }));
+
+        const plan = await detectOrgPlan(orgId);
+        const status = getOrgQuotaStatus(orgId, plan as ThrottlePlanTier);
+        res.json(status);
+      } catch (error) {
+        log.error("Failed to clear quota override", { error: String(error) });
+        res.status(500).json({ message: "Failed to clear quota override" });
       }
-
-      setOrgQuotaOverride(orgId, sanitized as any);
-
-      await storage.createAuditLog({
-        orgId,
-        userId: user?.id,
-        userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
-        action: "tenant_quota_override_set",
-        resourceType: "tenant_quotas",
-        details: sanitized,
-      }).catch((err) => log.error("Failed to create audit log", { error: String(err) }));
-
-      const plan = await detectOrgPlan(orgId);
-      const status = getOrgQuotaStatus(orgId, plan as ThrottlePlanTier);
-      res.json(status);
-    } catch (error) {
-      log.error("Failed to set quota override", { error: String(error) });
-      res.status(500).json({ message: "Failed to set quota override" });
-    }
-  });
-
-  app.delete("/api/tenant-quotas/override", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      clearOrgQuotaOverride(orgId);
-
-      await storage.createAuditLog({
-        orgId,
-        userId: (req as any).user?.id,
-        userName: "Admin",
-        action: "tenant_quota_override_cleared",
-        resourceType: "tenant_quotas",
-      }).catch((err) => log.error("Failed to create audit log", { error: String(err) }));
-
-      const plan = await detectOrgPlan(orgId);
-      const status = getOrgQuotaStatus(orgId, plan as ThrottlePlanTier);
-      res.json(status);
-    } catch (error) {
-      log.error("Failed to clear quota override", { error: String(error) });
-      res.status(500).json({ message: "Failed to clear quota override" });
-    }
-  });
+    },
+  );
 
   app.get("/api/tenant-quotas/check/:category", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {

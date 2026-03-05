@@ -108,9 +108,7 @@ function loadConfig(): AppConfig {
   const result = configSchema.safeParse(raw);
 
   if (!result.success) {
-    const errors = result.error.issues.map(
-      (issue) => `  - ${issue.path.join(".")}: ${issue.message}`
-    );
+    const errors = result.error.issues.map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`);
     logger.child("config").error(`\n[Config] Fatal: invalid configuration.\n${errors.join("\n")}\n`);
     process.exit(1);
   }

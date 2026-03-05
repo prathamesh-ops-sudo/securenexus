@@ -25,5 +25,4 @@ export function registerHealthRoutes(app: Express): void {
     }
     res.json({ ok: true, data: { summary: getCatalogSummary(), events: getAllEventSchemas() } });
   });
-
 }

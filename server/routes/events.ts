@@ -14,12 +14,20 @@ export function registerEventsRoutes(app: Express): void {
     const clientId = eventBus.generateClientId();
 
     const VALID_EVENT_TYPES: Set<string> = new Set([
-      "alert:created", "alert:updated", "incident:created", "incident:updated",
-      "correlation:found", "entity:resolved", "system:health",
+      "alert:created",
+      "alert:updated",
+      "incident:created",
+      "incident:updated",
+      "correlation:found",
+      "entity:resolved",
+      "system:health",
     ]);
     const rawTypes = req.query.types as string | undefined;
     const subscriptions = rawTypes
-      ? rawTypes.split(",").map((t) => t.trim()).filter((t) => VALID_EVENT_TYPES.has(t)) as any[]
+      ? (rawTypes
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => VALID_EVENT_TYPES.has(t)) as any[])
       : undefined;
 
     eventBus.addClient({
@@ -54,5 +62,4 @@ export function registerEventsRoutes(app: Express): void {
       totalBuffered: stats.totalBuffered,
     });
   });
-
 }

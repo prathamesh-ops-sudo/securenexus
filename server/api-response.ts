@@ -4,39 +4,39 @@ import type { Request, Response, NextFunction } from "express";
 
 export const ERROR_CODES = {
   // Authentication
-  UNAUTHENTICATED:          "UNAUTHENTICATED",
-  API_KEY_MISSING:          "API_KEY_MISSING",
-  API_KEY_INVALID:          "API_KEY_INVALID",
-  API_KEY_REVOKED:          "API_KEY_REVOKED",
-  WEBHOOK_SIG_MISSING:      "WEBHOOK_SIG_MISSING",
-  WEBHOOK_SIG_INVALID:      "WEBHOOK_SIG_INVALID",
-  WEBHOOK_TS_EXPIRED:       "WEBHOOK_TS_EXPIRED",
+  UNAUTHENTICATED: "UNAUTHENTICATED",
+  API_KEY_MISSING: "API_KEY_MISSING",
+  API_KEY_INVALID: "API_KEY_INVALID",
+  API_KEY_REVOKED: "API_KEY_REVOKED",
+  WEBHOOK_SIG_MISSING: "WEBHOOK_SIG_MISSING",
+  WEBHOOK_SIG_INVALID: "WEBHOOK_SIG_INVALID",
+  WEBHOOK_TS_EXPIRED: "WEBHOOK_TS_EXPIRED",
 
   // Authorization
-  FORBIDDEN:                "FORBIDDEN",
-  PERMISSION_DENIED:        "PERMISSION_DENIED",
-  ORG_ACCESS_DENIED:        "ORG_ACCESS_DENIED",
-  ORG_MEMBERSHIP_REQUIRED:  "ORG_MEMBERSHIP_REQUIRED",
+  FORBIDDEN: "FORBIDDEN",
+  PERMISSION_DENIED: "PERMISSION_DENIED",
+  ORG_ACCESS_DENIED: "ORG_ACCESS_DENIED",
+  ORG_MEMBERSHIP_REQUIRED: "ORG_MEMBERSHIP_REQUIRED",
 
   // CSRF
-  CSRF_MISSING:             "CSRF_MISSING",
-  CSRF_INVALID:             "CSRF_INVALID",
+  CSRF_MISSING: "CSRF_MISSING",
+  CSRF_INVALID: "CSRF_INVALID",
 
   // Client errors
-  BAD_REQUEST:              "BAD_REQUEST",
-  NOT_FOUND:                "NOT_FOUND",
-  CONFLICT:                 "CONFLICT",
-  VALIDATION_ERROR:         "VALIDATION_ERROR",
-  MISSING_PARAMETER:        "MISSING_PARAMETER",
+  BAD_REQUEST: "BAD_REQUEST",
+  NOT_FOUND: "NOT_FOUND",
+  CONFLICT: "CONFLICT",
+  VALIDATION_ERROR: "VALIDATION_ERROR",
+  MISSING_PARAMETER: "MISSING_PARAMETER",
 
   // Throttling
-  RATE_LIMITED:             "RATE_LIMITED",
-  INGESTION_RATE_LIMITED:   "INGESTION_RATE_LIMITED",
+  RATE_LIMITED: "RATE_LIMITED",
+  INGESTION_RATE_LIMITED: "INGESTION_RATE_LIMITED",
 
   // Server / upstream
-  INTERNAL_ERROR:           "INTERNAL_ERROR",
-  NOT_IMPLEMENTED:          "NOT_IMPLEMENTED",
-  UPSTREAM_ERROR:           "UPSTREAM_ERROR",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+  NOT_IMPLEMENTED: "NOT_IMPLEMENTED",
+  UPSTREAM_ERROR: "UPSTREAM_ERROR",
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -66,24 +66,14 @@ export interface ApiEnvelope<T = unknown> {
 
 // ─── Success reply ────────────────────────────────────────────────────────────
 
-export function reply<T>(
-  res: Response,
-  data: T,
-  meta: ApiMeta = {},
-  status = 200,
-): Response {
+export function reply<T>(res: Response, data: T, meta: ApiMeta = {}, status = 200): Response {
   const envelope: ApiEnvelope<T> = { data, meta, errors: null };
   return res.status(status).json(envelope);
 }
 
 // ─── Error replies ────────────────────────────────────────────────────────────
 
-export function replyError(
-  res: Response,
-  status: number,
-  errors: ApiError[],
-  meta: ApiMeta = {},
-): Response {
+export function replyError(res: Response, status: number, errors: ApiError[], meta: ApiMeta = {}): Response {
   const envelope: ApiEnvelope<null> = { data: null, meta, errors };
   return res.status(status).json(envelope);
 }
@@ -147,25 +137,15 @@ export function replyRateLimit(
   return replyError(res, 429, [{ code, message }]);
 }
 
-export function replyInternal(
-  res: Response,
-  message = "Internal Server Error",
-): Response {
+export function replyInternal(res: Response, message = "Internal Server Error"): Response {
   return replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message }]);
 }
 
-export function replyNotImplemented(
-  res: Response,
-  message = "Not implemented",
-): Response {
+export function replyNotImplemented(res: Response, message = "Not implemented"): Response {
   return replyError(res, 501, [{ code: ERROR_CODES.NOT_IMPLEMENTED, message }]);
 }
 
-export function replyUpstream(
-  res: Response,
-  message: string,
-  details?: unknown,
-): Response {
+export function replyUpstream(res: Response, message: string, details?: unknown): Response {
   return replyError(res, 502, [{ code: ERROR_CODES.UPSTREAM_ERROR, message, details }]);
 }
 

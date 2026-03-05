@@ -34,7 +34,12 @@ const versionHistory = new Map<string, PromptTemplate[]>();
 const auditLog: PromptAuditEntry[] = [];
 const MAX_AUDIT_ENTRIES = 2000;
 
-function recordAudit(promptId: string, version: number, action: PromptAuditEntry["action"], metadata?: Record<string, unknown>): void {
+function recordAudit(
+  promptId: string,
+  version: number,
+  action: PromptAuditEntry["action"],
+  metadata?: Record<string, unknown>,
+): void {
   auditLog.push({ promptId, version, action, timestamp: new Date().toISOString(), metadata });
   if (auditLog.length > MAX_AUDIT_ENTRIES) auditLog.splice(0, auditLog.length - MAX_AUDIT_ENTRIES);
 }
@@ -42,7 +47,11 @@ function recordAudit(promptId: string, version: number, action: PromptAuditEntry
 export function registerPrompt(template: PromptTemplate): void {
   const existing = registry.get(template.id);
   if (existing && existing.version >= template.version) {
-    log.warn("Skipping prompt registration — same or newer version exists", { id: template.id, existing: existing.version, incoming: template.version });
+    log.warn("Skipping prompt registration — same or newer version exists", {
+      id: template.id,
+      existing: existing.version,
+      incoming: template.version,
+    });
     return;
   }
 
@@ -160,7 +169,8 @@ export function initializeDefaultPrompts(): void {
     id: "correlation",
     version: 1,
     name: "Alert Correlation Engine",
-    description: "Correlates security alerts into attack chains using MITRE ATT&CK, Kill Chain, and Diamond Model frameworks.",
+    description:
+      "Correlates security alerts into attack chains using MITRE ATT&CK, Kill Chain, and Diamond Model frameworks.",
     tier: "correlation",
     systemPrompt: `${CYBER_ENGINE_IDENTITY}
 
@@ -225,7 +235,8 @@ Respond with this exact JSON structure:
     id: "narrative",
     version: 1,
     name: "Incident Narrative Generator",
-    description: "Generates attacker-centric incident narratives with full MITRE mapping, IOC extraction, and citation-backed analysis.",
+    description:
+      "Generates attacker-centric incident narratives with full MITRE mapping, IOC extraction, and citation-backed analysis.",
     tier: "narrative",
     systemPrompt: `${CYBER_ENGINE_IDENTITY}
 
@@ -304,7 +315,8 @@ Respond with this exact JSON structure:
     id: "triage",
     version: 1,
     name: "Alert Triage Analyst",
-    description: "Real-time alert triage with MITRE classification, false positive assessment, and actionable containment advice.",
+    description:
+      "Real-time alert triage with MITRE classification, false positive assessment, and actionable containment advice.",
     tier: "triage",
     systemPrompt: `${CYBER_ENGINE_IDENTITY}
 

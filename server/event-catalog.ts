@@ -2,7 +2,18 @@ import { logger } from "./logger";
 
 export const EVENT_CATALOG_VERSION = "1.0.0";
 
-export type EventDomain = "alert" | "incident" | "connector" | "entity" | "compliance" | "playbook" | "report" | "endpoint" | "investigation" | "webhook" | "system";
+export type EventDomain =
+  | "alert"
+  | "incident"
+  | "connector"
+  | "entity"
+  | "compliance"
+  | "playbook"
+  | "report"
+  | "endpoint"
+  | "investigation"
+  | "webhook"
+  | "system";
 
 export interface EventSchema {
   name: string;
@@ -360,10 +371,7 @@ export interface EventValidationResult {
   errors: string[];
 }
 
-export function validateEventPayload(
-  eventName: string,
-  payload: Record<string, unknown>,
-): EventValidationResult {
+export function validateEventPayload(eventName: string, payload: Record<string, unknown>): EventValidationResult {
   const result: EventValidationResult = { valid: true, warnings: [], errors: [] };
 
   const schema = CATALOG[eventName];

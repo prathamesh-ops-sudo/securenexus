@@ -348,7 +348,7 @@ jobs:
         run: npx playwright test --reporter=github
         env:
           CI: true
-          BASE_URL: http://localhost:5173
+          BASE_URL: http://localhost:4173
 
       - name: Upload E2E test results
         if: always()
@@ -382,9 +382,9 @@ jobs:
 
       - name: Validate OpenAPI spec
         run: |
-          if [ -f server/openapi.ts ] || [ -f docs/openapi.yml ]; then
+          if [ -f docs/openapi.yml ]; then
             echo "OpenAPI spec found — validating..."
-            npx --yes @redocly/cli lint docs/openapi.yml 2>/dev/null || npx --yes swagger-cli validate docs/openapi.yml 2>/dev/null || echo "Spec validation skipped (no compatible validator)"
+            npx --yes @redocly/cli lint docs/openapi.yml || npx --yes swagger-cli validate docs/openapi.yml || echo "Spec validation skipped (no compatible validator)"
           else
             echo "No OpenAPI spec file found — skipping validation"
           fi

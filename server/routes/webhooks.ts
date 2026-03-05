@@ -78,7 +78,11 @@ export function registerWebhooksRoutes(app: Express): void {
       if (!urlCheck.valid) {
         return res.status(400).json({ message: `Webhook URL blocked: ${urlCheck.reason}` });
       }
-      const testPayload = { event: "test", timestamp: new Date().toISOString(), message: "Test webhook delivery from SecureNexus" };
+      const testPayload = {
+        event: "test",
+        timestamp: new Date().toISOString(),
+        message: "Test webhook delivery from SecureNexus",
+      };
       const body = JSON.stringify(testPayload);
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (webhook.secret) {
@@ -97,7 +101,11 @@ export function registerWebhooksRoutes(app: Express): void {
         responseBody: result.responseBody.slice(0, 2000),
         success: result.success,
       });
-      res.json({ success: result.success, statusCode: result.statusCode, responseBody: result.responseBody.slice(0, 500) });
+      res.json({
+        success: result.success,
+        statusCode: result.statusCode,
+        responseBody: result.responseBody.slice(0, 500),
+      });
     } catch (error) {
       res.status(500).json({ message: "Failed to test webhook" });
     }
@@ -232,5 +240,4 @@ export function registerWebhooksRoutes(app: Express): void {
       });
     }
   });
-
 }

@@ -18,7 +18,7 @@ interface PolicyMatch {
 
 export async function evaluatePolicies(context: PolicyEvalContext): Promise<PolicyMatch[]> {
   const policies = await storage.getAutoResponsePolicies(context.orgId);
-  const activePolicies = policies.filter(p => p.status === "active");
+  const activePolicies = policies.filter((p) => p.status === "active");
 
   const matches: PolicyMatch[] = [];
 
@@ -26,10 +26,16 @@ export async function evaluatePolicies(context: PolicyEvalContext): Promise<Poli
     const match = evaluatePolicy(policy, context);
     if (match) {
       // Update policy tracking
-      storage.updateAutoResponsePolicy(policy.id, {
-        lastTriggeredAt: new Date(),
-        executionCount: (policy.executionCount || 0) + 1,
-      }).catch((err) => logger.child("policy-engine").warn("Failed to update policy tracking", { policyId: policy.id, error: String(err) }));
+      storage
+        .updateAutoResponsePolicy(policy.id, {
+          lastTriggeredAt: new Date(),
+          executionCount: (policy.executionCount || 0) + 1,
+        })
+        .catch((err) =>
+          logger
+            .child("policy-engine")
+            .warn("Failed to update policy tracking", { policyId: policy.id, error: String(err) }),
+        );
       matches.push(match);
     }
   }
@@ -49,19 +55,22 @@ function evaluatePolicy(policy: AutoResponsePolicy, context: PolicyEvalContext):
 
     const confidence = context.confidenceScore || 0;
     if (confidence < (policy.confidenceThreshold || 0.85)) return null;
-    matchedConditions.push(`confidence: ${(confidence * 100).toFixed(0)}% >= ${((policy.confidenceThreshold || 0.85) * 100).toFixed(0)}%`);
+    matchedConditions.push(
+      `confidence: ${(confidence * 100).toFixed(0)}% >= ${((policy.confidenceThreshold || 0.85) * 100).toFixed(0)}%`,
+    );
 
     if (conditions?.minAlertCount && context.alerts.length < conditions.minAlertCount) return null;
-    if (conditions?.minAlertCount) matchedConditions.push(`alerts: ${context.alerts.length} >= ${conditions.minAlertCount}`);
+    if (conditions?.minAlertCount)
+      matchedConditions.push(`alerts: ${context.alerts.length} >= ${conditions.minAlertCount}`);
 
     if (conditions?.minSources) {
-      const sources = new Set(context.alerts.map(a => a.source));
+      const sources = new Set(context.alerts.map((a) => a.source));
       if (sources.size < conditions.minSources) return null;
       matchedConditions.push(`sources: ${sources.size} >= ${conditions.minSources}`);
     }
 
     if (conditions?.categories && conditions.categories.length > 0) {
-      const alertCategories = context.alerts.map(a => a.category).filter(Boolean);
+      const alertCategories = context.alerts.map((a) => a.category).filter(Boolean);
       const hasMatch = conditions.categories.some((c: string) => alertCategories.includes(c));
       if (!hasMatch) return null;
       matchedConditions.push(`category match`);
@@ -92,7 +101,8 @@ export function generateDefaultPolicies(orgId: string): Partial<AutoResponsePoli
     {
       orgId,
       name: "Auto-Contain Critical Malware",
-      description: "Automatically isolate hosts and block IPs when critical malware incidents are detected with high confidence",
+      description:
+        "Automatically isolate hosts and block IPs when critical malware incidents are detected with high confidence",
       triggerType: "incident_created",
       conditions: { minAlertCount: 3, categories: ["malware"], minSources: 2 },
       actions: [
@@ -129,9 +139,7 @@ export function generateDefaultPolicies(orgId: string): Partial<AutoResponsePoli
       description: "Disable user accounts when credential access or privilege escalation is detected",
       triggerType: "incident_created",
       conditions: { categories: ["credential_access", "privilege_escalation"] },
-      actions: [
-        { type: "disable_user", config: { reason: "Account compromise detected - automated lockout" } },
-      ],
+      actions: [{ type: "disable_user", config: { reason: "Account compromise detected - automated lockout" } }],
       confidenceThreshold: 0.92,
       severityFilter: ["critical"],
       requiresApproval: true,

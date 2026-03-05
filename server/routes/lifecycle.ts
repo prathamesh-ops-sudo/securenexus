@@ -15,8 +15,14 @@ import {
 import { getScalingReadinessReport, getStateRegistry, getPodId } from "../scaling-state";
 
 const VALID_DATA_TYPES: ReadonlySet<string> = new Set([
-  "alerts", "incidents", "audit_logs", "sli_metrics",
-  "jobs", "connector_job_runs", "outbox_events", "ingestion_logs",
+  "alerts",
+  "incidents",
+  "audit_logs",
+  "sli_metrics",
+  "jobs",
+  "connector_job_runs",
+  "outbox_events",
+  "ingestion_logs",
 ]);
 
 const VALID_PLAN_TIERS: ReadonlySet<string> = new Set(["free", "pro", "enterprise"]);
@@ -88,7 +94,9 @@ export function registerLifecycleRoutes(app: Express): void {
       const dataType = req.query.dataType as string;
 
       if (!isValidDataType(dataType)) {
-        return replyError(res, 400, [{ code: "INVALID_DATA_TYPE", message: "Invalid or missing dataType query param" }]);
+        return replyError(res, 400, [
+          { code: "INVALID_DATA_TYPE", message: "Invalid or missing dataType query param" },
+        ]);
       }
 
       const archives = await listColdStorageArchives(orgId, dataType);
@@ -99,25 +107,31 @@ export function registerLifecycleRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/lifecycle/rehydrate", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { dataType, batchId } = req.body;
+  app.post(
+    "/api/lifecycle/rehydrate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { dataType, batchId } = req.body;
 
-      if (!isValidDataType(dataType)) {
-        return replyError(res, 400, [{ code: "INVALID_DATA_TYPE", message: "Invalid or missing dataType" }]);
-      }
-      if (!batchId || typeof batchId !== "string") {
-        return replyError(res, 400, [{ code: "INVALID_BATCH_ID", message: "batchId is required" }]);
-      }
+        if (!isValidDataType(dataType)) {
+          return replyError(res, 400, [{ code: "INVALID_DATA_TYPE", message: "Invalid or missing dataType" }]);
+        }
+        if (!batchId || typeof batchId !== "string") {
+          return replyError(res, 400, [{ code: "INVALID_BATCH_ID", message: "batchId is required" }]);
+        }
 
-      const result = await rehydrateFromColdStorage(orgId, dataType, batchId);
-      return reply(res, result);
-    } catch (err) {
-      logger.child("lifecycle").error("Rehydration failed", { error: String(err) });
-      return replyError(res, 500, [{ code: "INTERNAL", message: "Rehydration failed" }]);
-    }
-  });
+        const result = await rehydrateFromColdStorage(orgId, dataType, batchId);
+        return reply(res, result);
+      } catch (err) {
+        logger.child("lifecycle").error("Rehydration failed", { error: String(err) });
+        return replyError(res, 500, [{ code: "INTERNAL", message: "Rehydration failed" }]);
+      }
+    },
+  );
 
   app.post("/api/lifecycle/delete", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
@@ -138,7 +152,9 @@ export function registerLifecycleRoutes(app: Express): void {
         reason,
         requestedBy: user?.id || "unknown",
         olderThanDays: typeof olderThanDays === "number" ? olderThanDays : undefined,
-        specificIds: Array.isArray(specificIds) ? specificIds.filter((id: unknown) => typeof id === "string") : undefined,
+        specificIds: Array.isArray(specificIds)
+          ? specificIds.filter((id: unknown) => typeof id === "string")
+          : undefined,
         dryRun: dryRun === true,
       });
       return reply(res, result);

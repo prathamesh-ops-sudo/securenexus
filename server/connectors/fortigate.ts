@@ -32,7 +32,12 @@ export const fortigatePlugin: ConnectorPlugin = {
     authType: "api_key",
     requiredFields: [
       { key: "baseUrl", label: "FortiGate URL", type: "url", placeholder: "https://your-fortigate:443" },
-      { key: "apiKey", label: "API Key (Access Token)", type: "password", placeholder: "FortiGate REST API access token" },
+      {
+        key: "apiKey",
+        label: "API Key (Access Token)",
+        type: "password",
+        placeholder: "FortiGate REST API access token",
+      },
     ],
     optionalFields: [],
     icon: "Flame",
@@ -42,7 +47,10 @@ export const fortigatePlugin: ConnectorPlugin = {
   async test(config: ConnectorConfig): Promise<ConnectorTestResult> {
     const start = Date.now();
     try {
-      const res = await httpRequest(`${config.baseUrl}/api/v2/cmdb/system/status?access_token=${encodeURIComponent(config.apiKey!)}`, {});
+      const res = await httpRequest(
+        `${config.baseUrl}/api/v2/cmdb/system/status?access_token=${encodeURIComponent(config.apiKey!)}`,
+        {},
+      );
       if (res.status >= 400) throw new Error(`FortiGate returned ${res.status}`);
       return { success: true, message: "Successfully connected to fortigate", latencyMs: Date.now() - start };
     } catch (err: unknown) {

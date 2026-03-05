@@ -44,7 +44,7 @@ export const proofpointPlugin: ConnectorPlugin = {
     try {
       const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
       const res = await httpRequest(`${config.baseUrl}/v2/siem/messages/delivered?sinceSeconds=60&format=JSON`, {
-        headers: { "Authorization": `Basic ${auth}` },
+        headers: { Authorization: `Basic ${auth}` },
       });
       if (res.status >= 400) throw new Error(`Proofpoint returned ${res.status}`);
       return { success: true, message: "Successfully connected to proofpoint", latencyMs: Date.now() - start };
@@ -55,7 +55,7 @@ export const proofpointPlugin: ConnectorPlugin = {
 
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
     const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
-    const headers: Record<string, string> = { "Authorization": `Basic ${auth}`, "Content-Type": "application/json" };
+    const headers: Record<string, string> = { Authorization: `Basic ${auth}`, "Content-Type": "application/json" };
     const sinceSeconds = since ? Math.floor((Date.now() - since.getTime()) / 1000) : 86400;
     const url = `${config.baseUrl}/v2/siem/messages/delivered?sinceSeconds=${sinceSeconds}&format=JSON`;
     const res = await httpRequest(url, { headers });

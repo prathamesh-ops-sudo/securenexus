@@ -3,7 +3,7 @@ import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./co
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(sev?: number | string): string {
-  const n = typeof sev === "string" ? parseInt(sev, 10) || 0 : (sev || 0);
+  const n = typeof sev === "string" ? parseInt(sev, 10) || 0 : sev || 0;
   if (n >= 5) return "critical";
   if (n >= 4) return "high";
   if (n >= 3) return "medium";
@@ -34,7 +34,7 @@ export const qualysPlugin: ConnectorPlugin = {
     try {
       const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
       const res = await httpRequest(`${config.baseUrl}/api/2.0/fo/activity_log/?action=list&output_format=JSON`, {
-        headers: { "Authorization": `Basic ${auth}`, "X-Requested-With": "fetch" },
+        headers: { Authorization: `Basic ${auth}`, "X-Requested-With": "fetch" },
       });
       if (res.status >= 400) throw new Error(`Qualys returned ${res.status}`);
       return { success: true, message: "Successfully connected to qualys", latencyMs: Date.now() - start };
@@ -46,7 +46,7 @@ export const qualysPlugin: ConnectorPlugin = {
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
     const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
     const headers: Record<string, string> = {
-      "Authorization": `Basic ${auth}`,
+      Authorization: `Basic ${auth}`,
       "Content-Type": "application/x-www-form-urlencoded",
       "X-Requested-With": "fetch",
     };
@@ -60,8 +60,14 @@ export const qualysPlugin: ConnectorPlugin = {
     });
     const text = await rawRes.text();
     let data;
-    try { data = JSON.parse(text); } catch { data = []; }
-    return Array.isArray(data) ? data : (data as Record<string, any>)?.data?.host_list_vm_detection_output?.response?.host_list?.host || [];
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = [];
+    }
+    return Array.isArray(data)
+      ? data
+      : (data as Record<string, any>)?.data?.host_list_vm_detection_output?.response?.host_list?.host || [];
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {

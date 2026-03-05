@@ -8,34 +8,69 @@ export function registerReportsRoutes(app: Express): void {
   app.get("/api/export/alerts", isAuthenticated, async (req, res) => {
     try {
       const allAlerts = await storage.getAlerts();
-      const csvHeader = "ID,Title,Severity,Status,Source,Category,MITRE Tactic,MITRE Technique,Source IP,Dest IP,Hostname,Detected At,Created At\n";
-      const csvRows = allAlerts.map(a =>
-        [a.id, `"${(a.title || '').replace(/"/g, '""')}"`, a.severity, a.status, a.source, a.category || '',
-         a.mitreTactic || '', a.mitreTechnique || '', a.sourceIp || '', a.destIp || '', a.hostname || '',
-         a.detectedAt?.toISOString() || '', a.createdAt?.toISOString() || ''
-        ].join(",")
-      ).join("\n");
+      const csvHeader =
+        "ID,Title,Severity,Status,Source,Category,MITRE Tactic,MITRE Technique,Source IP,Dest IP,Hostname,Detected At,Created At\n";
+      const csvRows = allAlerts
+        .map((a) =>
+          [
+            a.id,
+            `"${(a.title || "").replace(/"/g, '""')}"`,
+            a.severity,
+            a.status,
+            a.source,
+            a.category || "",
+            a.mitreTactic || "",
+            a.mitreTechnique || "",
+            a.sourceIp || "",
+            a.destIp || "",
+            a.hostname || "",
+            a.detectedAt?.toISOString() || "",
+            a.createdAt?.toISOString() || "",
+          ].join(","),
+        )
+        .join("\n");
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename=securenexus-alerts-${new Date().toISOString().split("T")[0]}.csv`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=securenexus-alerts-${new Date().toISOString().split("T")[0]}.csv`,
+      );
       res.send(csvHeader + csvRows);
-    } catch (error) { res.status(500).json({ message: "Failed to export alerts" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to export alerts" });
+    }
   });
 
   app.get("/api/export/incidents", isAuthenticated, async (req, res) => {
     try {
       const allIncidents = await storage.getIncidents();
-      const csvHeader = "ID,Title,Severity,Status,Priority,Alert Count,Assigned To,Escalated,MITRE Tactics,Created At,Updated At\n";
-      const csvRows = allIncidents.map(i =>
-        [i.id, `"${(i.title || '').replace(/"/g, '""')}"`, i.severity, i.status, i.priority || '',
-         i.alertCount || 0, i.assignedTo || '', i.escalated ? 'Yes' : 'No',
-         `"${(i.mitreTactics || []).join('; ')}"`,
-         i.createdAt?.toISOString() || '', i.updatedAt?.toISOString() || ''
-        ].join(",")
-      ).join("\n");
+      const csvHeader =
+        "ID,Title,Severity,Status,Priority,Alert Count,Assigned To,Escalated,MITRE Tactics,Created At,Updated At\n";
+      const csvRows = allIncidents
+        .map((i) =>
+          [
+            i.id,
+            `"${(i.title || "").replace(/"/g, '""')}"`,
+            i.severity,
+            i.status,
+            i.priority || "",
+            i.alertCount || 0,
+            i.assignedTo || "",
+            i.escalated ? "Yes" : "No",
+            `"${(i.mitreTactics || []).join("; ")}"`,
+            i.createdAt?.toISOString() || "",
+            i.updatedAt?.toISOString() || "",
+          ].join(","),
+        )
+        .join("\n");
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename=securenexus-incidents-${new Date().toISOString().split("T")[0]}.csv`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=securenexus-incidents-${new Date().toISOString().split("T")[0]}.csv`,
+      );
       res.send(csvHeader + csvRows);
-    } catch (error) { res.status(500).json({ message: "Failed to export incidents" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to export incidents" });
+    }
   });
 
   app.get("/api/export/incident/:id/report", isAuthenticated, async (req, res) => {
@@ -49,7 +84,9 @@ export function registerReportsRoutes(app: Express): void {
         incident: { ...incident, alerts: incidentAlerts, comments },
       };
       res.json(report);
-    } catch (error) { res.status(500).json({ message: "Failed to generate report" }); }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate report" });
+    }
   });
 
   app.get("/api/report-templates", isAuthenticated, async (req, res) => {
@@ -62,7 +99,8 @@ export function registerReportsRoutes(app: Express): void {
     const template = await storage.getReportTemplate(p(req.params.id));
     if (!template) return res.status(404).json({ message: "Template not found" });
     const user = req.user as any;
-    if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+    if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+      return res.status(403).json({ message: "Access denied" });
     res.json(template);
   });
 
@@ -74,7 +112,8 @@ export function registerReportsRoutes(app: Express): void {
       const template = await storage.createReportTemplate(data);
       res.status(201).json(template);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create report template" });
     }
   });
@@ -83,7 +122,8 @@ export function registerReportsRoutes(app: Express): void {
     const user = req.user as any;
     const existing = await storage.getReportTemplate(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Template not found" });
-    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+      return res.status(403).json({ message: "Access denied" });
     const { id: _id, orgId: _org, ...updateData } = req.body;
     const template = await storage.updateReportTemplate(p(req.params.id), updateData);
     res.json(template);
@@ -93,7 +133,8 @@ export function registerReportsRoutes(app: Express): void {
     const user = req.user as any;
     const existing = await storage.getReportTemplate(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Template not found" });
-    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+      return res.status(403).json({ message: "Access denied" });
     await storage.deleteReportTemplate(p(req.params.id));
     res.json({ success: true });
   });
@@ -108,7 +149,8 @@ export function registerReportsRoutes(app: Express): void {
     const schedule = await storage.getReportSchedule(p(req.params.id));
     if (!schedule) return res.status(404).json({ message: "Schedule not found" });
     const user = req.user as any;
-    if (schedule.orgId && user?.orgId && schedule.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+    if (schedule.orgId && user?.orgId && schedule.orgId !== user.orgId)
+      return res.status(403).json({ message: "Access denied" });
     res.json(schedule);
   });
 
@@ -121,13 +163,15 @@ export function registerReportsRoutes(app: Express): void {
       const data = insertReportScheduleSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
       const template = await storage.getReportTemplate(data.templateId);
       if (!template) return res.status(404).json({ message: "Template not found" });
-      if (template.orgId && user?.orgId && template.orgId !== user.orgId) return res.status(403).json({ message: "Template access denied" });
+      if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+        return res.status(403).json({ message: "Template access denied" });
       const schedule = await storage.createReportSchedule(data);
       await storage.updateReportSchedule(schedule.id, { nextRunAt });
       const updated = await storage.getReportSchedule(schedule.id);
       res.status(201).json(updated);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create report schedule" });
     }
   });
@@ -136,7 +180,8 @@ export function registerReportsRoutes(app: Express): void {
     const user = req.user as any;
     const existing = await storage.getReportSchedule(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Schedule not found" });
-    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+      return res.status(403).json({ message: "Access denied" });
     const { id: _id, orgId: _org, ...updateData } = req.body;
     if (updateData.cadence) {
       updateData.nextRunAt = calculateNextRunFromCadence(updateData.cadence);
@@ -149,7 +194,8 @@ export function registerReportsRoutes(app: Express): void {
     const user = req.user as any;
     const existing = await storage.getReportSchedule(p(req.params.id));
     if (!existing) return res.status(404).json({ message: "Schedule not found" });
-    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+    if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+      return res.status(403).json({ message: "Access denied" });
     await storage.deleteReportSchedule(p(req.params.id));
     res.json({ success: true });
   });
@@ -220,16 +266,75 @@ export function registerReportsRoutes(app: Express): void {
       const user = req.user as any;
       const orgId = getOrgId(req);
       const allTemplates = await storage.getReportTemplates(undefined);
-      if (allTemplates.some(t => t.isBuiltIn && t.orgId === orgId)) {
-        return res.json({ message: "Built-in templates already exist for this org", count: allTemplates.filter(t => t.isBuiltIn && t.orgId === orgId).length });
+      if (allTemplates.some((t) => t.isBuiltIn && t.orgId === orgId)) {
+        return res.json({
+          message: "Built-in templates already exist for this org",
+          count: allTemplates.filter((t) => t.isBuiltIn && t.orgId === orgId).length,
+        });
       }
       const builtIns = [
-        { name: "Weekly SOC KPI Report", description: "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution", reportType: "soc_kpi", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
-        { name: "Incident Summary Report", description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics", reportType: "incidents", format: "csv", dashboardRole: "analyst", isBuiltIn: true, orgId, createdBy: user?.id || null },
-        { name: "MITRE ATT&CK Coverage Report", description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework", reportType: "attack_coverage", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
-        { name: "Connector Health Report", description: "Status and performance metrics for all configured data connectors", reportType: "connector_health", format: "csv", dashboardRole: "soc_manager", isBuiltIn: true, orgId, createdBy: user?.id || null },
-        { name: "Executive Security Brief", description: "High-level security posture summary for executive leadership including risk trends and key metrics", reportType: "executive_summary", format: "json", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
-        { name: "Compliance Status Report", description: "Compliance framework coverage, data retention status, and DSAR request tracking", reportType: "compliance", format: "csv", dashboardRole: "ciso", isBuiltIn: true, orgId, createdBy: user?.id || null },
+        {
+          name: "Weekly SOC KPI Report",
+          description:
+            "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution",
+          reportType: "soc_kpi",
+          format: "csv",
+          dashboardRole: "soc_manager",
+          isBuiltIn: true,
+          orgId,
+          createdBy: user?.id || null,
+        },
+        {
+          name: "Incident Summary Report",
+          description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics",
+          reportType: "incidents",
+          format: "csv",
+          dashboardRole: "analyst",
+          isBuiltIn: true,
+          orgId,
+          createdBy: user?.id || null,
+        },
+        {
+          name: "MITRE ATT&CK Coverage Report",
+          description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework",
+          reportType: "attack_coverage",
+          format: "csv",
+          dashboardRole: "ciso",
+          isBuiltIn: true,
+          orgId,
+          createdBy: user?.id || null,
+        },
+        {
+          name: "Connector Health Report",
+          description: "Status and performance metrics for all configured data connectors",
+          reportType: "connector_health",
+          format: "csv",
+          dashboardRole: "soc_manager",
+          isBuiltIn: true,
+          orgId,
+          createdBy: user?.id || null,
+        },
+        {
+          name: "Executive Security Brief",
+          description:
+            "High-level security posture summary for executive leadership including risk trends and key metrics",
+          reportType: "executive_summary",
+          format: "json",
+          dashboardRole: "ciso",
+          isBuiltIn: true,
+          orgId,
+          createdBy: user?.id || null,
+        },
+        {
+          name: "Compliance Status Report",
+          description: "Compliance framework coverage, data retention status, and DSAR request tracking",
+          reportType: "compliance",
+          format: "csv",
+          dashboardRole: "ciso",
+          isBuiltIn: true,
+          orgId,
+          createdBy: user?.id || null,
+        },
       ];
       const created = [];
       for (const t of builtIns) {
@@ -238,9 +343,9 @@ export function registerReportsRoutes(app: Express): void {
       }
       res.status(201).json({ message: "Built-in templates created", count: created.length, templates: created });
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to seed report templates" });
     }
   });
-
 }

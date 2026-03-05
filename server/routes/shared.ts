@@ -14,9 +14,27 @@ import {
 import { logger } from "../logger";
 import { createEventFingerprint } from "../outbox-processor";
 import { validateAndLogEvent } from "../event-catalog";
-import { validateWebhookUrl, isCircuitOpen, isWebhookRateLimited, recordDeliverySuccess, recordDeliveryFailure, secureOutboundFetch, redactDeliveryLog } from "../outbound-security";
+import {
+  validateWebhookUrl,
+  isCircuitOpen,
+  isWebhookRateLimited,
+  recordDeliverySuccess,
+  recordDeliveryFailure,
+  secureOutboundFetch,
+  redactDeliveryLog,
+} from "../outbound-security";
 
-export { storage, logger, ERROR_CODES, reply, replyError, replyUnauthenticated, replyForbidden, replyRateLimit, randomBytes };
+export {
+  storage,
+  logger,
+  ERROR_CODES,
+  reply,
+  replyError,
+  replyUnauthenticated,
+  replyForbidden,
+  replyRateLimit,
+  randomBytes,
+};
 export type { ApiMeta };
 
 export const generalLimiter = rateLimit({
@@ -64,7 +82,7 @@ export function sendEnvelope(
     status?: number;
     meta?: ApiMeta;
     errors?: { code: string; message: string; details?: any }[] | null;
-  }
+  },
 ) {
   const status = options?.status ?? 200;
   const meta: ApiMeta = options?.meta ?? {};
@@ -99,7 +117,9 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
   if (!apiKey.isActive) {
     return replyForbidden(res, "API key has been revoked.", ERROR_CODES.API_KEY_REVOKED);
   }
-  storage.updateApiKeyLastUsed(apiKey.id).catch((err) => logger.child("routes").warn("Failed to update API key last used", { error: String(err) }));
+  storage
+    .updateApiKeyLastUsed(apiKey.id)
+    .catch((err) => logger.child("routes").warn("Failed to update API key last used", { error: String(err) }));
   (req as any).apiKey = apiKey;
   (req as any).orgId = apiKey.orgId;
   next();
@@ -123,8 +143,12 @@ export function verifyWebhookSignature(req: Request, res: Response, next: NextFu
 
   try {
     const rawBodyBuf = (req as any).rawBody;
-    const rawBody = rawBodyBuf ? (Buffer.isBuffer(rawBodyBuf) ? rawBodyBuf.toString("utf8") : String(rawBodyBuf)) : JSON.stringify(req.body);
-    const timestamp = req.headers["x-webhook-timestamp"] as string || "";
+    const rawBody = rawBodyBuf
+      ? Buffer.isBuffer(rawBodyBuf)
+        ? rawBodyBuf.toString("utf8")
+        : String(rawBodyBuf)
+      : JSON.stringify(req.body);
+    const timestamp = (req.headers["x-webhook-timestamp"] as string) || "";
     const payload = timestamp ? `${timestamp}.${rawBody}` : rawBody;
     const expected = createHmac("sha256", apiKey.webhookSecret).update(payload).digest("hex");
     const sig = signature.startsWith("sha256=") ? signature.slice(7) : signature;
@@ -163,26 +187,46 @@ export async function dispatchWebhookEvent(orgId: string | null, event: string, 
       (async () => {
         const urlCheck = validateWebhookUrl(webhook.url);
         if (!urlCheck.valid) {
-          logger.child("webhook").warn("SSRF blocked: webhook URL rejected", { webhookId: webhook.id, reason: urlCheck.reason });
-          await storage.createOutboundWebhookLog({
-            webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
-            responseStatus: 0, responseBody: `Blocked: ${urlCheck.reason}`, success: false,
-          }).catch(() => {});
+          logger
+            .child("webhook")
+            .warn("SSRF blocked: webhook URL rejected", { webhookId: webhook.id, reason: urlCheck.reason });
+          await storage
+            .createOutboundWebhookLog({
+              webhookId: webhook.id,
+              event,
+              payload: redactDeliveryLog(payload) as Record<string, unknown>,
+              responseStatus: 0,
+              responseBody: `Blocked: ${urlCheck.reason}`,
+              success: false,
+            })
+            .catch(() => {});
           return;
         }
         if (isCircuitOpen(webhook.id)) {
           logger.child("webhook").warn("Circuit breaker open — skipping delivery", { webhookId: webhook.id });
-          await storage.createOutboundWebhookLog({
-            webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
-            responseStatus: 0, responseBody: "Circuit breaker open", success: false,
-          }).catch(() => {});
+          await storage
+            .createOutboundWebhookLog({
+              webhookId: webhook.id,
+              event,
+              payload: redactDeliveryLog(payload) as Record<string, unknown>,
+              responseStatus: 0,
+              responseBody: "Circuit breaker open",
+              success: false,
+            })
+            .catch(() => {});
           return;
         }
         if (isWebhookRateLimited(webhook.id)) {
-          await storage.createOutboundWebhookLog({
-            webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
-            responseStatus: 429, responseBody: "Rate limited", success: false,
-          }).catch(() => {});
+          await storage
+            .createOutboundWebhookLog({
+              webhookId: webhook.id,
+              event,
+              payload: redactDeliveryLog(payload) as Record<string, unknown>,
+              responseStatus: 429,
+              responseBody: "Rate limited",
+              success: false,
+            })
+            .catch(() => {});
           return;
         }
         const body = JSON.stringify(payload);
@@ -200,10 +244,16 @@ export async function dispatchWebhookEvent(orgId: string | null, event: string, 
         } else {
           recordDeliveryFailure(webhook.id);
         }
-        await storage.createOutboundWebhookLog({
-          webhookId: webhook.id, event, payload: redactDeliveryLog(payload) as Record<string, unknown>,
-          responseStatus: result.statusCode, responseBody: result.responseBody.slice(0, 2000), success: result.success,
-        }).catch((err) => logger.child("webhook").warn("Failed to log outbound webhook", { error: String(err) }));
+        await storage
+          .createOutboundWebhookLog({
+            webhookId: webhook.id,
+            event,
+            payload: redactDeliveryLog(payload) as Record<string, unknown>,
+            responseStatus: result.statusCode,
+            responseBody: result.responseBody.slice(0, 2000),
+            success: result.success,
+          })
+          .catch((err) => logger.child("webhook").warn("Failed to log outbound webhook", { error: String(err) }));
       })().catch((err) => logger.child("webhook").warn("Webhook dispatch error", { error: String(err) }));
     }
   } catch (err) {
@@ -234,7 +284,9 @@ export async function publishOutboxEvent(
       maxAttempts: 5,
     });
   } catch (err) {
-    logger.child("outbox").error(`Failed to publish ${eventType} for ${aggregateType}/${aggregateId}`, { error: String(err) });
+    logger
+      .child("outbox")
+      .error(`Failed to publish ${eventType} for ${aggregateType}/${aggregateId}`, { error: String(err) });
   }
 }
 
@@ -245,36 +297,56 @@ export function idempotencyCheck(req: Request, res: Response, next: NextFunction
   const orgId = getOrgId(req);
   const endpoint = req.originalUrl;
 
-  storage.getIdempotencyKey(orgId, idempotencyKey, endpoint).then((existing) => {
-    if (existing && existing.expiresAt && new Date(existing.expiresAt) > new Date()) {
-      const cached = existing.responseBody as any;
-      return res.status(existing.responseStatus || 200).json(cached);
-    }
+  storage
+    .getIdempotencyKey(orgId, idempotencyKey, endpoint)
+    .then((existing) => {
+      if (existing && existing.expiresAt && new Date(existing.expiresAt) > new Date()) {
+        const cached = existing.responseBody as any;
+        return res.status(existing.responseStatus || 200).json(cached);
+      }
 
-    const originalJson = res.json.bind(res);
-    res.json = function (body: any) {
-      storage.createIdempotencyKey({
-        orgId,
-        idempotencyKey,
-        endpoint,
-        method: req.method,
-        responseStatus: res.statusCode,
-        responseBody: body,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      }).catch((err) => logger.child("idempotency").warn("Failed to store idempotency key", { key: idempotencyKey, endpoint, error: String(err) }));
-      return originalJson(body);
-    } as any;
-    next();
-  }).catch((err) => {
-    logger.child("idempotency").warn("Failed to check idempotency key", { key: idempotencyKey, endpoint, error: String(err) });
-    next();
-  });
+      const originalJson = res.json.bind(res);
+      res.json = function (body: any) {
+        storage
+          .createIdempotencyKey({
+            orgId,
+            idempotencyKey,
+            endpoint,
+            method: req.method,
+            responseStatus: res.statusCode,
+            responseBody: body,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          })
+          .catch((err) =>
+            logger
+              .child("idempotency")
+              .warn("Failed to store idempotency key", { key: idempotencyKey, endpoint, error: String(err) }),
+          );
+        return originalJson(body);
+      } as any;
+      next();
+    })
+    .catch((err) => {
+      logger
+        .child("idempotency")
+        .warn("Failed to check idempotency key", { key: idempotencyKey, endpoint, error: String(err) });
+      next();
+    });
 }
 
 export function sanitizeConfig(config: any): any {
   if (!config) return config;
   const safe = { ...config };
-  const secretFields = ["apiKey", "apiToken", "clientSecret", "password", "secretAccessKey", "webhookSecret", "token", "siteToken"];
+  const secretFields = [
+    "apiKey",
+    "apiToken",
+    "clientSecret",
+    "password",
+    "secretAccessKey",
+    "webhookSecret",
+    "token",
+    "siteToken",
+  ];
   for (const field of secretFields) {
     if (safe[field]) safe[field] = "••••••••";
   }
@@ -284,12 +356,12 @@ export function sanitizeConfig(config: any): any {
 export function validateFeedUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
     const hostname = parsed.hostname.toLowerCase();
-    if (hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '127.0.0.1') return false;
-    if (hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('169.254.')) return false;
+    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname === "127.0.0.1") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("169.254.")) return false;
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
-    if (hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd')) return false;
+    if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd")) return false;
     return true;
   } catch {
     return false;
@@ -299,11 +371,23 @@ export function validateFeedUrl(url: string): boolean {
 export function calculateNextRunFromCadence(cadence: string): Date {
   const now = new Date();
   switch (cadence) {
-    case "daily": return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    case "weekly": return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    case "biweekly": return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    case "monthly": { const d = new Date(now); d.setMonth(d.getMonth() + 1); return d; }
-    case "quarterly": { const d = new Date(now); d.setMonth(d.getMonth() + 3); return d; }
-    default: return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case "daily":
+      return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    case "weekly":
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case "biweekly":
+      return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    case "monthly": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() + 1);
+      return d;
+    }
+    case "quarterly": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() + 3);
+      return d;
+    }
+    default:
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   }
 }

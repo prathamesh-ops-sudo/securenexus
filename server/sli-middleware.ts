@@ -25,7 +25,7 @@ export function sliMiddleware(req: any, res: any, next: any): void {
   res.on("finish", () => {
     const latency = Date.now() - start;
 
-    const routePath = (req.route && typeof req.route.path === "string") ? req.route.path : undefined;
+    const routePath = req.route && typeof req.route.path === "string" ? req.route.path : undefined;
     const baseUrl = typeof req.baseUrl === "string" ? req.baseUrl : "";
     const endpoint = routePath ? `${baseUrl}${routePath}` : req.path;
 
@@ -42,10 +42,10 @@ export function sliMiddleware(req: any, res: any, next: any): void {
   });
 
   const originalEnd = res.end;
-  res.end = function(...args: any[]) {
+  res.end = function (...args: any[]) {
     return originalEnd.apply(this, args);
   };
-  
+
   next();
 }
 
@@ -59,33 +59,45 @@ function percentile(arr: number[], p: number): number {
 async function flushMetrics(): Promise<void> {
   const now = new Date();
   const entries: Array<{ service: string; metric: string; value: number; labels: any }> = [];
-  
+
   for (const [key, bucket] of Array.from(buckets.entries())) {
     if (bucket.total === 0) continue;
     const [service, method, endpoint] = key.split("::");
     const labels = { method, endpoint };
-    
+
     entries.push({ service, metric: "latency_p50", value: percentile(bucket.latencies, 50), labels });
     entries.push({ service, metric: "latency_p95", value: percentile(bucket.latencies, 95), labels });
     entries.push({ service, metric: "latency_p99", value: percentile(bucket.latencies, 99), labels });
-    entries.push({ service, metric: "error_rate", value: bucket.total > 0 ? (bucket.errors / bucket.total) * 100 : 0, labels });
+    entries.push({
+      service,
+      metric: "error_rate",
+      value: bucket.total > 0 ? (bucket.errors / bucket.total) * 100 : 0,
+      labels,
+    });
     entries.push({ service, metric: "throughput", value: bucket.total, labels });
-    entries.push({ service, metric: "availability", value: bucket.total > 0 ? ((bucket.total - bucket.errors) / bucket.total) * 100 : 100, labels });
+    entries.push({
+      service,
+      metric: "availability",
+      value: bucket.total > 0 ? ((bucket.total - bucket.errors) / bucket.total) * 100 : 100,
+      labels,
+    });
   }
-  
+
   // Clear buckets
   buckets.clear();
-  
+
   if (entries.length === 0) return;
-  
+
   try {
-    await storage.createSliMetricsBatch(entries.map(e => ({
-      service: e.service,
-      metric: e.metric,
-      value: e.value,
-      labels: e.labels,
-      recordedAt: now,
-    })));
+    await storage.createSliMetricsBatch(
+      entries.map((e) => ({
+        service: e.service,
+        metric: e.metric,
+        value: e.value,
+        labels: e.labels,
+        recordedAt: now,
+      })),
+    );
   } catch (err) {
     logger.child("sli-middleware").error("Failed to flush metrics:", { error: String(err) });
   }
@@ -94,7 +106,7 @@ async function flushMetrics(): Promise<void> {
 export function startSliCollection(): void {
   if (flushTimer) return;
   flushTimer = setInterval(() => {
-    flushMetrics().catch(err => logger.child("sli-middleware").error("Flush error:", { error: String(err) }));
+    flushMetrics().catch((err) => logger.child("sli-middleware").error("Flush error:", { error: String(err) }));
   }, FLUSH_INTERVAL_MS);
   logger.child("sli-middleware").info("Metrics collection started - flushing every 60s");
 }
@@ -106,16 +118,18 @@ export function stopSliCollection(): void {
   }
 }
 
-export async function evaluateSlos(): Promise<Array<{
-  sloId: string;
-  service: string;
-  metric: string;
-  endpoint: string;
-  target: number;
-  actual: number;
-  breached: boolean;
-  description: string | null;
-}>> {
+export async function evaluateSlos(): Promise<
+  Array<{
+    sloId: string;
+    service: string;
+    metric: string;
+    endpoint: string;
+    target: number;
+    actual: number;
+    breached: boolean;
+    description: string | null;
+  }>
+> {
   const targets = await storage.getSloTargets();
   const results: Array<{
     sloId: string;
@@ -127,9 +141,9 @@ export async function evaluateSlos(): Promise<Array<{
     breached: boolean;
     description: string | null;
   }> = [];
-  
+
   const now = new Date();
-  
+
   for (const slo of targets) {
     const windowStart = new Date(now.getTime() - slo.windowMinutes * 60 * 1000);
     const metrics = await storage.getSliMetrics(
@@ -139,7 +153,7 @@ export async function evaluateSlos(): Promise<Array<{
       now,
       slo.endpoint && slo.endpoint !== "*" ? { endpoint: slo.endpoint } : undefined,
     );
-    
+
     if (metrics.length === 0) {
       results.push({
         sloId: slo.id,
@@ -153,10 +167,10 @@ export async function evaluateSlos(): Promise<Array<{
       });
       continue;
     }
-    
+
     const avg = metrics.reduce((sum, m) => sum + m.value, 0) / metrics.length;
     const breached = slo.operator === "gte" ? avg < slo.target : avg > slo.target;
-    
+
     results.push({
       sloId: slo.id,
       service: slo.service,
@@ -168,6 +182,6 @@ export async function evaluateSlos(): Promise<Array<{
       description: slo.description,
     });
   }
-  
+
   return results;
 }

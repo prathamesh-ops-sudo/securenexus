@@ -44,17 +44,17 @@ const COST_TABLE: Record<string, { input: number; output: number }> = {
   "anthropic.claude-3-sonnet": { input: 0.000003, output: 0.000015 },
   "anthropic.claude-3-haiku": { input: 0.00000025, output: 0.00000125 },
   "default-triage": { input: 0.00000015, output: 0.0000002 },
-  "default": { input: 0.000002, output: 0.000006 },
+  default: { input: 0.000002, output: 0.000006 },
 };
 
 const TRIAGE_RATES = { input: 0.00000015, output: 0.0000002 };
 
 function estimateCost(modelId: string, inputTokens: number, outputTokens: number, tier?: string): number {
   if (tier === "triage") {
-    return (inputTokens * TRIAGE_RATES.input) + (outputTokens * TRIAGE_RATES.output);
+    return inputTokens * TRIAGE_RATES.input + outputTokens * TRIAGE_RATES.output;
   }
   const rates = COST_TABLE[modelId] || COST_TABLE["default"];
-  return (inputTokens * rates.input) + (outputTokens * rates.output);
+  return inputTokens * rates.input + outputTokens * rates.output;
 }
 
 interface CircuitState {
@@ -110,7 +110,7 @@ function buildCacheKey(opts: ModelInvokeOptions): string {
   let hash = 0;
   for (let i = 0; i < raw.length; i++) {
     const ch = raw.charCodeAt(i);
-    hash = ((hash << 5) - hash) + ch;
+    hash = (hash << 5) - hash + ch;
     hash |= 0;
   }
   return `mc:${hash}`;
@@ -219,7 +219,10 @@ function classifyModelError(error: unknown): { retryable: boolean; message: stri
     return { retryable: true, message: "Rate limit exceeded on model endpoint. Retry after a brief delay." };
   }
   if (name === "AccessDeniedException" || name === "UnrecognizedClientException") {
-    return { retryable: false, message: "AWS credentials are invalid or lack model access. Verify IAM role permissions." };
+    return {
+      retryable: false,
+      message: "AWS credentials are invalid or lack model access. Verify IAM role permissions.",
+    };
   }
   if (name === "ResourceNotFoundException" || name === "ModelNotReadyException") {
     return { retryable: false, message: `Model ${msg} is not available. Enable it in the AWS console.` };
@@ -269,9 +272,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
 
     const start = Date.now();
     try {
-      const text = opts.backend === "sagemaker"
-        ? await invokeSageMakerRaw(opts)
-        : await invokeBedrockRaw(opts);
+      const text = opts.backend === "sagemaker" ? await invokeSageMakerRaw(opts) : await invokeBedrockRaw(opts);
 
       const latencyMs = Date.now() - start;
       const inputTokensEstimate = Math.ceil((opts.systemPrompt.length + opts.userMessage.length) / 4);
@@ -328,7 +329,10 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
   throw lastError || new Error("Model invocation failed after retries");
 }
 
-export function getCircuitBreakerStatus(): Record<string, { failures: number; isOpen: boolean; resetAt: string | null }> {
+export function getCircuitBreakerStatus(): Record<
+  string,
+  { failures: number; isOpen: boolean; resetAt: string | null }
+> {
   const result: Record<string, { failures: number; isOpen: boolean; resetAt: string | null }> = {};
   for (const [key, state] of Array.from(circuitBreakers.entries())) {
     result[key] = {

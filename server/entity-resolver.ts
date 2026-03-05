@@ -1,5 +1,14 @@
 import { db } from "./db";
-import { entities, entityAliases, alertEntities, alerts, type Alert, type Entity, type EntityAlias, type InsertEntity } from "@shared/schema";
+import {
+  entities,
+  entityAliases,
+  alertEntities,
+  alerts,
+  type Alert,
+  type Entity,
+  type EntityAlias,
+  type InsertEntity,
+} from "@shared/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { logger } from "./logger";
 
@@ -71,13 +80,15 @@ export async function resolveAndLinkEntities(alert: Alert): Promise<Entity[]> {
   for (const ext of extracted) {
     const orgId = alert.orgId || null;
 
-    let existing = await db.select().from(entities)
+    let existing = await db
+      .select()
+      .from(entities)
       .where(
         and(
           orgId ? eq(entities.orgId, orgId) : sql`${entities.orgId} IS NULL`,
           eq(entities.type, ext.type),
-          eq(entities.value, ext.value.toLowerCase())
-        )
+          eq(entities.value, ext.value.toLowerCase()),
+        ),
       )
       .limit(1);
 
@@ -91,7 +102,8 @@ export async function resolveAndLinkEntities(alert: Alert): Promise<Entity[]> {
     let entity: Entity;
     let isNewEntity = false;
     if (existing.length > 0) {
-      const [updated] = await db.update(entities)
+      const [updated] = await db
+        .update(entities)
         .set({
           lastSeenAt: new Date(),
           alertCount: sql`${entities.alertCount} + 1`,
@@ -101,7 +113,8 @@ export async function resolveAndLinkEntities(alert: Alert): Promise<Entity[]> {
         .returning();
       entity = updated;
     } else {
-      const [created] = await db.insert(entities)
+      const [created] = await db
+        .insert(entities)
         .values({
           orgId,
           type: ext.type,
@@ -127,13 +140,10 @@ export async function resolveAndLinkEntities(alert: Alert): Promise<Entity[]> {
 
     resolvedEntities.push(entity);
 
-    const existingLink = await db.select().from(alertEntities)
-      .where(
-        and(
-          eq(alertEntities.alertId, alert.id),
-          eq(alertEntities.entityId, entity.id)
-        )
-      )
+    const existingLink = await db
+      .select()
+      .from(alertEntities)
+      .where(and(eq(alertEntities.alertId, alert.id), eq(alertEntities.entityId, entity.id)))
       .limit(1);
 
     if (existingLink.length === 0) {
@@ -188,7 +198,9 @@ export async function getEntitiesForAlert(alertId: string): Promise<(Entity & { 
   return results;
 }
 
-export async function getEntitiesForIncident(incidentId: string): Promise<(Entity & { role: string; alertId: string })[]> {
+export async function getEntitiesForIncident(
+  incidentId: string,
+): Promise<(Entity & { role: string; alertId: string })[]> {
   const results = await db
     .select({
       id: entities.id,
@@ -213,7 +225,11 @@ export async function getEntitiesForIncident(incidentId: string): Promise<(Entit
   return results;
 }
 
-export async function findRelatedAlertsByEntity(alertId: string, orgId?: string | null, limit: number = 20): Promise<{ alertId: string; sharedEntities: string[] }[]> {
+export async function findRelatedAlertsByEntity(
+  alertId: string,
+  orgId?: string | null,
+  limit: number = 20,
+): Promise<{ alertId: string; sharedEntities: string[] }[]> {
   const alertEntityRows = await db
     .select({ entityId: alertEntities.entityId })
     .from(alertEntities)
@@ -221,7 +237,7 @@ export async function findRelatedAlertsByEntity(alertId: string, orgId?: string 
 
   if (alertEntityRows.length === 0) return [];
 
-  const entityIds = alertEntityRows.map(r => r.entityId);
+  const entityIds = alertEntityRows.map((r) => r.entityId);
 
   const related = await db
     .select({
@@ -235,8 +251,8 @@ export async function findRelatedAlertsByEntity(alertId: string, orgId?: string 
       and(
         inArray(alertEntities.entityId, entityIds),
         sql`${alertEntities.alertId} != ${alertId}`,
-        orgId ? eq(entities.orgId, orgId) : sql`${entities.orgId} IS NULL`
-      )
+        orgId ? eq(entities.orgId, orgId) : sql`${entities.orgId} IS NULL`,
+      ),
     )
     .limit(limit * 5);
 
@@ -271,45 +287,52 @@ export async function resolveEntityByAlias(aliasValue: string, orgId?: string | 
     .where(
       and(
         eq(entityAliases.aliasValue, aliasValue.toLowerCase()),
-        orgId ? eq(entities.orgId, orgId) : sql`${entities.orgId} IS NULL`
-      )
+        orgId ? eq(entities.orgId, orgId) : sql`${entities.orgId} IS NULL`,
+      ),
     )
     .limit(1);
   return result.length > 0 ? result[0].entity : null;
 }
 
-export async function addEntityAlias(entityId: string, aliasType: string, aliasValue: string, source?: string): Promise<EntityAlias> {
-  const existing = await db.select().from(entityAliases)
-    .where(and(
-      eq(entityAliases.entityId, entityId),
-      eq(entityAliases.aliasValue, aliasValue.toLowerCase())
-    ))
+export async function addEntityAlias(
+  entityId: string,
+  aliasType: string,
+  aliasValue: string,
+  source?: string,
+): Promise<EntityAlias> {
+  const existing = await db
+    .select()
+    .from(entityAliases)
+    .where(and(eq(entityAliases.entityId, entityId), eq(entityAliases.aliasValue, aliasValue.toLowerCase())))
     .limit(1);
   if (existing.length > 0) return existing[0];
 
-  const [alias] = await db.insert(entityAliases).values({
-    entityId,
-    aliasType,
-    aliasValue: aliasValue.toLowerCase(),
-    source: source || "auto",
-  }).returning();
+  const [alias] = await db
+    .insert(entityAliases)
+    .values({
+      entityId,
+      aliasType,
+      aliasValue: aliasValue.toLowerCase(),
+      source: source || "auto",
+    })
+    .returning();
   return alias;
 }
 
 export async function mergeEntities(targetId: string, sourceId: string): Promise<Entity> {
   return await db.transaction(async (tx) => {
-    await tx.update(alertEntities)
-      .set({ entityId: targetId })
-      .where(eq(alertEntities.entityId, sourceId));
+    await tx.update(alertEntities).set({ entityId: targetId }).where(eq(alertEntities.entityId, sourceId));
 
-    await tx.update(entityAliases)
-      .set({ entityId: targetId })
-      .where(eq(entityAliases.entityId, sourceId));
+    await tx.update(entityAliases).set({ entityId: targetId }).where(eq(entityAliases.entityId, sourceId));
 
     const [sourceEntity] = await tx.select().from(entities).where(eq(entities.id, sourceId)).limit(1);
     if (sourceEntity) {
-      const existingAlias = await tx.select().from(entityAliases)
-        .where(and(eq(entityAliases.entityId, targetId), eq(entityAliases.aliasValue, sourceEntity.value.toLowerCase())))
+      const existingAlias = await tx
+        .select()
+        .from(entityAliases)
+        .where(
+          and(eq(entityAliases.entityId, targetId), eq(entityAliases.aliasValue, sourceEntity.value.toLowerCase())),
+        )
         .limit(1);
       if (existingAlias.length === 0) {
         await tx.insert(entityAliases).values({
@@ -321,7 +344,8 @@ export async function mergeEntities(targetId: string, sourceId: string): Promise
       }
     }
 
-    const [updated] = await tx.update(entities)
+    const [updated] = await tx
+      .update(entities)
       .set({
         alertCount: sql`(SELECT COUNT(DISTINCT alert_id) FROM alert_entities WHERE entity_id = ${targetId})`,
         riskScore: sql`GREATEST(${entities.riskScore}, COALESCE((SELECT risk_score FROM entities WHERE id = ${sourceId}), 0))`,
@@ -337,7 +361,8 @@ export async function mergeEntities(targetId: string, sourceId: string): Promise
 }
 
 export async function updateEntityMetadata(entityId: string, metadata: Record<string, any>): Promise<Entity> {
-  const [updated] = await db.update(entities)
+  const [updated] = await db
+    .update(entities)
     .set({
       metadata: sql`COALESCE(${entities.metadata}, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb`,
     })
@@ -347,26 +372,27 @@ export async function updateEntityMetadata(entityId: string, metadata: Record<st
 }
 
 export async function getEntityAliases(entityId: string): Promise<EntityAlias[]> {
-  return db.select().from(entityAliases)
-    .where(eq(entityAliases.entityId, entityId))
-    .orderBy(entityAliases.createdAt);
+  return db.select().from(entityAliases).where(eq(entityAliases.entityId, entityId)).orderBy(entityAliases.createdAt);
 }
 
-export async function getEntityRelationships(entityId: string): Promise<{
-  relatedEntityId: string;
-  relatedEntityType: string;
-  relatedEntityValue: string;
-  relatedEntityRiskScore: number;
-  sharedAlertCount: number;
-  relationship: string;
-}[]> {
-  const alertRows = await db.select({ alertId: alertEntities.alertId })
+export async function getEntityRelationships(entityId: string): Promise<
+  {
+    relatedEntityId: string;
+    relatedEntityType: string;
+    relatedEntityValue: string;
+    relatedEntityRiskScore: number;
+    sharedAlertCount: number;
+    relationship: string;
+  }[]
+> {
+  const alertRows = await db
+    .select({ alertId: alertEntities.alertId })
     .from(alertEntities)
     .where(eq(alertEntities.entityId, entityId));
 
   if (alertRows.length === 0) return [];
 
-  const alertIds = alertRows.map(r => r.alertId);
+  const alertIds = alertRows.map((r) => r.alertId);
 
   const related = await db
     .select({
@@ -379,20 +405,18 @@ export async function getEntityRelationships(entityId: string): Promise<{
     })
     .from(alertEntities)
     .innerJoin(entities, eq(alertEntities.entityId, entities.id))
-    .where(
-      and(
-        inArray(alertEntities.alertId, alertIds),
-        sql`${alertEntities.entityId} != ${entityId}`
-      )
-    );
+    .where(and(inArray(alertEntities.alertId, alertIds), sql`${alertEntities.entityId} != ${entityId}`));
 
-  const entityMap = new Map<string, {
-    type: string;
-    value: string;
-    riskScore: number;
-    alertIds: Set<string>;
-    roles: Set<string>;
-  }>();
+  const entityMap = new Map<
+    string,
+    {
+      type: string;
+      value: string;
+      riskScore: number;
+      alertIds: Set<string>;
+      roles: Set<string>;
+    }
+  >();
 
   for (const r of related) {
     const existing = entityMap.get(r.entityId);
@@ -430,25 +454,27 @@ function inferRelationship(roles: Set<string>): string {
   return "co_occurred";
 }
 
-export async function getEntityGraphWithEdges(orgId?: string, limit: number = 80): Promise<{
+export async function getEntityGraphWithEdges(
+  orgId?: string,
+  limit: number = 80,
+): Promise<{
   nodes: (Entity & { connections: number })[];
   edges: { source: string; target: string; weight: number; relationship: string }[];
 }> {
   const conditions = orgId ? eq(entities.orgId, orgId) : undefined;
-  const topEntities = await db.select().from(entities)
-    .where(conditions)
-    .orderBy(desc(entities.riskScore))
-    .limit(limit);
+  const topEntities = await db.select().from(entities).where(conditions).orderBy(desc(entities.riskScore)).limit(limit);
 
   if (topEntities.length === 0) return { nodes: [], edges: [] };
 
-  const entityIds = topEntities.map(e => e.id);
+  const entityIds = topEntities.map((e) => e.id);
 
-  const links = await db.select({
-    entityId: alertEntities.entityId,
-    alertId: alertEntities.alertId,
-    role: alertEntities.role,
-  }).from(alertEntities)
+  const links = await db
+    .select({
+      entityId: alertEntities.entityId,
+      alertId: alertEntities.alertId,
+      role: alertEntities.role,
+    })
+    .from(alertEntities)
     .where(inArray(alertEntities.entityId, entityIds));
 
   const alertToEntities = new Map<string, { entityId: string; role: string }[]>();
@@ -491,7 +517,7 @@ export async function getEntityGraphWithEdges(orgId?: string, limit: number = 80
     };
   });
 
-  const nodes = topEntities.map(e => ({
+  const nodes = topEntities.map((e) => ({
     ...e,
     connections: connectionCount.get(e.id) || 0,
   }));
@@ -508,5 +534,5 @@ export async function getEntityAlerts(entityId: string): Promise<Alert[]> {
     .orderBy(desc(alerts.createdAt))
     .limit(50);
 
-  return results.map(r => r.alert);
+  return results.map((r) => r.alert);
 }
