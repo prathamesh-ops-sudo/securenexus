@@ -153,14 +153,16 @@ export async function cacheGetOrLoad<T>(
   const existing = inflightRequests.get(key) as Promise<T> | undefined;
   if (existing) return existing;
 
-  const promise = loader().then((result) => {
-    cacheSet(key, result, ttlMs);
-    inflightRequests.delete(key);
-    return result;
-  }).catch((err) => {
-    inflightRequests.delete(key);
-    throw err;
-  });
+  const promise = loader()
+    .then((result) => {
+      cacheSet(key, result, ttlMs);
+      inflightRequests.delete(key);
+      return result;
+    })
+    .catch((err) => {
+      inflightRequests.delete(key);
+      throw err;
+    });
 
   inflightRequests.set(key, promise);
   return promise;

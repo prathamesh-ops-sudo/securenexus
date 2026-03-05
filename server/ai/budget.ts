@@ -41,14 +41,19 @@ export function setOrgBudget(orgId: string, budgetUsd: number, invocationCap: nu
 }
 
 function getOrgConfig(orgId: string): OrgBudgetConfig {
-  return orgBudgetConfigs.get(orgId) || { dailyBudgetUsd: DEFAULT_DAILY_BUDGET_USD, dailyInvocationCap: DEFAULT_DAILY_INVOCATION_CAP };
+  return (
+    orgBudgetConfigs.get(orgId) || {
+      dailyBudgetUsd: DEFAULT_DAILY_BUDGET_USD,
+      dailyInvocationCap: DEFAULT_DAILY_INVOCATION_CAP,
+    }
+  );
 }
 
 function getOrCreateState(orgId: string): OrgBudgetState {
   let state = orgBudgets.get(orgId);
   const now = Date.now();
 
-  if (!state || (now - state.windowStart) > BUDGET_WINDOW_MS) {
+  if (!state || now - state.windowStart > BUDGET_WINDOW_MS) {
     state = {
       totalCostUsd: 0,
       totalInputTokens: 0,
@@ -69,12 +74,22 @@ export function checkBudget(orgId: string): { allowed: boolean; reason?: string 
 
   if (state.totalCostUsd >= budgetConfig.dailyBudgetUsd) {
     log.warn("AI budget exceeded", { orgId, spent: state.totalCostUsd, limit: budgetConfig.dailyBudgetUsd });
-    return { allowed: false, reason: `Daily AI spend limit of $${budgetConfig.dailyBudgetUsd.toFixed(2)} reached ($${state.totalCostUsd.toFixed(4)} used)` };
+    return {
+      allowed: false,
+      reason: `Daily AI spend limit of $${budgetConfig.dailyBudgetUsd.toFixed(2)} reached ($${state.totalCostUsd.toFixed(4)} used)`,
+    };
   }
 
   if (state.invocationCount >= budgetConfig.dailyInvocationCap) {
-    log.warn("AI invocation cap reached", { orgId, count: state.invocationCount, cap: budgetConfig.dailyInvocationCap });
-    return { allowed: false, reason: `Daily invocation cap of ${budgetConfig.dailyInvocationCap} reached (${state.invocationCount} used)` };
+    log.warn("AI invocation cap reached", {
+      orgId,
+      count: state.invocationCount,
+      cap: budgetConfig.dailyInvocationCap,
+    });
+    return {
+      allowed: false,
+      reason: `Daily invocation cap of ${budgetConfig.dailyInvocationCap} reached (${state.invocationCount} used)`,
+    };
   }
 
   return { allowed: true };
@@ -96,7 +111,12 @@ export function trackUsage(orgId: string, record: UsageRecord): void {
   const budgetConfig = getOrgConfig(orgId);
   const usagePercent = (state.totalCostUsd / budgetConfig.dailyBudgetUsd) * 100;
   if (usagePercent >= 80 && usagePercent < 100) {
-    log.warn("AI budget at 80%+", { orgId, spent: state.totalCostUsd, limit: budgetConfig.dailyBudgetUsd, percent: Math.round(usagePercent) });
+    log.warn("AI budget at 80%+", {
+      orgId,
+      spent: state.totalCostUsd,
+      limit: budgetConfig.dailyBudgetUsd,
+      percent: Math.round(usagePercent),
+    });
   }
 }
 
@@ -140,7 +160,8 @@ export function getOrgUsageSummary(orgId: string): OrgUsageSummary {
     if (byModel[key].count > 0) byModel[key].avgLatencyMs = Math.round(byModel[key].avgLatencyMs / byModel[key].count);
   }
   for (const key of Object.keys(byPrompt)) {
-    if (byPrompt[key].count > 0) byPrompt[key].avgLatencyMs = Math.round(byPrompt[key].avgLatencyMs / byPrompt[key].count);
+    if (byPrompt[key].count > 0)
+      byPrompt[key].avgLatencyMs = Math.round(byPrompt[key].avgLatencyMs / byPrompt[key].count);
   }
 
   return {

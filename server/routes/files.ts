@@ -58,5 +58,4 @@ export function registerFilesRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to delete file" });
     }
   });
-
 }

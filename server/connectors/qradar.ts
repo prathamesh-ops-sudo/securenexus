@@ -32,7 +32,7 @@ export const qradarPlugin: ConnectorPlugin = {
     const start = Date.now();
     try {
       const res = await httpRequest(`${config.baseUrl}/api/help/versions`, {
-        headers: { "SEC": config.apiKey!, "Accept": "application/json" },
+        headers: { SEC: config.apiKey!, Accept: "application/json" },
       });
       if (res.status >= 400) throw new Error(`QRadar returned ${res.status}`);
       return { success: true, message: "Successfully connected to qradar", latencyMs: Date.now() - start };
@@ -42,7 +42,11 @@ export const qradarPlugin: ConnectorPlugin = {
   },
 
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
-    const headers: Record<string, string> = { "SEC": config.apiKey!, "Content-Type": "application/json", "Accept": "application/json" };
+    const headers: Record<string, string> = {
+      SEC: config.apiKey!,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
     let url = `${config.baseUrl}/api/siem/offenses?filter=magnitude%20%3E%3D%205&Range=items%3D0-99`;
     if (since) {
       url += `&filter=start_time%20%3E%20${since.getTime()}`;

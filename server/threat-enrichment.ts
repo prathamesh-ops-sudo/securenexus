@@ -48,9 +48,16 @@ function isProviderConfigured(envVar: string): boolean {
 
 export async function getOrgApiKey(orgId: string, provider: string): Promise<string | undefined> {
   try {
-    const [config] = await db.select().from(threatIntelConfigs).where(
-      and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, provider), eq(threatIntelConfigs.enabled, true))
-    );
+    const [config] = await db
+      .select()
+      .from(threatIntelConfigs)
+      .where(
+        and(
+          eq(threatIntelConfigs.orgId, orgId),
+          eq(threatIntelConfigs.provider, provider),
+          eq(threatIntelConfigs.enabled, true),
+        ),
+      );
     if (config?.apiKey) return config.apiKey;
   } catch (err) {
     logger.child("threat-enrichment").warn(`Failed to fetch org API key for ${provider}`, { error: String(err) });
@@ -62,7 +69,12 @@ export async function getOrgApiKey(orgId: string, provider: string): Promise<str
 export async function getProviderStatuses(orgId?: string): Promise<ProviderStatus[]> {
   const providers = [
     { name: "AbuseIPDB", key: "abuseipdb", envVar: "ABUSEIPDB_API_KEY", supportedTypes: ["ip"] },
-    { name: "VirusTotal", key: "virustotal", envVar: "VIRUSTOTAL_API_KEY", supportedTypes: ["ip", "domain", "file_hash", "url"] },
+    {
+      name: "VirusTotal",
+      key: "virustotal",
+      envVar: "VIRUSTOTAL_API_KEY",
+      supportedTypes: ["ip", "domain", "file_hash", "url"],
+    },
     { name: "OTX AlienVault", key: "otx", envVar: "OTX_API_KEY", supportedTypes: ["ip", "domain", "file_hash", "url"] },
   ];
 
@@ -74,9 +86,10 @@ export async function getProviderStatuses(orgId?: string): Promise<ProviderStatu
 
     if (orgId) {
       try {
-        const [config] = await db.select().from(threatIntelConfigs).where(
-          and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, p.key))
-        );
+        const [config] = await db
+          .select()
+          .from(threatIntelConfigs)
+          .where(and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, p.key)));
         if (config) {
           configured = !!config.apiKey || configured;
           enabled = config.enabled ?? configured;
@@ -97,22 +110,29 @@ export async function getProviderStatuses(orgId?: string): Promise<ProviderStatu
   return statuses;
 }
 
-async function enrichWithAbuseIPDB(entityType: string, value: string, orgId?: string): Promise<EnrichmentResult | null> {
+async function enrichWithAbuseIPDB(
+  entityType: string,
+  value: string,
+  orgId?: string,
+): Promise<EnrichmentResult | null> {
   if (entityType !== "ip") return null;
   const apiKey = orgId ? await getOrgApiKey(orgId, "abuseipdb") : getApiKey("ABUSEIPDB_API_KEY");
   if (!apiKey) return null;
 
   try {
-    const resp = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(value)}&maxAgeInDays=90&verbose`, {
-      headers: { Key: apiKey, Accept: "application/json" },
-    });
+    const resp = await fetch(
+      `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(value)}&maxAgeInDays=90&verbose`,
+      {
+        headers: { Key: apiKey, Accept: "application/json" },
+      },
+    );
 
     if (!resp.ok) {
       logger.child("threat-enrichment").warn(`AbuseIPDB API error: ${resp.status}`);
       return null;
     }
 
-    const json = await resp.json() as any;
+    const json = (await resp.json()) as any;
     const data = json.data;
     if (!data) return null;
 
@@ -156,7 +176,11 @@ async function enrichWithAbuseIPDB(entityType: string, value: string, orgId?: st
   }
 }
 
-async function enrichWithVirusTotal(entityType: string, value: string, orgId?: string): Promise<EnrichmentResult | null> {
+async function enrichWithVirusTotal(
+  entityType: string,
+  value: string,
+  orgId?: string,
+): Promise<EnrichmentResult | null> {
   const apiKey = orgId ? await getOrgApiKey(orgId, "virustotal") : getApiKey("VIRUSTOTAL_API_KEY");
   if (!apiKey) return null;
 
@@ -180,7 +204,7 @@ async function enrichWithVirusTotal(entityType: string, value: string, orgId?: s
       return null;
     }
 
-    const json = await resp.json() as any;
+    const json = (await resp.json()) as any;
     const attrs = json.data?.attributes;
     if (!attrs) return null;
 
@@ -190,7 +214,10 @@ async function enrichWithVirusTotal(entityType: string, value: string, orgId?: s
     const suspiciousRatio = total > 0 ? ((stats.malicious || 0) + (stats.suspicious || 0)) / total : 0;
 
     const communityScore = attrs.reputation ?? 0;
-    const normalized = Math.min(Math.max(maliciousRatio * 0.7 + (communityScore < 0 ? Math.min(Math.abs(communityScore) / 100, 0.3) : 0), 0), 1);
+    const normalized = Math.min(
+      Math.max(maliciousRatio * 0.7 + (communityScore < 0 ? Math.min(Math.abs(communityScore) / 100, 0.3) : 0), 0),
+      1,
+    );
 
     let verdict: EnrichmentResult["verdict"] = "clean";
     if (maliciousRatio >= 0.3 || (stats.malicious || 0) >= 5) verdict = "malicious";
@@ -218,7 +245,9 @@ async function enrichWithVirusTotal(entityType: string, value: string, orgId?: s
         communityScore,
         ...(entityType === "ip" ? { country: attrs.country, asOwner: attrs.as_owner, network: attrs.network } : {}),
         ...(entityType === "domain" ? { registrar: attrs.registrar, creationDate: attrs.creation_date } : {}),
-        ...(entityType === "file_hash" ? { fileName: attrs.meaningful_name, fileSize: attrs.size, fileType: attrs.type_description } : {}),
+        ...(entityType === "file_hash"
+          ? { fileName: attrs.meaningful_name, fileSize: attrs.size, fileType: attrs.type_description }
+          : {}),
       },
       enrichedAt: new Date().toISOString(),
     };
@@ -252,7 +281,7 @@ async function enrichWithOTX(entityType: string, value: string, orgId?: string):
       return null;
     }
 
-    const json = await resp.json() as any;
+    const json = (await resp.json()) as any;
 
     const pulseCount = json.pulse_info?.count ?? 0;
     const normalized = Math.min(pulseCount / 20, 1);
@@ -297,7 +326,11 @@ async function enrichWithOTX(entityType: string, value: string, orgId?: string):
 
 const ENRICHABLE_TYPES = new Set(["ip", "domain", "file_hash", "url"]);
 
-export async function enrichEntity(entityId: string, force: boolean = false, orgId?: string): Promise<EnrichmentResult[]> {
+export async function enrichEntity(
+  entityId: string,
+  force: boolean = false,
+  orgId?: string,
+): Promise<EnrichmentResult[]> {
   const [entity] = await db.select().from(entities).where(eq(entities.id, entityId)).limit(1);
   if (!entity) return [];
 
@@ -333,9 +366,8 @@ export async function enrichEntity(entityId: string, force: boolean = false, org
     return existingEnrichment.results;
   }
 
-  const maxScore = results.length > 0
-    ? Math.max(...results.map((r) => r.reputationScore))
-    : (existingEnrichment?.riskScore ?? 0);
+  const maxScore =
+    results.length > 0 ? Math.max(...results.map((r) => r.reputationScore)) : (existingEnrichment?.riskScore ?? 0);
 
   const enrichmentCache: EnrichmentCache = {
     results,
@@ -343,7 +375,8 @@ export async function enrichEntity(entityId: string, force: boolean = false, org
     riskScore: maxScore,
   };
 
-  await db.update(entities)
+  await db
+    .update(entities)
     .set({
       metadata: { ...existingMeta, enrichment: enrichmentCache },
       riskScore: maxScore,
@@ -359,7 +392,9 @@ export async function enrichEntityBackground(entityId: string): Promise<void> {
     try {
       await enrichEntity(entityId, false);
     } catch (err) {
-      logger.child("threat-enrichment").warn(`Background enrichment failed for entity ${entityId}`, { error: String(err) });
+      logger
+        .child("threat-enrichment")
+        .warn(`Background enrichment failed for entity ${entityId}`, { error: String(err) });
     }
   });
 }

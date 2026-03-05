@@ -1,11 +1,27 @@
 import { db } from "./db";
-import { iocEntries, iocMatches, iocMatchRules, alerts, type Alert, type IocEntry, type IocMatchRule } from "@shared/schema";
+import {
+  iocEntries,
+  iocMatches,
+  iocMatchRules,
+  alerts,
+  type Alert,
+  type IocEntry,
+  type IocMatchRule,
+} from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface MatchResult {
   totalMatches: number;
-  matchDetails: { iocId: string; iocValue: string; iocType: string; matchField: string; confidence: number; malwareFamily?: string | null; campaignName?: string | null }[];
+  matchDetails: {
+    iocId: string;
+    iocValue: string;
+    iocType: string;
+    matchField: string;
+    confidence: number;
+    malwareFamily?: string | null;
+    campaignName?: string | null;
+  }[];
 }
 
 export async function matchAlertAgainstIOCs(alert: Alert, orgId?: string): Promise<MatchResult> {
@@ -20,7 +36,7 @@ export async function matchAlertAgainstIOCs(alert: Alert, orgId?: string): Promi
     { field: "hostname", value: alert.hostname, iocType: "domain" },
   ];
 
-  const validFields = alertFields.filter(f => f.value && f.value.trim());
+  const validFields = alertFields.filter((f) => f.value && f.value.trim());
   if (validFields.length === 0) return result;
 
   const typeValuePairs = new Map<string, { field: string; value: string }[]>();
@@ -44,7 +60,9 @@ export async function matchAlertAgainstIOCs(alert: Alert, orgId?: string): Promi
         conditions.push(eq(iocEntries.orgId, orgId));
       }
 
-      const matches = await db.select().from(iocEntries)
+      const matches = await db
+        .select()
+        .from(iocEntries)
         .where(and(...conditions))
         .limit(50);
 
@@ -79,7 +97,12 @@ export async function matchAlertAgainstIOCs(alert: Alert, orgId?: string): Promi
               },
             });
           } catch (e) {
-            logger.child("ioc-matcher").warn("Failed to insert IOC match record", { iocId: ioc.id, alertId: alert.id, matchField: mf.field, error: String(e) });
+            logger.child("ioc-matcher").warn("Failed to insert IOC match record", {
+              iocId: ioc.id,
+              alertId: alert.id,
+              matchField: mf.field,
+              error: String(e),
+            });
           }
         }
       }
@@ -97,11 +120,16 @@ export async function matchAlertAgainstRules(alert: Alert, orgId?: string): Prom
     const conditions = [eq(iocMatchRules.enabled, true)];
     if (orgId) conditions.push(eq(iocMatchRules.orgId, orgId));
 
-    const rules = await db.select().from(iocMatchRules).where(and(...conditions));
+    const rules = await db
+      .select()
+      .from(iocMatchRules)
+      .where(and(...conditions));
 
     for (const rule of rules) {
-      const matchFields = Array.isArray(rule.matchFields) ? rule.matchFields as string[] : ["sourceIp", "destIp", "domain", "url", "fileHash"];
-      const iocTypes = Array.isArray(rule.iocTypes) ? rule.iocTypes as string[] : [];
+      const matchFields = Array.isArray(rule.matchFields)
+        ? (rule.matchFields as string[])
+        : ["sourceIp", "destIp", "domain", "url", "fileHash"];
+      const iocTypes = Array.isArray(rule.iocTypes) ? (rule.iocTypes as string[]) : [];
 
       const alertFieldMap: Record<string, { value: string | null | undefined; iocType: string }> = {
         sourceIp: { value: alert.sourceIp, iocType: "ip" },
@@ -127,7 +155,11 @@ export async function matchAlertAgainstRules(alert: Alert, orgId?: string): Prom
         }
         if (orgId) matchConditions.push(eq(iocEntries.orgId, orgId));
 
-        const iocHits = await db.select().from(iocEntries).where(and(...matchConditions)).limit(10);
+        const iocHits = await db
+          .select()
+          .from(iocEntries)
+          .where(and(...matchConditions))
+          .limit(10);
 
         for (const ioc of iocHits) {
           try {
@@ -148,13 +180,21 @@ export async function matchAlertAgainstRules(alert: Alert, orgId?: string): Prom
               },
             });
 
-            await db.update(iocMatchRules).set({
-              matchCount: sql`${iocMatchRules.matchCount} + 1`,
-              lastMatchAt: new Date(),
-              updatedAt: new Date(),
-            }).where(eq(iocMatchRules.id, rule.id));
+            await db
+              .update(iocMatchRules)
+              .set({
+                matchCount: sql`${iocMatchRules.matchCount} + 1`,
+                lastMatchAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(iocMatchRules.id, rule.id));
           } catch (e) {
-            logger.child("ioc-matcher").warn("Failed to insert rule match or update rule counter", { ruleId: rule.id, iocId: ioc.id, alertId: alert.id, error: String(e) });
+            logger.child("ioc-matcher").warn("Failed to insert rule match or update rule counter", {
+              ruleId: rule.id,
+              iocId: ioc.id,
+              alertId: alert.id,
+              error: String(e),
+            });
           }
         }
       }
@@ -164,23 +204,30 @@ export async function matchAlertAgainstRules(alert: Alert, orgId?: string): Prom
   }
 }
 
-export async function enrichAlertWithIOCContext(alertId: string): Promise<{ matches: number; enrichment: Record<string, any> }> {
+export async function enrichAlertWithIOCContext(
+  alertId: string,
+): Promise<{ matches: number; enrichment: Record<string, any> }> {
   const matchRecords = await db.select().from(iocMatches).where(eq(iocMatches.alertId, alertId));
 
   if (matchRecords.length === 0) return { matches: 0, enrichment: {} };
 
-  const iocIds = matchRecords.map(m => m.iocEntryId).filter(Boolean) as string[];
-  const iocDetails = iocIds.length > 0
-    ? await db.select().from(iocEntries).where(inArray(iocEntries.id, iocIds))
-    : [];
+  const iocIds = matchRecords.map((m) => m.iocEntryId).filter(Boolean) as string[];
+  const iocDetails = iocIds.length > 0 ? await db.select().from(iocEntries).where(inArray(iocEntries.id, iocIds)) : [];
 
-  const malwareFamilies = Array.from(new Set(iocDetails.map(i => i.malwareFamily).filter(Boolean)));
-  const campaigns = Array.from(new Set(iocDetails.map(i => i.campaignName).filter(Boolean)));
-  const maxConfidence = Math.max(...iocDetails.map(i => i.confidence || 0), 0);
-  const sources = Array.from(new Set(iocDetails.map(i => i.source).filter(Boolean)));
+  const malwareFamilies = Array.from(new Set(iocDetails.map((i) => i.malwareFamily).filter(Boolean)));
+  const campaigns = Array.from(new Set(iocDetails.map((i) => i.campaignName).filter(Boolean)));
+  const maxConfidence = Math.max(...iocDetails.map((i) => i.confidence || 0), 0);
+  const sources = Array.from(new Set(iocDetails.map((i) => i.source).filter(Boolean)));
 
-  const firstSeenDates = iocDetails.map(i => i.firstSeen).filter(Boolean).sort();
-  const lastSeenDates = iocDetails.map(i => i.lastSeen).filter(Boolean).sort().reverse();
+  const firstSeenDates = iocDetails
+    .map((i) => i.firstSeen)
+    .filter(Boolean)
+    .sort();
+  const lastSeenDates = iocDetails
+    .map((i) => i.lastSeen)
+    .filter(Boolean)
+    .sort()
+    .reverse();
 
   return {
     matches: matchRecords.length,
@@ -192,36 +239,66 @@ export async function enrichAlertWithIOCContext(alertId: string): Promise<{ matc
       intelSources: sources,
       firstSeen: firstSeenDates[0] || null,
       lastSeen: lastSeenDates[0] || null,
-      matchedIndicators: iocDetails.map(i => ({ type: i.iocType, value: i.iocValue, confidence: i.confidence, severity: i.severity })),
+      matchedIndicators: iocDetails.map((i) => ({
+        type: i.iocType,
+        value: i.iocValue,
+        confidence: i.confidence,
+        severity: i.severity,
+      })),
     },
   };
 }
 
-export async function getIOCStats(orgId?: string): Promise<{ totalIOCs: number; activeIOCs: number; totalMatches: number; topMalwareFamilies: { name: string; count: number }[]; typeDistribution: { type: string; count: number }[] }> {
+export async function getIOCStats(orgId?: string): Promise<{
+  totalIOCs: number;
+  activeIOCs: number;
+  totalMatches: number;
+  topMalwareFamilies: { name: string; count: number }[];
+  typeDistribution: { type: string; count: number }[];
+}> {
   const conditions = orgId ? [eq(iocEntries.orgId, orgId)] : [];
 
-  const [totalResult] = await db.select({ count: sql<number>`count(*)` }).from(iocEntries).where(conditions.length > 0 ? and(...conditions) : undefined);
+  const [totalResult] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(iocEntries)
+    .where(conditions.length > 0 ? and(...conditions) : undefined);
   const activeConditions = [...conditions, eq(iocEntries.status, "active")];
-  const [activeResult] = await db.select({ count: sql<number>`count(*)` }).from(iocEntries).where(and(...activeConditions));
+  const [activeResult] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(iocEntries)
+    .where(and(...activeConditions));
 
   const matchConditions = orgId ? [eq(iocMatches.orgId, orgId)] : [];
-  const [matchResult] = await db.select({ count: sql<number>`count(*)` }).from(iocMatches).where(matchConditions.length > 0 ? and(...matchConditions) : undefined);
+  const [matchResult] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(iocMatches)
+    .where(matchConditions.length > 0 ? and(...matchConditions) : undefined);
 
-  const typeDistRaw = await db.select({
-    type: iocEntries.iocType,
-    count: sql<number>`count(*)`,
-  }).from(iocEntries).where(conditions.length > 0 ? and(...conditions) : undefined).groupBy(iocEntries.iocType);
+  const typeDistRaw = await db
+    .select({
+      type: iocEntries.iocType,
+      count: sql<number>`count(*)`,
+    })
+    .from(iocEntries)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(iocEntries.iocType);
 
-  const familyDistRaw = await db.select({
-    name: iocEntries.malwareFamily,
-    count: sql<number>`count(*)`,
-  }).from(iocEntries).where(and(...conditions, sql`${iocEntries.malwareFamily} IS NOT NULL`)).groupBy(iocEntries.malwareFamily).orderBy(sql`count(*) DESC`).limit(10);
+  const familyDistRaw = await db
+    .select({
+      name: iocEntries.malwareFamily,
+      count: sql<number>`count(*)`,
+    })
+    .from(iocEntries)
+    .where(and(...conditions, sql`${iocEntries.malwareFamily} IS NOT NULL`))
+    .groupBy(iocEntries.malwareFamily)
+    .orderBy(sql`count(*) DESC`)
+    .limit(10);
 
   return {
     totalIOCs: Number(totalResult?.count || 0),
     activeIOCs: Number(activeResult?.count || 0),
     totalMatches: Number(matchResult?.count || 0),
-    topMalwareFamilies: familyDistRaw.map(r => ({ name: r.name || "Unknown", count: Number(r.count) })),
-    typeDistribution: typeDistRaw.map(r => ({ type: r.type, count: Number(r.count) })),
+    topMalwareFamilies: familyDistRaw.map((r) => ({ name: r.name || "Unknown", count: Number(r.count) })),
+    typeDistribution: typeDistRaw.map((r) => ({ type: r.type, count: Number(r.count) })),
   };
 }

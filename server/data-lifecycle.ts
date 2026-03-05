@@ -12,7 +12,15 @@ const log = logger.child("data-lifecycle");
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
-export type DataType = "alerts" | "incidents" | "audit_logs" | "sli_metrics" | "jobs" | "connector_job_runs" | "outbox_events" | "ingestion_logs";
+export type DataType =
+  | "alerts"
+  | "incidents"
+  | "audit_logs"
+  | "sli_metrics"
+  | "jobs"
+  | "connector_job_runs"
+  | "outbox_events"
+  | "ingestion_logs";
 export type StorageTier = "hot" | "warm" | "cold" | "deleted";
 export type PlanTier = "free" | "pro" | "enterprise";
 
@@ -69,19 +77,149 @@ export function getRetentionPolicy(plan: PlanTier, dataType: DataType): Retentio
 }
 
 const ALLOWED_TABLES: ReadonlySet<string> = new Set([
-  "alerts", "incidents", "audit_logs", "sli_metrics",
-  "jobs", "connector_job_runs", "outbox_events", "ingestion_logs",
+  "alerts",
+  "incidents",
+  "audit_logs",
+  "sli_metrics",
+  "jobs",
+  "connector_job_runs",
+  "outbox_events",
+  "ingestion_logs",
 ]);
 
 const ALLOWED_COLUMNS: Record<string, ReadonlySet<string>> = {
-  alerts: new Set(["id", "org_id", "title", "description", "severity", "status", "source", "created_at", "updated_at", "assigned_to", "tags", "raw_data", "connector_id", "external_id", "mitre_tactics", "mitre_techniques", "entity_ids", "confidence_score", "first_seen", "last_seen"]),
-  incidents: new Set(["id", "org_id", "title", "description", "severity", "status", "created_at", "updated_at", "assigned_to", "alert_ids", "tags", "timeline", "root_cause", "resolution", "priority", "category", "sla_breach", "closed_at"]),
-  audit_logs: new Set(["id", "org_id", "user_id", "user_name", "action", "resource_type", "resource_id", "details", "ip_address", "user_agent", "created_at"]),
-  sli_metrics: new Set(["id", "org_id", "metric_name", "value", "unit", "tags", "recorded_at", "created_at", "window_start", "window_end", "p50", "p95", "p99", "error_rate", "request_count"]),
-  jobs: new Set(["id", "org_id", "type", "status", "payload", "result", "error", "attempts", "max_attempts", "priority", "created_at", "updated_at", "started_at", "completed_at", "locked_by", "locked_at", "scheduled_for"]),
-  connector_job_runs: new Set(["id", "org_id", "connector_id", "status", "started_at", "completed_at", "records_fetched", "records_created", "error", "created_at", "duration_ms", "checkpoint"]),
-  outbox_events: new Set(["id", "org_id", "event_type", "payload", "status", "created_at", "published_at", "attempts", "last_error", "aggregate_id", "aggregate_type"]),
-  ingestion_logs: new Set(["id", "org_id", "source", "status", "records_received", "records_accepted", "records_rejected", "errors", "created_at", "duration_ms", "connector_id", "batch_id"]),
+  alerts: new Set([
+    "id",
+    "org_id",
+    "title",
+    "description",
+    "severity",
+    "status",
+    "source",
+    "created_at",
+    "updated_at",
+    "assigned_to",
+    "tags",
+    "raw_data",
+    "connector_id",
+    "external_id",
+    "mitre_tactics",
+    "mitre_techniques",
+    "entity_ids",
+    "confidence_score",
+    "first_seen",
+    "last_seen",
+  ]),
+  incidents: new Set([
+    "id",
+    "org_id",
+    "title",
+    "description",
+    "severity",
+    "status",
+    "created_at",
+    "updated_at",
+    "assigned_to",
+    "alert_ids",
+    "tags",
+    "timeline",
+    "root_cause",
+    "resolution",
+    "priority",
+    "category",
+    "sla_breach",
+    "closed_at",
+  ]),
+  audit_logs: new Set([
+    "id",
+    "org_id",
+    "user_id",
+    "user_name",
+    "action",
+    "resource_type",
+    "resource_id",
+    "details",
+    "ip_address",
+    "user_agent",
+    "created_at",
+  ]),
+  sli_metrics: new Set([
+    "id",
+    "org_id",
+    "metric_name",
+    "value",
+    "unit",
+    "tags",
+    "recorded_at",
+    "created_at",
+    "window_start",
+    "window_end",
+    "p50",
+    "p95",
+    "p99",
+    "error_rate",
+    "request_count",
+  ]),
+  jobs: new Set([
+    "id",
+    "org_id",
+    "type",
+    "status",
+    "payload",
+    "result",
+    "error",
+    "attempts",
+    "max_attempts",
+    "priority",
+    "created_at",
+    "updated_at",
+    "started_at",
+    "completed_at",
+    "locked_by",
+    "locked_at",
+    "scheduled_for",
+  ]),
+  connector_job_runs: new Set([
+    "id",
+    "org_id",
+    "connector_id",
+    "status",
+    "started_at",
+    "completed_at",
+    "records_fetched",
+    "records_created",
+    "error",
+    "created_at",
+    "duration_ms",
+    "checkpoint",
+  ]),
+  outbox_events: new Set([
+    "id",
+    "org_id",
+    "event_type",
+    "payload",
+    "status",
+    "created_at",
+    "published_at",
+    "attempts",
+    "last_error",
+    "aggregate_id",
+    "aggregate_type",
+  ]),
+  ingestion_logs: new Set([
+    "id",
+    "org_id",
+    "source",
+    "status",
+    "records_received",
+    "records_accepted",
+    "records_rejected",
+    "errors",
+    "created_at",
+    "duration_ms",
+    "connector_id",
+    "batch_id",
+  ]),
 };
 
 function validateTableName(dataType: DataType): string {
@@ -137,11 +275,7 @@ export interface ExportResult {
   errors: string[];
 }
 
-export async function exportToColdStorage(
-  orgId: string,
-  dataType: DataType,
-  cutoffDate: Date,
-): Promise<ExportResult> {
+export async function exportToColdStorage(orgId: string, dataType: DataType, cutoffDate: Date): Promise<ExportResult> {
   const tableName = validateTableName(dataType);
   const result: ExportResult = { exported: 0, batches: [], errors: [] };
 
@@ -151,7 +285,7 @@ export async function exportToColdStorage(
 
     while (hasMore) {
       const rows = await db.execute(
-        sql`SELECT * FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at < ${cutoffDate} ORDER BY created_at ASC LIMIT ${BATCH_SIZE} OFFSET ${offset}`
+        sql`SELECT * FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at < ${cutoffDate} ORDER BY created_at ASC LIMIT ${BATCH_SIZE} OFFSET ${offset}`,
       );
 
       const records = (rows as any).rows || [];
@@ -217,10 +351,7 @@ export interface RehydrationResult {
   errors: string[];
 }
 
-export async function listColdStorageArchives(
-  orgId: string,
-  dataType: DataType,
-): Promise<ColdStorageManifest[]> {
+export async function listColdStorageArchives(orgId: string, dataType: DataType): Promise<ColdStorageManifest[]> {
   const prefix = s3ColdStoragePrefix(orgId, dataType);
   const files = await listFiles(prefix);
   const manifestFiles = files.filter((f) => f.key?.endsWith(".manifest.json"));
@@ -309,7 +440,7 @@ export async function rehydrateFromColdStorage(
             return sql`${val}`;
           });
           await db.execute(
-            sql`INSERT INTO ${sql.identifier(tableName)} (${sql.join(columnsSql, sql`, `)}) VALUES (${sql.join(vals, sql`, `)}) ON CONFLICT (id) DO NOTHING`
+            sql`INSERT INTO ${sql.identifier(tableName)} (${sql.join(columnsSql, sql`, `)}) VALUES (${sql.join(vals, sql`, `)}) ON CONFLICT (id) DO NOTHING`,
           );
         }
         insertedCount += batch.length;
@@ -360,7 +491,7 @@ export interface DeletionResult {
 export async function hasLegalHold(orgId: string): Promise<boolean> {
   try {
     const result = await db.execute(
-      sql`SELECT id FROM legal_holds WHERE org_id = ${orgId} AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`
+      sql`SELECT id FROM legal_holds WHERE org_id = ${orgId} AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
     );
     return ((result as any).rows || []).length > 0;
   } catch (err) {
@@ -395,7 +526,7 @@ export async function executeDeletion(request: DeletionRequest): Promise<Deletio
   try {
     if (request.specificIds && request.specificIds.length > 0) {
       const countResult = await db.execute(
-        sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND id = ANY(${request.specificIds})`
+        sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND id = ANY(${request.specificIds})`,
       );
       const recordCount = Number(((countResult as any).rows || [])[0]?.count || 0);
 
@@ -405,14 +536,14 @@ export async function executeDeletion(request: DeletionRequest): Promise<Deletio
       }
 
       const deleteResult = await db.execute(
-        sql`DELETE FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND id = ANY(${request.specificIds})`
+        sql`DELETE FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND id = ANY(${request.specificIds})`,
       );
       result.deleted = Number(deleteResult.rowCount) || 0;
     } else if (request.olderThanDays) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - request.olderThanDays);
       const countResult = await db.execute(
-        sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND created_at < ${cutoff}`
+        sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND created_at < ${cutoff}`,
       );
       const recordCount = Number(((countResult as any).rows || [])[0]?.count || 0);
 
@@ -425,7 +556,7 @@ export async function executeDeletion(request: DeletionRequest): Promise<Deletio
       let batchDeleted = 0;
       do {
         const batchResult = await db.execute(
-          sql`DELETE FROM ${sql.identifier(tableName)} WHERE id IN (SELECT id FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND created_at < ${cutoff} LIMIT ${BATCH_SIZE})`
+          sql`DELETE FROM ${sql.identifier(tableName)} WHERE id IN (SELECT id FROM ${sql.identifier(tableName)} WHERE org_id = ${request.orgId} AND created_at < ${cutoff} LIMIT ${BATCH_SIZE})`,
         );
         batchDeleted = Number(batchResult.rowCount) || 0;
         totalDeleted += batchDeleted;
@@ -493,10 +624,10 @@ export async function getLifecycleStatus(orgId: string, plan: PlanTier): Promise
     try {
       const [hotResult, warmResult] = await Promise.all([
         db.execute(
-          sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at >= ${warmCutoff}`
+          sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at >= ${warmCutoff}`,
         ),
         db.execute(
-          sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at < ${warmCutoff}`
+          sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at < ${warmCutoff}`,
         ),
       ]);
 
@@ -579,7 +710,7 @@ export async function runTieredCleanup(orgId: string, plan: PlanTier): Promise<T
         let batchDeleted = 0;
         do {
           const batchResult = await db.execute(
-            sql`DELETE FROM ${sql.identifier(tableName)} WHERE id IN (SELECT id FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at < ${coldCutoff} LIMIT ${BATCH_SIZE})`
+            sql`DELETE FROM ${sql.identifier(tableName)} WHERE id IN (SELECT id FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} AND created_at < ${coldCutoff} LIMIT ${BATCH_SIZE})`,
           );
           batchDeleted = Number(batchResult.rowCount) || 0;
           totalDeleted += batchDeleted;
@@ -606,7 +737,11 @@ export async function runTieredCleanup(orgId: string, plan: PlanTier): Promise<T
             if (newestDate < deleteCutoff) {
               await deleteFile(manifest.s3Key);
               await deleteFile(file.key);
-              log.info("Deleted expired cold storage archive", { key: manifest.s3Key, orgId, dataType: policy.dataType });
+              log.info("Deleted expired cold storage archive", {
+                key: manifest.s3Key,
+                orgId,
+                dataType: policy.dataType,
+              });
             }
           } catch (archiveErr) {
             entry.errors.push(`Failed to clean cold archive ${file.key}: ${String(archiveErr)}`);
@@ -664,7 +799,16 @@ export async function executeOrgDataPurge(
     return { purged: {} as Record<DataType, number>, dryRun, errors: ["Legal hold is active — purge blocked"] };
   }
 
-  const allTypes: DataType[] = ["alerts", "incidents", "audit_logs", "sli_metrics", "jobs", "connector_job_runs", "outbox_events", "ingestion_logs"];
+  const allTypes: DataType[] = [
+    "alerts",
+    "incidents",
+    "audit_logs",
+    "sli_metrics",
+    "jobs",
+    "connector_job_runs",
+    "outbox_events",
+    "ingestion_logs",
+  ];
   const purged = {} as Record<DataType, number>;
   const errors: string[] = [];
 
@@ -672,7 +816,7 @@ export async function executeOrgDataPurge(
     const tableName = validateTableName(dataType);
     try {
       const countResult = await db.execute(
-        sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId}`
+        sql`SELECT COUNT(*) as count FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId}`,
       );
       const recordCount = Number(((countResult as any).rows || [])[0]?.count || 0);
 
@@ -683,7 +827,7 @@ export async function executeOrgDataPurge(
         let batchDeleted = 0;
         do {
           const batchResult = await db.execute(
-            sql`DELETE FROM ${sql.identifier(tableName)} WHERE id IN (SELECT id FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} LIMIT ${BATCH_SIZE})`
+            sql`DELETE FROM ${sql.identifier(tableName)} WHERE id IN (SELECT id FROM ${sql.identifier(tableName)} WHERE org_id = ${orgId} LIMIT ${BATCH_SIZE})`,
           );
           batchDeleted = Number(batchResult.rowCount) || 0;
           totalDeleted += batchDeleted;

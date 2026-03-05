@@ -20,7 +20,11 @@ export function registerDashboardRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:analytics", { orgId });
-      const analytics = await cacheGetOrLoad(cacheKey, () => storage.getDashboardAnalytics(orgId), CACHE_TTL.DASHBOARD_ANALYTICS);
+      const analytics = await cacheGetOrLoad(
+        cacheKey,
+        () => storage.getDashboardAnalytics(orgId),
+        CACHE_TTL.DASHBOARD_ANALYTICS,
+      );
       res.json(analytics);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch analytics" });
@@ -51,7 +55,7 @@ export function registerDashboardRoutes(app: Express): void {
           },
           riskPosture: analytics.severityDistribution,
           topMitreTactics: analytics.topMitreTactics,
-          recentCriticalIncidents: allIncidents.filter(i => i.severity === "critical").slice(0, 5),
+          recentCriticalIncidents: allIncidents.filter((i) => i.severity === "critical").slice(0, 5),
           connectorHealth: analytics.connectorHealth,
           alertTrend: analytics.alertTrend,
         });
@@ -89,12 +93,11 @@ export function registerDashboardRoutes(app: Express): void {
           categoryDistribution: analytics.categoryDistribution,
           topMitreTactics: analytics.topMitreTactics,
           alertTrend: analytics.alertTrend,
-          recentIncidents: allIncidents.filter(i => ["open", "investigating"].includes(i.status || "")).slice(0, 10),
+          recentIncidents: allIncidents.filter((i) => ["open", "investigating"].includes(i.status || "")).slice(0, 10),
         });
       }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
-
 }

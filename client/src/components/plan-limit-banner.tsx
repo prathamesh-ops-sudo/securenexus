@@ -28,28 +28,29 @@ export function PlanLimitBanner() {
 
   if (dismissed || !data || data.warnings.length === 0) return null;
 
-  const criticalWarnings = data.warnings.filter(w => w.status === "critical");
-  const softWarnings = data.warnings.filter(w => w.status === "warning");
+  const criticalWarnings = data.warnings.filter((w) => w.status === "critical");
+  const softWarnings = data.warnings.filter((w) => w.status === "warning");
 
   const isCritical = criticalWarnings.length > 0;
   const warningList = isCritical ? criticalWarnings : softWarnings;
 
   if (warningList.length === 0) return null;
 
-  const labels = warningList.map(w => w.label).join(", ");
+  const labels = warningList.map((w) => w.label).join(", ");
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-2 text-sm border-b ${
-      isCritical
-        ? "bg-red-500/10 border-red-500/20 text-red-400"
-        : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
-    }`}>
+    <div
+      className={`flex items-center gap-3 px-4 py-2 text-sm border-b ${
+        isCritical
+          ? "bg-red-500/10 border-red-500/20 text-red-400"
+          : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+      }`}
+    >
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1 truncate">
         {isCritical
           ? `Plan limit reached for ${labels}. Upgrade to continue.`
-          : `Approaching plan limit for ${labels} (${warningList[0].pctUsed}% used).`
-        }
+          : `Approaching plan limit for ${labels} (${warningList[0].pctUsed}% used).`}
       </span>
       <button
         onClick={() => navigate("/usage-billing")}

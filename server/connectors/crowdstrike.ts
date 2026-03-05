@@ -26,12 +26,18 @@ function mapSeverity(sev: number | string): string {
 function mapCategory(tactic?: string): string {
   if (!tactic) return "other";
   const map: Record<string, string> = {
-    "Initial Access": "intrusion", "Execution": "malware", "Persistence": "persistence",
-    "Privilege Escalation": "privilege_escalation", "Defense Evasion": "malware",
-    "Credential Access": "credential_access", "Discovery": "reconnaissance",
-    "Lateral Movement": "lateral_movement", "Collection": "data_exfiltration",
-    "Command and Control": "command_and_control", "Exfiltration": "data_exfiltration",
-    "Impact": "malware",
+    "Initial Access": "intrusion",
+    Execution: "malware",
+    Persistence: "persistence",
+    "Privilege Escalation": "privilege_escalation",
+    "Defense Evasion": "malware",
+    "Credential Access": "credential_access",
+    Discovery: "reconnaissance",
+    "Lateral Movement": "lateral_movement",
+    Collection: "data_exfiltration",
+    "Command and Control": "command_and_control",
+    Exfiltration: "data_exfiltration",
+    Impact: "malware",
   };
   return map[tactic] || "other";
 }
@@ -47,7 +53,12 @@ export const crowdstrikePlugin: ConnectorPlugin = {
     requiredFields: [
       { key: "baseUrl", label: "API Base URL", type: "url", placeholder: "https://api.crowdstrike.com" },
       { key: "clientId", label: "OAuth2 Client ID", type: "text", placeholder: "Your CrowdStrike API Client ID" },
-      { key: "clientSecret", label: "OAuth2 Client Secret", type: "password", placeholder: "Your CrowdStrike API Client Secret" },
+      {
+        key: "clientSecret",
+        label: "OAuth2 Client Secret",
+        type: "password",
+        placeholder: "Your CrowdStrike API Client Secret",
+      },
     ],
     optionalFields: [],
     icon: "Shield",

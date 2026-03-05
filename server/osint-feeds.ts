@@ -68,21 +68,24 @@ async function fetchUrlhausFeed(): Promise<OsintFeedResult> {
       signal: makeAbortSignal(),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json() as any;
+    const json = (await resp.json()) as any;
     const urls: any[] = Array.isArray(json.urls) ? json.urls : [];
-    const indicators: OsintIndicator[] = urls.slice(0, 50).map((entry: any) => ({
-      type: "url" as const,
-      value: entry.url || "",
-      threat: entry.threat || entry.url_status || "malicious_url",
-      source: feedName,
-      firstSeen: entry.dateadded || undefined,
-      tags: [
-        entry.url_status,
-        entry.threat,
-        ...(Array.isArray(entry.tags) ? entry.tags : entry.tags ? [entry.tags] : []),
-      ].filter(Boolean) as string[],
-      confidence: entry.url_status === "online" ? 0.9 : 0.6,
-    })).slice(0, MAX_INDICATORS);
+    const indicators: OsintIndicator[] = urls
+      .slice(0, 50)
+      .map((entry: any) => ({
+        type: "url" as const,
+        value: entry.url || "",
+        threat: entry.threat || entry.url_status || "malicious_url",
+        source: feedName,
+        firstSeen: entry.dateadded || undefined,
+        tags: [
+          entry.url_status,
+          entry.threat,
+          ...(Array.isArray(entry.tags) ? entry.tags : entry.tags ? [entry.tags] : []),
+        ].filter(Boolean) as string[],
+        confidence: entry.url_status === "online" ? 0.9 : 0.6,
+      }))
+      .slice(0, MAX_INDICATORS);
     return {
       feedName,
       feedUrl,
@@ -107,7 +110,7 @@ async function fetchThreatFoxFeed(): Promise<OsintFeedResult> {
       signal: makeAbortSignal(),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json() as any;
+    const json = (await resp.json()) as any;
     const iocs: any[] = Array.isArray(json.data) ? json.data : [];
 
     const mapIocType = (iocType: string): OsintIndicator["type"] => {
@@ -118,20 +121,23 @@ async function fetchThreatFoxFeed(): Promise<OsintFeedResult> {
       return "url";
     };
 
-    const indicators: OsintIndicator[] = iocs.slice(0, 50).map((ioc: any) => ({
-      type: mapIocType(ioc.ioc_type || ""),
-      value: ioc.ioc || "",
-      threat: ioc.malware || ioc.threat_type || "unknown",
-      source: feedName,
-      firstSeen: ioc.first_seen_utc || undefined,
-      tags: [
-        ioc.threat_type,
-        ioc.malware,
-        ioc.malware_alias,
-        ...(Array.isArray(ioc.tags) ? ioc.tags : ioc.tags ? [ioc.tags] : []),
-      ].filter(Boolean) as string[],
-      confidence: ioc.confidence_level != null ? Math.min(ioc.confidence_level / 100, 1) : 0.7,
-    })).slice(0, MAX_INDICATORS);
+    const indicators: OsintIndicator[] = iocs
+      .slice(0, 50)
+      .map((ioc: any) => ({
+        type: mapIocType(ioc.ioc_type || ""),
+        value: ioc.ioc || "",
+        threat: ioc.malware || ioc.threat_type || "unknown",
+        source: feedName,
+        firstSeen: ioc.first_seen_utc || undefined,
+        tags: [
+          ioc.threat_type,
+          ioc.malware,
+          ioc.malware_alias,
+          ...(Array.isArray(ioc.tags) ? ioc.tags : ioc.tags ? [ioc.tags] : []),
+        ].filter(Boolean) as string[],
+        confidence: ioc.confidence_level != null ? Math.min(ioc.confidence_level / 100, 1) : 0.7,
+      }))
+      .slice(0, MAX_INDICATORS);
 
     return {
       feedName,
@@ -189,7 +195,7 @@ async function fetchCISAKevFeed(): Promise<OsintFeedResult> {
   try {
     const resp = await fetch(feedUrl, { signal: makeAbortSignal() });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json() as any;
+    const json = (await resp.json()) as any;
     const vulns: any[] = Array.isArray(json.vulnerabilities) ? json.vulnerabilities : [];
     const indicators: OsintIndicator[] = vulns.slice(0, MAX_INDICATORS).map((v: any) => ({
       type: "cve" as const,
@@ -197,11 +203,9 @@ async function fetchCISAKevFeed(): Promise<OsintFeedResult> {
       threat: v.shortDescription || v.vulnerabilityName || "known_exploited",
       source: feedName,
       firstSeen: v.dateAdded || undefined,
-      tags: [
-        v.vendorProject,
-        v.product,
-        v.knownRansomwareCampaignUse === "Known" ? "ransomware" : null,
-      ].filter(Boolean) as string[],
+      tags: [v.vendorProject, v.product, v.knownRansomwareCampaignUse === "Known" ? "ransomware" : null].filter(
+        Boolean,
+      ) as string[],
       confidence: 0.95,
     }));
     return {
@@ -218,10 +222,30 @@ async function fetchCISAKevFeed(): Promise<OsintFeedResult> {
 }
 
 const FEED_DEFINITIONS: FeedDefinition[] = [
-  { name: "abuse.ch URLhaus", slug: "urlhaus", url: "https://urlhaus-api.abuse.ch/v1/urls/recent/", fetcher: fetchUrlhausFeed },
-  { name: "abuse.ch ThreatFox", slug: "threatfox", url: "https://threatfox-api.abuse.ch/api/v1/", fetcher: fetchThreatFoxFeed },
-  { name: "abuse.ch SSL Blacklist", slug: "sslbl", url: "https://sslbl.abuse.ch/blacklist/sslipblacklist.csv", fetcher: fetchSSLBlacklistFeed },
-  { name: "CISA Known Exploited Vulnerabilities", slug: "cisa_kev", url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", fetcher: fetchCISAKevFeed },
+  {
+    name: "abuse.ch URLhaus",
+    slug: "urlhaus",
+    url: "https://urlhaus-api.abuse.ch/v1/urls/recent/",
+    fetcher: fetchUrlhausFeed,
+  },
+  {
+    name: "abuse.ch ThreatFox",
+    slug: "threatfox",
+    url: "https://threatfox-api.abuse.ch/api/v1/",
+    fetcher: fetchThreatFoxFeed,
+  },
+  {
+    name: "abuse.ch SSL Blacklist",
+    slug: "sslbl",
+    url: "https://sslbl.abuse.ch/blacklist/sslipblacklist.csv",
+    fetcher: fetchSSLBlacklistFeed,
+  },
+  {
+    name: "CISA Known Exploited Vulnerabilities",
+    slug: "cisa_kev",
+    url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+    fetcher: fetchCISAKevFeed,
+  },
 ];
 
 export async function fetchOsintFeed(feedNameOrSlug: string, force?: boolean): Promise<OsintFeedResult> {
@@ -267,9 +291,7 @@ export function getOsintFeedStatuses(): FeedStatus[] {
       url: def.url,
       lastFetched: cached ? cached.data.lastFetched : null,
       totalIndicators: cached ? cached.data.totalIndicators : 0,
-      status: cached
-        ? (cached.data.status === "error" ? "error" : "success")
-        : "never_fetched",
+      status: cached ? (cached.data.status === "error" ? "error" : "success") : "never_fetched",
       requiresApiKey: false as const,
     };
   });

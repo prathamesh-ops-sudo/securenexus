@@ -5,9 +5,22 @@ import { getEnrichmentForEntity } from "./threat-enrichment";
 import { getCachedOsintIndicators } from "./osint-feeds";
 import { config as appConfig } from "./config";
 import { logger } from "./logger";
-import { invokeModel as gatewayInvoke, getCircuitBreakerStatus, getModelCacheStats, clearModelCache } from "./ai/model-gateway";
+import {
+  invokeModel as gatewayInvoke,
+  getCircuitBreakerStatus,
+  getModelCacheStats,
+  clearModelCache,
+} from "./ai/model-gateway";
 import type { ModelInvokeResult } from "./ai/model-gateway";
-import { getPrompt, recordPromptInvocation, initializeDefaultPrompts, getPromptCatalogSummary, getAllPrompts, getPromptAuditLog, getPromptVersionHistory } from "./ai/prompt-registry";
+import {
+  getPrompt,
+  recordPromptInvocation,
+  initializeDefaultPrompts,
+  getPromptCatalogSummary,
+  getAllPrompts,
+  getPromptAuditLog,
+  getPromptVersionHistory,
+} from "./ai/prompt-registry";
 import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/budget";
 
 initializeDefaultPrompts();
@@ -46,19 +59,20 @@ async function invokeWithPrompt(
     log.warn("Using deprecated prompt", { promptId, version: prompt.version, supersededBy: prompt.supersededBy });
   }
 
-  const modelConfig = tier === "triage"
-    ? {
-        modelId: appConfig.ai.triage.modelId,
-        sagemakerEndpoint: appConfig.ai.triage.sagemakerEndpoint,
-        maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
-        temperature: appConfig.ai.triage.temperature,
-      }
-    : {
-        modelId: appConfig.ai.modelId,
-        sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
-        maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
-        temperature: appConfig.ai.temperature,
-      };
+  const modelConfig =
+    tier === "triage"
+      ? {
+          modelId: appConfig.ai.triage.modelId,
+          sagemakerEndpoint: appConfig.ai.triage.sagemakerEndpoint,
+          maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
+          temperature: appConfig.ai.triage.temperature,
+        }
+      : {
+          modelId: appConfig.ai.modelId,
+          sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+          maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
+          temperature: appConfig.ai.temperature,
+        };
 
   const result: ModelInvokeResult = await gatewayInvoke({
     modelId: modelConfig.modelId,
@@ -212,11 +226,7 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     const iocValues = Array.from(iocSet.keys());
 
     try {
-      const matchingEntities = await db
-        .select()
-        .from(entities)
-        .where(inArray(entities.value, iocValues))
-        .limit(100);
+      const matchingEntities = await db.select().from(entities).where(inArray(entities.value, iocValues)).limit(100);
 
       for (const entity of matchingEntities) {
         const enrichment = getEnrichmentForEntity(entity.metadata as Record<string, any> | null);
@@ -269,8 +279,8 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     result.enrichmentResults = result.enrichmentResults.slice(0, 20);
     result.osintMatches = result.osintMatches.slice(0, 20);
 
-    const maliciousCount = result.enrichmentResults.filter(r => r.verdict === "malicious").length;
-    const suspiciousCount = result.enrichmentResults.filter(r => r.verdict === "suspicious").length;
+    const maliciousCount = result.enrichmentResults.filter((r) => r.verdict === "malicious").length;
+    const suspiciousCount = result.enrichmentResults.filter((r) => r.verdict === "suspicious").length;
     const osintCount = result.osintMatches.length;
 
     const parts: string[] = [];
@@ -279,7 +289,8 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     if (osintCount > 0) parts.push(`${osintCount} IOC(s) matched in OSINT threat feeds`);
 
     if (parts.length > 0) {
-      const confidence = maliciousCount > 0 || osintCount > 2 ? "High" : suspiciousCount > 0 || osintCount > 0 ? "Moderate" : "Low";
+      const confidence =
+        maliciousCount > 0 || osintCount > 2 ? "High" : suspiciousCount > 0 || osintCount > 0 ? "Moderate" : "Low";
       result.summary = `${parts.join(", ")}. ${confidence} confidence of genuine threat activity.`;
     }
   } catch (err) {
@@ -296,14 +307,18 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
 
   const lines: string[] = [];
   lines.push("THREAT INTELLIGENCE CONTEXT:");
-  lines.push("The following IOCs from this alert have been cross-referenced against threat intelligence feeds and enrichment providers.");
+  lines.push(
+    "The following IOCs from this alert have been cross-referenced against threat intelligence feeds and enrichment providers.",
+  );
   lines.push("");
 
   if (ctx.enrichmentResults.length > 0) {
     lines.push("ENRICHMENT RESULTS (from AbuseIPDB, VirusTotal, OTX AlienVault):");
     for (const r of ctx.enrichmentResults) {
       const tagStr = r.tags.length > 0 ? ` [tags: ${r.tags.join(", ")}]` : "";
-      lines.push(`- ${r.ioc} (${r.iocType}): ${r.verdict.toUpperCase()} (score: ${r.reputationScore.toFixed(2)}) via ${r.provider}${tagStr}`);
+      lines.push(
+        `- ${r.ioc} (${r.iocType}): ${r.verdict.toUpperCase()} (score: ${r.reputationScore.toFixed(2)}) via ${r.provider}${tagStr}`,
+      );
     }
     lines.push("");
   }
@@ -312,7 +327,9 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
     lines.push("OSINT FEED MATCHES:");
     for (const m of ctx.osintMatches) {
       const tagStr = m.tags.length > 0 ? ` [tags: ${m.tags.join(", ")}]` : "";
-      lines.push(`- ${m.ioc} (${m.iocType}): Matched in ${m.feedName} - threat: ${m.threat} (confidence: ${m.confidence})${tagStr}`);
+      lines.push(
+        `- ${m.ioc} (${m.iocType}): Matched in ${m.feedName} - threat: ${m.threat} (confidence: ${m.confidence})${tagStr}`,
+      );
     }
     lines.push("");
   }
@@ -322,12 +339,17 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
     lines.push("");
   }
 
-  lines.push("Use this threat intelligence to inform your analysis. IOCs with high reputation scores or OSINT matches should increase your confidence that this is a genuine threat, not a false positive. Cross-reference these findings with the alert telemetry.");
+  lines.push(
+    "Use this threat intelligence to inform your analysis. IOCs with high reputation scores or OSINT matches should increase your confidence that this is a genuine threat, not a false positive. Cross-reference these findings with the alert telemetry.",
+  );
 
   return lines.join("\n");
 }
 
-export async function correlateAlerts(alertsData: any[], threatIntelCtx?: ThreatIntelContext): Promise<CorrelationResult> {
+export async function correlateAlerts(
+  alertsData: any[],
+  threatIntelCtx?: ThreatIntelContext,
+): Promise<CorrelationResult> {
   const userMessage = buildCorrelationUserMessage(alertsData);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
@@ -337,19 +359,40 @@ export async function correlateAlerts(alertsData: any[], threatIntelCtx?: Threat
 }
 
 function buildCorrelationUserMessage(alertsData: any[]): string {
-  const telemetry = JSON.stringify(alertsData.map(a => ({
-    id: a.id, title: a.title, source: a.source, category: a.category, severity: a.severity,
-    sourceIp: a.sourceIp, destIp: a.destIp, sourcePort: a.sourcePort, destPort: a.destPort,
-    protocol: a.protocol, hostname: a.hostname, userId: a.userId,
-    mitreTactic: a.mitreTactic, mitreTechnique: a.mitreTechnique,
-    detectedAt: a.detectedAt, description: a.description,
-    domain: a.domain, fileHash: a.fileHash, url: a.url,
-  })), null, 2);
+  const telemetry = JSON.stringify(
+    alertsData.map((a) => ({
+      id: a.id,
+      title: a.title,
+      source: a.source,
+      category: a.category,
+      severity: a.severity,
+      sourceIp: a.sourceIp,
+      destIp: a.destIp,
+      sourcePort: a.sourcePort,
+      destPort: a.destPort,
+      protocol: a.protocol,
+      hostname: a.hostname,
+      userId: a.userId,
+      mitreTactic: a.mitreTactic,
+      mitreTechnique: a.mitreTechnique,
+      detectedAt: a.detectedAt,
+      description: a.description,
+      domain: a.domain,
+      fileHash: a.fileHash,
+      url: a.url,
+    })),
+    null,
+    2,
+  );
 
   return `Correlate these ${alertsData.length} security alerts. Identify attack chains, lateral movement patterns, and coordinated campaigns.\n\nALERT TELEMETRY:\n${telemetry}\n\nRespond with this exact JSON structure:\n{\n  "correlatedGroups": [\n    {\n      "groupName": "descriptive attack chain name",\n      "alertIds": ["id1", "id2"],\n      "confidence": 0.85,\n      "reasoning": "evidence-based explanation citing specific indicators",\n      "suggestedIncidentTitle": "concise incident title",\n      "severity": "critical|high|medium|low",\n      "mitreTactics": ["Initial Access", "Execution"],\n      "mitreTechniques": ["T1566.001", "T1059.001"],\n      "killChainPhases": ["Delivery", "Exploitation"],\n      "diamondModel": {\n        "adversary": "threat actor profile or unknown",\n        "infrastructure": ["malicious IPs/domains"],\n        "capability": "attack capability description",\n        "victim": ["affected hosts/users"]\n      }\n    }\n  ],\n  "uncorrelatedAlertIds": ["standalone alert ids"],\n  "overallAssessment": "strategic threat assessment",\n  "threatLandscape": "broader threat context and recommendations"\n}`;
 }
 
-export async function generateIncidentNarrative(incident: any, alerts: any[], threatIntelCtx?: ThreatIntelContext): Promise<NarrativeResult> {
+export async function generateIncidentNarrative(
+  incident: any,
+  alerts: any[],
+  threatIntelCtx?: ThreatIntelContext,
+): Promise<NarrativeResult> {
   const userMessage = buildNarrativeUserMessage(incident, alerts);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
@@ -369,21 +412,46 @@ export async function generateIncidentNarrative(incident: any, alerts: any[], th
 }
 
 function buildNarrativeUserMessage(incident: any, alerts: any[]): string {
-  const incidentCtx = JSON.stringify({
-    title: incident.title, summary: incident.summary, severity: incident.severity,
-    status: incident.status, mitreTactics: incident.mitreTactics,
-    mitreTechniques: incident.mitreTechniques, affectedAssets: incident.affectedAssets,
-    createdAt: incident.createdAt,
-  }, null, 2);
+  const incidentCtx = JSON.stringify(
+    {
+      title: incident.title,
+      summary: incident.summary,
+      severity: incident.severity,
+      status: incident.status,
+      mitreTactics: incident.mitreTactics,
+      mitreTechniques: incident.mitreTechniques,
+      affectedAssets: incident.affectedAssets,
+      createdAt: incident.createdAt,
+    },
+    null,
+    2,
+  );
 
-  const alertTelemetry = JSON.stringify(alerts.map(a => ({
-    id: a.id, title: a.title, source: a.source, category: a.category, severity: a.severity,
-    description: a.description, sourceIp: a.sourceIp, destIp: a.destIp,
-    sourcePort: a.sourcePort, destPort: a.destPort, protocol: a.protocol,
-    hostname: a.hostname, userId: a.userId, mitreTactic: a.mitreTactic,
-    mitreTechnique: a.mitreTechnique, detectedAt: a.detectedAt,
-    fileHash: a.fileHash, domain: a.domain, url: a.url,
-  })), null, 2);
+  const alertTelemetry = JSON.stringify(
+    alerts.map((a) => ({
+      id: a.id,
+      title: a.title,
+      source: a.source,
+      category: a.category,
+      severity: a.severity,
+      description: a.description,
+      sourceIp: a.sourceIp,
+      destIp: a.destIp,
+      sourcePort: a.sourcePort,
+      destPort: a.destPort,
+      protocol: a.protocol,
+      hostname: a.hostname,
+      userId: a.userId,
+      mitreTactic: a.mitreTactic,
+      mitreTechnique: a.mitreTechnique,
+      detectedAt: a.detectedAt,
+      fileHash: a.fileHash,
+      domain: a.domain,
+      url: a.url,
+    })),
+    null,
+    2,
+  );
 
   return `Generate a comprehensive incident narrative for this security incident.\n\nINCIDENT CONTEXT:\n${incidentCtx}\n\nASSOCIATED ALERT TELEMETRY (${alerts.length} alerts):\n${alertTelemetry}\n\nRespond with this exact JSON structure:\n{\n  "narrative": "detailed multi-paragraph attacker-centric narrative with inline [Alert <id>] citations for every claim. Every paragraph MUST reference at least one alert ID from the provided telemetry.",\n  "citedAlertIds": ["list of all alert IDs explicitly cited in the narrative"],\n  "summary": "one-line executive summary",\n  "attackTimeline": [\n    {"timestamp": "ISO 8601", "description": "action description", "alertId": "source alert", "mitreTechnique": "T1xxx.xxx"}\n  ],\n  "attackerProfile": {\n    "ttps": ["TTP descriptions"],\n    "sophistication": "nation-state|advanced-persistent|organized-crime|intermediate|opportunistic",\n    "likelyMotivation": "financial|espionage|hacktivism|destruction|unknown",\n    "estimatedOrigin": "geographic/organizational origin assessment",\n    "diamondModel": {\n      "adversary": "threat actor characterization",\n      "infrastructure": ["C2 servers, domains, IPs used"],\n      "capability": "tooling and technique sophistication",\n      "victim": ["targeted assets, users, systems"]\n    }\n  },\n  "killChainAnalysis": [\n    {"phase": "Kill Chain phase", "description": "what occurred in this phase", "evidence": ["supporting indicators"]}\n  ],\n  "mitigationSteps": ["NIST-aligned containment and recovery steps"],\n  "iocs": [{"type": "ip|domain|hash|url|email|registry|mutex", "value": "indicator value", "context": "where/how observed"}],\n  "riskScore": 85,\n  "nistPhase": "Detection|Analysis|Containment|Eradication|Recovery"\n}`;
 }
@@ -398,16 +466,30 @@ export async function triageAlert(alertData: any, threatIntelCtx?: ThreatIntelCo
 }
 
 function buildTriageUserMessage(alertData: any): string {
-  const telemetry = JSON.stringify({
-    title: alertData.title, source: alertData.source, severity: alertData.severity,
-    category: alertData.category, description: alertData.description,
-    sourceIp: alertData.sourceIp, destIp: alertData.destIp,
-    sourcePort: alertData.sourcePort, destPort: alertData.destPort,
-    protocol: alertData.protocol, hostname: alertData.hostname, userId: alertData.userId,
-    fileHash: alertData.fileHash, url: alertData.url, domain: alertData.domain,
-    rawData: alertData.rawData, normalizedData: alertData.normalizedData,
-    detectedAt: alertData.detectedAt,
-  }, null, 2);
+  const telemetry = JSON.stringify(
+    {
+      title: alertData.title,
+      source: alertData.source,
+      severity: alertData.severity,
+      category: alertData.category,
+      description: alertData.description,
+      sourceIp: alertData.sourceIp,
+      destIp: alertData.destIp,
+      sourcePort: alertData.sourcePort,
+      destPort: alertData.destPort,
+      protocol: alertData.protocol,
+      hostname: alertData.hostname,
+      userId: alertData.userId,
+      fileHash: alertData.fileHash,
+      url: alertData.url,
+      domain: alertData.domain,
+      rawData: alertData.rawData,
+      normalizedData: alertData.normalizedData,
+      detectedAt: alertData.detectedAt,
+    },
+    null,
+    2,
+  );
 
   return `Triage this security alert with full analytical assessment.\n\nALERT TELEMETRY:\n${telemetry}\n\nRespond with this exact JSON structure:\n{\n  "severity": "critical|high|medium|low|informational",\n  "priority": 1,\n  "category": "MITRE-aligned category",\n  "recommendedAction": "specific actionable next step for the analyst",\n  "reasoning": "evidence-based triage reasoning citing specific indicators",\n  "mitreTactic": "MITRE ATT&CK Tactic",\n  "mitreTechnique": "T1xxx.xxx",\n  "killChainPhase": "Kill Chain phase",\n  "falsePositiveLikelihood": 0.15,\n  "falsePositiveReasoning": "why this is or is not likely a false positive",\n  "relatedIocs": [{"type": "ip|domain|hash|url", "value": "indicator value"}],\n  "nistClassification": "NIST incident category",\n  "escalationRequired": false,\n  "containmentAdvice": "immediate containment steps if threat is active"\n}`;
 }

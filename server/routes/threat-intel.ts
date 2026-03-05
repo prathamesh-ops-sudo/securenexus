@@ -1,7 +1,12 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, validateFeedUrl } from "./shared";
 import { isAuthenticated } from "../auth";
-import { insertIocEntrySchema, insertIocFeedSchema, insertIocMatchRuleSchema, insertIocWatchlistSchema } from "@shared/schema";
+import {
+  insertIocEntrySchema,
+  insertIocFeedSchema,
+  insertIocMatchRuleSchema,
+  insertIocWatchlistSchema,
+} from "@shared/schema";
 
 export function registerThreatIntelRoutes(app: Express): void {
   // Threat Intel Configuration (Org-level API keys)
@@ -11,7 +16,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       const orgId = user?.orgId;
       if (!orgId) return res.json([]);
       const configs = await storage.getThreatIntelConfigs(orgId);
-      const masked = configs.map(c => ({
+      const masked = configs.map((c) => ({
         ...c,
         apiKey: c.apiKey ? `****${c.apiKey.slice(-4)}` : null,
       }));
@@ -110,10 +115,13 @@ export function registerThreatIntelRoutes(app: Express): void {
         const { db: database } = await import("../db");
         const { threatIntelConfigs } = await import("@shared/schema");
         const { eq } = await import("drizzle-orm");
-        await database.update(threatIntelConfigs).set({
-          lastTestedAt: new Date(),
-          lastTestStatus: success ? "success" : "failed",
-        }).where(eq(threatIntelConfigs.id, updatedConfig.id));
+        await database
+          .update(threatIntelConfigs)
+          .set({
+            lastTestedAt: new Date(),
+            lastTestStatus: success ? "success" : "failed",
+          })
+          .where(eq(threatIntelConfigs.id, updatedConfig.id));
       }
 
       res.json({ success, message, testedAt: new Date().toISOString() });
@@ -199,7 +207,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const feed = await storage.getIocFeed(p(req.params.id));
       if (!feed) return res.status(404).json({ message: "Feed not found" });
-      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       res.json(feed);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC feed" });
@@ -215,12 +224,15 @@ export function registerThreatIntelRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid feed data", errors: parsed.error.flatten() });
       }
       if (parsed.data.url && !validateFeedUrl(parsed.data.url)) {
-        return res.status(400).json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
+        return res
+          .status(400)
+          .json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
       }
       const feed = await storage.createIocFeed({ ...parsed.data, orgId });
       res.status(201).json(feed);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC feed" });
     }
   });
@@ -230,9 +242,12 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocFeed(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Feed not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       if (req.body.url && !validateFeedUrl(req.body.url)) {
-        return res.status(400).json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
+        return res
+          .status(400)
+          .json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
       }
       const { orgId: _ignoreOrgId, ...updateData } = req.body;
       const feed = await storage.updateIocFeed(p(req.params.id), updateData);
@@ -248,7 +263,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocFeed(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Feed not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const deleted = await storage.deleteIocFeed(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Feed not found" });
       res.json({ message: "Feed deleted" });
@@ -262,7 +278,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const feed = await storage.getIocFeed(p(req.params.id));
       if (!feed) return res.status(404).json({ message: "Feed not found" });
-      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const { fetchAndIngestFeed, ingestFeed } = await import("../ioc-ingestion");
       let result;
       if (req.body && req.body.data) {
@@ -299,7 +316,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const entry = await storage.getIocEntry(p(req.params.id));
       if (!entry) return res.status(404).json({ message: "IOC entry not found" });
-      if (entry.orgId && user?.orgId && entry.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (entry.orgId && user?.orgId && entry.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       res.json(entry);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC entry" });
@@ -317,7 +335,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const entry = await storage.createIocEntry({ ...parsed.data, orgId });
       res.status(201).json(entry);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC entry" });
     }
   });
@@ -327,7 +346,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocEntry(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "IOC entry not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const { orgId: _ignoreOrgId, ...updateData } = req.body;
       const entry = await storage.updateIocEntry(p(req.params.id), updateData);
       if (!entry) return res.status(404).json({ message: "IOC entry not found" });
@@ -342,7 +362,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocEntry(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "IOC entry not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const deleted = await storage.deleteIocEntry(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "IOC entry not found" });
       res.json({ message: "IOC entry deleted" });
@@ -383,7 +404,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const watchlist = await storage.createIocWatchlist({ ...parsed.data, orgId, createdBy: userName });
       res.status(201).json(watchlist);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create watchlist" });
     }
   });
@@ -391,8 +413,11 @@ export function registerThreatIntelRoutes(app: Express): void {
   app.patch("/api/ioc-watchlists/:id", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      const existing = await storage.getIocWatchlist ? await (storage as any).getIocWatchlist(p(req.params.id)) : null;
-      if (existing && existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      const existing = (await storage.getIocWatchlist)
+        ? await (storage as any).getIocWatchlist(p(req.params.id))
+        : null;
+      if (existing && existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const { orgId: _ignoreOrgId, ...updateData } = req.body;
       const watchlist = await storage.updateIocWatchlist(p(req.params.id), updateData);
       if (!watchlist) return res.status(404).json({ message: "Watchlist not found" });
@@ -429,7 +454,11 @@ export function registerThreatIntelRoutes(app: Express): void {
     try {
       const user = (req as any).user;
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const entry = await storage.addIocToWatchlist({ watchlistId: p(req.params.id), iocEntryId: req.body.iocEntryId, addedBy: userName });
+      const entry = await storage.addIocToWatchlist({
+        watchlistId: p(req.params.id),
+        iocEntryId: req.body.iocEntryId,
+        addedBy: userName,
+      });
       res.status(201).json(entry);
     } catch (error) {
       res.status(500).json({ message: "Failed to add IOC to watchlist" });
@@ -467,7 +496,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const rule = await storage.createIocMatchRule({ ...parsed.data, orgId });
       res.status(201).json(rule);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create match rule" });
     }
   });
@@ -505,7 +535,12 @@ export function registerThreatIntelRoutes(app: Express): void {
     try {
       const user = (req as any).user;
       const { alertId, iocEntryId, limit } = req.query;
-      const matches = await storage.getIocMatches(user?.orgId, alertId as string | undefined, iocEntryId as string | undefined, limit ? parseInt(limit as string, 10) : undefined);
+      const matches = await storage.getIocMatches(
+        user?.orgId,
+        alertId as string | undefined,
+        iocEntryId as string | undefined,
+        limit ? parseInt(limit as string, 10) : undefined,
+      );
       res.json(matches);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC matches" });
@@ -553,7 +588,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const review = await storage.getPostIncidentReview(p(req.params.id));
       if (!review) return res.status(404).json({ message: "Post-incident review not found" });
-      if (review.orgId && user?.orgId && review.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (review.orgId && user?.orgId && review.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       res.json(review);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch post-incident review" });
@@ -565,7 +601,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getPostIncidentReview(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Post-incident review not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const review = await storage.updatePostIncidentReview(p(req.params.id), req.body);
       res.json(review);
     } catch (error) {
@@ -578,12 +615,12 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getPostIncidentReview(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Post-incident review not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const deleted = await storage.deletePostIncidentReview(p(req.params.id));
       res.json({ message: "Post-incident review deleted" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete post-incident review" });
     }
   });
-
 }

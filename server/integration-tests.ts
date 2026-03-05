@@ -50,78 +50,100 @@ export async function runConnectorContractTests(connectorType: string): Promise<
   const suiteStart = Date.now();
   const results: TestResult[] = [];
 
-  results.push(await runTest(`${connectorType}: connector type metadata exists`, async () => {
-    const { getAllConnectorTypes } = await import("./connector-engine");
-    const types = getAllConnectorTypes();
-    const found = types.find((t: any) => t.type === connectorType);
-    assertDefined(found, `connector type '${connectorType}'`);
-    assertHasFields(found as unknown as Record<string, unknown>, ["type", "name", "category"], "connector metadata");
-  }));
+  results.push(
+    await runTest(`${connectorType}: connector type metadata exists`, async () => {
+      const { getAllConnectorTypes } = await import("./connector-engine");
+      const types = getAllConnectorTypes();
+      const found = types.find((t: any) => t.type === connectorType);
+      assertDefined(found, `connector type '${connectorType}'`);
+      assertHasFields(found as unknown as Record<string, unknown>, ["type", "name", "category"], "connector metadata");
+    }),
+  );
 
-  results.push(await runTest(`${connectorType}: connector schema has required fields`, async () => {
-    const orgs = await storage.getOrganizations();
-    const testOrgId = orgs.length > 0 ? orgs[0].id : undefined;
-    const connectors = testOrgId ? await storage.getConnectors(testOrgId) : [];
-    const sample = connectors.find(c => c.type === connectorType);
-    if (!sample) {
-      const allConnectors = testOrgId ? await storage.getConnectors(testOrgId) : [];
-      if (allConnectors.length > 0) {
-        const anyConnector = allConnectors[0];
-        assertHasFields(anyConnector as unknown as Record<string, unknown>, ["id", "name", "type", "status"], "connector");
+  results.push(
+    await runTest(`${connectorType}: connector schema has required fields`, async () => {
+      const orgs = await storage.getOrganizations();
+      const testOrgId = orgs.length > 0 ? orgs[0].id : undefined;
+      const connectors = testOrgId ? await storage.getConnectors(testOrgId) : [];
+      const sample = connectors.find((c) => c.type === connectorType);
+      if (!sample) {
+        const allConnectors = testOrgId ? await storage.getConnectors(testOrgId) : [];
+        if (allConnectors.length > 0) {
+          const anyConnector = allConnectors[0];
+          assertHasFields(
+            anyConnector as unknown as Record<string, unknown>,
+            ["id", "name", "type", "status"],
+            "connector",
+          );
+          return;
+        }
         return;
       }
-      return;
-    }
-    assertHasFields(sample as unknown as Record<string, unknown>, ["id", "name", "type", "status", "orgId"], "connector");
-  }));
+      assertHasFields(
+        sample as unknown as Record<string, unknown>,
+        ["id", "name", "type", "status", "orgId"],
+        "connector",
+      );
+    }),
+  );
 
-  results.push(await runTest(`${connectorType}: connector config sanitization strips secrets`, async () => {
-    const sensitiveKeys = ["apiKey", "secretAccessKey", "token", "password", "siteToken"];
-    const mockConfig: Record<string, string> = {};
-    for (const key of sensitiveKeys) {
-      mockConfig[key] = "test-secret-value";
-    }
-    for (const key of sensitiveKeys) {
-      assertDefined(mockConfig[key], key);
-    }
-  }));
+  results.push(
+    await runTest(`${connectorType}: connector config sanitization strips secrets`, async () => {
+      const sensitiveKeys = ["apiKey", "secretAccessKey", "token", "password", "siteToken"];
+      const mockConfig: Record<string, string> = {};
+      for (const key of sensitiveKeys) {
+        mockConfig[key] = "test-secret-value";
+      }
+      for (const key of sensitiveKeys) {
+        assertDefined(mockConfig[key], key);
+      }
+    }),
+  );
 
-  results.push(await runTest(`${connectorType}: test connector returns structured response`, async () => {
-    const { testConnector } = await import("./connector-engine");
-    const response = { success: false, message: "No connector configured for contract test" };
-    assertHasFields(response, ["success", "message"], "test result");
-    assertType(response.success, "boolean", "success");
-    assertType(response.message, "string", "message");
-  }));
+  results.push(
+    await runTest(`${connectorType}: test connector returns structured response`, async () => {
+      const { testConnector } = await import("./connector-engine");
+      const response = { success: false, message: "No connector configured for contract test" };
+      assertHasFields(response, ["success", "message"], "test result");
+      assertType(response.success, "boolean", "success");
+      assertType(response.message, "string", "message");
+    }),
+  );
 
-  results.push(await runTest(`${connectorType}: sync returns structured result`, async () => {
-    const expectedShape = { synced: false, alertsIngested: 0 };
-    assertHasFields(expectedShape, ["synced"], "sync result");
-  }));
+  results.push(
+    await runTest(`${connectorType}: sync returns structured result`, async () => {
+      const expectedShape = { synced: false, alertsIngested: 0 };
+      assertHasFields(expectedShape, ["synced"], "sync result");
+    }),
+  );
 
-  results.push(await runTest(`${connectorType}: health check schema compliance`, async () => {
-    const healthCheckShape = {
-      id: "uuid",
-      connectorId: "uuid",
-      status: "healthy",
-      latencyMs: 100,
-      checkedAt: new Date().toISOString(),
-    };
-    assertHasFields(healthCheckShape, ["id", "connectorId", "status", "latencyMs", "checkedAt"], "health check");
-  }));
+  results.push(
+    await runTest(`${connectorType}: health check schema compliance`, async () => {
+      const healthCheckShape = {
+        id: "uuid",
+        connectorId: "uuid",
+        status: "healthy",
+        latencyMs: 100,
+        checkedAt: new Date().toISOString(),
+      };
+      assertHasFields(healthCheckShape, ["id", "connectorId", "status", "latencyMs", "checkedAt"], "health check");
+    }),
+  );
 
-  results.push(await runTest(`${connectorType}: connector job run schema compliance`, async () => {
-    const jobRunShape = {
-      id: "uuid",
-      connectorId: "uuid",
-      status: "completed",
-      alertsIngested: 0,
-      startedAt: new Date().toISOString(),
-    };
-    assertHasFields(jobRunShape, ["id", "connectorId", "status", "alertsIngested", "startedAt"], "job run");
-  }));
+  results.push(
+    await runTest(`${connectorType}: connector job run schema compliance`, async () => {
+      const jobRunShape = {
+        id: "uuid",
+        connectorId: "uuid",
+        status: "completed",
+        alertsIngested: 0,
+        startedAt: new Date().toISOString(),
+      };
+      assertHasFields(jobRunShape, ["id", "connectorId", "status", "alertsIngested", "startedAt"], "job run");
+    }),
+  );
 
-  const passed = results.filter(r => r.passed).length;
+  const passed = results.filter((r) => r.passed).length;
   return {
     suite: `Connector Contract Tests: ${connectorType}`,
     total: results.length,
@@ -137,71 +159,98 @@ export async function runAutomationIntegrationTests(playbookId: string): Promise
   const suiteStart = Date.now();
   const results: TestResult[] = [];
 
-  results.push(await runTest("playbook: exists and has valid schema", async () => {
-    const playbook = await storage.getPlaybook(playbookId);
-    assertDefined(playbook, "playbook");
-    assertHasFields(playbook as unknown as Record<string, unknown>, ["id", "name", "trigger", "actions", "status"], "playbook");
-  }));
+  results.push(
+    await runTest("playbook: exists and has valid schema", async () => {
+      const playbook = await storage.getPlaybook(playbookId);
+      assertDefined(playbook, "playbook");
+      assertHasFields(
+        playbook as unknown as Record<string, unknown>,
+        ["id", "name", "trigger", "actions", "status"],
+        "playbook",
+      );
+    }),
+  );
 
-  results.push(await runTest("playbook: steps array is well-formed", async () => {
-    const playbook = await storage.getPlaybook(playbookId);
-    assertDefined(playbook, "playbook");
-    const steps = playbook!.actions;
-    assertDefined(steps, "steps");
-  }));
+  results.push(
+    await runTest("playbook: steps array is well-formed", async () => {
+      const playbook = await storage.getPlaybook(playbookId);
+      assertDefined(playbook, "playbook");
+      const steps = playbook!.actions;
+      assertDefined(steps, "steps");
+    }),
+  );
 
-  results.push(await runTest("playbook: execution creates valid record", async () => {
-    const executionShape = {
-      id: "uuid",
-      playbookId,
-      status: "pending",
-      triggeredBy: "system",
-      startedAt: new Date().toISOString(),
-    };
-    assertHasFields(executionShape, ["id", "playbookId", "status", "triggeredBy", "startedAt"], "execution");
-    assertType(executionShape.status, "string", "execution.status");
-  }));
+  results.push(
+    await runTest("playbook: execution creates valid record", async () => {
+      const executionShape = {
+        id: "uuid",
+        playbookId,
+        status: "pending",
+        triggeredBy: "system",
+        startedAt: new Date().toISOString(),
+      };
+      assertHasFields(executionShape, ["id", "playbookId", "status", "triggeredBy", "startedAt"], "execution");
+      assertType(executionShape.status, "string", "execution.status");
+    }),
+  );
 
-  results.push(await runTest("playbook: approval workflow schema compliance", async () => {
-    const approvalShape = {
-      id: "uuid",
-      playbookId,
-      executionId: "uuid",
-      status: "pending",
-      requestedBy: "user-id",
-    };
-    assertHasFields(approvalShape, ["id", "playbookId", "executionId", "status", "requestedBy"], "approval");
-  }));
+  results.push(
+    await runTest("playbook: approval workflow schema compliance", async () => {
+      const approvalShape = {
+        id: "uuid",
+        playbookId,
+        executionId: "uuid",
+        status: "pending",
+        requestedBy: "user-id",
+      };
+      assertHasFields(approvalShape, ["id", "playbookId", "executionId", "status", "requestedBy"], "approval");
+    }),
+  );
 
-  results.push(await runTest("action-dispatcher: dispatchAction returns structured result", async () => {
-    const { dispatchAction } = await import("./action-dispatcher");
-    assertDefined(dispatchAction, "dispatchAction function");
-    assertType(dispatchAction, "function", "dispatchAction");
-  }));
+  results.push(
+    await runTest("action-dispatcher: dispatchAction returns structured result", async () => {
+      const { dispatchAction } = await import("./action-dispatcher");
+      assertDefined(dispatchAction, "dispatchAction function");
+      assertType(dispatchAction, "function", "dispatchAction");
+    }),
+  );
 
-  results.push(await runTest("rollback-engine: rollback interfaces exist", async () => {
-    const rollbackModule = await import("./rollback-engine");
-    assertDefined(rollbackModule.canRollback, "canRollback");
-    assertDefined(rollbackModule.executeRollback, "executeRollback");
-    assertDefined(rollbackModule.getAvailableRollbacks, "getAvailableRollbacks");
-    assertType(rollbackModule.canRollback, "function", "canRollback");
-  }));
+  results.push(
+    await runTest("rollback-engine: rollback interfaces exist", async () => {
+      const rollbackModule = await import("./rollback-engine");
+      assertDefined(rollbackModule.canRollback, "canRollback");
+      assertDefined(rollbackModule.executeRollback, "executeRollback");
+      assertDefined(rollbackModule.getAvailableRollbacks, "getAvailableRollbacks");
+      assertType(rollbackModule.canRollback, "function", "canRollback");
+    }),
+  );
 
-  results.push(await runTest("response-actions: action types are well-defined", async () => {
-    const validActionTypes = ["block_ip", "isolate_host", "disable_user", "quarantine_file", "revoke_token", "custom"];
-    assertArray(validActionTypes, "action types");
-    for (const at of validActionTypes) {
-      assertType(at, "string", "action type");
-    }
-  }));
+  results.push(
+    await runTest("response-actions: action types are well-defined", async () => {
+      const validActionTypes = [
+        "block_ip",
+        "isolate_host",
+        "disable_user",
+        "quarantine_file",
+        "revoke_token",
+        "custom",
+      ];
+      assertArray(validActionTypes, "action types");
+      for (const at of validActionTypes) {
+        assertType(at, "string", "action type");
+      }
+    }),
+  );
 
-  results.push(await runTest("entity-resolver: entity resolution interface exists", async () => {
-    const entityModule = await import("./entity-resolver");
-    assertDefined(entityModule.resolveAndLinkEntities, "resolveAndLinkEntities");
-    assertType(entityModule.resolveAndLinkEntities, "function", "resolveAndLinkEntities");
-  }));
+  results.push(
+    await runTest("entity-resolver: entity resolution interface exists", async () => {
+      const entityModule = await import("./entity-resolver");
+      assertDefined(entityModule.resolveAndLinkEntities, "resolveAndLinkEntities");
+      assertType(entityModule.resolveAndLinkEntities, "function", "resolveAndLinkEntities");
+    }),
+  );
 
-  const passed = results.filter(r => r.passed).length;
+  const passed = results.filter((r) => r.passed).length;
   return {
     suite: `Automation Integration Tests: ${playbookId}`,
     total: results.length,

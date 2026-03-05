@@ -22,16 +22,26 @@ function isEnvelope(body: unknown): body is ApiEnvelope {
 
 function statusToErrorCode(status: number): string {
   switch (status) {
-    case 400: return ERROR_CODES.BAD_REQUEST;
-    case 401: return ERROR_CODES.UNAUTHENTICATED;
-    case 403: return ERROR_CODES.FORBIDDEN;
-    case 404: return ERROR_CODES.NOT_FOUND;
-    case 409: return ERROR_CODES.CONFLICT;
-    case 422: return ERROR_CODES.VALIDATION_ERROR;
-    case 429: return ERROR_CODES.RATE_LIMITED;
-    case 501: return ERROR_CODES.NOT_IMPLEMENTED;
-    case 502: return ERROR_CODES.UPSTREAM_ERROR;
-    default:  return ERROR_CODES.INTERNAL_ERROR;
+    case 400:
+      return ERROR_CODES.BAD_REQUEST;
+    case 401:
+      return ERROR_CODES.UNAUTHENTICATED;
+    case 403:
+      return ERROR_CODES.FORBIDDEN;
+    case 404:
+      return ERROR_CODES.NOT_FOUND;
+    case 409:
+      return ERROR_CODES.CONFLICT;
+    case 422:
+      return ERROR_CODES.VALIDATION_ERROR;
+    case 429:
+      return ERROR_CODES.RATE_LIMITED;
+    case 501:
+      return ERROR_CODES.NOT_IMPLEMENTED;
+    case 502:
+      return ERROR_CODES.UPSTREAM_ERROR;
+    default:
+      return ERROR_CODES.INTERNAL_ERROR;
   }
 }
 
@@ -69,16 +79,16 @@ export function envelopeMiddleware(req: Request, res: Response, next: NextFuncti
 
     // Error responses (4xx / 5xx)
     if (status >= 400) {
-      const message = (typeof body === "object" && body !== null && !Array.isArray(body))
-        ? extractMessage(body as Record<string, unknown>)
-        : "An error occurred";
+      const message =
+        typeof body === "object" && body !== null && !Array.isArray(body)
+          ? extractMessage(body as Record<string, unknown>)
+          : "An error occurred";
 
       const code = statusToErrorCode(status);
 
       // Preserve Zod validation details when present.
-      const details = (typeof body === "object" && body !== null && (body as any).errors)
-        ? (body as any).errors
-        : undefined;
+      const details =
+        typeof body === "object" && body !== null && (body as any).errors ? (body as any).errors : undefined;
 
       const envelope: ApiEnvelope<null> = {
         data: null,

@@ -68,12 +68,13 @@ export const zscalerPlugin: ConnectorPlugin = {
       headers: { "Content-Type": "application/json" },
       body: { apiKey: config.apiKey, username: config.username, password: config.password },
     });
-    const cookie = (authRes.data as Record<string, any>)?.authType === "session"
-      ? (authRes.data as Record<string, any>)?.obfuscateApiKey
-      : undefined;
+    const cookie =
+      (authRes.data as Record<string, any>)?.authType === "session"
+        ? (authRes.data as Record<string, any>)?.obfuscateApiKey
+        : undefined;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Cookie": cookie ? `JSESSIONID=${cookie}` : "",
+      Cookie: cookie ? `JSESSIONID=${cookie}` : "",
     };
     const body: Record<string, unknown> = { type: "all", pageSize: 100 };
     if (since) {

@@ -131,7 +131,13 @@ function resetWindowIfExpired(counter: SlidingWindowCounter, windowMs: number): 
   }
 }
 
-export type QuotaCategory = "ingestion" | "ai_tokens" | "ai_invocations" | "connector_sync" | "api_calls" | "sse_connections";
+export type QuotaCategory =
+  | "ingestion"
+  | "ai_tokens"
+  | "ai_invocations"
+  | "connector_sync"
+  | "api_calls"
+  | "sse_connections";
 
 export interface QuotaCheckResult {
   allowed: boolean;
@@ -475,15 +481,51 @@ export function getOrgQuotaStatus(orgId: string, plan: PlanTier): OrgQuotaStatus
   resetWindowIfExpired(state.apiCallsPerDay, ONE_DAY);
 
   const usage = {
-    ingestionPerMinute: { current: state.ingestionPerMinute.count, limit: quotas.ingestionEventsPerMinute, pct: usagePct(state.ingestionPerMinute.count, quotas.ingestionEventsPerMinute) },
-    ingestionPerDay: { current: state.ingestionPerDay.count, limit: quotas.ingestionEventsPerDay, pct: usagePct(state.ingestionPerDay.count, quotas.ingestionEventsPerDay) },
-    aiTokensPerDay: { current: state.aiTokensPerDay.count, limit: quotas.aiTokensPerDay, pct: usagePct(state.aiTokensPerDay.count, quotas.aiTokensPerDay) },
-    aiInvocationsPerMinute: { current: state.aiInvocationsPerMinute.count, limit: quotas.aiInvocationsPerMinute, pct: usagePct(state.aiInvocationsPerMinute.count, quotas.aiInvocationsPerMinute) },
-    connectorSyncsPerHour: { current: state.connectorSyncsPerHour.count, limit: quotas.connectorSyncsPerHour, pct: usagePct(state.connectorSyncsPerHour.count, quotas.connectorSyncsPerHour) },
-    connectorActiveSyncs: { current: state.activeConnectorSyncs, limit: quotas.connectorMaxConcurrent, pct: usagePct(state.activeConnectorSyncs, quotas.connectorMaxConcurrent) },
-    apiCallsPerMinute: { current: state.apiCallsPerMinute.count, limit: quotas.apiCallsPerMinute, pct: usagePct(state.apiCallsPerMinute.count, quotas.apiCallsPerMinute) },
-    apiCallsPerDay: { current: state.apiCallsPerDay.count, limit: quotas.apiCallsPerDay, pct: usagePct(state.apiCallsPerDay.count, quotas.apiCallsPerDay) },
-    sseConnections: { current: state.activeSseConnections, limit: quotas.maxSseConnections, pct: usagePct(state.activeSseConnections, quotas.maxSseConnections) },
+    ingestionPerMinute: {
+      current: state.ingestionPerMinute.count,
+      limit: quotas.ingestionEventsPerMinute,
+      pct: usagePct(state.ingestionPerMinute.count, quotas.ingestionEventsPerMinute),
+    },
+    ingestionPerDay: {
+      current: state.ingestionPerDay.count,
+      limit: quotas.ingestionEventsPerDay,
+      pct: usagePct(state.ingestionPerDay.count, quotas.ingestionEventsPerDay),
+    },
+    aiTokensPerDay: {
+      current: state.aiTokensPerDay.count,
+      limit: quotas.aiTokensPerDay,
+      pct: usagePct(state.aiTokensPerDay.count, quotas.aiTokensPerDay),
+    },
+    aiInvocationsPerMinute: {
+      current: state.aiInvocationsPerMinute.count,
+      limit: quotas.aiInvocationsPerMinute,
+      pct: usagePct(state.aiInvocationsPerMinute.count, quotas.aiInvocationsPerMinute),
+    },
+    connectorSyncsPerHour: {
+      current: state.connectorSyncsPerHour.count,
+      limit: quotas.connectorSyncsPerHour,
+      pct: usagePct(state.connectorSyncsPerHour.count, quotas.connectorSyncsPerHour),
+    },
+    connectorActiveSyncs: {
+      current: state.activeConnectorSyncs,
+      limit: quotas.connectorMaxConcurrent,
+      pct: usagePct(state.activeConnectorSyncs, quotas.connectorMaxConcurrent),
+    },
+    apiCallsPerMinute: {
+      current: state.apiCallsPerMinute.count,
+      limit: quotas.apiCallsPerMinute,
+      pct: usagePct(state.apiCallsPerMinute.count, quotas.apiCallsPerMinute),
+    },
+    apiCallsPerDay: {
+      current: state.apiCallsPerDay.count,
+      limit: quotas.apiCallsPerDay,
+      pct: usagePct(state.apiCallsPerDay.count, quotas.apiCallsPerDay),
+    },
+    sseConnections: {
+      current: state.activeSseConnections,
+      limit: quotas.maxSseConnections,
+      pct: usagePct(state.activeSseConnections, quotas.maxSseConnections),
+    },
   };
 
   const warnings: string[] = [];

@@ -58,7 +58,12 @@ export const checkpointPlugin: ConnectorPlugin = {
       { key: "baseUrl", label: "Management Server URL", type: "url", placeholder: "https://your-checkpoint-mgmt:443" },
     ],
     optionalFields: [
-      { key: "apiKey", label: "Session ID (X-chkp-sid)", type: "password", placeholder: "Pre-authenticated session ID" },
+      {
+        key: "apiKey",
+        label: "Session ID (X-chkp-sid)",
+        type: "password",
+        placeholder: "Pre-authenticated session ID",
+      },
       { key: "username", label: "Username", type: "text", placeholder: "Check Point admin username" },
       { key: "password", label: "Password", type: "password", placeholder: "Check Point admin password" },
     ],
@@ -98,7 +103,8 @@ export const checkpointPlugin: ConnectorPlugin = {
       limit: 100,
     };
     if (since) {
-      (body["new-query"] as Record<string, unknown>)["time-frame"] = `last-${Math.ceil((Date.now() - since.getTime()) / 3600000)}hours`;
+      (body["new-query"] as Record<string, unknown>)["time-frame"] =
+        `last-${Math.ceil((Date.now() - since.getTime()) / 3600000)}hours`;
     }
     const res = await httpRequest(`${config.baseUrl}/web_api/show-logs`, {
       method: "POST",
