@@ -168,8 +168,10 @@ function CopyButton({ text }: { text: string }) {
             size="icon"
             className="h-6 w-6 shrink-0"
             onClick={() => {
-              navigator.clipboard.writeText(text);
-              toast({ title: "Copied", description: "Copied to clipboard" });
+              navigator.clipboard.writeText(text).then(
+                () => toast({ title: "Copied", description: "Copied to clipboard" }),
+                () => toast({ title: "Copy failed", description: "Could not access clipboard" }),
+              );
             }}
           >
             <Copy className="h-3 w-3" />
@@ -643,10 +645,13 @@ export default function ApiVersioningPage() {
   const isLoading = policyLoading || guideLoading;
   const isError = policyError || guideError;
 
-  const handleRefresh = () => {
-    refetchPolicy();
-    refetchGuide();
-    toast({ title: "Refreshed", description: "API versioning data refreshed" });
+  const handleRefresh = async () => {
+    try {
+      await Promise.all([refetchPolicy(), refetchGuide()]);
+      toast({ title: "Refreshed", description: "API versioning data refreshed" });
+    } catch {
+      toast({ title: "Refresh failed", description: "Could not refresh API versioning data", variant: "destructive" });
+    }
   };
 
   if (isLoading) return <LoadingSkeleton />;
