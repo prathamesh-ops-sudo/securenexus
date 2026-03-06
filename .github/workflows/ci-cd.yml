@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # =============================================================================
 # PR PIPELINE — every gate must pass, nothing merges without green across all
@@ -214,6 +214,7 @@ jobs:
             fi
             echo "Auto-fix resolved critical vulnerabilities"
           fi
+          HIGH_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
           if [ "$HIGH_COUNT" -gt 5 ]; then
             echo "::error::$HIGH_COUNT high vulnerabilities exceed threshold (5) — failing gate"
             exit 1

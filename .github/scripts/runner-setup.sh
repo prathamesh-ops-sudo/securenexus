@@ -143,7 +143,7 @@ if [[ ! -f ./config.sh ]]; then
 fi
 
 # Configure the runner
-su - "$RUNNER_USER" -c "cd $RUNNER_HOME && ./config.sh --url https://github.com/${REPO} --token ${TOKEN} --labels ${LABELS} --name securenexus-runner --work _work --replace --unattended"
+su - "$RUNNER_USER" -c "cd $RUNNER_HOME && RUNNER_TOKEN='${TOKEN}' ./config.sh --url https://github.com/${REPO} --token \"\$RUNNER_TOKEN\" --labels ${LABELS} --name securenexus-runner --work _work --replace --unattended"
 
 # ── 8. Install as a service ──────────────────────────────────────────────────
 echo "[8/8] Installing runner as systemd service..."
