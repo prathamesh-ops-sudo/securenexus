@@ -110,7 +110,11 @@ export default function EvidenceChainViewerPage() {
     queryFn: async () => {
       const res = await fetch(`/api/incidents/${activeIncidentId}/evidence-chain`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch evidence chain");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as EvidenceChainEntry[];
+      }
+      return Array.isArray(body) ? body : [];
     },
     enabled: !!activeIncidentId,
   });
@@ -124,7 +128,11 @@ export default function EvidenceChainViewerPage() {
     queryFn: async () => {
       const res = await fetch(`/api/incidents/${activeIncidentId}/evidence-chain/verify`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to verify chain");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return body.data as ChainVerification;
+      }
+      return body as ChainVerification;
     },
     enabled: false,
   });
