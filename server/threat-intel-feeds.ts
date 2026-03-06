@@ -237,7 +237,7 @@ function normalizeRSSItems(feedUrl: string, feed: Parser.Output<Parser.Item>, fe
       const updatedDt = parseTimestamp(item.isoDate);
 
       const publishedAt = isoformatZ(publishedDt);
-      const updatedAt = publishedDt !== updatedDt ? isoformatZ(updatedDt) : null;
+      const updatedAt = publishedDt?.getTime() !== updatedDt?.getTime() ? isoformatZ(updatedDt) : null;
 
       const summarySrc = item.contentSnippet || item.content || "";
       const contentSrc = (item as any).contentEncoded || item.content || "";
@@ -1114,6 +1114,19 @@ const RSS_FEEDS: ThreatIntelFeedDefinition[] = [
 const feedArticleCache = new Map<string, { articles: ThreatIntelArticle[]; fetchedAt: number }>();
 const feedHealthHistory = new Map<string, FeedHealthEntry[]>();
 const feedEnabled = new Map<string, boolean>();
+const ORG_FEED_ENABLED = new Map<string, boolean>();
+
+function orgFeedKey(orgId: string, slug: string): string {
+  return `${orgId}:${slug}`;
+}
+
+function isFeedEnabledForOrg(slug: string, orgId?: string): boolean {
+  if (orgId) {
+    const orgKey = orgFeedKey(orgId, slug);
+    if (ORG_FEED_ENABLED.has(orgKey)) return ORG_FEED_ENABLED.get(orgKey) !== false;
+  }
+  return feedEnabled.get(slug) !== false;
+}
 const ARTICLE_CACHE_TTL_MS = 30 * 60 * 1000;
 const MAX_HEALTH_ENTRIES = 50;
 const ALL_SLUGS = new Set(RSS_FEEDS.map((f) => f.slug));
@@ -1145,10 +1158,10 @@ export function isThreatIntelSlugValid(slug: string): boolean {
   return ALL_SLUGS.has(slug);
 }
 
-export function getThreatIntelFeedStatuses(): ThreatIntelFeedStatus[] {
+export function getThreatIntelFeedStatuses(orgId?: string): ThreatIntelFeedStatus[] {
   return RSS_FEEDS.map((def) => {
     const cached = feedArticleCache.get(def.slug);
-    const enabled = feedEnabled.get(def.slug) !== false;
+    const enabled = isFeedEnabledForOrg(def.slug, orgId);
     const history = feedHealthHistory.get(def.slug) || [];
 
     const successCount = history.filter((h) => h.status === "success").length;
@@ -1186,9 +1199,13 @@ export function getThreatIntelFeedStatuses(): ThreatIntelFeedStatus[] {
   });
 }
 
-export function setThreatIntelFeedEnabled(slug: string, enabled: boolean): boolean {
+export function setThreatIntelFeedEnabled(slug: string, enabled: boolean, orgId?: string): boolean {
   if (!ALL_SLUGS.has(slug)) return false;
-  feedEnabled.set(slug, enabled);
+  if (orgId) {
+    ORG_FEED_ENABLED.set(orgFeedKey(orgId, slug), enabled);
+  } else {
+    feedEnabled.set(slug, enabled);
+  }
   return true;
 }
 
@@ -1242,9 +1259,9 @@ export async function fetchThreatIntelFeed(
   return { articles: sorted, error: null };
 }
 
-export async function fetchAllThreatIntelFeeds(force: boolean = false): Promise<FeedAggregationResult> {
+export async function fetchAllThreatIntelFeeds(force: boolean = false, orgId?: string): Promise<FeedAggregationResult> {
   const started = Date.now();
-  const enabledFeeds = RSS_FEEDS.filter((f) => feedEnabled.get(f.slug) !== false);
+  const enabledFeeds = RSS_FEEDS.filter((f) => isFeedEnabledForOrg(f.slug, orgId));
 
   const allArticles: ThreatIntelArticle[] = [];
   const errors: Array<{ feedUrl: string; type: string; message: string }> = [];
@@ -1298,24 +1315,18 @@ export function getCachedThreatIntelArticles(options?: {
   category?: string;
   search?: string;
   feedSlug?: string;
+  orgId?: string;
 }): ThreatIntelArticle[] {
+  const categorySlugs = options?.category
+    ? new Set(RSS_FEEDS.filter((f) => f.category.toLowerCase() === options.category!.toLowerCase()).map((f) => f.slug))
+    : null;
+
   let all: ThreatIntelArticle[] = [];
   for (const [slug, cached] of Array.from(feedArticleCache.entries())) {
-    if (feedEnabled.get(slug) === false) continue;
+    if (!isFeedEnabledForOrg(slug, options?.orgId)) continue;
     if (options?.feedSlug && slug !== options.feedSlug) continue;
+    if (categorySlugs && !categorySlugs.has(slug)) continue;
     all.push(...cached.articles);
-  }
-
-  if (options?.category) {
-    const cat = options.category.toLowerCase();
-    const feedSlugsInCategory = RSS_FEEDS.filter((f) => f.category.toLowerCase() === cat).map((f) => f.slug);
-    all = all.filter((a) => {
-      const source = a.source.toLowerCase();
-      return feedSlugsInCategory.some((slug) => {
-        const def = RSS_FEEDS.find((f) => f.slug === slug);
-        return def && extractSource(def.url) === source;
-      });
-    });
   }
 
   if (options?.search) {

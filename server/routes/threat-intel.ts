@@ -730,9 +730,10 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/threat-intel-feeds/statuses", isAuthenticated, (_req: Request, res: Response) => {
+  app.get("/api/threat-intel-feeds/statuses", isAuthenticated, (req: Request, res: Response) => {
     try {
-      res.json(getThreatIntelFeedStatuses());
+      const orgId = (req as any).user?.orgId;
+      res.json(getThreatIntelFeedStatuses(orgId));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch feed statuses" });
     }
@@ -747,16 +748,18 @@ export function registerThreatIntelRoutes(app: Express): void {
       if (isNaN(limit) || limit < 1 || limit > 5000) {
         return res.status(400).json({ message: "limit must be between 1 and 5000" });
       }
-      const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug });
+      const orgId = (req as any).user?.orgId;
+      const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug, orgId });
       res.json({ articles, total: articles.length });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch articles" });
     }
   });
 
-  app.post("/api/threat-intel-feeds/refresh-all", isAuthenticated, async (_req: Request, res: Response) => {
+  app.post("/api/threat-intel-feeds/refresh-all", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const result = await fetchAllThreatIntelFeeds(true);
+      const orgId = (req as any).user?.orgId;
+      const result = await fetchAllThreatIntelFeeds(true, orgId);
       res.json(result);
     } catch (error) {
       res.status(500).json({ message: "Failed to refresh all threat intel feeds" });
@@ -792,7 +795,8 @@ export function registerThreatIntelRoutes(app: Express): void {
   app.post("/api/threat-intel-feeds/:slug/enable", isAuthenticated, (req: Request, res: Response) => {
     try {
       const slug = p(req.params.slug);
-      if (!setThreatIntelFeedEnabled(slug, true)) {
+      const orgId = (req as any).user?.orgId;
+      if (!setThreatIntelFeedEnabled(slug, true, orgId)) {
         return res.status(404).json({ message: "Unknown feed slug" });
       }
       res.json({ slug, enabled: true });
@@ -804,7 +808,8 @@ export function registerThreatIntelRoutes(app: Express): void {
   app.post("/api/threat-intel-feeds/:slug/disable", isAuthenticated, (req: Request, res: Response) => {
     try {
       const slug = p(req.params.slug);
-      if (!setThreatIntelFeedEnabled(slug, false)) {
+      const orgId = (req as any).user?.orgId;
+      if (!setThreatIntelFeedEnabled(slug, false, orgId)) {
         return res.status(404).json({ message: "Unknown feed slug" });
       }
       res.json({ slug, enabled: false });

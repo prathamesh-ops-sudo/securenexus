@@ -641,7 +641,12 @@ export default function ThreatIntelFeedsPage() {
                     size="sm"
                     variant="outline"
                     className="h-8 text-xs"
-                    onClick={() => setArticleLimit((prev) => prev + 100)}
+                    onClick={() =>
+                      setArticleLimit((prev) => {
+                        const opts = [50, 100, 250, 500, 1000];
+                        return opts.find((o) => o > prev) || prev + 500;
+                      })
+                    }
                   >
                     Load More
                   </Button>
