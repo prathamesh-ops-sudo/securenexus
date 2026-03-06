@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Shield,
   AlertTriangle,
@@ -23,6 +24,15 @@ import {
   Target,
   Zap,
   TrendingUp,
+  Plus,
+  Send,
+  Route,
+  Crosshair,
+  Laptop,
+  CloudCog,
+  Bug,
+  Wrench,
+  Activity,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -102,6 +112,11 @@ const ASSET_TYPE_CONFIG: Record<string, { icon: typeof Shield; color: string; la
   network: { icon: Globe, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", label: "Network" },
   compute: { icon: Server, color: "text-orange-400 bg-orange-500/10 border-orange-500/20", label: "Compute" },
   container: { icon: Box, color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", label: "Container" },
+  endpoint: { icon: Laptop, color: "text-pink-400 bg-pink-500/10 border-pink-500/20", label: "Endpoint" },
+  saas: { icon: CloudCog, color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20", label: "SaaS" },
+  runtime: { icon: Activity, color: "text-lime-400 bg-lime-500/10 border-lime-500/20", label: "Runtime" },
+  remediation: { icon: Wrench, color: "text-teal-400 bg-teal-500/10 border-teal-500/20", label: "Remediation" },
+  vulnerability: { icon: Bug, color: "text-rose-400 bg-rose-500/10 border-rose-500/20", label: "Vulnerability" },
 };
 
 const ENVIRONMENT_COLORS: Record<string, string> = {
@@ -632,11 +647,524 @@ function VisualGraphView({
   );
 }
 
+interface IngestionResult {
+  assetsUpserted: number;
+  relationshipsUpserted: number;
+  assetsSkipped: number;
+  relationshipsSkipped: number;
+  errors: string[];
+}
+
+const ASSET_TYPE_OPTIONS = [
+  "code",
+  "cloud",
+  "identity",
+  "data",
+  "network",
+  "compute",
+  "container",
+  "endpoint",
+  "saas",
+  "runtime",
+  "remediation",
+  "vulnerability",
+];
+
+const RELATIONSHIP_TYPE_OPTIONS = [
+  "accesses",
+  "authenticates_with",
+  "contains",
+  "deploys_to",
+  "exposes",
+  "has_permission",
+  "reads_from",
+  "writes_to",
+  "connects_to",
+  "inherits_from",
+  "manages",
+  "depends_on",
+  "runs_on",
+  "can_access",
+  "exposed_to",
+  "owned_by",
+  "fixed_by",
+  "triggers",
+  "mitigates",
+  "scans",
+];
+
+const ENV_OPTIONS = ["production", "staging", "development", "shared"];
+
+function IngestionPanel() {
+  const queryClient = useQueryClient();
+  const [assetName, setAssetName] = useState("");
+  const [assetType, setAssetType] = useState("code");
+  const [assetSubType, setAssetSubType] = useState("");
+  const [assetEnv, setAssetEnv] = useState("production");
+  const [assetRisk, setAssetRisk] = useState("0.5");
+  const [assetOwner, setAssetOwner] = useState("");
+  const [assetTags, setAssetTags] = useState("");
+  const [lastResult, setLastResult] = useState<IngestionResult | null>(null);
+
+  const ingestMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/security-graph/ingest", payload);
+      return res.json() as Promise<IngestionResult>;
+    },
+    onSuccess: (data) => {
+      setLastResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/security-graph"] });
+    },
+  });
+
+  const handleIngest = () => {
+    const riskScore = Math.max(0, Math.min(1, parseFloat(assetRisk) || 0.5));
+    const tags = assetTags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    ingestMutation.mutate({
+      assets: [
+        {
+          name: assetName,
+          type: assetType,
+          subType: assetSubType || assetType + "_asset",
+          environment: assetEnv,
+          riskScore,
+          owner: assetOwner || null,
+          tags,
+          metadata: {},
+        },
+      ],
+    });
+  };
+
+  const nameValid = assetName.trim().length > 0;
+  const subTypeValid = assetSubType.trim().length > 0;
+  const riskValid = !isNaN(parseFloat(assetRisk)) && parseFloat(assetRisk) >= 0 && parseFloat(assetRisk) <= 1;
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Plus className="h-4 w-4 text-cyan-400" />
+          <h3 className="text-sm font-bold">Ingest New Entity</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Asset Name *</label>
+            <Input
+              value={assetName}
+              onChange={(e) => setAssetName(e.target.value)}
+              placeholder="e.g. my-api-server"
+              className={`text-xs h-8 ${!nameValid && assetName ? "border-red-500" : ""}`}
+            />
+            {!nameValid && assetName && <p className="text-[10px] text-red-400 mt-0.5">Name is required</p>}
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Type *</label>
+            <select
+              value={assetType}
+              onChange={(e) => setAssetType(e.target.value)}
+              className="w-full h-8 text-xs rounded-md border bg-background px-2"
+            >
+              {ASSET_TYPE_OPTIONS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Sub Type *</label>
+            <Input
+              value={assetSubType}
+              onChange={(e) => setAssetSubType(e.target.value)}
+              placeholder="e.g. repository, s3_bucket"
+              className={`text-xs h-8 ${!subTypeValid && assetSubType ? "border-red-500" : ""}`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Environment</label>
+            <select
+              value={assetEnv}
+              onChange={(e) => setAssetEnv(e.target.value)}
+              className="w-full h-8 text-xs rounded-md border bg-background px-2"
+            >
+              {ENV_OPTIONS.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Risk Score (0-1)</label>
+            <Input
+              value={assetRisk}
+              onChange={(e) => setAssetRisk(e.target.value)}
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              className={`text-xs h-8 ${!riskValid ? "border-red-500" : ""}`}
+            />
+            {!riskValid && <p className="text-[10px] text-red-400 mt-0.5">Must be 0-1</p>}
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Owner</label>
+            <Input
+              value={assetOwner}
+              onChange={(e) => setAssetOwner(e.target.value)}
+              placeholder="e.g. platform-team"
+              className="text-xs h-8"
+            />
+          </div>
+          <div className="md:col-span-2 lg:col-span-3">
+            <label className="text-xs text-muted-foreground block mb-1">Tags (comma-separated)</label>
+            <Input
+              value={assetTags}
+              onChange={(e) => setAssetTags(e.target.value)}
+              placeholder="e.g. backend, api, nodejs"
+              className="text-xs h-8"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            onClick={handleIngest}
+            disabled={!nameValid || !riskValid || ingestMutation.isPending}
+            className="h-8"
+          >
+            {ingestMutation.isPending ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Send className="h-3 w-3 mr-1" />
+            )}
+            Ingest Entity
+          </Button>
+          {lastResult && (
+            <div className="text-xs text-muted-foreground">
+              Upserted: {lastResult.assetsUpserted} assets
+              {lastResult.errors.length > 0 && (
+                <span className="text-red-400 ml-2">{lastResult.errors.length} errors</span>
+              )}
+            </div>
+          )}
+          {ingestMutation.isError && <span className="text-xs text-red-400">Ingestion failed. Try again.</span>}
+        </div>
+        {lastResult && lastResult.errors.length > 0 && (
+          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-2">
+            <p className="text-[10px] font-medium text-red-400 mb-1">Ingestion Errors</p>
+            {lastResult.errors.map((err, i) => (
+              <p key={i} className="text-[10px] text-muted-foreground">
+                {err}
+              </p>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function QueryBuilderPanel({ onApplyQuery }: { onApplyQuery: (q: Record<string, unknown>) => void }) {
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedEnvs, setSelectedEnvs] = useState<string[]>([]);
+  const [minRisk, setMinRisk] = useState("");
+  const [maxRisk, setMaxRisk] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedRelTypes, setSelectedRelTypes] = useState<string[]>([]);
+
+  const toggleArrayItem = (arr: string[], item: string): string[] =>
+    arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item];
+
+  const handleApply = () => {
+    const query: Record<string, unknown> = {};
+    if (selectedTypes.length > 0) query.assetTypes = selectedTypes;
+    if (selectedEnvs.length > 0) query.environments = selectedEnvs;
+    if (selectedRelTypes.length > 0) query.relationshipTypes = selectedRelTypes;
+    if (minRisk) query.minRiskScore = parseFloat(minRisk);
+    if (maxRisk) query.maxRiskScore = parseFloat(maxRisk);
+    if (ownerFilter) query.ownerFilter = ownerFilter;
+    if (searchTerm) query.searchTerm = searchTerm;
+    onApplyQuery(query);
+  };
+
+  const handleClear = () => {
+    setSelectedTypes([]);
+    setSelectedEnvs([]);
+    setMinRisk("");
+    setMaxRisk("");
+    setOwnerFilter("");
+    setSearchTerm("");
+    setSelectedRelTypes([]);
+    onApplyQuery({});
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Crosshair className="h-4 w-4 text-cyan-400" />
+          <h3 className="text-sm font-bold">Query Builder</h3>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Asset Types</label>
+            <div className="flex flex-wrap gap-1">
+              {ASSET_TYPE_OPTIONS.map((t) => (
+                <Badge
+                  key={t}
+                  variant={selectedTypes.includes(t) ? "default" : "outline"}
+                  className="text-[10px] cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => setSelectedTypes(toggleArrayItem(selectedTypes, t))}
+                >
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Environments</label>
+            <div className="flex flex-wrap gap-1">
+              {ENV_OPTIONS.map((e) => (
+                <Badge
+                  key={e}
+                  variant={selectedEnvs.includes(e) ? "default" : "outline"}
+                  className={`text-[10px] cursor-pointer hover:opacity-80 transition-opacity ${ENVIRONMENT_COLORS[e] || ""}`}
+                  onClick={() => setSelectedEnvs(toggleArrayItem(selectedEnvs, e))}
+                >
+                  {e}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Relationship Types</label>
+            <div className="flex flex-wrap gap-1">
+              {RELATIONSHIP_TYPE_OPTIONS.map((r) => (
+                <Badge
+                  key={r}
+                  variant={selectedRelTypes.includes(r) ? "default" : "outline"}
+                  className="text-[10px] cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => setSelectedRelTypes(toggleArrayItem(selectedRelTypes, r))}
+                >
+                  {r.replace(/_/g, " ")}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Min Risk</label>
+              <Input
+                value={minRisk}
+                onChange={(e) => setMinRisk(e.target.value)}
+                type="number"
+                min={0}
+                max={1}
+                step={0.1}
+                placeholder="0.0"
+                className="text-xs h-8"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Max Risk</label>
+              <Input
+                value={maxRisk}
+                onChange={(e) => setMaxRisk(e.target.value)}
+                type="number"
+                min={0}
+                max={1}
+                step={0.1}
+                placeholder="1.0"
+                className="text-xs h-8"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Owner</label>
+              <Input
+                value={ownerFilter}
+                onChange={(e) => setOwnerFilter(e.target.value)}
+                placeholder="e.g. devops-team"
+                className="text-xs h-8"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Search Term</label>
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="e.g. securenexus"
+                className="text-xs h-8"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={handleApply} className="h-8">
+            <Filter className="h-3 w-3 mr-1" />
+            Apply Query
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleClear} className="h-8">
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PathFinderPanel({ assets }: { assets: SecurityAsset[] }) {
+  const [sourceId, setSourceId] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const [maxDepth, setMaxDepth] = useState("6");
+  const [paths, setPaths] = useState<RankedAttackPath[]>([]);
+  const [expandedPathIds, setExpandedPathIds] = useState<Set<string>>(new Set());
+
+  const findPathsMutation = useMutation({
+    mutationFn: async (payload: { sourceId: string; targetId: string; maxDepth: number }) => {
+      const res = await apiRequest("POST", "/api/security-graph/find-paths", payload);
+      return res.json() as Promise<RankedAttackPath[]>;
+    },
+    onSuccess: (data) => setPaths(data),
+  });
+
+  const handleFindPaths = () => {
+    if (!sourceId || !targetId) return;
+    findPathsMutation.mutate({
+      sourceId,
+      targetId,
+      maxDepth: Math.max(1, Math.min(10, parseInt(maxDepth, 10) || 6)),
+    });
+  };
+
+  const togglePathExpansion = useCallback((id: string) => {
+    setExpandedPathIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Route className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-bold">Path Finder</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Find all attack paths between any two assets in the graph.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Source Asset</label>
+              <select
+                value={sourceId}
+                onChange={(e) => setSourceId(e.target.value)}
+                className="w-full h-8 text-xs rounded-md border bg-background px-2"
+              >
+                <option value="">Select source...</option>
+                {assets.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.type})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Target Asset</label>
+              <select
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+                className="w-full h-8 text-xs rounded-md border bg-background px-2"
+              >
+                <option value="">Select target...</option>
+                {assets.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.type})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Max Depth (1-10)</label>
+              <Input
+                value={maxDepth}
+                onChange={(e) => setMaxDepth(e.target.value)}
+                type="number"
+                min={1}
+                max={10}
+                className="text-xs h-8"
+              />
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleFindPaths}
+            disabled={!sourceId || !targetId || sourceId === targetId || findPathsMutation.isPending}
+            className="h-8"
+          >
+            {findPathsMutation.isPending ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Route className="h-3 w-3 mr-1" />
+            )}
+            Find Paths
+          </Button>
+          {sourceId === targetId && sourceId && (
+            <p className="text-[10px] text-red-400">Source and target must be different.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {findPathsMutation.isError && (
+        <Card>
+          <CardContent className="p-4 text-center">
+            <AlertTriangle className="h-8 w-8 text-red-400 mx-auto mb-2" />
+            <p className="text-xs text-red-400">Failed to find paths. Try again.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {paths.length === 0 && !findPathsMutation.isPending && findPathsMutation.isSuccess && (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Route className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+            <p className="text-sm text-muted-foreground">No paths found between the selected assets.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {paths.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">{paths.length} path(s) found</p>
+          {paths.map((path) => (
+            <AttackPathCard
+              key={path.id}
+              path={path}
+              isExpanded={expandedPathIds.has(path.id)}
+              onToggle={() => togglePathExpansion(path.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UnifiedSecurityGraphPage() {
+  const queryClient = useQueryClient();
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [queryFilteredData, setQueryFilteredData] = useState<SecurityGraphData | null>(null);
 
   const {
     data: graphData,
@@ -646,6 +1174,25 @@ export default function UnifiedSecurityGraphPage() {
   } = useQuery<SecurityGraphData>({
     queryKey: ["/api/security-graph"],
   });
+
+  const queryMutation = useMutation({
+    mutationFn: async (query: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/security-graph/query", query);
+      return res.json() as Promise<SecurityGraphData>;
+    },
+    onSuccess: (data) => setQueryFilteredData(data),
+  });
+
+  const handleApplyQuery = useCallback(
+    (query: Record<string, unknown>) => {
+      if (Object.keys(query).length === 0) {
+        setQueryFilteredData(null);
+        return;
+      }
+      queryMutation.mutate(query);
+    },
+    [queryMutation],
+  );
 
   const selectedAsset = useMemo(() => {
     if (!selectedAssetId || !graphData) return null;
@@ -716,7 +1263,8 @@ export default function UnifiedSecurityGraphPage() {
     );
   }
 
-  const { stats, relationships, attackPaths } = graphData;
+  const activeData = queryFilteredData || graphData;
+  const { stats, relationships, attackPaths } = activeData;
 
   return (
     <div className="w-full p-4 md:p-6 space-y-6">
@@ -860,6 +1408,18 @@ export default function UnifiedSecurityGraphPage() {
             </TabsTrigger>
             <TabsTrigger value="attack-paths" data-testid="tab-attack-paths">
               Attack Paths
+            </TabsTrigger>
+            <TabsTrigger value="ingest" data-testid="tab-ingest">
+              <Plus className="h-3 w-3 mr-1" />
+              Ingest
+            </TabsTrigger>
+            <TabsTrigger value="query" data-testid="tab-query">
+              <Crosshair className="h-3 w-3 mr-1" />
+              Query
+            </TabsTrigger>
+            <TabsTrigger value="path-finder" data-testid="tab-path-finder">
+              <Route className="h-3 w-3 mr-1" />
+              Path Finder
             </TabsTrigger>
           </TabsList>
 
@@ -1030,6 +1590,53 @@ export default function UnifiedSecurityGraphPage() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="ingest">
+          <IngestionPanel />
+        </TabsContent>
+
+        <TabsContent value="query">
+          <div className="space-y-4">
+            <QueryBuilderPanel onApplyQuery={handleApplyQuery} />
+            {queryMutation.isPending && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Querying graph...
+              </div>
+            )}
+            {queryMutation.isError && (
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <AlertTriangle className="h-8 w-8 text-red-400 mx-auto mb-2" />
+                  <p className="text-xs text-red-400">Query failed. Try again.</p>
+                </CardContent>
+              </Card>
+            )}
+            {queryFilteredData && (
+              <Card>
+                <CardContent className="p-3">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Query returned {queryFilteredData.assets.length} assets, {queryFilteredData.relationships.length}{" "}
+                    relationships
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setQueryFilteredData(null)}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear Query Results
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="path-finder">
+          <PathFinderPanel assets={graphData.assets} />
         </TabsContent>
       </Tabs>
 
