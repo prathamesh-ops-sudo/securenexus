@@ -1,10 +1,6 @@
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 env:
@@ -20,66 +16,17 @@ permissions:
   security-events: write
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: deploy-${{ github.sha }}
+  cancel-in-progress: false
 
 # =============================================================================
-# PR PIPELINE - fast typecheck only; Devin Review handles code review.
-# Full lint/test/security/docker checks run weekly via weekly-sweep.yml.
+# DEPLOY PIPELINE - manual trigger only (workflow_dispatch).
+# No automated PR checks or push-to-main checks.
+# Full quality/security/test checks run weekly via weekly-sweep.yml.
 # =============================================================================
 jobs:
-  pr-sanity:
-    name: "PR Sanity Check"
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: TypeScript typecheck
-        run: npx tsc --noEmit
-
-  # =============================================================================
-  # MAIN BRANCH GATE - typecheck before deploying anything
-  # =============================================================================
-  main-sanity:
-    name: "Main Branch Sanity Check"
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: TypeScript typecheck
-        run: npx tsc --noEmit
-
-  # =============================================================================
-  # DEPLOY PIPELINE - push to main only (staging -> UAT -> production)
-  # =============================================================================
   build-and-push:
     name: Build & Push to ECR
-    needs: main-sanity
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     timeout-minutes: 30
     concurrency:
@@ -122,7 +69,6 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     needs: build-and-push
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     timeout-minutes: 20
     environment: staging
@@ -183,7 +129,6 @@ jobs:
   deploy-uat:
     name: Deploy to UAT
     needs: [build-and-push, deploy-staging]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     timeout-minutes: 20
     environment: uat
@@ -228,7 +173,6 @@ jobs:
   deploy-production:
     name: Deploy to Production (Argo Rollout)
     needs: [build-and-push, deploy-staging, deploy-uat]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     timeout-minutes: 30
     environment: production
