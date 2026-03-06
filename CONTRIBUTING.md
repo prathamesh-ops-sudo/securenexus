@@ -63,7 +63,7 @@ npm run dev
 | `npm run checks`        | Typecheck + unit tests (fast pre-push gate)    |
 | `npm run checks:all`    | Typecheck + tests + format check (full gate)   |
 
-Run `npm run checks` before pushing to ensure CI will pass.
+Run `npm run checks` locally before pushing to catch issues early (there are no automated PR checks).
 
 ## Project Structure
 
@@ -87,20 +87,20 @@ securenexus/
 
 ## CI Pipeline
 
-On every PR (`.github/workflows/ci-cd.yml`):
+No automated checks run on PRs or on push to main. This is intentional to
+maximise shipping velocity.
 
-- **TypeScript typecheck** — `tsc --noEmit` (blocking)
-- **Devin Review** — automated review with a fix loop
+**Manual deploy** (`.github/workflows/ci-cd.yml`, `workflow_dispatch` only):
 
-On merge to main (`.github/workflows/ci-cd.yml`):
-
-- **Main Branch Sanity Check** — typecheck gate before any deploy
+- **Typecheck Gate** — `tsc --noEmit` (blocking, main branch only)
 - **Build and Push** to ECR
 - **Deploy to Staging** with smoke test
 - **Deploy to UAT**
 - **Deploy to Production** via Argo Rollouts (canary)
 
-Weekly full sweep (`.github/workflows/weekly-sweep.yml`, Monday 06:00 UTC):
+Deploys are triggered manually from the GitHub Actions UI or CLI when ready.
+
+**Weekly full sweep** (`.github/workflows/weekly-sweep.yml`, Monday 06:00 UTC):
 
 - **Code Quality** — ESLint + Prettier + typecheck
 - **Security** — secret patterns + dependency audit
@@ -108,6 +108,8 @@ Weekly full sweep (`.github/workflows/weekly-sweep.yml`, Monday 06:00 UTC):
 - **Unit Tests** — Vitest
 - **E2E Tests** — Playwright
 - **Docker Build** — build verification
+
+All accumulated issues are fixed in one batch after each weekly run.
 
 ## Writing Tests
 
