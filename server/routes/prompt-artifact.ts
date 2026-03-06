@@ -1,12 +1,11 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { logger } from "./shared";
+import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { runInvestigation, getInvestigation, listInvestigations, getSuggestedPrompts } from "../prompt-artifact-engine";
 
 const runInvestigationSchema = z.object({
   prompt: z.string().min(1, "Prompt is required").max(2000, "Prompt must be under 2000 characters"),
-  orgId: z.string().nullable().optional(),
 });
 
 export function registerPromptArtifactRoutes(app: Express): void {
@@ -20,8 +19,14 @@ export function registerPromptArtifactRoutes(app: Express): void {
         });
       }
 
-      const { prompt, orgId } = parsed.data;
-      const investigation = runInvestigation(prompt, orgId ?? null);
+      const { prompt } = parsed.data;
+      let orgId: string | null = null;
+      try {
+        orgId = getOrgId(req);
+      } catch {
+        /* org context may not be available for all users */
+      }
+      const investigation = runInvestigation(prompt, orgId);
       res.json(investigation);
     } catch (error) {
       logger.child("routes").error("Prompt-to-artifact investigation error", {
@@ -33,8 +38,13 @@ export function registerPromptArtifactRoutes(app: Express): void {
 
   app.get("/api/prompt-artifact/investigations", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
-      const investigations = listInvestigations(orgId ?? null);
+      let orgId: string | null = null;
+      try {
+        orgId = getOrgId(req);
+      } catch {
+        /* org context may not be available */
+      }
+      const investigations = listInvestigations(orgId);
       res.json(investigations);
     } catch (error) {
       logger.child("routes").error("List investigations error", {
@@ -46,10 +56,14 @@ export function registerPromptArtifactRoutes(app: Express): void {
 
   app.get("/api/prompt-artifact/investigations/:id", isAuthenticated, async (req, res) => {
     try {
-      const rawOrgId = req.query.orgId;
-      const orgId = typeof rawOrgId === "string" ? rawOrgId : undefined;
+      let orgId: string | null = null;
+      try {
+        orgId = getOrgId(req);
+      } catch {
+        /* org context may not be available */
+      }
       const id = String(req.params.id);
-      const investigation = getInvestigation(id, orgId ?? null);
+      const investigation = getInvestigation(id, orgId);
       if (!investigation) return res.status(404).json({ message: "Investigation not found" });
       res.json(investigation);
     } catch (error) {
