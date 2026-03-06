@@ -20,11 +20,11 @@ export function registerPromptArtifactRoutes(app: Express): void {
       }
 
       const { prompt } = parsed.data;
-      let orgId: string | null = null;
+      let orgId: string;
       try {
         orgId = getOrgId(req);
       } catch {
-        /* org context may not be available for all users */
+        return res.status(403).json({ message: "Organization context required" });
       }
       const investigation = runInvestigation(prompt, orgId);
       res.json(investigation);
@@ -38,11 +38,11 @@ export function registerPromptArtifactRoutes(app: Express): void {
 
   app.get("/api/prompt-artifact/investigations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string | null = null;
+      let orgId: string;
       try {
         orgId = getOrgId(req);
       } catch {
-        /* org context may not be available */
+        return res.status(403).json({ message: "Organization context required" });
       }
       const investigations = listInvestigations(orgId);
       res.json(investigations);
@@ -56,11 +56,11 @@ export function registerPromptArtifactRoutes(app: Express): void {
 
   app.get("/api/prompt-artifact/investigations/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string | null = null;
+      let orgId: string;
       try {
         orgId = getOrgId(req);
       } catch {
-        /* org context may not be available */
+        return res.status(403).json({ message: "Organization context required" });
       }
       const id = String(req.params.id);
       const investigation = getInvestigation(id, orgId);
