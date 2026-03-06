@@ -418,7 +418,7 @@ function InvestigationsTab() {
 
   const { data: incidentsResponse } = useQuery<PaginatedResponse<any>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: () => fetchPaginated<any>("/api/v1/incidents", { offset: 0, limit: 500 }),
+    queryFn: () => fetchPaginated<any>("/api/v1/incidents", { offset: 0, limit: 200 }),
   });
   const incidents = incidentsResponse?.items;
 

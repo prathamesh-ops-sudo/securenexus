@@ -64,7 +64,7 @@ const GUIDED_COMPLETED_KEY = "securenexus.guidedWorkflow.completed";
 function useGuidedProgress() {
   const { data: connectorsResponse } = useQuery<PaginatedResponse<unknown>>({
     queryKey: ["/api/v1/connectors"],
-    queryFn: () => fetchPaginated<unknown>("/api/v1/connectors", { offset: 0, limit: 500 }),
+    queryFn: () => fetchPaginated<unknown>("/api/v1/connectors", { offset: 0, limit: 200 }),
   });
   const connectors = connectorsResponse?.items;
 
@@ -74,7 +74,7 @@ function useGuidedProgress() {
 
   const { data: incidentsResponse } = useQuery<PaginatedResponse<unknown>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: () => fetchPaginated<unknown>("/api/v1/incidents", { offset: 0, limit: 500 }),
+    queryFn: () => fetchPaginated<unknown>("/api/v1/incidents", { offset: 0, limit: 200 }),
   });
   const incidents = incidentsResponse?.items;
 

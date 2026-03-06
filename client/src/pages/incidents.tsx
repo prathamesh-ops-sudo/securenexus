@@ -434,7 +434,7 @@ export default function IncidentsPage() {
     queryFn: () =>
       fetchPaginated<Incident>("/api/v1/incidents", {
         offset: 0,
-        limit: 500,
+        limit: 200,
       }),
   });
   const incidents = incidentsResponse?.items;

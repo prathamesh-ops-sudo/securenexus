@@ -1214,7 +1214,7 @@ export function registerComplianceRoutes(app: Express): void {
       const policy = await storage.getCompliancePolicy(orgId);
       const dsarReqs = await storage.getDsarRequests(orgId);
       const evidenceItems = await storage.getEvidenceLockerItems(orgId);
-      const controls = await storage.getComplianceControls(orgId);
+      const controls = await storage.getComplianceControls();
       const mappings = await storage.getComplianceControlMappings(orgId);
 
       const enabledFrameworks = (policy?.enabledFrameworks as string[]) || [];

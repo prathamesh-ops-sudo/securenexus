@@ -102,13 +102,13 @@ export function CommandPalette() {
 
   const { data: alertsResponse } = useQuery<PaginatedResponse<Alert>>({
     queryKey: ["/api/v1/alerts"],
-    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 200 }),
   });
   const alerts = alertsResponse?.items;
 
   const { data: incidentsResponse } = useQuery<PaginatedResponse<Incident>>({
     queryKey: ["/api/v1/incidents"],
-    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 500 }),
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 200 }),
   });
   const incidents = incidentsResponse?.items;
 
