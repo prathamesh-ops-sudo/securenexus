@@ -205,16 +205,9 @@ jobs:
           CRITICAL_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
           echo "High: $HIGH_COUNT, Critical: $CRITICAL_COUNT"
           if [ "$CRITICAL_COUNT" -gt 0 ]; then
-            echo "::error::$CRITICAL_COUNT critical vulnerabilities — auto-attempting npm audit fix"
-            npm audit fix --force 2>&1 || true
-            RETRY_CRITICAL=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
-            if [ "$RETRY_CRITICAL" -gt 0 ]; then
-              echo "::error::$RETRY_CRITICAL critical vulnerabilities persist after auto-fix — failing gate"
-              exit 1
-            fi
-            echo "Auto-fix resolved critical vulnerabilities"
+            echo "::error::$CRITICAL_COUNT critical vulnerabilities found — failing gate"
+            exit 1
           fi
-          HIGH_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
           if [ "$HIGH_COUNT" -gt 5 ]; then
             echo "::error::$HIGH_COUNT high vulnerabilities exceed threshold (5) — failing gate"
             exit 1
@@ -779,9 +772,15 @@ jobs:
 
       - name: Install Argo Rollouts kubectl plugin
         run: |
-          curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
-          chmod +x kubectl-argo-rollouts-linux-amd64
-          sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "aarch64" ]; then
+            ARGO_ARCH="arm64"
+          else
+            ARGO_ARCH="amd64"
+          fi
+          curl -LO "https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-${ARGO_ARCH}"
+          chmod +x "kubectl-argo-rollouts-linux-${ARGO_ARCH}"
+          sudo mv "kubectl-argo-rollouts-linux-${ARGO_ARCH}" /usr/local/bin/kubectl-argo-rollouts
 
       - name: Sync secrets from AWS Secrets Manager
         run: |
