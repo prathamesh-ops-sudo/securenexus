@@ -195,9 +195,12 @@ export default function AIEnginePage() {
   const { data: feedbackMetrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
     queryKey: ["/api/ai/feedback/metrics", driftDays],
     queryFn: async () => {
-      const res = await fetch(`/api/ai/feedback/metrics?days=${driftDays}`);
-      if (!res.ok) return [];
-      return res.json();
+      try {
+        const res = await apiRequest("GET", `/api/ai/feedback/metrics?days=${driftDays}`);
+        return await res.json();
+      } catch {
+        return [];
+      }
     },
   });
 

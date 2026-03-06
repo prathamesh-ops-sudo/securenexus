@@ -176,9 +176,8 @@ export default function SettingsPage() {
   const { data: webhookLogs } = useQuery<OutboundWebhookLog[]>({
     queryKey: ["/api/outbound-webhooks", expandedWebhookId, "logs"],
     queryFn: async () => {
-      const res = await fetch(`/api/outbound-webhooks/${expandedWebhookId}/logs`);
-      if (!res.ok) throw new Error("Failed to fetch logs");
-      return res.json();
+      const res = await apiRequest("GET", `/api/outbound-webhooks/${expandedWebhookId}/logs`);
+      return await res.json();
     },
     enabled: !!expandedWebhookId,
   });
