@@ -610,6 +610,9 @@ jobs:
     needs: [quality-gate, unit-tests]
     runs-on: self-hosted
     timeout-minutes: 30
+    concurrency:
+      group: deploy-build
+      cancel-in-progress: false
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -651,6 +654,9 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 20
     environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -709,6 +715,9 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 20
     environment: uat
+    concurrency:
+      group: deploy-uat
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -751,6 +760,9 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 30
     environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
