@@ -46,6 +46,7 @@ import {
   Upload,
   Newspaper,
   GitMerge,
+  ShieldBan,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -153,6 +154,7 @@ const navGroups: NavGroup[] = [
       { title: "Operations", url: "/operations", icon: Zap },
       { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
       { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
+      { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
     ],
   },
 ];

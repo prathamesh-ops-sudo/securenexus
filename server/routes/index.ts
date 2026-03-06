@@ -44,6 +44,7 @@ import { registerPromptArtifactRoutes } from "./prompt-artifact";
 import { registerSecurityGraphRoutes } from "./security-graph";
 import { registerRemediationRoutes } from "./remediation";
 import { registerFindingLineageRoutes } from "./finding-lineage";
+import { registerRuntimeGuardrailsRoutes } from "./runtime-guardrails";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -92,4 +93,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerSecurityGraphRoutes(app);
   registerRemediationRoutes(app);
   registerFindingLineageRoutes(app);
+  registerRuntimeGuardrailsRoutes(app);
 }
