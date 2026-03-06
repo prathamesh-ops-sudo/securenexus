@@ -97,6 +97,8 @@ const navGroups: NavGroup[] = [
       { title: "Entity Graph", url: "/entity-graph", icon: Network },
       { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
       { title: "Security Graph", url: "/security-graph", icon: Shield },
+      { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
+      { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
       { title: "Kill Chain", url: "/kill-chain", icon: Swords },
     ],
   },

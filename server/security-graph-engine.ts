@@ -1,6 +1,3 @@
-import { storage } from "./storage";
-import { logger } from "./logger";
-
 export interface SecurityAsset {
   id: string;
   orgId: string | null;

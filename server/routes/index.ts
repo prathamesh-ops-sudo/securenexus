@@ -40,7 +40,9 @@ import { registerEngineControlsRoutes } from "./engine-controls";
 import { registerEmailTemplateRoutes } from "./email-templates";
 import { registerMetricsRollupRoutes } from "./metrics-rollup";
 import { registerModelGatewayRoutes } from "./model-gateway";
+import { registerPromptArtifactRoutes } from "./prompt-artifact";
 import { registerSecurityGraphRoutes } from "./security-graph";
+import { registerRemediationRoutes } from "./remediation";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -85,5 +87,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerEmailTemplateRoutes(app);
   registerMetricsRollupRoutes(app);
   registerModelGatewayRoutes(app);
+  registerPromptArtifactRoutes(app);
   registerSecurityGraphRoutes(app);
+  registerRemediationRoutes(app);
 }
