@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext } from "../rbac";
 import { runInvestigation, getInvestigation, listInvestigations, getSuggestedPrompts } from "../prompt-artifact-engine";
 
 const runInvestigationSchema = z.object({
@@ -9,7 +10,7 @@ const runInvestigationSchema = z.object({
 });
 
 export function registerPromptArtifactRoutes(app: Express): void {
-  app.post("/api/prompt-artifact/investigate", isAuthenticated, async (req, res) => {
+  app.post("/api/prompt-artifact/investigate", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const parsed = runInvestigationSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -36,7 +37,7 @@ export function registerPromptArtifactRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/prompt-artifact/investigations", isAuthenticated, async (req, res) => {
+  app.get("/api/prompt-artifact/investigations", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       let orgId: string;
       try {
@@ -54,7 +55,7 @@ export function registerPromptArtifactRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/prompt-artifact/investigations/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/prompt-artifact/investigations/:id", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       let orgId: string;
       try {

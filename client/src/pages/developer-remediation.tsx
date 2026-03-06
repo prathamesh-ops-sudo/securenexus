@@ -120,12 +120,6 @@ const STATUS_CONFIG: Record<RemediationStatus, { icon: typeof CheckCircle2; colo
   failed: { icon: XCircle, color: "text-red-400", label: "Failed" },
 };
 
-async function apiFetch<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
-}
-
 function StatCard({
   label,
   value,
@@ -392,12 +386,10 @@ export default function DeveloperRemediationPage() {
 
   const { data: fixes, isLoading: fixesLoading } = useQuery<RemediationFix[]>({
     queryKey: ["/api/remediation/fixes"],
-    queryFn: () => apiFetch("/api/remediation/fixes"),
   });
 
   const { data: stats, isLoading: statsLoading } = useQuery<RemediationStats>({
     queryKey: ["/api/remediation/stats"],
-    queryFn: () => apiFetch("/api/remediation/stats"),
   });
 
   const filteredFixes = (fixes ?? []).filter((f) => {
