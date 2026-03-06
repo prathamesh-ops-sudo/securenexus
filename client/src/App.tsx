@@ -283,12 +283,12 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <main className="h-screen flex items-center justify-center">
         <div className="space-y-3 text-center">
           <Skeleton className="h-10 w-10 rounded-md mx-auto" />
           <Skeleton className="h-4 w-32" />
         </div>
-      </div>
+      </main>
     );
   }
 
