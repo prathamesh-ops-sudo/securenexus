@@ -103,6 +103,7 @@ const navGroups: NavGroup[] = [
       { title: "Security Graph", url: "/security-graph", icon: Shield },
       { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
       { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
+      { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
       { title: "Kill Chain", url: "/kill-chain", icon: Swords },
     ],
   },
