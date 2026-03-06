@@ -259,7 +259,7 @@ export default function AlertsPage() {
     queryFn: () =>
       fetchPaginated<Alert>("/api/v1/alerts", {
         offset: 0,
-        limit: 500,
+        limit: 200,
       }),
   });
   const alerts = alertsResponse?.items;

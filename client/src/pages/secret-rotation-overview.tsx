@@ -133,7 +133,11 @@ export default function SecretRotationOverviewPage() {
     queryFn: async () => {
       const res = await fetch(`/api/secret-rotations/expiring?days=${daysAhead}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch rotations");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as SecretRotation[];
+      }
+      return Array.isArray(body) ? body : [];
     },
   });
 

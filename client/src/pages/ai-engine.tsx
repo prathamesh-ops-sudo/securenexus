@@ -188,7 +188,7 @@ export default function AIEnginePage() {
 
   const { data: alertsResponse, isLoading: alertsLoading } = useQuery<PaginatedResponse<Alert>>({
     queryKey: ["/api/v1/alerts"],
-    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 500 }),
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 200 }),
   });
   const alerts = alertsResponse?.items;
 

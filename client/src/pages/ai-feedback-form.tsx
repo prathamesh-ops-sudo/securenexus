@@ -139,7 +139,11 @@ export default function AiFeedbackFormPage() {
       if (filterType !== "all") params.set("resourceType", filterType);
       const res = await fetch(`/api/ai/feedback?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch feedback");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as AiFeedback[];
+      }
+      return Array.isArray(body) ? body : [];
     },
   });
 
@@ -148,7 +152,11 @@ export default function AiFeedbackFormPage() {
     queryFn: async () => {
       const res = await fetch("/api/ai/feedback/metrics?days=30", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch metrics");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as FeedbackMetric[];
+      }
+      return Array.isArray(body) ? body : [];
     },
   });
 
