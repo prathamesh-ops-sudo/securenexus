@@ -1,6 +1,8 @@
 name: CI/CD Pipeline
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -20,8 +22,9 @@ concurrency:
   cancel-in-progress: false
 
 # =============================================================================
-# DEPLOY PIPELINE - manual trigger only (workflow_dispatch).
-# No automated PR checks or push-to-main checks.
+# DEPLOY PIPELINE
+# - push to main  → typecheck → build → deploy STAGING only (auto)
+# - workflow_dispatch → typecheck → build → deploy STAGING → UAT → PRODUCTION (manual)
 # Full quality/security/test checks run weekly via weekly-sweep.yml.
 # =============================================================================
 jobs:
@@ -33,7 +36,7 @@ jobs:
       - name: Verify main branch
         run: |
           if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "::error::Deploy blocked — workflow_dispatch must be triggered from main branch (got ${{ github.ref }})"
+            echo "::error::Deploy blocked — must be triggered from main branch (got ${{ github.ref }})"
             exit 1
           fi
 
@@ -156,6 +159,7 @@ jobs:
 
   deploy-uat:
     name: Deploy to UAT
+    if: github.event_name == 'workflow_dispatch'
     needs: [build-and-push, deploy-staging]
     runs-on: self-hosted
     timeout-minutes: 20
@@ -200,6 +204,7 @@ jobs:
 
   deploy-production:
     name: Deploy to Production (Argo Rollout)
+    if: github.event_name == 'workflow_dispatch'
     needs: [build-and-push, deploy-staging, deploy-uat]
     runs-on: self-hosted
     timeout-minutes: 30
