@@ -159,9 +159,14 @@ function CodeDiffView({ codeChange }: { codeChange: CodeChange }) {
   const lines = codeChange.diff.split("\n");
 
   function handleCopy() {
-    navigator.clipboard.writeText(codeChange.afterSnippet).then(() => {
-      toast({ title: "Copied", description: "Fix copied to clipboard" });
-    });
+    navigator.clipboard
+      .writeText(codeChange.afterSnippet)
+      .then(() => {
+        toast({ title: "Copied", description: "Fix copied to clipboard" });
+      })
+      .catch(() => {
+        toast({ title: "Copy failed", description: "Unable to access clipboard", variant: "destructive" });
+      });
   }
 
   return (
