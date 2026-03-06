@@ -15,8 +15,7 @@ env:
 
 permissions:
   id-token: write
-  contents: write
-  pull-requests: write
+  contents: read
   security-events: write
 
 concurrency:
@@ -407,6 +406,9 @@ jobs:
     needs: [lint-and-typecheck, unit-tests, secret-scan, e2e-tests, bundle-check, build-check, api-schema-validation]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Approve PR
         uses: hmarr/auto-approve-action@v4
