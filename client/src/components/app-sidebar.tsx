@@ -45,6 +45,7 @@ import {
   Webhook as WebhookIcon,
   Upload,
   Newspaper,
+  GitMerge,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -97,6 +98,7 @@ const navGroups: NavGroup[] = [
       { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
       { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
       { title: "Entity Graph", url: "/entity-graph", icon: Network },
+      { title: "Entity Merge", url: "/entity-merge-alias", icon: GitMerge },
       { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
       { title: "Security Graph", url: "/security-graph", icon: Shield },
       { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
