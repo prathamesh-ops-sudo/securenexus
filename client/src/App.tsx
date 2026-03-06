@@ -85,6 +85,7 @@ const AiPromptRegistryPage = lazy(() => import("@/pages/ai-prompt-registry"));
 const WebhookSecurityCenterPage = lazy(() => import("@/pages/webhook-security-center"));
 const ReportTemplateVersioningPage = lazy(() => import("@/pages/report-template-versioning"));
 const IocIngestionMatchingPage = lazy(() => import("@/pages/ioc-ingestion-matching"));
+const UnifiedSecurityGraphPage = lazy(() => import("@/pages/unified-security-graph"));
 
 function PageSkeleton() {
   return (
@@ -253,6 +254,7 @@ function AuthenticatedApp() {
                     <Route path="/webhook-security-center" component={WebhookSecurityCenterPage} />
                     <Route path="/report-template-versioning" component={ReportTemplateVersioningPage} />
                     <Route path="/ioc-ingestion-matching" component={IocIngestionMatchingPage} />
+                    <Route path="/security-graph" component={UnifiedSecurityGraphPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
