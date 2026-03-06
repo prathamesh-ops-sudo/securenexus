@@ -92,6 +92,7 @@ maximise shipping velocity.
 
 **Manual deploy** (`.github/workflows/ci-cd.yml`, `workflow_dispatch` only):
 
+- **Typecheck Gate** — `tsc --noEmit` (blocking, main branch only)
 - **Build and Push** to ECR
 - **Deploy to Staging** with smoke test
 - **Deploy to UAT**

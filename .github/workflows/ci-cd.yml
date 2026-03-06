@@ -27,10 +27,16 @@ concurrency:
 jobs:
   typecheck-gate:
     name: Typecheck Gate
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Verify main branch
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Deploy blocked — workflow_dispatch must be triggered from main branch (got ${{ github.ref }})"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
