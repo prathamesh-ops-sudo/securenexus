@@ -87,18 +87,25 @@ securenexus/
 
 ## CI Pipeline
 
-No automated checks run on PRs or on push to main. This is intentional to
-maximise shipping velocity.
+No automated checks run on PRs. This is intentional to maximise shipping velocity.
 
-**Manual deploy** (`.github/workflows/ci-cd.yml`, `workflow_dispatch` only):
+**On push to main** (`.github/workflows/ci-cd.yml`, automatic):
 
-- **Typecheck Gate** — `tsc --noEmit` (blocking, main branch only)
+- **Typecheck Gate** — `tsc --noEmit` (blocking)
+- **Build and Push** to ECR
+- **Deploy to Staging** with smoke test
+
+Staging deploys happen automatically whenever code is merged to main.
+
+**Full deploy including production** (`.github/workflows/ci-cd.yml`, `workflow_dispatch` only):
+
+- **Typecheck Gate** — `tsc --noEmit` (blocking)
 - **Build and Push** to ECR
 - **Deploy to Staging** with smoke test
 - **Deploy to UAT**
 - **Deploy to Production** via Argo Rollouts (canary)
 
-Deploys are triggered manually from the GitHub Actions UI or CLI when ready.
+UAT and production deploys are triggered manually from the GitHub Actions UI or CLI when ready.
 
 **Weekly full sweep** (`.github/workflows/weekly-sweep.yml`, Monday 06:00 UTC):
 
