@@ -299,7 +299,7 @@ export default function PromptToArtifactPage() {
 
   const handleSubmit = useCallback(() => {
     const trimmed = prompt.trim();
-    if (trimmed.length === 0) return;
+    if (trimmed.length === 0 || runMutation.isPending) return;
     runMutation.mutate(trimmed);
   }, [prompt, runMutation]);
 
