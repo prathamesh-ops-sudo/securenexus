@@ -40,6 +40,7 @@ import { registerEngineControlsRoutes } from "./engine-controls";
 import { registerEmailTemplateRoutes } from "./email-templates";
 import { registerMetricsRollupRoutes } from "./metrics-rollup";
 import { registerModelGatewayRoutes } from "./model-gateway";
+import { registerSecurityGraphRoutes } from "./security-graph";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -84,4 +85,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerEmailTemplateRoutes(app);
   registerMetricsRollupRoutes(app);
   registerModelGatewayRoutes(app);
+  registerSecurityGraphRoutes(app);
 }
