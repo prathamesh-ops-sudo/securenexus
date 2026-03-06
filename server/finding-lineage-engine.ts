@@ -1266,22 +1266,34 @@ export function ingestFinding(
 export function updateFindingStatus(findingId: string, status: FindingStatus, orgId?: string): FindingLineage | null {
   if (orgId) {
     const store = getOrgStore(orgId);
-    const finding = store.get(findingId);
-    if (finding) {
-      finding.status = status;
+    const existing = store.get(findingId);
+    if (existing) {
+      existing.status = status;
       if (status === "remediated") {
-        finding.resolvedAt = new Date().toISOString();
+        existing.resolvedAt = new Date().toISOString();
       }
-      return finding;
+      return existing;
     }
-  }
-  const catalogFinding = CATALOG_FINDINGS.find((f) => f.id === findingId);
-  if (catalogFinding) {
-    catalogFinding.status = status;
-    if (status === "remediated") {
-      catalogFinding.resolvedAt = new Date().toISOString();
+    const catalogFinding = CATALOG_FINDINGS.find((f) => f.id === findingId);
+    if (catalogFinding) {
+      const cloned: FindingLineage = {
+        ...catalogFinding,
+        orgId,
+        owner: { ...catalogFinding.owner },
+        sourceLocation: { ...catalogFinding.sourceLocation },
+        deployedAsset: { ...catalogFinding.deployedAsset },
+        buildContext: catalogFinding.buildContext ? { ...catalogFinding.buildContext } : null,
+        evidenceBundles: catalogFinding.evidenceBundles.map((e) => ({ ...e })),
+        remediationSuggestions: catalogFinding.remediationSuggestions.map((r) => ({ ...r })),
+        cveIds: [...catalogFinding.cveIds],
+        cweIds: [...catalogFinding.cweIds],
+        mitreTactics: [...catalogFinding.mitreTactics],
+        status,
+        resolvedAt: status === "remediated" ? new Date().toISOString() : catalogFinding.resolvedAt,
+      };
+      store.set(cloned.id, cloned);
+      return cloned;
     }
-    return catalogFinding;
   }
   return null;
 }

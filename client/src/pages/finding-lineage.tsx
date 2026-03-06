@@ -613,7 +613,13 @@ function FindingCard({
                               className="text-[10px] text-cyan-400 hover:underline flex items-center gap-1"
                             >
                               <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                              {new URL(ref).hostname}
+                              {(() => {
+                                try {
+                                  return new URL(ref).hostname;
+                                } catch {
+                                  return ref;
+                                }
+                              })()}
                             </a>
                           ))}
                         </div>
