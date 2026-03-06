@@ -584,6 +584,7 @@ function generateArtifact(classification: IntentClassification, prompt: string):
   }
 }
 
+const MAX_INVESTIGATION_STORE_SIZE = 10000;
 const investigationStore = new Map<string, Investigation>();
 
 export function runInvestigation(prompt: string, orgId: string | null): Investigation {
@@ -610,6 +611,16 @@ export function runInvestigation(prompt: string, orgId: string | null): Investig
   };
 
   investigationStore.set(investigation.id, investigation);
+
+  if (investigationStore.size > MAX_INVESTIGATION_STORE_SIZE) {
+    const entries = Array.from(investigationStore.entries());
+    entries.sort((a, b) => new Date(a[1].createdAt).getTime() - new Date(b[1].createdAt).getTime());
+    const toRemove = entries.slice(0, investigationStore.size - MAX_INVESTIGATION_STORE_SIZE);
+    for (const [key] of toRemove) {
+      investigationStore.delete(key);
+    }
+  }
+
   return investigation;
 }
 
@@ -621,14 +632,16 @@ function buildSummary(classification: IntentClassification, artifact: GeneratedA
   return `Analyzed ${entityDesc}${timeDesc}${severityDesc} and generated a ${artifact.type.replace(/_/g, " ")}: "${artifact.name}".`;
 }
 
-export function getInvestigation(id: string, _orgId?: string | null): Investigation | null {
-  return investigationStore.get(id) || null;
+export function getInvestigation(id: string, orgId?: string | null): Investigation | null {
+  const investigation = investigationStore.get(id) || null;
+  if (investigation && orgId !== undefined && orgId !== null && investigation.orgId !== orgId) return null;
+  return investigation;
 }
 
 export function listInvestigations(orgId?: string | null): Investigation[] {
   const all = Array.from(investigationStore.values());
-  if (orgId) return all.filter((inv) => inv.orgId === orgId);
-  return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const filtered = orgId ? all.filter((inv) => inv.orgId === orgId) : all;
+  return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export function getSuggestedPrompts(): string[] {

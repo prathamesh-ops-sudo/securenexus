@@ -491,6 +491,7 @@ export default function DeveloperRemediationPage() {
                     <option value="in_progress">In Progress</option>
                     <option value="applied">Applied</option>
                     <option value="dismissed">Dismissed</option>
+                    <option value="failed">Failed</option>
                   </select>
                 </div>
               </div>
