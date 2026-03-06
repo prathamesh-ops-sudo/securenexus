@@ -52,10 +52,35 @@ jobs:
         run: npx tsc --noEmit
 
   # =============================================================================
+  # MAIN BRANCH GATE - typecheck before deploying anything
+  # =============================================================================
+  main-sanity:
+    name: "Main Branch Sanity Check"
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+  # =============================================================================
   # DEPLOY PIPELINE - push to main only (staging -> UAT -> production)
   # =============================================================================
   build-and-push:
     name: Build & Push to ECR
+    needs: main-sanity
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     timeout-minutes: 30
