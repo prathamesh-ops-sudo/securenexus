@@ -400,37 +400,6 @@ jobs:
         run: |
           npx --yes ts-unused-exports tsconfig.json --silent 2>/dev/null | head -50 || echo "Unused export check completed"
 
-  auto-merge-devin:
-    name: Auto-Merge Devin PRs
-    if: github.event_name == 'pull_request' && github.actor == 'devin-ai-integration[bot]'
-    needs:
-      [
-        lint-and-typecheck,
-        unit-tests,
-        secret-scan,
-        e2e-tests,
-        bundle-check,
-        build-check,
-        api-schema-validation,
-        codeql-analysis,
-        a11y-audit,
-      ]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Approve PR
-        uses: hmarr/auto-approve-action@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Merge PR
-        run: gh pr merge ${{ github.event.pull_request.number }} --squash --repo ${{ github.repository }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-and-push:
     name: Build & Push to ECR
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
