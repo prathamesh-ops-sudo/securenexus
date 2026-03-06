@@ -90,6 +90,7 @@ const PromptToArtifactPage = lazy(() => import("@/pages/prompt-to-artifact"));
 const DeveloperRemediationPage = lazy(() => import("@/pages/developer-remediation"));
 const ThreatIntelFeedsPage = lazy(() => import("@/pages/threat-intel-feeds"));
 const EntityMergeAliasPage = lazy(() => import("@/pages/entity-merge-alias"));
+const FindingLineagePage = lazy(() => import("@/pages/finding-lineage"));
 
 function PageSkeleton() {
   return (
@@ -263,6 +264,7 @@ function AuthenticatedApp() {
                     <Route path="/developer-remediation" component={DeveloperRemediationPage} />
                     <Route path="/threat-intel-feeds" component={ThreatIntelFeedsPage} />
                     <Route path="/entity-merge-alias" component={EntityMergeAliasPage} />
+                    <Route path="/finding-lineage" component={FindingLineagePage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
