@@ -574,11 +574,11 @@ export function createPolicy(
 export function deletePolicy(policyIdVal: string, orgId: string): boolean {
   const store = getOrgPolicyStore(orgId);
   if (store.has(policyIdVal)) {
+    if (CATALOG_POLICIES.some((p) => p.id === policyIdVal)) {
+      return false;
+    }
     store.delete(policyIdVal);
     return true;
-  }
-  if (CATALOG_POLICIES.some((p) => p.id === policyIdVal)) {
-    return false;
   }
   return false;
 }
