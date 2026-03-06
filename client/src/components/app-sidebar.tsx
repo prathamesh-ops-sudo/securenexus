@@ -251,8 +251,8 @@ export function AppSidebar() {
     const hasActive = filtered.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)));
 
     return (
-      <Collapsible key={group.label} open={isOpen} onOpenChange={() => toggleGroup(group.label)}>
-        <SidebarMenuItem>
+      <SidebarMenuItem key={group.label}>
+        <Collapsible open={isOpen} onOpenChange={() => toggleGroup(group.label)}>
           <CollapsibleTrigger asChild>
             <SidebarMenuButton className="w-full" data-active={hasActive || undefined}>
               <group.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -267,8 +267,8 @@ export function AppSidebar() {
               {filtered.map(renderItem)}
             </SidebarMenu>
           </CollapsibleContent>
-        </SidebarMenuItem>
-      </Collapsible>
+        </Collapsible>
+      </SidebarMenuItem>
     );
   }
 

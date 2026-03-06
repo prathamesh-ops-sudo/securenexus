@@ -198,7 +198,7 @@ function AuthenticatedApp() {
                 </div>
                 <ThemeToggle />
               </header>
-              <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
+              <main id="main-content" className="flex-1 overflow-auto" tabIndex={0}>
                 <Suspense fallback={<PageSkeleton />}>
                   <Switch>
                     <Route path="/" component={Dashboard} />
