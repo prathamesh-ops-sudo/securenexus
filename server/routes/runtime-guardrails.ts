@@ -5,6 +5,7 @@ import {
   getPolicies,
   getPolicyById,
   createPolicy,
+  deletePolicy,
   updatePolicy,
   evaluateAction,
   simulatePolicy,
@@ -266,6 +267,26 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     }
   });
 
+  app.delete("/api/runtime-guardrails/policies/:id", isAuthenticated, async (req, res) => {
+    try {
+      let orgId: string;
+      try {
+        orgId = getOrgId(req);
+      } catch {
+        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
+      }
+      const id = String(req.params.id);
+      const deleted = deletePolicy(id, orgId);
+      if (!deleted) {
+        return res.status(404).json({ message: "Policy not found or is a catalog policy that cannot be deleted" });
+      }
+      res.json({ message: "Policy deleted" });
+    } catch (error) {
+      logger.child("routes").error("Delete policy error", { error: String(error) });
+      res.status(500).json({ message: "Failed to delete policy" });
+    }
+  });
+
   app.post("/api/runtime-guardrails/evaluate", isAuthenticated, async (req, res) => {
     try {
       let orgId: string;
@@ -409,6 +430,9 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
       }
       if (errMsg.includes("SELF_APPROVAL_FORBIDDEN")) {
         return res.status(403).json({ message: "Self-approval is not allowed. A different user must approve." });
+      }
+      if (errMsg.includes("OVERRIDE_EXPIRED")) {
+        return res.status(400).json({ message: "Override has expired and can no longer be approved" });
       }
       logger.child("routes").error("Approve override error", { error: errMsg });
       res.status(500).json({ message: "Failed to approve override" });

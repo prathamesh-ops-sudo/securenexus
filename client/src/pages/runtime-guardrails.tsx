@@ -7,8 +7,6 @@ import {
   ShieldOff,
   Activity,
   Zap,
-  Clock,
-  AlertTriangle,
   CheckCircle2,
   XCircle,
   Eye,

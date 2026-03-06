@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from "crypto";
+import { randomUUID } from "crypto";
 
 export type PolicyAction =
   | "ai_agent_invoke"
@@ -497,6 +497,8 @@ const CATALOG_OVERRIDES: EmergencyOverride[] = [
   },
 ];
 
+const MAX_DECISION_LOG_SIZE = 10000;
+
 const orgPolicyStores = new Map<string, Map<string, PolicyRule>>();
 const orgDecisionStores = new Map<string, PolicyDecision[]>();
 const orgSimulationStores = new Map<string, PolicySimulation[]>();
@@ -569,6 +571,18 @@ export function createPolicy(
   return policy;
 }
 
+export function deletePolicy(policyIdVal: string, orgId: string): boolean {
+  const store = getOrgPolicyStore(orgId);
+  if (store.has(policyIdVal)) {
+    store.delete(policyIdVal);
+    return true;
+  }
+  if (CATALOG_POLICIES.some((p) => p.id === policyIdVal)) {
+    return false;
+  }
+  return false;
+}
+
 export function updatePolicy(
   policyIdVal: string,
   orgId: string,
@@ -622,7 +636,11 @@ export function updatePolicy(
   return policy;
 }
 
-export function evaluateAction(orgId: string, request: EvaluateRequest): PolicyDecision {
+export function evaluateAction(
+  orgId: string,
+  request: EvaluateRequest,
+  options?: { skipLog?: boolean },
+): PolicyDecision {
   const startTime = Date.now();
   const policies = getPolicies(orgId).filter((p) => p.mode !== "disabled");
 
@@ -683,8 +701,13 @@ export function evaluateAction(orgId: string, request: EvaluateRequest): PolicyD
       : "No policy matched; default allow",
   };
 
-  const store = getOrgDecisionStore(orgId);
-  store.push(decision);
+  if (!options?.skipLog) {
+    const store = getOrgDecisionStore(orgId);
+    store.push(decision);
+    if (store.length > MAX_DECISION_LOG_SIZE) {
+      store.splice(0, store.length - MAX_DECISION_LOG_SIZE);
+    }
+  }
 
   return decision;
 }
@@ -711,8 +734,11 @@ function evaluateCondition(fieldValue: unknown, condition: PolicyCondition): boo
       return typeof fieldValue === "string" && typeof value === "string" && fieldValue.includes(value);
     case "matches_regex":
       if (typeof fieldValue !== "string" || typeof value !== "string") return false;
+      if (value.length > 200) return false;
       try {
-        return new RegExp(value).test(fieldValue);
+        const regex = new RegExp(value);
+        const timeoutFieldValue = fieldValue.length > 10000 ? fieldValue.slice(0, 10000) : fieldValue;
+        return regex.test(timeoutFieldValue);
       } catch {
         return false;
       }
@@ -735,23 +761,30 @@ export function simulatePolicy(orgId: string, request: SimulateRequest): PolicyS
     throw new Error("POLICY_NOT_FOUND");
   }
 
-  const evalResult = evaluateAction(orgId, {
-    action: request.action,
-    actorId: "simulation",
-    actorType: "service",
-    resourceId: "sim-resource",
-    resourceType: "simulation",
-    context: request.context,
-  });
+  const evalResult = evaluateAction(
+    orgId,
+    {
+      action: request.action,
+      actorId: "simulation",
+      actorType: "service",
+      resourceId: "sim-resource",
+      resourceType: "simulation",
+      context: request.context,
+    },
+    { skipLog: true },
+  );
 
   const allPolicies = getPolicies(orgId);
   const scopedPolicies = allPolicies.filter((p) => p.scope === policy.scope || p.scope === "global");
 
   const blastRadius: BlastRadius = {
-    affectedAgents: policy.scope === "ai_agent" ? Math.floor(Math.random() * 15) + 1 : 0,
-    affectedWorkflows: Math.floor(Math.random() * 20) + 1,
-    affectedApiCalls: policy.actions.includes("api_outbound_call") ? Math.floor(Math.random() * 50) + 5 : 0,
-    estimatedBlockRate: Math.round(Math.random() * 40) / 100,
+    affectedAgents: policy.scope === "ai_agent" ? scopedPolicies.filter((p) => p.scope === "ai_agent").length * 2 : 0,
+    affectedWorkflows: scopedPolicies.length * 3,
+    affectedApiCalls: policy.actions.includes("api_outbound_call") ? scopedPolicies.length * 5 : 0,
+    estimatedBlockRate:
+      scopedPolicies.length > 0
+        ? Math.round((scopedPolicies.filter((p) => p.verdict === "deny").length / scopedPolicies.length) * 100) / 100
+        : 0,
     impactedScopes: Array.from(new Set(scopedPolicies.map((p) => p.scope))),
     riskLevel:
       policy.priority >= 90 ? "critical" : policy.priority >= 70 ? "high" : policy.priority >= 50 ? "medium" : "low",
@@ -848,6 +881,16 @@ export function approveEmergencyOverride(
 
   if (override.status !== "pending") {
     throw new Error("OVERRIDE_NOT_PENDING");
+  }
+
+  if (new Date(override.expiresAt) <= new Date()) {
+    override.status = "expired";
+    override.auditTrail.push({
+      action: "override_auto_expired",
+      actor: "system",
+      timestamp: new Date().toISOString(),
+    });
+    throw new Error("OVERRIDE_EXPIRED");
   }
 
   if (override.requestedBy === approvedBy) {
