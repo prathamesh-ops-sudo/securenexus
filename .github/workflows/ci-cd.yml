@@ -403,7 +403,18 @@ jobs:
   auto-merge-devin:
     name: Auto-Merge Devin PRs
     if: github.event_name == 'pull_request' && github.actor == 'devin-ai-integration[bot]'
-    needs: [lint-and-typecheck, unit-tests, secret-scan, e2e-tests, bundle-check, build-check, api-schema-validation]
+    needs:
+      [
+        lint-and-typecheck,
+        unit-tests,
+        secret-scan,
+        e2e-tests,
+        bundle-check,
+        build-check,
+        api-schema-validation,
+        codeql-analysis,
+        a11y-audit,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
