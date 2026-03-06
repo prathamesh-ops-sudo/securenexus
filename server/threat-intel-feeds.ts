@@ -71,7 +71,7 @@ export interface FeedAggregationResult {
   };
 }
 
-const DROP_QUERY_PREFIXES = ["utm_", "ref", "fbclid", "gclid", "mc_", "mkt_", "pk_", "sc_"];
+const DROP_QUERY_PREFIXES = ["utm_", "ref_", "fbclid", "gclid", "mc_", "mkt_", "pk_", "sc_"];
 
 function canonicalizeLink(link: string): string {
   if (!link) return "";
@@ -542,7 +542,6 @@ const RSS_FEEDS: ThreatIntelFeedDefinition[] = [
     category: "News",
     type: "rss",
   },
-  { name: "Threatpost", slug: "threatpost-latest", url: "https://threatpost.com/feed/", category: "News", type: "rss" },
   { name: "SC Magazine", slug: "sc-magazine", url: "https://www.scmagazine.com/feed", category: "News", type: "rss" },
   {
     name: "Help Net Security",
@@ -1074,13 +1073,6 @@ const RSS_FEEDS: ThreatIntelFeedDefinition[] = [
     type: "rss",
   },
   {
-    name: "Threatpost Latest",
-    slug: "threatpost-all",
-    url: "https://threatpost.com/feed/",
-    category: "News",
-    type: "rss",
-  },
-  {
     name: "Hacker One Hacktivity",
     slug: "hackerone",
     url: "https://hackerone.com/hacktivity.rss",
@@ -1185,7 +1177,7 @@ export function getThreatIntelFeedStatuses(): ThreatIntelFeedStatus[] {
       lastError: lastError ? lastError.timestamp : null,
       lastErrorMessage: lastError ? lastError.errorMessage || null : null,
       articleCount: cached ? cached.articles.length : 0,
-      status: cached ? (cached.articles.length > 0 ? "success" : "error") : "never_fetched",
+      status: history.length > 0 ? history[0].status : cached ? "success" : "never_fetched",
       successRate,
       avgResponseTimeMs,
       totalFetches: history.length,

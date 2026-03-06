@@ -744,7 +744,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       const category = req.query.category ? String(req.query.category) : undefined;
       const search = req.query.search ? String(req.query.search) : undefined;
       const feedSlug = req.query.feedSlug ? String(req.query.feedSlug) : undefined;
-      if (limit < 1 || limit > 5000) {
+      if (isNaN(limit) || limit < 1 || limit > 5000) {
         return res.status(400).json({ message: "limit must be between 1 and 5000" });
       }
       const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug });
