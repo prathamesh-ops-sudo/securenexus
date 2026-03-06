@@ -71,7 +71,7 @@ export function OnboardingChecklist() {
     },
   });
 
-  if (isDismissed || isLoading || !data || data.allDone) return null;
+  if (isDismissed || isLoading || !data || !Array.isArray(data.steps) || data.allDone) return null;
 
   const nextStep = data.steps.find((s) => !s.isCompleted);
 

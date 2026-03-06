@@ -26,7 +26,7 @@ export function PlanLimitBanner() {
     refetchInterval: 60000,
   });
 
-  if (dismissed || !data || data.warnings.length === 0) return null;
+  if (dismissed || !data || !Array.isArray(data.warnings) || data.warnings.length === 0) return null;
 
   const criticalWarnings = data.warnings.filter((w) => w.status === "critical");
   const softWarnings = data.warnings.filter((w) => w.status === "warning");
