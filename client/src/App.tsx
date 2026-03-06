@@ -88,6 +88,7 @@ const IocIngestionMatchingPage = lazy(() => import("@/pages/ioc-ingestion-matchi
 const UnifiedSecurityGraphPage = lazy(() => import("@/pages/unified-security-graph"));
 const PromptToArtifactPage = lazy(() => import("@/pages/prompt-to-artifact"));
 const DeveloperRemediationPage = lazy(() => import("@/pages/developer-remediation"));
+const ThreatIntelFeedsPage = lazy(() => import("@/pages/threat-intel-feeds"));
 
 function PageSkeleton() {
   return (
@@ -259,6 +260,7 @@ function AuthenticatedApp() {
                     <Route path="/security-graph" component={UnifiedSecurityGraphPage} />
                     <Route path="/prompt-to-artifact" component={PromptToArtifactPage} />
                     <Route path="/developer-remediation" component={DeveloperRemediationPage} />
+                    <Route path="/threat-intel-feeds" component={ThreatIntelFeedsPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

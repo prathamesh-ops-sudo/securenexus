@@ -7,6 +7,17 @@ import {
   insertIocMatchRuleSchema,
   insertIocWatchlistSchema,
 } from "@shared/schema";
+import {
+  getThreatIntelFeedDefinitions,
+  getThreatIntelFeedStatuses,
+  isThreatIntelSlugValid,
+  setThreatIntelFeedEnabled,
+  getThreatIntelFeedHealth,
+  fetchThreatIntelFeed,
+  fetchAllThreatIntelFeeds,
+  getCachedThreatIntelArticles,
+  getThreatIntelCategories,
+} from "../threat-intel-feeds";
 
 export function registerThreatIntelRoutes(app: Express): void {
   // Threat Intel Configuration (Org-level API keys)
@@ -697,6 +708,113 @@ export function registerThreatIntelRoutes(app: Express): void {
       res.json({ message: "Post-incident review deleted" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete post-incident review" });
+    }
+  });
+
+  // ── Threat Intel News Feeds (RSS aggregation) ──
+  // Static routes first to avoid shadowing by parameterized routes
+
+  app.get("/api/threat-intel-feeds/categories", isAuthenticated, (_req: Request, res: Response) => {
+    try {
+      res.json(getThreatIntelCategories());
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed categories" });
+    }
+  });
+
+  app.get("/api/threat-intel-feeds/definitions", isAuthenticated, (_req: Request, res: Response) => {
+    try {
+      res.json(getThreatIntelFeedDefinitions());
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed definitions" });
+    }
+  });
+
+  app.get("/api/threat-intel-feeds/statuses", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      res.json(getThreatIntelFeedStatuses(orgId));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed statuses" });
+    }
+  });
+
+  app.get("/api/threat-intel-feeds/articles", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 500;
+      const category = req.query.category ? String(req.query.category) : undefined;
+      const search = req.query.search ? String(req.query.search) : undefined;
+      const feedSlug = req.query.feedSlug ? String(req.query.feedSlug) : undefined;
+      if (isNaN(limit) || limit < 1 || limit > 5000) {
+        return res.status(400).json({ message: "limit must be between 1 and 5000" });
+      }
+      const orgId = (req as any).user?.orgId;
+      const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug, orgId });
+      res.json({ articles, total: articles.length });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch articles" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/refresh-all", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const result = await fetchAllThreatIntelFeeds(true, orgId);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to refresh all threat intel feeds" });
+    }
+  });
+
+  // Parameterized routes after static routes
+  app.get("/api/threat-intel-feeds/:slug/health", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      if (!isThreatIntelSlugValid(slug)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      res.json(getThreatIntelFeedHealth(slug));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed health" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/:slug/refresh", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      if (!isThreatIntelSlugValid(slug)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      const result = await fetchThreatIntelFeed(slug, true);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to refresh feed" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/:slug/enable", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      const orgId = (req as any).user?.orgId;
+      if (!setThreatIntelFeedEnabled(slug, true, orgId)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      res.json({ slug, enabled: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to enable feed" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/:slug/disable", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      const orgId = (req as any).user?.orgId;
+      if (!setThreatIntelFeedEnabled(slug, false, orgId)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      res.json({ slug, enabled: false });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to disable feed" });
     }
   });
 }
