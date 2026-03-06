@@ -31,9 +31,16 @@ usage() {
   exit 1
 }
 
+ARCH=$(uname -m)
+if [[ "$ARCH" == "aarch64" ]]; then
+  ARCH_LABEL="ARM64"
+else
+  ARCH_LABEL="X64"
+fi
+
 TOKEN=""
 REPO=""
-LABELS="self-hosted,Linux,X64,securenexus"
+LABELS="self-hosted,Linux,${ARCH_LABEL},securenexus"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
