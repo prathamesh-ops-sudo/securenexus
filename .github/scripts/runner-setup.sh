@@ -21,7 +21,7 @@ set -euo pipefail
 #   sudo ./runner-setup.sh --token AXXXXXX... --repo prathamesh-ops-sudo/securenexus
 # ============================================================================
 
-RUNNER_VERSION="2.321.0"
+RUNNER_VERSION="2.332.0"
 NODE_MAJOR=20
 RUNNER_USER="runner"
 RUNNER_HOME="/opt/actions-runner"
