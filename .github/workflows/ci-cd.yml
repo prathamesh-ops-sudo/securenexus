@@ -16,7 +16,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: deploy-${{ github.sha }}
+  group: deploy-pipeline
   cancel-in-progress: false
 
 # =============================================================================

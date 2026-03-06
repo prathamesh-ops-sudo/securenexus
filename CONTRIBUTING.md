@@ -63,7 +63,7 @@ npm run dev
 | `npm run checks`        | Typecheck + unit tests (fast pre-push gate)    |
 | `npm run checks:all`    | Typecheck + tests + format check (full gate)   |
 
-Run `npm run checks` before pushing to ensure CI will pass.
+Run `npm run checks` locally before pushing to catch issues early (there are no automated PR checks).
 
 ## Project Structure
 
