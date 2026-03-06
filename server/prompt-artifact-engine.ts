@@ -634,13 +634,13 @@ function buildSummary(classification: IntentClassification, artifact: GeneratedA
 
 export function getInvestigation(id: string, orgId?: string | null): Investigation | null {
   const investigation = investigationStore.get(id) || null;
-  if (investigation && orgId !== undefined && orgId !== null && investigation.orgId !== orgId) return null;
+  if (investigation && investigation.orgId !== orgId) return null;
   return investigation;
 }
 
 export function listInvestigations(orgId?: string | null): Investigation[] {
   const all = Array.from(investigationStore.values());
-  const filtered = orgId ? all.filter((inv) => inv.orgId === orgId) : all;
+  const filtered = all.filter((inv) => inv.orgId === orgId);
   return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
