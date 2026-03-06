@@ -52,16 +52,16 @@ npm run dev
 
 ## Dev Check Scripts
 
-| Command               | What it does                                     |
-|-----------------------|--------------------------------------------------|
-| `npm run typecheck`   | TypeScript compiler — zero-emission type check   |
-| `npm test`            | Run unit tests via Vitest                        |
-| `npm run test:watch`  | Run tests in watch mode                          |
+| Command                 | What it does                                   |
+| ----------------------- | ---------------------------------------------- |
+| `npm run typecheck`     | TypeScript compiler — zero-emission type check |
+| `npm test`              | Run unit tests via Vitest                      |
+| `npm run test:watch`    | Run tests in watch mode                        |
 | `npm run test:coverage` | Run tests with V8 coverage report              |
-| `npm run format:check`| Check formatting via Prettier (no writes)        |
-| `npm run format`      | Auto-format source files                         |
-| `npm run checks`      | Typecheck + unit tests (fast pre-push gate)      |
-| `npm run checks:all`  | Typecheck + tests + format check (full gate)     |
+| `npm run format:check`  | Check formatting via Prettier (no writes)      |
+| `npm run format`        | Auto-format source files                       |
+| `npm run checks`        | Typecheck + unit tests (fast pre-push gate)    |
+| `npm run checks:all`    | Typecheck + tests + format check (full gate)   |
 
 Run `npm run checks` before pushing to ensure CI will pass.
 
@@ -87,23 +87,27 @@ securenexus/
 
 ## CI Pipeline
 
-On every PR:
-- **Lint and Typecheck** — `tsc --noEmit` (blocking)
-- **Unit Tests** — Vitest with coverage report
-- **Secret Scanning** — Gitleaks + custom pattern scan
-- **CodeQL Analysis** — GitHub security scanning
-- **Bundle Size Check** — JS budget enforcement
-- **Docker Build + Trivy** — Container vulnerability scan
-- **Dependency Audit** — npm audit for high/critical CVEs
-- **SBOM Generation** — CycloneDX bill of materials
-- **License Compliance** — Deny AGPL/GPL/SSPL
+On every PR (`.github/workflows/ci-cd.yml`):
 
-On merge to main:
-- All PR checks above
+- **TypeScript typecheck** — `tsc --noEmit` (blocking)
+- **Devin Review** — automated review with a fix loop
+
+On merge to main (`.github/workflows/ci-cd.yml`):
+
+- **Main Branch Sanity Check** — typecheck gate before any deploy
 - **Build and Push** to ECR
 - **Deploy to Staging** with smoke test
 - **Deploy to UAT**
 - **Deploy to Production** via Argo Rollouts (canary)
+
+Weekly full sweep (`.github/workflows/weekly-sweep.yml`, Monday 06:00 UTC):
+
+- **Code Quality** — ESLint + Prettier + typecheck
+- **Security** — secret patterns + dependency audit
+- **CodeQL SAST** — GitHub security scanning
+- **Unit Tests** — Vitest
+- **E2E Tests** — Playwright
+- **Docker Build** — build verification
 
 ## Writing Tests
 
@@ -129,11 +133,11 @@ npx vitest run server/__tests__/my-module.test.ts
 
 See `.env.example` for the full list with descriptions. Required vars:
 
-| Variable         | Description                     |
-|------------------|---------------------------------|
-| `DATABASE_URL`   | PostgreSQL connection string    |
-| `SESSION_SECRET` | Session encryption key          |
-| `S3_BUCKET_NAME` | AWS S3 bucket for file uploads  |
+| Variable         | Description                    |
+| ---------------- | ------------------------------ |
+| `DATABASE_URL`   | PostgreSQL connection string   |
+| `SESSION_SECRET` | Session encryption key         |
+| `S3_BUCKET_NAME` | AWS S3 bucket for file uploads |
 
 All other variables have sensible defaults for local development.
 
