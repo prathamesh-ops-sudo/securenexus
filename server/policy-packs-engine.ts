@@ -925,9 +925,8 @@ export function activatePackForOrg(
 
   activations.push(activation);
 
-  const orgActivationCount = activations.filter((a) => a.packId === packId).length;
-  if (orgActivationCount > 0) {
-    log.debug("Pack now active for org", { orgId, packId });
+  if (!pack.appliedByOrgs.includes(orgId)) {
+    pack.appliedByOrgs.push(orgId);
   }
 
   log.info("Policy pack activated", { orgId, packId, strictnessOverride });
@@ -954,6 +953,12 @@ export function deactivatePackForOrg(orgId: string, packId: string): boolean {
   if (idx === -1) return false;
 
   activations.splice(idx, 1);
+
+  const pack = catalogPacks.find((p) => p.id === packId);
+  if (pack) {
+    const orgIdx = pack.appliedByOrgs.indexOf(orgId);
+    if (orgIdx !== -1) pack.appliedByOrgs.splice(orgIdx, 1);
+  }
 
   log.info("Policy pack deactivated", { orgId, packId });
   return true;
