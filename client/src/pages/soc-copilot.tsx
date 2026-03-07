@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Brain,
   Shield,
@@ -114,6 +115,7 @@ interface AutonomousAction {
   executionResult: string | null;
   triggeredBy: string;
   approvedBy: string | null;
+  rejectedBy: string | null;
   executedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -754,7 +756,8 @@ function ActionCard({
             )}
           <span className="text-[10px] text-muted-foreground ml-auto">
             {action.triggeredBy}
-            {action.approvedBy && ` / ${action.approvedBy}`}
+            {action.approvedBy && ` / approved: ${action.approvedBy}`}
+            {action.rejectedBy && ` / rejected: ${action.rejectedBy}`}
           </span>
         </div>
       </div>
@@ -887,6 +890,8 @@ export default function SocCopilotPage() {
   const [expandedTriages, setExpandedTriages] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const analystId = user?.id || user?.email || "unknown";
 
   const { data: stats, isLoading: statsLoading } = useQuery<CopilotStats>({
     queryKey: ["/api/soc-copilot/stats"],
@@ -959,7 +964,7 @@ export default function SocCopilotPage() {
   const approveActionMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("POST", `/api/soc-copilot/actions/${id}/approve`, {
-        analystId: "current-analyst",
+        analystId,
       });
       return res.json();
     },
@@ -973,7 +978,7 @@ export default function SocCopilotPage() {
   const rejectActionMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("POST", `/api/soc-copilot/actions/${id}/reject`, {
-        analystId: "current-analyst",
+        analystId,
       });
       return res.json();
     },
