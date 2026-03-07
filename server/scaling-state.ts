@@ -64,11 +64,11 @@ const STATE_REGISTRY: StateStoreEntry[] = [
   {
     name: "Connector Provider Concurrency",
     file: "connector-engine.ts",
-    tier: "local-ok",
+    tier: "already-shared",
     description:
-      "Per-pod concurrency limits and backoff for connector providers. Each pod independently rate-limits its own outbound requests.",
-    sharedStoreUpgrade: "Use Redis INCR/DECR for global concurrency counting. Backoff state in Redis with TTL keys.",
-    currentBackend: "in-memory",
+      "Cluster-wide concurrency limits and backoff for connector providers. Uses connector_provider_state DB table with atomic UPDATE for slot acquire/release. Stale slot reaper runs periodically to recover from pod crashes.",
+    sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed coordination.",
+    currentBackend: "database",
   },
   {
     name: "Slow Query Log",
