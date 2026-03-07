@@ -164,6 +164,7 @@ const navGroups: NavGroup[] = [
       { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
       { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
       { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
+      { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
       { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
     ],
   },
