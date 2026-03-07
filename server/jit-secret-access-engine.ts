@@ -781,7 +781,14 @@ export function requestAccess(
 
 export function approveAccessRequest(orgId: string, requestId: string, approverName: string): AccessRequest {
   const store = getOrgAccessRequestStore(orgId);
-  const allRequests = [...CATALOG_ACCESS_REQUESTS.filter((r) => r.orgId === "__catalog__"), ...store];
+  const allRequests = [
+    ...CATALOG_ACCESS_REQUESTS.filter((r) => r.orgId === "__catalog__").map((r) => ({
+      ...r,
+      orgId,
+      auditTrail: [...r.auditTrail],
+    })),
+    ...store,
+  ];
   const request = allRequests.find((r) => r.id === requestId);
   if (!request) throw new Error("REQUEST_NOT_FOUND");
   if (request.status !== "pending") throw new Error("REQUEST_NOT_PENDING");
@@ -802,6 +809,10 @@ export function approveAccessRequest(orgId: string, requestId: string, approverN
     details: `Ephemeral token issued, expires: ${expiresAt}`,
   });
 
+  if (!store.some((r) => r.id === request.id)) {
+    store.push(request);
+  }
+
   const secret = getSecretById(orgId, request.secretId);
   if (secret) {
     secret.accessCount += 1;
@@ -820,7 +831,14 @@ export function approveAccessRequest(orgId: string, requestId: string, approverN
 
 export function denyAccessRequest(orgId: string, requestId: string, denierName: string, reason: string): AccessRequest {
   const store = getOrgAccessRequestStore(orgId);
-  const allRequests = [...CATALOG_ACCESS_REQUESTS.filter((r) => r.orgId === "__catalog__"), ...store];
+  const allRequests = [
+    ...CATALOG_ACCESS_REQUESTS.filter((r) => r.orgId === "__catalog__").map((r) => ({
+      ...r,
+      orgId,
+      auditTrail: [...r.auditTrail],
+    })),
+    ...store,
+  ];
   const request = allRequests.find((r) => r.id === requestId);
   if (!request) throw new Error("REQUEST_NOT_FOUND");
   if (request.status !== "pending") throw new Error("REQUEST_NOT_PENDING");
@@ -836,6 +854,10 @@ export function denyAccessRequest(orgId: string, requestId: string, denierName: 
     details: reason,
   });
 
+  if (!store.some((r) => r.id === request.id)) {
+    store.push(request);
+  }
+
   appendAudit(orgId, {
     action: "access_denied",
     actor: denierName,
@@ -848,7 +870,14 @@ export function denyAccessRequest(orgId: string, requestId: string, denierName: 
 
 export function releaseAccess(orgId: string, requestId: string, releaserName: string): AccessRequest {
   const store = getOrgAccessRequestStore(orgId);
-  const allRequests = [...CATALOG_ACCESS_REQUESTS.filter((r) => r.orgId === "__catalog__"), ...store];
+  const allRequests = [
+    ...CATALOG_ACCESS_REQUESTS.filter((r) => r.orgId === "__catalog__").map((r) => ({
+      ...r,
+      orgId,
+      auditTrail: [...r.auditTrail],
+    })),
+    ...store,
+  ];
   const request = allRequests.find((r) => r.id === requestId);
   if (!request) throw new Error("REQUEST_NOT_FOUND");
   if (request.status !== "active" && request.status !== "approved") throw new Error("REQUEST_NOT_ACTIVE");
@@ -863,6 +892,10 @@ export function releaseAccess(orgId: string, requestId: string, releaserName: st
     timestamp: now,
     details: "Early release of access",
   });
+
+  if (!store.some((r) => r.id === request.id)) {
+    store.push(request);
+  }
 
   const secret = getSecretById(orgId, request.secretId);
   if (secret && secret.activeAccessors > 0) {
@@ -955,7 +988,7 @@ export function createShare(
 
 export function consumeShare(orgId: string, shareId: string, consumerIdentity: string): ExternalShare {
   const store = getOrgShareStore(orgId);
-  const allShares = [...CATALOG_SHARES.map((s) => ({ ...s, orgId })), ...store];
+  const allShares = [...CATALOG_SHARES.map((s) => ({ ...s, orgId, auditTrail: [...s.auditTrail] })), ...store];
   const share = allShares.find((s) => s.id === shareId);
   if (!share) throw new Error("SHARE_NOT_FOUND");
   if (share.status !== "active") throw new Error("SHARE_NOT_ACTIVE");
@@ -967,6 +1000,9 @@ export function consumeShare(orgId: string, shareId: string, consumerIdentity: s
       actor: "system",
       timestamp: new Date().toISOString(),
     });
+    if (!store.some((s) => s.id === share.id)) {
+      store.push(share);
+    }
     throw new Error("SHARE_EXPIRED");
   }
 
@@ -981,6 +1017,10 @@ export function consumeShare(orgId: string, shareId: string, consumerIdentity: s
     actor: consumerIdentity,
     timestamp: now,
   });
+
+  if (!store.some((s) => s.id === share.id)) {
+    store.push(share);
+  }
 
   appendAudit(orgId, {
     action: "share_consumed",
@@ -1064,7 +1104,7 @@ export function transferOwnership(
     action: input.isOffboarding ? "ownership_reclaimed" : "ownership_transferred",
     actor: input.initiatedBy,
     timestamp: now,
-    details: `${secret.name}: ${secret.ownerName} -> ${input.toOwnerName}${input.isOffboarding ? " (offboarding)" : ""}`,
+    details: `${secret.name}: ${transfer.fromOwnerName} -> ${input.toOwnerName}${input.isOffboarding ? " (offboarding)" : ""}`,
   });
 
   return transfer;
@@ -1233,7 +1273,7 @@ export function reviewBreakGlass(
   notes: string,
 ): BreakGlassAccess {
   const store = getOrgBreakGlassStore(orgId);
-  const allEntries = [...CATALOG_BREAK_GLASS.map((b) => ({ ...b, orgId })), ...store];
+  const allEntries = [...CATALOG_BREAK_GLASS.map((b) => ({ ...b, orgId, auditTrail: [...b.auditTrail] })), ...store];
   const entry = allEntries.find((b) => b.id === breakGlassId);
   if (!entry) throw new Error("BREAK_GLASS_NOT_FOUND");
   if (entry.status === "reviewed") throw new Error("ALREADY_REVIEWED");
@@ -1250,6 +1290,10 @@ export function reviewBreakGlass(
     timestamp: now,
     details: notes.slice(0, 200),
   });
+
+  if (!store.some((b) => b.id === entry.id)) {
+    store.push(entry);
+  }
 
   appendAudit(orgId, {
     action: "break_glass_reviewed",
