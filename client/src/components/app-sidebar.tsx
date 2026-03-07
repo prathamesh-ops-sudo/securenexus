@@ -50,6 +50,7 @@ import {
   Lock,
   HardDrive,
   Package,
+  BadgeCheck,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -178,6 +179,7 @@ const adminGroup: NavGroup = {
     { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
+    { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
     { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
