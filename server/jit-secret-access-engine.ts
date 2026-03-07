@@ -914,7 +914,8 @@ export function releaseAccess(orgId: string, requestId: string, releaserName: st
 
 export function getAccessRequests(orgId: string): AccessRequest[] {
   const store = getOrgAccessRequestStore(orgId);
-  const catalog = CATALOG_ACCESS_REQUESTS.map((r) => ({ ...r, orgId }));
+  const storeIds = new Set(store.map((r) => r.id));
+  const catalog = CATALOG_ACCESS_REQUESTS.filter((r) => !storeIds.has(r.id)).map((r) => ({ ...r, orgId }));
   return [...catalog, ...store];
 }
 
@@ -1034,7 +1035,8 @@ export function consumeShare(orgId: string, shareId: string, consumerIdentity: s
 
 export function getShares(orgId: string): ExternalShare[] {
   const store = getOrgShareStore(orgId);
-  const catalog = CATALOG_SHARES.map((s) => ({ ...s, orgId }));
+  const storeIds = new Set(store.map((s) => s.id));
+  const catalog = CATALOG_SHARES.filter((s) => !storeIds.has(s.id)).map((s) => ({ ...s, orgId }));
   return [...catalog, ...store];
 }
 
@@ -1307,7 +1309,8 @@ export function reviewBreakGlass(
 
 export function getBreakGlassEntries(orgId: string): BreakGlassAccess[] {
   const store = getOrgBreakGlassStore(orgId);
-  const catalog = CATALOG_BREAK_GLASS.map((b) => ({ ...b, orgId }));
+  const storeIds = new Set(store.map((b) => b.id));
+  const catalog = CATALOG_BREAK_GLASS.filter((b) => !storeIds.has(b.id)).map((b) => ({ ...b, orgId }));
   return [...catalog, ...store];
 }
 
