@@ -51,13 +51,16 @@ export function registerAiRoutes(app: Express): void {
     strictLimiter,
     async (req, res) => {
       try {
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
         const { alertIds } = req.body;
         let alertsToCorrelate;
         if (alertIds && Array.isArray(alertIds) && alertIds.length > 0) {
-          const allAlerts = await storage.getAlerts();
+          const allAlerts = await storage.getAlerts(orgId);
           alertsToCorrelate = allAlerts.filter((a) => alertIds.includes(a.id));
         } else {
-          alertsToCorrelate = (await storage.getAlerts()).filter((a) => a.status === "new" || a.status === "triaged");
+          alertsToCorrelate = (await storage.getAlerts(orgId)).filter(
+            (a) => a.status === "new" || a.status === "triaged",
+          );
         }
         if (alertsToCorrelate.length === 0) {
           return res.status(400).json({ message: "No alerts to correlate" });
@@ -73,11 +76,12 @@ export function registerAiRoutes(app: Express): void {
           resourceType: "alerts",
           details: { alertCount: alertsToCorrelate.length, groupsFound: result.correlatedGroups.length },
         });
-        storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses").catch(() => {});
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
         res.json(result);
       } catch (error: any) {
-        logger.child("ai").error("AI correlation error", { error: String(error) });
-        res.status(500).json({ message: "AI correlation failed. Please try again." });
+        const errMsg = error?.message || String(error);
+        logger.child("ai").error("AI correlation error", { error: errMsg });
+        res.status(500).json({ message: errMsg.length > 200 ? "AI correlation failed. Please try again." : errMsg });
       }
     },
   );

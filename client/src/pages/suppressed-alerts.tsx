@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, fetchPaginated } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { EyeOff, RefreshCw, Loader2, AlertTriangle, Eye, Filter, Shield, Clock, User, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -88,8 +88,12 @@ export default function SuppressedAlertsPage() {
   } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts", "suppressed"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/v1/alerts?suppressed=true&limit=200&sortOrder=desc");
-      return res.json();
+      const { items } = await fetchPaginated<Alert>("/api/v1/alerts", {
+        suppressed: "true",
+        limit: 200,
+        sortOrder: "desc",
+      });
+      return items;
     },
   });
 

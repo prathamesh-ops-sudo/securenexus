@@ -510,9 +510,20 @@ export function registerComplianceRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const userId = (req as any).user?.id;
+      const { name, scope, scopeValue } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "name is required" });
+      }
+      if (!scope || typeof scope !== "string" || !scope.trim()) {
+        return res.status(400).json({ message: "scope is required" });
+      }
+      if (!scopeValue || typeof scopeValue !== "string" || !scopeValue.trim()) {
+        return res.status(400).json({ message: "scopeValue is required" });
+      }
       const rule = await storage.createSuppressionRule({ ...req.body, orgId, createdBy: userId });
       res.status(201).json(rule);
     } catch (error) {
+      logger.child("compliance").error("Failed to create suppression rule", { error: String(error) });
       res.status(500).json({ message: "Failed to create suppression rule" });
     }
   });

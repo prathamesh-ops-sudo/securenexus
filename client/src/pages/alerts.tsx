@@ -45,6 +45,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useOrgContext } from "@/hooks/use-org-context";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule, SavedView } from "@shared/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -207,12 +208,14 @@ export default function AlertsPage() {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
   const { toast } = useToast();
+  const { currentOrgId } = useOrgContext();
+  const orgSlug = currentOrgId || "default";
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
-    queryKey: ["/api/orgs/default/saved-views", "alerts"],
+    queryKey: [`/api/orgs/${orgSlug}/saved-views`, "alerts"],
     queryFn: async () => {
       try {
-        const res = await apiRequest("GET", "/api/orgs/default/saved-views?resourceType=alerts");
+        const res = await apiRequest("GET", `/api/orgs/${orgSlug}/saved-views?resourceType=alerts`);
         return res.json();
       } catch {
         return [];
@@ -222,7 +225,7 @@ export default function AlertsPage() {
 
   const createSavedViewMutation = useMutation({
     mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
-      const res = await apiRequest("POST", "/api/orgs/default/saved-views", {
+      const res = await apiRequest("POST", `/api/orgs/${orgSlug}/saved-views`, {
         name: viewData.name,
         resourceType: "alerts",
         filters: viewData.filters,
@@ -241,7 +244,7 @@ export default function AlertsPage() {
 
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      await apiRequest("DELETE", `/api/orgs/default/saved-views/${viewId}`);
+      await apiRequest("DELETE", `/api/orgs/${orgSlug}/saved-views/${viewId}`);
     },
     onSuccess: () => {
       refetchSavedViews();
