@@ -42,6 +42,18 @@ function redactInstanceConfig(instance: CollectorInstance): CollectorInstance {
   return { ...instance, config: redactedConfig };
 }
 
+function stripRedactedKeys(config: Record<string, unknown>, templateSlug: string): Record<string, unknown> {
+  const template = getTemplateBySlug(templateSlug);
+  if (!template) return config;
+  const secretKeys = new Set(template.configSchema.filter((f) => f.type === "secret").map((f) => f.key));
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (secretKeys.has(key) && value === REDACTED) continue;
+    cleaned[key] = value;
+  }
+  return cleaned;
+}
+
 const deploySchema = z.object({
   templateSlug: z.string().min(1).max(100),
   name: z.string().min(1).max(200),
@@ -161,7 +173,12 @@ export function registerNativeCollectorRoutes(app: Express): void {
     }
     const orgId = (req as any).orgId as string;
     const instanceId = req.params.id as string;
-    const updated = updateCollectorConfig(instanceId, orgId, parsed.data as any);
+    const instance = getCollectorInstance(instanceId, orgId);
+    if (!instance) return res.status(404).json({ message: "Collector not found" });
+    const safeData = parsed.data.config
+      ? { ...parsed.data, config: stripRedactedKeys(parsed.data.config, instance.templateSlug) }
+      : parsed.data;
+    const updated = updateCollectorConfig(instanceId, orgId, safeData as any);
     if (!updated) return res.status(404).json({ message: "Collector not found" });
     res.json(redactInstanceConfig(updated));
   });
