@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
   Fingerprint,
@@ -108,13 +109,8 @@ export default function EvidenceChainViewerPage() {
   } = useQuery<EvidenceChainEntry[]>({
     queryKey: ["/api/incidents", activeIncidentId, "evidence-chain"],
     queryFn: async () => {
-      const res = await fetch(`/api/incidents/${activeIncidentId}/evidence-chain`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch evidence chain");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as EvidenceChainEntry[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", `/api/incidents/${activeIncidentId}/evidence-chain`);
+      return res.json();
     },
     enabled: !!activeIncidentId,
   });
@@ -126,13 +122,8 @@ export default function EvidenceChainViewerPage() {
   } = useQuery<ChainVerification>({
     queryKey: ["/api/incidents", activeIncidentId, "evidence-chain", "verify"],
     queryFn: async () => {
-      const res = await fetch(`/api/incidents/${activeIncidentId}/evidence-chain/verify`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to verify chain");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return body.data as ChainVerification;
-      }
-      return body as ChainVerification;
+      const res = await apiRequest("GET", `/api/incidents/${activeIncidentId}/evidence-chain/verify`);
+      return res.json();
     },
     enabled: false,
   });

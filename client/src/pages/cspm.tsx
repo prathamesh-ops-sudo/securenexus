@@ -528,13 +528,8 @@ function FindingsTab() {
   const { data: findings, isLoading } = useQuery<any[]>({
     queryKey: ["/api/cspm/findings", severityFilter],
     queryFn: async () => {
-      const res = await fetch(`/api/cspm/findings${queryParams}`, { credentials: "include" });
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as any[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", `/api/cspm/findings${queryParams}`);
+      return res.json();
     },
   });
 

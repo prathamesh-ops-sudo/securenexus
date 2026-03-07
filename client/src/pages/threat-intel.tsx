@@ -334,8 +334,7 @@ export default function ThreatIntelPage() {
       const params = new URLSearchParams();
       if (iocTypeFilter !== "all") params.set("iocType", iocTypeFilter);
       params.set("limit", "200");
-      const res = await fetch(`/api/ioc-entries?${params.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
+      const res = await apiRequest("GET", `/api/ioc-entries?${params.toString()}`);
       return res.json();
     },
   });
