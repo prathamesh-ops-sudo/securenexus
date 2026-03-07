@@ -111,12 +111,11 @@ const STATE_REGISTRY: StateStoreEntry[] = [
   {
     name: "AI Prompt Registry",
     file: "ai/prompt-registry.ts",
-    tier: "needs-shared-store",
+    tier: "already-shared",
     description:
-      "Prompt templates and version history. Per-pod state means prompt updates on pod A are invisible to pod B. Audit log is also per-pod.",
-    sharedStoreUpgrade:
-      "Store prompts in DB table. Load into memory on startup, refresh periodically or via event-bus notification. Audit log already goes to DB.",
-    currentBackend: "in-memory",
+      "Cluster-wide prompt templates, version history, and audit log. Uses ai_prompts, ai_prompt_versions, and ai_prompt_audit_log DB tables with parameterized queries. Default prompts are idempotently registered on startup.",
+    sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed coordination.",
+    currentBackend: "database",
   },
   {
     name: "Webhook Circuit Breakers",

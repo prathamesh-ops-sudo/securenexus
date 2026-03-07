@@ -23,7 +23,7 @@ import {
 } from "./ai/prompt-registry";
 import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/budget";
 
-initializeDefaultPrompts();
+initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 
 const log = logger.child("ai");
 
@@ -50,7 +50,7 @@ async function invokeWithPrompt(
   orgId?: string,
   maxTokensOverride?: number,
 ): Promise<{ text: string; metrics: InferenceMetrics }> {
-  const prompt = getPrompt(promptId);
+  const prompt = await getPrompt(promptId);
   if (!prompt) {
     throw new Error(`Prompt "${promptId}" not found in registry`);
   }
@@ -89,7 +89,7 @@ async function invokeWithPrompt(
     tier,
   });
 
-  recordPromptInvocation(prompt.id, prompt.version, {
+  await recordPromptInvocation(prompt.id, prompt.version, {
     tier,
     modelId: modelConfig.modelId,
     latencyMs: result.latencyMs,
@@ -504,7 +504,7 @@ export async function checkModelHealth(): Promise<{
 }> {
   const start = Date.now();
   try {
-    const prompt = getPrompt("health-check");
+    const prompt = await getPrompt("health-check");
     if (!prompt) throw new Error("Health check prompt not found in registry");
 
     await gatewayInvoke({
@@ -538,7 +538,7 @@ export async function checkModelHealth(): Promise<{
   }
 }
 
-export function getModelConfig(): {
+export async function getModelConfig(): Promise<{
   backend: string;
   model: string;
   region: string;
@@ -547,14 +547,15 @@ export function getModelConfig(): {
   promptCount: number;
   cacheStats: { size: number; maxSize: number };
   circuitBreakers: Record<string, { failures: number; isOpen: boolean; resetAt: string | null }>;
-} {
+}> {
+  const prompts = await getAllPrompts();
   return {
     backend: appConfig.ai.backend,
     model: appConfig.ai.modelId,
     region: appConfig.aws.region,
     temperature: appConfig.ai.temperature,
     maxTokens: appConfig.ai.maxTokens,
-    promptCount: getAllPrompts().length,
+    promptCount: prompts.length,
     cacheStats: getModelCacheStats(),
     circuitBreakers: getCircuitBreakerStatus(),
   };

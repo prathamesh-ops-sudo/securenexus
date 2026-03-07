@@ -5032,3 +5032,90 @@ export const insertEngineExplainabilityLogSchema = createInsertSchema(engineExpl
 
 export type EngineExplainabilityLog = typeof engineExplainabilityLogs.$inferSelect;
 export type InsertEngineExplainabilityLog = z.infer<typeof insertEngineExplainabilityLogSchema>;
+
+export const PROMPT_TIERS = ["triage", "narrative", "correlation", "health", "general"] as const;
+
+export const aiPrompts = pgTable(
+  "ai_prompts",
+  {
+    id: varchar("id").primaryKey(),
+    orgId: varchar("org_id"),
+    name: varchar("name").notNull(),
+    description: text("description").notNull().default(""),
+    tier: varchar("tier").notNull().default("general"),
+    systemPrompt: text("system_prompt").notNull(),
+    userTemplate: text("user_template").notNull(),
+    outputSchema: jsonb("output_schema"),
+    maxTokens: integer("max_tokens").notNull().default(2048),
+    temperature: doublePrecision("temperature").notNull().default(0.1),
+    version: integer("version").notNull().default(1),
+    deprecated: boolean("deprecated").notNull().default(false),
+    deprecatedAt: timestamp("deprecated_at"),
+    supersededBy: varchar("superseded_by"),
+    tags: jsonb("tags").notNull().default([]),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ai_prompts_org").on(table.orgId), index("idx_ai_prompts_tier").on(table.tier)],
+);
+
+export const aiPromptsRelations = relations(aiPrompts, ({ one }) => ({
+  organization: one(organizations, { fields: [aiPrompts.orgId], references: [organizations.id] }),
+}));
+
+export const insertAiPromptSchema = createInsertSchema(aiPrompts).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type AiPrompt = typeof aiPrompts.$inferSelect;
+export type InsertAiPrompt = z.infer<typeof insertAiPromptSchema>;
+
+export const aiPromptVersions = pgTable(
+  "ai_prompt_versions",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    promptId: varchar("prompt_id").notNull(),
+    orgId: varchar("org_id"),
+    version: integer("version").notNull(),
+    name: varchar("name").notNull(),
+    description: text("description").notNull().default(""),
+    tier: varchar("tier").notNull().default("general"),
+    systemPrompt: text("system_prompt").notNull(),
+    userTemplate: text("user_template").notNull(),
+    outputSchema: jsonb("output_schema"),
+    maxTokens: integer("max_tokens").notNull().default(2048),
+    temperature: doublePrecision("temperature").notNull().default(0.1),
+    tags: jsonb("tags").notNull().default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_prompt_versions_prompt").on(table.promptId),
+    index("idx_ai_prompt_versions_org").on(table.orgId),
+  ],
+);
+
+export const aiPromptVersionsRelations = relations(aiPromptVersions, ({ one }) => ({
+  organization: one(organizations, { fields: [aiPromptVersions.orgId], references: [organizations.id] }),
+}));
+
+export type AiPromptVersion = typeof aiPromptVersions.$inferSelect;
+
+export const aiPromptAuditLog = pgTable(
+  "ai_prompt_audit_log",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    promptId: varchar("prompt_id").notNull(),
+    version: integer("version").notNull(),
+    action: varchar("action").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_prompt_audit_prompt").on(table.promptId),
+    index("idx_ai_prompt_audit_action").on(table.action),
+  ],
+);
+
+export type AiPromptAuditEntry = typeof aiPromptAuditLog.$inferSelect;
