@@ -19,11 +19,28 @@ import {
   getDeploymentScript,
   getDataPipelineStats,
   generateApiKey,
+  type CollectorInstance,
   type CollectorType,
   type Platform,
   type DeploymentMethod,
   type CollectorStatus,
 } from "../native-collectors-engine";
+
+const REDACTED = "***REDACTED***";
+
+function redactInstanceConfig(instance: CollectorInstance): CollectorInstance {
+  const template = getTemplateBySlug(instance.templateSlug);
+  if (!template) return instance;
+
+  const secretKeys = new Set(template.configSchema.filter((f) => f.type === "secret").map((f) => f.key));
+  if (secretKeys.size === 0) return instance;
+
+  const redactedConfig: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(instance.config)) {
+    redactedConfig[key] = secretKeys.has(key) ? REDACTED : value;
+  }
+  return { ...instance, config: redactedConfig };
+}
 
 const deploySchema = z.object({
   templateSlug: z.string().min(1).max(100),
@@ -117,7 +134,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
         parsed.data.config,
         parsed.data.tags,
       );
-      res.status(201).json(instance);
+      res.status(201).json(redactInstanceConfig(instance));
     } catch (err: unknown) {
       res.status(400).json({ message: (err as Error).message });
     }
@@ -126,7 +143,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
   app.get("/api/native-collectors/instances", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
     const orgId = (req as any).orgId as string;
     const type = req.query.type as CollectorType | undefined;
-    res.json(getCollectorInstances(orgId, type));
+    res.json(getCollectorInstances(orgId, type).map(redactInstanceConfig));
   });
 
   app.get("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
@@ -134,7 +151,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     const instanceId = req.params.id as string;
     const instance = getCollectorInstance(instanceId, orgId);
     if (!instance) return res.status(404).json({ message: "Collector not found" });
-    res.json(instance);
+    res.json(redactInstanceConfig(instance));
   });
 
   app.patch("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
@@ -146,7 +163,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     const instanceId = req.params.id as string;
     const updated = updateCollectorConfig(instanceId, orgId, parsed.data as any);
     if (!updated) return res.status(404).json({ message: "Collector not found" });
-    res.json(updated);
+    res.json(redactInstanceConfig(updated));
   });
 
   app.delete("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
@@ -171,7 +188,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
       const instanceId = req.params.id as string;
       const updated = sendHeartbeat(instanceId, orgId, parsed.data.hostInfo, parsed.data.metrics);
       if (!updated) return res.status(404).json({ message: "Collector not found" });
-      res.json(updated);
+      res.json(redactInstanceConfig(updated));
     },
   );
 

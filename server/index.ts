@@ -24,6 +24,23 @@ import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFligh
 import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 
+const startedAt = Date.now();
+
+process.on("unhandledRejection", (reason: unknown) => {
+  logger.child("process").error("Unhandled promise rejection", {
+    error: String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+});
+
+process.on("uncaughtException", (err: Error) => {
+  logger.child("process").error("Uncaught exception — process will exit", {
+    error: err.message,
+    stack: err.stack,
+  });
+  process.exit(1);
+});
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -116,7 +133,13 @@ export function log(message: string, source = "express") {
       reusePort: true,
     },
     () => {
-      logger.child("express").info(`serving on port ${port}`);
+      logger.child("express").info("SecureNexus started", {
+        port,
+        env: config.nodeEnv,
+        pid: process.pid,
+        node: process.version,
+        startupMs: Date.now() - startedAt,
+      });
       initializeScalingState();
       initializeTenantIsolation();
       initializeTenantThrottle();
@@ -135,6 +158,19 @@ export function log(message: string, source = "express") {
       markServerReady();
     },
   );
+
+  if (config.nodeEnv !== "development" && config.nodeEnv !== "test") {
+    const HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000;
+    const heartbeatTimer = setInterval(() => {
+      const mem = process.memoryUsage();
+      logger.child("heartbeat").debug("alive", {
+        uptimeSec: Math.floor(process.uptime()),
+        rssMb: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+    heartbeatTimer.unref();
+  }
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {

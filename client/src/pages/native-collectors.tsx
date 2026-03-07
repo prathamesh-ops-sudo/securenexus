@@ -824,7 +824,7 @@ function EventsView() {
           <CardContent className="p-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Badge className={SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.info + " text-[10px]"}>
+                <Badge className={(SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.info) + " text-[10px]"}>
                   {event.severity}
                 </Badge>
                 <span className="text-sm font-medium text-foreground">{event.eventType.replace(/_/g, " ")}</span>

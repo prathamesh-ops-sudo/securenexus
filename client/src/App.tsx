@@ -21,6 +21,7 @@ import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
@@ -341,14 +342,16 @@ function AppContent() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <TooltipProvider>
-          <AppContent />
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <TooltipProvider>
+            <AppContent />
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
