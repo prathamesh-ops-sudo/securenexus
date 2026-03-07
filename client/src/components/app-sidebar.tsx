@@ -48,6 +48,7 @@ import {
   GitMerge,
   ShieldBan,
   Lock,
+  HardDrive,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -141,6 +142,7 @@ const navGroups: NavGroup[] = [
       { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
       { title: "Integrations", url: "/integrations", icon: Link2 },
       { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
+      { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
       { title: "File Manager", url: "/file-manager", icon: FolderOpen },
     ],
