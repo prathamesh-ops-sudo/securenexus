@@ -180,6 +180,7 @@ const adminGroup: NavGroup = {
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
+    { title: "Policy Packs", url: "/policy-packs", icon: Shield },
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
     { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
