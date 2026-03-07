@@ -97,6 +97,7 @@ const JitSecretAccessPage = lazy(() => import("@/pages/jit-secret-access"));
 const IntegrationMarketplacePage = lazy(() => import("@/pages/integration-marketplace"));
 const NativeCollectorsPage = lazy(() => import("@/pages/native-collectors"));
 const AdversarialTestingPage = lazy(() => import("@/pages/adversarial-testing"));
+const SocCopilotPage = lazy(() => import("@/pages/soc-copilot"));
 
 function PageSkeleton() {
   return (
@@ -276,6 +277,7 @@ function AuthenticatedApp() {
                     <Route path="/integration-marketplace" component={IntegrationMarketplacePage} />
                     <Route path="/native-collectors" component={NativeCollectorsPage} />
                     <Route path="/adversarial-testing" component={AdversarialTestingPage} />
+                    <Route path="/soc-copilot" component={SocCopilotPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
