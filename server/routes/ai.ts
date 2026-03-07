@@ -339,7 +339,7 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/budget/usage", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(getAiOrgUsage(orgId));
+      res.json(await getAiOrgUsage(orgId));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch AI budget usage" });
     }
@@ -352,7 +352,7 @@ export function registerAiRoutes(app: Express): void {
     requireMinRole("admin"),
     async (_req, res) => {
       try {
-        res.json(getAllAiOrgUsage());
+        res.json(await getAllAiOrgUsage());
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch all AI budget usage" });
       }
@@ -375,7 +375,7 @@ export function registerAiRoutes(app: Express): void {
         if (typeof dailyInvocationCap !== "number" || dailyInvocationCap <= 0 || dailyInvocationCap > 100000) {
           return res.status(400).json({ message: "dailyInvocationCap must be a number between 0 and 100000" });
         }
-        setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
+        await setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
         res.json({ orgId, dailyBudgetUsd, dailyInvocationCap, updated: true });
       } catch (error) {
         res.status(500).json({ message: "Failed to update AI budget" });

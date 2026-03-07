@@ -8,6 +8,7 @@ import {
   boolean,
   jsonb,
   real,
+  doublePrecision,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -3087,6 +3088,24 @@ export const connectorProviderState = pgTable("connector_provider_state", {
 });
 
 export type ConnectorProviderState = typeof connectorProviderState.$inferSelect;
+
+export const orgAiBudgets = pgTable(
+  "org_ai_budgets",
+  {
+    orgId: varchar("org_id").primaryKey(),
+    budgetUsd: doublePrecision("budget_usd").notNull().default(50),
+    invocationCap: integer("invocation_cap").notNull().default(5000),
+    dailySpendUsd: doublePrecision("daily_spend_usd").notNull().default(0),
+    dailyInvocations: integer("daily_invocations").notNull().default(0),
+    dailyInputTokens: integer("daily_input_tokens").notNull().default(0),
+    dailyOutputTokens: integer("daily_output_tokens").notNull().default(0),
+    lastResetAt: timestamp("last_reset_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_org_ai_budgets_org_id").on(table.orgId)],
+);
+
+export type OrgAiBudget = typeof orgAiBudgets.$inferSelect;
 
 export const connectorHealthChecks = pgTable(
   "connector_health_checks",

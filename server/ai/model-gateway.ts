@@ -303,7 +303,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
   }
 
   if (opts.orgId) {
-    const budgetOk = checkBudget(opts.orgId);
+    const budgetOk = await checkBudget(opts.orgId);
     if (!budgetOk.allowed) {
       throw new Error(`AI budget exceeded for org ${opts.orgId}: ${budgetOk.reason}`);
     }
@@ -362,7 +362,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
       };
 
       if (opts.orgId) {
-        trackUsage(opts.orgId, {
+        await trackUsage(opts.orgId, {
           inputTokens: inputTokensEstimate,
           outputTokens: outputTokensEstimate,
           costUsd: costEstimateUsd,

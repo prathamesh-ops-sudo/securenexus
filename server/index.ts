@@ -24,6 +24,7 @@ import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFligh
 import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
+import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
 
 const startedAt = Date.now();
 
@@ -155,9 +156,11 @@ export function log(message: string, source = "express") {
       startTracingFlush();
       startDrillScheduler();
       startStaleSlotReaper();
+      startBudgetResetScheduler();
       registerShutdownHandler("job-worker", stopJobWorker);
       registerShutdownHandler("dr-drill-scheduler", async () => stopDrillScheduler());
       registerShutdownHandler("stale-slot-reaper", stopStaleSlotReaper);
+      registerShutdownHandler("budget-reset-scheduler", stopBudgetResetScheduler);
       markServerReady();
     },
   );
