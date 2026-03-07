@@ -3077,6 +3077,17 @@ export const connectorJobRuns = pgTable(
   ],
 );
 
+export const connectorProviderState = pgTable("connector_provider_state", {
+  provider: varchar("provider").primaryKey(),
+  activeCount: integer("active_count").notNull().default(0),
+  maxConcurrency: integer("max_concurrency").notNull().default(3),
+  backoffUntil: timestamp("backoff_until"),
+  backoffFactor: integer("backoff_factor").notNull().default(1),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type ConnectorProviderState = typeof connectorProviderState.$inferSelect;
+
 export const connectorHealthChecks = pgTable(
   "connector_health_checks",
   {

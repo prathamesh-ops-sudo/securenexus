@@ -7,6 +7,15 @@ import { getPlugin, getAllPluginTypes, getPluginMetadata as registryGetMetadata 
 import type { ConnectorPlugin } from "./connectors/connector-plugin";
 import { initializeConnectorPlugins } from "./connectors/registry";
 import { startSpan, addSpanAttribute } from "./tracing";
+import {
+  distributedAcquireSlot,
+  distributedReleaseSlot,
+  distributedCheckBackoff,
+  distributedApplyBackoff,
+  distributedClearBackoff,
+  distributedSetMaxConcurrency,
+  distributedGetProviderStats,
+} from "./distributed-concurrency";
 
 export type { ConnectorConfig, SyncResult, ConnectorTestResult } from "./connectors/connector-plugin";
 import type { ConnectorConfig, SyncResult, ConnectorTestResult } from "./connectors/connector-plugin";
@@ -15,94 +24,49 @@ initializeConnectorPlugins();
 
 const BATCH_SIZE = 50;
 const DEFAULT_MAX_CONCURRENCY = 3;
+const SLOT_POLL_INTERVAL_MS = 500;
+const SLOT_POLL_MAX_WAIT_MS = 30_000;
 
-const providerConcurrency = new Map<string, number>();
-const providerActiveCount = new Map<string, number>();
-const providerWaiters = new Map<string, Array<() => void>>();
-
-const providerBackoff = new Map<string, { until: number; factor: number }>();
-
-export function setProviderConcurrency(provider: string, max: number): void {
-  providerConcurrency.set(provider, max);
-}
-
-function getMaxConcurrency(provider: string): number {
-  return providerConcurrency.get(provider) ?? DEFAULT_MAX_CONCURRENCY;
+export async function setProviderConcurrency(provider: string, max: number): Promise<void> {
+  await distributedSetMaxConcurrency(provider, max);
 }
 
 async function acquireProviderSlot(provider: string): Promise<void> {
-  const max = getMaxConcurrency(provider);
-  const active = providerActiveCount.get(provider) ?? 0;
-  if (active < max) {
-    providerActiveCount.set(provider, active + 1);
-    return;
-  }
-  return new Promise<void>((resolve) => {
-    let waiters = providerWaiters.get(provider);
-    if (!waiters) {
-      waiters = [];
-      providerWaiters.set(provider, waiters);
-    }
-    waiters.push(() => {
-      resolve();
-    });
-  });
-}
+  const acquired = await distributedAcquireSlot(provider, DEFAULT_MAX_CONCURRENCY);
+  if (acquired) return;
 
-function releaseProviderSlot(provider: string): void {
-  const waiters = providerWaiters.get(provider);
-  if (waiters && waiters.length > 0) {
-    const next = waiters.shift()!;
-    next();
-  } else {
-    const active = providerActiveCount.get(provider) ?? 1;
-    providerActiveCount.set(provider, Math.max(0, active - 1));
+  const deadline = Date.now() + SLOT_POLL_MAX_WAIT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, SLOT_POLL_INTERVAL_MS));
+    const retryAcquired = await distributedAcquireSlot(provider, DEFAULT_MAX_CONCURRENCY);
+    if (retryAcquired) return;
   }
-}
 
-function checkProviderBackoff(provider: string): number {
-  const entry = providerBackoff.get(provider);
-  if (!entry) return 0;
-  const remaining = entry.until - Date.now();
-  if (remaining <= 0) {
-    providerBackoff.delete(provider);
-    return 0;
-  }
-  return remaining;
-}
-
-function applyProviderBackoff(provider: string): void {
-  const existing = providerBackoff.get(provider);
-  const factor = existing ? Math.min(existing.factor * 2, 64) : 2;
-  const waitMs = factor * 1000;
-  providerBackoff.set(provider, { until: Date.now() + waitMs, factor });
   logger
     .child("connector-engine")
-    .warn("Provider " + provider + " backoff applied: " + waitMs + "ms", { provider, factor });
+    .warn("Slot acquisition timed out, proceeding anyway", { provider, timeoutMs: SLOT_POLL_MAX_WAIT_MS });
 }
 
-function clearProviderBackoff(provider: string): void {
-  providerBackoff.delete(provider);
+async function releaseProviderSlot(provider: string): Promise<void> {
+  await distributedReleaseSlot(provider);
 }
 
-export function getProviderSyncStats(): Record<
-  string,
-  { active: number; maxConcurrency: number; backoffMs: number; waiting: number }
+async function checkProviderBackoff(provider: string): Promise<number> {
+  return distributedCheckBackoff(provider);
+}
+
+async function applyProviderBackoff(provider: string): Promise<void> {
+  await distributedApplyBackoff(provider);
+}
+
+async function clearProviderBackoff(provider: string): Promise<void> {
+  await distributedClearBackoff(provider);
+}
+
+export async function getProviderSyncStats(): Promise<
+  Record<string, { active: number; maxConcurrency: number; backoffMs: number; waiting: number }>
 > {
-  const stats: Record<string, { active: number; maxConcurrency: number; backoffMs: number; waiting: number }> = {};
-  const allProviders = Array.from(
-    new Set([...Array.from(providerConcurrency.keys()), ...Array.from(providerActiveCount.keys())]),
-  );
-  for (let pi = 0; pi < allProviders.length; pi++) {
-    const p = allProviders[pi]!;
-    stats[p] = {
-      active: providerActiveCount.get(p) ?? 0,
-      maxConcurrency: getMaxConcurrency(p),
-      backoffMs: checkProviderBackoff(p),
-      waiting: (providerWaiters.get(p) ?? []).length,
-    };
-  }
-  return stats;
+  return distributedGetProviderStats();
 }
 
 export async function testConnector(type: string, config: ConnectorConfig): Promise<ConnectorTestResult> {
@@ -154,7 +118,7 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
     };
   }
 
-  const backoffMs = checkProviderBackoff(type);
+  const backoffMs = await checkProviderBackoff(type);
   if (backoffMs > 0) {
     return {
       alertsReceived: 0,
@@ -172,11 +136,11 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
     let rawAlerts: unknown[];
     try {
       rawAlerts = await plugin.fetch(config, since || undefined);
-      clearProviderBackoff(type);
+      await clearProviderBackoff(type);
     } catch (err: unknown) {
       const msg = ((err as Error).message || "").toLowerCase();
       if (msg.includes("429") || msg.includes("rate limit") || msg.includes("throttl") || msg.includes("503")) {
-        applyProviderBackoff(type);
+        await applyProviderBackoff(type);
       }
       return {
         alertsReceived: 0,
@@ -199,7 +163,7 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
       rawAlerts: normalized,
     };
   } finally {
-    releaseProviderSlot(type);
+    await releaseProviderSlot(type);
   }
 }
 

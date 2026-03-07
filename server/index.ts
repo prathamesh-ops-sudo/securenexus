@@ -23,6 +23,7 @@ import { tracingMiddleware, startTracingFlush, stopTracingFlush } from "./tracin
 import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFlightDrain } from "./request-lifecycle";
 import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
+import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
 
 const startedAt = Date.now();
 
@@ -153,8 +154,10 @@ export function log(message: string, source = "express") {
       startMetricsRollupScheduler();
       startTracingFlush();
       startDrillScheduler();
+      startStaleSlotReaper();
       registerShutdownHandler("job-worker", stopJobWorker);
       registerShutdownHandler("dr-drill-scheduler", async () => stopDrillScheduler());
+      registerShutdownHandler("stale-slot-reaper", stopStaleSlotReaper);
       markServerReady();
     },
   );
