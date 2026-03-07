@@ -54,6 +54,7 @@ import { registerTieredPackagingRoutes } from "./tiered-packaging";
 import { registerTrustCenterRoutes } from "./trust-center";
 import { registerPolicyPacksRoutes } from "./policy-packs";
 import { registerExecutiveRiskRoutes } from "./executive-risk";
+import { registerAgentToolSecurityRoutes } from "./agent-tool-security";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -112,4 +113,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerTrustCenterRoutes(app);
   registerPolicyPacksRoutes(app);
   registerExecutiveRiskRoutes(app);
+  registerAgentToolSecurityRoutes(app);
 }
