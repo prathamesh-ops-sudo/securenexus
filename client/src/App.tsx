@@ -101,6 +101,7 @@ const SocCopilotPage = lazy(() => import("@/pages/soc-copilot"));
 const TieredPackagingPage = lazy(() => import("@/pages/tiered-packaging"));
 const TrustCenterPage = lazy(() => import("@/pages/trust-center"));
 const PolicyPacksPage = lazy(() => import("@/pages/policy-packs"));
+const ExecutiveRiskPage = lazy(() => import("@/pages/executive-risk"));
 
 function PageSkeleton() {
   return (
@@ -284,6 +285,7 @@ function AuthenticatedApp() {
                     <Route path="/tiered-packaging" component={TieredPackagingPage} />
                     <Route path="/trust-center" component={TrustCenterPage} />
                     <Route path="/policy-packs" component={PolicyPacksPage} />
+                    <Route path="/executive-risk" component={ExecutiveRiskPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

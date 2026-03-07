@@ -181,6 +181,7 @@ const adminGroup: NavGroup = {
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
     { title: "Policy Packs", url: "/policy-packs", icon: Shield },
+    { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
     { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
