@@ -649,7 +649,15 @@ export function runTestCase(orgId: string, testCaseId: string, trigger: RunTrigg
 }
 
 export function runBatch(orgId: string, testCaseIds: string[], trigger: RunTrigger): TestExecution[] {
-  return testCaseIds.map((id) => runTestCase(orgId, id, trigger));
+  const results: TestExecution[] = [];
+  for (const id of testCaseIds) {
+    try {
+      results.push(runTestCase(orgId, id, trigger));
+    } catch {
+      continue;
+    }
+  }
+  return results;
 }
 
 export function retestRemediation(orgId: string, remediationId: string): TestExecution {
