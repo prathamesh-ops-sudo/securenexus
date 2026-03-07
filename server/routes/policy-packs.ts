@@ -83,6 +83,26 @@ export function registerPolicyPacksRoutes(app: Express): void {
     }
   });
 
+  app.get(
+    "/api/policy-packs/org/activations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const activations = getOrgActivatedPacks(orgId);
+        return sendEnvelope(res, activations);
+      } catch (err) {
+        log.error("Failed to get org activations", { error: String(err) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INTERNAL_ERROR", message: "Failed to fetch org activations" }],
+        });
+      }
+    },
+  );
+
   app.get("/api/policy-packs/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -144,26 +164,6 @@ export function registerPolicyPacksRoutes(app: Express): void {
     },
   );
 
-  app.get(
-    "/api/policy-packs/org/activations",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    async (req: Request, res: Response) => {
-      try {
-        const orgId = getOrgId(req);
-        const activations = getOrgActivatedPacks(orgId);
-        return sendEnvelope(res, activations);
-      } catch (err) {
-        log.error("Failed to get org activations", { error: String(err) });
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "INTERNAL_ERROR", message: "Failed to fetch org activations" }],
-        });
-      }
-    },
-  );
-
   app.post(
     "/api/policy-packs/:id/activate",
     isAuthenticated,
@@ -174,7 +174,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const packId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const user = (req as any).user;
+        const user = req.user as { id?: string } | undefined;
         const strictnessOverride =
           typeof req.body.strictnessOverride === "string" &&
           VALID_STRICTNESS.includes(req.body.strictnessOverride as StrictnessPreset)
@@ -266,10 +266,20 @@ export function registerPolicyPacksRoutes(app: Express): void {
           updates.status = req.body.status;
         }
         if (req.body.ruleOverrides !== undefined) {
+          if (
+            typeof req.body.ruleOverrides !== "object" ||
+            req.body.ruleOverrides === null ||
+            Array.isArray(req.body.ruleOverrides)
+          ) {
+            return sendEnvelope(res, null, {
+              status: 400,
+              errors: [{ code: "VALIDATION_ERROR", message: "ruleOverrides must be a non-null object" }],
+            });
+          }
           updates.ruleOverrides = req.body.ruleOverrides;
         }
 
-        const result = updatePackActivation(orgId, packId, updates as any);
+        const result = updatePackActivation(orgId, packId, updates as Parameters<typeof updatePackActivation>[2]);
         if (!result) {
           return sendEnvelope(res, null, {
             status: 404,
