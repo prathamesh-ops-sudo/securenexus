@@ -80,6 +80,7 @@ export interface AutonomousAction {
   executionResult: string | null;
   triggeredBy: string;
   approvedBy: string | null;
+  rejectedBy: string | null;
   executedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -587,6 +588,7 @@ function seedActions(orgId: string): AutonomousAction[] {
         "VirusTotal: 47/90 malicious | AbuseIPDB: 100% confidence score | Shodan: Cobalt Strike C2 on port 443",
       triggeredBy: "copilot-auto",
       approvedBy: null,
+      rejectedBy: null,
       executedAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
       createdAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
       updatedAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
@@ -608,6 +610,7 @@ function seedActions(orgId: string): AutonomousAction[] {
         "Registered 48h ago via Namecheap | Privacy-protected WHOIS | NS: ns1.bulletproof-dns.com | No historical DNS records",
       triggeredBy: "copilot-auto",
       approvedBy: null,
+      rejectedBy: null,
       executedAt: new Date(now - 86400000 * 0.5).toISOString(),
       createdAt: new Date(now - 86400000 * 0.5).toISOString(),
       updatedAt: new Date(now - 86400000 * 0.5).toISOString(),
@@ -629,6 +632,7 @@ function seedActions(orgId: string): AutonomousAction[] {
         "Location: Singapore | ASN: AS136907 (Huawei Cloud) | Hosting: Cloud VPS | Abuse contact: abuse@huaweicloud.com",
       triggeredBy: "copilot-auto",
       approvedBy: null,
+      rejectedBy: null,
       executedAt: new Date(now - 86400000 - 3600000 * 5).toISOString(),
       createdAt: new Date(now - 86400000 - 3600000 * 5).toISOString(),
       updatedAt: new Date(now - 86400000 - 3600000 * 5).toISOString(),
@@ -649,6 +653,7 @@ function seedActions(orgId: string): AutonomousAction[] {
       executionResult: "Endpoint ws-prod-17 isolated successfully — all network connections terminated",
       triggeredBy: "copilot-suggest",
       approvedBy: "analyst-sarah",
+      rejectedBy: null,
       executedAt: new Date(now - 86400000 * 2 - 3600000 * 5).toISOString(),
       createdAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
       updatedAt: new Date(now - 86400000 * 2 - 3600000 * 5).toISOString(),
@@ -669,6 +674,7 @@ function seedActions(orgId: string): AutonomousAction[] {
       executionResult: "IP blocked on firewall (rule FW-8821) and WAF (rule WAF-4412)",
       triggeredBy: "copilot-suggest",
       approvedBy: "analyst-sarah",
+      rejectedBy: null,
       executedAt: new Date(now - 86400000 * 2 - 3600000 * 4).toISOString(),
       createdAt: new Date(now - 86400000 * 2 - 3600000 * 5).toISOString(),
       updatedAt: new Date(now - 86400000 * 2 - 3600000 * 4).toISOString(),
@@ -689,6 +695,7 @@ function seedActions(orgId: string): AutonomousAction[] {
       executionResult: null,
       triggeredBy: "copilot-suggest",
       approvedBy: null,
+      rejectedBy: null,
       executedAt: null,
       createdAt: new Date(now - 3600000 * 2).toISOString(),
       updatedAt: new Date(now - 3600000 * 2).toISOString(),
@@ -709,6 +716,7 @@ function seedActions(orgId: string): AutonomousAction[] {
       executionResult: null,
       triggeredBy: "copilot-suggest",
       approvedBy: null,
+      rejectedBy: null,
       executedAt: null,
       createdAt: new Date(now - 86400000 - 3600000 * 4).toISOString(),
       updatedAt: new Date(now - 86400000 - 3600000 * 4).toISOString(),
@@ -730,6 +738,7 @@ function seedActions(orgId: string): AutonomousAction[] {
         "30-day activity report generated — 3 anomalous file access events detected on financial-reports share",
       triggeredBy: "copilot-auto",
       approvedBy: null,
+      rejectedBy: null,
       executedAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
       createdAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
       updatedAt: new Date(now - 86400000 * 2 - 3600000 * 6).toISOString(),
@@ -1003,7 +1012,7 @@ export function rejectAction(orgId: string, actionId: string, analystId: string)
   if (!action) return null;
   if (action.status !== "pending_approval") return null;
   action.status = "rejected";
-  action.approvedBy = analystId;
+  action.rejectedBy = analystId;
   action.updatedAt = new Date().toISOString();
   return action;
 }
