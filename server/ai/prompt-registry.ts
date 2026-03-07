@@ -78,6 +78,9 @@ async function ensureTables(): Promise<void> {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_prompt_versions_prompt_version ON ai_prompt_versions (prompt_id, version)`,
+  );
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_prompt ON ai_prompt_versions (prompt_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_org ON ai_prompt_versions (org_id)`);
 
@@ -163,6 +166,10 @@ export async function registerPrompt(template: PromptTemplate): Promise<void> {
        max_tokens = EXCLUDED.max_tokens,
        temperature = EXCLUDED.temperature,
        version = EXCLUDED.version,
+       deprecated = EXCLUDED.deprecated,
+       deprecated_at = EXCLUDED.deprecated_at,
+       superseded_by = EXCLUDED.superseded_by,
+       is_active = EXCLUDED.is_active,
        tags = EXCLUDED.tags,
        updated_at = NOW()`,
     [
@@ -187,7 +194,8 @@ export async function registerPrompt(template: PromptTemplate): Promise<void> {
 
   await pool.query(
     `INSERT INTO ai_prompt_versions (prompt_id, org_id, version, name, description, tier, system_prompt, user_template, output_schema, max_tokens, temperature, tags)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT (prompt_id, version) DO NOTHING`,
     [
       template.id,
       null,
