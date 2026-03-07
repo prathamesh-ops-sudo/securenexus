@@ -36,7 +36,7 @@ export function registerAiRoutes(app: Express): void {
   });
 
   app.get("/api/ai/config", isAuthenticated, async (_req, res) => {
-    res.json(getModelConfig());
+    res.json(await getModelConfig());
   });
 
   app.get("/api/ai/inference-metrics", isAuthenticated, strictLimiter, async (req, res) => {
@@ -385,8 +385,8 @@ export function registerAiRoutes(app: Express): void {
 
   app.get("/api/ai/prompts", isAuthenticated, async (_req, res) => {
     try {
-      const prompts = getAllRegisteredPrompts();
-      const summary = getPromptCatalogSummary();
+      const prompts = await getAllRegisteredPrompts();
+      const summary = await getPromptCatalogSummary();
       res.json({ prompts, summary });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch prompt catalog" });
@@ -395,7 +395,7 @@ export function registerAiRoutes(app: Express): void {
 
   app.get("/api/ai/prompts/:id", isAuthenticated, async (req, res) => {
     try {
-      const prompts = getAllRegisteredPrompts();
+      const prompts = await getAllRegisteredPrompts();
       const prompt = prompts.find((pt) => pt.id === p(req.params.id));
       if (!prompt) return res.status(404).json({ message: "Prompt not found" });
       res.json(prompt);
@@ -406,7 +406,7 @@ export function registerAiRoutes(app: Express): void {
 
   app.get("/api/ai/prompts/:id/history", isAuthenticated, async (req, res) => {
     try {
-      const history = getPromptVersionHistory(p(req.params.id));
+      const history = await getPromptVersionHistory(p(req.params.id));
       if (history.length === 0) return res.status(404).json({ message: "No version history found for prompt" });
       res.json(history);
     } catch (error) {
@@ -417,7 +417,7 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/prompts/:id/audit", isAuthenticated, async (req, res) => {
     try {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
-      const auditEntries = getPromptAuditLog(p(req.params.id), limit);
+      const auditEntries = await getPromptAuditLog(p(req.params.id), limit);
       res.json(auditEntries);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch prompt audit log" });
@@ -427,7 +427,7 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/audit", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit || "100"), 10) || 100, 1), 500);
-      const auditEntries = getPromptAuditLog(undefined, limit);
+      const auditEntries = await getPromptAuditLog(undefined, limit);
       res.json(auditEntries);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch AI audit log" });

@@ -21,7 +21,7 @@ export function registerModelGatewayRoutes(app: Express): void {
   app.get("/api/model-gateway/dashboard", ...authChain, async (_req, res) => {
     try {
       const dashboard = getGatewayDashboardData();
-      const promptCatalog = getPromptCatalogSummary();
+      const promptCatalog = await getPromptCatalogSummary();
       const allUsage = await getAllOrgUsageSummaries();
 
       let totalCostUsd = 0;
@@ -72,7 +72,7 @@ export function registerModelGatewayRoutes(app: Express): void {
 
   app.get("/api/model-gateway/prompts", ...authChain, async (_req, res) => {
     try {
-      const prompts = getAllPrompts();
+      const prompts = await getAllPrompts();
       res.json(prompts);
     } catch (error) {
       log.error("Failed to fetch prompts", { error: String(error) });
