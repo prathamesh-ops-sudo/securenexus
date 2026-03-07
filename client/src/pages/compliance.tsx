@@ -1594,7 +1594,11 @@ function ControlsTab() {
           : `/api/compliance-controls?framework=${frameworkFilter}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch controls");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as ComplianceControl[];
+      }
+      return Array.isArray(body) ? body : [];
     },
   });
 
@@ -1967,7 +1971,11 @@ function EvidenceLockerTab() {
       const url = `/api/evidence-locker${params.toString() ? `?${params.toString()}` : ""}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch evidence");
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as EvidenceLockerItem[];
+      }
+      return Array.isArray(body) ? body : [];
     },
   });
 
@@ -2624,7 +2632,11 @@ function EvidenceAttachmentsTab() {
         : "/api/evidence-attachments";
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return [];
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return (body.data ?? []) as any[];
+      }
+      return Array.isArray(body) ? body : [];
     },
   });
 
@@ -2835,7 +2847,11 @@ function ComplianceHelpersTab() {
     queryFn: async () => {
       const res = await fetch("/api/compliance-helpers/coverage-summary", { credentials: "include" });
       if (!res.ok) return null;
-      return res.json();
+      const body = await res.json();
+      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
+        return body.data;
+      }
+      return body;
     },
   });
 
