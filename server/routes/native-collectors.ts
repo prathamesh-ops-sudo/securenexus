@@ -1,0 +1,270 @@
+import type { Express } from "express";
+import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId } from "../rbac";
+import { z } from "zod";
+import {
+  getCollectorTemplates,
+  getTemplateBySlug,
+  deployCollector,
+  getCollectorInstances,
+  getCollectorInstance,
+  updateCollectorConfig,
+  deleteCollector,
+  sendHeartbeat,
+  ingestEvents,
+  getIngestedEvents,
+  triggerScan,
+  getScanResults,
+  getScanResult,
+  getDeploymentScript,
+  getDataPipelineStats,
+  generateApiKey,
+  type CollectorType,
+  type Platform,
+  type DeploymentMethod,
+  type CollectorStatus,
+} from "../native-collectors-engine";
+
+const deploySchema = z.object({
+  templateSlug: z.string().min(1).max(100),
+  name: z.string().min(1).max(200),
+  platform: z.enum(["linux", "windows", "macos", "docker", "kubernetes", "aws", "azure", "gcp", "any"]),
+  deploymentMethod: z.enum(["script", "docker", "kubernetes", "manual", "cloud_api"]),
+  config: z.record(z.unknown()).default({}),
+  tags: z.array(z.string().max(50)).max(20).default([]),
+});
+
+const updateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  config: z.record(z.unknown()).optional(),
+  tags: z.array(z.string().max(50)).max(20).optional(),
+  status: z.enum(["active", "degraded", "offline", "pending_install", "disabled"]).optional(),
+});
+
+const heartbeatSchema = z.object({
+  hostInfo: z.object({
+    hostname: z.string().min(1).max(200),
+    ipAddress: z.string().min(1).max(45),
+    os: z.string().min(1).max(100),
+    arch: z.string().min(1).max(50),
+    cpuCount: z.number().int().min(1).max(1024),
+    memoryGb: z.number().min(0).max(65536),
+    agentVersion: z.string().min(1).max(50),
+  }),
+  metrics: z
+    .object({
+      eventsPerSecond: z.number().min(0).optional(),
+      bytesIngested: z.number().min(0).optional(),
+      errorsLast24h: z.number().min(0).optional(),
+      uptimePercent: z.number().min(0).max(100).optional(),
+      latencyP50Ms: z.number().min(0).optional(),
+      latencyP99Ms: z.number().min(0).optional(),
+    })
+    .default({}),
+});
+
+const ingestSchema = z.object({
+  events: z
+    .array(
+      z.object({
+        eventType: z.string().min(1).max(200),
+        severity: z.enum(["info", "low", "medium", "high", "critical"]),
+        source: z.string().min(1).max(200),
+        rawData: z.record(z.unknown()),
+        tags: z.array(z.string().max(50)).max(20).optional(),
+      }),
+    )
+    .min(1)
+    .max(1000),
+});
+
+const scanSchema = z.object({
+  scanType: z.enum(["vulnerability", "asset_discovery", "compliance", "configuration"]),
+  targets: z.array(z.string().min(1).max(200)).min(1).max(100),
+});
+
+export function registerNativeCollectorRoutes(app: Express): void {
+  app.get("/api/native-collectors/templates", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const type = req.query.type as CollectorType | undefined;
+    res.json(getCollectorTemplates(type));
+  });
+
+  app.get("/api/native-collectors/templates/:slug", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const slug = req.params.slug as string;
+    const template = getTemplateBySlug(slug);
+    if (!template) return res.status(404).json({ message: "Template not found" });
+    res.json(template);
+  });
+
+  app.get("/api/native-collectors/stats", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    res.json(getDataPipelineStats(orgId));
+  });
+
+  app.post("/api/native-collectors/deploy", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const parsed = deploySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+    }
+    const orgId = (req as any).orgId as string;
+    try {
+      const instance = deployCollector(
+        parsed.data.templateSlug,
+        orgId,
+        parsed.data.name,
+        parsed.data.platform as Platform,
+        parsed.data.deploymentMethod as DeploymentMethod,
+        parsed.data.config,
+        parsed.data.tags,
+      );
+      res.status(201).json(instance);
+    } catch (err: unknown) {
+      res.status(400).json({ message: (err as Error).message });
+    }
+  });
+
+  app.get("/api/native-collectors/instances", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    const type = req.query.type as CollectorType | undefined;
+    res.json(getCollectorInstances(orgId, type));
+  });
+
+  app.get("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    const instanceId = req.params.id as string;
+    const instance = getCollectorInstance(instanceId, orgId);
+    if (!instance) return res.status(404).json({ message: "Collector not found" });
+    res.json(instance);
+  });
+
+  app.patch("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const parsed = updateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+    }
+    const orgId = (req as any).orgId as string;
+    const instanceId = req.params.id as string;
+    const updated = updateCollectorConfig(instanceId, orgId, parsed.data as any);
+    if (!updated) return res.status(404).json({ message: "Collector not found" });
+    res.json(updated);
+  });
+
+  app.delete("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    const instanceId = req.params.id as string;
+    const deleted = deleteCollector(instanceId, orgId);
+    if (!deleted) return res.status(404).json({ message: "Collector not found" });
+    res.json({ success: true });
+  });
+
+  app.post(
+    "/api/native-collectors/instances/:id/heartbeat",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    (req, res) => {
+      const parsed = heartbeatSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+      }
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      const updated = sendHeartbeat(instanceId, orgId, parsed.data.hostInfo, parsed.data.metrics);
+      if (!updated) return res.status(404).json({ message: "Collector not found" });
+      res.json(updated);
+    },
+  );
+
+  app.post(
+    "/api/native-collectors/instances/:id/ingest",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    (req, res) => {
+      const parsed = ingestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+      }
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      try {
+        const events = ingestEvents(instanceId, orgId, parsed.data.events);
+        res.status(201).json({ ingested: events.length, events });
+      } catch (err: unknown) {
+        res.status(400).json({ message: (err as Error).message });
+      }
+    },
+  );
+
+  app.get("/api/native-collectors/events", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    const collectorId = req.query.collectorId as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 200);
+    res.json(getIngestedEvents(orgId, collectorId, limit));
+  });
+
+  app.post(
+    "/api/native-collectors/instances/:id/scan",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    (req, res) => {
+      const parsed = scanSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+      }
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      try {
+        const scan = triggerScan(instanceId, orgId, parsed.data.scanType, parsed.data.targets);
+        res.json(scan);
+      } catch (err: unknown) {
+        res.status(400).json({ message: (err as Error).message });
+      }
+    },
+  );
+
+  app.get("/api/native-collectors/scans", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    const collectorId = req.query.collectorId as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 20, 100);
+    res.json(getScanResults(orgId, collectorId, limit));
+  });
+
+  app.get("/api/native-collectors/scans/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+    const orgId = (req as any).orgId as string;
+    const scanId = req.params.id as string;
+    const scan = getScanResult(scanId, orgId);
+    if (!scan) return res.status(404).json({ message: "Scan not found" });
+    res.json(scan);
+  });
+
+  app.get(
+    "/api/native-collectors/instances/:id/deploy-script",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    (req, res) => {
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      const instance = getCollectorInstance(instanceId, orgId);
+      if (!instance) return res.status(404).json({ message: "Collector not found" });
+      const script = getDeploymentScript(instance.templateSlug, instanceId);
+      res.json({ script, templateSlug: instance.templateSlug });
+    },
+  );
+
+  app.post(
+    "/api/native-collectors/instances/:id/api-key",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    (req, res) => {
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      const result = generateApiKey(instanceId, orgId);
+      if (!result) return res.status(404).json({ message: "Collector not found" });
+      res.json(result);
+    },
+  );
+}

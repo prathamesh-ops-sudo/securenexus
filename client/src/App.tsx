@@ -94,6 +94,7 @@ const FindingLineagePage = lazy(() => import("@/pages/finding-lineage"));
 const RuntimeGuardrailsPage = lazy(() => import("@/pages/runtime-guardrails"));
 const JitSecretAccessPage = lazy(() => import("@/pages/jit-secret-access"));
 const IntegrationMarketplacePage = lazy(() => import("@/pages/integration-marketplace"));
+const NativeCollectorsPage = lazy(() => import("@/pages/native-collectors"));
 
 function PageSkeleton() {
   return (
@@ -271,6 +272,7 @@ function AuthenticatedApp() {
                     <Route path="/runtime-guardrails" component={RuntimeGuardrailsPage} />
                     <Route path="/jit-secret-access" component={JitSecretAccessPage} />
                     <Route path="/integration-marketplace" component={IntegrationMarketplacePage} />
+                    <Route path="/native-collectors" component={NativeCollectorsPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
