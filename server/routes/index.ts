@@ -51,6 +51,7 @@ import { registerNativeCollectorRoutes } from "./native-collectors";
 import { registerAdversarialTestingRoutes } from "./adversarial-testing";
 import { registerSocCopilotRoutes } from "./soc-copilot";
 import { registerTieredPackagingRoutes } from "./tiered-packaging";
+import { registerTrustCenterRoutes } from "./trust-center";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -106,4 +107,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerAdversarialTestingRoutes(app);
   registerSocCopilotRoutes(app);
   registerTieredPackagingRoutes(app);
+  registerTrustCenterRoutes(app);
 }

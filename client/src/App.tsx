@@ -99,6 +99,7 @@ const NativeCollectorsPage = lazy(() => import("@/pages/native-collectors"));
 const AdversarialTestingPage = lazy(() => import("@/pages/adversarial-testing"));
 const SocCopilotPage = lazy(() => import("@/pages/soc-copilot"));
 const TieredPackagingPage = lazy(() => import("@/pages/tiered-packaging"));
+const TrustCenterPage = lazy(() => import("@/pages/trust-center"));
 
 function PageSkeleton() {
   return (
@@ -280,6 +281,7 @@ function AuthenticatedApp() {
                     <Route path="/adversarial-testing" component={AdversarialTestingPage} />
                     <Route path="/soc-copilot" component={SocCopilotPage} />
                     <Route path="/tiered-packaging" component={TieredPackagingPage} />
+                    <Route path="/trust-center" component={TrustCenterPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
