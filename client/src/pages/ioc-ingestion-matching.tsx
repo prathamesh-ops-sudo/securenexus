@@ -947,11 +947,17 @@ export default function IocIngestionMatchingPage() {
                   <SelectValue placeholder="Select a feed..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {allFeeds.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.name} ({f.feedType.toUpperCase()})
-                    </SelectItem>
-                  ))}
+                  {allFeeds.length > 0 ? (
+                    allFeeds.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.name} ({f.feedType.toUpperCase()})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      No feeds configured. Create a feed in the Feed Sources tab first.
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>

@@ -227,15 +227,30 @@ export default function MitreAttackPage() {
 
   if (alertsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
+      <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto" data-testid="page-mitre-attack">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+            <span className="gradient-text-red">MITRE ATT&CK Coverage</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Visualize alert coverage across the MITRE ATT&CK framework
+          </p>
+          <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        <p className="text-sm font-medium">Failed to load MITRE ATT&CK data</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAlerts()}>
-          Try Again
-        </Button>
+        <Card>
+          <CardContent className="py-12">
+            <div className="flex flex-col items-center justify-center text-center" role="alert">
+              <AlertTriangle className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium">Could not load alert data</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Check your connection and try again. The MITRE matrix will populate once alerts are available.
+              </p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAlerts()}>
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

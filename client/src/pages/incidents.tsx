@@ -39,6 +39,7 @@ import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime }
 import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { CardHeader, CardTitle } from "@/components/ui/card";
+import { useOrgContext } from "@/hooks/use-org-context";
 import type { Incident, IncidentSlaPolicy, SavedView } from "@shared/schema";
 
 function IncidentMiniTimeline({ incident }: { incident: Incident }) {
@@ -371,6 +372,7 @@ export default function IncidentsPage() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const { currentOrgId } = useOrgContext();
 
   // Optimistic update helper for incident status changes
   const optimisticStatusUpdate = useCallback((incidentId: string, updates: Partial<Incident>) => {
@@ -384,10 +386,10 @@ export default function IncidentsPage() {
   }, []);
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
-    queryKey: ["/api/orgs/default/saved-views", "incidents"],
+    queryKey: [`/api/orgs/${currentOrgId}/saved-views`, "incidents"],
     queryFn: async () => {
       try {
-        const res = await apiRequest("GET", "/api/orgs/default/saved-views?resourceType=incidents");
+        const res = await apiRequest("GET", `/api/orgs/${currentOrgId}/saved-views?resourceType=incidents`);
         return res.json();
       } catch {
         return [];
@@ -397,7 +399,7 @@ export default function IncidentsPage() {
 
   const createSavedViewMutation = useMutation({
     mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
-      const res = await apiRequest("POST", "/api/orgs/default/saved-views", {
+      const res = await apiRequest("POST", `/api/orgs/${currentOrgId}/saved-views`, {
         name: viewData.name,
         resourceType: "incidents",
         filters: viewData.filters,
@@ -416,7 +418,7 @@ export default function IncidentsPage() {
 
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      await apiRequest("DELETE", `/api/orgs/default/saved-views/${viewId}`);
+      await apiRequest("DELETE", `/api/orgs/${currentOrgId}/saved-views/${viewId}`);
     },
     onSuccess: () => {
       refetchSavedViews();
@@ -746,9 +748,16 @@ export default function IncidentsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setIsDetailOpen((prev) => !prev)}
-          disabled={!selectedIncident}
+          disabled={!focusedIncidentId && !selectedIncident}
           data-testid="button-toggle-detail-pane"
+          onClick={() => {
+            if (!selectedIncident && filtered && filtered.length > 0) {
+              setFocusedIncidentId(filtered[0].id);
+              setIsDetailOpen(true);
+            } else {
+              setIsDetailOpen((prev) => !prev);
+            }
+          }}
         >
           <PanelRight className="h-3.5 w-3.5 mr-1.5" />
           {isDetailOpen ? "Hide Detail" : "Show Detail"}
