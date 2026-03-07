@@ -238,7 +238,38 @@ export function registerAdversarialTestingRoutes(app: Express): void {
         orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
       }
       const id = String(req.params.id);
-      const updated = updateSchedule(orgId, id, req.body);
+      const body = req.body;
+      const sanitized: Record<string, unknown> = {};
+      if (body.name !== undefined) {
+        if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
+        sanitized.name = body.name;
+      }
+      if (body.description !== undefined) {
+        sanitized.description = typeof body.description === "string" ? body.description : "";
+      }
+      if (body.frequency !== undefined) {
+        if (!VALID_FREQUENCIES.includes(body.frequency))
+          return res.status(400).json({ message: `frequency must be one of: ${VALID_FREQUENCIES.join(", ")}` });
+        sanitized.frequency = body.frequency;
+      }
+      if (body.enabled !== undefined) {
+        sanitized.enabled = body.enabled === true;
+      }
+      if (body.domains !== undefined) {
+        sanitized.domains = Array.isArray(body.domains)
+          ? body.domains.filter((d: string) => VALID_DOMAINS.includes(d as AttackDomain))
+          : [];
+      }
+      if (body.categories !== undefined) {
+        sanitized.categories = Array.isArray(body.categories)
+          ? body.categories.filter((c: string) => VALID_CATEGORIES.includes(c as AttackCategory))
+          : [];
+      }
+      if (body.testCaseIds !== undefined) {
+        if (!Array.isArray(body.testCaseIds)) return res.status(400).json({ message: "testCaseIds must be an array" });
+        sanitized.testCaseIds = body.testCaseIds;
+      }
+      const updated = updateSchedule(orgId, id, sanitized);
       if (!updated) return res.status(404).json({ message: "Schedule not found" });
       res.json(updated);
     } catch (error) {
