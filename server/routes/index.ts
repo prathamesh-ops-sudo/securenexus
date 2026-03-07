@@ -46,6 +46,7 @@ import { registerRemediationRoutes } from "./remediation";
 import { registerFindingLineageRoutes } from "./finding-lineage";
 import { registerRuntimeGuardrailsRoutes } from "./runtime-guardrails";
 import { registerJitSecretAccessRoutes } from "./jit-secret-access";
+import { registerIntegrationMarketplaceRoutes } from "./integration-marketplace";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -96,4 +97,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerFindingLineageRoutes(app);
   registerRuntimeGuardrailsRoutes(app);
   registerJitSecretAccessRoutes(app);
+  registerIntegrationMarketplaceRoutes(app);
 }
