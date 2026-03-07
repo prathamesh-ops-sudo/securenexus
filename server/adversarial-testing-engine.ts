@@ -333,7 +333,7 @@ const ATTACK_LIBRARY: AttackTestCase[] = [
     version: 1,
     controlIds: ["CTRL-ID-003", "CTRL-AUTH-001"],
     policyOwner: "identity-team",
-    payload: "Authorization: Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbiJ9.",
+    payload: 'Authorization: Bearer <jwt-with-alg-none-header>.{"sub":"admin"}.',
     expectedBehavior: "JWT verification must reject tokens with algorithm 'none' or missing signatures",
     tags: ["jwt", "auth-bypass", "alg-none"],
     enabled: true,
