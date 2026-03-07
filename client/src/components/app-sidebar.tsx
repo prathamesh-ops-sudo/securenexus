@@ -49,6 +49,7 @@ import {
   ShieldBan,
   Lock,
   HardDrive,
+  Package,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -174,6 +175,7 @@ const adminGroup: NavGroup = {
     { title: "Team & Invites", url: "/team", icon: Users },
     { title: "Billing", url: "/billing", icon: CreditCard },
     { title: "Usage", url: "/usage-billing", icon: BarChart3 },
+    { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Settings", url: "/settings", icon: Settings },
