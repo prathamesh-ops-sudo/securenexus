@@ -5091,6 +5091,7 @@ export const aiPromptVersions = pgTable(
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [
+    uniqueIndex("idx_ai_prompt_versions_prompt_version").on(table.promptId, table.version),
     index("idx_ai_prompt_versions_prompt").on(table.promptId),
     index("idx_ai_prompt_versions_org").on(table.orgId),
   ],
