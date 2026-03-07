@@ -98,6 +98,7 @@ const IntegrationMarketplacePage = lazy(() => import("@/pages/integration-market
 const NativeCollectorsPage = lazy(() => import("@/pages/native-collectors"));
 const AdversarialTestingPage = lazy(() => import("@/pages/adversarial-testing"));
 const SocCopilotPage = lazy(() => import("@/pages/soc-copilot"));
+const TieredPackagingPage = lazy(() => import("@/pages/tiered-packaging"));
 
 function PageSkeleton() {
   return (
@@ -278,6 +279,7 @@ function AuthenticatedApp() {
                     <Route path="/native-collectors" component={NativeCollectorsPage} />
                     <Route path="/adversarial-testing" component={AdversarialTestingPage} />
                     <Route path="/soc-copilot" component={SocCopilotPage} />
+                    <Route path="/tiered-packaging" component={TieredPackagingPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

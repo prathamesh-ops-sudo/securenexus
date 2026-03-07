@@ -50,6 +50,7 @@ import { registerIntegrationMarketplaceRoutes } from "./integration-marketplace"
 import { registerNativeCollectorRoutes } from "./native-collectors";
 import { registerAdversarialTestingRoutes } from "./adversarial-testing";
 import { registerSocCopilotRoutes } from "./soc-copilot";
+import { registerTieredPackagingRoutes } from "./tiered-packaging";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -104,4 +105,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerNativeCollectorRoutes(app);
   registerAdversarialTestingRoutes(app);
   registerSocCopilotRoutes(app);
+  registerTieredPackagingRoutes(app);
 }
