@@ -92,6 +92,7 @@ const ThreatIntelFeedsPage = lazy(() => import("@/pages/threat-intel-feeds"));
 const EntityMergeAliasPage = lazy(() => import("@/pages/entity-merge-alias"));
 const FindingLineagePage = lazy(() => import("@/pages/finding-lineage"));
 const RuntimeGuardrailsPage = lazy(() => import("@/pages/runtime-guardrails"));
+const JitSecretAccessPage = lazy(() => import("@/pages/jit-secret-access"));
 
 function PageSkeleton() {
   return (
@@ -267,6 +268,7 @@ function AuthenticatedApp() {
                     <Route path="/entity-merge-alias" component={EntityMergeAliasPage} />
                     <Route path="/finding-lineage" component={FindingLineagePage} />
                     <Route path="/runtime-guardrails" component={RuntimeGuardrailsPage} />
+                    <Route path="/jit-secret-access" component={JitSecretAccessPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
