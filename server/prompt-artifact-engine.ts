@@ -1260,7 +1260,12 @@ export function runInvestigation(prompt: string, orgId: string | null): Investig
     const entries = Array.from(investigationStore.entries());
     entries.sort((a, b) => new Date(a[1].createdAt).getTime() - new Date(b[1].createdAt).getTime());
     const toRemove = entries.slice(0, investigationStore.size - MAX_INVESTIGATION_STORE_SIZE);
-    for (const [key] of toRemove) {
+    for (const [key, inv] of toRemove) {
+      for (const art of inv.artifacts) {
+        if (art.approvalGate) {
+          approvalStore.delete(art.approvalGate.id);
+        }
+      }
       investigationStore.delete(key);
     }
   }
@@ -1320,7 +1325,7 @@ export function reviewApproval(
   const investigation = Array.from(investigationStore.values()).find((inv) =>
     inv.artifacts.some((a) => a.id === gate.artifactId),
   );
-  if (investigation && investigation.orgId !== orgId) return null;
+  if (!investigation || investigation.orgId !== orgId) return null;
 
   gate.status = decision;
   gate.reviewedBy = reviewerName;
