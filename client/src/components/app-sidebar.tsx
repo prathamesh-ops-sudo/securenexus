@@ -140,6 +140,7 @@ const navGroups: NavGroup[] = [
       { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
       { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
       { title: "Integrations", url: "/integrations", icon: Link2 },
+      { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
       { title: "File Manager", url: "/file-manager", icon: FolderOpen },
     ],
