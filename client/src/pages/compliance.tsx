@@ -1592,13 +1592,8 @@ function ControlsTab() {
         frameworkFilter === "all"
           ? "/api/compliance-controls"
           : `/api/compliance-controls?framework=${frameworkFilter}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch controls");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as ComplianceControl[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", url);
+      return res.json();
     },
   });
 
@@ -1969,13 +1964,8 @@ function EvidenceLockerTab() {
       if (frameworkFilter !== "all") params.set("framework", frameworkFilter);
       if (artifactTypeFilter !== "all") params.set("artifactType", artifactTypeFilter);
       const url = `/api/evidence-locker${params.toString() ? `?${params.toString()}` : ""}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch evidence");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as EvidenceLockerItem[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", url);
+      return res.json();
     },
   });
 
@@ -2345,20 +2335,14 @@ function LegalHoldsTab() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/legal-holds", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name: newName,
-          description: newDescription,
-          reason: newReason,
-          caseReference: newCaseRef,
-          holdType: newHoldType,
-          tableScope: newTableScope,
-        }),
+      const res = await apiRequest("POST", "/api/legal-holds", {
+        name: newName,
+        description: newDescription,
+        reason: newReason,
+        caseReference: newCaseRef,
+        holdType: newHoldType,
+        tableScope: newTableScope,
       });
-      if (!res.ok) throw new Error("Failed to create legal hold");
       return res.json();
     },
     onSuccess: () => {
@@ -2374,11 +2358,7 @@ function LegalHoldsTab() {
 
   const deactivateMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/legal-holds/${id}/deactivate`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to deactivate");
+      const res = await apiRequest("POST", `/api/legal-holds/${id}/deactivate`);
       return res.json();
     },
     onSuccess: () => {
@@ -2630,13 +2610,12 @@ function EvidenceAttachmentsTab() {
       const url = controlMappingFilter
         ? `/api/evidence-attachments?controlMappingId=${controlMappingFilter}`
         : "/api/evidence-attachments";
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) return [];
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as any[];
+      try {
+        const res = await apiRequest("GET", url);
+        return res.json();
+      } catch {
+        return [];
       }
-      return Array.isArray(body) ? body : [];
     },
   });
 
@@ -2845,13 +2824,12 @@ function ComplianceHelpersTab() {
   const { data: coverageSummary, isLoading: coverageLoading } = useQuery<any>({
     queryKey: ["/api/compliance-helpers/coverage-summary"],
     queryFn: async () => {
-      const res = await fetch("/api/compliance-helpers/coverage-summary", { credentials: "include" });
-      if (!res.ok) return null;
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return body.data;
+      try {
+        const res = await apiRequest("GET", "/api/compliance-helpers/coverage-summary");
+        return res.json();
+      } catch {
+        return null;
       }
-      return body;
     },
   });
 

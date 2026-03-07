@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { EyeOff, RefreshCw, Loader2, AlertTriangle, Eye, Filter, Shield, Clock, User, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -87,12 +88,8 @@ export default function SuppressedAlertsPage() {
   } = useQuery<Alert[]>({
     queryKey: ["/api/v1/alerts", "suppressed"],
     queryFn: async () => {
-      const res = await fetch("/api/v1/alerts?suppressed=true&limit=200&sortOrder=desc", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch suppressed alerts");
-      const envelope = await res.json();
-      return envelope.data ?? [];
+      const res = await apiRequest("GET", "/api/v1/alerts?suppressed=true&limit=200&sortOrder=desc");
+      return res.json();
     },
   });
 
@@ -114,11 +111,7 @@ export default function SuppressedAlertsPage() {
 
   const unsuppressMutation = useMutation({
     mutationFn: async (alertId: string) => {
-      const res = await fetch(`/api/alerts/${alertId}/unsuppress`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to unsuppress alert");
+      const res = await apiRequest("POST", `/api/alerts/${alertId}/unsuppress`);
       return res.json();
     },
     onSuccess: () => {

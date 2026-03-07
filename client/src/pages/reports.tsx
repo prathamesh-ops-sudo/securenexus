@@ -1159,9 +1159,12 @@ function TemplateVersioningTab({ templates }: { templates: any[] }) {
     queryKey: ["/api/report-templates", selectedTemplate, "versions"],
     queryFn: async () => {
       if (!selectedTemplate) return [];
-      const res = await fetch(`/api/report-templates/${selectedTemplate}/versions`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
+      try {
+        const res = await apiRequest("GET", `/api/report-templates/${selectedTemplate}/versions`);
+        return res.json();
+      } catch {
+        return [];
+      }
     },
     enabled: !!selectedTemplate,
   });

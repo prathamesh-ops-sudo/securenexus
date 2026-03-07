@@ -975,10 +975,8 @@ export default function PlaybooksPage() {
   const { data: playbookVersions, isLoading: versionsLoading } = useQuery<PlaybookVersion[]>({
     queryKey: ["/api/playbook-versions", selectedGovernancePlaybook],
     queryFn: async () => {
-      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/versions`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load versions");
-      const body = await res.json();
-      return body.data ?? body;
+      const res = await apiRequest("GET", `/api/playbooks/${selectedGovernancePlaybook}/versions`);
+      return res.json();
     },
     enabled: !!selectedGovernancePlaybook,
   });
@@ -986,10 +984,8 @@ export default function PlaybooksPage() {
   const { data: simulations, isLoading: simulationsLoading } = useQuery<PlaybookSimulation[]>({
     queryKey: ["/api/playbooks", selectedGovernancePlaybook, "simulations"],
     queryFn: async () => {
-      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/simulations`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load simulations");
-      const body = await res.json();
-      return body.data ?? body;
+      const res = await apiRequest("GET", `/api/playbooks/${selectedGovernancePlaybook}/simulations`);
+      return res.json();
     },
     enabled: !!selectedGovernancePlaybook,
   });
@@ -997,10 +993,8 @@ export default function PlaybooksPage() {
   const { data: blastPreviews, isLoading: blastLoading } = useQuery<BlastRadiusPreview[]>({
     queryKey: ["/api/playbooks", selectedGovernancePlaybook, "blast-radius"],
     queryFn: async () => {
-      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/blast-radius`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load blast radius");
-      const body = await res.json();
-      return body.data ?? body;
+      const res = await apiRequest("GET", `/api/playbooks/${selectedGovernancePlaybook}/blast-radius`);
+      return res.json();
     },
     enabled: !!selectedGovernancePlaybook,
   });
@@ -1008,12 +1002,8 @@ export default function PlaybooksPage() {
   const { data: rollbackPlans, isLoading: rollbackPlansLoading } = useQuery<PlaybookRollbackPlan[]>({
     queryKey: ["/api/playbooks", selectedGovernancePlaybook, "rollback-plans"],
     queryFn: async () => {
-      const res = await fetch(`/api/playbooks/${selectedGovernancePlaybook}/rollback-plans`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to load rollback plans");
-      const body = await res.json();
-      return body.data ?? body;
+      const res = await apiRequest("GET", `/api/playbooks/${selectedGovernancePlaybook}/rollback-plans`);
+      return res.json();
     },
     enabled: !!selectedGovernancePlaybook,
   });
