@@ -1119,15 +1119,29 @@ export default function EntityGraphPage() {
 
   if (!graph && !isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
+      <div className="p-6 space-y-4 animate-fade-in" data-testid="entity-graph-page">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+            <Network className="h-5 w-5 text-red-400" />
+            <span className="gradient-text-red">Entity Graph</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Identity resolution and entity relationship mapping</p>
+          <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        <p className="text-sm font-medium">Failed to load entity graph</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
-          Try Again
-        </Button>
+        <Card>
+          <CardContent className="py-12">
+            <div className="flex flex-col items-center justify-center text-center" role="alert">
+              <Network className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium">No entity graph data available</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Entity relationships will appear here once alerts and incidents generate entity data.
+              </p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
+                Refresh
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

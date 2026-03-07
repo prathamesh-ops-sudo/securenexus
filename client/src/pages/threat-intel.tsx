@@ -257,27 +257,39 @@ export default function ThreatIntelPage() {
   const refreshAllMutation = useMutation({
     mutationFn: async () => {
       const statuses = feedStatuses || [];
-      const results = await Promise.all(
+      const settled = await Promise.allSettled(
         statuses.map(async (feed) => {
           const res = await apiRequest("POST", `/api/osint-feeds/${encodeURIComponent(feed.slug)}/refresh`);
-          return res.json() as Promise<OsintFeedResult>;
+          return { slug: feed.slug, result: (await res.json()) as OsintFeedResult };
         }),
       );
-      return results;
+      const successes: { slug: string; result: OsintFeedResult }[] = [];
+      const failures: string[] = [];
+      for (const s of settled) {
+        if (s.status === "fulfilled") successes.push(s.value);
+        else failures.push(String((s.reason as Error)?.message || "Unknown error"));
+      }
+      return { successes, failures };
     },
-    onSuccess: (results) => {
+    onSuccess: ({ successes, failures }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/osint-feeds/status"] });
       const newMap: Record<string, OsintFeedResult> = {};
-      const statuses = feedStatuses || [];
-      for (let i = 0; i < results.length; i++) {
-        const slug = statuses[i]?.slug || results[i].feedName;
-        newMap[slug] = results[i];
+      for (const s of successes) {
+        newMap[s.slug] = s.result;
       }
       setFeedDataMap((prev) => ({ ...prev, ...newMap }));
-      toast({
-        title: "All feeds refreshed",
-        description: `${results.length} feeds updated`,
-      });
+      if (failures.length > 0) {
+        toast({
+          title: `Refreshed ${successes.length} feeds, ${failures.length} failed`,
+          description: failures.slice(0, 2).join("; "),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "All feeds refreshed",
+          description: `${successes.length} feeds updated`,
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -471,10 +483,11 @@ export default function ThreatIntelPage() {
   });
 
   const filteredIocEntries = useMemo(() => {
-    if (!iocEntriesData) return [];
-    if (!iocSearch.trim()) return iocEntriesData;
+    const entries = Array.isArray(iocEntriesData) ? iocEntriesData : [];
+    if (entries.length === 0) return [];
+    if (!iocSearch.trim()) return entries;
     const q = iocSearch.toLowerCase();
-    return iocEntriesData.filter(
+    return entries.filter(
       (e: any) =>
         e.iocValue?.toLowerCase().includes(q) ||
         e.malwareFamily?.toLowerCase().includes(q) ||
