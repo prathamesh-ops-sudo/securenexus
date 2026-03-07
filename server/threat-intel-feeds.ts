@@ -1244,7 +1244,20 @@ export async function fetchThreatIntelFeed(
   }
 
   const fetchedAt = new Date();
-  const articles = normalizeRSSItems(def.url, feed, fetchedAt);
+  let articles: ThreatIntelArticle[];
+  try {
+    articles = normalizeRSSItems(def.url, feed, fetchedAt);
+  } catch (normErr: unknown) {
+    const msg = normErr instanceof Error ? normErr.message : String(normErr);
+    recordFeedHealth(slug, {
+      timestamp: fetchedAt.toISOString(),
+      status: "error",
+      articleCount: 0,
+      responseTimeMs: elapsed,
+      errorMessage: `Normalization failed: ${msg.slice(0, 300)}`,
+    });
+    return { articles: [], error: `Normalization failed: ${msg.slice(0, 300)}` };
+  }
   const deduped = dedupeArticles(articles);
   const sorted = sortArticles(deduped);
 
@@ -1277,6 +1290,9 @@ export async function fetchAllThreatIntelFeeds(force: boolean = false, orgId?: s
       try {
         const result = await fetchThreatIntelFeed(def.slug, force);
         return { slug: def.slug, url: def.url, ...result };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { slug: def.slug, url: def.url, articles: [] as ThreatIntelArticle[], error: msg };
       } finally {
         semaphore.count--;
       }
