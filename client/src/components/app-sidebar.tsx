@@ -51,6 +51,7 @@ import {
   HardDrive,
   Package,
   BadgeCheck,
+  Layers,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -166,6 +167,7 @@ const navGroups: NavGroup[] = [
       { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
       { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
       { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
+      { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
     ],
   },
 ];

@@ -56,6 +56,7 @@ import { registerPolicyPacksRoutes } from "./policy-packs";
 import { registerExecutiveRiskRoutes } from "./executive-risk";
 import { registerAgentToolSecurityRoutes } from "./agent-tool-security";
 import { registerBrowserDefenseRoutes } from "./browser-defense";
+import { registerCrossCuttingRoutes } from "./cross-cutting";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -116,4 +117,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerExecutiveRiskRoutes(app);
   registerAgentToolSecurityRoutes(app);
   registerBrowserDefenseRoutes(app);
+  registerCrossCuttingRoutes(app);
 }
