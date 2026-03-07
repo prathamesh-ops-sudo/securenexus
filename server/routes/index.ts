@@ -53,6 +53,7 @@ import { registerSocCopilotRoutes } from "./soc-copilot";
 import { registerTieredPackagingRoutes } from "./tiered-packaging";
 import { registerTrustCenterRoutes } from "./trust-center";
 import { registerPolicyPacksRoutes } from "./policy-packs";
+import { registerExecutiveRiskRoutes } from "./executive-risk";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -110,4 +111,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerTieredPackagingRoutes(app);
   registerTrustCenterRoutes(app);
   registerPolicyPacksRoutes(app);
+  registerExecutiveRiskRoutes(app);
 }
