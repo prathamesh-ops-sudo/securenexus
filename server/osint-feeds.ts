@@ -392,7 +392,13 @@ export async function fetchOsintFeed(feedNameOrSlug: string, force?: boolean): P
     }
   }
 
-  const result = await def.fetcher();
+  let result: OsintFeedResult;
+  try {
+    result = await def.fetcher();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    result = errorResult(feedName, def.url, msg);
+  }
   feedCache.set(feedName, { data: result, fetchedAt: Date.now() });
 
   recordHealth(def.slug, {
@@ -432,14 +438,25 @@ export async function refreshAllFeedsWithProgress(
   const progress: BulkRefreshProgress = { total: enabledDefs.length, completed: 0, results: [] };
 
   for (const def of enabledDefs) {
-    const result = await fetchOsintFeed(def.slug, true);
-    progress.completed++;
-    progress.results.push({
-      slug: def.slug,
-      status: result.status === "error" ? "error" : "success",
-      indicatorCount: result.totalIndicators,
-      errorMessage: result.errorMessage,
-    });
+    try {
+      const result = await fetchOsintFeed(def.slug, true);
+      progress.completed++;
+      progress.results.push({
+        slug: def.slug,
+        status: result.status === "error" ? "error" : "success",
+        indicatorCount: result.totalIndicators,
+        errorMessage: result.errorMessage,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      progress.completed++;
+      progress.results.push({
+        slug: def.slug,
+        status: "error",
+        indicatorCount: 0,
+        errorMessage: msg,
+      });
+    }
     if (onProgress) onProgress(progress);
   }
 
