@@ -772,6 +772,11 @@ export function triggerScan(
     });
   }
 
+  const actualCritical = findings.filter((f) => f.severity === "critical").length;
+  const actualHigh = findings.filter((f) => f.severity === "high").length;
+  const actualMedium = findings.filter((f) => f.severity === "medium").length;
+  const actualLow = findings.filter((f) => f.severity === "low").length;
+
   const scan: ScanResult = {
     id: generateId(),
     collectorId,
@@ -781,10 +786,10 @@ export function triggerScan(
     startedAt: new Date(Date.now() - randomBetween(30000, 120000)).toISOString(),
     completedAt: new Date().toISOString(),
     findingsCount: findings.length,
-    criticalCount,
-    highCount,
-    mediumCount,
-    lowCount,
+    criticalCount: actualCritical,
+    highCount: actualHigh,
+    mediumCount: actualMedium,
+    lowCount: actualLow,
     targets,
     findings,
   };

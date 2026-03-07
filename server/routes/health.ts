@@ -1,9 +1,18 @@
 import type { Express, Request, Response } from "express";
 import { getCatalogSummary, getAllEventSchemas, getEventsByDomain, type EventDomain } from "../event-catalog";
+import { checkLiveness } from "../request-lifecycle";
 
 export function registerHealthRoutes(app: Express): void {
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    const liveness = checkLiveness();
+    res.json({
+      status: "ok",
+      version: "1.0.0",
+      timestamp: new Date().toISOString(),
+      uptime: liveness.uptime,
+      pid: liveness.pid,
+      memoryMB: liveness.memoryMB,
+    });
   });
 
   // Versioned API
