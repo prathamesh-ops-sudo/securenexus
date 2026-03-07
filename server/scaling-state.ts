@@ -102,12 +102,11 @@ const STATE_REGISTRY: StateStoreEntry[] = [
   {
     name: "AI Budget Tracking",
     file: "ai/budget.ts",
-    tier: "needs-shared-store",
+    tier: "already-shared",
     description:
-      "Per-org daily budget and invocation tracking. Per-pod state means org can spend N*budget by hitting N pods. Critical for cost control.",
-    sharedStoreUpgrade:
-      "Use Redis INCRBYFLOAT for atomic cost accumulation. Store budget config in DB. Flush usage records to DB periodically.",
-    currentBackend: "in-memory",
+      "Cluster-wide per-org daily budget and invocation tracking. Uses org_ai_budgets DB table with atomic UPDATE for spend accumulation. Daily reset scheduler zeros counters at midnight UTC.",
+    sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed coordination.",
+    currentBackend: "database",
   },
   {
     name: "AI Prompt Registry",

@@ -22,7 +22,7 @@ export function registerModelGatewayRoutes(app: Express): void {
     try {
       const dashboard = getGatewayDashboardData();
       const promptCatalog = getPromptCatalogSummary();
-      const allUsage = getAllOrgUsageSummaries();
+      const allUsage = await getAllOrgUsageSummaries();
 
       let totalCostUsd = 0;
       let totalInvocations = 0;
@@ -84,9 +84,9 @@ export function registerModelGatewayRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       if (orgId) {
-        res.json(getOrgUsageSummary(orgId));
+        res.json(await getOrgUsageSummary(orgId));
       } else {
-        res.json(getAllOrgUsageSummaries());
+        res.json(await getAllOrgUsageSummaries());
       }
     } catch (error) {
       log.error("Failed to fetch usage data", { error: String(error) });
