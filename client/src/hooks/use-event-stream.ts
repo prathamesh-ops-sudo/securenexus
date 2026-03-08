@@ -94,11 +94,16 @@ export function useEventStream({ enabled }: UseEventStreamOptions) {
       eventSourceRef.current = null;
       setConnectionState("disconnected");
 
-      const delay = backoffRef.current;
-      backoffRef.current = Math.min(delay * 2, MAX_BACKOFF);
-      reconnectTimerRef.current = setTimeout(() => {
-        connect();
-      }, delay);
+      fetch("/api/auth/user", { credentials: "include" })
+        .then((r) => {
+          if (r.status === 401) return;
+          const delay = backoffRef.current;
+          backoffRef.current = Math.min(delay * 2, MAX_BACKOFF);
+          reconnectTimerRef.current = setTimeout(() => {
+            connect();
+          }, delay);
+        })
+        .catch(() => {});
     };
 
     for (const eventType of EVENT_TYPES) {
