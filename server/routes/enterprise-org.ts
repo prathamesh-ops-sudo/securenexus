@@ -1,38 +1,10 @@
 import type { Express } from "express";
-import { createHash, createCipheriv, createDecipheriv, randomBytes as cryptoRandomBytes } from "crypto";
+import { createHash } from "crypto";
 import { logger, p, randomBytes, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { z } from "zod";
-import { config } from "../config";
-
-const ALGO = "aes-256-gcm" as const;
-const IV_LEN = 12;
-const TAG_LEN = 16;
-
-function deriveEncryptionKey(): Buffer {
-  return createHash("sha256").update(config.session.secret).digest();
-}
-
-function encryptSecret(plaintext: string): string {
-  const key = deriveEncryptionKey();
-  const iv = cryptoRandomBytes(IV_LEN);
-  const cipher = createCipheriv(ALGO, key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, encrypted]).toString("base64");
-}
-
-function decryptSecret(ciphertext: string): string {
-  const key = deriveEncryptionKey();
-  const buf = Buffer.from(ciphertext, "base64");
-  const iv = buf.subarray(0, IV_LEN);
-  const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);
-  const encrypted = buf.subarray(IV_LEN + TAG_LEN);
-  const decipher = createDecipheriv(ALGO, key, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(encrypted) + decipher.final("utf8");
-}
+import { encryptSsoSecret as encryptSecret } from "../sso-crypto";
 
 function hashSecret(value: string): string {
   return createHash("sha256").update(value).digest("hex");
