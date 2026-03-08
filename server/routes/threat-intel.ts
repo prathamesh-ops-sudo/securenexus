@@ -732,8 +732,10 @@ export function registerThreatIntelRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const result = await fetchAllThreatIntelFeeds(true, orgId);
-      res.json(result);
+      const { items: _strip, ...summary } = result;
+      res.json(summary);
     } catch (error) {
+      logger.child("routes").error("Failed to refresh all threat intel feeds", { error: String(error) });
       res.status(500).json({ message: "Failed to refresh all threat intel feeds" });
     }
   });
@@ -758,8 +760,9 @@ export function registerThreatIntelRoutes(app: Express): void {
         return res.status(404).json({ message: "Unknown feed slug" });
       }
       const result = await fetchThreatIntelFeed(slug, true);
-      res.json(result);
+      res.json({ articleCount: result.articles.length, error: result.error });
     } catch (error) {
+      logger.child("routes").error("Failed to refresh feed", { error: String(error) });
       res.status(500).json({ message: "Failed to refresh feed" });
     }
   });

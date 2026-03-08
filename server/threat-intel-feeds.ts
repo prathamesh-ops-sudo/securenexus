@@ -159,7 +159,7 @@ function extractSource(url: string): string {
   }
 }
 
-const FETCH_TIMEOUT_MS = 25_000;
+const FETCH_TIMEOUT_MS = 12_000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 const MAX_ITEMS_PER_FEED = 200;
 const CONCURRENCY = 15;
@@ -196,7 +196,7 @@ const rssParser = new Parser({
 
 async function fetchAndParseRSSFeed(
   url: string,
-  maxRetries: number = 2,
+  maxRetries: number = 1,
 ): Promise<{ feed: Parser.Output<Parser.Item> | null; error: string | null }> {
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
