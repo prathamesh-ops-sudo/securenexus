@@ -52,10 +52,10 @@ const TRIAGE_RATES = { input: 0.00015, output: 0.0002 };
 
 function estimateCost(modelId: string, inputTokens: number, outputTokens: number, tier?: string): number {
   if (tier === "triage") {
-    return (inputTokens / 1000) * TRIAGE_RATES.input + (outputTokens / 1000) * TRIAGE_RATES.output;
+    return inputTokens * TRIAGE_RATES.input + outputTokens * TRIAGE_RATES.output;
   }
   const rates = COST_TABLE[modelId] || COST_TABLE["default"];
-  return (inputTokens / 1000) * rates.input + (outputTokens / 1000) * rates.output;
+  return inputTokens * rates.input + outputTokens * rates.output;
 }
 
 interface CircuitState {
