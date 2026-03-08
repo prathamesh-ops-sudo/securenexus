@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
   BookOpen,
@@ -367,16 +368,9 @@ export default function AiPromptRegistryPage() {
   const { data: versionHistory, isLoading: isLoadingHistory } = useQuery<PromptTemplate[]>({
     queryKey: ["/api/ai/prompts", selectedPromptId, "history"],
     queryFn: async () => {
-      const headers: Record<string, string> = {};
-      try {
-        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
-        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
-      } catch {
-        /* privacy mode */
-      }
-      const res = await fetch(`/api/ai/prompts/${selectedPromptId}/history`, { credentials: "include", headers });
-      if (!res.ok) return [];
-      return res.json();
+      const res = await apiRequest("GET", `/api/ai/prompts/${selectedPromptId}/history`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: !!selectedPromptId,
   });
@@ -384,19 +378,9 @@ export default function AiPromptRegistryPage() {
   const { data: auditLog, isLoading: isLoadingAudit } = useQuery<PromptAuditEntry[]>({
     queryKey: ["/api/ai/prompts", selectedPromptId, "audit"],
     queryFn: async () => {
-      const headers: Record<string, string> = {};
-      try {
-        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
-        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
-      } catch {
-        /* privacy mode */
-      }
-      const res = await fetch(`/api/ai/prompts/${selectedPromptId}/audit?limit=50`, {
-        credentials: "include",
-        headers,
-      });
-      if (!res.ok) return [];
-      return res.json();
+      const res = await apiRequest("GET", `/api/ai/prompts/${selectedPromptId}/audit?limit=50`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: !!selectedPromptId,
   });
@@ -404,16 +388,9 @@ export default function AiPromptRegistryPage() {
   const { data: globalAudit, isLoading: isLoadingGlobalAudit } = useQuery<PromptAuditEntry[]>({
     queryKey: ["/api/ai/audit"],
     queryFn: async () => {
-      const headers: Record<string, string> = {};
-      try {
-        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
-        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
-      } catch {
-        /* privacy mode */
-      }
-      const res = await fetch("/api/ai/audit?limit=100", { credentials: "include", headers });
-      if (!res.ok) return [];
-      return res.json();
+      const res = await apiRequest("GET", "/api/ai/audit?limit=100");
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: activeTab === "audit",
   });
