@@ -63,12 +63,12 @@ export async function setupAuth(app: Express) {
         if (!user || !user.passwordHash) {
           return done(null, false, { message: "Invalid email or password" });
         }
+        if (user.disabledAt) {
+          return done(null, false, { message: "Invalid email or password" });
+        }
         const isValid = await comparePasswords(password, user.passwordHash);
         if (!isValid) {
           return done(null, false, { message: "Invalid email or password" });
-        }
-        if (user.disabledAt) {
-          return done(null, false, { message: "Account is disabled" });
         }
         return done(null, user);
       } catch (err) {
@@ -122,7 +122,12 @@ export async function setupAuth(app: Express) {
         },
         async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
           try {
-            const email = profile.emails?.[0]?.value || `${profile.username}@github.local`;
+            const emails: Array<{ value?: string; primary?: boolean; verified?: boolean }> = profile.emails || [];
+            const verified = emails.find((e) => e.primary && e.verified && e.value);
+            if (!verified?.value) {
+              return done(null, false, { message: "No verified primary email from GitHub" });
+            }
+            const email = verified.value;
             let user = await authStorage.getUserByEmail(email);
             if (!user) {
               user = await authStorage.upsertUser({
