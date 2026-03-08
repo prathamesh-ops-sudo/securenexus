@@ -8,6 +8,7 @@ import { uploadFile, getSignedUrl, deleteFile } from "../s3";
 import { sendEmail } from "../email-service";
 import { invitationEmail, memberSuspendedEmail, memberRoleChangedEmail } from "../email-templates";
 import { authStorage } from "../auth/storage";
+import { invalidateDeserializeCache } from "../auth/session";
 
 const LOGO_MAX_SIZE = 2 * 1024 * 1024;
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -81,6 +82,7 @@ export function registerOrgsRoutes(app: Express): void {
               joinedAt: new Date(),
             });
             await storage.updateOrgInvitation(pending.id, { acceptedAt: new Date() });
+            invalidateDeserializeCache(userId);
             return res.json({ membership, organization: org });
           }
         }
@@ -142,6 +144,7 @@ export function registerOrgsRoutes(app: Express): void {
 
         const oldRole = target.role;
         const updated = await storage.updateOrgMembership(memberId, { role });
+        invalidateDeserializeCache(target.userId);
         await storage.createAuditLog({
           userId,
           userName: (req as any).user?.firstName
@@ -200,6 +203,7 @@ export function registerOrgsRoutes(app: Express): void {
         if (target.role === "owner") return res.status(400).json({ error: "Cannot suspend an owner" });
 
         const updated = await storage.updateOrgMembership(memberId, { status: "suspended", suspendedAt: new Date() });
+        invalidateDeserializeCache(target.userId);
         await storage.createAuditLog({
           userId,
           userName: (req as any).user?.firstName
@@ -258,6 +262,7 @@ export function registerOrgsRoutes(app: Express): void {
         if (!target || target.orgId !== orgId) return res.status(404).json({ error: "Member not found" });
 
         const updated = await storage.updateOrgMembership(memberId, { status: "active", suspendedAt: null });
+        invalidateDeserializeCache(target.userId);
         const userId = (req as any).user?.id;
         await storage.createAuditLog({
           userId,
@@ -457,6 +462,7 @@ export function registerOrgsRoutes(app: Express): void {
         joinedAt: new Date(),
       });
       await storage.updateOrgInvitation(invitation.id, { acceptedAt: new Date() });
+      invalidateDeserializeCache(userId);
 
       await storage.createAuditLog({
         userId,
