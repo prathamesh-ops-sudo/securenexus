@@ -423,8 +423,8 @@ function ScanHistoryTab() {
   const {
     data: scans,
     isLoading,
-    isError: _scansError,
-    refetch: _refetchScans,
+    isError: scansError,
+    refetch: refetchScans,
   } = useQuery<any[]>({
     queryKey: ["/api/cspm/scans"],
   });
@@ -439,6 +439,21 @@ function ScanHistoryTab() {
             </CardContent>
           </Card>
         ))}
+      </div>
+    );
+  }
+
+  if (scansError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load scan history</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchScans()}>
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -525,7 +540,12 @@ function FindingsTab() {
 
   const queryParams = severityFilter !== "all" ? `?severity=${severityFilter}` : "";
 
-  const { data: findings, isLoading } = useQuery<any[]>({
+  const {
+    data: findings,
+    isLoading,
+    isError: findingsError,
+    refetch: refetchFindings,
+  } = useQuery<any[]>({
     queryKey: ["/api/cspm/findings", severityFilter],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/cspm/findings${queryParams}`);
@@ -571,6 +591,21 @@ function FindingsTab() {
             </CardContent>
           </Card>
         ))}
+      </div>
+    );
+  }
+
+  if (findingsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load findings</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchFindings()}>
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -736,7 +771,12 @@ function PolicyChecksTab() {
   const [policyRuleLogic, setPolicyRuleLogic] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
 
-  const { data: policyChecks, isLoading } = useQuery<PolicyCheck[]>({
+  const {
+    data: policyChecks,
+    isLoading,
+    isError: policyError,
+    refetch: refetchPolicies,
+  } = useQuery<PolicyCheck[]>({
     queryKey: ["/api/policy-checks"],
   });
 
@@ -803,6 +843,7 @@ function PolicyChecksTab() {
       toast({ title: "Invalid JSON", description: "Rule logic must be valid JSON.", variant: "destructive" });
       return;
     }
+    createMutation.reset();
     createMutation.mutate({
       name: policyName.trim(),
       description: policyDescription.trim() || null,
@@ -832,6 +873,21 @@ function PolicyChecksTab() {
             </CardContent>
           </Card>
         ))}
+      </div>
+    );
+  }
+
+  if (policyError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load policy checks</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPolicies()}>
+          Try Again
+        </Button>
       </div>
     );
   }

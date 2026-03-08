@@ -548,7 +548,10 @@ export default function EndpointTelemetryPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button
-            onClick={() => seedMutation.mutate()}
+            onClick={() => {
+              seedMutation.reset();
+              seedMutation.mutate();
+            }}
             disabled={seedMutation.isPending}
             data-testid="button-seed-endpoints"
           >
@@ -594,7 +597,10 @@ export default function EndpointTelemetryPage() {
                 <p className="text-xs text-muted-foreground mt-1">Seed demo endpoint data to get started</p>
                 <Button
                   className="mt-4"
-                  onClick={() => seedMutation.mutate()}
+                  onClick={() => {
+                    seedMutation.reset();
+                    seedMutation.mutate();
+                  }}
                   disabled={seedMutation.isPending}
                   data-testid="button-seed-endpoints-empty"
                 >
@@ -699,7 +705,10 @@ export default function EndpointTelemetryPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => genTelemetryMutation.mutate(asset.id)}
+                              onClick={() => {
+                                genTelemetryMutation.reset();
+                                genTelemetryMutation.mutate(asset.id);
+                              }}
                               disabled={genTelemetryMutation.isPending}
                               data-testid={`button-gen-telemetry-${asset.id}`}
                             >
@@ -709,7 +718,10 @@ export default function EndpointTelemetryPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => calcRiskMutation.mutate(asset.id)}
+                              onClick={() => {
+                                calcRiskMutation.reset();
+                                calcRiskMutation.mutate(asset.id);
+                              }}
                               disabled={calcRiskMutation.isPending}
                               data-testid={`button-calc-risk-${asset.id}`}
                             >
