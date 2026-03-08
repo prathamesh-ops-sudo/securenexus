@@ -4,6 +4,7 @@ import { config as appConfig } from "../config";
 import { logger } from "../logger";
 import { getAwsClientConfig } from "../aws-credentials";
 import { trackUsage, checkBudget } from "./budget";
+import { countTokens } from "./tokenizer";
 
 const log = logger.child("model-gateway");
 
@@ -342,8 +343,8 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
       const text = opts.backend === "sagemaker" ? await invokeSageMakerRaw(opts) : await invokeBedrockRaw(opts);
 
       const latencyMs = Date.now() - start;
-      const inputTokensEstimate = Math.ceil((opts.systemPrompt.length + opts.userMessage.length) / 4);
-      const outputTokensEstimate = Math.ceil(text.length / 4);
+      const inputTokensEstimate = countTokens(opts.systemPrompt + opts.userMessage);
+      const outputTokensEstimate = countTokens(text);
       const costEstimateUsd = estimateCost(opts.modelId, inputTokensEstimate, outputTokensEstimate, opts.tier);
 
       recordCircuitSuccess(circuitKey);
