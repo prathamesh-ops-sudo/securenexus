@@ -85,7 +85,7 @@ export async function orgRateLimitMiddleware(req: Request, res: Response, next: 
   res.setHeader("X-RateLimit-Remaining", String(remaining));
   res.setHeader("X-RateLimit-Reset", String(resetSeconds));
 
-  if (bucket.count > limit) {
+  if (bucket.count >= limit) {
     log.warn("Org rate limit exceeded", {
       key,
       orgId: orgId ?? null,

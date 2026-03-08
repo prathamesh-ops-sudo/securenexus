@@ -15,6 +15,39 @@ import { logger } from "../logger";
 
 const scryptAsync = promisify(scrypt);
 
+const DESERIALIZE_CACHE_TTL_MS = 30_000;
+const DESERIALIZE_CACHE_MAX = 500;
+
+interface CachedUser {
+  user: any;
+  expiresAt: number;
+}
+
+const deserializeCache = new Map<string, CachedUser>();
+
+function pruneDeserializeCache() {
+  if (deserializeCache.size <= DESERIALIZE_CACHE_MAX) return;
+  const now = Date.now();
+  const keys = Array.from(deserializeCache.keys());
+  for (let i = 0; i < keys.length; i++) {
+    const entry = deserializeCache.get(keys[i]);
+    if (entry && entry.expiresAt <= now) deserializeCache.delete(keys[i]);
+  }
+  if (deserializeCache.size > DESERIALIZE_CACHE_MAX) {
+    const oldest = Array.from(deserializeCache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    const toRemove = oldest.slice(0, deserializeCache.size - DESERIALIZE_CACHE_MAX);
+    for (let i = 0; i < toRemove.length; i++) deserializeCache.delete(toRemove[i][0]);
+  }
+}
+
+export function invalidateDeserializeCache(userId?: string) {
+  if (userId) {
+    deserializeCache.delete(userId);
+  } else {
+    deserializeCache.clear();
+  }
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
@@ -153,13 +186,29 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: any, cb) => cb(null, user.id));
   passport.deserializeUser(async (id: string, cb) => {
     try {
+      const now = Date.now();
+      const cached = deserializeCache.get(id);
+      if (cached && cached.expiresAt > now) {
+        return cb(null, cached.user);
+      }
+
       const user = await authStorage.getUser(id);
-      if (!user) return cb(null, null);
-      if (user.disabledAt) return cb(null, null);
+      if (!user) {
+        deserializeCache.delete(id);
+        return cb(null, null);
+      }
+      if (user.disabledAt) {
+        deserializeCache.delete(id);
+        return cb(null, null);
+      }
       const memberships = await storage.getUserMemberships(user.id);
       const active = memberships.find((m) => m.status === "active");
       (user as any).orgId = active?.orgId || null;
       (user as any).orgRole = active?.role || null;
+
+      deserializeCache.set(id, { user, expiresAt: now + DESERIALIZE_CACHE_TTL_MS });
+      pruneDeserializeCache();
+
       cb(null, user);
     } catch (err) {
       cb(err);
