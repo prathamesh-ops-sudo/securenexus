@@ -41,7 +41,12 @@ export async function setupVite(server: Server, app: Express) {
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+
+      const nonce: string = res.locals.cspNonce ?? "";
+      const nonced = page
+        .replace(/<script(?=[\s>])((?!nonce=)[^>]*)>/gi, `<script nonce="${nonce}"$1>`)
+        .replace(/<style(?=[\s>])((?!nonce=)[^>]*)>/gi, `<style nonce="${nonce}"$1>`);
+      res.status(200).set({ "Content-Type": "text/html" }).end(nonced);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);

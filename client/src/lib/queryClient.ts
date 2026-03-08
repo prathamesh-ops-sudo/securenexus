@@ -1,14 +1,24 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 let csrfTokenCache: string | null = null;
+let csrfTokenFetchedAt = 0;
+const CSRF_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function clearCsrfTokenCache(): void {
+  csrfTokenCache = null;
+  csrfTokenFetchedAt = 0;
+}
 
 export async function fetchCsrfToken(): Promise<string | null> {
-  if (csrfTokenCache) return csrfTokenCache;
+  if (csrfTokenCache && Date.now() - csrfTokenFetchedAt < CSRF_CACHE_TTL_MS) {
+    return csrfTokenCache;
+  }
   try {
     const res = await fetch("/api/csrf-token", { credentials: "include" });
     if (res.ok) {
       const body = await res.json();
       csrfTokenCache = body.token ?? null;
+      csrfTokenFetchedAt = Date.now();
       return csrfTokenCache;
     }
   } catch {

@@ -92,19 +92,31 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-function configureHelmet(): ReturnType<typeof helmet> {
+function generateCspNonce(): string {
+  return randomBytes(16).toString("base64");
+}
+
+function cspNonceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  res.locals.cspNonce = generateCspNonce();
+  next();
+}
+
+function configureHelmet() {
   return helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
-          "'unsafe-inline'",
-          "'unsafe-eval'",
+          ((_req: Request, res: Response) => `'nonce-${res.locals.cspNonce}'`) as unknown as string,
           "https://www.googletagmanager.com",
           "https://www.google-analytics.com",
         ],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        styleSrc: [
+          "'self'",
+          ((_req: Request, res: Response) => `'nonce-${res.locals.cspNonce}'`) as unknown as string,
+          "https://fonts.googleapis.com",
+        ],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: [
@@ -192,6 +204,7 @@ function permissionsPolicy(_req: Request, res: Response, next: NextFunction): vo
 }
 
 export function applySecurityMiddleware(app: Express): void {
+  app.use(cspNonceMiddleware);
   app.use(configureHelmet());
   app.use(permissionsPolicy);
 
