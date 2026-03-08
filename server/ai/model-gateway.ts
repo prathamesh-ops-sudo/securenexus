@@ -41,21 +41,21 @@ export interface ModelInvokeResult {
 }
 
 const COST_TABLE: Record<string, { input: number; output: number }> = {
-  "mistral.mistral-large-2402-v1:0": { input: 0.000004, output: 0.000012 },
-  "anthropic.claude-3-sonnet": { input: 0.000003, output: 0.000015 },
-  "anthropic.claude-3-haiku": { input: 0.00000025, output: 0.00000125 },
-  "default-triage": { input: 0.00000015, output: 0.0000002 },
-  default: { input: 0.000002, output: 0.000006 },
+  "mistral.mistral-large-2402-v1:0": { input: 0.004, output: 0.012 },
+  "anthropic.claude-3-sonnet": { input: 0.003, output: 0.015 },
+  "anthropic.claude-3-haiku": { input: 0.00025, output: 0.00125 },
+  "default-triage": { input: 0.00015, output: 0.0002 },
+  default: { input: 0.002, output: 0.006 },
 };
 
-const TRIAGE_RATES = { input: 0.00000015, output: 0.0000002 };
+const TRIAGE_RATES = { input: 0.00015, output: 0.0002 };
 
 function estimateCost(modelId: string, inputTokens: number, outputTokens: number, tier?: string): number {
   if (tier === "triage") {
-    return inputTokens * TRIAGE_RATES.input + outputTokens * TRIAGE_RATES.output;
+    return (inputTokens / 1000) * TRIAGE_RATES.input + (outputTokens / 1000) * TRIAGE_RATES.output;
   }
   const rates = COST_TABLE[modelId] || COST_TABLE["default"];
-  return inputTokens * rates.input + outputTokens * rates.output;
+  return (inputTokens / 1000) * rates.input + (outputTokens / 1000) * rates.output;
 }
 
 interface CircuitState {
@@ -200,7 +200,13 @@ export function getModelCacheStats(): { size: number; maxSize: number } {
   return { size: responseCache.size, maxSize: MAX_CACHE_ENTRIES };
 }
 
-async function invokeBedrockRaw(opts: ModelInvokeOptions): Promise<string> {
+interface BedrockResult {
+  text: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
+async function invokeBedrockRaw(opts: ModelInvokeOptions): Promise<BedrockResult> {
   try {
     const command = new ConverseCommand({
       modelId: opts.modelId,
@@ -218,7 +224,11 @@ async function invokeBedrockRaw(opts: ModelInvokeOptions): Promise<string> {
     if (!outputContent || outputContent.length === 0) {
       throw new Error("Empty response from Bedrock model");
     }
-    return outputContent[0].text || "";
+    return {
+      text: outputContent[0].text || "",
+      inputTokens: response.usage?.inputTokens ?? null,
+      outputTokens: response.usage?.outputTokens ?? null,
+    };
   } catch (error: unknown) {
     const err = error as { name?: string; message?: string };
     if (err.name === "ValidationException" && err.message?.includes("system")) {
@@ -230,7 +240,11 @@ async function invokeBedrockRaw(opts: ModelInvokeOptions): Promise<string> {
       const fbResp = await bedrockClient.send(fallback);
       const fbContent = fbResp.output?.message?.content;
       if (!fbContent || fbContent.length === 0) throw new Error("Empty response from Bedrock model (fallback)");
-      return fbContent[0].text || "";
+      return {
+        text: fbContent[0].text || "",
+        inputTokens: fbResp.usage?.inputTokens ?? null,
+        outputTokens: fbResp.usage?.outputTokens ?? null,
+      };
     }
     throw error;
   }
@@ -340,11 +354,22 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
 
     const start = Date.now();
     try {
-      const text = opts.backend === "sagemaker" ? await invokeSageMakerRaw(opts) : await invokeBedrockRaw(opts);
+      let text: string;
+      let apiInputTokens: number | null = null;
+      let apiOutputTokens: number | null = null;
+
+      if (opts.backend === "sagemaker") {
+        text = await invokeSageMakerRaw(opts);
+      } else {
+        const bedrockResult = await invokeBedrockRaw(opts);
+        text = bedrockResult.text;
+        apiInputTokens = bedrockResult.inputTokens;
+        apiOutputTokens = bedrockResult.outputTokens;
+      }
 
       const latencyMs = Date.now() - start;
-      const inputTokensEstimate = countTokens(opts.systemPrompt + opts.userMessage);
-      const outputTokensEstimate = countTokens(text);
+      const inputTokensEstimate = apiInputTokens ?? countTokens(opts.systemPrompt + opts.userMessage);
+      const outputTokensEstimate = apiOutputTokens ?? countTokens(text);
       const costEstimateUsd = estimateCost(opts.modelId, inputTokensEstimate, outputTokensEstimate, opts.tier);
 
       recordCircuitSuccess(circuitKey);
