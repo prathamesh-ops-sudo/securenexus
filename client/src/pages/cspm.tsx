@@ -549,7 +549,8 @@ function FindingsTab() {
     queryKey: ["/api/cspm/findings", severityFilter],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/cspm/findings${queryParams}`);
-      return res.json();
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 

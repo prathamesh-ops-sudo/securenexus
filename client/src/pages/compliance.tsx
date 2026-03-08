@@ -1583,8 +1583,8 @@ function ControlsTab() {
   const {
     data: controls,
     isLoading: controlsLoading,
-    isError: _controlsError,
-    refetch: _refetchControls,
+    isError: controlsError,
+    refetch: refetchControls,
   } = useQuery<ComplianceControl[]>({
     queryKey: controlsQueryKey,
     queryFn: async () => {
@@ -1593,17 +1593,23 @@ function ControlsTab() {
           ? "/api/compliance-controls"
           : `/api/compliance-controls?framework=${frameworkFilter}`;
       const res = await apiRequest("GET", url);
-      return res.json();
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
   const {
     data: mappings,
     isLoading: mappingsLoading,
-    isError: _mappingsError,
-    refetch: _refetchMappings,
+    isError: mappingsError,
+    refetch: refetchMappings,
   } = useQuery<ComplianceControlMapping[]>({
     queryKey: ["/api/compliance-control-mappings"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/compliance-control-mappings");
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
   });
 
   const seedControls = useMutation({
@@ -1655,6 +1661,29 @@ function ControlsTab() {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (controlsError || mappingsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load compliance controls</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchControls();
+            refetchMappings();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }

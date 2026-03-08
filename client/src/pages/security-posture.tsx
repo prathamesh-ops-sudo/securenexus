@@ -152,9 +152,26 @@ function PostureScoreTab() {
     data: latestScore,
     isLoading: latestLoading,
     isError: latestError,
+    error: latestErrorObj,
     refetch: refetchLatest,
   } = useQuery<any>({
     queryKey: ["/api/posture/latest"],
+    queryFn: async () => {
+      const reqHeaders: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) reqHeaders["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* SSR / privacy mode */
+      }
+      const res = await fetch("/api/posture/latest", {
+        credentials: "include",
+        headers: reqHeaders,
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      return res.json();
+    },
   });
 
   const {
