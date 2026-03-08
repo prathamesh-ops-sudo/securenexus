@@ -8,6 +8,7 @@ import { parsePaginationParams } from "../db-performance";
 import { findRelatedAlertsByEntity, getEntitiesForAlert } from "../entity-resolver";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { validateAlertFieldLengths } from "../normalizer";
 
 export function registerAlertsRoutes(app: Express): void {
   // Alerts
@@ -95,6 +96,10 @@ export function registerAlertsRoutes(app: Express): void {
         if (!parsed.success) {
           return res.status(400).json({ message: "Invalid alert data", errors: parsed.error.flatten() });
         }
+        const lengthCheck = validateAlertFieldLengths(parsed.data);
+        if (!lengthCheck.valid) {
+          return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
+        }
         const alert = await storage.createAlert(parsed.data);
         publishOutboxEvent(alert.orgId, "alert.created", "alert", alert.id, {
           title: alert.title,
@@ -124,6 +129,10 @@ export function registerAlertsRoutes(app: Express): void {
         const parsed = insertAlertSchema.partial().safeParse(req.body);
         if (!parsed.success) {
           return res.status(400).json({ message: "Invalid update data", errors: parsed.error.flatten() });
+        }
+        const lengthCheck = validateAlertFieldLengths(parsed.data);
+        if (!lengthCheck.valid) {
+          return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
         }
         const alert = await storage.updateAlert(p(req.params.id), parsed.data);
         if (!alert) return res.status(404).json({ message: "Alert not found" });
@@ -305,6 +314,10 @@ export function registerAlertsRoutes(app: Express): void {
   app.patch("/api/alerts/:id/confidence", isAuthenticated, async (req, res) => {
     try {
       const { confidenceScore, confidenceSource, confidenceNotes } = req.body;
+      const lengthCheck = validateAlertFieldLengths({ confidenceNotes });
+      if (!lengthCheck.valid) {
+        return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
+      }
       const alert = await storage.updateAlert(p(req.params.id), { confidenceScore, confidenceSource, confidenceNotes });
       if (!alert) return res.status(404).json({ message: "Alert not found" });
       res.json(alert);
