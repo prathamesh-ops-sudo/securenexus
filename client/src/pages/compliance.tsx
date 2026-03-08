@@ -50,7 +50,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ensureArray } from "@/lib/queryClient";
 import { formatDateShort as formatDate, formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -1593,8 +1593,8 @@ function ControlsTab() {
           ? "/api/compliance-controls"
           : `/api/compliance-controls?framework=${frameworkFilter}`;
       const res = await apiRequest("GET", url);
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      const raw = await res.json();
+      return ensureArray(raw);
     },
   });
 
@@ -1607,8 +1607,8 @@ function ControlsTab() {
     queryKey: ["/api/compliance-control-mappings"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/compliance-control-mappings");
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      const raw = await res.json();
+      return ensureArray(raw);
     },
   });
 
@@ -1650,12 +1650,15 @@ function ControlsTab() {
     },
   });
 
-  const groupedControls = (controls || []).reduce<Record<string, ComplianceControl[]>>((acc, ctrl) => {
-    const key = ctrl.category || "Uncategorized";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(ctrl);
-    return acc;
-  }, {});
+  const groupedControls = ensureArray<ComplianceControl>(controls).reduce<Record<string, ComplianceControl[]>>(
+    (acc, ctrl) => {
+      const key = ctrl.category || "Uncategorized";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(ctrl);
+      return acc;
+    },
+    {},
+  );
 
   if (controlsLoading) {
     return (
@@ -1994,7 +1997,8 @@ function EvidenceLockerTab() {
       if (artifactTypeFilter !== "all") params.set("artifactType", artifactTypeFilter);
       const url = `/api/evidence-locker${params.toString() ? `?${params.toString()}` : ""}`;
       const res = await apiRequest("GET", url);
-      return res.json();
+      const raw = await res.json();
+      return ensureArray(raw);
     },
   });
 
@@ -2641,7 +2645,8 @@ function EvidenceAttachmentsTab() {
         : "/api/evidence-attachments";
       try {
         const res = await apiRequest("GET", url);
-        return res.json();
+        const raw = await res.json();
+        return ensureArray(raw);
       } catch {
         return [];
       }
