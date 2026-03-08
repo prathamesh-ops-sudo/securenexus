@@ -76,7 +76,7 @@ export function registerAiRoutes(app: Express): void {
           resourceType: "alerts",
           details: { alertCount: alertsToCorrelate.length, groupsFound: result.correlatedGroups.length },
         });
-        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+        await storage.incrementUsage(orgId, "ai_analyses");
         res.json(result);
       } catch (error: any) {
         const errMsg = error?.message || String(error);
@@ -131,7 +131,7 @@ export function registerAiRoutes(app: Express): void {
           resourceId: p(req.params.incidentId),
           details: { riskScore: result.riskScore },
         });
-        storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses").catch(() => {});
+        await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
         res.json(result);
       } catch (error: any) {
         logger.child("ai").error("AI narrative error", { error: String(error) });
@@ -170,7 +170,7 @@ export function registerAiRoutes(app: Express): void {
           resourceId: p(req.params.alertId),
           details: { severity: result.severity, priority: result.priority },
         });
-        storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses").catch(() => {});
+        await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
         res.json(result);
       } catch (error: any) {
         logger.child("ai").error("AI triage error", { error: String(error) });
