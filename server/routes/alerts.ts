@@ -108,7 +108,7 @@ export function registerAlertsRoutes(app: Express): void {
           status: alert.status,
         });
         cacheInvalidate("dashboard:");
-        if (alert.orgId) storage.incrementUsage(alert.orgId, "alerts_ingested").catch(() => {});
+        if (alert.orgId) await storage.incrementUsage(alert.orgId, "alerts_ingested");
         res.status(201).json(alert);
       } catch (error) {
         logger.child("routes").error("Error creating alert", { error: String(error) });

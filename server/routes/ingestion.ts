@@ -277,7 +277,7 @@ export function registerIngestionRoutes(app: Express): void {
         }
 
         if (isNew && orgId) {
-          storage.incrementUsage(orgId, "alerts_ingested").catch(() => {});
+          await storage.incrementUsage(orgId, "alerts_ingested");
         }
 
         res.status(isNew ? 201 : 200).json({
@@ -402,7 +402,7 @@ export function registerIngestionRoutes(app: Express): void {
         });
 
         if (created > 0 && orgId) {
-          storage.incrementUsage(orgId, "alerts_ingested", created).catch(() => {});
+          await storage.incrementUsage(orgId, "alerts_ingested", created);
         }
 
         res.status(created > 0 ? 201 : 200).json({
