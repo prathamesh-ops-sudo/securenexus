@@ -2493,6 +2493,7 @@ export const iocMatchRules = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     orgId: varchar("org_id").references(() => organizations.id),
+    feedId: varchar("feed_id").references(() => iocFeeds.id),
     name: text("name").notNull(),
     description: text("description"),
     iocTypes: text("ioc_types")
