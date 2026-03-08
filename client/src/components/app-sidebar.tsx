@@ -52,6 +52,22 @@ import {
   Package,
   BadgeCheck,
   Layers,
+  ClipboardList,
+  Search,
+  DollarSign,
+  Server,
+  Microscope,
+  Target,
+  Bug,
+  HeartPulse,
+  Wand2,
+  LayoutGrid,
+  Database,
+  Flame,
+  ListTodo,
+  RotateCcw,
+  Globe,
+  Cpu,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -111,6 +127,9 @@ const navGroups: NavGroup[] = [
       { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
       { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
       { title: "Kill Chain", url: "/kill-chain", icon: Swords },
+      { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
+      { title: "CVE Browser", url: "/cve-browser", icon: Bug },
+      { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
     ],
   },
   {
@@ -122,6 +141,7 @@ const navGroups: NavGroup[] = [
       { title: "Template Versioning", url: "/report-template-versioning", icon: GitBranch },
       { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
       { title: "Security Posture", url: "/security-posture", icon: Gauge },
+      { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
     ],
   },
   {
@@ -131,6 +151,9 @@ const navGroups: NavGroup[] = [
       { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
       { title: "Playbooks", url: "/playbooks", icon: Workflow },
       { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
+      { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
+      { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
+      { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
     ],
   },
   {
@@ -168,6 +191,11 @@ const navGroups: NavGroup[] = [
       { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
       { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
       { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
+      { title: "AI Budget Controls", url: "/ai-budget-controls", icon: DollarSign },
+      { title: "AI Model Health", url: "/ai-model-health", icon: HeartPulse },
+      { title: "Manual AI Triggers", url: "/manual-ai-triggers", icon: Wand2 },
+      { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
+      { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3 },
     ],
   },
 ];
@@ -189,6 +217,12 @@ const adminGroup: NavGroup = {
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
     { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
+    { title: "Role Dashboard", url: "/role-dashboard", icon: LayoutGrid },
+    { title: "Tenant Isolation", url: "/tenant-isolation", icon: Server },
+    { title: "Data Lifecycle", url: "/data-lifecycle", icon: Database },
+    { title: "DR Drill Scheduler", url: "/dr-drill-scheduler", icon: Flame },
+    { title: "Domain Auto-Join", url: "/domain-auto-join", icon: Globe },
+    { title: "Usage Analytics", url: "/usage-metering-analytics", icon: Cpu },
   ],
 };
 
