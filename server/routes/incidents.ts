@@ -1063,18 +1063,6 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/response-approvals", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      if (!orgId) return res.status(403).json({ message: "Organization context required" });
-      const status = req.query.status as string | undefined;
-      const approvals = await storage.getIncidentResponseApprovals(orgId, undefined, status);
-      res.json(approvals);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch response approvals" });
-    }
-  });
-
   app.post(
     "/api/incidents/:incidentId/approvals",
     isAuthenticated,
