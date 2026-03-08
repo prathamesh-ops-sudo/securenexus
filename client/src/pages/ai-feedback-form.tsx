@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
   Brain,
@@ -137,26 +138,18 @@ export default function AiFeedbackFormPage() {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filterType !== "all") params.set("resourceType", filterType);
-      const res = await fetch(`/api/ai/feedback?${params.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch feedback");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as AiFeedback[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", `/api/ai/feedback?${params.toString()}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
     queryKey: ["/api/ai/feedback/metrics"],
     queryFn: async () => {
-      const res = await fetch("/api/ai/feedback/metrics?days=30", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch metrics");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as FeedbackMetric[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", "/api/ai/feedback/metrics?days=30");
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
@@ -170,16 +163,7 @@ export default function AiFeedbackFormPage() {
       correctedSeverity?: string;
       correctedCategory?: string;
     }) => {
-      const res = await fetch("/api/ai/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Failed to submit feedback" }));
-        throw new Error(err.message || "Failed to submit feedback");
-      }
+      const res = await apiRequest("POST", "/api/ai/feedback", data);
       return res.json();
     },
     onSuccess: () => {

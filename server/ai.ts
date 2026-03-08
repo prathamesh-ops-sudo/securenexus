@@ -349,12 +349,13 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
 export async function correlateAlerts(
   alertsData: any[],
   threatIntelCtx?: ThreatIntelContext,
+  orgId?: string,
 ): Promise<CorrelationResult> {
   const userMessage = buildCorrelationUserMessage(alertsData);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text } = await invokeWithPrompt("correlation", finalUserMessage, "correlation");
+  const { text } = await invokeWithPrompt("correlation", finalUserMessage, "correlation", orgId);
   return JSON.parse(extractJson(text));
 }
 
@@ -392,12 +393,13 @@ export async function generateIncidentNarrative(
   incident: any,
   alerts: any[],
   threatIntelCtx?: ThreatIntelContext,
+  orgId?: string,
 ): Promise<NarrativeResult> {
   const userMessage = buildNarrativeUserMessage(incident, alerts);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text } = await invokeWithPrompt("narrative", finalUserMessage, "narrative", undefined, 6144);
+  const { text } = await invokeWithPrompt("narrative", finalUserMessage, "narrative", orgId, 6144);
   const parsed = JSON.parse(extractJson(text));
   if (!parsed.citedAlertIds || !Array.isArray(parsed.citedAlertIds) || parsed.citedAlertIds.length === 0) {
     const citationRegex = /\[Alert ([^\]]+)\]/g;
@@ -456,12 +458,16 @@ function buildNarrativeUserMessage(incident: any, alerts: any[]): string {
   return `Generate a comprehensive incident narrative for this security incident.\n\nINCIDENT CONTEXT:\n${incidentCtx}\n\nASSOCIATED ALERT TELEMETRY (${alerts.length} alerts):\n${alertTelemetry}\n\nRespond with this exact JSON structure:\n{\n  "narrative": "detailed multi-paragraph attacker-centric narrative with inline [Alert <id>] citations for every claim. Every paragraph MUST reference at least one alert ID from the provided telemetry.",\n  "citedAlertIds": ["list of all alert IDs explicitly cited in the narrative"],\n  "summary": "one-line executive summary",\n  "attackTimeline": [\n    {"timestamp": "ISO 8601", "description": "action description", "alertId": "source alert", "mitreTechnique": "T1xxx.xxx"}\n  ],\n  "attackerProfile": {\n    "ttps": ["TTP descriptions"],\n    "sophistication": "nation-state|advanced-persistent|organized-crime|intermediate|opportunistic",\n    "likelyMotivation": "financial|espionage|hacktivism|destruction|unknown",\n    "estimatedOrigin": "geographic/organizational origin assessment",\n    "diamondModel": {\n      "adversary": "threat actor characterization",\n      "infrastructure": ["C2 servers, domains, IPs used"],\n      "capability": "tooling and technique sophistication",\n      "victim": ["targeted assets, users, systems"]\n    }\n  },\n  "killChainAnalysis": [\n    {"phase": "Kill Chain phase", "description": "what occurred in this phase", "evidence": ["supporting indicators"]}\n  ],\n  "mitigationSteps": ["NIST-aligned containment and recovery steps"],\n  "iocs": [{"type": "ip|domain|hash|url|email|registry|mutex", "value": "indicator value", "context": "where/how observed"}],\n  "riskScore": 85,\n  "nistPhase": "Detection|Analysis|Containment|Eradication|Recovery"\n}`;
 }
 
-export async function triageAlert(alertData: any, threatIntelCtx?: ThreatIntelContext): Promise<TriageResult> {
+export async function triageAlert(
+  alertData: any,
+  threatIntelCtx?: ThreatIntelContext,
+  orgId?: string,
+): Promise<TriageResult> {
   const userMessage = buildTriageUserMessage(alertData);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text } = await invokeWithPrompt("triage", finalUserMessage, "triage");
+  const { text } = await invokeWithPrompt("triage", finalUserMessage, "triage", orgId);
   return JSON.parse(extractJson(text));
 }
 

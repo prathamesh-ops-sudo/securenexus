@@ -68,7 +68,7 @@ export function registerAiRoutes(app: Express): void {
           return res.status(400).json({ message: "No alerts to correlate" });
         }
         const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
-        const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx);
+        const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx, orgId);
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName
@@ -114,7 +114,8 @@ export function registerAiRoutes(app: Express): void {
         if (!incident) return res.status(404).json({ message: "Incident not found" });
         const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
         const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
-        const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx);
+        const narrativeOrgId = (req as any).orgId || (req as any).user?.orgId;
+        const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx, narrativeOrgId);
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           (result as any).threatIntelSources = Array.from(
             new Set([
@@ -174,7 +175,8 @@ export function registerAiRoutes(app: Express): void {
         const alert = await storage.getAlert(p(req.params.alertId));
         if (!alert) return res.status(404).json({ message: "Alert not found" });
         const threatIntelCtx = await buildThreatIntelContext([alert]);
-        const result = await triageAlert(alert, threatIntelCtx);
+        const triageOrgId = (req as any).orgId || (req as any).user?.orgId;
+        const result = await triageAlert(alert, threatIntelCtx, triageOrgId);
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           result.threatIntelSources = Array.from(
             new Set([
