@@ -344,21 +344,32 @@ export default function ThreatIntelFeedsPage() {
 
   const refreshAllMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/threat-intel-feeds/refresh-all");
-      return res.json();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 90_000);
+      try {
+        const res = await apiRequest("POST", "/api/threat-intel-feeds/refresh-all");
+        return res.json();
+      } finally {
+        clearTimeout(timer);
+      }
     },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/statuses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/articles"] });
+      const ok = result?.meta?.okFeedCount ?? 0;
+      const total = result?.feedCount ?? 0;
+      const items = result?.itemCount ?? 0;
       toast({
         title: "Feeds Refreshed",
-        description: result.meta
-          ? result.meta.okFeedCount + "/" + result.feedCount + " feeds fetched (" + result.itemCount + " articles)"
-          : "All feeds refreshed",
+        description: total > 0 ? ok + "/" + total + " feeds fetched (" + items + " articles)" : "All feeds refreshed",
       });
     },
-    onError: () => {
-      toast({ title: "Refresh Failed", description: "Could not refresh feeds.", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({
+        title: "Refresh Failed",
+        description: error.message || "Could not refresh feeds. The operation may have timed out.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -368,14 +379,24 @@ export default function ThreatIntelFeedsPage() {
       const res = await apiRequest("POST", "/api/threat-intel-feeds/" + slug + "/refresh");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/statuses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/articles"] });
-      toast({ title: "Feed Refreshed", description: "Feed data updated." });
+      const count = result?.articleCount ?? 0;
+      const feedError = result?.error;
+      if (feedError) {
+        toast({ title: "Feed Partially Refreshed", description: feedError, variant: "destructive" });
+      } else {
+        toast({ title: "Feed Refreshed", description: count + " articles fetched." });
+      }
       setRefreshingSlug(null);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to refresh feed.", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({
+        title: "Refresh Failed",
+        description: error.message || "Failed to refresh feed.",
+        variant: "destructive",
+      });
       setRefreshingSlug(null);
     },
   });
