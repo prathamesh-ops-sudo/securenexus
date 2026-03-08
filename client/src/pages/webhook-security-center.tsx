@@ -365,6 +365,7 @@ export default function WebhookSecurityCenterPage() {
     isLoading,
     isError,
     refetch,
+    isFetching,
   } = useQuery<OutboundWebhook[]>({
     queryKey: ["/api/v1/webhooks"],
     queryFn: async () => {
@@ -454,8 +455,8 @@ export default function WebhookSecurityCenterPage() {
             Replay defense, signing status, delivery retries, and forensic logs
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
-          <RefreshCw className="h-3.5 w-3.5" />
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1.5">
+          {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Refresh
         </Button>
       </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
   KeyRound,
@@ -131,13 +132,9 @@ export default function SecretRotationOverviewPage() {
   } = useQuery<SecretRotation[]>({
     queryKey: ["/api/secret-rotations/expiring", daysAhead],
     queryFn: async () => {
-      const res = await fetch(`/api/secret-rotations/expiring?days=${daysAhead}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch rotations");
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body && "meta" in body && "errors" in body) {
-        return (body.data ?? []) as SecretRotation[];
-      }
-      return Array.isArray(body) ? body : [];
+      const res = await apiRequest("GET", `/api/secret-rotations/expiring?days=${daysAhead}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
