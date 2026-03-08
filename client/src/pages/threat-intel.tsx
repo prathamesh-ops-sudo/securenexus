@@ -134,15 +134,15 @@ function extractIOCsFromAlerts(alerts: Alert[]): IOCEntry[] {
       { field: alert.hostname, type: "hostname" },
     ];
     for (const { field, type } of fields) {
-      if (field && field.trim()) {
+      if (typeof field === "string" && field.trim()) {
         iocs.push({
           value: field.trim(),
           type,
-          source: alert.source,
-          alertTitle: alert.title,
-          severity: alert.severity,
-          firstSeen: alert.detectedAt || alert.createdAt,
-          alertId: alert.id,
+          source: alert.source || "Alert",
+          alertTitle: alert.title || "",
+          severity: alert.severity || "medium",
+          firstSeen: alert.detectedAt || alert.createdAt || "",
+          alertId: alert.id ?? "",
         });
       }
     }
@@ -154,16 +154,18 @@ function extractIOCsFromIncidents(incidents: Incident[]): IOCEntry[] {
   const iocs: IOCEntry[] = [];
   for (const incident of incidents) {
     if (!incident.iocs || !Array.isArray(incident.iocs)) continue;
-    for (const iocStr of incident.iocs as string[]) {
+    for (const raw of incident.iocs) {
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      const iocStr = raw as string;
       const match = iocStr.match(/^(.+?)\s*\((\w+):\s*(.+?)\)$/);
       if (match) {
         iocs.push({
           value: match[1].trim(),
           type: match[2].trim().toLowerCase(),
           source: "Incident Analysis",
-          alertTitle: incident.title,
-          severity: incident.severity,
-          firstSeen: incident.createdAt,
+          alertTitle: incident.title || "",
+          severity: incident.severity || "medium",
+          firstSeen: incident.createdAt || "",
           alertId: "",
         });
       } else {
@@ -171,9 +173,9 @@ function extractIOCsFromIncidents(incidents: Incident[]): IOCEntry[] {
           value: iocStr.trim(),
           type: "unknown",
           source: "Incident Analysis",
-          alertTitle: incident.title,
-          severity: incident.severity,
-          firstSeen: incident.createdAt,
+          alertTitle: incident.title || "",
+          severity: incident.severity || "medium",
+          firstSeen: incident.createdAt || "",
           alertId: "",
         });
       }
@@ -500,9 +502,13 @@ export default function ThreatIntelPage() {
   const anyProviderConfigured = providers?.some((p) => p.configured) ?? false;
 
   const allIOCs = useMemo(() => {
-    const alertIOCs = alerts ? extractIOCsFromAlerts(alerts) : [];
-    const incidentIOCs = incidents ? extractIOCsFromIncidents(incidents) : [];
-    return [...alertIOCs, ...incidentIOCs];
+    try {
+      const alertIOCs = alerts ? extractIOCsFromAlerts(alerts) : [];
+      const incidentIOCs = incidents ? extractIOCsFromIncidents(incidents) : [];
+      return [...alertIOCs, ...incidentIOCs];
+    } catch {
+      return [];
+    }
   }, [alerts, incidents]);
 
   const filteredIOCs = useMemo(() => {
@@ -510,15 +516,16 @@ export default function ThreatIntelPage() {
     const q = search.toLowerCase();
     return allIOCs.filter(
       (ioc) =>
-        ioc.value.toLowerCase().includes(q) ||
-        ioc.type.toLowerCase().includes(q) ||
-        ioc.source.toLowerCase().includes(q),
+        (ioc.value ?? "").toLowerCase().includes(q) ||
+        (ioc.type ?? "").toLowerCase().includes(q) ||
+        (ioc.source ?? "").toLowerCase().includes(q),
     );
   }, [allIOCs, search]);
 
   const stats = useMemo(() => {
-    const uniqueDomains = new Set(allIOCs.filter((i) => i.type === "domain").map((i) => i.value.toLowerCase())).size;
-    const uniqueIPs = new Set(allIOCs.filter((i) => i.type === "ip").map((i) => i.value)).size;
+    const uniqueDomains = new Set(allIOCs.filter((i) => i.type === "domain").map((i) => (i.value ?? "").toLowerCase()))
+      .size;
+    const uniqueIPs = new Set(allIOCs.filter((i) => i.type === "ip").map((i) => i.value ?? "")).size;
     return { total: allIOCs.length, uniqueDomains, uniqueIPs };
   }, [allIOCs]);
 
