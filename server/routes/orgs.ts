@@ -67,7 +67,10 @@ export function registerOrgsRoutes(app: Express): void {
           if (org.deletedAt) continue;
           const invitations = await storage.getOrgInvitations(org.id);
           const pending = invitations.find(
-            (inv) => inv.email === userEmail && !inv.acceptedAt && new Date(inv.expiresAt) > new Date(),
+            (inv) =>
+              inv.email.toLowerCase() === userEmail.toLowerCase() &&
+              !inv.acceptedAt &&
+              new Date(inv.expiresAt) > new Date(),
           );
           if (pending) {
             const membership = await storage.createOrgMembership({
@@ -327,7 +330,8 @@ export function registerOrgsRoutes(app: Express): void {
         const userOrgId = (req as any).orgId;
         if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
 
-        const { email, role } = (req as any).validatedBody;
+        const { email: rawEmail, role } = (req as any).validatedBody;
+        const email = rawEmail.toLowerCase();
 
         const userId = (req as any).user?.id;
         const token = randomBytes(32).toString("hex");
