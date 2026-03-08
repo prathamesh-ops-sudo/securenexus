@@ -136,7 +136,6 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
     let rawAlerts: unknown[];
     try {
       rawAlerts = await plugin.fetch(config, since || undefined);
-      await clearProviderBackoff(type);
     } catch (err: unknown) {
       const msg = ((err as Error).message || "").toLowerCase();
       if (msg.includes("429") || msg.includes("rate limit") || msg.includes("throttl") || msg.includes("503")) {
@@ -150,6 +149,14 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
         errors: [(err as Error).message],
         rawAlerts: [],
       };
+    }
+
+    try {
+      await clearProviderBackoff(type);
+    } catch (clearErr) {
+      logger
+        .child("connector-engine")
+        .warn("Failed to clear provider backoff after successful fetch", { provider: type, error: String(clearErr) });
     }
 
     const { normalized, failed, errors } = normalizeBatch(rawAlerts, plugin.normalize.bind(plugin), connector.orgId);
