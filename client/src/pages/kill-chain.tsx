@@ -133,7 +133,7 @@ export default function KillChainPage() {
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<PaginatedResponse<Alert>>({
-    queryKey: ["/api/v1/alerts"],
+    queryKey: ["/api/v1/alerts", "kill-chain"],
     queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 200 }),
   });
   const alerts = alertsResponse?.items;
@@ -144,7 +144,7 @@ export default function KillChainPage() {
     isError: incidentsError,
     refetch: refetchIncidents,
   } = useQuery<PaginatedResponse<Incident>>({
-    queryKey: ["/api/v1/incidents"],
+    queryKey: ["/api/v1/incidents", "kill-chain"],
     queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 200 }),
   });
   const incidents = incidentsResponse?.items;
