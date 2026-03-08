@@ -39,7 +39,7 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.get("/api/connectors/dead-letters", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any).user?.orgId;
       const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
       const runs = await storage.getDeadLetterJobRuns(orgId);
       res.json(runs.slice(offset, offset + limit));

@@ -282,7 +282,7 @@ export function registerAiRoutes(app: Express): void {
     validateQuery(querySchemas.feedbackMetrics),
     async (req, res) => {
       try {
-        const orgId = (req as any).user?.organizationId;
+        const orgId = (req as any).user?.orgId;
         const { days } = (req as any).validatedQuery;
         const metrics = await storage.getAiFeedbackMetrics(orgId, days);
         res.json(metrics);
