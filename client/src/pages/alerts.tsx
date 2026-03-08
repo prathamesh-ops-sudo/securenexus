@@ -209,23 +209,25 @@ export default function AlertsPage() {
   const PAGE_SIZE = 25;
   const { toast } = useToast();
   const { currentOrgId } = useOrgContext();
-  const orgSlug = currentOrgId || "default";
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
-    queryKey: [`/api/orgs/${orgSlug}/saved-views`, "alerts"],
+    queryKey: [`/api/orgs/${currentOrgId}/saved-views`, "alerts"],
     queryFn: async () => {
+      if (!currentOrgId) return [];
       try {
-        const res = await apiRequest("GET", `/api/orgs/${orgSlug}/saved-views?resourceType=alerts`);
+        const res = await apiRequest("GET", `/api/orgs/${currentOrgId}/saved-views?resourceType=alerts`);
         return res.json();
       } catch {
         return [];
       }
     },
+    enabled: !!currentOrgId,
   });
 
   const createSavedViewMutation = useMutation({
     mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
-      const res = await apiRequest("POST", `/api/orgs/${orgSlug}/saved-views`, {
+      if (!currentOrgId) throw new Error("No organization selected");
+      const res = await apiRequest("POST", `/api/orgs/${currentOrgId}/saved-views`, {
         name: viewData.name,
         resourceType: "alerts",
         filters: viewData.filters,
@@ -244,7 +246,8 @@ export default function AlertsPage() {
 
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      await apiRequest("DELETE", `/api/orgs/${orgSlug}/saved-views/${viewId}`);
+      if (!currentOrgId) throw new Error("No organization selected");
+      await apiRequest("DELETE", `/api/orgs/${currentOrgId}/saved-views/${viewId}`);
     },
     onSuccess: () => {
       refetchSavedViews();
@@ -1005,7 +1008,7 @@ export default function AlertsPage() {
                       variant="outline"
                       size="sm"
                       className="h-8"
-                      disabled={!savedViewName.trim() || createSavedViewMutation.isPending}
+                      disabled={!savedViewName.trim() || !currentOrgId || createSavedViewMutation.isPending}
                       onClick={() => {
                         createSavedViewMutation.mutate({
                           name: savedViewName.trim(),

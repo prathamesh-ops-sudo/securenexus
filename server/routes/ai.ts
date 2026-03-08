@@ -85,7 +85,17 @@ export function registerAiRoutes(app: Express): void {
       } catch (error: any) {
         const errMsg = error?.message || String(error);
         logger.child("ai").error("AI correlation error", { error: errMsg });
-        res.status(500).json({ message: errMsg.length > 200 ? "AI correlation failed. Please try again." : errMsg });
+        let userMessage = "AI correlation failed. Please try again.";
+        if (errMsg.includes("Circuit breaker open")) {
+          userMessage = "AI service is temporarily unavailable due to repeated failures. Please try again later.";
+        } else if (errMsg.includes("budget exceeded")) {
+          userMessage = "AI budget exceeded for your organization. Contact your admin to increase limits.";
+        } else if (errMsg.includes("not found in registry")) {
+          userMessage = "AI correlation prompt is not configured. Contact your administrator.";
+        } else if (errMsg.length <= 200) {
+          userMessage = errMsg;
+        }
+        res.status(500).json({ message: userMessage });
       }
     },
   );
