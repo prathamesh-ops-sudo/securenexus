@@ -188,7 +188,7 @@ export function registerReportGovernanceRoutes(app: Express): void {
         attachment.s3Key && attachment.s3Key.startsWith(`evidence/${attachment.orgId}/`)
           ? attachment.s3Key
           : `evidence/${attachment.orgId}/${attachment.id}/${sanitizedFileName}`;
-      if (candidateKey.includes("..") || candidateKey.includes("\0")) {
+      if (/\.\.[\\/]|[\\/]\.\./.test(candidateKey) || candidateKey.includes("\0")) {
         return res.status(400).json({ message: "Invalid S3 key: path traversal sequences are not allowed" });
       }
       const key = candidateKey;
