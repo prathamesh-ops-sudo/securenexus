@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { logger, p, storage } from "./shared";
+import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import {
   getCorrelationCluster,
@@ -146,7 +146,7 @@ export function registerEntitiesRoutes(app: Express): void {
 
   app.get("/api/entity-graph", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = (req.query.orgId as string | undefined) || getOrgId(req);
       const limit = parseInt(req.query.limit as string, 10) || 80;
       const graph = await getEntityGraphWithEdges(orgId, limit);
       res.json(graph);

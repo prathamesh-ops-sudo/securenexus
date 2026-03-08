@@ -1066,6 +1066,10 @@ export default function EntityGraphPage() {
 
   const { data: graph, isLoading } = useQuery<EntityGraph>({
     queryKey: ["/api/entity-graph"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/entity-graph");
+      return res.json();
+    },
   });
 
   const filteredNodes = useMemo(() => {
