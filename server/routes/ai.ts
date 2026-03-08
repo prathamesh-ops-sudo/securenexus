@@ -336,19 +336,27 @@ export function registerAiRoutes(app: Express): void {
 
   // ── AI Platform Introspection Routes (3.5) ──
 
-  app.get("/api/ai/budget/usage", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      res.json(await getAiOrgUsage(orgId));
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch AI budget usage" });
-    }
-  });
+  app.get(
+    "/api/ai/budget/usage",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        res.json(await getAiOrgUsage(orgId));
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch AI budget usage" });
+      }
+    },
+  );
 
   app.get(
     "/api/ai/budget/usage/all",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
     requireMinRole("admin"),
     async (_req, res) => {
       try {
