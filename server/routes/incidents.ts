@@ -924,13 +924,25 @@ export function registerIncidentsRoutes(app: Express): void {
   app.get(
     "/api/incidents/:incidentId/evidence-chain",
     isAuthenticated,
+    resolveOrgContext,
     validatePathId("incidentId"),
     async (req, res) => {
       try {
-        const orgId = (req as any).user?.orgId;
-        const entries = await storage.getEvidenceChainEntries(p(req.params.incidentId), orgId);
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        const incidentId = p(req.params.incidentId);
+
+        const incident = await storage.getIncident(incidentId);
+        if (!incident) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+        if (orgId && incident.orgId && incident.orgId !== orgId) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+
+        const entries = await storage.getEvidenceChainEntries(incidentId, orgId);
         res.json(entries);
       } catch (error) {
+        logger.child("routes").error("Evidence chain fetch error", { error: String(error) });
         res.status(500).json({ message: "Failed to fetch evidence chain" });
       }
     },
@@ -999,11 +1011,22 @@ export function registerIncidentsRoutes(app: Express): void {
   app.get(
     "/api/incidents/:incidentId/evidence-chain/verify",
     isAuthenticated,
+    resolveOrgContext,
     validatePathId("incidentId"),
     async (req, res) => {
       try {
-        const orgId = (req as any).user?.orgId;
-        const entries = await storage.getEvidenceChainEntries(p(req.params.incidentId), orgId);
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        const incidentId = p(req.params.incidentId);
+
+        const incident = await storage.getIncident(incidentId);
+        if (!incident) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+        if (orgId && incident.orgId && incident.orgId !== orgId) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+
+        const entries = await storage.getEvidenceChainEntries(incidentId, orgId);
 
         if (entries.length === 0) {
           return res.json({ valid: true, message: "No entries to verify", entryCount: 0 });
