@@ -60,7 +60,14 @@ export function registerRemediationRoutes(app: Express): void {
       if (typeof rawFilePath !== "string" || rawFilePath.length === 0) {
         return res.status(400).json({ message: "filePath query parameter is required" });
       }
-      const owner = getCodeOwnerForFile(rawFilePath);
+      if (rawFilePath.includes("..") || rawFilePath.includes("\0")) {
+        return res.status(400).json({ message: "Invalid filePath: path traversal sequences are not allowed" });
+      }
+      const sanitizedPath = rawFilePath
+        .replace(/\\/g, "/")
+        .replace(/\/{2,}/g, "/")
+        .replace(/^\/+/, "");
+      const owner = getCodeOwnerForFile(sanitizedPath);
       res.json(owner);
     } catch (error) {
       logger.child("routes").error("Owner lookup error", {

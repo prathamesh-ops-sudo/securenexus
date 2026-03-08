@@ -53,6 +53,16 @@ function sanitizePrefix(raw: string, opts?: { allowEmpty?: boolean }): string | 
   return s;
 }
 
+function isValidS3Key(key: string, orgId: string | number): boolean {
+  if (!key || typeof key !== "string") return false;
+  if (key.includes("\0")) return false;
+  if (key.includes("..")) return false;
+  if (key.length > 1024) return false;
+  const normalized = key.replace(/\\+/g, "/").replace(/\/{2,}/g, "/");
+  if (normalized !== key) return false;
+  return normalized.startsWith(`orgs/${orgId}/`);
+}
+
 function sanitizeFilename(raw: string): string {
   const base = raw.split(/[\\/\\\\]/).pop() || "file";
   const cleaned = base
@@ -114,7 +124,7 @@ export function registerFilesRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const key = req.query.key as string;
       if (!key) return res.status(400).json({ message: "key query param required" });
-      if (!key.startsWith(`orgs/${orgId}/`)) return res.status(403).json({ message: "Access denied" });
+      if (!isValidS3Key(key, orgId)) return res.status(403).json({ message: "Access denied" });
       const url = await getSignedUrl(key);
       res.json({ url });
     } catch (error) {
@@ -127,7 +137,7 @@ export function registerFilesRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const key = req.query.key as string;
       if (!key) return res.status(400).json({ message: "key query param required" });
-      if (!key.startsWith(`orgs/${orgId}/`)) return res.status(403).json({ message: "Access denied" });
+      if (!isValidS3Key(key, orgId)) return res.status(403).json({ message: "Access denied" });
       const result = await deleteFile(key);
       res.json(result);
     } catch (error) {
