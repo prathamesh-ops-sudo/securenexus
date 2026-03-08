@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { formatDateTime } from "@/lib/i18n";
+import type { AuditLog } from "@shared/schema";
 import {
   CreditCard,
   Crown,
@@ -25,6 +27,9 @@ import {
   Plug,
   FileText,
   RefreshCw,
+  User,
+  History,
+  Globe,
 } from "lucide-react";
 
 function formatCents(cents: number): string {
@@ -111,11 +116,38 @@ function progressColor(pct: number): string {
   return "bg-emerald-500";
 }
 
+function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <Card className="glass-card border-destructive/30">
+      <CardContent className="p-8 text-center">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mx-auto w-fit mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">{message}</p>
+        <p className="text-xs text-muted-foreground mt-1">Check your connection and try again.</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1" /> Try Again
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function CurrentPlanSection() {
-  const { data: subData, isLoading: subLoading } = useQuery({
+  const {
+    data: subData,
+    isLoading: subLoading,
+    isError: subError,
+    refetch: refetchSub,
+  } = useQuery({
     queryKey: ["/api/billing/subscription"],
   });
-  const { data: usageData, isLoading: usageLoading } = useQuery({
+  const {
+    data: usageData,
+    isLoading: usageLoading,
+    isError: usageError,
+    refetch: refetchUsage,
+  } = useQuery({
     queryKey: ["/api/billing/usage-vs-limits"],
   });
 
@@ -131,6 +163,30 @@ function CurrentPlanSection() {
           <Skeleton className="h-20" />
         </div>
       </div>
+    );
+  }
+
+  if (subError) {
+    return (
+      <ErrorCard
+        message="Failed to load subscription details"
+        onRetry={() => {
+          refetchSub();
+          refetchUsage();
+        }}
+      />
+    );
+  }
+
+  if (usageError && !sub) {
+    return (
+      <ErrorCard
+        message="Failed to load billing data"
+        onRetry={() => {
+          refetchSub();
+          refetchUsage();
+        }}
+      />
     );
   }
 
@@ -289,7 +345,12 @@ function CurrentPlanSection() {
 }
 
 function PlanComparisonSection() {
-  const { data: plansData, isLoading } = useQuery({
+  const {
+    data: plansData,
+    isLoading,
+    isError: plansError,
+    refetch: refetchPlans,
+  } = useQuery({
     queryKey: ["/api/billing/plans"],
   });
   const { data: subData } = useQuery({
@@ -352,7 +413,7 @@ function PlanComparisonSection() {
     },
   ];
 
-  const displayPlans = allPlans.length > 0 ? allPlans : defaultPlans;
+  const displayPlans = Array.isArray(allPlans) && allPlans.length > 0 ? allPlans : defaultPlans;
 
   if (isLoading) {
     return (
@@ -362,6 +423,10 @@ function PlanComparisonSection() {
         <Skeleton className="h-80" />
       </div>
     );
+  }
+
+  if (plansError && !Array.isArray(allPlans)) {
+    return <ErrorCard message="Failed to load plans" onRetry={() => refetchPlans()} />;
   }
 
   const tierColors: Record<string, string> = {
@@ -466,11 +531,17 @@ function PlanComparisonSection() {
 }
 
 function InvoicesSection() {
-  const { data: invoicesData, isLoading } = useQuery({
+  const {
+    data: invoicesData,
+    isLoading,
+    isError: invoicesError,
+    refetch: refetchInvoices,
+  } = useQuery({
     queryKey: ["/api/billing/invoices"],
   });
 
-  const invoicesList = ((invoicesData as any)?.data || invoicesData || []) as any[];
+  const raw = (invoicesData as any)?.data || invoicesData;
+  const invoicesList = (Array.isArray(raw) ? raw : []) as any[];
 
   if (isLoading) {
     return (
@@ -480,6 +551,10 @@ function InvoicesSection() {
         <Skeleton className="h-12" />
       </div>
     );
+  }
+
+  if (invoicesError) {
+    return <ErrorCard message="Failed to load invoices" onRetry={() => refetchInvoices()} />;
   }
 
   if (invoicesList.length === 0) {
@@ -546,6 +621,104 @@ function InvoicesSection() {
             ))}
           </tbody>
         </table>
+      </div>
+    </Card>
+  );
+}
+
+function BillingActivitySection() {
+  const {
+    data: logsData,
+    isLoading,
+    isError: logsError,
+    refetch: refetchLogs,
+  } = useQuery<AuditLog[]>({
+    queryKey: ["/api/billing/activity"],
+  });
+
+  const logs = Array.isArray(logsData) ? logsData : [];
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-16" />
+        ))}
+      </div>
+    );
+  }
+
+  if (logsError) {
+    return <ErrorCard message="Failed to load billing activity" onRetry={() => refetchLogs()} />;
+  }
+
+  if (logs.length === 0) {
+    return (
+      <Card className="glass-card border-border/50">
+        <CardContent className="p-8 text-center">
+          <History className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-muted-foreground">No billing activity yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">
+            Actions like plan changes, cancellations, and payment updates will appear here
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const ACTION_LABELS: Record<string, string> = {
+    billing_checkout_started: "Checkout started",
+    billing_plan_changed: "Plan changed",
+    billing_subscription_cancelled: "Subscription cancelled",
+    billing_subscription_reactivated: "Subscription reactivated",
+    billing_portal_opened: "Payment portal opened",
+  };
+
+  return (
+    <Card className="glass-card border-border/50 overflow-hidden">
+      <div className="divide-y divide-border/30">
+        {logs.map((log) => {
+          const label = ACTION_LABELS[log.action] || log.action.replace(/_/g, " ");
+          const details = log.details
+            ? ((typeof log.details === "string" ? JSON.parse(log.details) : log.details) as Record<string, unknown>)
+            : null;
+
+          return (
+            <div key={log.id} className="flex items-start gap-3 p-4">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/10 flex-shrink-0 mt-0.5">
+                <Activity className="h-3.5 w-3.5 text-cyan-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{label}</span>
+                  {details?.planName != null && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {String(details.planName)}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                  {log.userName && (
+                    <span className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      {log.userName}
+                    </span>
+                  )}
+                  {log.ipAddress && (
+                    <span className="flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      {log.ipAddress}
+                    </span>
+                  )}
+                  {log.createdAt && <span>{formatDateTime(log.createdAt)}</span>}
+                </div>
+                {details?.reason != null && (
+                  <p className="text-xs text-muted-foreground/80 mt-1">Reason: {String(details.reason)}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </Card>
   );
@@ -758,9 +931,12 @@ export default function BillingPage() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="plans">Plans</TabsTrigger>
+          <TabsTrigger value="plans" id="plans-tab">
+            Plans
+          </TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="payment">Payment</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -779,6 +955,10 @@ export default function BillingPage() {
         <TabsContent value="payment" className="space-y-4">
           <PaymentMethodSection />
           <DangerZoneSection />
+        </TabsContent>
+
+        <TabsContent value="activity">
+          <BillingActivitySection />
         </TabsContent>
       </Tabs>
     </div>
