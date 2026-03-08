@@ -367,8 +367,53 @@ function normalizeSuricata(payload: any): NormalizedAlert {
   };
 }
 
+function collectUnmappedFields(event: Record<string, any>, mappedKeys: string[]): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  const mapped = new Set(mappedKeys);
+  for (const key of Object.keys(event)) {
+    if (!mapped.has(key) && event[key] !== undefined && event[key] !== null) {
+      extra[key] = event[key];
+    }
+  }
+  return extra;
+}
+
 function normalizeDefender(payload: any): NormalizedAlert {
   const event = payload.alert || payload.evidence || payload;
+  const MAPPED_KEYS = [
+    "alertId",
+    "id",
+    "incidentId",
+    "category",
+    "threatFamilyName",
+    "severity",
+    "title",
+    "alertDisplayName",
+    "name",
+    "description",
+    "machineIp",
+    "localIp",
+    "evidence",
+    "remoteIp",
+    "localPort",
+    "remotePort",
+    "computerDnsName",
+    "machineName",
+    "deviceName",
+    "userPrincipalName",
+    "accountName",
+    "sha256",
+    "sha1",
+    "md5",
+    "url",
+    "remoteUrl",
+    "domainName",
+    "mitreTechniques",
+    "alertCreationTime",
+    "firstEventTime",
+    "createdDateTime",
+  ];
+  const unmapped = collectUnmappedFields(event, MAPPED_KEYS);
   return {
     source: "Microsoft Defender",
     sourceEventId: event.alertId || event.id || event.incidentId?.toString() || "",
@@ -377,7 +422,34 @@ function normalizeDefender(payload: any): NormalizedAlert {
     title: event.title || event.alertDisplayName || event.name || "Defender Alert",
     description: event.description || "",
     rawData: payload,
-    normalizedData: { normalized: true, source: "defender", timestamp: new Date().toISOString() },
+    normalizedData: {
+      normalized: true,
+      source: "defender",
+      ocsf_mapped: true,
+      timestamp: new Date().toISOString(),
+      src_ip: event.machineIp || event.localIp || event.evidence?.ipAddress,
+      dest_ip: event.remoteIp,
+      src_host: event.computerDnsName || event.machineName || event.deviceName,
+      username: event.userPrincipalName || event.accountName,
+      sha256: event.sha256,
+      sha1: event.sha1,
+      md5: event.md5,
+      domain_name: event.domainName,
+      url: event.url || event.remoteUrl,
+      detection_source: event.detectionSource,
+      service_source: event.serviceSource,
+      threat_family: event.threatFamilyName,
+      actor_name: event.actorName,
+      incident_id: event.incidentId,
+      alert_status: event.status,
+      assigned_to: event.assignedTo,
+      classification: event.classification,
+      determination: event.determination,
+      investigation_state: event.investigationState,
+      evidence_details: event.evidence,
+      mitre_techniques: event.mitreTechniques,
+      ...unmapped,
+    },
     sourceIp: event.machineIp || event.localIp || event.evidence?.ipAddress,
     destIp: event.remoteIp,
     sourcePort: event.localPort,
