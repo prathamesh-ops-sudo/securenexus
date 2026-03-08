@@ -683,34 +683,6 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/pir/:id", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const existing = await storage.getPostIncidentReview(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Post-incident review not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const review = await storage.updatePostIncidentReview(p(req.params.id), req.body);
-      res.json(review);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update post-incident review" });
-    }
-  });
-
-  app.delete("/api/pir/:id", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const existing = await storage.getPostIncidentReview(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Post-incident review not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const deleted = await storage.deletePostIncidentReview(p(req.params.id));
-      res.json({ message: "Post-incident review deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete post-incident review" });
-    }
-  });
-
   // ── Threat Intel News Feeds (RSS aggregation) ──
   // Static routes first to avoid shadowing by parameterized routes
 
