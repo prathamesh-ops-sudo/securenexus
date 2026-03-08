@@ -1151,11 +1151,7 @@ function TemplateVersioningTab({ templates }: { templates: any[] }) {
   const [showCreateVersion, setShowCreateVersion] = useState(false);
   const [changeDescription, setChangeDescription] = useState("");
 
-  const {
-    data: versions,
-    isLoading: versionsLoading,
-    refetch: refetchVersions,
-  } = useQuery<any[]>({
+  const { data: versions, isLoading: versionsLoading } = useQuery<any[]>({
     queryKey: ["/api/report-templates", selectedTemplate, "versions"],
     queryFn: async () => {
       if (!selectedTemplate) return [];
@@ -1175,7 +1171,7 @@ function TemplateVersioningTab({ templates }: { templates: any[] }) {
       return res.json();
     },
     onSuccess: () => {
-      refetchVersions();
+      queryClient.invalidateQueries({ queryKey: ["/api/report-templates", selectedTemplate, "versions"] });
       setShowCreateVersion(false);
       setChangeDescription("");
       toast({ title: "Version Created" });
@@ -1189,7 +1185,7 @@ function TemplateVersioningTab({ templates }: { templates: any[] }) {
       return res.json();
     },
     onSuccess: () => {
-      refetchVersions();
+      queryClient.invalidateQueries({ queryKey: ["/api/report-templates", selectedTemplate, "versions"] });
       toast({ title: "Version Approved" });
     },
   });
@@ -1200,7 +1196,7 @@ function TemplateVersioningTab({ templates }: { templates: any[] }) {
       return res.json();
     },
     onSuccess: () => {
-      refetchVersions();
+      queryClient.invalidateQueries({ queryKey: ["/api/report-templates", selectedTemplate, "versions"] });
       toast({ title: "Version Deprecated" });
     },
   });
