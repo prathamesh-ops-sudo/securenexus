@@ -26,6 +26,7 @@ import {
   Lock,
   Zap,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -628,6 +629,7 @@ export default function ApiVersioningPage() {
     data: policy,
     isLoading: policyLoading,
     isError: policyError,
+    isFetching: policyFetching,
     refetch: refetchPolicy,
   } = useQuery<VersionPolicy>({
     queryKey: ["/api/v1/version-policy"],
@@ -637,6 +639,7 @@ export default function ApiVersioningPage() {
     data: guide,
     isLoading: guideLoading,
     isError: guideError,
+    isFetching: guideFetching,
     refetch: refetchGuide,
   } = useQuery<MigrationGuide>({
     queryKey: ["/api/v1/migration-guide"],
@@ -644,6 +647,7 @@ export default function ApiVersioningPage() {
 
   const isLoading = policyLoading || guideLoading;
   const isError = policyError || guideError;
+  const isRefreshing = policyFetching || guideFetching;
 
   const handleRefresh = async () => {
     const [policyResult, guideResult] = await Promise.all([refetchPolicy(), refetchGuide()]);
@@ -689,8 +693,8 @@ export default function ApiVersioningPage() {
           <Badge variant="outline" className="text-xs font-mono">
             {policy.currentVersion}
           </Badge>
-          <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" />
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing} className="gap-1.5">
+            {isRefreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Refresh
           </Button>
         </div>

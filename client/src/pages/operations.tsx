@@ -795,6 +795,7 @@ function DRRunbooksTab() {
           .map((s, i) => ({ step: i + 1, action: s.trim() }));
       }
     }
+    createMutation.reset();
     createMutation.mutate({
       title: title.trim(),
       description: rbDescription.trim() || null,
