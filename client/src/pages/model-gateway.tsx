@@ -462,10 +462,19 @@ export default function ModelGatewayPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
 
-  const { data, isLoading, isError, refetch } = useQuery<DashboardResponse>({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery<DashboardResponse>({
     queryKey: ["/api/model-gateway/dashboard"],
     refetchInterval: 15000,
   });
+
+  const handleRefresh = async () => {
+    try {
+      await refetch();
+      toast({ title: "Dashboard refreshed", description: "Gateway data updated." });
+    } catch {
+      toast({ title: "Refresh failed", variant: "destructive" });
+    }
+  };
 
   const clearCacheMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/model-gateway/cache/clear"),
@@ -522,8 +531,14 @@ export default function ModelGatewayPage() {
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={() => refetch()} aria-label="Refresh dashboard">
-                  <RefreshCw className="h-4 w-4" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isFetching}
+                  aria-label="Refresh dashboard"
+                >
+                  {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Refresh data</TooltipContent>
@@ -535,7 +550,10 @@ export default function ModelGatewayPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => clearCacheMutation.mutate()}
+                  onClick={() => {
+                    clearCacheMutation.reset();
+                    clearCacheMutation.mutate();
+                  }}
                   disabled={clearCacheMutation.isPending}
                   aria-label="Clear model cache"
                 >
