@@ -506,11 +506,12 @@ export function registerComplianceRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/suppression-rules", isAuthenticated, async (req, res) => {
+  app.post("/api/suppression-rules", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId;
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
       const userId = (req as any).user?.id;
-      const { name, scope, scopeValue } = req.body;
+      const { name, scope, scopeValue, description, matcher, reason, source, severity, category, enabled, expiresAt } =
+        req.body;
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ message: "name is required" });
       }
@@ -520,7 +521,23 @@ export function registerComplianceRoutes(app: Express): void {
       if (!scopeValue || typeof scopeValue !== "string" || !scopeValue.trim()) {
         return res.status(400).json({ message: "scopeValue is required" });
       }
-      const rule = await storage.createSuppressionRule({ ...req.body, orgId, createdBy: userId });
+      const ruleData: Record<string, unknown> = {
+        name: name.trim(),
+        scope: scope.trim(),
+        scopeValue: scopeValue.trim(),
+        orgId,
+        createdBy: userId,
+        ownedBy: userId,
+      };
+      if (description !== undefined) ruleData.description = description;
+      if (matcher !== undefined) ruleData.matcher = matcher;
+      if (reason !== undefined) ruleData.reason = reason;
+      if (source !== undefined) ruleData.source = source;
+      if (severity !== undefined) ruleData.severity = severity;
+      if (category !== undefined) ruleData.category = category;
+      if (enabled !== undefined) ruleData.enabled = enabled;
+      if (expiresAt !== undefined) ruleData.expiresAt = expiresAt ? new Date(expiresAt) : null;
+      const rule = await storage.createSuppressionRule(ruleData as any);
       res.status(201).json(rule);
     } catch (error) {
       logger.child("compliance").error("Failed to create suppression rule", { error: String(error) });
