@@ -1340,7 +1340,7 @@ export function registerComplianceRoutes(app: Express): void {
       const escapeCSV = (val: string | null | undefined): string => {
         if (val === null || val === undefined) return "";
         const str = String(val);
-        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
           return `"${str.replace(/"/g, '""')}"`;
         }
         return str;
@@ -1370,7 +1370,7 @@ export function registerComplianceRoutes(app: Express): void {
       const filename = `audit-logs-${orgId}-${new Date().toISOString().slice(0, 10)}.csv`;
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(csvRows.join("\n"));
+      res.send(csvRows.join("\r\n") + "\r\n");
 
       try {
         await storage.createAuditLog({

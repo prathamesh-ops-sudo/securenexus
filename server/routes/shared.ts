@@ -368,6 +368,19 @@ export function validateFeedUrl(url: string): boolean {
   }
 }
 
+export function escapeCSVField(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  const str = String(val);
+  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function formatCSVRow(fields: unknown[]): string {
+  return fields.map(escapeCSVField).join(",");
+}
+
 export function calculateNextRunFromCadence(cadence: string): Date {
   const now = new Date();
   switch (cadence) {
