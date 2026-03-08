@@ -140,23 +140,15 @@ interface LocalSavedView {
   queue: QueueTab;
 }
 
-function getSlaStatus(incident: Incident): { label: string; variant: "destructive" | "default" } | null {
-  const now = new Date();
+function getSlaStatus(
+  incident: Incident & { slaLabel?: string; slaVariant?: string },
+): { label: string; variant: "destructive" | "default" } | null {
+  if (incident.slaLabel && incident.slaVariant) {
+    return { label: incident.slaLabel, variant: incident.slaVariant as "destructive" | "default" };
+  }
 
   if (incident.slaBreached) {
     return { label: "SLA Breached", variant: "destructive" };
-  }
-
-  if (incident.ackDueAt && !incident.ackAt && now > new Date(incident.ackDueAt)) {
-    return { label: "ACK Overdue", variant: "destructive" };
-  }
-
-  if (incident.containDueAt && !incident.containedAt && now > new Date(incident.containDueAt)) {
-    return { label: "Contain Overdue", variant: "destructive" };
-  }
-
-  if (incident.resolveDueAt && !incident.resolvedAt && now > new Date(incident.resolveDueAt)) {
-    return { label: "Resolve Overdue", variant: "destructive" };
   }
 
   if (incident.ackDueAt || incident.containDueAt || incident.resolveDueAt) {

@@ -7,6 +7,10 @@ import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 import { storage } from "../storage";
+import { db } from "../db";
+import { eq, and } from "drizzle-orm";
+import { users } from "@shared/models/auth";
+import { organizationMemberships } from "@shared/schema";
 import { config } from "../config";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
@@ -192,19 +196,32 @@ export async function setupAuth(app: Express) {
         return cb(null, cached.user);
       }
 
-      const user = await authStorage.getUser(id);
-      if (!user) {
+      const rows = await db
+        .select({
+          user: users,
+          membershipOrgId: organizationMemberships.orgId,
+          membershipRole: organizationMemberships.role,
+          membershipStatus: organizationMemberships.status,
+        })
+        .from(users)
+        .leftJoin(
+          organizationMemberships,
+          and(eq(organizationMemberships.userId, users.id), eq(organizationMemberships.status, "active")),
+        )
+        .where(eq(users.id, id))
+        .limit(1);
+      if (rows.length === 0) {
         deserializeCache.delete(id);
         return cb(null, null);
       }
+      const row = rows[0];
+      const user = row.user;
       if (user.disabledAt) {
         deserializeCache.delete(id);
         return cb(null, null);
       }
-      const memberships = await storage.getUserMemberships(user.id);
-      const active = memberships.find((m) => m.status === "active");
-      (user as any).orgId = active?.orgId || null;
-      (user as any).orgRole = active?.role || null;
+      (user as any).orgId = row.membershipOrgId || null;
+      (user as any).orgRole = row.membershipRole || null;
 
       deserializeCache.set(id, { user, expiresAt: now + DESERIALIZE_CACHE_TTL_MS });
       pruneDeserializeCache();

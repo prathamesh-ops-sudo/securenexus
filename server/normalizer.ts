@@ -927,8 +927,8 @@ export const SOURCE_KEYS = Object.keys(NORMALIZERS);
 
 export function normalizeAlert(source: string, payload: any): NormalizedAlert {
   const key = source.toLowerCase().replace(/[\s\-_]/g, "");
-  const normalizer = Object.entries(NORMALIZERS).find(([k]) => key.includes(k));
-  if (normalizer) return normalizer[1](payload);
+  const exact = NORMALIZERS[key];
+  if (exact) return exact(payload);
   return normalizeCustom(payload);
 }
 
