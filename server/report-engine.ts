@@ -363,27 +363,37 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
 }
 
 export function formatAsCSV(data: ReportData): string {
+  const escapeField = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    const str = String(val);
+    if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+  const formatRow = (fields: unknown[]): string => fields.map(escapeField).join(",");
+
   const lines: string[] = [];
-  lines.push(`# ${data.title}`);
+  lines.push(`# ${escapeField(data.title)}`);
   lines.push(`# Generated: ${data.generatedAt}`);
   lines.push("");
 
   for (const section of data.sections) {
-    lines.push(`## ${section.title}`);
+    lines.push(`## ${escapeField(section.title)}`);
     if (section.type === "summary" && section.data) {
       lines.push("Metric,Value");
       for (const [k, v] of Object.entries(section.data)) {
-        lines.push(`"${k}","${v}"`);
+        lines.push(formatRow([k, v]));
       }
     } else if (section.type === "table" && section.columns && section.rows) {
-      lines.push(section.columns.map((c) => `"${c}"`).join(","));
+      lines.push(formatRow(section.columns));
       for (const row of section.rows) {
-        lines.push(row.map((v: any) => `"${v ?? ""}"`).join(","));
+        lines.push(formatRow(row));
       }
     }
     lines.push("");
   }
-  return lines.join("\n");
+  return lines.join("\r\n");
 }
 
 export function formatAsJSON(data: ReportData): string {

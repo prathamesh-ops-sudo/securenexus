@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { calculateNextRunFromCadence, getOrgId, p, storage } from "./shared";
+import { calculateNextRunFromCadence, formatCSVRow, getOrgId, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { insertReportScheduleSchema, insertReportTemplateSchema } from "@shared/schema";
 
@@ -8,33 +8,46 @@ export function registerReportsRoutes(app: Express): void {
   app.get("/api/export/alerts", isAuthenticated, async (req, res) => {
     try {
       const allAlerts = await storage.getAlerts();
-      const csvHeader =
-        "ID,Title,Severity,Status,Source,Category,MITRE Tactic,MITRE Technique,Source IP,Dest IP,Hostname,Detected At,Created At\n";
+      const csvHeader = formatCSVRow([
+        "ID",
+        "Title",
+        "Severity",
+        "Status",
+        "Source",
+        "Category",
+        "MITRE Tactic",
+        "MITRE Technique",
+        "Source IP",
+        "Dest IP",
+        "Hostname",
+        "Detected At",
+        "Created At",
+      ]);
       const csvRows = allAlerts
         .map((a) =>
-          [
+          formatCSVRow([
             a.id,
-            `"${(a.title || "").replace(/"/g, '""')}"`,
+            a.title,
             a.severity,
             a.status,
             a.source,
-            a.category || "",
-            a.mitreTactic || "",
-            a.mitreTechnique || "",
-            a.sourceIp || "",
-            a.destIp || "",
-            a.hostname || "",
-            a.detectedAt?.toISOString() || "",
-            a.createdAt?.toISOString() || "",
-          ].join(","),
+            a.category,
+            a.mitreTactic,
+            a.mitreTechnique,
+            a.sourceIp,
+            a.destIp,
+            a.hostname,
+            a.detectedAt?.toISOString(),
+            a.createdAt?.toISOString(),
+          ]),
         )
-        .join("\n");
+        .join("\r\n");
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename=securenexus-alerts-${new Date().toISOString().split("T")[0]}.csv`,
       );
-      res.send(csvHeader + csvRows);
+      res.send(csvHeader + "\r\n" + csvRows + "\r\n");
     } catch (error) {
       res.status(500).json({ message: "Failed to export alerts" });
     }
@@ -43,31 +56,42 @@ export function registerReportsRoutes(app: Express): void {
   app.get("/api/export/incidents", isAuthenticated, async (req, res) => {
     try {
       const allIncidents = await storage.getIncidents();
-      const csvHeader =
-        "ID,Title,Severity,Status,Priority,Alert Count,Assigned To,Escalated,MITRE Tactics,Created At,Updated At\n";
+      const csvHeader = formatCSVRow([
+        "ID",
+        "Title",
+        "Severity",
+        "Status",
+        "Priority",
+        "Alert Count",
+        "Assigned To",
+        "Escalated",
+        "MITRE Tactics",
+        "Created At",
+        "Updated At",
+      ]);
       const csvRows = allIncidents
         .map((i) =>
-          [
+          formatCSVRow([
             i.id,
-            `"${(i.title || "").replace(/"/g, '""')}"`,
+            i.title,
             i.severity,
             i.status,
-            i.priority || "",
-            i.alertCount || 0,
-            i.assignedTo || "",
+            i.priority,
+            i.alertCount ?? 0,
+            i.assignedTo,
             i.escalated ? "Yes" : "No",
-            `"${(i.mitreTactics || []).join("; ")}"`,
-            i.createdAt?.toISOString() || "",
-            i.updatedAt?.toISOString() || "",
-          ].join(","),
+            (i.mitreTactics || []).join("; "),
+            i.createdAt?.toISOString(),
+            i.updatedAt?.toISOString(),
+          ]),
         )
-        .join("\n");
+        .join("\r\n");
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename=securenexus-incidents-${new Date().toISOString().split("T")[0]}.csv`,
       );
-      res.send(csvHeader + csvRows);
+      res.send(csvHeader + "\r\n" + csvRows + "\r\n");
     } catch (error) {
       res.status(500).json({ message: "Failed to export incidents" });
     }
