@@ -22,6 +22,8 @@ import {
   clearModelCache,
 } from "../ai";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { invokeModel as gatewayInvoke } from "../ai/model-gateway";
+import { config as appConfig } from "../config";
 
 export function registerAiRoutes(app: Express): void {
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
@@ -339,25 +341,113 @@ export function registerAiRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ai/playbook-authoring/propose", isAuthenticated, async (req, res) => {
+  app.post("/api/ai/playbook-authoring/propose", isAuthenticated, resolveOrgContext, async (req, res) => {
+    const PROPOSAL_TIMEOUT_MS = 30_000;
+    const log = logger.child("ai-playbook-propose");
     try {
       const { objective, severity = "high", guardrails = [] } = req.body || {};
       const normalized = String(objective || "Contain suspicious activity").trim();
+      const orgId: string | undefined = (req as any).orgId || (req as any).user?.orgId;
+
       const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
-      const actions = [
+      const fallbackActions = [
         { type: "auto_triage", reason: "Initial enrichment and classification" },
         { type: "assign_analyst", reason: "Ensure analyst ownership" },
         severity === "critical"
           ? { type: "isolate_host", reason: "Containment for critical blast radius" }
           : { type: "notify_slack", reason: "Notify response channel" },
       ].filter((a) => !blocked.has(a.type));
+
+      const fallbackResponse = {
+        objective: normalized,
+        guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
+        proposedActions: fallbackActions,
+        requiresAnalystApproval: true,
+        source: "fallback" as const,
+      };
+
+      const systemPrompt = [
+        "You are a SOC playbook architect. Given a security objective and severity, propose a JSON array of response actions.",
+        "Each action must have: type (string), reason (string explaining why this step is needed).",
+        "BLOCKED action types that must never appear: delete_data, shutdown_network, disable_logging.",
+        "Available action types: auto_triage, assign_analyst, notify_slack, isolate_host, block_ip, quarantine_file, enrich_ioc, create_ticket, escalate, snapshot_evidence.",
+        "Output ONLY a valid JSON array of action objects. No preamble, no markdown, no commentary.",
+      ].join(" ");
+
+      const userMessage = `Objective: ${normalized}\nSeverity: ${severity}\nGuardrails: ${guardrails.length > 0 ? guardrails.join(", ") : "none specified"}`;
+
+      const aiPromise = gatewayInvoke({
+        modelId: appConfig.ai.modelId,
+        backend: appConfig.ai.backend,
+        systemPrompt,
+        userMessage,
+        maxTokens: 1024,
+        temperature: 0.3,
+        topP: appConfig.ai.topP,
+        sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+        orgId,
+        promptId: "playbook-propose",
+        skipCache: false,
+      });
+
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("PROPOSAL_TIMEOUT")), PROPOSAL_TIMEOUT_MS);
+      });
+
+      const result = await Promise.race([aiPromise, timeoutPromise]);
+
+      let proposedActions: { type: string; reason: string }[];
+      try {
+        const parsed = JSON.parse(result.text.trim());
+        proposedActions = (Array.isArray(parsed) ? parsed : []).filter(
+          (a: unknown): a is { type: string; reason: string } =>
+            typeof a === "object" &&
+            a !== null &&
+            typeof (a as any).type === "string" &&
+            typeof (a as any).reason === "string" &&
+            !blocked.has((a as any).type),
+        );
+      } catch {
+        log.warn("AI returned non-JSON, using fallback", { raw: result.text.slice(0, 200) });
+        return res.json(fallbackResponse);
+      }
+
+      if (proposedActions.length === 0) {
+        log.warn("AI returned empty actions, using fallback");
+        return res.json(fallbackResponse);
+      }
+
       res.json({
         objective: normalized,
         guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
-        proposedActions: actions,
+        proposedActions,
         requiresAnalystApproval: true,
+        source: "ai",
+        latencyMs: result.latencyMs,
       });
     } catch (error) {
+      const errMsg = String(error);
+      if (errMsg.includes("PROPOSAL_TIMEOUT")) {
+        log.warn("Playbook proposal timed out after 30s, returning fallback");
+        const { objective, severity = "high", guardrails = [] } = req.body || {};
+        const normalized = String(objective || "Contain suspicious activity").trim();
+        const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
+        const fallbackActions = [
+          { type: "auto_triage", reason: "Initial enrichment and classification" },
+          { type: "assign_analyst", reason: "Ensure analyst ownership" },
+          severity === "critical"
+            ? { type: "isolate_host", reason: "Containment for critical blast radius" }
+            : { type: "notify_slack", reason: "Notify response channel" },
+        ].filter((a) => !blocked.has(a.type));
+        return res.json({
+          objective: normalized,
+          guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
+          proposedActions: fallbackActions,
+          requiresAnalystApproval: true,
+          source: "fallback_timeout",
+        });
+      }
+      log.error("Playbook proposal failed", { error: errMsg });
       res.status(500).json({ message: "Failed to generate playbook proposal" });
     }
   });
