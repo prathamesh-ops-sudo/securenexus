@@ -24,6 +24,12 @@ import {
   BarChart3,
   Play,
   TrendingUp,
+  Plus,
+  Settings2,
+  Trash2,
+  Power,
+  PowerOff,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -107,6 +113,25 @@ interface EnrichmentData {
   [key: string]: unknown;
 }
 
+interface IocMatchRule {
+  id: string;
+  orgId: string | null;
+  feedId: string | null;
+  name: string;
+  description: string | null;
+  iocTypes: string[];
+  matchFields: string[];
+  minConfidence: number;
+  enabled: boolean;
+  autoEnrich: boolean;
+  action: string;
+  actionConfig: Record<string, unknown> | null;
+  matchCount: number;
+  lastMatchAt: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
 interface IocStats {
   totalIOCs: number;
   activeIOCs: number;
@@ -114,6 +139,27 @@ interface IocStats {
   topMalwareFamilies: { name: string; count: number }[];
   typeDistribution: { type: string; count: number }[];
 }
+
+const IOC_TYPE_OPTIONS = ["ip", "domain", "url", "hash", "email", "cve"];
+const MATCH_FIELD_OPTIONS = ["sourceIp", "destIp", "domain", "url", "fileHash", "sender", "subject"];
+const ACTION_OPTIONS = [
+  { value: "tag", label: "Tag Alert" },
+  { value: "escalate", label: "Escalate to Incident" },
+  { value: "notify", label: "Send Notification" },
+  { value: "block", label: "Block (Response Action)" },
+];
+
+const EMPTY_RULE_FORM = {
+  name: "",
+  description: "",
+  feedId: "",
+  iocTypes: [] as string[],
+  matchFields: [] as string[],
+  minConfidence: 50,
+  enabled: true,
+  autoEnrich: true,
+  action: "tag",
+};
 
 function LoadingSkeleton() {
   return (
@@ -255,6 +301,9 @@ export default function IocIngestionMatchingPage() {
   const [selectedFeedId, setSelectedFeedId] = useState<string | null>(null);
   const [entryTypeFilter, setEntryTypeFilter] = useState<string>("all");
   const [ingestingFeedIds, setIngestingFeedIds] = useState<Set<string>>(new Set());
+  const [showRuleDialog, setShowRuleDialog] = useState(false);
+  const [editingRule, setEditingRule] = useState<IocMatchRule | null>(null);
+  const [ruleForm, setRuleForm] = useState(EMPTY_RULE_FORM);
 
   const {
     data: feeds,
@@ -275,6 +324,10 @@ export default function IocIngestionMatchingPage() {
 
   const { data: matches, isLoading: isLoadingMatches } = useQuery<IocMatch[]>({
     queryKey: ["/api/ioc-matches"],
+  });
+
+  const { data: matchRules, isLoading: isLoadingRules } = useQuery<IocMatchRule[]>({
+    queryKey: ["/api/ioc-match-rules"],
   });
 
   const ingestMutation = useMutation({
@@ -303,6 +356,71 @@ export default function IocIngestionMatchingPage() {
         next.delete(variables.feedId);
         return next;
       });
+    },
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/ioc-match-rules", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Rule Created", description: "Match rule has been created." });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-match-rules"] });
+      setShowRuleDialog(false);
+      setRuleForm(EMPTY_RULE_FORM);
+      setEditingRule(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to Create Rule", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateRuleMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", "/api/ioc-match-rules/" + id, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Rule Updated", description: "Match rule has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-match-rules"] });
+      setShowRuleDialog(false);
+      setRuleForm(EMPTY_RULE_FORM);
+      setEditingRule(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to Update Rule", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", "/api/ioc-match-rules/" + id);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Rule Deleted", description: "Match rule has been removed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-match-rules"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to Delete Rule", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleRuleMutation = useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      const res = await apiRequest("PATCH", "/api/ioc-match-rules/" + id, { enabled });
+      return res.json();
+    },
+    onSuccess: (_data: unknown, variables: { id: string; enabled: boolean }) => {
+      toast({
+        title: variables.enabled ? "Rule Enabled" : "Rule Disabled",
+        description: "Match rule has been " + (variables.enabled ? "enabled" : "disabled") + ".",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-match-rules"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to Toggle Rule", description: err.message, variant: "destructive" });
     },
   });
 
@@ -494,6 +612,9 @@ export default function IocIngestionMatchingPage() {
           </TabsTrigger>
           <TabsTrigger value="matches" className="gap-1">
             <Target className="h-4 w-4" /> Matches ({allMatches.length})
+          </TabsTrigger>
+          <TabsTrigger value="rules" className="gap-1">
+            <Settings2 className="h-4 w-4" /> Rules ({(Array.isArray(matchRules) ? matchRules : []).length})
           </TabsTrigger>
           <TabsTrigger value="enrichment" className="gap-1">
             <BarChart3 className="h-4 w-4" /> Enrichment
@@ -800,6 +921,209 @@ export default function IocIngestionMatchingPage() {
           )}
         </TabsContent>
 
+        <TabsContent value="rules" className="mt-4">
+          {isLoadingRules ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-20" />
+              ))}
+            </div>
+          ) : (
+            (() => {
+              const allRules = Array.isArray(matchRules) ? matchRules : [];
+              const filteredRules = allRules.filter((r) => {
+                if (!searchQuery) return true;
+                const q = searchQuery.toLowerCase();
+                return r.name.toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q);
+              });
+              return (
+                <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      className="gap-1"
+                      onClick={() => {
+                        setEditingRule(null);
+                        setRuleForm(EMPTY_RULE_FORM);
+                        setShowRuleDialog(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" /> New Rule
+                    </Button>
+                  </div>
+                  {filteredRules.length === 0 ? (
+                    <Card className="glass-card">
+                      <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                        <Settings2 className="h-10 w-10 mb-3 opacity-40" />
+                        <p className="text-sm">No match rules configured</p>
+                        <p className="text-xs mt-1">Create a rule to automatically match IOCs against alerts</p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {filteredRules.map((rule) => {
+                        const targetFeed = allFeeds.find((f) => f.id === rule.feedId);
+                        return (
+                          <Card
+                            key={rule.id}
+                            className="glass-card border-border/40 hover:border-border/60 transition-colors"
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <Settings2 className="h-4 w-4 text-cyan-400" />
+                                  <span className="text-sm font-semibold">{rule.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {rule.enabled ? (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                    >
+                                      Active
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] bg-slate-500/15 text-slate-400 border-slate-500/30"
+                                    >
+                                      Disabled
+                                    </Badge>
+                                  )}
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {ACTION_OPTIONS.find((a) => a.value === rule.action)?.label || rule.action}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              {rule.description && (
+                                <p className="text-xs text-muted-foreground mb-3">{rule.description}</p>
+                              )}
+
+                              <div className="grid grid-cols-3 gap-3 mb-3">
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Target Feed</p>
+                                  <p className="text-sm font-medium">
+                                    {targetFeed ? targetFeed.name : rule.feedId ? "Unknown" : "All Feeds"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Min Confidence</p>
+                                  <p className="text-sm font-medium">{rule.minConfidence}%</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Matches</p>
+                                  <p className="text-sm font-medium">{rule.matchCount}</p>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                {(rule.iocTypes || []).map((t) => (
+                                  <Badge
+                                    key={t}
+                                    variant="outline"
+                                    className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                  >
+                                    {t}
+                                  </Badge>
+                                ))}
+                                {(rule.matchFields || []).map((f) => (
+                                  <Badge
+                                    key={f}
+                                    variant="outline"
+                                    className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/20"
+                                  >
+                                    {f}
+                                  </Badge>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-muted-foreground">
+                                  {rule.lastMatchAt
+                                    ? "Last match: " + new Date(rule.lastMatchAt).toLocaleDateString()
+                                    : "No matches yet"}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 w-7 p-0"
+                                          onClick={() =>
+                                            toggleRuleMutation.mutate({ id: rule.id, enabled: !rule.enabled })
+                                          }
+                                        >
+                                          {rule.enabled ? (
+                                            <PowerOff className="h-3.5 w-3.5" />
+                                          ) : (
+                                            <Power className="h-3.5 w-3.5" />
+                                          )}
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{rule.enabled ? "Disable rule" : "Enable rule"}</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 w-7 p-0"
+                                          onClick={() => {
+                                            setEditingRule(rule);
+                                            setRuleForm({
+                                              name: rule.name,
+                                              description: rule.description || "",
+                                              feedId: rule.feedId || "",
+                                              iocTypes: rule.iocTypes || [],
+                                              matchFields: rule.matchFields || [],
+                                              minConfidence: rule.minConfidence,
+                                              enabled: rule.enabled,
+                                              autoEnrich: rule.autoEnrich,
+                                              action: rule.action,
+                                            });
+                                            setShowRuleDialog(true);
+                                          }}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Edit rule</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
+                                          onClick={() => deleteRuleMutation.mutate(rule.id)}
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Delete rule</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
+          )}
+        </TabsContent>
+
         <TabsContent value="enrichment" className="mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card className="glass-card">
@@ -1008,6 +1332,223 @@ export default function IocIngestionMatchingPage() {
                 <Upload className="h-4 w-4 mr-1" />
               )}
               Upload &amp; Ingest
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showRuleDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowRuleDialog(false);
+            setEditingRule(null);
+            setRuleForm(EMPTY_RULE_FORM);
+          } else {
+            setShowRuleDialog(true);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingRule ? "Edit Match Rule" : "Create Match Rule"}</DialogTitle>
+            <DialogDescription>
+              {editingRule
+                ? "Update the match rule configuration."
+                : "Define a rule to automatically match IOCs against alerts and incidents."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="rule-name">Rule Name</Label>
+              <Input
+                id="rule-name"
+                placeholder="e.g. Block Known C2 IPs"
+                value={ruleForm.name}
+                onChange={(e) => setRuleForm((prev) => ({ ...prev, name: e.target.value }))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="rule-desc">Description</Label>
+              <Textarea
+                id="rule-desc"
+                placeholder="What this rule does..."
+                value={ruleForm.description}
+                onChange={(e) => setRuleForm((prev) => ({ ...prev, description: e.target.value }))}
+                className="mt-1"
+                rows={2}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rule-feed">Target Feed</Label>
+              <Select value={ruleForm.feedId} onValueChange={(v) => setRuleForm((prev) => ({ ...prev, feedId: v }))}>
+                <SelectTrigger id="rule-feed" className="mt-1">
+                  <SelectValue placeholder="All feeds (no filter)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Feeds</SelectItem>
+                  {allFeeds.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name} ({f.feedType.toUpperCase()})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Restrict this rule to IOCs from a specific feed, or leave as "All Feeds" to match across all sources.
+              </p>
+            </div>
+            <div>
+              <Label>IOC Types</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {IOC_TYPE_OPTIONS.map((t) => {
+                  const selected = ruleForm.iocTypes.includes(t);
+                  return (
+                    <Button
+                      key={t}
+                      type="button"
+                      variant={selected ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setRuleForm((prev) => ({
+                          ...prev,
+                          iocTypes: selected ? prev.iocTypes.filter((x) => x !== t) : [...prev.iocTypes, t],
+                        }));
+                      }}
+                    >
+                      {t}
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Select which IOC types this rule should match. Leave empty to match all types.
+              </p>
+            </div>
+            <div>
+              <Label>Match Fields</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {MATCH_FIELD_OPTIONS.map((f) => {
+                  const selected = ruleForm.matchFields.includes(f);
+                  return (
+                    <Button
+                      key={f}
+                      type="button"
+                      variant={selected ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setRuleForm((prev) => ({
+                          ...prev,
+                          matchFields: selected ? prev.matchFields.filter((x) => x !== f) : [...prev.matchFields, f],
+                        }));
+                      }}
+                    >
+                      {f}
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Alert fields to check for IOC matches.</p>
+            </div>
+            <div>
+              <Label htmlFor="rule-confidence">Minimum Confidence ({ruleForm.minConfidence}%)</Label>
+              <input
+                id="rule-confidence"
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={ruleForm.minConfidence}
+                onChange={(e) => setRuleForm((prev) => ({ ...prev, minConfidence: parseInt(e.target.value, 10) }))}
+                className="w-full mt-1 accent-cyan-500"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>0%</span>
+                <span>50%</span>
+                <span>100%</span>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="rule-action">Action on Match</Label>
+              <Select value={ruleForm.action} onValueChange={(v) => setRuleForm((prev) => ({ ...prev, action: v }))}>
+                <SelectTrigger id="rule-action" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ACTION_OPTIONS.map((a) => (
+                    <SelectItem key={a.value} value={a.value}>
+                      {a.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ruleForm.autoEnrich}
+                  onChange={(e) => setRuleForm((prev) => ({ ...prev, autoEnrich: e.target.checked }))}
+                  className="rounded accent-cyan-500"
+                />
+                Auto-enrich matches
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ruleForm.enabled}
+                  onChange={(e) => setRuleForm((prev) => ({ ...prev, enabled: e.target.checked }))}
+                  className="rounded accent-cyan-500"
+                />
+                Enabled
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRuleDialog(false);
+                setEditingRule(null);
+                setRuleForm(EMPTY_RULE_FORM);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!ruleForm.name.trim()) {
+                  toast({ title: "Validation Error", description: "Rule name is required", variant: "destructive" });
+                  return;
+                }
+                const payload: Record<string, unknown> = {
+                  name: ruleForm.name.trim(),
+                  description: ruleForm.description.trim() || null,
+                  feedId: ruleForm.feedId && ruleForm.feedId !== "all" ? ruleForm.feedId : null,
+                  iocTypes: ruleForm.iocTypes,
+                  matchFields: ruleForm.matchFields,
+                  minConfidence: ruleForm.minConfidence,
+                  enabled: ruleForm.enabled,
+                  autoEnrich: ruleForm.autoEnrich,
+                  action: ruleForm.action,
+                };
+                if (editingRule) {
+                  updateRuleMutation.mutate({ id: editingRule.id, data: payload });
+                } else {
+                  createRuleMutation.mutate(payload);
+                }
+              }}
+              disabled={createRuleMutation.isPending || updateRuleMutation.isPending}
+            >
+              {createRuleMutation.isPending || updateRuleMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Settings2 className="h-4 w-4 mr-1" />
+              )}
+              {editingRule ? "Update Rule" : "Create Rule"}
             </Button>
           </DialogFooter>
         </DialogContent>
