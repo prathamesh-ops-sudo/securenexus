@@ -932,8 +932,35 @@ export function normalizeAlert(source: string, payload: any): NormalizedAlert {
   return normalizeCustom(payload);
 }
 
+export const ALERT_FIELD_LIMITS = {
+  title: 500,
+  description: 5000,
+  analystNotes: 10000,
+  confidenceNotes: 2000,
+  correlationReason: 5000,
+} as const;
+
+export function validateAlertFieldLengths(fields: Record<string, unknown>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  for (const [field, maxLen] of Object.entries(ALERT_FIELD_LIMITS)) {
+    const value = fields[field];
+    if (typeof value === "string" && value.length > maxLen) {
+      errors.push(`${field} exceeds maximum length of ${maxLen} characters (got ${value.length})`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 export function toInsertAlert(normalized: NormalizedAlert, orgId?: string): InsertAlert {
   const ocsfData = toOCSFSecurityFinding(normalized);
+
+  const lengthCheck = validateAlertFieldLengths({
+    title: normalized.title,
+    description: normalized.description,
+  });
+  if (!lengthCheck.valid) {
+    throw new Error(`Alert field validation failed: ${lengthCheck.errors.join("; ")}`);
+  }
 
   return {
     orgId: orgId || null,
@@ -941,8 +968,8 @@ export function toInsertAlert(normalized: NormalizedAlert, orgId?: string): Inse
     sourceEventId: normalized.sourceEventId || null,
     category: normalized.category,
     severity: normalized.severity,
-    title: normalized.title.slice(0, 500),
-    description: normalized.description?.slice(0, 5000) || null,
+    title: normalized.title,
+    description: normalized.description || null,
     rawData: normalized.rawData,
     normalizedData: normalized.normalizedData,
     ocsfData,
