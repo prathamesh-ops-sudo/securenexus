@@ -101,19 +101,24 @@ export default function EvidenceChainViewerPage() {
   const [selectedEntry, setSelectedEntry] = useState<EvidenceChainEntry | null>(null);
 
   const {
-    data: entries,
+    data: rawEntries,
     isLoading,
     isError,
+    error,
     refetch,
     isFetching,
   } = useQuery<EvidenceChainEntry[]>({
     queryKey: ["/api/incidents", activeIncidentId, "evidence-chain"],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/incidents/${activeIncidentId}/evidence-chain`);
-      return res.json();
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: !!activeIncidentId,
   });
+
+  const entries = Array.isArray(rawEntries) ? rawEntries : [];
+  const isNotFound = isError && error instanceof Error && error.message.startsWith("404");
 
   const {
     data: verification,
@@ -135,7 +140,7 @@ export default function EvidenceChainViewerPage() {
     }
   };
 
-  const sortedEntries = [...(entries ?? [])].sort((a, b) => a.sequenceNum - b.sequenceNum);
+  const sortedEntries = [...entries].sort((a, b) => a.sequenceNum - b.sequenceNum);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
@@ -281,6 +286,16 @@ export default function EvidenceChainViewerPage() {
                 </div>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      ) : isNotFound ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-400 mx-auto mb-2" />
+            <p className="text-sm font-medium">Incident not found</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              No incident exists with ID &ldquo;{activeIncidentId}&rdquo;. Check the ID and try again.
+            </p>
           </CardContent>
         </Card>
       ) : isError ? (
