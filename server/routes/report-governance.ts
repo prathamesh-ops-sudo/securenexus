@@ -184,10 +184,14 @@ export function registerReportGovernanceRoutes(app: Express): void {
       const evidenceBucket = process.env.EVIDENCE_S3_BUCKET || "securenexus-evidence";
       const bucket = attachment.s3Bucket === evidenceBucket ? attachment.s3Bucket : evidenceBucket;
       const sanitizedFileName = (attachment.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
-      const key =
+      const candidateKey =
         attachment.s3Key && attachment.s3Key.startsWith(`evidence/${attachment.orgId}/`)
           ? attachment.s3Key
           : `evidence/${attachment.orgId}/${attachment.id}/${sanitizedFileName}`;
+      if (candidateKey.includes("..") || candidateKey.includes("\0")) {
+        return res.status(400).json({ message: "Invalid S3 key: path traversal sequences are not allowed" });
+      }
+      const key = candidateKey;
       try {
         const { S3Client, PutObjectCommand, GetObjectCommand } = await import("@aws-sdk/client-s3");
         const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
