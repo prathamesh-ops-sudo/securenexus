@@ -1,9 +1,13 @@
 import type { Express, Request, Response } from "express";
-import { isAuthenticated } from "../auth";
 import { eventBus } from "../event-bus";
+import { replyUnauthenticated } from "../api-response";
 
 export function registerEventsRoutes(app: Express): void {
-  app.get("/api/events/stream", isAuthenticated, (req: Request, res: Response) => {
+  app.get("/api/events/stream", (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return replyUnauthenticated(res, "Authentication required for SSE stream");
+    }
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -51,7 +55,11 @@ export function registerEventsRoutes(app: Express): void {
     });
   });
 
-  app.get("/api/events/status", isAuthenticated, (req: Request, res: Response) => {
+  app.get("/api/events/status", (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return replyUnauthenticated(res, "Authentication required");
+    }
+
     const orgId = (req as any).user?.orgId ?? null;
     const stats = eventBus.getStats();
     res.json({
