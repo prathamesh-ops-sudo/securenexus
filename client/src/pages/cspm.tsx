@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ensureArray } from "@/lib/queryClient";
 import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -549,8 +549,8 @@ function FindingsTab() {
     queryKey: ["/api/cspm/findings", severityFilter],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/cspm/findings${queryParams}`);
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      const raw = await res.json();
+      return ensureArray(raw);
     },
   });
 
@@ -567,7 +567,8 @@ function FindingsTab() {
     },
   });
 
-  const severityCounts = (findings || []).reduce((acc: Record<string, number>, f: any) => {
+  const safeFindingsArr = ensureArray(findings);
+  const severityCounts = safeFindingsArr.reduce((acc: Record<string, number>, f: any) => {
     const sev = f.severity || "informational";
     acc[sev] = (acc[sev] || 0) + 1;
     return acc;
@@ -860,7 +861,7 @@ function PolicyChecksTab() {
     });
   }
 
-  const filteredResults = (policyResults || []).filter((r: PolicyResult) =>
+  const filteredResults = ensureArray<PolicyResult>(policyResults).filter((r: PolicyResult) =>
     resultFilter === "all" ? true : r.policyCheckId === resultFilter,
   );
 

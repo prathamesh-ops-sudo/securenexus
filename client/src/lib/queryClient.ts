@@ -61,6 +61,23 @@ function unwrapEnvelope<T>(body: unknown): T {
   return body as T;
 }
 
+/**
+ * Safely extract an array from a value that may be a raw array, an envelope
+ * `{ data: [...] }`, or something else entirely.  Returns `[]` when the value
+ * is not coercible to an array.  Use at every consumption-point where query
+ * data is expected to be an array — this guards against the Response.json()
+ * override not firing (browser compat) and against stale React-Query cache
+ * entries that predate the envelope unwrap logic.
+ */
+export function ensureArray<T = unknown>(val: unknown): T[] {
+  if (Array.isArray(val)) return val;
+  if (val && typeof val === "object" && "data" in val) {
+    const inner = (val as Record<string, unknown>).data;
+    if (Array.isArray(inner)) return inner;
+  }
+  return [];
+}
+
 // ─── Request helpers ─────────────────────────────────────────────────────────
 
 async function throwIfResNotOk(res: Response) {
@@ -103,11 +120,21 @@ export async function apiRequest(method: string, url: string, data?: unknown | u
   // Override .json() so callers automatically receive the unwrapped payload
   // rather than the raw envelope.  The body stream can only be consumed once,
   // so this is safe from double-unwrap issues.
-  const originalJson = res.json.bind(res);
-  (res as any).json = async () => {
-    const body = await originalJson();
-    return unwrapEnvelope(body);
-  };
+  try {
+    const originalJson = res.json.bind(res);
+    const patchedJson = async () => {
+      const body = await originalJson();
+      return unwrapEnvelope(body);
+    };
+    Object.defineProperty(res, "json", {
+      value: patchedJson,
+      writable: true,
+      configurable: true,
+    });
+  } catch {
+    // Fallback: some environments disallow property override on Response.
+    // Callers should use ensureArray() as a safety net.
+  }
 
   return res;
 }

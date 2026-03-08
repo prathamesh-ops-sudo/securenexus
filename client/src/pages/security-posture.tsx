@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ensureArray } from "@/lib/queryClient";
 import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import {
   Shield,
@@ -164,13 +164,10 @@ function PostureScoreTab() {
       } catch {
         /* SSR / privacy mode */
       }
-      const res = await fetch("/api/posture/latest", {
-        credentials: "include",
-        headers: reqHeaders,
-      });
+      const res = await apiRequest("GET", "/api/posture/latest");
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
-      return res.json();
+      const body = await res.json();
+      return body;
     },
   });
 
@@ -330,37 +327,42 @@ function PostureScoreTab() {
                         </tr>
                       </thead>
                       <tbody>
-                        {scoreHistory.slice(0, 10).map((entry: any, idx: number) => (
-                          <tr
-                            key={entry.id || idx}
-                            className="border-b last:border-b-0"
-                            data-testid={`row-score-history-${idx}`}
-                          >
-                            <td className="p-3 text-xs text-muted-foreground" data-testid={`text-history-date-${idx}`}>
-                              {formatTimestamp(entry.generatedAt || entry.createdAt)}
-                            </td>
-                            <td className="p-3">
-                              <span
-                                className={`font-bold tabular-nums ${scoreColor(entry.overallScore ?? 0)}`}
-                                data-testid={`value-history-overall-${idx}`}
+                        {ensureArray(scoreHistory)
+                          .slice(0, 10)
+                          .map((entry: any, idx: number) => (
+                            <tr
+                              key={entry.id || idx}
+                              className="border-b last:border-b-0"
+                              data-testid={`row-score-history-${idx}`}
+                            >
+                              <td
+                                className="p-3 text-xs text-muted-foreground"
+                                data-testid={`text-history-date-${idx}`}
                               >
-                                {entry.overallScore ?? 0}
-                              </span>
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-cspm-${idx}`}>
-                              {entry.cspmScore ?? "—"}
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-endpoint-${idx}`}>
-                              {entry.endpointScore ?? "—"}
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-incident-${idx}`}>
-                              {entry.incidentScore ?? "—"}
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-compliance-${idx}`}>
-                              {entry.complianceScore ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
+                                {formatTimestamp(entry.generatedAt || entry.createdAt)}
+                              </td>
+                              <td className="p-3">
+                                <span
+                                  className={`font-bold tabular-nums ${scoreColor(entry.overallScore ?? 0)}`}
+                                  data-testid={`value-history-overall-${idx}`}
+                                >
+                                  {entry.overallScore ?? 0}
+                                </span>
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-cspm-${idx}`}>
+                                {entry.cspmScore ?? "—"}
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-endpoint-${idx}`}>
+                                {entry.endpointScore ?? "—"}
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-incident-${idx}`}>
+                                {entry.incidentScore ?? "—"}
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-compliance-${idx}`}>
+                                {entry.complianceScore ?? "—"}
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </div>
