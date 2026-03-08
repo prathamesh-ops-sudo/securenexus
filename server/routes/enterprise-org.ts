@@ -334,7 +334,11 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       const parsed = ssoConfigSchema.partial().safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
       const userId = (req as any).user?.id;
-      const ssoPayload: Record<string, unknown> = { orgId, ...parsed.data, createdBy: userId };
+      const existing = await storage.getOrgSsoConfig(orgId);
+      const base: Record<string, unknown> = existing
+        ? { orgId }
+        : { orgId, providerType: "saml", enabled: false, enforced: false, defaultRole: "analyst" };
+      const ssoPayload: Record<string, unknown> = { ...base, ...parsed.data, createdBy: userId };
       if (parsed.data.clientSecret) {
         ssoPayload.clientSecret = encryptSecret(parsed.data.clientSecret);
       }
