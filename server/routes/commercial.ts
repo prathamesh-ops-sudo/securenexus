@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
+import { syncOrgAiBudgetWithPlan } from "../ai/budget";
 
 export function registerCommercialRoutes(app: Express): void {
   // ============================
@@ -144,6 +145,7 @@ export function registerCommercialRoutes(app: Express): void {
         const orgId = (req as any).orgId;
         const user = (req as any).user;
         const plan = await storage.upsertOrgPlanLimit({ ...req.body, orgId });
+        await syncOrgAiBudgetWithPlan(orgId, plan.planTier);
         await storage.createAuditLog({
           orgId,
           userId: user?.id,
