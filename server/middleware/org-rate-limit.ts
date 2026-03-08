@@ -76,16 +76,13 @@ export async function orgRateLimitMiddleware(req: Request, res: Response, next: 
   }
 
   bucket.limit = limit;
-  bucket.count++;
 
-  const remaining = Math.max(0, limit - bucket.count);
   const resetSeconds = Math.ceil((bucket.resetAt - now) / 1000);
 
-  res.setHeader("X-RateLimit-Limit", String(limit));
-  res.setHeader("X-RateLimit-Remaining", String(remaining));
-  res.setHeader("X-RateLimit-Reset", String(resetSeconds));
-
   if (bucket.count >= limit) {
+    res.setHeader("X-RateLimit-Limit", String(limit));
+    res.setHeader("X-RateLimit-Remaining", "0");
+    res.setHeader("X-RateLimit-Reset", String(resetSeconds));
     log.warn("Org rate limit exceeded", {
       key,
       orgId: orgId ?? null,
@@ -100,6 +97,12 @@ export async function orgRateLimitMiddleware(req: Request, res: Response, next: 
     );
     return;
   }
+
+  bucket.count++;
+  const remaining = Math.max(0, limit - bucket.count);
+  res.setHeader("X-RateLimit-Limit", String(limit));
+  res.setHeader("X-RateLimit-Remaining", String(remaining));
+  res.setHeader("X-RateLimit-Reset", String(resetSeconds));
 
   next();
 }

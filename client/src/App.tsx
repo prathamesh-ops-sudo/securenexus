@@ -105,6 +105,23 @@ const ExecutiveRiskPage = lazy(() => import("@/pages/executive-risk"));
 const AgentToolSecurityPage = lazy(() => import("@/pages/agent-tool-security"));
 const BrowserDefensePage = lazy(() => import("@/pages/browser-defense"));
 const CrossCuttingPage = lazy(() => import("@/pages/cross-cutting"));
+const RunbookTemplatesPage = lazy(() => import("@/pages/runbook-templates"));
+const GapAnalysisPage = lazy(() => import("@/pages/gap-analysis"));
+const AiBudgetControlsPage = lazy(() => import("@/pages/ai-budget-controls"));
+const TenantIsolationPage = lazy(() => import("@/pages/tenant-isolation"));
+const InvestigationRunsPage = lazy(() => import("@/pages/investigation-runs"));
+const CampaignViewerPage = lazy(() => import("@/pages/campaign-viewer"));
+const CveBrowserPage = lazy(() => import("@/pages/cve-browser"));
+const PostIncidentReviewPage = lazy(() => import("@/pages/post-incident-review"));
+const AiModelHealthPage = lazy(() => import("@/pages/ai-model-health"));
+const ManualAiTriggersPage = lazy(() => import("@/pages/manual-ai-triggers"));
+const RoleDashboardPage = lazy(() => import("@/pages/role-dashboard"));
+const DataLifecyclePage = lazy(() => import("@/pages/data-lifecycle"));
+const DrDrillSchedulerPage = lazy(() => import("@/pages/dr-drill-scheduler"));
+const JobQueueDashboardPage = lazy(() => import("@/pages/job-queue-dashboard"));
+const RollbackHistoryPage = lazy(() => import("@/pages/rollback-history"));
+const DomainAutoJoinPage = lazy(() => import("@/pages/domain-auto-join"));
+const UsageMeteringAnalyticsPage = lazy(() => import("@/pages/usage-metering-analytics"));
 
 function PageSkeleton() {
   return (
@@ -292,6 +309,23 @@ function AuthenticatedApp() {
                     <Route path="/agent-tool-security" component={AgentToolSecurityPage} />
                     <Route path="/browser-defense" component={BrowserDefensePage} />
                     <Route path="/cross-cutting" component={CrossCuttingPage} />
+                    <Route path="/runbook-templates" component={RunbookTemplatesPage} />
+                    <Route path="/gap-analysis" component={GapAnalysisPage} />
+                    <Route path="/ai-budget-controls" component={AiBudgetControlsPage} />
+                    <Route path="/tenant-isolation" component={TenantIsolationPage} />
+                    <Route path="/investigation-runs" component={InvestigationRunsPage} />
+                    <Route path="/campaign-viewer" component={CampaignViewerPage} />
+                    <Route path="/cve-browser" component={CveBrowserPage} />
+                    <Route path="/post-incident-review" component={PostIncidentReviewPage} />
+                    <Route path="/ai-model-health" component={AiModelHealthPage} />
+                    <Route path="/manual-ai-triggers" component={ManualAiTriggersPage} />
+                    <Route path="/role-dashboard" component={RoleDashboardPage} />
+                    <Route path="/data-lifecycle" component={DataLifecyclePage} />
+                    <Route path="/dr-drill-scheduler" component={DrDrillSchedulerPage} />
+                    <Route path="/job-queue-dashboard" component={JobQueueDashboardPage} />
+                    <Route path="/rollback-history" component={RollbackHistoryPage} />
+                    <Route path="/domain-auto-join" component={DomainAutoJoinPage} />
+                    <Route path="/usage-metering-analytics" component={UsageMeteringAnalyticsPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

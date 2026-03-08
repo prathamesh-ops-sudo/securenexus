@@ -22,6 +22,25 @@ import { getEntitiesForIncident } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
 
+function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string } | null {
+  const now = new Date();
+  if (incident.slaBreached) return { slaLabel: "SLA Breached", slaVariant: "destructive" };
+  if (incident.ackDueAt && !incident.ackAt && now > new Date(incident.ackDueAt))
+    return { slaLabel: "ACK Overdue", slaVariant: "destructive" };
+  if (incident.containDueAt && !incident.containedAt && now > new Date(incident.containDueAt))
+    return { slaLabel: "Contain Overdue", slaVariant: "destructive" };
+  if (incident.resolveDueAt && !incident.resolvedAt && now > new Date(incident.resolveDueAt))
+    return { slaLabel: "Resolve Overdue", slaVariant: "destructive" };
+  if (incident.ackDueAt || incident.containDueAt || incident.resolveDueAt)
+    return { slaLabel: "On Track", slaVariant: "default" };
+  return null;
+}
+
+function enrichWithSla(incident: any): any {
+  const sla = computeSlaStatus(incident);
+  return { ...incident, ...(sla ?? {}) };
+}
+
 export function registerIncidentsRoutes(app: Express): void {
   // Incidents
   app.get("/api/incidents", isAuthenticated, async (req, res) => {
@@ -29,7 +48,7 @@ export function registerIncidentsRoutes(app: Express): void {
       const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
       const allIncidents = await storage.getIncidents();
       const sorted = sortOrder === "asc" ? [...allIncidents].reverse() : allIncidents;
-      res.json(sorted.slice(offset, offset + limit));
+      res.json(sorted.slice(offset, offset + limit).map(enrichWithSla));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch incidents" });
     }
@@ -50,7 +69,7 @@ export function registerIncidentsRoutes(app: Express): void {
         sortOrder,
       });
 
-      return sendEnvelope(res, items, {
+      return sendEnvelope(res, items.map(enrichWithSla), {
         meta: {
           offset,
           limit,
@@ -100,7 +119,7 @@ export function registerIncidentsRoutes(app: Express): void {
     try {
       const incident = await storage.getIncident(p(req.params.id));
       if (!incident) return res.status(404).json({ message: "Incident not found" });
-      res.json(incident);
+      res.json(enrichWithSla(incident));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch incident" });
     }
