@@ -60,7 +60,7 @@ export function registerRemediationRoutes(app: Express): void {
       if (typeof rawFilePath !== "string" || rawFilePath.length === 0) {
         return res.status(400).json({ message: "filePath query parameter is required" });
       }
-      if (rawFilePath.includes("..") || rawFilePath.includes("\0")) {
+      if (/\.\.[\\/]|[\\/]\.\./.test(rawFilePath) || rawFilePath.includes("\0")) {
         return res.status(400).json({ message: "Invalid filePath: path traversal sequences are not allowed" });
       }
       const sanitizedPath = rawFilePath

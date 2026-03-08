@@ -56,7 +56,7 @@ function sanitizePrefix(raw: string, opts?: { allowEmpty?: boolean }): string | 
 function isValidS3Key(key: string, orgId: string | number): boolean {
   if (!key || typeof key !== "string") return false;
   if (key.includes("\0")) return false;
-  if (key.includes("..")) return false;
+  if (/\.\.[\/\\]|[\/\\]\.\./.test(key)) return false;
   if (key.length > 1024) return false;
   const normalized = key.replace(/\\+/g, "/").replace(/\/{2,}/g, "/");
   if (normalized !== key) return false;
