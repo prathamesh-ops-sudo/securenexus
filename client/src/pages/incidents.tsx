@@ -388,6 +388,7 @@ export default function IncidentsPage() {
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
     queryKey: [`/api/orgs/${currentOrgId}/saved-views`, "incidents"],
     queryFn: async () => {
+      if (!currentOrgId) return [];
       try {
         const res = await apiRequest("GET", `/api/orgs/${currentOrgId}/saved-views?resourceType=incidents`);
         return res.json();
@@ -395,10 +396,12 @@ export default function IncidentsPage() {
         return [];
       }
     },
+    enabled: !!currentOrgId,
   });
 
   const createSavedViewMutation = useMutation({
     mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
+      if (!currentOrgId) throw new Error("Organization context not available");
       const res = await apiRequest("POST", `/api/orgs/${currentOrgId}/saved-views`, {
         name: viewData.name,
         resourceType: "incidents",
@@ -418,6 +421,7 @@ export default function IncidentsPage() {
 
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
+      if (!currentOrgId) throw new Error("Organization context not available");
       await apiRequest("DELETE", `/api/orgs/${currentOrgId}/saved-views/${viewId}`);
     },
     onSuccess: () => {
@@ -748,10 +752,10 @@ export default function IncidentsPage() {
         <Button
           variant="outline"
           size="sm"
-          disabled={!focusedIncidentId && !selectedIncident}
+          disabled={!filtered || filtered.length === 0}
           data-testid="button-toggle-detail-pane"
           onClick={() => {
-            if (!selectedIncident && filtered && filtered.length > 0) {
+            if (!focusedIncidentId && filtered && filtered.length > 0) {
               setFocusedIncidentId(filtered[0].id);
               setIsDetailOpen(true);
             } else {
@@ -880,7 +884,7 @@ export default function IncidentsPage() {
                     variant="outline"
                     size="sm"
                     className="h-8"
-                    disabled={!savedViewName.trim() || createSavedViewMutation.isPending}
+                    disabled={!savedViewName.trim() || !currentOrgId || createSavedViewMutation.isPending}
                     onClick={() => {
                       createSavedViewMutation.mutate({
                         name: savedViewName.trim(),
