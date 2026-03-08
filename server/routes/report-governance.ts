@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { getOrgId, logger, p, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext } from "../rbac";
 import {
   insertReportTemplateVersionSchema,
   insertEvidenceAttachmentSchema,
@@ -12,15 +13,15 @@ export function registerReportGovernanceRoutes(app: Express): void {
   // Report Template Versioning
   // ==========================================
 
-  app.get("/api/report-templates/:templateId/versions", isAuthenticated, async (req, res) => {
+  app.get("/api/report-templates/:templateId/versions", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
-      const user = req.user as any;
+      const orgId = (req as any).orgId as string | undefined;
       const template = await storage.getReportTemplate(p(req.params.templateId));
       if (!template) return res.status(404).json({ message: "Template not found" });
-      if (template.orgId && user?.orgId && template.orgId !== user.orgId) {
+      if (template.orgId && orgId && template.orgId !== orgId) {
         return res.status(403).json({ message: "Access denied" });
       }
-      const versions = await storage.getReportTemplateVersions(template.id, user?.orgId);
+      const versions = await storage.getReportTemplateVersions(template.id, orgId || undefined);
       res.json(versions);
     } catch (error) {
       logger.child("report-governance").error("Failed to fetch template versions", { error: String(error) });
@@ -28,12 +29,12 @@ export function registerReportGovernanceRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/report-template-versions/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/report-template-versions/:id", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const version = await storage.getReportTemplateVersion(p(req.params.id));
       if (!version) return res.status(404).json({ message: "Version not found" });
-      const user = req.user as any;
-      if (user?.orgId && version.orgId !== user.orgId) {
+      const orgId = (req as any).orgId as string | undefined;
+      if (orgId && version.orgId !== orgId) {
         return res.status(403).json({ message: "Access denied" });
       }
       res.json(version);
@@ -42,13 +43,13 @@ export function registerReportGovernanceRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/report-templates/:templateId/versions", isAuthenticated, async (req, res) => {
+  app.post("/api/report-templates/:templateId/versions", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const user = req.user as any;
       const orgId = getOrgId(req);
       const template = await storage.getReportTemplate(p(req.params.templateId));
       if (!template) return res.status(404).json({ message: "Template not found" });
-      if (template.orgId && user?.orgId && template.orgId !== user.orgId) {
+      if (template.orgId && orgId && template.orgId !== orgId) {
         return res.status(403).json({ message: "Access denied" });
       }
       const latest = await storage.getLatestTemplateVersion(template.id);
@@ -82,12 +83,13 @@ export function registerReportGovernanceRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/report-template-versions/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/report-template-versions/:id", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const user = req.user as any;
+      const orgId = (req as any).orgId as string | undefined;
       const existing = await storage.getReportTemplateVersion(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Version not found" });
-      if (user?.orgId && existing.orgId !== user.orgId) {
+      if (orgId && existing.orgId !== orgId) {
         return res.status(403).json({ message: "Access denied" });
       }
       const allowedFields = ["status", "changeDescription", "config", "format", "approvedBy", "approvedAt"];
