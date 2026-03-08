@@ -128,11 +128,69 @@ export const bodySchemas = {
     config: z.record(z.unknown()),
   }),
 
-  integrationCreate: z.object({
-    name: z.string().min(1).max(MAX_NAME),
-    type: z.enum(INTEGRATION_TYPES),
-    config: z.record(z.unknown()),
-  }),
+  integrationCreate: z
+    .object({
+      name: z.string().min(1).max(MAX_NAME),
+      type: z.enum(INTEGRATION_TYPES),
+      config: z.record(z.unknown()),
+    })
+    .superRefine((data, ctx) => {
+      const urlField = z.string().url();
+      const emailField = z.string().email();
+      const requiredStr = z.string().min(1).max(MAX_STRING);
+      const portField = z.coerce.number().int().min(1).max(65535);
+
+      const rules: Record<string, { key: string; validator: z.ZodType }[]> = {
+        jira: [
+          { key: "baseUrl", validator: urlField },
+          { key: "projectKey", validator: requiredStr },
+          { key: "apiToken", validator: requiredStr },
+          { key: "email", validator: emailField },
+        ],
+        servicenow: [
+          { key: "instanceUrl", validator: urlField },
+          { key: "username", validator: requiredStr },
+          { key: "password", validator: requiredStr },
+        ],
+        slack: [
+          { key: "webhookUrl", validator: urlField },
+          { key: "channel", validator: requiredStr },
+        ],
+        teams: [{ key: "webhookUrl", validator: urlField }],
+        pagerduty: [
+          { key: "routingKey", validator: requiredStr },
+          { key: "serviceId", validator: requiredStr },
+        ],
+        email: [
+          { key: "smtpHost", validator: requiredStr },
+          { key: "smtpPort", validator: portField },
+          { key: "from", validator: emailField },
+          { key: "to", validator: emailField },
+        ],
+        webhook: [
+          { key: "url", validator: urlField },
+          { key: "secret", validator: requiredStr },
+          { key: "method", validator: z.enum(["POST", "PUT", "PATCH", "GET", "DELETE"]) },
+        ],
+      };
+
+      const typeRules = rules[data.type];
+      if (!typeRules) return;
+      const cfg = (data.config ?? {}) as Record<string, unknown>;
+      for (const rule of typeRules) {
+        const val = cfg[rule.key];
+        const result = rule.validator.safeParse(val);
+        if (!result.success) {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["config", rule.key],
+              message: !val || (typeof val === "string" && !val.trim()) ? `${rule.key} is required` : issue.message,
+            });
+          }
+        }
+      }
+    }),
 
   notificationChannelCreate: z.object({
     name: z.string().min(1).max(MAX_NAME),

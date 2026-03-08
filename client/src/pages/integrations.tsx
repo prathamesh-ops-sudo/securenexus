@@ -255,6 +255,8 @@ function IntegrationsTab() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string }>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const {
     data: integrations,
@@ -337,6 +339,38 @@ function IntegrationsTab() {
     setFormType("");
     setFormConfig({});
     setTouchedFields({});
+    setFormErrors({});
+    setSubmitAttempted(false);
+  }
+
+  function validateConfigFields(): Record<string, string> {
+    const errors: Record<string, string> = {};
+    if (!formType) return errors;
+    const fields = CONFIG_FIELDS[formType] || [];
+    for (const field of fields) {
+      const val = (formConfig[field.key] || "").trim();
+      if (!val) {
+        errors[field.key] = `${field.label} is required`;
+        continue;
+      }
+      const isUrl = field.key.toLowerCase().includes("url");
+      const isEmail = field.type === "email";
+      const isPort = field.key.toLowerCase().includes("port");
+      const isMethod = field.key === "method";
+      if (isUrl && !/^https?:\/\/.+/.test(val)) {
+        errors[field.key] = "Must be a valid URL starting with http:// or https://";
+      } else if (isEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+        errors[field.key] = "Must be a valid email address";
+      } else if (isPort) {
+        const port = Number(val);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          errors[field.key] = "Must be a valid port number (1-65535)";
+        }
+      } else if (isMethod && !["POST", "PUT", "PATCH", "GET", "DELETE"].includes(val.toUpperCase())) {
+        errors[field.key] = "Must be POST, PUT, PATCH, GET, or DELETE";
+      }
+    }
+    return errors;
   }
 
   function openCreate() {
@@ -353,14 +387,31 @@ function IntegrationsTab() {
   }
 
   function handleSubmit() {
-    if (!formName || !formType) {
-      toast({ title: "Missing fields", description: "Name and type are required.", variant: "destructive" });
+    setSubmitAttempted(true);
+    if (!formName.trim()) {
+      toast({ title: "Missing fields", description: "Name is required.", variant: "destructive" });
       return;
     }
-    const payload = { name: formName, type: formType, config: formConfig, status: "active" };
+    if (!formType) {
+      toast({ title: "Missing fields", description: "Integration type is required.", variant: "destructive" });
+      return;
+    }
+    const configErrors = validateConfigFields();
+    setFormErrors(configErrors);
+    if (Object.keys(configErrors).length > 0) {
+      toast({
+        title: "Invalid configuration",
+        description: `Please fix ${Object.keys(configErrors).length} field error(s) before saving.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const payload = { name: formName.trim(), type: formType, config: formConfig };
     if (editingItem) {
+      updateMutation.reset();
       updateMutation.mutate({ id: editingItem.id, data: payload });
     } else {
+      createMutation.reset();
       createMutation.mutate(payload);
     }
   }
@@ -563,29 +614,48 @@ function IntegrationsTab() {
             </div>
             {fields.map((field) => {
               const val = formConfig[field.key] || "";
-              const isTouched = touchedFields[field.key];
-              const isUrl = field.key.toLowerCase().includes("url");
-              const isEmail = field.type === "email";
-              const urlInvalid = isUrl && val.trim() && !/^https?:\/\/.+/.test(val.trim());
-              const emailInvalid = isEmail && val.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
+              const fieldError = formErrors[field.key];
+              const showError = fieldError && (touchedFields[field.key] || submitAttempted);
               return (
-                <div key={field.key} className="space-y-2">
-                  <Label htmlFor={`field-${field.key}`}>{field.label}</Label>
+                <div key={field.key} className="space-y-1.5">
+                  <Label htmlFor={`field-${field.key}`}>
+                    {field.label} <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id={`field-${field.key}`}
                     type={field.type === "password" ? "password" : "text"}
                     placeholder={field.placeholder}
                     value={val}
-                    onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                    onBlur={() => setTouchedFields((prev) => ({ ...prev, [field.key]: true }))}
-                    className={urlInvalid ? "border-amber-500" : emailInvalid ? "border-amber-500" : ""}
+                    onChange={(e) => {
+                      const newConfig = { ...formConfig, [field.key]: e.target.value };
+                      setFormConfig(newConfig);
+                      if (formErrors[field.key]) {
+                        const updated = { ...formErrors };
+                        delete updated[field.key];
+                        setFormErrors(updated);
+                      }
+                    }}
+                    onBlur={() => {
+                      setTouchedFields((prev) => ({ ...prev, [field.key]: true }));
+                      const singleErrors = validateConfigFields();
+                      if (singleErrors[field.key]) {
+                        setFormErrors((prev) => ({ ...prev, [field.key]: singleErrors[field.key] }));
+                      } else {
+                        setFormErrors((prev) => {
+                          const updated = { ...prev };
+                          delete updated[field.key];
+                          return updated;
+                        });
+                      }
+                    }}
+                    className={showError ? "border-destructive" : ""}
+                    aria-invalid={!!showError}
+                    aria-describedby={showError ? `error-${field.key}` : undefined}
                     data-testid={`input-integration-${field.key}`}
                   />
-                  {urlInvalid && <p className="text-xs text-amber-400">URL should start with http:// or https://</p>}
-                  {emailInvalid && <p className="text-xs text-amber-400">Please enter a valid email address</p>}
-                  {isTouched && !val.trim() && (
-                    <p className="text-xs text-muted-foreground">
-                      This field is recommended for the integration to work
+                  {showError && (
+                    <p id={`error-${field.key}`} className="text-xs text-destructive" role="alert">
+                      {fieldError}
                     </p>
                   )}
                 </div>
