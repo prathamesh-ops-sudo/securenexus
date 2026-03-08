@@ -3,8 +3,19 @@ import { logger } from "../logger";
 
 const log = logger.child("ai-budget");
 
-const DEFAULT_DAILY_BUDGET_USD = 50;
-const DEFAULT_DAILY_INVOCATION_CAP = 5000;
+interface PlanAiBudget {
+  budgetUsd: number;
+  invocationCap: number;
+}
+
+const PLAN_AI_BUDGETS: Record<string, PlanAiBudget> = {
+  free: { budgetUsd: 5, invocationCap: 500 },
+  starter: { budgetUsd: 50, invocationCap: 5000 },
+  professional: { budgetUsd: 500, invocationCap: 50000 },
+  enterprise: { budgetUsd: 10000, invocationCap: 1000000 },
+};
+
+const FALLBACK_BUDGET: PlanAiBudget = PLAN_AI_BUDGETS["free"];
 
 export interface UsageRecord {
   inputTokens: number;
@@ -52,13 +63,28 @@ async function ensureTable(): Promise<void> {
   TABLE_ENSURED.done = true;
 }
 
+async function resolveOrgAiBudget(orgId: string): Promise<PlanAiBudget> {
+  try {
+    const result = await pool.query(`SELECT plan_tier FROM org_plan_limits WHERE org_id = $1 LIMIT 1`, [orgId]);
+    if (result.rows.length > 0) {
+      const tier = (result.rows[0] as { plan_tier: string }).plan_tier;
+      const budget = PLAN_AI_BUDGETS[tier];
+      if (budget) return budget;
+    }
+  } catch {
+    log.warn("Failed to resolve org plan tier for AI budget, using fallback", { orgId });
+  }
+  return FALLBACK_BUDGET;
+}
+
 async function ensureOrgRow(orgId: string): Promise<void> {
   await ensureTable();
+  const budget = await resolveOrgAiBudget(orgId);
   await pool.query(
     `INSERT INTO org_ai_budgets (org_id, budget_usd, invocation_cap, daily_spend_usd, daily_invocations, daily_input_tokens, daily_output_tokens, last_reset_at, updated_at)
      VALUES ($1, $2, $3, 0, 0, 0, 0, NOW(), NOW())
      ON CONFLICT (org_id) DO NOTHING`,
-    [orgId, DEFAULT_DAILY_BUDGET_USD, DEFAULT_DAILY_INVOCATION_CAP],
+    [orgId, budget.budgetUsd, budget.invocationCap],
   );
 }
 
@@ -77,6 +103,23 @@ export async function setOrgBudget(orgId: string, budgetUsd: number, invocationC
     [orgId, budgetUsd, invocationCap],
   );
   log.info("Org AI budget updated", { orgId, budgetUsd, invocationCap });
+}
+
+export async function syncOrgAiBudgetWithPlan(orgId: string, planTier: string): Promise<void> {
+  const budget = PLAN_AI_BUDGETS[planTier] || FALLBACK_BUDGET;
+  await ensureOrgRow(orgId);
+  await pool.query(
+    `UPDATE org_ai_budgets
+     SET budget_usd = $2, invocation_cap = $3, updated_at = NOW()
+     WHERE org_id = $1`,
+    [orgId, budget.budgetUsd, budget.invocationCap],
+  );
+  log.info("Org AI budget synced with plan tier", {
+    orgId,
+    planTier,
+    budgetUsd: budget.budgetUsd,
+    invocationCap: budget.invocationCap,
+  });
 }
 
 export async function checkBudget(orgId: string): Promise<{ allowed: boolean; reason?: string }> {
