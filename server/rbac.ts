@@ -119,7 +119,8 @@ export function requireOrgRole(...allowedRoles: string[]) {
       return replyForbidden(res, "No organization membership found", ERROR_CODES.ORG_MEMBERSHIP_REQUIRED);
     }
     if (!allowedRoles.includes(role)) {
-      return replyForbidden(res, `Requires one of: ${allowedRoles.join(", ")}`);
+      log.warn("RBAC role check failed", { userRole: role, allowedRoles, route: req.path, method: req.method });
+      return replyForbidden(res, "Forbidden");
     }
     next();
   };
@@ -134,7 +135,8 @@ export function requireMinRole(minRole: string) {
     const userLevel = ROLE_HIERARCHY[role] || 0;
     const requiredLevel = ROLE_HIERARCHY[minRole] || 0;
     if (userLevel < requiredLevel) {
-      return replyForbidden(res, `Requires at least ${minRole} role`);
+      log.warn("RBAC min-role check failed", { userRole: role, minRole, route: req.path, method: req.method });
+      return replyForbidden(res, "Forbidden");
     }
     next();
   };
@@ -148,11 +150,8 @@ export function requirePermission(scope: string, action: string) {
     }
     const rolePerms = ROLE_PERMISSIONS[role];
     if (!rolePerms || !rolePerms[scope] || !rolePerms[scope].includes(action)) {
-      return replyForbidden(
-        res,
-        `Insufficient permissions: requires ${scope}:${action}`,
-        ERROR_CODES.PERMISSION_DENIED,
-      );
+      log.warn("RBAC permission check failed", { userRole: role, scope, action, route: req.path, method: req.method });
+      return replyForbidden(res, "Insufficient permissions", ERROR_CODES.PERMISSION_DENIED);
     }
     next();
   };
