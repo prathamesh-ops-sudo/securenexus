@@ -581,6 +581,7 @@ export default function OutboxMonitoringPage() {
   const {
     data: eventsData,
     isLoading: eventsLoading,
+    isFetching: eventsFetching,
     isError: eventsError,
     refetch: refetchEvents,
   } = useQuery<{ items: OutboxEvent[]; total: number }>({
@@ -703,10 +704,14 @@ export default function OutboxMonitoringPage() {
     batchReplayMutation.mutate(ids);
   }, [selectedIds, batchReplayMutation]);
 
-  const handleRefresh = useCallback(() => {
-    refetchEvents();
-    refetchStatus();
-  }, [refetchEvents, refetchStatus]);
+  const handleRefresh = useCallback(async () => {
+    try {
+      await Promise.all([refetchEvents(), refetchStatus()]);
+      toast({ title: "Data refreshed", description: "Outbox events updated." });
+    } catch {
+      toast({ title: "Refresh failed", variant: "destructive" });
+    }
+  }, [refetchEvents, refetchStatus, toast]);
 
   const selectedReplayableCount = Array.from(selectedIds).filter((id) => {
     const event = events.find((e) => e.id === id);
@@ -725,8 +730,14 @@ export default function OutboxMonitoringPage() {
             Track event delivery, manage retries, and replay failed events
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-1.5 shrink-0">
-          <RefreshCw className="h-3.5 w-3.5" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={eventsFetching}
+          className="gap-1.5 shrink-0"
+        >
+          {eventsFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Refresh
         </Button>
       </div>
