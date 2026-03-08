@@ -138,7 +138,10 @@ export function registerAiRoutes(app: Express): void {
         try {
           await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
         } catch (e) {
-          logger.child("ai").warn("Usage tracking failed", { error: String(e) });
+          logger.child("ai").warn("Usage tracking failed", {
+            error: String(e),
+            orgId: (req as any).orgId || (req as any).user?.orgId,
+          });
         }
         res.json(result);
       } catch (error: any) {
@@ -181,7 +184,10 @@ export function registerAiRoutes(app: Express): void {
         try {
           await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
         } catch (e) {
-          logger.child("ai").warn("Usage tracking failed", { error: String(e) });
+          logger.child("ai").warn("Usage tracking failed", {
+            error: String(e),
+            orgId: (req as any).orgId || (req as any).user?.orgId,
+          });
         }
         res.json(result);
       } catch (error: any) {
