@@ -349,8 +349,8 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
   );
   const [isDirty, setIsDirty] = useState(false);
 
-  const updateConfig = useMutation({
-    mutationFn: async (data: Partial<EngineConfig>) => {
+  const savePolicy = useMutation({
+    mutationFn: async (data: { policyConfig: Record<string, unknown> }) => {
       const res = await apiRequest("PUT", `/api/engine-controls/${engineName}`, data);
       return res.json();
     },
@@ -361,6 +361,34 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
     },
     onError: (error: Error) => {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleEnabled = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await apiRequest("PUT", `/api/engine-controls/${engineName}`, { enabled });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engine-controls"] });
+      toast({ title: "Engine updated", description: `${meta.label} ${config.enabled ? "disabled" : "enabled"}.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Toggle failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleDryRunMode = useMutation({
+    mutationFn: async (dryRunMode: boolean) => {
+      const res = await apiRequest("PUT", `/api/engine-controls/${engineName}`, { dryRunMode });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engine-controls"] });
+      toast({ title: "Dry-run mode updated", description: `${meta.label} dry-run mode toggled.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Toggle failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -394,15 +422,15 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
   };
 
   const handleSave = () => {
-    updateConfig.mutate({ policyConfig: localPolicy });
+    savePolicy.mutate({ policyConfig: localPolicy });
   };
 
   const handleToggleEnabled = () => {
-    updateConfig.mutate({ enabled: !config.enabled });
+    toggleEnabled.mutate(!config.enabled);
   };
 
   const handleToggleDryRun = () => {
-    updateConfig.mutate({ dryRunMode: !config.dryRunMode });
+    toggleDryRunMode.mutate(!config.dryRunMode);
   };
 
   const totalWeight =
@@ -428,7 +456,7 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground">Engine</Label>
-            <Switch checked={config.enabled} onCheckedChange={handleToggleEnabled} />
+            <Switch checked={config.enabled} onCheckedChange={handleToggleEnabled} disabled={toggleEnabled.isPending} />
             <Badge variant={config.enabled ? "default" : "secondary"} className="text-[10px]">
               {config.enabled ? (
                 <>
@@ -446,7 +474,11 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
           <Separator orientation="vertical" className="h-6" />
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground">Dry-Run</Label>
-            <Switch checked={config.dryRunMode} onCheckedChange={handleToggleDryRun} />
+            <Switch
+              checked={config.dryRunMode}
+              onCheckedChange={handleToggleDryRun}
+              disabled={toggleDryRunMode.isPending}
+            />
             <Badge variant={config.dryRunMode ? "outline" : "secondary"} className="text-[10px]">
               {config.dryRunMode ? (
                 <>
@@ -498,8 +530,8 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
               )}
             </ScrollArea>
             <div className="flex gap-2 mt-3 pt-3 border-t">
-              <Button size="sm" onClick={handleSave} disabled={!isDirty || updateConfig.isPending} className="flex-1">
-                {updateConfig.isPending ? (
+              <Button size="sm" onClick={handleSave} disabled={!isDirty || savePolicy.isPending} className="flex-1">
+                {savePolicy.isPending ? (
                   <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                 ) : (
                   <Settings2 className="h-3.5 w-3.5 mr-1" />
@@ -509,7 +541,10 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => executeDryRun.mutate()}
+                onClick={() => {
+                  executeDryRun.reset();
+                  executeDryRun.mutate();
+                }}
                 disabled={executeDryRun.isPending}
               >
                 {executeDryRun.isPending ? (
