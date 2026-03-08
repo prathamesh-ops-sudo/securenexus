@@ -20,6 +20,7 @@ export interface CorrelationResult {
   alertIds: string[];
   sharedEntities: { type: string; value: string; count: number }[];
   reasoningTrace: string;
+  warnings: string[];
 }
 
 interface AlertWithEntities {
@@ -74,6 +75,7 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
   });
 
   let threatIntelBoost = 0;
+  const warnings: string[] = [];
   if (sharedEntities.length > 0) {
     try {
       const sharedEntityKeys = sharedEntities.map((e) => `${e.type}:${e.value}`);
@@ -95,11 +97,21 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
         enrichedEntities.map((e) => e.metadata as Record<string, any> | null),
       );
     } catch (err) {
-      logger.child("correlation-engine").warn("Threat intel confidence boost computation failed, defaulting to 0", {
-        alertId: alert.id,
-        error: String(err),
-      });
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errStack = err instanceof Error ? err.stack : undefined;
+      logger
+        .child("correlation-engine")
+        .error("TI enrichment failed during correlation — confidence may be understated", {
+          alertId: alert.id,
+          orgId: alert.orgId,
+          sharedEntityCount: sharedEntities.length,
+          error: errMsg,
+          stack: errStack,
+        });
       threatIntelBoost = 0;
+      warnings.push(
+        `Threat-intelligence enrichment failed: ${errMsg}. Correlation proceeded without TI boost — confidence may be understated.`,
+      );
     }
   }
 
@@ -108,7 +120,7 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
   if (confidence < 0.3) return null;
 
   const clusterAlertIds = [alert.id, ...relatedAlerts.map((a) => a.id)];
-  const reasoningTrace = generateReasoningTrace(alert, relatedAlerts, sharedEntities, confidence);
+  const reasoningTrace = generateReasoningTrace(alert, relatedAlerts, sharedEntities, confidence, warnings);
 
   const [cluster] = await db
     .insert(correlationClusters)
@@ -139,6 +151,7 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
     alertIds: clusterAlertIds,
     sharedEntities,
     reasoningTrace,
+    warnings,
   };
 }
 
@@ -238,6 +251,7 @@ function generateReasoningTrace(
   relatedAlerts: Alert[],
   sharedEntities: { type: string; value: string; count: number }[],
   confidence: number,
+  warnings: string[] = [],
 ): string {
   const lines: string[] = [];
   lines.push(`CORRELATION ANALYSIS — Confidence: ${(confidence * 100).toFixed(1)}%`);
@@ -269,6 +283,14 @@ function generateReasoningTrace(
 
   const allSources = new Set([targetAlert.source, ...relatedAlerts.map((a) => a.source)]);
   lines.push(`Sources: ${Array.from(allSources).join(", ")}`);
+
+  if (warnings.length > 0) {
+    lines.push("");
+    lines.push("WARNINGS:");
+    for (const w of warnings) {
+      lines.push(`  ⚠ ${w}`);
+    }
+  }
 
   if (confidence >= CORRELATION_CONFIG.confidenceThresholdForIncident) {
     lines.push("");
