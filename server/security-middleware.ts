@@ -64,7 +64,7 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 
   const isSecure = PRODUCTION_ENVS.has(config.nodeEnv) && config.session.forceHttps;
   res.cookie(CSRF_COOKIE, session.csrfToken, {
-    httpOnly: false,
+    httpOnly: true,
     secure: isSecure,
     sameSite: PRODUCTION_ENVS.has(config.nodeEnv) ? "strict" : "lax",
     path: "/",
