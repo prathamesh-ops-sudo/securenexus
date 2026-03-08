@@ -67,6 +67,9 @@ export async function setupAuth(app: Express) {
         if (!isValid) {
           return done(null, false, { message: "Invalid email or password" });
         }
+        if (user.disabledAt) {
+          return done(null, false, { message: "Account is disabled" });
+        }
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -94,6 +97,9 @@ export async function setupAuth(app: Express) {
                 lastName: profile.name?.familyName || null,
                 profileImageUrl: profile.photos?.[0]?.value || null,
               });
+            }
+            if (user.disabledAt) {
+              return done(null, false, { message: "Account is disabled" });
             }
             return done(null, user);
           } catch (err) {
@@ -126,6 +132,9 @@ export async function setupAuth(app: Express) {
                 profileImageUrl: profile.photos?.[0]?.value || null,
               });
             }
+            if (user.disabledAt) {
+              return done(null, false, { message: "Account is disabled" });
+            }
             return done(null, user);
           } catch (err) {
             return done(err);
@@ -141,6 +150,7 @@ export async function setupAuth(app: Express) {
     try {
       const user = await authStorage.getUser(id);
       if (!user) return cb(null, null);
+      if (user.disabledAt) return cb(null, null);
       const memberships = await storage.getUserMemberships(user.id);
       const active = memberships.find((m) => m.status === "active");
       (user as any).orgId = active?.orgId || null;
