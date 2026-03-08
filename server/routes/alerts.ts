@@ -108,7 +108,13 @@ export function registerAlertsRoutes(app: Express): void {
           status: alert.status,
         });
         cacheInvalidate("dashboard:");
-        if (alert.orgId) await storage.incrementUsage(alert.orgId, "alerts_ingested");
+        if (alert.orgId) {
+          try {
+            await storage.incrementUsage(alert.orgId, "alerts_ingested");
+          } catch (e) {
+            logger.child("routes").warn("Usage tracking failed", { error: String(e), orgId: alert.orgId });
+          }
+        }
         res.status(201).json(alert);
       } catch (error) {
         logger.child("routes").error("Error creating alert", { error: String(error) });
