@@ -281,10 +281,10 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&family=Source+Serif+4:wght@400;600;700&display=swap"
     />
     <link
+      id="gfonts"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&family=Source+Serif+4:wght@400;600;700&display=swap"
       rel="stylesheet"
       media="print"
-      onload="this.media='all'"
     />
     <noscript>
       <link
@@ -293,12 +293,30 @@
       />
     </noscript>
     <style>
-      body{margin:0;font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;background:#f0f2f5}
-      #root{min-height:100vh}
+      body {
+        margin: 0;
+        font-family:
+          "Inter",
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        background: #f0f2f5;
+      }
+      #root {
+        min-height: 100vh;
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      var f = document.getElementById("gfonts");
+      if (f) f.media = "all";
+    </script>
   </body>
 </html>
