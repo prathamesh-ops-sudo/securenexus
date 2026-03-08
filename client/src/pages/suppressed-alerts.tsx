@@ -151,7 +151,18 @@ export default function SuppressedAlertsPage() {
             </p>
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching} className="h-8">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isFetching}
+          className="h-8"
+          onClick={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts", "suppressed"] });
+            refetch().then(() => {
+              toast({ title: "Refreshed", description: "Suppressed alerts list updated." });
+            });
+          }}
+        >
           {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           <span className="ml-1.5 hidden sm:inline">Refresh</span>
         </Button>
