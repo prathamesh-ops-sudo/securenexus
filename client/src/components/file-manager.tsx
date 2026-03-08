@@ -25,7 +25,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, fetchCsrfToken, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -121,8 +121,8 @@ export function FileManager({ prefix, title, compact }: { prefix?: string; title
       } catch {
         /* SSR */
       }
-      const csrfMatch = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
-      if (csrfMatch) headers["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
+      const csrfToken = await fetchCsrfToken();
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
       setUploadProgress(10);
       const res = await fetch(`/api/files/upload?prefix=${encodeURIComponent(queryPrefix)}`, {

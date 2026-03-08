@@ -1,8 +1,20 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-function getCsrfToken(): string | null {
-  const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+let csrfTokenCache: string | null = null;
+
+export async function fetchCsrfToken(): Promise<string | null> {
+  if (csrfTokenCache) return csrfTokenCache;
+  try {
+    const res = await fetch("/api/csrf-token", { credentials: "include" });
+    if (res.ok) {
+      const body = await res.json();
+      csrfTokenCache = body.token ?? null;
+      return csrfTokenCache;
+    }
+  } catch {
+    /* network error — proceed without token */
+  }
+  return null;
 }
 
 // ─── Envelope-aware helpers ──────────────────────────────────────────────────
@@ -59,9 +71,9 @@ export async function apiRequest(method: string, url: string, data?: unknown | u
   if (data) {
     headers["Content-Type"] = "application/json";
   }
-  const csrfToken = getCsrfToken();
-  if (csrfToken && method !== "GET" && method !== "HEAD") {
-    headers["X-CSRF-Token"] = csrfToken;
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfToken = await fetchCsrfToken();
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
   }
   try {
     const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
