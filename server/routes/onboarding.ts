@@ -3,6 +3,8 @@ import { getOrgId, sendEnvelope, storage, logger } from "./shared";
 import { isAuthenticated } from "../auth";
 import { WIZARD_STEPS } from "@shared/schema";
 import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
+import { sendEmail } from "../email-service";
+import { invitationEmail } from "../email-templates";
 
 const INDUSTRY_OPTIONS = [
   "Technology",
@@ -345,15 +347,41 @@ export function registerOnboardingRoutes(app: Express): void {
 
           try {
             const token = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
             await storage.createOrgInvitation({
               orgId: progress.orgId,
               email,
               role,
               invitedBy: userId,
               token,
-              expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              expiresAt,
             });
             created.push({ email, role });
+
+            const org = await storage.getOrganization(progress.orgId);
+            const inviterUser = (req as any).user;
+            const inviterName = inviterUser?.firstName
+              ? `${inviterUser.firstName} ${inviterUser.lastName || ""}`.trim()
+              : "An administrator";
+            const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+            const acceptUrl = `${appBaseUrl}/accept-invitation?token=${token}`;
+
+            const emailContent = invitationEmail({
+              orgName: org?.name || "an organization",
+              inviterName,
+              role,
+              acceptUrl,
+              expiresAt,
+            });
+
+            sendEmail({
+              to: email,
+              subject: emailContent.subject,
+              html: emailContent.html,
+              text: emailContent.text,
+            }).catch((emailErr) => {
+              logger.child("wizard").error("Failed to send invitation email", { error: String(emailErr), email });
+            });
           } catch (invErr: unknown) {
             const errMsg = invErr instanceof Error ? invErr.message : String(invErr);
             errors.push({ email, reason: errMsg });
