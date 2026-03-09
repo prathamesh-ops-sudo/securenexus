@@ -129,7 +129,7 @@ export default function AiFeedbackFormPage() {
 
   const {
     data: feedbackList,
-    isLoading: listLoading,
+    isPending: listPending,
     isError: listError,
     refetch: refetchList,
     isFetching: listFetching,
@@ -144,7 +144,7 @@ export default function AiFeedbackFormPage() {
     },
   });
 
-  const { data: metrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
+  const { data: metrics, isPending: metricsPending } = useQuery<FeedbackMetric[]>({
     queryKey: ["/api/ai/feedback/metrics"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/ai/feedback/metrics?days=30");
@@ -246,7 +246,7 @@ export default function AiFeedbackFormPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums">
-                {metricsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : totalFeedback}
+                {metricsPending ? <Skeleton className="h-7 w-8 inline-block" /> : totalFeedback}
               </p>
               <p className="text-[11px] text-muted-foreground">Total (30d)</p>
             </div>
@@ -259,7 +259,7 @@ export default function AiFeedbackFormPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums">
-                {metricsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : avgRating.toFixed(1)}
+                {metricsPending ? <Skeleton className="h-7 w-8 inline-block" /> : avgRating.toFixed(1)}
               </p>
               <p className="text-[11px] text-muted-foreground">Avg Rating</p>
             </div>
@@ -272,7 +272,7 @@ export default function AiFeedbackFormPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums text-emerald-400">
-                {metricsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : totalPositive}
+                {metricsPending ? <Skeleton className="h-7 w-8 inline-block" /> : totalPositive}
               </p>
               <p className="text-[11px] text-muted-foreground">Positive</p>
             </div>
@@ -285,7 +285,7 @@ export default function AiFeedbackFormPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums text-red-400">
-                {metricsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : totalNegative}
+                {metricsPending ? <Skeleton className="h-7 w-8 inline-block" /> : totalNegative}
               </p>
               <p className="text-[11px] text-muted-foreground">Negative</p>
             </div>
@@ -440,7 +440,7 @@ export default function AiFeedbackFormPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {listLoading ? (
+            {listPending ? (
               <div className="p-4 space-y-3">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <Skeleton key={i} className="h-12 w-full" />

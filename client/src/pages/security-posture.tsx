@@ -150,7 +150,7 @@ function PostureScoreTab() {
 
   const {
     data: latestScore,
-    isLoading: latestLoading,
+    isPending: latestPending,
     isError: latestError,
     error: latestErrorObj,
     refetch: refetchLatest,
@@ -173,7 +173,7 @@ function PostureScoreTab() {
 
   const {
     data: scoreHistory,
-    isLoading: historyLoading,
+    isPending: historyPending,
     isError: historyError,
     refetch: refetchHistory,
   } = useQuery<any[]>({
@@ -194,10 +194,10 @@ function PostureScoreTab() {
     },
   });
 
-  const isLoading = latestLoading || historyLoading;
+  const isPending = latestPending || historyPending;
   const hasScore = latestScore && latestScore.overallScore != null;
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-6" data-testid="posture-score-loading">
         <div className="flex justify-center py-8">
@@ -379,7 +379,7 @@ function PostureScoreTab() {
 function AIDeploymentTab() {
   const { toast } = useToast();
 
-  const { data: config, isLoading } = useQuery<any>({
+  const { data: config, isPending } = useQuery<any>({
     queryKey: ["/api/ai-deployment/config"],
   });
 
@@ -421,7 +421,7 @@ function AIDeploymentTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-4" data-testid="ai-deployment-loading">
         <Card>
