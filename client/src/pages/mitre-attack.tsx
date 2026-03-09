@@ -102,7 +102,7 @@ export default function MitreAttackPage() {
   usePageTitle("MITRE ATT&CK Coverage");
   const {
     data: alertsResponse,
-    isLoading,
+    isPending,
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<PaginatedResponse<Alert>>({
@@ -197,7 +197,7 @@ export default function MitreAttackPage() {
   const coveragePercent = Math.round((coveredTactics / MITRE_TACTICS.length) * 100);
   const hasData = totalTechniques > 0;
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
         <div>

@@ -129,7 +129,7 @@ export default function KillChainPage() {
 
   const {
     data: alertsResponse,
-    isLoading: alertsLoading,
+    isPending: alertsPending,
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<PaginatedResponse<Alert>>({
@@ -140,7 +140,7 @@ export default function KillChainPage() {
 
   const {
     data: incidentsResponse,
-    isLoading: incidentsLoading,
+    isPending: incidentsPending,
     isError: incidentsError,
     refetch: refetchIncidents,
   } = useQuery<PaginatedResponse<Incident>>({
@@ -149,7 +149,7 @@ export default function KillChainPage() {
   });
   const incidents = incidentsResponse?.items;
 
-  const isLoading = alertsLoading || incidentsLoading;
+  const isPending = alertsPending || incidentsPending;
 
   const {
     mappedItems,
@@ -292,7 +292,7 @@ export default function KillChainPage() {
     });
   }, [mappedItems]);
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
         <div>

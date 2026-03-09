@@ -125,7 +125,7 @@ export default function SecretRotationOverviewPage() {
 
   const {
     data: rotations,
-    isLoading,
+    isPending,
     isError,
     refetch,
     isFetching,
@@ -205,7 +205,7 @@ export default function SecretRotationOverviewPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums text-red-400">
-                {isLoading ? <Skeleton className="h-7 w-8 inline-block" /> : overdueCount}
+                {isPending ? <Skeleton className="h-7 w-8 inline-block" /> : overdueCount}
               </p>
               <p className="text-[11px] text-muted-foreground">Overdue</p>
             </div>
@@ -221,7 +221,7 @@ export default function SecretRotationOverviewPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums text-orange-400">
-                {isLoading ? <Skeleton className="h-7 w-8 inline-block" /> : dueSoonCount}
+                {isPending ? <Skeleton className="h-7 w-8 inline-block" /> : dueSoonCount}
               </p>
               <p className="text-[11px] text-muted-foreground">Due Soon (≤14d)</p>
             </div>
@@ -237,7 +237,7 @@ export default function SecretRotationOverviewPage() {
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums text-emerald-400">
-                {isLoading ? <Skeleton className="h-7 w-8 inline-block" /> : okCount}
+                {isPending ? <Skeleton className="h-7 w-8 inline-block" /> : okCount}
               </p>
               <p className="text-[11px] text-muted-foreground">Healthy</p>
             </div>
@@ -275,7 +275,7 @@ export default function SecretRotationOverviewPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {isLoading ? (
+          {isPending ? (
             <div className="p-4 space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />

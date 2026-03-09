@@ -269,7 +269,7 @@ function ComplianceCenterTab() {
   const { toast } = useToast();
   const {
     data: centerData,
-    isLoading,
+    isPending,
     isError,
     refetch,
   } = useQuery<ComplianceCenterData>({
@@ -315,7 +315,7 @@ function ComplianceCenterTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -516,7 +516,7 @@ function PoliciesTab() {
   const { toast } = useToast();
   const {
     data: policy,
-    isLoading,
+    isPending,
     isError: policyError,
     refetch: refetchPolicy,
   } = useQuery<CompliancePolicy>({
@@ -574,7 +574,7 @@ function PoliciesTab() {
     setFrameworks((prev) => (prev.includes(fw) ? prev.filter((f) => f !== fw) : [...prev, fw]));
   };
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -767,7 +767,7 @@ function DsarTab() {
 
   const {
     data: dsarRequests,
-    isLoading,
+    isPending,
     isError: _dsarError,
     refetch: _refetchDsar,
   } = useQuery<DsarRequest[]>({
@@ -834,7 +834,7 @@ function DsarTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1582,7 +1582,7 @@ function ControlsTab() {
 
   const {
     data: controls,
-    isLoading: controlsLoading,
+    isPending: controlsPending,
     isError: controlsError,
     refetch: refetchControls,
   } = useQuery<ComplianceControl[]>({
@@ -1600,7 +1600,7 @@ function ControlsTab() {
 
   const {
     data: mappings,
-    isLoading: mappingsLoading,
+    isPending: mappingsPending,
     isError: mappingsError,
     refetch: refetchMappings,
   } = useQuery<ComplianceControlMapping[]>({
@@ -1660,7 +1660,7 @@ function ControlsTab() {
     {},
   );
 
-  if (controlsLoading) {
+  if (controlsPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1891,7 +1891,7 @@ function ControlsTab() {
           </Dialog>
         </CardHeader>
         <CardContent>
-          {mappingsLoading ? (
+          {mappingsPending ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
@@ -1986,7 +1986,7 @@ function EvidenceLockerTab() {
 
   const {
     data: evidenceItems,
-    isLoading,
+    isPending,
     isError: _evidenceError,
     refetch: _refetchEvidence,
   } = useQuery<EvidenceLockerItem[]>({
@@ -2050,7 +2050,7 @@ function EvidenceLockerTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2359,7 +2359,7 @@ function LegalHoldsTab() {
 
   const {
     data: holds,
-    isLoading,
+    isPending,
     isError: _holdsError,
     refetch: _refetchHolds,
   } = useQuery<LegalHold[]>({
@@ -2404,7 +2404,7 @@ function LegalHoldsTab() {
     setNewTableScope((prev) => (prev.includes(table) ? prev.filter((t) => t !== table) : [...prev, table]));
   };
 
-  if (isLoading)
+  if (isPending)
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2635,7 +2635,7 @@ function EvidenceAttachmentsTab() {
 
   const {
     data: attachments,
-    isLoading,
+    isPending,
     refetch: refetchAttachments,
   } = useQuery<any[]>({
     queryKey: ["/api/evidence-attachments", controlMappingFilter],
@@ -2712,7 +2712,7 @@ function EvidenceAttachmentsTab() {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isPending ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 bg-muted/30 rounded-lg animate-pulse" />
@@ -2849,13 +2849,13 @@ function ComplianceHelpersTab() {
 
   const {
     data: helpers,
-    isLoading,
+    isPending,
     refetch: refetchHelpers,
   } = useQuery<any[]>({
     queryKey: ["/api/compliance-helpers"],
   });
 
-  const { data: coverageSummary, isLoading: coverageLoading } = useQuery<any>({
+  const { data: coverageSummary, isPending: coveragePending } = useQuery<any>({
     queryKey: ["/api/compliance-helpers/coverage-summary"],
     queryFn: async () => {
       try {
@@ -3033,7 +3033,7 @@ function ComplianceHelpersTab() {
           <CardTitle className="text-sm font-semibold">Helper Run History</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isPending ? (
             <div className="space-y-2">
               {[1, 2].map((i) => (
                 <div key={i} className="h-16 bg-muted/30 rounded-lg animate-pulse" />

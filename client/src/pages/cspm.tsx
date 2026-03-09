@@ -113,7 +113,7 @@ function CloudAccountsTab() {
 
   const {
     data: accounts,
-    isLoading,
+    isPending,
     isError: accountsError,
     refetch: refetchAccounts,
   } = useQuery<any[]>({
@@ -179,7 +179,7 @@ function CloudAccountsTab() {
     });
   }
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-3" data-testid="accounts-loading">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -422,14 +422,14 @@ function CloudAccountsTab() {
 function ScanHistoryTab() {
   const {
     data: scans,
-    isLoading,
+    isPending,
     isError: scansError,
     refetch: refetchScans,
   } = useQuery<any[]>({
     queryKey: ["/api/cspm/scans"],
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-3" data-testid="scans-loading">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -542,7 +542,7 @@ function FindingsTab() {
 
   const {
     data: findings,
-    isLoading,
+    isPending,
     isError: findingsError,
     refetch: refetchFindings,
   } = useQuery<any[]>({
@@ -574,7 +574,7 @@ function FindingsTab() {
     return acc;
   }, {});
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-3" data-testid="findings-loading">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -775,14 +775,14 @@ function PolicyChecksTab() {
 
   const {
     data: policyChecks,
-    isLoading,
+    isPending,
     isError: policyError,
     refetch: refetchPolicies,
   } = useQuery<PolicyCheck[]>({
     queryKey: ["/api/policy-checks"],
   });
 
-  const { data: policyResults, isLoading: resultsLoading } = useQuery<PolicyResult[]>({
+  const { data: policyResults, isPending: resultsPending } = useQuery<PolicyResult[]>({
     queryKey: ["/api/policy-results"],
   });
 
@@ -865,7 +865,7 @@ function PolicyChecksTab() {
     resultFilter === "all" ? true : r.policyCheckId === resultFilter,
   );
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-3" data-testid="policy-checks-loading">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -1177,7 +1177,7 @@ function PolicyChecksTab() {
           </Select>
         </div>
 
-        {resultsLoading ? (
+        {resultsPending ? (
           <div className="space-y-3" data-testid="policy-results-loading">
             {Array.from({ length: 3 }).map((_, i) => (
               <Card key={i}>
