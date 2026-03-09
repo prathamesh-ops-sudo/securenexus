@@ -58,6 +58,20 @@ const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 
+function shannonEntropy(s: string): number {
+  const freq = new Map<string, number>();
+  for (const ch of s) {
+    freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  }
+  let entropy = 0;
+  const len = s.length;
+  for (const count of Array.from(freq.values())) {
+    const p = count / len;
+    if (p > 0) entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
 function loadConfig(): AppConfig {
   const env = process.env;
 
@@ -122,6 +136,15 @@ function loadConfig(): AppConfig {
     }
     if (cfg.session.secret.length < 32) {
       logger.child("config").error("SESSION_SECRET must be at least 32 characters in production environments");
+      process.exit(1);
+    }
+    const entropy = shannonEntropy(cfg.session.secret);
+    if (entropy < 3.0) {
+      logger
+        .child("config")
+        .error(
+          `SESSION_SECRET has insufficient entropy (${entropy.toFixed(2)} bits). Use a cryptographically random value.`,
+        );
       process.exit(1);
     }
   }

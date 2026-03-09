@@ -59,7 +59,7 @@ export async function orgRateLimitMiddleware(req: Request, res: Response, next: 
   }
 
   const orgId: string | undefined = (req as any).orgId;
-  const key = orgId || req.ip || "unknown";
+  const key = orgId || req.socket.remoteAddress || req.ip || "unknown";
 
   const now = Date.now();
   let bucket = buckets.get(key);

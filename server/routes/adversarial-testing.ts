@@ -47,12 +47,7 @@ const VALID_REMEDIATION_STATUSES = ["open", "in_progress", "resolved", "wont_fix
 export function registerAdversarialTestingRoutes(app: Express): void {
   app.get("/api/adversarial-testing/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getAdversarialStats(orgId));
     } catch (error) {
       logger.child("routes").error("Adversarial stats error", { error: String(error) });
@@ -95,12 +90,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.get("/api/adversarial-testing/executions", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: {
         testCaseId?: string;
         status?: TestStatus;
@@ -123,12 +113,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.post("/api/adversarial-testing/run", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const { testCaseId, trigger } = req.body as { testCaseId?: string; trigger?: string };
       if (!testCaseId || typeof testCaseId !== "string") {
         return res.status(400).json({ message: "testCaseId is required" });
@@ -148,12 +133,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.post("/api/adversarial-testing/run-batch", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const { testCaseIds, trigger } = req.body as { testCaseIds?: string[]; trigger?: string };
       if (!Array.isArray(testCaseIds) || testCaseIds.length === 0) {
         return res.status(400).json({ message: "testCaseIds must be a non-empty array" });
@@ -173,12 +153,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.get("/api/adversarial-testing/schedules", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getTestSchedules(orgId));
     } catch (error) {
       logger.child("routes").error("List schedules error", { error: String(error) });
@@ -188,12 +163,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.post("/api/adversarial-testing/schedules", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.name || typeof body.name !== "string") {
         return res.status(400).json({ message: "name is required" });
@@ -231,12 +201,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.patch("/api/adversarial-testing/schedules/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       const sanitized: Record<string, unknown> = {};
@@ -280,12 +245,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.delete("/api/adversarial-testing/schedules/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const deleted = deleteSchedule(orgId, id);
       if (!deleted) return res.status(404).json({ message: "Schedule not found" });
@@ -298,12 +258,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.get("/api/adversarial-testing/remediations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: {
         status?: (typeof VALID_REMEDIATION_STATUSES)[number];
         category?: AttackCategory;
@@ -324,12 +279,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.patch("/api/adversarial-testing/remediations/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       if (body.status !== undefined && !VALID_REMEDIATION_STATUSES.includes(body.status)) {
@@ -346,12 +296,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
   app.post("/api/adversarial-testing/remediations/:id/retest", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const execution = retestRemediation(orgId, id);
       res.status(201).json(execution);

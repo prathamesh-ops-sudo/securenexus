@@ -35,12 +35,7 @@ const VALID_DIRECTIONS = ["outbound", "inbound"] as const;
 export function registerBrowserDefenseRoutes(app: Express): void {
   app.get("/api/browser-defense/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getBrowserDefenseStats(orgId));
     } catch (error) {
       logger.child("routes").error("Browser defense stats error", { error: String(error) });
@@ -50,12 +45,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/sessions", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: { state?: SessionState; agentId?: string } = {};
       if (typeof req.query.state === "string" && VALID_SESSION_STATES.includes(req.query.state as SessionState))
         filters.state = req.query.state as SessionState;
@@ -69,12 +59,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/sessions/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const session = getSessionById(orgId, id);
       if (!session) return res.status(404).json({ message: "Session not found" });
@@ -87,12 +72,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.post("/api/browser-defense/sessions/:id/isolate", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const session = isolateSession(orgId, id);
       if (!session) return res.status(404).json({ message: "Session not found" });
@@ -105,12 +85,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.post("/api/browser-defense/sessions/:id/terminate", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const session = terminateSession(orgId, id);
       if (!session) return res.status(404).json({ message: "Session not found" });
@@ -123,12 +98,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/dom-events", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: {
         sessionId?: string;
         classification?: string;
@@ -150,12 +120,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.post("/api/browser-defense/dom-events/classify", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.sessionId || typeof body.sessionId !== "string") {
         return res.status(400).json({ message: "sessionId is required" });
@@ -185,12 +150,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/egress-rules", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(listEgressRules(orgId));
     } catch (error) {
       logger.child("routes").error("List egress rules error", { error: String(error) });
@@ -200,12 +160,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.post("/api/browser-defense/egress-rules", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.name || typeof body.name !== "string") {
         return res.status(400).json({ message: "name is required" });
@@ -240,12 +195,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.patch("/api/browser-defense/egress-rules/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       const sanitized: Record<string, unknown> = {};
@@ -283,12 +233,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.delete("/api/browser-defense/egress-rules/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const deleted = deleteEgressRule(orgId, id);
       if (!deleted) return res.status(404).json({ message: "Egress rule not found" });
@@ -301,12 +246,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/trusted-paths", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(listTrustedPaths(orgId));
     } catch (error) {
       logger.child("routes").error("List trusted paths error", { error: String(error) });
@@ -316,12 +256,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/trusted-paths/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const path = getTrustedPathById(orgId, id);
       if (!path) return res.status(404).json({ message: "Trusted path not found" });
@@ -334,12 +269,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.post("/api/browser-defense/trusted-paths", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.name || typeof body.name !== "string") {
         return res.status(400).json({ message: "name is required" });
@@ -367,12 +297,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.patch("/api/browser-defense/trusted-paths/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       const sanitized: Record<string, unknown> = {};
@@ -405,12 +330,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.delete("/api/browser-defense/trusted-paths/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const deleted = deleteTrustedPath(orgId, id);
       if (!deleted) return res.status(404).json({ message: "Trusted path not found" });
@@ -423,12 +343,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.get("/api/browser-defense/injection-patterns", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(listInjectionPatterns(orgId));
     } catch (error) {
       logger.child("routes").error("List injection patterns error", { error: String(error) });
@@ -438,12 +353,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.patch("/api/browser-defense/injection-patterns/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       const sanitized: Record<string, unknown> = {};
@@ -473,12 +383,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
 
   app.post("/api/browser-defense/evaluate-egress", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.destination || typeof body.destination !== "string") {
         return res.status(400).json({ message: "destination is required" });

@@ -46,12 +46,7 @@ function validateStatus(val: string): val is FindingStatus {
 export function registerFindingLineageRoutes(app: Express): void {
   app.get("/api/finding-lineage", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const findings = getFindings(orgId);
       res.json(findings);
     } catch (error) {
@@ -62,12 +57,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.get("/api/finding-lineage/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const stats = getLineageStats(orgId);
       res.json(stats);
     } catch (error) {
@@ -88,12 +78,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.get("/api/finding-lineage/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const finding = getFindingById(id, orgId);
       if (!finding) {
@@ -108,12 +93,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.get("/api/finding-lineage/:id/evidence", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const evidence = getEvidenceForFinding(id, orgId);
       res.json(evidence);
@@ -125,12 +105,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.get("/api/finding-lineage/:id/remediations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const remediations = getRemediationsForFinding(id, orgId);
       res.json(remediations);
@@ -142,12 +117,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.post("/api/finding-lineage/filter", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body as LineageFilter;
 
       if (body.severity) {
@@ -194,12 +164,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.post("/api/finding-lineage/ingest", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
 
       if (!body.title || typeof body.title !== "string") {
@@ -231,12 +196,7 @@ export function registerFindingLineageRoutes(app: Express): void {
 
   app.patch("/api/finding-lineage/:id/status", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { status } = req.body as { status: string };
 

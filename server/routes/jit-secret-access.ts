@@ -50,12 +50,7 @@ function isValidClassification(val: string): val is SecretClassification {
 export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/secrets", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const secrets = getSecrets(orgId);
       res.json(secrets);
     } catch (error) {
@@ -66,12 +61,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/secrets/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const secret = getSecretById(orgId, id);
       if (!secret) {
@@ -86,12 +76,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/secrets", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
 
       const {
         name,
@@ -145,12 +130,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/access-requests", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const requests = getAccessRequests(orgId);
       res.json(requests);
     } catch (error) {
@@ -161,12 +141,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/access-requests", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
 
       const { secretId, requesterId, requesterName, reason, durationMinutes, approverRole } = req.body;
 
@@ -217,12 +192,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/access-requests/:id/approve", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { approverName } = req.body;
       if (!approverName || typeof approverName !== "string") {
@@ -245,12 +215,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/access-requests/:id/deny", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { denierName, reason } = req.body;
       if (!denierName || typeof denierName !== "string") {
@@ -276,12 +241,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/access-requests/:id/release", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { releaserName } = req.body;
       if (!releaserName || typeof releaserName !== "string") {
@@ -304,12 +264,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/shares", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const shares = getShares(orgId);
       res.json(shares);
     } catch (error) {
@@ -320,12 +275,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/shares", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
 
       const { secretId, createdBy, recipientEmail, expiresInHours, maxUses } = req.body;
 
@@ -369,12 +319,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/shares/:id/consume", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { consumerIdentity } = req.body;
       if (!consumerIdentity || typeof consumerIdentity !== "string") {
@@ -400,12 +345,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/break-glass", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
 
       const { secretId, requesterId, requesterName, justification, incidentId, durationMinutes } = req.body;
 
@@ -453,12 +393,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/break-glass/:id/review", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { reviewerName, notes } = req.body;
       if (!reviewerName || typeof reviewerName !== "string") {
@@ -484,12 +419,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/break-glass", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const entries = getBreakGlassEntries(orgId);
       res.json(entries);
     } catch (error) {
@@ -500,12 +430,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/ownership/transfer", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
 
       const { secretId, toOwnerId, toOwnerName, reason, isOffboarding, initiatedBy } = req.body;
 
@@ -550,12 +475,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.post("/api/jit-secrets/ownership/reclaim", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
 
       const { secretId, toOwnerId, toOwnerName, reason, initiatedBy } = req.body;
 
@@ -599,12 +519,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/transfers", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const transfers = getTransfers(orgId);
       res.json(transfers);
     } catch (error) {
@@ -615,12 +530,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/audit-log", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const log = getAuditLog(orgId);
       res.json(log);
     } catch (error) {
@@ -631,12 +541,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   app.get("/api/jit-secrets/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const stats = getStats(orgId);
       res.json(stats);
     } catch (error) {

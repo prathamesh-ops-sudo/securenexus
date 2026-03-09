@@ -69,7 +69,7 @@ function validateEnvironment(e: string): boolean {
 export function registerSecurityGraphRoutes(app: Express): void {
   app.get("/api/security-graph", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const graph = getSecurityGraph(orgId);
       res.json(graph);
     } catch (error) {
@@ -80,12 +80,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.post("/api/security-graph/query", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = (req.query.orgId as string) || "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body as GraphQuery;
       if (body.assetTypes) {
         for (const t of body.assetTypes) {
@@ -118,12 +113,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.post("/api/security-graph/ingest", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = (req.query.orgId as string) || "__default__";
-      }
+      const orgId = getOrgId(req);
       const payload = req.body as IngestionPayload;
       if (!payload.assets && !payload.relationships) {
         return res.status(400).json({ message: "Payload must include assets or relationships" });
@@ -162,12 +152,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.post("/api/security-graph/find-paths", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = (req.query.orgId as string) || "__default__";
-      }
+      const orgId = getOrgId(req);
       const { sourceId, targetId, maxDepth } = req.body as { sourceId: string; targetId: string; maxDepth?: number };
       if (!sourceId || typeof sourceId !== "string") return res.status(400).json({ message: "sourceId is required" });
       if (!targetId || typeof targetId !== "string") return res.status(400).json({ message: "targetId is required" });
@@ -184,7 +169,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.get("/api/security-graph/assets/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const asset = getAssetById(p(req.params.id), orgId);
       if (!asset) return res.status(404).json({ message: "Asset not found" });
       res.json(asset);
@@ -196,12 +181,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.delete("/api/security-graph/assets/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = (req.query.orgId as string) || "__default__";
-      }
+      const orgId = getOrgId(req);
       const deleted = deleteAsset(orgId, p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Asset not found" });
       res.json({ deleted: true });
@@ -213,7 +193,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.get("/api/security-graph/assets/:id/neighbors", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const neighbors = getAssetNeighbors(p(req.params.id), orgId);
       res.json(neighbors);
     } catch (error) {
@@ -224,7 +204,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.get("/api/security-graph/attack-paths", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const graph = getSecurityGraph(orgId);
       res.json(graph.attackPaths);
     } catch (error) {
@@ -235,7 +215,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.get("/api/security-graph/attack-paths/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const path = getAttackPathById(p(req.params.id), orgId);
       if (!path) return res.status(404).json({ message: "Attack path not found" });
       res.json(path);
@@ -247,12 +227,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.delete("/api/security-graph/relationships/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = (req.query.orgId as string) || "__default__";
-      }
+      const orgId = getOrgId(req);
       const deleted = deleteRelationship(orgId, p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Relationship not found" });
       res.json({ deleted: true });
@@ -264,7 +239,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
 
   app.get("/api/security-graph/stats", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const graph = getSecurityGraph(orgId);
       res.json(graph.stats);
     } catch (error) {

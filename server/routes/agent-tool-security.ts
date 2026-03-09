@@ -39,12 +39,7 @@ const VALID_RATE_PERIODS = ["minute", "hour", "day"] as const;
 export function registerAgentToolSecurityRoutes(app: Express): void {
   app.get("/api/agent-tool-security/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getAgentToolStats(orgId));
     } catch (error) {
       logger.child("routes").error("Agent tool stats error", { error: String(error) });
@@ -95,12 +90,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.get("/api/agent-tool-security/invocations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: {
         toolId?: string;
         agentId?: string;
@@ -121,12 +111,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.get("/api/agent-tool-security/invocations/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const inv = getInvocationById(orgId, id);
       if (!inv) return res.status(404).json({ message: "Invocation not found" });
@@ -139,12 +124,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.post("/api/agent-tool-security/invocations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.agentId || typeof body.agentId !== "string") {
         return res.status(400).json({ message: "agentId is required" });
@@ -183,12 +163,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.get("/api/agent-tool-security/anomalies", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: {
         type?: AnomalyType;
         severity?: ToolRiskLevel;
@@ -209,12 +184,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.post("/api/agent-tool-security/anomalies/:id/acknowledge", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const result = acknowledgeAnomaly(orgId, id);
       if (!result) return res.status(404).json({ message: "Anomaly not found" });
@@ -227,12 +197,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.get("/api/agent-tool-security/policies", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getToolPolicies(orgId));
     } catch (error) {
       logger.child("routes").error("List policies error", { error: String(error) });
@@ -242,12 +207,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.patch("/api/agent-tool-security/policies/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       const sanitized: Record<string, unknown> = {};
@@ -293,12 +253,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.get("/api/agent-tool-security/boundary-rules", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getTrustBoundaryRules(orgId));
     } catch (error) {
       logger.child("routes").error("List boundary rules error", { error: String(error) });
@@ -308,12 +263,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.post("/api/agent-tool-security/boundary-rules", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.name || typeof body.name !== "string") {
         return res.status(400).json({ message: "name is required" });
@@ -344,12 +294,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.patch("/api/agent-tool-security/boundary-rules/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       const sanitized: Record<string, unknown> = {};
@@ -383,12 +328,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
 
   app.delete("/api/agent-tool-security/boundary-rules/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const deleted = deleteBoundaryRule(orgId, id);
       if (!deleted) return res.status(404).json({ message: "Boundary rule not found" });

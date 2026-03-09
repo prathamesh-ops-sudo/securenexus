@@ -73,6 +73,7 @@ export function getSession() {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  const isProduction = new Set(["production", "staging", "uat"]).has(config.nodeEnv);
   return session({
     secret: config.session.secret,
     store: sessionStore,
@@ -80,9 +81,9 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: config.session.forceHttps,
+      secure: isProduction,
       maxAge: sessionTtl,
-      sameSite: "lax",
+      sameSite: isProduction ? "strict" : "lax",
     },
   });
 }

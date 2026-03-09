@@ -64,12 +64,7 @@ function isValidScope(val: string): val is PolicyScope {
 export function registerRuntimeGuardrailsRoutes(app: Express): void {
   app.get("/api/runtime-guardrails/policies", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const policies = getPolicies(orgId);
       res.json(policies);
     } catch (error) {
@@ -80,12 +75,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.get("/api/runtime-guardrails/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const stats = getGuardrailStats(orgId);
       res.json(stats);
     } catch (error) {
@@ -96,12 +86,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.get("/api/runtime-guardrails/decisions", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const decisions = getDecisionLogs(orgId);
       res.json(decisions);
     } catch (error) {
@@ -112,12 +97,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.get("/api/runtime-guardrails/simulations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const simulations = getSimulations(orgId);
       res.json(simulations);
     } catch (error) {
@@ -128,12 +108,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.get("/api/runtime-guardrails/overrides", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const overrides = getOverrides(orgId);
       res.json(overrides);
     } catch (error) {
@@ -144,12 +119,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.get("/api/runtime-guardrails/policies/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const policy = getPolicyById(id, orgId);
       if (!policy) {
@@ -164,12 +134,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.post("/api/runtime-guardrails/policies", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
 
       if (!body.name || typeof body.name !== "string") {
@@ -221,12 +186,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.patch("/api/runtime-guardrails/policies/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
 
@@ -269,12 +229,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.delete("/api/runtime-guardrails/policies/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const deleted = deletePolicy(id, orgId);
       if (!deleted) {
@@ -289,12 +244,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.post("/api/runtime-guardrails/evaluate", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
 
       if (!body.action || !isValidAction(body.action)) {
@@ -324,12 +274,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.post("/api/runtime-guardrails/simulate", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
 
       if (!body.policyId || typeof body.policyId !== "string") {
@@ -357,12 +302,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.post("/api/runtime-guardrails/overrides", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
 
       if (!body.policyId || typeof body.policyId !== "string") {
@@ -405,12 +345,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.patch("/api/runtime-guardrails/overrides/:id/approve", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { approvedBy } = req.body as { approvedBy: string };
 
@@ -441,12 +376,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
 
   app.patch("/api/runtime-guardrails/overrides/:id/deny", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { deniedBy } = req.body as { deniedBy: string };
 
