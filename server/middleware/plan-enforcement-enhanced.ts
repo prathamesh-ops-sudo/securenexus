@@ -114,9 +114,14 @@ function buildUsageMap(records: UsageRecord[]): UsageSummaryMap {
   return usageMap;
 }
 
+function currentPeriodStart(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
 async function getCurrentUsage(orgId: string): Promise<UsageSummaryMap> {
   try {
-    const records = await storage.getUsageRecords(orgId);
+    const records = await storage.getUsageRecords(orgId, currentPeriodStart());
     return buildUsageMap(records);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -142,16 +147,6 @@ async function isLimitExceeded(
 
   const limitValue = limits[limit];
 
-  // -1 means unlimited
-  if (limitValue === -1) {
-    return {
-      exceeded: false,
-      current: usage[limit] || 0,
-      limit: -1,
-      percentage: 0,
-    };
-  }
-
   const LIMIT_TO_METRIC: Record<string, string> = {
     alerts: "alerts_ingested",
     ai_analyses: "ai_analyses",
@@ -160,6 +155,16 @@ async function isLimitExceeded(
   };
   const metricKey = LIMIT_TO_METRIC[limit] || limit;
   const currentUsage = usage[metricKey] || 0;
+
+  // -1 means unlimited
+  if (limitValue === -1) {
+    return {
+      exceeded: false,
+      current: currentUsage,
+      limit: -1,
+      percentage: 0,
+    };
+  }
   const percentage = Math.round((currentUsage / limitValue) * 100);
 
   return {
