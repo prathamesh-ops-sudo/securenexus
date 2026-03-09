@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { logger } from "./shared";
+import { getOrgId, logger } from "./shared";
 import { isAuthenticated } from "../auth";
 import {
   getRemediations,
@@ -12,9 +12,8 @@ import {
 export function registerRemediationRoutes(app: Express): void {
   app.get("/api/remediation/fixes", isAuthenticated, async (req, res) => {
     try {
-      const rawOrgId = req.query.orgId;
-      const orgId = typeof rawOrgId === "string" ? rawOrgId : undefined;
-      const fixes = getRemediations(orgId ?? null);
+      const orgId = getOrgId(req);
+      const fixes = getRemediations(orgId);
       res.json(fixes);
     } catch (error) {
       logger.child("routes").error("List remediations error", {
@@ -26,10 +25,9 @@ export function registerRemediationRoutes(app: Express): void {
 
   app.get("/api/remediation/fixes/:id", isAuthenticated, async (req, res) => {
     try {
-      const rawOrgId = req.query.orgId;
-      const orgId = typeof rawOrgId === "string" ? rawOrgId : undefined;
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const fix = getRemediationById(id, orgId ?? null);
+      const fix = getRemediationById(id, orgId);
       if (!fix) return res.status(404).json({ message: "Remediation not found" });
       res.json(fix);
     } catch (error) {
@@ -42,9 +40,8 @@ export function registerRemediationRoutes(app: Express): void {
 
   app.get("/api/remediation/owners", isAuthenticated, async (req, res) => {
     try {
-      const rawOrgId = req.query.orgId;
-      const orgId = typeof rawOrgId === "string" ? rawOrgId : undefined;
-      const owners = getCodeOwners(orgId ?? null);
+      const orgId = getOrgId(req);
+      const owners = getCodeOwners(orgId);
       res.json(owners);
     } catch (error) {
       logger.child("routes").error("List code owners error", {
@@ -79,9 +76,8 @@ export function registerRemediationRoutes(app: Express): void {
 
   app.get("/api/remediation/stats", isAuthenticated, async (req, res) => {
     try {
-      const rawOrgId = req.query.orgId;
-      const orgId = typeof rawOrgId === "string" ? rawOrgId : undefined;
-      const stats = getRemediationStats(orgId ?? null);
+      const orgId = getOrgId(req);
+      const stats = getRemediationStats(orgId);
       res.json(stats);
     } catch (error) {
       logger.child("routes").error("Remediation stats error", {

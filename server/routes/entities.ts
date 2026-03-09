@@ -24,7 +24,7 @@ export function registerEntitiesRoutes(app: Express): void {
   // Entity Graph Routes (Phase 7.1)
   app.get("/api/entities", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const entityList = await getEntityGraph(orgId);
       res.json(entityList);
     } catch (error) {
@@ -54,7 +54,7 @@ export function registerEntitiesRoutes(app: Express): void {
   // Correlation Engine Routes (Phase 7.1)
   app.get("/api/correlation/clusters", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const clusters = await getCorrelationClusters(orgId);
       res.json(clusters);
     } catch (error) {
@@ -74,7 +74,7 @@ export function registerEntitiesRoutes(app: Express): void {
 
   app.post("/api/correlation/scan", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.body.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const results = await runCorrelationScan(orgId);
       res.json({ scanned: true, correlations: results.length, results });
     } catch (error) {
@@ -146,7 +146,7 @@ export function registerEntitiesRoutes(app: Express): void {
 
   app.get("/api/entity-graph", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req.query.orgId as string | undefined) || getOrgId(req);
+      const orgId = getOrgId(req);
       const limit = parseInt(req.query.limit as string, 10) || 80;
       const graph = await getEntityGraphWithEdges(orgId, limit);
       res.json(graph);
@@ -158,7 +158,7 @@ export function registerEntitiesRoutes(app: Express): void {
   // Phase 2: Graph-Based Correlation Engine
   app.post("/api/correlation/graph-scan", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.body.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const results = await runGraphCorrelation(orgId);
       res.json({
         scanned: true,
@@ -174,7 +174,7 @@ export function registerEntitiesRoutes(app: Express): void {
 
   app.get("/api/attack-paths", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const paths = await getAttackPaths(orgId);
       res.json(paths);
     } catch (error) {
@@ -194,7 +194,7 @@ export function registerEntitiesRoutes(app: Express): void {
 
   app.get("/api/campaigns", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string | undefined;
+      const orgId = getOrgId(req);
       const campaignList = await getCampaigns(orgId);
       res.json(campaignList);
     } catch (error) {

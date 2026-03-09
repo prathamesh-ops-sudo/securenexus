@@ -45,12 +45,7 @@ const VALID_COPILOT_DOMAINS: CopilotDomain[] = ["triage", "timeline", "hypothesi
 export function registerSocCopilotRoutes(app: Express): void {
   app.get("/api/soc-copilot/stats", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getCopilotStats(orgId));
     } catch (error) {
       logger.child("routes").error("SOC copilot stats error", { error: String(error) });
@@ -60,12 +55,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/triages", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: { verdict?: TriageVerdict; severity?: string } = {};
       if (typeof req.query.verdict === "string" && VALID_VERDICTS.includes(req.query.verdict as TriageVerdict))
         filters.verdict = req.query.verdict as TriageVerdict;
@@ -80,12 +70,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/triages/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const triage = getTriageById(orgId, id);
       if (!triage) return res.status(404).json({ message: "Triage not found" });
@@ -98,12 +83,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.post("/api/soc-copilot/triages", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const { alertId, alertTitle, severity } = req.body as {
         alertId?: string;
         alertTitle?: string;
@@ -124,12 +104,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.patch("/api/soc-copilot/triages/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { analystNotes } = req.body as { analystNotes?: string };
       if (analystNotes === undefined || typeof analystNotes !== "string")
@@ -145,12 +120,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/timelines", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getCopilotTimelines(orgId));
     } catch (error) {
       logger.child("routes").error("SOC copilot timelines error", { error: String(error) });
@@ -160,12 +130,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/timelines/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const timeline = getTimelineById(orgId, id);
       if (!timeline) return res.status(404).json({ message: "Timeline not found" });
@@ -178,12 +143,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/hypotheses", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: { incidentId?: string; confidence?: HypothesisConfidence; status?: string } = {};
       if (typeof req.query.incidentId === "string") filters.incidentId = req.query.incidentId;
       if (
@@ -202,12 +162,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.patch("/api/soc-copilot/hypotheses/:id", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
       if (body.status !== undefined && !VALID_HYPOTHESIS_STATUSES.includes(body.status)) {
@@ -228,12 +183,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/actions", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: { actionClass?: ActionClass; status?: ActionStatus } = {};
       if (
         typeof req.query.actionClass === "string" &&
@@ -251,12 +201,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.post("/api/soc-copilot/actions/:id/approve", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { analystId } = req.body as { analystId?: string };
       if (!analystId || typeof analystId !== "string")
@@ -272,12 +217,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.post("/api/soc-copilot/actions/:id/reject", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const { analystId } = req.body as { analystId?: string };
       if (!analystId || typeof analystId !== "string")
@@ -293,12 +233,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.post("/api/soc-copilot/actions/:id/rollback", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const id = String(req.params.id);
       const result = rollbackAction(orgId, id);
       if (!result) return res.status(404).json({ message: "Action not found or not eligible for rollback" });
@@ -311,12 +246,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/feedback", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const filters: { actionType?: CopilotDomain; outcome?: FeedbackOutcome } = {};
       if (
         typeof req.query.actionType === "string" &&
@@ -337,12 +267,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.post("/api/soc-copilot/feedback", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       const body = req.body;
       if (!body.actionId || typeof body.actionId !== "string")
         return res.status(400).json({ message: "actionId is required" });
@@ -376,12 +301,7 @@ export function registerSocCopilotRoutes(app: Express): void {
 
   app.get("/api/soc-copilot/calibrations", isAuthenticated, async (req, res) => {
     try {
-      let orgId: string;
-      try {
-        orgId = getOrgId(req);
-      } catch {
-        orgId = typeof req.query.orgId === "string" ? req.query.orgId : "__default__";
-      }
+      const orgId = getOrgId(req);
       res.json(getCopilotCalibrations(orgId));
     } catch (error) {
       logger.child("routes").error("SOC copilot calibrations error", { error: String(error) });

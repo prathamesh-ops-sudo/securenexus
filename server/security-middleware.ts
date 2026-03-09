@@ -155,7 +155,7 @@ function authRateLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown";
+      return req.ip || req.socket.remoteAddress || "unknown";
     },
     handler: (_req, res) => replyRateLimit(res, "Too many authentication attempts. Try again in 5 minutes."),
     skip: (req) => req.method === "GET",
