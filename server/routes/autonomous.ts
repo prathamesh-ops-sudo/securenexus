@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { requireAuth } from "../middleware/auth";
+import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
 import { dispatchAction } from "../action-dispatcher";
 import { runInvestigation } from "../investigation-agent";
@@ -19,11 +19,13 @@ const policySchema = z.object({
     source: z.array(z.string()).optional(),
     mitreTactic: z.array(z.string()).optional(),
   }),
-  actions: z.array(z.object({
-    actionType: z.string(),
-    config: z.record(z.unknown()),
-    requireApproval: z.boolean().default(false),
-  })),
+  actions: z.array(
+    z.object({
+      actionType: z.string(),
+      config: z.record(z.unknown()),
+      requireApproval: z.boolean().default(false),
+    }),
+  ),
   cooldownMinutes: z.number().min(0).max(10080).default(60),
   maxExecutionsPerDay: z.number().min(1).max(1000).default(100),
 });
@@ -34,29 +36,28 @@ const rollbackSchema = z.object({
 });
 
 export function registerAutonomousRoutes(app: Express): void {
-  
   // =============================
   // AUTONOMOUS POLICIES
   // =============================
-  
+
   /**
    * GET /api/autonomous/policies
    * List all autonomous response policies for the organization
    */
-  app.get("/api/autonomous/policies", requireAuth, async (req, res) => {
+  app.get("/api/autonomous/policies", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
 
       const policies = await storage.getAutonomousPolicies(orgId);
-      
+
       return res.json({
         policies: policies || [],
         summary: {
           total: policies?.length || 0,
           enabled: policies?.filter((p: any) => p.enabled).length || 0,
           disabled: policies?.filter((p: any) => !p.enabled).length || 0,
-        }
+        },
       });
     } catch (error: any) {
       log.error("Failed to fetch autonomous policies", { error: error.message });
@@ -68,7 +69,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * POST /api/autonomous/policies/seed-defaults
    * Seed default autonomous response policies
    */
-  app.post("/api/autonomous/policies/seed-defaults", requireAuth, async (req, res) => {
+  app.post("/api/autonomous/policies/seed-defaults", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -109,7 +110,11 @@ export function registerAutonomousRoutes(app: Express): void {
           actions: [
             { actionType: "block_ip", config: {}, requireApproval: true },
             { actionType: "block_domain", config: {}, requireApproval: true },
-            { actionType: "create_jira_ticket", config: { project: "SEC", priority: "critical" }, requireApproval: false },
+            {
+              actionType: "create_jira_ticket",
+              config: { project: "SEC", priority: "critical" },
+              requireApproval: false,
+            },
           ],
           cooldownMinutes: 15,
           maxExecutionsPerDay: 10,
@@ -177,7 +182,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * POST /api/autonomous/policies
    * Create a new autonomous response policy
    */
-  app.post("/api/autonomous/policies", requireAuth, async (req, res) => {
+  app.post("/api/autonomous/policies", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -207,7 +212,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * PATCH /api/autonomous/policies/:id
    * Update an autonomous response policy
    */
-  app.patch("/api/autonomous/policies/:id", requireAuth, async (req, res) => {
+  app.patch("/api/autonomous/policies/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -240,7 +245,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * DELETE /api/autonomous/policies/:id
    * Delete an autonomous response policy
    */
-  app.delete("/api/autonomous/policies/:id", requireAuth, async (req, res) => {
+  app.delete("/api/autonomous/policies/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -271,7 +276,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * GET /api/response-actions
    * Get response action timeline for the organization
    */
-  app.get("/api/response-actions", requireAuth, async (req, res) => {
+  app.get("/api/response-actions", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -296,7 +301,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * POST /api/response-actions/execute
    * Manually execute a response action
    */
-  app.post("/api/response-actions/execute", requireAuth, async (req, res) => {
+  app.post("/api/response-actions/execute", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -333,7 +338,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * GET /api/autonomous/investigations
    * List all investigation runs
    */
-  app.get("/api/autonomous/investigations", requireAuth, async (req, res) => {
+  app.get("/api/autonomous/investigations", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -347,7 +352,7 @@ export function registerAutonomousRoutes(app: Express): void {
           completed: runs?.filter((r: any) => r.status === "completed").length || 0,
           running: runs?.filter((r: any) => r.status === "running").length || 0,
           failed: runs?.filter((r: any) => r.status === "failed").length || 0,
-        }
+        },
       });
     } catch (error: any) {
       log.error("Failed to fetch investigation runs", { error: error.message });
@@ -359,7 +364,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * POST /api/autonomous/investigations
    * Trigger a new investigation run for an incident
    */
-  app.post("/api/autonomous/investigations", requireAuth, async (req, res) => {
+  app.post("/api/autonomous/investigations", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -405,7 +410,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * GET /api/autonomous/investigations/:id
    * Get investigation run details including steps
    */
-  app.get("/api/autonomous/investigations/:id", requireAuth, async (req, res) => {
+  app.get("/api/autonomous/investigations/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -437,7 +442,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * GET /api/autonomous/rollbacks
    * Get rollback history
    */
-  app.get("/api/autonomous/rollbacks", requireAuth, async (req, res) => {
+  app.get("/api/autonomous/rollbacks", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -458,7 +463,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * POST /api/autonomous/rollbacks
    * Create a rollback request for a response action
    */
-  app.post("/api/autonomous/rollbacks", requireAuth, async (req, res) => {
+  app.post("/api/autonomous/rollbacks", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -498,7 +503,7 @@ export function registerAutonomousRoutes(app: Express): void {
    * POST /api/autonomous/rollbacks/:id/execute
    * Execute a rollback
    */
-  app.post("/api/autonomous/rollbacks/:id/execute", requireAuth, async (req, res) => {
+  app.post("/api/autonomous/rollbacks/:id/execute", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });

@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { requireAuth } from "../middleware/auth";
+import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
 import { logger } from "../logger";
 
@@ -7,7 +7,7 @@ const log = logger.child("predictive-routes");
 
 /**
  * Predictive Defense Routes
- * 
+ *
  * Provides AI-powered predictive analytics for proactive threat defense:
  * - Attack forecasting (predict future attack types)
  * - Anomaly detection (statistical outliers in security metrics)
@@ -18,19 +18,18 @@ const log = logger.child("predictive-routes");
  */
 
 export function registerPredictiveRoutes(app: Express): void {
-  
   /**
    * GET /api/predictive/forecasts
    * Get attack probability forecasts for next 7 days
    */
-  app.get("/api/predictive/forecasts", requireAuth, async (req, res) => {
+  app.get("/api/predictive/forecasts", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
 
       // Get recent alerts to inform predictions
       const recentAlerts = await storage.getAlerts(orgId);
-      const last30Days = recentAlerts.filter(a => {
+      const last30Days = recentAlerts.filter((a) => {
         const createdAt = new Date(a.createdAt);
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         return createdAt >= thirtyDaysAgo;
@@ -39,7 +38,7 @@ export function registerPredictiveRoutes(app: Express): void {
       // Analyze patterns
       const categoryCount: Record<string, number> = {};
       const severityCount: Record<string, number> = {};
-      
+
       for (const alert of last30Days) {
         if (alert.category) {
           categoryCount[alert.category] = (categoryCount[alert.category] || 0) + 1;
@@ -63,13 +62,13 @@ export function registerPredictiveRoutes(app: Express): void {
           indicators: [
             "Increased email spoofing attempts detected",
             "Recent credential harvesting campaigns targeting similar organizations",
-            "Social engineering activity spike in industry"
+            "Social engineering activity spike in industry",
           ],
           recommendedActions: [
             "Increase email security scanning thresholds",
             "Deploy additional user awareness campaigns",
             "Enable MFA for all accounts",
-            "Review email gateway rules"
+            "Review email gateway rules",
           ],
           impactScore: 7.5,
           likelihoodTrend: "increasing",
@@ -85,13 +84,13 @@ export function registerPredictiveRoutes(app: Express): void {
           indicators: [
             "Web filtering detected suspicious download attempts",
             "Several endpoints missing critical patches",
-            "Malicious domain activity in threat intel feeds"
+            "Malicious domain activity in threat intel feeds",
           ],
           recommendedActions: [
             "Accelerate patch deployment schedule",
             "Isolate vulnerable endpoints",
             "Update antivirus signatures",
-            "Restrict executable downloads"
+            "Restrict executable downloads",
           ],
           impactScore: 8.2,
           likelihoodTrend: "stable",
@@ -107,13 +106,13 @@ export function registerPredictiveRoutes(app: Express): void {
           indicators: [
             "Ransomware campaigns targeting similar verticals",
             "Backup infrastructure has incomplete coverage",
-            "RDP exposure detected on external perimeter"
+            "RDP exposure detected on external perimeter",
           ],
           recommendedActions: [
             "Verify backup integrity and test restore procedures",
             "Disable RDP on external interfaces",
             "Implement network segmentation",
-            "Deploy ransomware-specific detection rules"
+            "Deploy ransomware-specific detection rules",
           ],
           impactScore: 9.5,
           likelihoodTrend: "increasing",
@@ -122,20 +121,23 @@ export function registerPredictiveRoutes(app: Express): void {
         {
           id: "forecast_credential_theft",
           attackType: "credential_theft",
-          probability: Math.min(0.72, (categoryCount["credential_access"] || 0) / totalAlerts + 0.2 + Math.random() * 0.2),
+          probability: Math.min(
+            0.72,
+            (categoryCount["credential_access"] || 0) / totalAlerts + 0.2 + Math.random() * 0.2,
+          ),
           confidence: 0.75,
           timeframe: "next_7_days",
           reasoning: "Password spray attempts observed. Legacy authentication protocols in use.",
           indicators: [
             "Multiple failed login attempts from distributed IPs",
             "NTLM authentication still enabled",
-            "Privileged accounts without MFA"
+            "Privileged accounts without MFA",
           ],
           recommendedActions: [
             "Force password resets for accounts with weak credentials",
             "Disable legacy auth protocols",
             "Implement conditional access policies",
-            "Enable advanced threat protection"
+            "Enable advanced threat protection",
           ],
           impactScore: 8.8,
           likelihoodTrend: "increasing",
@@ -151,13 +153,13 @@ export function registerPredictiveRoutes(app: Express): void {
           indicators: [
             "Botnet activity increased in region",
             "Public-facing services without DDoS protection",
-            "Recent geopolitical tensions"
+            "Recent geopolitical tensions",
           ],
           recommendedActions: [
             "Enable DDoS protection service",
             "Review rate limiting policies",
             "Prepare incident response runbook",
-            "Increase CDN caching"
+            "Increase CDN caching",
           ],
           impactScore: 7.0,
           likelihoodTrend: "stable",
@@ -166,20 +168,23 @@ export function registerPredictiveRoutes(app: Express): void {
         {
           id: "forecast_data_exfiltration",
           attackType: "data_exfiltration",
-          probability: Math.min(0.58, (categoryCount["data_exfiltration"] || 0) / totalAlerts + 0.18 + Math.random() * 0.15),
+          probability: Math.min(
+            0.58,
+            (categoryCount["data_exfiltration"] || 0) / totalAlerts + 0.18 + Math.random() * 0.15,
+          ),
           confidence: 0.69,
           timeframe: "next_14_days",
           reasoning: "Insider threat risk elevated. DLP coverage gaps identified.",
           indicators: [
             "Unusual data access patterns detected",
             "Cloud storage uploads to personal accounts",
-            "Employee resignation rate increased"
+            "Employee resignation rate increased",
           ],
           recommendedActions: [
             "Enable DLP on all endpoints",
             "Review access controls for sensitive data",
             "Implement behavioral analytics",
-            "Audit privileged user activity"
+            "Audit privileged user activity",
           ],
           impactScore: 9.0,
           likelihoodTrend: "stable",
@@ -203,20 +208,20 @@ export function registerPredictiveRoutes(app: Express): void {
    * GET /api/predictive/anomalies
    * Detect statistical anomalies in security metrics
    */
-  app.get("/api/predictive/anomalies", requireAuth, async (req, res) => {
+  app.get("/api/predictive/anomalies", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
 
       const recentAlerts = await storage.getAlerts(orgId);
       const now = new Date();
-      const last7Days = recentAlerts.filter(a => {
+      const last7Days = recentAlerts.filter((a) => {
         const createdAt = new Date(a.createdAt);
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         return createdAt >= sevenDaysAgo;
       });
 
-      const last30Days = recentAlerts.filter(a => {
+      const last30Days = recentAlerts.filter((a) => {
         const createdAt = new Date(a.createdAt);
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         return createdAt >= thirtyDaysAgo;
@@ -224,7 +229,7 @@ export function registerPredictiveRoutes(app: Express): void {
 
       const avgLast30 = last30Days.length / 30;
       const currentWeek = last7Days.length / 7;
-      
+
       const anomalies = [];
 
       // Volume spike anomaly
@@ -235,28 +240,28 @@ export function registerPredictiveRoutes(app: Express): void {
           metricName: "alert_volume",
           baseline: Math.round(avgLast30 * 7),
           observed: last7Days.length,
-          delta: Math.round(((currentWeek / avgLast30) - 1) * 100),
+          delta: Math.round((currentWeek / avgLast30 - 1) * 100),
           zScore: 2.8,
           severity: "high",
           detectedAt: now.toISOString(),
-          description: `Alert volume is ${Math.round(((currentWeek / avgLast30) - 1) * 100)}% above baseline`,
+          description: `Alert volume is ${Math.round((currentWeek / avgLast30 - 1) * 100)}% above baseline`,
           possibleCauses: [
             "Active attack campaign in progress",
             "Misconfigured security tool generating noise",
-            "New monitoring rules detecting previously unseen activity"
+            "New monitoring rules detecting previously unseen activity",
           ],
           recommendedActions: [
             "Investigate source of increased alerts",
             "Review recent changes to monitoring rules",
-            "Check for ongoing security incidents"
+            "Check for ongoing security incidents",
           ],
         });
       }
 
       // Check for new attack vectors
-      const last30Categories = new Set(last30Days.map(a => a.category).filter(Boolean));
-      const last7Categories = new Set(last7Days.map(a => a.category).filter(Boolean));
-      const newCategories = Array.from(last7Categories).filter(c => !last30Categories.has(c));
+      const last30Categories = new Set(last30Days.map((a) => a.category).filter(Boolean));
+      const last7Categories = new Set(last7Days.map((a) => a.category).filter(Boolean));
+      const newCategories = Array.from(last7Categories).filter((c) => !last30Categories.has(c));
 
       if (newCategories.length > 0) {
         anomalies.push({
@@ -273,18 +278,18 @@ export function registerPredictiveRoutes(app: Express): void {
           possibleCauses: [
             "Attacker pivoting to new techniques",
             "Newly deployed security controls detecting different threats",
-            "Threat landscape evolution"
+            "Threat landscape evolution",
           ],
           recommendedActions: [
             "Investigate new attack vectors",
             "Update threat models",
-            "Review detection coverage for new categories"
+            "Review detection coverage for new categories",
           ],
         });
       }
 
       // After-hours activity anomaly
-      const afterHoursAlerts = last7Days.filter(a => {
+      const afterHoursAlerts = last7Days.filter((a) => {
         const hour = new Date(a.createdAt).getHours();
         return hour < 6 || hour > 20; // Outside 6am-8pm
       });
@@ -294,10 +299,14 @@ export function registerPredictiveRoutes(app: Express): void {
           id: "anomaly_timing",
           kind: "timing_anomaly",
           metricName: "after_hours_activity",
-          baseline: Math.round(last30Days.filter(a => {
-            const hour = new Date(a.createdAt).getHours();
-            return hour < 6 || hour > 20;
-          }).length / 30 * 7),
+          baseline: Math.round(
+            (last30Days.filter((a) => {
+              const hour = new Date(a.createdAt).getHours();
+              return hour < 6 || hour > 20;
+            }).length /
+              30) *
+              7,
+          ),
           observed: afterHoursAlerts.length,
           delta: Math.round((afterHoursAlerts.length / last7Days.length) * 100),
           zScore: 1.9,
@@ -307,19 +316,19 @@ export function registerPredictiveRoutes(app: Express): void {
           possibleCauses: [
             "Automated attack tools running continuously",
             "Insider threat working after hours",
-            "Global attacker in different timezone"
+            "Global attacker in different timezone",
           ],
           recommendedActions: [
             "Review after-hours access patterns",
             "Implement time-based alerting",
-            "Investigate source IPs and accounts"
+            "Investigate source IPs and accounts",
           ],
         });
       }
 
       // Severity escalation
-      const criticalCount = last7Days.filter(a => a.severity === "critical").length;
-      const criticalBaseline = last30Days.filter(a => a.severity === "critical").length / 30 * 7;
+      const criticalCount = last7Days.filter((a) => a.severity === "critical").length;
+      const criticalBaseline = (last30Days.filter((a) => a.severity === "critical").length / 30) * 7;
 
       if (criticalCount > criticalBaseline * 1.5 && criticalCount > 2) {
         anomalies.push({
@@ -328,20 +337,20 @@ export function registerPredictiveRoutes(app: Express): void {
           metricName: "critical_alerts",
           baseline: Math.round(criticalBaseline),
           observed: criticalCount,
-          delta: Math.round(((criticalCount / criticalBaseline) - 1) * 100),
+          delta: Math.round((criticalCount / criticalBaseline - 1) * 100),
           zScore: 2.5,
           severity: "critical",
           detectedAt: now.toISOString(),
-          description: `Critical severity alerts increased by ${Math.round(((criticalCount / criticalBaseline) - 1) * 100)}%`,
+          description: `Critical severity alerts increased by ${Math.round((criticalCount / criticalBaseline - 1) * 100)}%`,
           possibleCauses: [
             "Attack sophistication increased",
             "High-value targets being attacked",
-            "Security controls failing or bypassed"
+            "Security controls failing or bypassed",
           ],
           recommendedActions: [
             "Immediate investigation of critical alerts",
             "Escalate to security leadership",
-            "Review security posture of critical assets"
+            "Review security posture of critical assets",
           ],
         });
       }
@@ -359,16 +368,16 @@ export function registerPredictiveRoutes(app: Express): void {
    * GET /api/predictive/attack-surface
    * Analyze attack surface and identify vulnerable assets
    */
-  app.get("/api/predictive/attack-surface", requireAuth, async (req, res) => {
+  app.get("/api/predictive/attack-surface", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
 
       const alerts = await storage.getAlerts(orgId);
-      
+
       // Group by affected asset
       const assetMap: Record<string, any> = {};
-      
+
       for (const alert of alerts) {
         const asset = alert.hostname || alert.sourceIp || alert.destIp || "unknown";
         if (!assetMap[asset]) {
@@ -398,14 +407,18 @@ export function registerPredictiveRoutes(app: Express): void {
         riskScore += item.highCount * 10;
         riskScore += item.alertCount * 2;
         riskScore += item.categories.size * 5;
-        
+
         // Cap at 100
         riskScore = Math.min(100, riskScore);
 
         // Generate vulnerabilities
         const vulns = [];
         if (item.categories.has("malware")) {
-          vulns.push({ type: "malware_detected", severity: "critical", description: "Malware activity detected on asset" });
+          vulns.push({
+            type: "malware_detected",
+            severity: "critical",
+            description: "Malware activity detected on asset",
+          });
         }
         if (item.categories.has("credential_access")) {
           vulns.push({ type: "weak_credentials", severity: "high", description: "Credential compromise attempts" });
@@ -428,19 +441,20 @@ export function registerPredictiveRoutes(app: Express): void {
           attackCategories: Array.from(item.categories),
           vulnerabilities: vulns,
           lastAlertDate: item.lastAlertDate,
-          recommendation: riskScore > 75 
-            ? "CRITICAL: Isolate asset and conduct forensic investigation"
-            : riskScore > 50
-            ? "HIGH: Prioritize patching and monitoring"
-            : riskScore > 25
-            ? "MEDIUM: Review security posture"
-            : "LOW: Continue monitoring",
+          recommendation:
+            riskScore > 75
+              ? "CRITICAL: Isolate asset and conduct forensic investigation"
+              : riskScore > 50
+                ? "HIGH: Prioritize patching and monitoring"
+                : riskScore > 25
+                  ? "MEDIUM: Review security posture"
+                  : "LOW: Continue monitoring",
           mitigationSteps: [
             "Deploy EDR agent if not present",
             "Apply latest security patches",
             "Review and restrict network access",
             "Enable enhanced logging",
-            "Conduct vulnerability scan"
+            "Conduct vulnerability scan",
           ],
         };
       });
@@ -461,7 +475,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * GET /api/predictive/recommendations
    * Get AI-generated security recommendations
    */
-  app.get("/api/predictive/recommendations", requireAuth, async (req, res) => {
+  app.get("/api/predictive/recommendations", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -472,7 +486,7 @@ export function registerPredictiveRoutes(app: Express): void {
       const recommendations = [];
 
       // Check for missing EDR
-      const hostsWithAlerts = new Set(alerts.map(a => a.hostname).filter(Boolean));
+      const hostsWithAlerts = new Set(alerts.map((a) => a.hostname).filter(Boolean));
       if (hostsWithAlerts.size > 5) {
         recommendations.push({
           id: "rec_edr_coverage",
@@ -480,7 +494,8 @@ export function registerPredictiveRoutes(app: Express): void {
           priority: "high",
           category: "detection",
           description: `${hostsWithAlerts.size} hosts generating alerts. Deploy EDR agents for enhanced visibility.`,
-          reasoning: "Endpoint detection and response provides real-time threat visibility and automated response capabilities.",
+          reasoning:
+            "Endpoint detection and response provides real-time threat visibility and automated response capabilities.",
           estimatedEffort: "medium",
           estimatedImpact: "high",
           estimatedCost: "$5-10 per endpoint/month",
@@ -489,7 +504,7 @@ export function registerPredictiveRoutes(app: Express): void {
             "Identify unprotected endpoints",
             "Deploy EDR agents via GPO or management tool",
             "Configure threat detection policies",
-            "Integrate with SIEM"
+            "Integrate with SIEM",
           ],
           status: "pending",
           createdAt: new Date().toISOString(),
@@ -497,7 +512,7 @@ export function registerPredictiveRoutes(app: Express): void {
       }
 
       // Check for MFA gaps
-      const credentialAlerts = alerts.filter(a => a.category === "credential_access");
+      const credentialAlerts = alerts.filter((a) => a.category === "credential_access");
       if (credentialAlerts.length > 5) {
         recommendations.push({
           id: "rec_mfa_enforcement",
@@ -514,7 +529,7 @@ export function registerPredictiveRoutes(app: Express): void {
             "Start with admin and privileged accounts",
             "Use phishing-resistant MFA (FIDO2, WebAuthn)",
             "Implement conditional access policies",
-            "Provide user training"
+            "Provide user training",
           ],
           status: "pending",
           createdAt: new Date().toISOString(),
@@ -522,7 +537,7 @@ export function registerPredictiveRoutes(app: Express): void {
       }
 
       // Check for unpatched vulnerabilities
-      const malwareAlerts = alerts.filter(a => a.category === "malware");
+      const malwareAlerts = alerts.filter((a) => a.category === "malware");
       if (malwareAlerts.length > 3) {
         recommendations.push({
           id: "rec_patch_management",
@@ -539,7 +554,7 @@ export function registerPredictiveRoutes(app: Express): void {
             "Implement 48-hour patch window for critical vulnerabilities",
             "Schedule regular maintenance windows",
             "Test patches in staging before production",
-            "Monitor patch compliance metrics"
+            "Monitor patch compliance metrics",
           ],
           status: "pending",
           createdAt: new Date().toISOString(),
@@ -547,7 +562,7 @@ export function registerPredictiveRoutes(app: Express): void {
       }
 
       // Network segmentation
-      const lateralMovement = alerts.filter(a => a.category === "lateral_movement");
+      const lateralMovement = alerts.filter((a) => a.category === "lateral_movement");
       if (lateralMovement.length > 2) {
         recommendations.push({
           id: "rec_network_segmentation",
@@ -564,7 +579,7 @@ export function registerPredictiveRoutes(app: Express): void {
             "Define security zones (DMZ, user, server, management)",
             "Implement VLANs and firewall rules",
             "Enable micro-segmentation for critical assets",
-            "Deploy network access control (NAC)"
+            "Deploy network access control (NAC)",
           ],
           status: "pending",
           createdAt: new Date().toISOString(),
@@ -572,7 +587,7 @@ export function registerPredictiveRoutes(app: Express): void {
       }
 
       // Security awareness training
-      const phishingAlerts = alerts.filter(a => a.category === "phishing");
+      const phishingAlerts = alerts.filter((a) => a.category === "phishing");
       if (phishingAlerts.length > 10) {
         recommendations.push({
           id: "rec_security_training",
@@ -589,7 +604,7 @@ export function registerPredictiveRoutes(app: Express): void {
             "Conduct monthly phishing tests",
             "Provide targeted training to users who fail tests",
             "Create security awareness portal",
-            "Track training completion metrics"
+            "Track training completion metrics",
           ],
           status: "pending",
           createdAt: new Date().toISOString(),
@@ -597,7 +612,7 @@ export function registerPredictiveRoutes(app: Express): void {
       }
 
       // Incident response
-      const openIncidents = incidents.filter(i => i.status !== "closed" && i.status !== "resolved");
+      const openIncidents = incidents.filter((i) => i.status !== "closed" && i.status !== "resolved");
       if (openIncidents.length > 5) {
         recommendations.push({
           id: "rec_soar_platform",
@@ -614,7 +629,7 @@ export function registerPredictiveRoutes(app: Express): void {
             "Define automated playbooks for common incident types",
             "Integrate with security tools (SIEM, EDR, firewall)",
             "Build response workflows",
-            "Measure automation metrics (time saved, accuracy)"
+            "Measure automation metrics (time saved, accuracy)",
           ],
           status: "pending",
           createdAt: new Date().toISOString(),
@@ -634,7 +649,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * GET /api/predictive/forecast-quality
    * Track forecast accuracy over time
    */
-  app.get("/api/predictive/forecast-quality", requireAuth, async (req, res) => {
+  app.get("/api/predictive/forecast-quality", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -642,7 +657,7 @@ export function registerPredictiveRoutes(app: Express): void {
       // Generate mock quality trends showing improving accuracy
       const trends = [];
       const now = Date.now();
-      
+
       for (let i = 30; i >= 0; i--) {
         const date = new Date(now - i * 24 * 60 * 60 * 1000);
         trends.push({
@@ -650,7 +665,7 @@ export function registerPredictiveRoutes(app: Express): void {
           accuracy: 0.65 + (30 - i) * 0.005 + (Math.random() - 0.5) * 0.05, // Trending up
           precision: 0.72 + (30 - i) * 0.004 + (Math.random() - 0.5) * 0.04,
           recall: 0.68 + (30 - i) * 0.003 + (Math.random() - 0.5) * 0.03,
-          f1Score: 0.70 + (30 - i) * 0.004 + (Math.random() - 0.5) * 0.04,
+          f1Score: 0.7 + (30 - i) * 0.004 + (Math.random() - 0.5) * 0.04,
           forecasts: 6,
           truePositives: Math.floor(3 + Math.random() * 2),
           falsePositives: Math.floor(1 + Math.random() * 2),
@@ -669,7 +684,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * POST /api/predictive/recompute
    * Trigger recomputation of all predictive models
    */
-  app.post("/api/predictive/recompute", requireAuth, async (req, res) => {
+  app.post("/api/predictive/recompute", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -678,7 +693,7 @@ export function registerPredictiveRoutes(app: Express): void {
 
       // In a real system, this would trigger ML model retraining
       // For now, we just acknowledge the request
-      
+
       return res.json({
         message: "Predictive models recomputation initiated",
         estimatedCompletionTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
@@ -694,7 +709,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * PATCH /api/predictive/recommendations/:id
    * Update recommendation status
    */
-  app.patch("/api/predictive/recommendations/:id", requireAuth, async (req, res) => {
+  app.patch("/api/predictive/recommendations/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -723,7 +738,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * GET /api/predictive/anomaly-subscriptions
    * Get anomaly alert subscriptions
    */
-  app.get("/api/predictive/anomaly-subscriptions", requireAuth, async (req, res) => {
+  app.get("/api/predictive/anomaly-subscriptions", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -740,7 +755,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * POST /api/predictive/anomaly-subscriptions
    * Create anomaly alert subscription
    */
-  app.post("/api/predictive/anomaly-subscriptions", requireAuth, async (req, res) => {
+  app.post("/api/predictive/anomaly-subscriptions", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
@@ -772,7 +787,7 @@ export function registerPredictiveRoutes(app: Express): void {
    * DELETE /api/predictive/anomaly-subscriptions/:id
    * Delete anomaly alert subscription
    */
-  app.delete("/api/predictive/anomaly-subscriptions/:id", requireAuth, async (req, res) => {
+  app.delete("/api/predictive/anomaly-subscriptions/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = req.user?.orgId;
       if (!orgId) return res.status(403).json({ error: "No organization context" });
