@@ -1,12 +1,13 @@
-import type { Request, Response, NextFunction } from 'express';
-import { storage } from '../storage';
-import { logger } from '../logger';
+import type { Request, Response, NextFunction } from "express";
+import type { UsageRecord } from "../../shared/schema";
+import { storage } from "../storage";
+import { logger } from "../logger";
 
-const log = logger.child('plan-enforcement');
+const log = logger.child("plan-enforcement");
 
 /**
  * Enterprise-Grade Plan Enforcement Middleware
- * 
+ *
  * Enforces subscription plan limits across all features:
  * - Alert ingestion limits
  * - Connector limits
@@ -57,29 +58,27 @@ const PLAN_LIMITS: Record<string, PlanLimits> = {
  */
 async function getCurrentPlan(orgId: string): Promise<string> {
   try {
-    const org = await storage.getOrganization(orgId);
-    
-    if (!org) {
-      return 'free';
+    const subscription = await storage.getSubscription(orgId);
+
+    if (!subscription) {
+      return "free";
     }
 
-    // Check if has active subscription
-    if (org.stripeSubscriptionId && org.subscriptionStatus === 'active') {
-      // Check subscription details from Stripe or stored plan
-      // For now, return 'pro' if has subscription
-      // In production, this should check the actual Stripe subscription
-      return org.planId || 'pro';
+    if (subscription.status === "active" && subscription.planId) {
+      const plan = await storage.getPlan(subscription.planId);
+      return plan?.name || "free";
     }
 
-    // Check if in trial
-    if (org.trialEndsAt && new Date(org.trialEndsAt) > new Date()) {
-      return org.trialPlan || 'pro'; // Default trial to pro features
+    if (subscription.trialEndDate && new Date(subscription.trialEndDate) > new Date()) {
+      const plan = await storage.getPlan(subscription.planId);
+      return plan?.name || "pro";
     }
 
-    return 'free';
-  } catch (error: any) {
-    log.error('Failed to get current plan', { error: error.message, orgId });
-    return 'free'; // Default to free on error
+    return "free";
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error("Failed to get current plan", { error: message, orgId });
+    return "free";
   }
 }
 
@@ -94,13 +93,36 @@ export async function getPlanLimits(orgId: string): Promise<PlanLimits> {
 /**
  * Get current usage for organization
  */
-async function getCurrentUsage(orgId: string): Promise<any> {
+interface UsageSummaryMap {
+  alerts_ingested: number;
+  connectors: number;
+  users: number;
+  ai_analyses: number;
+  [key: string]: number;
+}
+
+function buildUsageMap(records: UsageRecord[]): UsageSummaryMap {
+  const usageMap: UsageSummaryMap = {
+    alerts_ingested: 0,
+    connectors: 0,
+    users: 0,
+    ai_analyses: 0,
+  };
+  for (const record of records) {
+    usageMap[record.metric] = record.value;
+  }
+  return usageMap;
+}
+
+async function getCurrentUsage(orgId: string): Promise<UsageSummaryMap> {
   try {
-    return await storage.getUsageByOrg(orgId);
-  } catch (error: any) {
-    log.error('Failed to get current usage', { error: error.message, orgId });
+    const records = await storage.getUsageRecords(orgId);
+    return buildUsageMap(records);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error("Failed to get current usage", { error: message, orgId });
     return {
-      alertsIngested: 0,
+      alerts_ingested: 0,
       connectors: 0,
       users: 0,
       ai_analyses: 0,
@@ -113,7 +135,7 @@ async function getCurrentUsage(orgId: string): Promise<any> {
  */
 async function isLimitExceeded(
   orgId: string,
-  limit: keyof PlanLimits
+  limit: keyof PlanLimits,
 ): Promise<{ exceeded: boolean; current: number; limit: number; percentage: number }> {
   const limits = await getPlanLimits(orgId);
   const usage = await getCurrentUsage(orgId);
@@ -130,11 +152,14 @@ async function isLimitExceeded(
     };
   }
 
-  // Map limit key to usage key
-  let usageKey = limit;
-  if (limit === 'alerts') usageKey = 'alertsIngested';
-
-  const currentUsage = usage[usageKey] || 0;
+  const LIMIT_TO_METRIC: Record<string, string> = {
+    alerts: "alerts_ingested",
+    ai_analyses: "ai_analyses",
+    connectors: "connectors",
+    users: "users",
+  };
+  const metricKey = LIMIT_TO_METRIC[limit] || limit;
+  const currentUsage = usage[metricKey] || 0;
   const percentage = Math.round((currentUsage / limitValue) * 100);
 
   return {
@@ -147,7 +172,7 @@ async function isLimitExceeded(
 
 /**
  * Middleware: Enforce plan limit for specific feature
- * 
+ *
  * Usage:
  * app.post('/api/alerts', enforcePlanLimit('alerts'), handler);
  */
@@ -158,8 +183,8 @@ export function enforcePlanLimit(limit: keyof PlanLimits) {
 
       if (!orgId) {
         return res.status(403).json({
-          error: 'No organization context',
-          code: 'NO_ORG_CONTEXT',
+          error: "No organization context",
+          code: "NO_ORG_CONTEXT",
         });
       }
 
@@ -167,8 +192,8 @@ export function enforcePlanLimit(limit: keyof PlanLimits) {
 
       if (result.exceeded) {
         const plan = await getCurrentPlan(orgId);
-        
-        log.warn('Plan limit exceeded', {
+
+        log.warn("Plan limit exceeded", {
           orgId,
           limit,
           current: result.current,
@@ -177,29 +202,29 @@ export function enforcePlanLimit(limit: keyof PlanLimits) {
         });
 
         return res.status(402).json({
-          error: 'Plan limit exceeded',
-          code: 'PLAN_LIMIT_EXCEEDED',
+          error: "Plan limit exceeded",
+          code: "PLAN_LIMIT_EXCEEDED",
           limit,
           current: result.current,
           max: result.limit,
           percentage: result.percentage,
           plan,
           message: `You've reached your ${limit} limit (${result.current}/${result.limit}). Upgrade your plan to continue.`,
-          upgradeUrl: '/billing',
+          upgradeUrl: "/billing",
         });
       }
 
       // Check soft limit (80% threshold) - add warning header
       if (result.percentage >= 80 && result.limit !== -1) {
-        res.setHeader('X-Usage-Warning', `${limit}: ${result.percentage}% used`);
-        res.setHeader('X-Usage-Current', String(result.current));
-        res.setHeader('X-Usage-Limit', String(result.limit));
+        res.setHeader("X-Usage-Warning", `${limit}: ${result.percentage}% used`);
+        res.setHeader("X-Usage-Current", String(result.current));
+        res.setHeader("X-Usage-Limit", String(result.limit));
       }
 
       next();
-    } catch (error: any) {
-      log.error('Plan enforcement error', { error: error.message, limit });
-      // On error, allow request to proceed (fail open)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Plan enforcement error", { error: message, limit });
       next();
     }
   };
@@ -215,8 +240,8 @@ export function enforceMultipleLimits(limits: Array<keyof PlanLimits>) {
 
       if (!orgId) {
         return res.status(403).json({
-          error: 'No organization context',
-          code: 'NO_ORG_CONTEXT',
+          error: "No organization context",
+          code: "NO_ORG_CONTEXT",
         });
       }
 
@@ -227,21 +252,22 @@ export function enforceMultipleLimits(limits: Array<keyof PlanLimits>) {
           const plan = await getCurrentPlan(orgId);
 
           return res.status(402).json({
-            error: 'Plan limit exceeded',
-            code: 'PLAN_LIMIT_EXCEEDED',
+            error: "Plan limit exceeded",
+            code: "PLAN_LIMIT_EXCEEDED",
             limit,
             current: result.current,
             max: result.limit,
             plan,
             message: `You've reached your ${limit} limit. Upgrade to continue.`,
-            upgradeUrl: '/billing',
+            upgradeUrl: "/billing",
           });
         }
       }
 
       next();
-    } catch (error: any) {
-      log.error('Multiple limits enforcement error', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Multiple limits enforcement error", { error: message });
       next();
     }
   };
@@ -261,9 +287,10 @@ export function trackUsage(metric: keyof PlanLimits) {
       }
 
       next();
-    } catch (error: any) {
-      log.error('Usage tracking error', { error: error.message, metric });
-      next(); // Continue even if tracking fails
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Usage tracking error", { error: message, metric });
+      next();
     }
   };
 }
@@ -300,31 +327,32 @@ export function planAwareRateLimit() {
       const rateLimit = limits.api_calls_per_hour;
 
       // Set rate limit headers
-      res.setHeader('X-RateLimit-Limit', String(rateLimit));
-      res.setHeader('X-RateLimit-Remaining', String(Math.max(0, rateLimit - usage.count)));
-      res.setHeader('X-RateLimit-Reset', String(usage.resetAt));
+      res.setHeader("X-RateLimit-Limit", String(rateLimit));
+      res.setHeader("X-RateLimit-Remaining", String(Math.max(0, rateLimit - usage.count)));
+      res.setHeader("X-RateLimit-Reset", String(usage.resetAt));
 
       // Check if exceeded
       if (rateLimit !== -1 && usage.count > rateLimit) {
-        log.warn('Rate limit exceeded', {
+        log.warn("Rate limit exceeded", {
           orgId,
           count: usage.count,
           limit: rateLimit,
         });
 
         return res.status(429).json({
-          error: 'Rate limit exceeded',
-          code: 'RATE_LIMIT_EXCEEDED',
+          error: "Rate limit exceeded",
+          code: "RATE_LIMIT_EXCEEDED",
           message: `You've exceeded your API rate limit (${rateLimit} requests per hour). Upgrade your plan for higher limits.`,
           retryAfter: Math.ceil((usage.resetAt - now) / 1000),
-          upgradeUrl: '/billing',
+          upgradeUrl: "/billing",
         });
       }
 
       next();
-    } catch (error: any) {
-      log.error('Plan-aware rate limiting error', { error: error.message });
-      next(); // Continue on error
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Plan-aware rate limiting error", { error: message });
+      next();
     }
   };
 }
@@ -332,50 +360,65 @@ export function planAwareRateLimit() {
 /**
  * Get usage summary for organization
  */
-export async function getUsageSummary(orgId: string): Promise<any> {
+interface UsageLimitDetail {
+  current: number;
+  limit: number;
+  percentage: number;
+  exceeded: boolean;
+}
+
+interface UsageSummaryResult {
+  plan: string;
+  usage: {
+    alerts: UsageLimitDetail;
+    connectors: UsageLimitDetail;
+    users: UsageLimitDetail;
+    ai_analyses: UsageLimitDetail;
+  };
+  warnings: string[];
+  blockers: string[];
+}
+
+function calculatePercentage(current: number, limit: number): number {
+  if (limit === -1) return 0;
+  if (limit === 0) return current > 0 ? 100 : 0;
+  return Math.round((current / limit) * 100);
+}
+
+function buildLimitDetail(current: number, limit: number): UsageLimitDetail {
+  return {
+    current,
+    limit,
+    percentage: calculatePercentage(current, limit),
+    exceeded: limit !== -1 && current >= limit,
+  };
+}
+
+export async function getUsageSummary(orgId: string): Promise<UsageSummaryResult> {
   try {
     const limits = await getPlanLimits(orgId);
     const usage = await getCurrentUsage(orgId);
     const plan = await getCurrentPlan(orgId);
 
-    const calculatePercentage = (current: number, limit: number): number => {
-      if (limit === -1) return 0;
-      return Math.round((current / limit) * 100);
-    };
+    const alertsUsed = usage.alerts_ingested;
+    const connectorsUsed = usage.connectors;
+    const usersUsed = usage.users;
+    const aiAnalysesUsed = usage.ai_analyses;
 
     return {
       plan,
       usage: {
-        alerts: {
-          current: usage.alertsIngested || 0,
-          limit: limits.alerts,
-          percentage: calculatePercentage(usage.alertsIngested || 0, limits.alerts),
-          exceeded: limits.alerts !== -1 && (usage.alertsIngested || 0) >= limits.alerts,
-        },
-        connectors: {
-          current: usage.connectors || 0,
-          limit: limits.connectors,
-          percentage: calculatePercentage(usage.connectors || 0, limits.connectors),
-          exceeded: limits.connectors !== -1 && (usage.connectors || 0) >= limits.connectors,
-        },
-        users: {
-          current: usage.users || 0,
-          limit: limits.users,
-          percentage: calculatePercentage(usage.users || 0, limits.users),
-          exceeded: limits.users !== -1 && (usage.users || 0) >= limits.users,
-        },
-        ai_analyses: {
-          current: usage.ai_analyses || 0,
-          limit: limits.ai_analyses,
-          percentage: calculatePercentage(usage.ai_analyses || 0, limits.ai_analyses),
-          exceeded: limits.ai_analyses !== -1 && (usage.ai_analyses || 0) >= limits.ai_analyses,
-        },
+        alerts: buildLimitDetail(alertsUsed, limits.alerts),
+        connectors: buildLimitDetail(connectorsUsed, limits.connectors),
+        users: buildLimitDetail(usersUsed, limits.users),
+        ai_analyses: buildLimitDetail(aiAnalysesUsed, limits.ai_analyses),
       },
       warnings: [],
       blockers: [],
     };
-  } catch (error: any) {
-    log.error('Failed to get usage summary', { error: error.message, orgId });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error("Failed to get usage summary", { error: message, orgId });
     throw error;
   }
 }
