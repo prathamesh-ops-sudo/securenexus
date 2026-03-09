@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { getOrgId, sendEnvelope, storage, logger } from "./shared";
 import { isAuthenticated } from "../auth";
 import { WIZARD_STEPS } from "@shared/schema";
+import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
 
 const INDUSTRY_OPTIONS = [
   "Technology",
@@ -259,11 +260,35 @@ export function registerOnboardingRoutes(app: Express): void {
       });
 
       if (planId !== "free") {
+        if (isStripeEnabled()) {
+          try {
+            const user = (req as any).user;
+            const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+            const result = await createCheckoutSession({
+              orgId: progress.orgId,
+              planId,
+              billingCycle: "monthly",
+              successUrl: `${appBaseUrl}/onboarding-wizard?checkout=success`,
+              cancelUrl: `${appBaseUrl}/onboarding-wizard?checkout=cancelled`,
+              customerEmail: user?.email,
+            });
+            if (result?.url) {
+              return sendEnvelope(res, {
+                planId,
+                requiresPayment: true,
+                checkoutUrl: result.url,
+              });
+            }
+          } catch (checkoutErr: unknown) {
+            const errMsg = checkoutErr instanceof Error ? checkoutErr.message : String(checkoutErr);
+            logger.child("wizard").warn("Stripe checkout session failed, activating as trial", { error: errMsg });
+          }
+        }
         return sendEnvelope(res, {
           planId,
-          requiresPayment: true,
-          checkoutUrl: null,
-          message: "Stripe Checkout will be available in Phase 3. Plan activated as trial.",
+          requiresPayment: false,
+          trialActivated: true,
+          message: "Plan activated as a trial. You can add payment details in Billing settings.",
         });
       }
 
