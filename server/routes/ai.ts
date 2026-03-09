@@ -21,6 +21,10 @@ import {
   setAiOrgBudget,
   clearModelCache,
 } from "../ai";
+  conductDeepInvestigation,
+  conductThreatHunt,
+  analyzeBehavior,
+  predictAttackPaths,
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
 export function registerAiRoutes(app: Express): void {
@@ -471,4 +475,207 @@ export function registerAiRoutes(app: Express): void {
       }
     },
   );
+
+  // =============================
+  // ENHANCED AI CAPABILITIES
+  // =============================
+
+  /**
+   * POST /api/ai/deep-investigation/:incidentId
+   * Conduct deep forensic investigation with advanced analysis
+   */
+  app.post(
+    "/api/ai/deep-investigation/:incidentId",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        
+        const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
+        if (incidentAlerts.length === 0) {
+          return res.status(400).json({ message: "No alerts associated with this incident" });
+        }
+
+        const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        
+        const result = await conductDeepInvestigation(incident, incidentAlerts, threatIntelCtx, orgId);
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_deep_investigation",
+          resourceType: "incident",
+          resourceId: incident.id,
+          details: { alertCount: incidentAlerts.length, confidence: result.investigationConfidence },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("Deep investigation error", { error: String(error) });
+        res.status(500).json({ message: "Deep investigation failed. Please try again." });
+      }
+    },
+  );
+
+  /**
+   * POST /api/ai/threat-hunt
+   * Conduct proactive threat hunting mission
+   */
+  app.post(
+    "/api/ai/threat-hunt",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const { huntContext, telemetryData } = req.body;
+
+        if (!huntContext || !telemetryData) {
+          return res.status(400).json({ message: "huntContext and telemetryData are required" });
+        }
+
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+
+        // Build threat intel context if telemetry includes alerts
+        let threatIntelCtx;
+        if (telemetryData.alerts && Array.isArray(telemetryData.alerts)) {
+          threatIntelCtx = await buildThreatIntelContext(telemetryData.alerts);
+        }
+
+        const result = await conductThreatHunt(huntContext, telemetryData, threatIntelCtx, orgId);
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_threat_hunt",
+          resourceType: "telemetry",
+          details: { 
+            huntMissionId: result.huntMissionId,
+            threatsFound: result.huntSummary.threatsConfirmed,
+            hypothesesTested: result.huntSummary.hypothesesTested
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("Threat hunting error", { error: String(error) });
+        res.status(500).json({ message: "Threat hunting failed. Please try again." });
+      }
+    },
+  );
+
+  /**
+   * POST /api/ai/behavioral-analysis
+   * Analyze behavioral patterns for insider threats and account compromise
+   */
+  app.post(
+    "/api/ai/behavioral-analysis",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const { entityContext, activityData, baselineData } = req.body;
+
+        if (!entityContext || !activityData || !baselineData) {
+          return res.status(400).json({ 
+            message: "entityContext, activityData, and baselineData are required" 
+          });
+        }
+
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        const result = await analyzeBehavior(entityContext, activityData, baselineData, orgId);
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_behavioral_analysis",
+          resourceType: "entity",
+          resourceId: entityContext.entityId || "unknown",
+          details: { 
+            riskLevel: result.riskLevel,
+            behavioralScore: result.behavioralScore,
+            anomalyCount: result.anomalies.length
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("Behavioral analysis error", { error: String(error) });
+        res.status(500).json({ message: "Behavioral analysis failed. Please try again." });
+      }
+    },
+  );
+
+  /**
+   * POST /api/ai/predict-attack-paths
+   * Predict attacker's next moves and attack paths
+   */
+  app.post(
+    "/api/ai/predict-attack-paths",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const { compromiseState, networkTopology, crownJewels, securityControls } = req.body;
+
+        if (!compromiseState) {
+          return res.status(400).json({ message: "compromiseState is required" });
+        }
+
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        
+        const result = await predictAttackPaths(
+          compromiseState,
+          networkTopology || {},
+          crownJewels || [],
+          securityControls || {},
+          orgId
+        );
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_attack_path_prediction",
+          resourceType: "compromise",
+          details: { 
+            accessLevel: result.currentCompromiseState.accessLevel,
+            predictedPaths: result.predictedAttackPaths.length,
+            highestProbability: Math.max(...result.predictedAttackPaths.map(p => p.probability))
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json(result);
+      } catch (error: any) {
+        logger.child("ai").error("Attack path prediction error", { error: String(error) });
+        res.status(500).json({ message: "Attack path prediction failed. Please try again." });
+      }
+    },
+  );
+
 }
