@@ -141,7 +141,7 @@ function StatCard({
 }
 
 function OverviewTab() {
-  const { data, isLoading } = useQuery<PlatformStats>({
+  const { data, isPending } = useQuery<PlatformStats>({
     queryKey: ["/api/platform-admin/stats"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/stats");
@@ -150,7 +150,7 @@ function OverviewTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
@@ -195,7 +195,7 @@ function OrganizationsTab() {
   const [page, setPage] = useState(0);
   const limit = 20;
 
-  const { data, isLoading } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ["/api/platform-admin/organizations", search, page],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
@@ -223,7 +223,7 @@ function OrganizationsTab() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isPending ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-14" />
@@ -309,7 +309,7 @@ function UsersTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data, isLoading } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ["/api/platform-admin/users", search, page],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
@@ -383,7 +383,7 @@ function UsersTab() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isPending ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-14" />
@@ -536,7 +536,7 @@ function SubscriptionsTab() {
   const [page, setPage] = useState(0);
   const limit = 20;
 
-  const { data, isLoading } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ["/api/platform-admin/subscriptions", page],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
@@ -546,7 +546,7 @@ function SubscriptionsTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -634,7 +634,7 @@ function SubscriptionsTab() {
 }
 
 function RevenueTab() {
-  const { data, isLoading } = useQuery<RevenueData>({
+  const { data, isPending } = useQuery<RevenueData>({
     queryKey: ["/api/platform-admin/revenue"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/revenue");
@@ -643,7 +643,7 @@ function RevenueTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -709,7 +709,7 @@ function AuditLogTab() {
   const [actionFilter, setActionFilter] = useState("");
   const limit = 30;
 
-  const { data, isLoading } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ["/api/platform-admin/audit-logs", page, actionFilter],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
@@ -737,7 +737,7 @@ function AuditLogTab() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isPending ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12" />
@@ -808,7 +808,7 @@ function AuditLogTab() {
 }
 
 function HealthTab() {
-  const { data, isLoading, refetch } = useQuery<HealthData>({
+  const { data, isPending, refetch } = useQuery<HealthData>({
     queryKey: ["/api/platform-admin/health"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/health");
@@ -818,7 +818,7 @@ function HealthTab() {
     refetchInterval: 30000,
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (

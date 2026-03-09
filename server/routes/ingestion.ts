@@ -277,7 +277,11 @@ export function registerIngestionRoutes(app: Express): void {
         }
 
         if (isNew && orgId) {
-          storage.incrementUsage(orgId, "alerts_ingested").catch(() => {});
+          try {
+            await storage.incrementUsage(orgId, "alerts_ingested");
+          } catch (e) {
+            logger.child("ingestion").warn("Usage tracking failed", { error: String(e), orgId });
+          }
         }
 
         res.status(isNew ? 201 : 200).json({
@@ -402,7 +406,11 @@ export function registerIngestionRoutes(app: Express): void {
         });
 
         if (created > 0 && orgId) {
-          storage.incrementUsage(orgId, "alerts_ingested", created).catch(() => {});
+          try {
+            await storage.incrementUsage(orgId, "alerts_ingested", created);
+          } catch (e) {
+            logger.child("ingestion").warn("Usage tracking failed", { error: String(e), orgId, created });
+          }
         }
 
         res.status(created > 0 ? 201 : 200).json({

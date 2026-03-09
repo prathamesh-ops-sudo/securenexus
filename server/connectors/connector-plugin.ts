@@ -91,12 +91,15 @@ export function getPluginMetadata(type: string): ConnectorMetadata | null {
   return plugin ? plugin.metadata : null;
 }
 
-export function httpRequest(url: string, options: {
-  method?: string;
-  headers?: Record<string, string>;
-  body?: unknown;
-  timeout?: number;
-}): Promise<{ status: number; data: unknown }> {
+export function httpRequest(
+  url: string,
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+    timeout?: number;
+  },
+): Promise<{ status: number; data: unknown }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), options.timeout || 30000);
   return fetch(url, {
@@ -104,15 +107,21 @@ export function httpRequest(url: string, options: {
     headers: options.headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: controller.signal,
-  }).then(async (res) => {
-    clearTimeout(timeoutId);
-    const text = await res.text();
-    let data: unknown;
-    try { data = JSON.parse(text); } catch { data = text; }
-    return { status: res.status, data };
-  }).catch((err: Error) => {
-    clearTimeout(timeoutId);
-    if (err.name === "AbortError") throw new Error("Request timed out");
-    throw err;
-  });
+  })
+    .then(async (res) => {
+      clearTimeout(timeoutId);
+      const text = await res.text();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
+      return { status: res.status, data };
+    })
+    .catch((err: Error) => {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") throw new Error("Request timed out");
+      throw err;
+    });
 }

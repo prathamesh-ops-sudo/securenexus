@@ -61,9 +61,7 @@ describe("Cross-tenant boundary enforcement", () => {
       const userOrgA = "org-aaa-111";
       const targetOrgB = "org-bbb-222";
 
-      (storage.getUserMemberships as any).mockResolvedValue([
-        { orgId: userOrgA, role: "analyst", status: "active" },
-      ]);
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: userOrgA, role: "analyst", status: "active" }]);
 
       const req = mockReq({
         user: { id: "user-1", email: "alice@example.com" },
@@ -89,9 +87,7 @@ describe("Cross-tenant boundary enforcement", () => {
     it("allows access to member org via x-org-id header", async () => {
       const orgId = "org-aaa-111";
 
-      (storage.getUserMemberships as any).mockResolvedValue([
-        { orgId, role: "analyst", status: "active" },
-      ]);
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId, role: "analyst", status: "active" }]);
 
       const req = mockReq({
         user: { id: "user-1", email: "alice@example.com" },
@@ -264,9 +260,7 @@ describe("Cross-tenant boundary enforcement", () => {
       const orgA = "org-alpha";
       const orgB = "org-beta";
 
-      (storage.getUserMemberships as any).mockResolvedValue([
-        { orgId: orgA, role: "analyst", status: "active" },
-      ]);
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: orgA, role: "analyst", status: "active" }]);
 
       const req = mockReq({
         user: { id: "user-orgA", email: "orgA@example.com" },
@@ -288,9 +282,7 @@ describe("Cross-tenant boundary enforcement", () => {
       const orgA = "org-alpha";
       const orgB = "org-beta";
 
-      (storage.getUserMemberships as any).mockResolvedValue([
-        { orgId: orgA, role: "admin", status: "active" },
-      ]);
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: orgA, role: "admin", status: "active" }]);
 
       const req = mockReq({
         user: { id: "user-orgA", email: "orgA@example.com" },
@@ -311,9 +303,7 @@ describe("Cross-tenant boundary enforcement", () => {
       const orgA = "org-alpha";
       const orgB = "org-beta";
 
-      (storage.getUserMemberships as any).mockResolvedValue([
-        { orgId: orgA, role: "owner", status: "active" },
-      ]);
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: orgA, role: "owner", status: "active" }]);
 
       const req = mockReq({
         user: { id: "user-orgA", email: "orgA@example.com" },
@@ -334,9 +324,7 @@ describe("Cross-tenant boundary enforcement", () => {
       const orgA = "org-alpha";
       const orgB = "org-beta";
 
-      (storage.getUserMemberships as any).mockResolvedValue([
-        { orgId: orgA, role: "analyst", status: "active" },
-      ]);
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: orgA, role: "analyst", status: "active" }]);
 
       const routes = [
         { path: "/api/alerts", method: "GET" },
@@ -348,9 +336,7 @@ describe("Cross-tenant boundary enforcement", () => {
 
       for (const route of routes) {
         vi.clearAllMocks();
-        (storage.getUserMemberships as any).mockResolvedValue([
-          { orgId: orgA, role: "analyst", status: "active" },
-        ]);
+        (storage.getUserMemberships as any).mockResolvedValue([{ orgId: orgA, role: "analyst", status: "active" }]);
 
         const req = mockReq({
           user: { id: "user-orgA", email: "orgA@example.com" },

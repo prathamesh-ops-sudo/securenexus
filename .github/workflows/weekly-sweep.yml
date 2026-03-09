@@ -1,0 +1,217 @@
+name: Weekly Codebase Sweep
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20"
+  COVERAGE_THRESHOLD: 10
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  quality:
+    name: "Code Quality (Lint + Typecheck + Prettier)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript strict typecheck
+        run: npx tsc --noEmit
+
+      - name: ESLint (errors are fatal)
+        run: npx eslint . --quiet
+
+      - name: Prettier format verification
+        run: npx prettier --check "server/**/*.ts" "client/src/**/*.{ts,tsx}" "shared/**/*.ts"
+
+  security:
+    name: "Security Scanning"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hardcoded secret pattern scan
+        run: |
+          set -euo pipefail
+          PATTERNS=(
+            'AKIA[A-Z0-9]{16}'
+            'ghp_[A-Za-z0-9]{36}'
+            'snx_[a-f0-9]{64}'
+            'sk-[A-Za-z0-9]{48}'
+          )
+          FOUND=0
+          for pat in "${PATTERNS[@]}"; do
+            MATCHES=$(grep -rn --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' -E "$pat" server/ client/ shared/ 2>/dev/null | grep -v node_modules | grep -v '\.test\.' | grep -v 'REDACTED' | grep -v 'pattern' | grep -v 'RegExp' || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::error::Potential secret pattern found: $pat"
+              echo "$MATCHES"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::error::Hardcoded secrets detected"
+            exit 1
+          fi
+          echo "No hardcoded secrets detected"
+
+      - name: Dependency vulnerability audit
+        run: |
+          npm audit --omit=dev --audit-level=high 2>&1 || true
+          CRITICAL_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "::error::$CRITICAL_COUNT critical vulnerabilities found"
+            exit 1
+          fi
+
+  codeql:
+    name: "CodeQL SAST"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+
+  unit-tests:
+    name: "Unit Tests + Coverage"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npx vitest run --reporter=verbose
+
+  e2e-tests:
+    name: "E2E Tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build application
+        run: npx vite build
+
+      - name: Run E2E tests
+        run: npx playwright test --reporter=github
+        env:
+          CI: true
+
+  docker-build:
+    name: "Docker Build Verification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: securenexus:weekly-${{ github.sha }}
+
+  sweep-verdict:
+    name: "Weekly Sweep Verdict"
+    needs: [quality, security, codeql, unit-tests, e2e-tests, docker-build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report results
+        run: |
+          echo "============================================"
+          echo "  WEEKLY CODEBASE SWEEP RESULTS"
+          echo "============================================"
+          echo ""
+          echo "  Quality:      ${{ needs.quality.result }}"
+          echo "  Security:     ${{ needs.security.result }}"
+          echo "  CodeQL:       ${{ needs.codeql.result }}"
+          echo "  Unit Tests:   ${{ needs.unit-tests.result }}"
+          echo "  E2E Tests:    ${{ needs.e2e-tests.result }}"
+          echo "  Docker Build: ${{ needs.docker-build.result }}"
+          echo ""
+          echo "============================================"
+          FAILED=0
+          for result in "${{ needs.quality.result }}" "${{ needs.security.result }}" "${{ needs.codeql.result }}" "${{ needs.unit-tests.result }}" "${{ needs.e2e-tests.result }}" "${{ needs.docker-build.result }}"; do
+            if [ "$result" = "failure" ]; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::One or more sweep checks failed - review required"
+            exit 1
+          fi
+          echo "All sweep checks passed"

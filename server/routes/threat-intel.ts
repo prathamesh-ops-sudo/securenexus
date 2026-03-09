@@ -1,7 +1,23 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, validateFeedUrl } from "./shared";
 import { isAuthenticated } from "../auth";
-import { insertIocEntrySchema, insertIocFeedSchema, insertIocMatchRuleSchema, insertIocWatchlistSchema } from "@shared/schema";
+import {
+  insertIocEntrySchema,
+  insertIocFeedSchema,
+  insertIocMatchRuleSchema,
+  insertIocWatchlistSchema,
+} from "@shared/schema";
+import {
+  getThreatIntelFeedDefinitions,
+  getThreatIntelFeedStatuses,
+  isThreatIntelSlugValid,
+  setThreatIntelFeedEnabled,
+  getThreatIntelFeedHealth,
+  fetchThreatIntelFeed,
+  fetchAllThreatIntelFeeds,
+  getCachedThreatIntelArticles,
+  getThreatIntelCategories,
+} from "../threat-intel-feeds";
 
 export function registerThreatIntelRoutes(app: Express): void {
   // Threat Intel Configuration (Org-level API keys)
@@ -11,7 +27,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       const orgId = user?.orgId;
       if (!orgId) return res.json([]);
       const configs = await storage.getThreatIntelConfigs(orgId);
-      const masked = configs.map(c => ({
+      const masked = configs.map((c) => ({
         ...c,
         apiKey: c.apiKey ? `****${c.apiKey.slice(-4)}` : null,
       }));
@@ -110,10 +126,13 @@ export function registerThreatIntelRoutes(app: Express): void {
         const { db: database } = await import("../db");
         const { threatIntelConfigs } = await import("@shared/schema");
         const { eq } = await import("drizzle-orm");
-        await database.update(threatIntelConfigs).set({
-          lastTestedAt: new Date(),
-          lastTestStatus: success ? "success" : "failed",
-        }).where(eq(threatIntelConfigs.id, updatedConfig.id));
+        await database
+          .update(threatIntelConfigs)
+          .set({
+            lastTestedAt: new Date(),
+            lastTestStatus: success ? "success" : "failed",
+          })
+          .where(eq(threatIntelConfigs.id, updatedConfig.id));
       }
 
       res.json({ success, message, testedAt: new Date().toISOString() });
@@ -136,12 +155,22 @@ export function registerThreatIntelRoutes(app: Express): void {
   });
 
   // OSINT Threat Intelligence Feeds (no API keys required)
+  // Static routes MUST be registered before parameterized routes to avoid shadowing
   app.get("/api/osint-feeds/status", isAuthenticated, async (_req, res) => {
     try {
       const { getOsintFeedStatuses } = await import("../osint-feeds");
       res.json(getOsintFeedStatuses());
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch OSINT feed statuses" });
+    }
+  });
+
+  app.get("/api/osint-feeds/subscriptions", isAuthenticated, async (_req, res) => {
+    try {
+      const { getAllSubscriptions, getOsintFeedStatuses } = await import("../osint-feeds");
+      res.json({ subscriptions: getAllSubscriptions(), statuses: getOsintFeedStatuses() });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch OSINT feed subscriptions" });
     }
   });
 
@@ -169,6 +198,61 @@ export function registerThreatIntelRoutes(app: Express): void {
     }
   });
 
+  // Static POST routes before parameterized POST routes
+  app.post("/api/osint-feeds/refresh-all", isAuthenticated, async (_req, res) => {
+    try {
+      const { refreshAllFeedsWithProgress } = await import("../osint-feeds");
+      const result = await refreshAllFeedsWithProgress();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to refresh all feeds" });
+    }
+  });
+
+  // OSINT Feed Subscription Management (parameterized routes)
+  app.post("/api/osint-feeds/:feedSlug/subscribe", isAuthenticated, async (req, res) => {
+    try {
+      const { updateFeedSubscription } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const result = updateFeedSubscription(slug, { enabled: true });
+      if (!result) return res.status(404).json({ message: "Unknown feed slug" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to subscribe to feed" });
+    }
+  });
+
+  app.post("/api/osint-feeds/:feedSlug/unsubscribe", isAuthenticated, async (req, res) => {
+    try {
+      const { updateFeedSubscription } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const result = updateFeedSubscription(slug, { enabled: false });
+      if (!result) return res.status(404).json({ message: "Unknown feed slug" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsubscribe from feed" });
+    }
+  });
+
+  app.patch("/api/osint-feeds/:feedSlug/config", isAuthenticated, async (req, res) => {
+    try {
+      const { updateFeedSubscription } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const { refreshIntervalMinutes } = req.body;
+      if (refreshIntervalMinutes === undefined || typeof refreshIntervalMinutes !== "number") {
+        return res.status(400).json({ message: "refreshIntervalMinutes is required and must be a number" });
+      }
+      if (refreshIntervalMinutes < 5 || refreshIntervalMinutes > 1440) {
+        return res.status(400).json({ message: "refreshIntervalMinutes must be between 5 and 1440" });
+      }
+      const result = updateFeedSubscription(slug, { refreshIntervalMinutes });
+      if (!result) return res.status(404).json({ message: "Unknown feed slug" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update feed config" });
+    }
+  });
+
   app.post("/api/osint-feeds/:feedName/refresh", isAuthenticated, async (req, res) => {
     try {
       const { fetchOsintFeed } = await import("../osint-feeds");
@@ -180,6 +264,17 @@ export function registerThreatIntelRoutes(app: Express): void {
       res.json(result);
     } catch (error) {
       res.status(500).json({ message: "Failed to refresh OSINT feed" });
+    }
+  });
+
+  app.get("/api/osint-feeds/:feedSlug/health", isAuthenticated, async (req, res) => {
+    try {
+      const { getFeedHealthHistory } = await import("../osint-feeds");
+      const slug = p(req.params.feedSlug);
+      const history = getFeedHealthHistory(slug);
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed health history" });
     }
   });
 
@@ -199,7 +294,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const feed = await storage.getIocFeed(p(req.params.id));
       if (!feed) return res.status(404).json({ message: "Feed not found" });
-      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       res.json(feed);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC feed" });
@@ -215,12 +311,15 @@ export function registerThreatIntelRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid feed data", errors: parsed.error.flatten() });
       }
       if (parsed.data.url && !validateFeedUrl(parsed.data.url)) {
-        return res.status(400).json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
+        return res
+          .status(400)
+          .json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
       }
       const feed = await storage.createIocFeed({ ...parsed.data, orgId });
       res.status(201).json(feed);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC feed" });
     }
   });
@@ -230,9 +329,12 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocFeed(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Feed not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       if (req.body.url && !validateFeedUrl(req.body.url)) {
-        return res.status(400).json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
+        return res
+          .status(400)
+          .json({ message: "Invalid feed URL. Must be http/https and not target private/internal networks." });
       }
       const { orgId: _ignoreOrgId, ...updateData } = req.body;
       const feed = await storage.updateIocFeed(p(req.params.id), updateData);
@@ -248,7 +350,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocFeed(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Feed not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const deleted = await storage.deleteIocFeed(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Feed not found" });
       res.json({ message: "Feed deleted" });
@@ -262,7 +365,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const feed = await storage.getIocFeed(p(req.params.id));
       if (!feed) return res.status(404).json({ message: "Feed not found" });
-      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (feed.orgId && user?.orgId && feed.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const { fetchAndIngestFeed, ingestFeed } = await import("../ioc-ingestion");
       let result;
       if (req.body && req.body.data) {
@@ -299,7 +403,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const entry = await storage.getIocEntry(p(req.params.id));
       if (!entry) return res.status(404).json({ message: "IOC entry not found" });
-      if (entry.orgId && user?.orgId && entry.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (entry.orgId && user?.orgId && entry.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       res.json(entry);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC entry" });
@@ -317,7 +422,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const entry = await storage.createIocEntry({ ...parsed.data, orgId });
       res.status(201).json(entry);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create IOC entry" });
     }
   });
@@ -327,7 +433,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocEntry(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "IOC entry not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const { orgId: _ignoreOrgId, ...updateData } = req.body;
       const entry = await storage.updateIocEntry(p(req.params.id), updateData);
       if (!entry) return res.status(404).json({ message: "IOC entry not found" });
@@ -342,7 +449,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const existing = await storage.getIocEntry(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "IOC entry not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const deleted = await storage.deleteIocEntry(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "IOC entry not found" });
       res.json({ message: "IOC entry deleted" });
@@ -383,7 +491,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const watchlist = await storage.createIocWatchlist({ ...parsed.data, orgId, createdBy: userName });
       res.status(201).json(watchlist);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create watchlist" });
     }
   });
@@ -391,8 +500,11 @@ export function registerThreatIntelRoutes(app: Express): void {
   app.patch("/api/ioc-watchlists/:id", isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      const existing = await storage.getIocWatchlist ? await (storage as any).getIocWatchlist(p(req.params.id)) : null;
-      if (existing && existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      const existing = (await storage.getIocWatchlist)
+        ? await (storage as any).getIocWatchlist(p(req.params.id))
+        : null;
+      if (existing && existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       const { orgId: _ignoreOrgId, ...updateData } = req.body;
       const watchlist = await storage.updateIocWatchlist(p(req.params.id), updateData);
       if (!watchlist) return res.status(404).json({ message: "Watchlist not found" });
@@ -429,7 +541,11 @@ export function registerThreatIntelRoutes(app: Express): void {
     try {
       const user = (req as any).user;
       const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const entry = await storage.addIocToWatchlist({ watchlistId: p(req.params.id), iocEntryId: req.body.iocEntryId, addedBy: userName });
+      const entry = await storage.addIocToWatchlist({
+        watchlistId: p(req.params.id),
+        iocEntryId: req.body.iocEntryId,
+        addedBy: userName,
+      });
       res.status(201).json(entry);
     } catch (error) {
       res.status(500).json({ message: "Failed to add IOC to watchlist" });
@@ -467,7 +583,8 @@ export function registerThreatIntelRoutes(app: Express): void {
       const rule = await storage.createIocMatchRule({ ...parsed.data, orgId });
       res.status(201).json(rule);
     } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING") return res.status(403).json({ message: "Organization context required" });
+      if (error.message === "ORG_CONTEXT_MISSING")
+        return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create match rule" });
     }
   });
@@ -505,7 +622,12 @@ export function registerThreatIntelRoutes(app: Express): void {
     try {
       const user = (req as any).user;
       const { alertId, iocEntryId, limit } = req.query;
-      const matches = await storage.getIocMatches(user?.orgId, alertId as string | undefined, iocEntryId as string | undefined, limit ? parseInt(limit as string, 10) : undefined);
+      const matches = await storage.getIocMatches(
+        user?.orgId,
+        alertId as string | undefined,
+        iocEntryId as string | undefined,
+        limit ? parseInt(limit as string, 10) : undefined,
+      );
       res.json(matches);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch IOC matches" });
@@ -553,37 +675,121 @@ export function registerThreatIntelRoutes(app: Express): void {
       const user = (req as any).user;
       const review = await storage.getPostIncidentReview(p(req.params.id));
       if (!review) return res.status(404).json({ message: "Post-incident review not found" });
-      if (review.orgId && user?.orgId && review.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
+      if (review.orgId && user?.orgId && review.orgId !== user.orgId)
+        return res.status(403).json({ message: "Access denied" });
       res.json(review);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch post-incident review" });
     }
   });
 
-  app.patch("/api/pir/:id", isAuthenticated, async (req, res) => {
+  // ── Threat Intel News Feeds (RSS aggregation) ──
+  // Static routes first to avoid shadowing by parameterized routes
+
+  app.get("/api/threat-intel-feeds/categories", isAuthenticated, (_req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
-      const existing = await storage.getPostIncidentReview(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Post-incident review not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
-      const review = await storage.updatePostIncidentReview(p(req.params.id), req.body);
-      res.json(review);
+      res.json(getThreatIntelCategories());
     } catch (error) {
-      res.status(500).json({ message: "Failed to update post-incident review" });
+      res.status(500).json({ message: "Failed to fetch feed categories" });
     }
   });
 
-  app.delete("/api/pir/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/threat-intel-feeds/definitions", isAuthenticated, (_req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
-      const existing = await storage.getPostIncidentReview(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Post-incident review not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId) return res.status(403).json({ message: "Access denied" });
-      const deleted = await storage.deletePostIncidentReview(p(req.params.id));
-      res.json({ message: "Post-incident review deleted" });
+      res.json(getThreatIntelFeedDefinitions());
     } catch (error) {
-      res.status(500).json({ message: "Failed to delete post-incident review" });
+      res.status(500).json({ message: "Failed to fetch feed definitions" });
     }
   });
 
+  app.get("/api/threat-intel-feeds/statuses", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      res.json(getThreatIntelFeedStatuses(orgId));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed statuses" });
+    }
+  });
+
+  app.get("/api/threat-intel-feeds/articles", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 500;
+      const category = req.query.category ? String(req.query.category) : undefined;
+      const search = req.query.search ? String(req.query.search) : undefined;
+      const feedSlug = req.query.feedSlug ? String(req.query.feedSlug) : undefined;
+      if (isNaN(limit) || limit < 1 || limit > 5000) {
+        return res.status(400).json({ message: "limit must be between 1 and 5000" });
+      }
+      const orgId = (req as any).user?.orgId;
+      const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug, orgId });
+      res.json({ articles, total: articles.length });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch articles" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/refresh-all", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const result = await fetchAllThreatIntelFeeds(true, orgId);
+      const { items: _strip, ...summary } = result;
+      res.json(summary);
+    } catch (error) {
+      logger.child("routes").error("Failed to refresh all threat intel feeds", { error: String(error) });
+      res.status(500).json({ message: "Failed to refresh all threat intel feeds" });
+    }
+  });
+
+  // Parameterized routes after static routes
+  app.get("/api/threat-intel-feeds/:slug/health", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      if (!isThreatIntelSlugValid(slug)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      res.json(getThreatIntelFeedHealth(slug));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feed health" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/:slug/refresh", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      if (!isThreatIntelSlugValid(slug)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      const result = await fetchThreatIntelFeed(slug, true);
+      res.json({ articleCount: result.articles.length, error: result.error });
+    } catch (error) {
+      logger.child("routes").error("Failed to refresh feed", { error: String(error) });
+      res.status(500).json({ message: "Failed to refresh feed" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/:slug/enable", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      const orgId = (req as any).user?.orgId;
+      if (!setThreatIntelFeedEnabled(slug, true, orgId)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      res.json({ slug, enabled: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to enable feed" });
+    }
+  });
+
+  app.post("/api/threat-intel-feeds/:slug/disable", isAuthenticated, (req: Request, res: Response) => {
+    try {
+      const slug = p(req.params.slug);
+      const orgId = (req as any).user?.orgId;
+      if (!setThreatIntelFeedEnabled(slug, false, orgId)) {
+        return res.status(404).json({ message: "Unknown feed slug" });
+      }
+      res.json({ slug, enabled: false });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to disable feed" });
+    }
+  });
 }

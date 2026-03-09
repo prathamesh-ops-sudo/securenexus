@@ -20,12 +20,15 @@ export const paloaltoPlugin: ConnectorPlugin = {
     description: "Firewall / XDR - Pulls incidents from Cortex XDR API",
     authType: "api_key",
     requiredFields: [
-      { key: "baseUrl", label: "API URL", type: "url", placeholder: "https://api-your-instance.xdr.us.paloaltonetworks.com" },
+      {
+        key: "baseUrl",
+        label: "API URL",
+        type: "url",
+        placeholder: "https://api-your-instance.xdr.us.paloaltonetworks.com",
+      },
       { key: "apiKey", label: "API Key", type: "password", placeholder: "Your Cortex XDR API key" },
     ],
-    optionalFields: [
-      { key: "clientId", label: "API Key ID", type: "text", placeholder: "1" },
-    ],
+    optionalFields: [{ key: "clientId", label: "API Key ID", type: "text", placeholder: "1" }],
     icon: "Flame",
     docsUrl: "https://docs-cortex.paloaltonetworks.com/",
   },
@@ -33,7 +36,10 @@ export const paloaltoPlugin: ConnectorPlugin = {
   async test(config: ConnectorConfig): Promise<ConnectorTestResult> {
     const start = Date.now();
     try {
-      const headers: Record<string, string> = { "x-xdr-auth-id": config.clientId || "1", Authorization: config.apiKey! };
+      const headers: Record<string, string> = {
+        "x-xdr-auth-id": config.clientId || "1",
+        Authorization: config.apiKey!,
+      };
       const res = await httpRequest(`${config.baseUrl}/public_api/v1/healthcheck`, { headers });
       if (res.status >= 400) throw new Error(`Palo Alto returned ${res.status}`);
       return { success: true, message: "Successfully connected to paloalto", latencyMs: Date.now() - start };
@@ -52,8 +58,14 @@ export const paloaltoPlugin: ConnectorPlugin = {
     if (since) {
       filters.push({ field: "creation_time", operator: "gte", value: since.getTime() });
     }
-    const body = { request_data: { filters, search_from: 0, search_to: 100, sort: { field: "creation_time", keyword: "desc" } } };
-    const res = await httpRequest(`${config.baseUrl}/public_api/v1/incidents/get_incidents`, { method: "POST", headers, body });
+    const body = {
+      request_data: { filters, search_from: 0, search_to: 100, sort: { field: "creation_time", keyword: "desc" } },
+    };
+    const res = await httpRequest(`${config.baseUrl}/public_api/v1/incidents/get_incidents`, {
+      method: "POST",
+      headers,
+      body,
+    });
     return (res.data as Record<string, any>)?.reply?.incidents || [];
   },
 

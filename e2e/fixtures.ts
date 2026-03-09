@@ -32,7 +32,21 @@ async function mockAuthenticatedSession(page: Page) {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(envelope({ user: MOCK_USER, orgs: [MOCK_ORG], currentOrg: MOCK_ORG })),
+      body: JSON.stringify(
+        envelope({
+          userId: MOCK_USER.id,
+          memberships: [
+            {
+              id: "e2e-membership-1",
+              orgId: MOCK_ORG.id,
+              userId: MOCK_USER.id,
+              role: "admin",
+              status: "active",
+              organization: MOCK_ORG,
+            },
+          ],
+        }),
+      ),
     }),
   );
   await page.route("**/api/events", (route) => route.abort());

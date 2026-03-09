@@ -1,5 +1,13 @@
 import { db } from "./db";
-import { alerts, entities, alertEntities, correlationClusters, incidents, type Alert, type CorrelationCluster } from "@shared/schema";
+import {
+  alerts,
+  entities,
+  alertEntities,
+  correlationClusters,
+  incidents,
+  type Alert,
+  type CorrelationCluster,
+} from "@shared/schema";
 import { eq, and, sql, gte, desc, inArray, ne } from "drizzle-orm";
 import { findRelatedAlertsByEntity } from "./entity-resolver";
 import { computeThreatIntelConfidenceBoost } from "./threat-enrichment";
@@ -12,6 +20,7 @@ export interface CorrelationResult {
   alertIds: string[];
   sharedEntities: { type: string; value: string; count: number }[];
   reasoningTrace: string;
+  warnings: string[];
 }
 
 interface AlertWithEntities {
@@ -28,11 +37,11 @@ const CORRELATION_CONFIG = {
   weights: {
     sharedEntity: 0.25,
     temporalProximity: 0.15,
-    mitreAlignment: 0.20,
-    severityPattern: 0.10,
+    mitreAlignment: 0.2,
+    severityPattern: 0.1,
     sameSource: 0.05,
     categoryMatch: 0.15,
-    killChainProgression: 0.10,
+    killChainProgression: 0.1,
   },
 };
 
@@ -40,17 +49,14 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
   const timeWindow = new Date(Date.now() - CORRELATION_CONFIG.timeWindowHours * 60 * 60 * 1000);
 
   const relatedByEntity = await findRelatedAlertsByEntity(alert.id, alert.orgId, 30);
-  
+
   if (relatedByEntity.length === 0) return null;
 
-  const relatedAlertIds = relatedByEntity.map(r => r.alertId);
-  const relatedAlerts = await db.select().from(alerts)
-    .where(
-      and(
-        inArray(alerts.id, relatedAlertIds),
-        gte(alerts.createdAt, timeWindow)
-      )
-    )
+  const relatedAlertIds = relatedByEntity.map((r) => r.alertId);
+  const relatedAlerts = await db
+    .select()
+    .from(alerts)
+    .where(and(inArray(alerts.id, relatedAlertIds), gte(alerts.createdAt, timeWindow)))
     .orderBy(desc(alerts.createdAt))
     .limit(CORRELATION_CONFIG.maxClusterSize);
 
@@ -69,25 +75,43 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
   });
 
   let threatIntelBoost = 0;
+  const warnings: string[] = [];
   if (sharedEntities.length > 0) {
     try {
-      const sharedEntityKeys = sharedEntities.map(e => `${e.type}:${e.value}`);
-      const enrichedEntities = await db.select({ metadata: entities.metadata })
+      const sharedEntityKeys = sharedEntities.map((e) => `${e.type}:${e.value}`);
+      const enrichedEntities = await db
+        .select({ metadata: entities.metadata })
         .from(entities)
         .where(
           and(
             alert.orgId ? eq(entities.orgId, alert.orgId) : sql`${entities.orgId} IS NULL`,
-            sql`(${entities.type} || ':' || ${entities.value}) = ANY(${sql`ARRAY[${sql.join(sharedEntityKeys.map(k => sql`${k}`), sql`, `)}]`})`
-          )
+            sql`(${entities.type} || ':' || ${entities.value}) = ANY(${sql`ARRAY[${sql.join(
+              sharedEntityKeys.map((k) => sql`${k}`),
+              sql`, `,
+            )}]`})`,
+          ),
         )
         .limit(20);
 
       threatIntelBoost = computeThreatIntelConfidenceBoost(
-        enrichedEntities.map(e => e.metadata as Record<string, any> | null)
+        enrichedEntities.map((e) => e.metadata as Record<string, any> | null),
       );
     } catch (err) {
-      logger.child("correlation-engine").warn("Threat intel confidence boost computation failed, defaulting to 0", { alertId: alert.id, error: String(err) });
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errStack = err instanceof Error ? err.stack : undefined;
+      logger
+        .child("correlation-engine")
+        .error("TI enrichment failed during correlation — confidence may be understated", {
+          alertId: alert.id,
+          orgId: alert.orgId,
+          sharedEntityCount: sharedEntities.length,
+          error: errMsg,
+          stack: errStack,
+        });
       threatIntelBoost = 0;
+      warnings.push(
+        `Threat-intelligence enrichment failed: ${errMsg}. Correlation proceeded without TI boost — confidence may be understated.`,
+      );
     }
   }
 
@@ -95,21 +119,25 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
 
   if (confidence < 0.3) return null;
 
-  const clusterAlertIds = [alert.id, ...relatedAlerts.map(a => a.id)];
-  const reasoningTrace = generateReasoningTrace(alert, relatedAlerts, sharedEntities, confidence);
+  const clusterAlertIds = [alert.id, ...relatedAlerts.map((a) => a.id)];
+  const reasoningTrace = generateReasoningTrace(alert, relatedAlerts, sharedEntities, confidence, warnings);
 
-  const [cluster] = await db.insert(correlationClusters).values({
-    orgId: alert.orgId,
-    confidence,
-    method: "temporal_entity_clustering_v1",
-    sharedEntities: sharedEntities,
-    reasoningTrace,
-    alertIds: clusterAlertIds,
-    status: confidence >= CORRELATION_CONFIG.confidenceThresholdForIncident ? "confirmed" : "pending",
-  }).returning();
+  const [cluster] = await db
+    .insert(correlationClusters)
+    .values({
+      orgId: alert.orgId,
+      confidence,
+      method: "temporal_entity_clustering_v1",
+      sharedEntities: sharedEntities,
+      reasoningTrace,
+      alertIds: clusterAlertIds,
+      status: confidence >= CORRELATION_CONFIG.confidenceThresholdForIncident ? "confirmed" : "pending",
+    })
+    .returning();
 
-  await db.update(alerts)
-    .set({ 
+  await db
+    .update(alerts)
+    .set({
       correlationScore: confidence,
       correlationClusterId: cluster.id,
       correlationReason: reasoningTrace.substring(0, 500),
@@ -123,42 +151,54 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
     alertIds: clusterAlertIds,
     sharedEntities,
     reasoningTrace,
+    warnings,
   };
 }
 
 function calculateConfidence(
   targetAlert: Alert,
   relatedAlerts: Alert[],
-  sharedEntities: { type: string; value: string; count: number }[]
+  sharedEntities: { type: string; value: string; count: number }[],
 ): number {
   const w = CORRELATION_CONFIG.weights;
   let score = 0;
 
-  const uniqueSharedTypes = new Set(sharedEntities.map(e => e.type));
+  const uniqueSharedTypes = new Set(sharedEntities.map((e) => e.type));
   const entityScore = Math.min(uniqueSharedTypes.size / 4, 1.0);
   score += entityScore * w.sharedEntity;
 
   const now = Date.now();
   const targetTime = targetAlert.createdAt ? new Date(targetAlert.createdAt).getTime() : now;
-  const avgTimeDiff = relatedAlerts.reduce((sum, a) => {
-    const t = a.createdAt ? new Date(a.createdAt).getTime() : now;
-    return sum + Math.abs(targetTime - t);
-  }, 0) / Math.max(relatedAlerts.length, 1);
+  const avgTimeDiff =
+    relatedAlerts.reduce((sum, a) => {
+      const t = a.createdAt ? new Date(a.createdAt).getTime() : now;
+      return sum + Math.abs(targetTime - t);
+    }, 0) / Math.max(relatedAlerts.length, 1);
   const hoursDiff = avgTimeDiff / (1000 * 60 * 60);
   const temporalScore = Math.max(0, 1.0 - hoursDiff / CORRELATION_CONFIG.timeWindowHours);
   score += temporalScore * w.temporalProximity;
 
   const targetTactic = targetAlert.mitreTactic;
-  const relatedTactics = new Set(relatedAlerts.map(a => a.mitreTactic).filter(Boolean));
+  const relatedTactics = new Set(relatedAlerts.map((a) => a.mitreTactic).filter(Boolean));
   if (targetTactic && relatedTactics.size > 0) {
     const killChainOrder = [
-      "reconnaissance", "resource-development", "initial-access", "execution",
-      "persistence", "privilege-escalation", "defense-evasion", "credential-access",
-      "discovery", "lateral-movement", "collection", "command-and-control",
-      "exfiltration", "impact"
+      "reconnaissance",
+      "resource-development",
+      "initial-access",
+      "execution",
+      "persistence",
+      "privilege-escalation",
+      "defense-evasion",
+      "credential-access",
+      "discovery",
+      "lateral-movement",
+      "collection",
+      "command-and-control",
+      "exfiltration",
+      "impact",
     ];
     const tactics = [targetTactic, ...Array.from(relatedTactics)].filter((t): t is string => t !== null);
-    const indices = tactics.map(t => killChainOrder.indexOf(t)).filter(i => i >= 0);
+    const indices = tactics.map((t) => killChainOrder.indexOf(t)).filter((i) => i >= 0);
     if (indices.length >= 2) {
       const span = Math.max(...indices) - Math.min(...indices);
       const mitreScore = span > 0 ? Math.min(span / 5, 1.0) : 0.3;
@@ -166,29 +206,36 @@ function calculateConfidence(
     }
   }
 
-  const severities = [targetAlert.severity, ...relatedAlerts.map(a => a.severity)];
+  const severities = [targetAlert.severity, ...relatedAlerts.map((a) => a.severity)];
   const hasCritical = severities.includes("critical");
   const hasHigh = severities.includes("high");
   const severityScore = hasCritical ? 1.0 : hasHigh ? 0.7 : 0.3;
   score += severityScore * w.severityPattern;
 
-  const sameSourceCount = relatedAlerts.filter(a => a.source === targetAlert.source).length;
+  const sameSourceCount = relatedAlerts.filter((a) => a.source === targetAlert.source).length;
   const sourceScore = sameSourceCount > 0 ? Math.min(sameSourceCount / relatedAlerts.length + 0.3, 1.0) : 0.5;
   score += sourceScore * w.sameSource;
 
   const targetCategory = targetAlert.category;
-  const relatedCategories = new Set(relatedAlerts.map(a => a.category));
+  const relatedCategories = new Set(relatedAlerts.map((a) => a.category));
   if (targetCategory && relatedCategories.has(targetCategory)) {
     score += 0.8 * w.categoryMatch;
   } else if (relatedCategories.size > 0) {
-    const attackCategories = new Set(["malware", "intrusion", "lateral_movement", "credential_access", "data_exfiltration", "privilege_escalation"]);
-    const relatedAttackCats = Array.from(relatedCategories).filter(c => c && attackCategories.has(c));
+    const attackCategories = new Set([
+      "malware",
+      "intrusion",
+      "lateral_movement",
+      "credential_access",
+      "data_exfiltration",
+      "privilege_escalation",
+    ]);
+    const relatedAttackCats = Array.from(relatedCategories).filter((c) => c && attackCategories.has(c));
     if (targetCategory && attackCategories.has(targetCategory) && relatedAttackCats.length > 0) {
       score += 0.6 * w.categoryMatch;
     }
   }
 
-  const allTactics = [targetAlert.mitreTactic, ...relatedAlerts.map(a => a.mitreTactic)].filter(Boolean) as string[];
+  const allTactics = [targetAlert.mitreTactic, ...relatedAlerts.map((a) => a.mitreTactic)].filter(Boolean) as string[];
   const uniqueTactics = new Set(allTactics);
   if (uniqueTactics.size >= 3) {
     score += 1.0 * w.killChainProgression;
@@ -203,7 +250,8 @@ function generateReasoningTrace(
   targetAlert: Alert,
   relatedAlerts: Alert[],
   sharedEntities: { type: string; value: string; count: number }[],
-  confidence: number
+  confidence: number,
+  warnings: string[] = [],
 ): string {
   const lines: string[] = [];
   lines.push(`CORRELATION ANALYSIS — Confidence: ${(confidence * 100).toFixed(1)}%`);
@@ -211,14 +259,14 @@ function generateReasoningTrace(
   lines.push(`Primary Alert: [${targetAlert.id.substring(0, 8)}] ${targetAlert.title}`);
   lines.push(`Related Alerts: ${relatedAlerts.length}`);
   lines.push("");
-  
+
   lines.push("SHARED ENTITIES:");
   for (const ent of sharedEntities.slice(0, 10)) {
     lines.push(`  - ${ent.type}: ${ent.value} (seen in ${ent.count} related alerts)`);
   }
   lines.push("");
 
-  const allTactics = new Set([targetAlert.mitreTactic, ...relatedAlerts.map(a => a.mitreTactic)].filter(Boolean));
+  const allTactics = new Set([targetAlert.mitreTactic, ...relatedAlerts.map((a) => a.mitreTactic)].filter(Boolean));
   if (allTactics.size > 0) {
     lines.push(`MITRE ATT&CK Tactics: ${Array.from(allTactics).join(", ")}`);
     if (allTactics.size >= 3) {
@@ -226,13 +274,23 @@ function generateReasoningTrace(
     }
   }
 
-  const allSeverities = [targetAlert.severity, ...relatedAlerts.map(a => a.severity)];
-  const critCount = allSeverities.filter(s => s === "critical").length;
-  const highCount = allSeverities.filter(s => s === "high").length;
-  lines.push(`Severity Distribution: ${critCount} critical, ${highCount} high, ${allSeverities.length - critCount - highCount} other`);
+  const allSeverities = [targetAlert.severity, ...relatedAlerts.map((a) => a.severity)];
+  const critCount = allSeverities.filter((s) => s === "critical").length;
+  const highCount = allSeverities.filter((s) => s === "high").length;
+  lines.push(
+    `Severity Distribution: ${critCount} critical, ${highCount} high, ${allSeverities.length - critCount - highCount} other`,
+  );
 
-  const allSources = new Set([targetAlert.source, ...relatedAlerts.map(a => a.source)]);
+  const allSources = new Set([targetAlert.source, ...relatedAlerts.map((a) => a.source)]);
   lines.push(`Sources: ${Array.from(allSources).join(", ")}`);
+
+  if (warnings.length > 0) {
+    lines.push("");
+    lines.push("WARNINGS:");
+    for (const w of warnings) {
+      lines.push(`  ⚠ ${w}`);
+    }
+  }
 
   if (confidence >= CORRELATION_CONFIG.confidenceThresholdForIncident) {
     lines.push("");
@@ -244,21 +302,23 @@ function generateReasoningTrace(
 
 export async function runCorrelationScan(orgId?: string): Promise<CorrelationResult[]> {
   const timeWindow = new Date(Date.now() - CORRELATION_CONFIG.timeWindowHours * 60 * 60 * 1000);
-  
-  const uncorrelatedAlerts = await db.select().from(alerts)
+
+  const uncorrelatedAlerts = await db
+    .select()
+    .from(alerts)
     .where(
       and(
         orgId ? eq(alerts.orgId, orgId) : undefined,
         gte(alerts.createdAt, timeWindow),
         sql`${alerts.correlationClusterId} IS NULL`,
-        sql`${alerts.incidentId} IS NULL`
-      )
+        sql`${alerts.incidentId} IS NULL`,
+      ),
     )
     .orderBy(desc(alerts.createdAt))
     .limit(100);
 
   const results: CorrelationResult[] = [];
-  
+
   for (const alert of uncorrelatedAlerts) {
     const result = await correlateAlert(alert);
     if (result) {
@@ -271,10 +331,7 @@ export async function runCorrelationScan(orgId?: string): Promise<CorrelationRes
 
 export async function getCorrelationClusters(orgId?: string): Promise<CorrelationCluster[]> {
   const conditions = orgId ? eq(correlationClusters.orgId, orgId) : undefined;
-  return db.select().from(correlationClusters)
-    .where(conditions)
-    .orderBy(desc(correlationClusters.createdAt))
-    .limit(50);
+  return db.select().from(correlationClusters).where(conditions).orderBy(desc(correlationClusters.createdAt)).limit(50);
 }
 
 export async function getCorrelationCluster(id: string): Promise<CorrelationCluster | undefined> {
@@ -285,36 +342,41 @@ export async function getCorrelationCluster(id: string): Promise<CorrelationClus
 export async function promoteClusterToIncident(
   clusterId: string,
   title: string,
-  severity: string
+  severity: string,
 ): Promise<{ incidentId: string }> {
   const cluster = await getCorrelationCluster(clusterId);
   if (!cluster) throw new Error("Cluster not found");
 
-  const [incident] = await db.insert(incidents).values({
-    orgId: cluster.orgId,
-    title,
-    severity,
-    status: "investigating",
-    priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
-    confidence: cluster.confidence,
-    alertCount: cluster.alertIds?.length || 0,
-    mitreTactics: [],
-    mitreTechniques: [],
-    referencedAlertIds: cluster.alertIds as string[] | undefined,
-    reasoningTrace: cluster.reasoningTrace,
-  }).returning();
+  const [incident] = await db
+    .insert(incidents)
+    .values({
+      orgId: cluster.orgId,
+      title,
+      severity,
+      status: "investigating",
+      priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
+      confidence: cluster.confidence,
+      alertCount: cluster.alertIds?.length || 0,
+      mitreTactics: [],
+      mitreTechniques: [],
+      referencedAlertIds: cluster.alertIds as string[] | undefined,
+      reasoningTrace: cluster.reasoningTrace,
+    })
+    .returning();
 
   if (cluster.alertIds && Array.isArray(cluster.alertIds)) {
-    await db.update(alerts)
-      .set({ 
-        incidentId: incident.id, 
+    await db
+      .update(alerts)
+      .set({
+        incidentId: incident.id,
         status: "correlated",
         correlationScore: cluster.confidence,
       })
       .where(inArray(alerts.id, cluster.alertIds as string[]));
   }
 
-  await db.update(correlationClusters)
+  await db
+    .update(correlationClusters)
     .set({ incidentId: incident.id, status: "promoted", updatedAt: new Date() })
     .where(eq(correlationClusters.id, clusterId));
 

@@ -50,7 +50,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ensureArray } from "@/lib/queryClient";
 import { formatDateShort as formatDate, formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -269,7 +269,7 @@ function ComplianceCenterTab() {
   const { toast } = useToast();
   const {
     data: centerData,
-    isLoading,
+    isPending,
     isError,
     refetch,
   } = useQuery<ComplianceCenterData>({
@@ -315,7 +315,7 @@ function ComplianceCenterTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -516,7 +516,7 @@ function PoliciesTab() {
   const { toast } = useToast();
   const {
     data: policy,
-    isLoading,
+    isPending,
     isError: policyError,
     refetch: refetchPolicy,
   } = useQuery<CompliancePolicy>({
@@ -574,7 +574,7 @@ function PoliciesTab() {
     setFrameworks((prev) => (prev.includes(fw) ? prev.filter((f) => f !== fw) : [...prev, fw]));
   };
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -767,7 +767,7 @@ function DsarTab() {
 
   const {
     data: dsarRequests,
-    isLoading,
+    isPending,
     isError: _dsarError,
     refetch: _refetchDsar,
   } = useQuery<DsarRequest[]>({
@@ -834,7 +834,7 @@ function DsarTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1582,9 +1582,9 @@ function ControlsTab() {
 
   const {
     data: controls,
-    isLoading: controlsLoading,
-    isError: _controlsError,
-    refetch: _refetchControls,
+    isPending: controlsPending,
+    isError: controlsError,
+    refetch: refetchControls,
   } = useQuery<ComplianceControl[]>({
     queryKey: controlsQueryKey,
     queryFn: async () => {
@@ -1592,19 +1592,24 @@ function ControlsTab() {
         frameworkFilter === "all"
           ? "/api/compliance-controls"
           : `/api/compliance-controls?framework=${frameworkFilter}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch controls");
-      return res.json();
+      const res = await apiRequest("GET", url);
+      const raw = await res.json();
+      return ensureArray(raw);
     },
   });
 
   const {
     data: mappings,
-    isLoading: mappingsLoading,
-    isError: _mappingsError,
-    refetch: _refetchMappings,
+    isPending: mappingsPending,
+    isError: mappingsError,
+    refetch: refetchMappings,
   } = useQuery<ComplianceControlMapping[]>({
     queryKey: ["/api/compliance-control-mappings"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/compliance-control-mappings");
+      const raw = await res.json();
+      return ensureArray(raw);
+    },
   });
 
   const seedControls = useMutation({
@@ -1645,17 +1650,43 @@ function ControlsTab() {
     },
   });
 
-  const groupedControls = (controls || []).reduce<Record<string, ComplianceControl[]>>((acc, ctrl) => {
-    const key = ctrl.category || "Uncategorized";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(ctrl);
-    return acc;
-  }, {});
+  const groupedControls = ensureArray<ComplianceControl>(controls).reduce<Record<string, ComplianceControl[]>>(
+    (acc, ctrl) => {
+      const key = ctrl.category || "Uncategorized";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(ctrl);
+      return acc;
+    },
+    {},
+  );
 
-  if (controlsLoading) {
+  if (controlsPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (controlsError || mappingsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load compliance controls</p>
+        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            refetchControls();
+            refetchMappings();
+          }}
+        >
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -1860,7 +1891,7 @@ function ControlsTab() {
           </Dialog>
         </CardHeader>
         <CardContent>
-          {mappingsLoading ? (
+          {mappingsPending ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
@@ -1955,7 +1986,7 @@ function EvidenceLockerTab() {
 
   const {
     data: evidenceItems,
-    isLoading,
+    isPending,
     isError: _evidenceError,
     refetch: _refetchEvidence,
   } = useQuery<EvidenceLockerItem[]>({
@@ -1965,9 +1996,9 @@ function EvidenceLockerTab() {
       if (frameworkFilter !== "all") params.set("framework", frameworkFilter);
       if (artifactTypeFilter !== "all") params.set("artifactType", artifactTypeFilter);
       const url = `/api/evidence-locker${params.toString() ? `?${params.toString()}` : ""}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch evidence");
-      return res.json();
+      const res = await apiRequest("GET", url);
+      const raw = await res.json();
+      return ensureArray(raw);
     },
   });
 
@@ -2019,7 +2050,7 @@ function EvidenceLockerTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2328,7 +2359,7 @@ function LegalHoldsTab() {
 
   const {
     data: holds,
-    isLoading,
+    isPending,
     isError: _holdsError,
     refetch: _refetchHolds,
   } = useQuery<LegalHold[]>({
@@ -2337,20 +2368,14 @@ function LegalHoldsTab() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/legal-holds", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name: newName,
-          description: newDescription,
-          reason: newReason,
-          caseReference: newCaseRef,
-          holdType: newHoldType,
-          tableScope: newTableScope,
-        }),
+      const res = await apiRequest("POST", "/api/legal-holds", {
+        name: newName,
+        description: newDescription,
+        reason: newReason,
+        caseReference: newCaseRef,
+        holdType: newHoldType,
+        tableScope: newTableScope,
       });
-      if (!res.ok) throw new Error("Failed to create legal hold");
       return res.json();
     },
     onSuccess: () => {
@@ -2366,11 +2391,7 @@ function LegalHoldsTab() {
 
   const deactivateMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/legal-holds/${id}/deactivate`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to deactivate");
+      const res = await apiRequest("POST", `/api/legal-holds/${id}/deactivate`);
       return res.json();
     },
     onSuccess: () => {
@@ -2383,7 +2404,7 @@ function LegalHoldsTab() {
     setNewTableScope((prev) => (prev.includes(table) ? prev.filter((t) => t !== table) : [...prev, table]));
   };
 
-  if (isLoading)
+  if (isPending)
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2614,7 +2635,7 @@ function EvidenceAttachmentsTab() {
 
   const {
     data: attachments,
-    isLoading,
+    isPending,
     refetch: refetchAttachments,
   } = useQuery<any[]>({
     queryKey: ["/api/evidence-attachments", controlMappingFilter],
@@ -2622,9 +2643,13 @@ function EvidenceAttachmentsTab() {
       const url = controlMappingFilter
         ? `/api/evidence-attachments?controlMappingId=${controlMappingFilter}`
         : "/api/evidence-attachments";
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
+      try {
+        const res = await apiRequest("GET", url);
+        const raw = await res.json();
+        return ensureArray(raw);
+      } catch {
+        return [];
+      }
     },
   });
 
@@ -2687,7 +2712,7 @@ function EvidenceAttachmentsTab() {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isPending ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 bg-muted/30 rounded-lg animate-pulse" />
@@ -2824,18 +2849,21 @@ function ComplianceHelpersTab() {
 
   const {
     data: helpers,
-    isLoading,
+    isPending,
     refetch: refetchHelpers,
   } = useQuery<any[]>({
     queryKey: ["/api/compliance-helpers"],
   });
 
-  const { data: coverageSummary, isLoading: coverageLoading } = useQuery<any>({
+  const { data: coverageSummary, isPending: coveragePending } = useQuery<any>({
     queryKey: ["/api/compliance-helpers/coverage-summary"],
     queryFn: async () => {
-      const res = await fetch("/api/compliance-helpers/coverage-summary", { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
+      try {
+        const res = await apiRequest("GET", "/api/compliance-helpers/coverage-summary");
+        return res.json();
+      } catch {
+        return null;
+      }
     },
   });
 
@@ -3005,7 +3033,7 @@ function ComplianceHelpersTab() {
           <CardTitle className="text-sm font-semibold">Helper Run History</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isPending ? (
             <div className="space-y-2">
               {[1, 2].map((i) => (
                 <div key={i} className="h-16 bg-muted/30 rounded-lg animate-pulse" />

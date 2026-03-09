@@ -22,7 +22,10 @@ export interface TenantIsolationConfig {
   lastAssessedAt: string;
 }
 
-const PLAN_ISOLATION_DEFAULTS: Record<PlanTier, { isolationLevel: IsolationLevel; connectionPoolSize: number; maxConnectionsPerOrg: number }> = {
+const PLAN_ISOLATION_DEFAULTS: Record<
+  PlanTier,
+  { isolationLevel: IsolationLevel; connectionPoolSize: number; maxConnectionsPerOrg: number }
+> = {
   free: { isolationLevel: "shared", connectionPoolSize: 5, maxConnectionsPerOrg: 10 },
   pro: { isolationLevel: "shared", connectionPoolSize: 15, maxConnectionsPerOrg: 30 },
   enterprise: { isolationLevel: "dedicated-schema", connectionPoolSize: 50, maxConnectionsPerOrg: 100 },
@@ -63,7 +66,11 @@ export function getTenantIsolationConfig(orgId: string, plan: PlanTier = "free")
   return config;
 }
 
-export function setTenantIsolationConfig(orgId: string, updates: Partial<TenantIsolationConfig>, plan: PlanTier = "free"): TenantIsolationConfig {
+export function setTenantIsolationConfig(
+  orgId: string,
+  updates: Partial<TenantIsolationConfig>,
+  plan: PlanTier = "free",
+): TenantIsolationConfig {
   const current = tenantConfigs.get(orgId) || getTenantIsolationConfig(orgId, plan);
   const updated: TenantIsolationConfig = {
     ...current,
@@ -72,7 +79,11 @@ export function setTenantIsolationConfig(orgId: string, updates: Partial<TenantI
     lastAssessedAt: new Date().toISOString(),
   };
   tenantConfigs.set(orgId, updated);
-  log.info("Tenant isolation config updated", { orgId, isolationLevel: updated.isolationLevel, resourceGroup: updated.resourceGroup });
+  log.info("Tenant isolation config updated", {
+    orgId,
+    isolationLevel: updated.isolationLevel,
+    resourceGroup: updated.resourceGroup,
+  });
   return updated;
 }
 
@@ -146,9 +157,11 @@ export function assessNoisyNeighbor(orgId: string): NoisyNeighborMetrics {
 
   let recommendation = "Normal operation — no action needed";
   if (noiseScore >= 90) {
-    recommendation = "Critical: Migrate to dedicated instance immediately. This tenant is severely impacting shared resources.";
+    recommendation =
+      "Critical: Migrate to dedicated instance immediately. This tenant is severely impacting shared resources.";
   } else if (noiseScore >= NOISY_THRESHOLD) {
-    recommendation = "Warning: Consider dedicated schema or throttling. Tenant is causing noticeable resource contention.";
+    recommendation =
+      "Warning: Consider dedicated schema or throttling. Tenant is causing noticeable resource contention.";
   } else if (noiseScore >= 40) {
     recommendation = "Monitor: Tenant is approaching noise threshold. Review query patterns and add indexes if needed.";
   }
@@ -182,36 +195,52 @@ export interface SchemaIsolationStatus {
   created: boolean;
 }
 
-export async function provisionDedicatedSchema(orgId: string, plan: PlanTier = "enterprise"): Promise<SchemaIsolationStatus> {
+export async function provisionDedicatedSchema(
+  orgId: string,
+  plan: PlanTier = "enterprise",
+): Promise<SchemaIsolationStatus> {
   const schemaName = `org_${orgId.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 
   try {
     await db.execute(sql`CREATE SCHEMA IF NOT EXISTS ${sql.identifier(schemaName)}`);
 
-    const CORE_TABLES = ["alerts", "incidents", "audit_logs", "sli_metrics", "jobs", "connector_job_runs", "outbox_events", "ingestion_logs"];
+    const CORE_TABLES = [
+      "alerts",
+      "incidents",
+      "audit_logs",
+      "sli_metrics",
+      "jobs",
+      "connector_job_runs",
+      "outbox_events",
+      "ingestion_logs",
+    ];
 
     for (const table of CORE_TABLES) {
       await db.execute(
-        sql`CREATE TABLE IF NOT EXISTS ${sql.identifier(schemaName)}.${sql.identifier(table)} (LIKE public.${sql.identifier(table)} INCLUDING ALL)`
+        sql`CREATE TABLE IF NOT EXISTS ${sql.identifier(schemaName)}.${sql.identifier(table)} (LIKE public.${sql.identifier(table)} INCLUDING ALL)`,
       );
     }
 
     const tableCountResult = await db.execute(
-      sql`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = ${schemaName}`
+      sql`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = ${schemaName}`,
     );
     const tableCount = Number(((tableCountResult as any).rows || [])[0]?.count || 0);
 
     const sizeResult = await db.execute(
-      sql`SELECT pg_size_pretty(sum(pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename)))) as size FROM pg_tables WHERE schemaname = ${schemaName}`
+      sql`SELECT pg_size_pretty(sum(pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename)))) as size FROM pg_tables WHERE schemaname = ${schemaName}`,
     );
     const sizeStr = String(((sizeResult as any).rows || [])[0]?.size || "0 bytes");
     const estimatedSizeMb = parseSizeToMb(sizeStr);
 
-    setTenantIsolationConfig(orgId, {
-      isolationLevel: "dedicated-schema",
-      dedicatedSchema: schemaName,
-      resourceGroup: "dedicated",
-    }, plan);
+    setTenantIsolationConfig(
+      orgId,
+      {
+        isolationLevel: "dedicated-schema",
+        dedicatedSchema: schemaName,
+        resourceGroup: "dedicated",
+      },
+      plan,
+    );
 
     log.info("Dedicated schema provisioned", { orgId, schemaName, tableCount });
 
@@ -241,12 +270,18 @@ function parseSizeToMb(sizeStr: string): number {
   const value = parseFloat(match[1]);
   const unit = (match[2] || "bytes").toLowerCase();
   switch (unit) {
-    case "bytes": return value / (1024 * 1024);
-    case "kb": return value / 1024;
-    case "mb": return value;
-    case "gb": return value * 1024;
-    case "tb": return value * 1024 * 1024;
-    default: return 0;
+    case "bytes":
+      return value / (1024 * 1024);
+    case "kb":
+      return value / 1024;
+    case "mb":
+      return value;
+    case "gb":
+      return value * 1024;
+    case "tb":
+      return value * 1024 * 1024;
+    default:
+      return 0;
   }
 }
 
@@ -263,7 +298,11 @@ export interface DedicatedInstanceConfig {
 
 const dedicatedInstances = new Map<string, DedicatedInstanceConfig>();
 
-export function registerDedicatedInstance(orgId: string, instanceConfig: Omit<DedicatedInstanceConfig, "orgId" | "provisionedAt">, plan: PlanTier = "enterprise"): DedicatedInstanceConfig {
+export function registerDedicatedInstance(
+  orgId: string,
+  instanceConfig: Omit<DedicatedInstanceConfig, "orgId" | "provisionedAt">,
+  plan: PlanTier = "enterprise",
+): DedicatedInstanceConfig {
   const config: DedicatedInstanceConfig = {
     ...instanceConfig,
     orgId,
@@ -272,11 +311,15 @@ export function registerDedicatedInstance(orgId: string, instanceConfig: Omit<De
 
   dedicatedInstances.set(orgId, config);
 
-  setTenantIsolationConfig(orgId, {
-    isolationLevel: "dedicated-instance",
-    dedicatedDbUrl: `postgresql://${instanceConfig.endpoint}:${instanceConfig.port}`,
-    resourceGroup: "dedicated-instance",
-  }, plan);
+  setTenantIsolationConfig(
+    orgId,
+    {
+      isolationLevel: "dedicated-instance",
+      dedicatedDbUrl: `postgresql://${instanceConfig.endpoint}:${instanceConfig.port}`,
+      resourceGroup: "dedicated-instance",
+    },
+    plan,
+  );
 
   log.info("Dedicated RDS instance registered", { orgId, instanceIdentifier: instanceConfig.instanceIdentifier });
   return config;
@@ -293,7 +336,12 @@ export interface TenantIsolationReport {
   byIsolationLevel: Record<IsolationLevel, number>;
   noisyTenants: NoisyNeighborMetrics[];
   dedicatedInstances: DedicatedInstanceConfig[];
-  recommendations: Array<{ orgId: string; currentLevel: IsolationLevel; recommendedLevel: IsolationLevel; reason: string }>;
+  recommendations: Array<{
+    orgId: string;
+    currentLevel: IsolationLevel;
+    recommendedLevel: IsolationLevel;
+    reason: string;
+  }>;
 }
 
 export function getTenantIsolationReport(): TenantIsolationReport {

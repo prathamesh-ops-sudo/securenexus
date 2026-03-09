@@ -55,6 +55,7 @@ const REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /snx_[a-f0-9]{64}/g, replacement: "snx_[REDACTED]" },
   { pattern: /ghp_[A-Za-z0-9]{36}/g, replacement: "ghp_[REDACTED]" },
   { pattern: /AKIA[A-Z0-9]{16}/g, replacement: "AKIA[REDACTED]" },
+  { pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, replacement: "[EMAIL_REDACTED]" },
 ];
 
 const SENSITIVE_KEYS = new Set([

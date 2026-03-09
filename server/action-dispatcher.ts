@@ -17,11 +17,7 @@ export interface ActionResult {
   executedAt: string;
 }
 
-export async function dispatchAction(
-  actionType: string,
-  config: any,
-  context: ActionContext
-): Promise<ActionResult> {
+export async function dispatchAction(actionType: string, config: any, context: ActionContext): Promise<ActionResult> {
   const executedAt = new Date().toISOString();
 
   switch (actionType) {
@@ -77,7 +73,7 @@ async function simulateTicketing(
   platform: string,
   config: any,
   context: ActionContext,
-  executedAt: string
+  executedAt: string,
 ): Promise<ActionResult> {
   const ticketId = `${platform.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
   const summary = config?.summary || `Security Incident ${context.incidentId || "Unknown"}`;
@@ -103,7 +99,14 @@ async function simulateTicketing(
     actionType: `create_${platform}_ticket`,
     status: "simulated",
     message: `[Simulated] Created ${platform} ticket ${ticketId}: "${summary}" (Priority: ${priority})`,
-    details: { ticketId, platform, summary, priority, project, ticketUrl: `https://${platform}.example.com/browse/${ticketId}` },
+    details: {
+      ticketId,
+      platform,
+      summary,
+      priority,
+      project,
+      ticketUrl: `https://${platform}.example.com/browse/${ticketId}`,
+    },
     executedAt,
   };
 }
@@ -112,7 +115,7 @@ async function simulateNotification(
   channel: string,
   config: any,
   context: ActionContext,
-  executedAt: string
+  executedAt: string,
 ): Promise<ActionResult> {
   const message = config?.message || `Alert from SecureNexus: Incident ${context.incidentId || "N/A"}`;
   const target = config?.channel || config?.recipient || config?.webhookUrl || "#security-alerts";
@@ -130,7 +133,7 @@ async function simulateEdrAction(
   actionType: string,
   config: any,
   context: ActionContext,
-  executedAt: string
+  executedAt: string,
 ): Promise<ActionResult> {
   const target = config?.target || config?.hostname || config?.ip || config?.hash || "unknown";
   const connector = config?.connector || config?.connectorId || "auto";

@@ -131,6 +131,10 @@ const articleSchema = {
     name: "Arica Technologies",
     url: "https://aricatech.xyz",
   },
+  speakable: {
+    "@type": "SpeakableSpecification",
+    cssSelector: ["header > p", "header > h1"],
+  },
 };
 
 export default function ProductOverviewPage() {
@@ -146,7 +150,7 @@ export default function ProductOverviewPage() {
     >
       <header className="mb-12">
         <h1 className="text-3xl md:text-5xl font-black mb-4 leading-tight">SecureNexus: The Agentic SOC Platform</h1>
-        <p className="text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
+        <p className="speakable-summary text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
           SecureNexus is an AI-powered security operations platform that autonomously detects, investigates, and
           responds to threats. Built in India by Arica Technologies for global enterprises, it replaces manual analyst
           workflows with intelligent automation.

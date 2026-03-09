@@ -189,7 +189,11 @@ function extractObservables(alert: NormalizedAlert): OCSFObservable[] {
   return observables;
 }
 
-export function toOCSFSecurityFinding(alert: NormalizedAlert, alertId?: string, alertStatus?: string): OCSFSecurityFinding {
+export function toOCSFSecurityFinding(
+  alert: NormalizedAlert,
+  alertId?: string,
+  alertStatus?: string,
+): OCSFSecurityFinding {
   const now = new Date();
   const severity = SEVERITY_TO_OCSF[alert.severity] || SEVERITY_TO_OCSF.medium;
   const category = CATEGORY_TO_OCSF[alert.category] || CATEGORY_TO_OCSF.other;
@@ -198,14 +202,18 @@ export function toOCSFSecurityFinding(alert: NormalizedAlert, alertId?: string, 
   const attacks: OCSFMitreAttack[] = [];
   if (alert.mitreTactic || alert.mitreTechnique) {
     attacks.push({
-      tactic: alert.mitreTactic ? {
-        uid: alert.mitreTactic,
-        name: MITRE_TACTIC_NAMES[alert.mitreTactic] || alert.mitreTactic,
-      } : undefined,
-      technique: alert.mitreTechnique ? {
-        uid: alert.mitreTechnique,
-        name: alert.mitreTechnique,
-      } : undefined,
+      tactic: alert.mitreTactic
+        ? {
+            uid: alert.mitreTactic,
+            name: MITRE_TACTIC_NAMES[alert.mitreTactic] || alert.mitreTactic,
+          }
+        : undefined,
+      technique: alert.mitreTechnique
+        ? {
+            uid: alert.mitreTechnique,
+            name: alert.mitreTechnique,
+          }
+        : undefined,
       version: "14.1",
     });
   }
@@ -306,7 +314,7 @@ export function getOCSFSeverityName(severityId: number): string {
 
 export function validateOCSFSecurityFinding(finding: OCSFSecurityFinding): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   if (finding.class_uid !== 2001) errors.push("class_uid must be 2001");
   if (!finding.finding_info?.uid) errors.push("finding_info.uid is required");
   if (!finding.finding_info?.title) errors.push("finding_info.title is required");
@@ -314,6 +322,6 @@ export function validateOCSFSecurityFinding(finding: OCSFSecurityFinding): { val
   if (!finding.time) errors.push("time is required");
   if (!finding.metadata?.version) errors.push("metadata.version is required");
   if (!finding.metadata?.product?.name) errors.push("metadata.product.name is required");
-  
+
   return { valid: errors.length === 0, errors };
 }

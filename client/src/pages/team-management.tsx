@@ -434,11 +434,8 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
   });
 
   const createInvitation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", `/api/orgs/${orgId}/invitations`, {
-        email: inviteEmail,
-        role: inviteRole,
-      });
+    mutationFn: async (data: { email: string; role: string }) => {
+      await apiRequest("POST", `/api/orgs/${orgId}/invitations`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orgs", orgId, "invitations"] });
@@ -608,8 +605,9 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
               </Button>
             </DialogClose>
             <Button
-              onClick={() => createInvitation.mutate()}
-              disabled={!inviteEmail || createInvitation.isPending}
+              type="button"
+              onClick={() => createInvitation.mutate({ email: inviteEmail.trim(), role: inviteRole })}
+              disabled={!inviteEmail.trim() || createInvitation.isPending}
               data-testid="button-send-invite"
             >
               {createInvitation.isPending ? (
@@ -666,10 +664,10 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     isLoading: ssoLoading,
     refetch: refetchSso,
   } = useQuery<any>({
-    queryKey: ["/api/orgs", orgId, "sso"],
+    queryKey: ["/api/orgs", orgId, "sso", "config"],
     queryFn: async () => {
       try {
-        const res = await apiRequest("GET", `/api/orgs/${orgId}/sso`);
+        const res = await apiRequest("GET", `/api/orgs/${orgId}/sso/config`);
         return res.json();
       } catch {
         return null;
@@ -749,7 +747,7 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
 
   const updateSso = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
-      const res = await apiRequest("PUT", `/api/orgs/${orgId}/sso`, data);
+      const res = await apiRequest("POST", `/api/orgs/${orgId}/sso/config`, data);
       return res.json();
     },
     onSuccess: () => {

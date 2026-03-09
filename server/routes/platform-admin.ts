@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireSuperAdmin } from "../middleware/super-admin";
+import { invalidateDeserializeCache } from "../auth/session";
 import { db } from "../db";
 import {
   users,
@@ -523,6 +524,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           details: { targetEmail: target.email },
         });
 
+        invalidateDeserializeCache(userId);
         return sendEnvelope(res, { id: updated.id, email: updated.email, disabledAt: updated.disabledAt });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -570,6 +572,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           details: { targetEmail: updated.email },
         });
 
+        invalidateDeserializeCache(userId);
         return sendEnvelope(res, { id: updated.id, email: updated.email, disabledAt: null });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

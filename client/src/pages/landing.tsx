@@ -521,434 +521,484 @@ export default function LandingPage() {
         </div>
       )}
 
-      <nav className="fixed top-4 left-4 right-4 z-50 max-w-6xl mx-auto">
-        <div className="flex items-center justify-between h-14 px-5 bg-white/80 dark:bg-[#111827]/80 backdrop-blur-xl border-[2.5px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg border-2 border-[#1e293b] dark:border-cyan-500/30 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-500/10 dark:to-transparent">
-              <img src={atsLogo} alt="SecureNexus" className="w-5 h-5 object-contain" />
-            </div>
-            <span className="font-extrabold text-base tracking-tight">SecureNexus</span>
-          </div>
-          <div className="hidden md:flex items-center gap-6">
-            <button
-              onClick={scrollToHowItWorks}
-              className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
-            >
-              How it works
-            </button>
-            <a
-              href="#features"
-              className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
-            >
-              Features
-            </a>
-            <a
-              href="#faq"
-              className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
-            >
-              FAQ
-            </a>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAuthMode("login")}
-              className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors px-3 py-1.5"
-            >
-              Log In
-            </button>
-            <button
-              onClick={() => setAuthMode("register")}
-              className="text-sm font-bold text-white bg-[#0ea5e9] px-5 py-2 rounded-xl border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.4)] hover:shadow-[1px_1px_0px_#1e293b] dark:hover:shadow-[1px_1px_0px_rgba(6,182,212,0.4)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all"
-            >
-              Start Free
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div className="relative z-10">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border-2 border-[#0ea5e9] dark:border-cyan-500/40 bg-cyan-50 dark:bg-cyan-500/10 text-[#0ea5e9] dark:text-cyan-300 text-xs font-bold mb-6 tracking-wide">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9] animate-pulse" />
-                AI-Powered Security Operations
+      <a
+        href="#landing-main"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-white focus:text-[#1e293b] focus:rounded-md focus:outline-none focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
+      <header>
+        <nav className="fixed top-4 left-4 right-4 z-50 max-w-6xl mx-auto">
+          <div className="flex items-center justify-between h-14 px-5 bg-white/80 dark:bg-[#111827]/80 backdrop-blur-xl border-[2.5px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg border-2 border-[#1e293b] dark:border-cyan-500/30 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-500/10 dark:to-transparent">
+                <img src={atsLogo} alt="SecureNexus" className="w-5 h-5 object-contain" />
               </div>
-              <h1 className="text-4xl md:text-5xl lg:text-[3.5rem] font-black tracking-tight mb-6 leading-[1.08]">
-                Stop Chasing
-                <br />
-                <span className="text-[#0ea5e9]">Alerts.</span>
-                <br />
-                Start Stopping
-                <br />
-                <span className="bg-[#0ea5e9] text-white px-3 py-0.5 rounded-lg inline-block mt-1 border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)]">
-                  Attackers.
-                </span>
-              </h1>
-              <p className="text-base md:text-lg text-[#475569] dark:text-[#94a3b8] max-w-lg mb-8 leading-relaxed font-medium">
-                SecureNexus uses AI to correlate thousands of alerts into actionable incidents, cutting triage time by
-                90% and false positives by 70%.
+              <span className="font-extrabold text-base tracking-tight">SecureNexus</span>
+            </div>
+            <div className="hidden md:flex items-center gap-6">
+              <button
+                onClick={scrollToHowItWorks}
+                className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
+              >
+                How it works
+              </button>
+              <a
+                href="#features"
+                className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
+              >
+                Features
+              </a>
+              <a
+                href="#faq"
+                className="text-sm font-semibold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors"
+              >
+                FAQ
+              </a>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAuthMode("login")}
+                className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] hover:text-[#1e293b] dark:hover:text-white transition-colors px-3 py-1.5"
+              >
+                Log In
+              </button>
+              <button
+                onClick={() => setAuthMode("register")}
+                className="text-sm font-bold text-white bg-[#0ea5e9] px-5 py-2 rounded-xl border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.4)] hover:shadow-[1px_1px_0px_#1e293b] dark:hover:shadow-[1px_1px_0px_rgba(6,182,212,0.4)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all"
+              >
+                Start Free
+              </button>
+            </div>
+          </div>
+        </nav>
+      </header>
+
+      <main id="landing-main">
+        <section className="relative pt-32 pb-20 px-6 overflow-hidden">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+              <div className="relative z-10">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border-2 border-[#0ea5e9] dark:border-cyan-500/40 bg-cyan-50 dark:bg-cyan-500/10 text-[#0ea5e9] dark:text-cyan-300 text-xs font-bold mb-6 tracking-wide">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9] animate-pulse" />
+                  AI-Powered Security Operations
+                </div>
+                <h1 className="text-4xl md:text-5xl lg:text-[3.5rem] font-black tracking-tight mb-6 leading-[1.08]">
+                  Stop Chasing
+                  <br />
+                  <span className="text-[#0ea5e9]">Alerts.</span>
+                  <br />
+                  Start Stopping
+                  <br />
+                  <span className="bg-[#0ea5e9] text-white px-3 py-0.5 rounded-lg inline-block mt-1 border-[2.5px] border-[#1e293b] dark:border-cyan-400/50 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)]">
+                    Attackers.
+                  </span>
+                </h1>
+                <p className="text-base md:text-lg text-[#475569] dark:text-[#94a3b8] max-w-lg mb-8 leading-relaxed font-medium">
+                  SecureNexus uses AI to correlate thousands of alerts into actionable incidents, cutting triage time by
+                  90% and false positives by 70%.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 mb-8">
+                  <button
+                    onClick={() => setAuthMode("register")}
+                    className={`inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}
+                  >
+                    Start Free Trial
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={scrollToHowItWorks}
+                    className="inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
+                  >
+                    How It Works
+                  </button>
+                </div>
+                <div className="flex items-center gap-8">
+                  {[
+                    { val: "10K+", sub: "Alerts/Day" },
+                    { val: "50+", sub: "SOC Teams" },
+                    { val: "500+", sub: "Integrations" },
+                  ].map((s) => (
+                    <div key={s.sub}>
+                      <div className="text-2xl font-black tracking-tight">{s.val}</div>
+                      <div className="text-xs text-[#94a3b8] font-semibold">{s.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="relative hidden lg:block">
+                <div className="absolute -top-4 -right-4 w-14 h-14 rounded-full border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-red-100 dark:bg-red-500/20 flex items-center justify-center shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.2)] z-20 animate-float">
+                  <AlertTriangle className="h-6 w-6 text-red-500" />
+                </div>
+                <div className="absolute -bottom-2 -right-6 w-12 h-12 rounded-full border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.2)] z-20 animate-float delay-300">
+                  <Star className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div className="absolute top-1/2 -left-6 w-11 h-11 rounded-full border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-cyan-100 dark:bg-cyan-500/20 flex items-center justify-center shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.2)] z-20 animate-float delay-500">
+                  <Shield className="h-5 w-5 text-cyan-500" />
+                </div>
+
+                <div className="bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[8px_8px_0px_#1e293b] dark:shadow-[8px_8px_0px_rgba(6,182,212,0.2)] overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b-[2.5px] border-[#1e293b] dark:border-[#334155] bg-[#f8fafc] dark:bg-[#0f172a]">
+                    <div className="flex gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-red-400 border border-red-500" />
+                      <div className="w-3 h-3 rounded-full bg-amber-400 border border-amber-500" />
+                      <div className="w-3 h-3 rounded-full bg-emerald-400 border border-emerald-500" />
+                    </div>
+                    <div className="flex-1 text-center">
+                      <span className="text-[10px] font-bold text-[#94a3b8]">SecureNexus Dashboard</span>
+                    </div>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center">
+                          <Shield className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-extrabold">Threat Detection</div>
+                          <div className="text-[10px] text-[#94a3b8] font-medium">
+                            24 active alerts &bull; 3 incidents
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/20">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Protected</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#f8fafc] dark:bg-[#0f172a] rounded-xl border-2 border-[#e2e8f0] dark:border-[#1e293b] p-3">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-[#64748b] dark:text-[#94a3b8]">Threat Score</span>
+                        <span className="text-sm font-black text-[#0ea5e9]">87%</span>
+                      </div>
+                      <div className="w-full h-3 rounded-full bg-[#e2e8f0] dark:bg-[#1e293b] border border-[#cbd5e1] dark:border-[#334155] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-[#0ea5e9] to-[#06b6d4]"
+                          style={{ width: "87%" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        {
+                          label: "Critical",
+                          val: "3",
+                          cls: "bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20",
+                        },
+                        {
+                          label: "High",
+                          val: "12",
+                          cls: "bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
+                        },
+                        {
+                          label: "Resolved",
+                          val: "156",
+                          cls: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
+                        },
+                      ].map((item) => (
+                        <div
+                          key={item.label}
+                          className={`flex flex-col items-center p-2 rounded-lg border-2 ${item.cls}`}
+                        >
+                          <span className="text-lg font-black">{item.val}</span>
+                          <span className="text-[9px] font-bold">{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => setAuthMode("register")}
+                      className="w-full py-2.5 rounded-xl font-bold text-white bg-[#0ea5e9] border-2 border-[#1e293b] dark:border-cyan-500/30 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)] hover:shadow-[1px_1px_0px_#1e293b] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all text-sm"
+                    >
+                      View Full Dashboard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-16 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {metrics.map((metric) => (
+                <div key={metric.label} className={`flex flex-col items-center gap-1.5 p-5 rounded-xl ${brutCard}`}>
+                  <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center mb-1">
+                    <metric.icon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                  </div>
+                  <span className="text-3xl font-black tracking-tight">{metric.value}</span>
+                  <span className="text-xs text-[#94a3b8] font-semibold">{metric.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="py-20 px-6 bg-[#f1f5f9] dark:bg-[#0f172a]">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-red-400 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold mb-4">
+                The Problem
+              </div>
+              <h2 className="text-3xl md:text-4xl font-black mb-3">Your SOC Is Drowning in Noise</h2>
+              <p className="text-[#64748b] dark:text-[#94a3b8] max-w-xl mx-auto font-medium">
+                Security teams spend more time managing tools than stopping threats.
               </p>
-              <div className="flex flex-wrap items-center gap-3 mb-8">
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {painPoints.map((point) => (
+                <div key={point.label} className={`${brutCard} p-6 text-center ${brutCardHover} transition-all`}>
+                  <div
+                    className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-3 ${point.color}`}
+                  >
+                    <point.icon className="h-6 w-6" />
+                  </div>
+                  <div className="text-3xl font-black tracking-tight mb-0.5">{point.stat}</div>
+                  <div className="text-xs font-bold text-[#0ea5e9] mb-2 uppercase tracking-wider">{point.label}</div>
+                  <p className="text-xs text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
+                    {point.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section ref={howItWorksRef} id="how-it-works" className="py-20 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#0ea5e9] dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 text-[#0ea5e9] dark:text-cyan-300 text-xs font-bold mb-4">
+                How It Works
+              </div>
+              <h2 className="text-3xl md:text-4xl font-black mb-3">Three Steps to a Quieter SOC</h2>
+              <p className="text-[#64748b] dark:text-[#94a3b8] max-w-xl mx-auto font-medium">
+                Go from alert overload to clear, actionable intelligence in under 30 minutes.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {howItWorks.map((step) => (
+                <div key={step.step} className="relative">
+                  <div className="absolute -top-3 -left-3 w-12 h-12 rounded-xl border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-[#0ea5e9] text-white flex items-center justify-center font-black text-lg shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)] z-10">
+                    {step.step}
+                  </div>
+                  <div className={`${brutCard} p-6 pt-10 h-full`}>
+                    <div className="w-12 h-12 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center mb-4">
+                      <step.icon className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
+                    </div>
+                    <h3 className="font-extrabold text-lg mb-2">{step.title}</h3>
+                    <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
+                      {step.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="text-center mt-10">
+              <button
+                onClick={() => setAuthMode("register")}
+                className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] ${brutBtn}`}
+              >
+                Start Free Trial
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-16 overflow-hidden bg-[#f1f5f9] dark:bg-[#0f172a]">
+          <div className="text-center mb-10 px-6">
+            <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#94a3b8] dark:border-[#475569] bg-white dark:bg-[#1e293b] text-[#475569] dark:text-[#94a3b8] text-xs font-bold mb-4">
+              Integrations
+            </div>
+            <h2 className="text-2xl md:text-3xl font-black mb-2">Works with Your Existing Stack</h2>
+            <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">
+              24+ connectors. Read-only. No agents required.
+            </p>
+          </div>
+          <div className="relative">
+            <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-[#f1f5f9] dark:from-[#0f172a] to-transparent z-10 pointer-events-none" />
+            <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-[#f1f5f9] dark:from-[#0f172a] to-transparent z-10 pointer-events-none" />
+            <div className="flex animate-marquee gap-4">
+              {[...integrations, ...integrations].map((item, i) => (
+                <div
+                  key={`${item.name}-${i}`}
+                  className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white dark:bg-[#111827] border-2 border-[#1e293b] dark:border-[#334155] shadow-[2px_2px_0px_#1e293b] dark:shadow-[2px_2px_0px_rgba(6,182,212,0.1)] flex-shrink-0"
+                >
+                  <item.icon className="h-4 w-4 text-[#475569] dark:text-[#94a3b8] flex-shrink-0" />
+                  <span className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] whitespace-nowrap">
+                    {item.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="features" className="py-20 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#0ea5e9] dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 text-[#0ea5e9] dark:text-cyan-300 text-xs font-bold mb-4">
+                Capabilities
+              </div>
+              <h2 className="text-3xl md:text-4xl font-black mb-3">Everything You Need to Succeed</h2>
+              <p className="text-[#64748b] dark:text-[#94a3b8] max-w-xl mx-auto font-medium">
+                Every capability is built to deliver a measurable result for your security team.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {features.map((feature, index) => (
+                <div key={index} className={`${brutCard} p-6 ${brutCardHover} transition-all group`}>
+                  <div
+                    className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-4 ${feature.color}`}
+                  >
+                    <feature.icon className="h-6 w-6" />
+                  </div>
+                  <h3 className="font-extrabold text-lg mb-2">{feature.title}</h3>
+                  <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
+                    {feature.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="py-20 px-6 bg-[#f1f5f9] dark:bg-[#0f172a]">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-amber-400 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold mb-4">
+                Customer Stories
+              </div>
+              <h2 className="text-3xl md:text-4xl font-black mb-3">What Our Users Say</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {testimonials.map((t, i) => (
+                <div key={i} className={`${brutCard} p-6 flex flex-col`}>
+                  <div className="flex gap-1 mb-4">
+                    {Array.from({ length: t.rating }).map((_, si) => (
+                      <Star key={si} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  <p className="text-sm text-[#475569] dark:text-[#cbd5e1] leading-relaxed flex-1 mb-5 font-medium">
+                    &ldquo;{t.quote}&rdquo;
+                  </p>
+                  <div className="flex items-center gap-3 pt-4 border-t-2 border-[#e2e8f0] dark:border-[#1e293b]">
+                    <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/20 bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-500/15 dark:to-cyan-500/5 flex items-center justify-center text-sm font-black text-cyan-600 dark:text-cyan-400">
+                      {t.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">{t.name}</p>
+                      <p className="text-xs text-[#94a3b8] font-medium">
+                        {t.role}, {t.company}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="faq" className="py-20 px-6">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#94a3b8] dark:border-[#475569] bg-white dark:bg-[#1e293b] text-[#475569] dark:text-[#94a3b8] text-xs font-bold mb-4">
+                FAQ
+              </div>
+              <h2 className="text-3xl md:text-4xl font-black mb-3">Common Questions</h2>
+            </div>
+            <div className="space-y-3">
+              {faqs.map((faq, i) => (
+                <FaqItem key={i} question={faq.q} answer={faq.a} />
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="py-20 px-6 bg-[#dbeafe] dark:bg-[#0c1a3d]">
+          <div className="max-w-3xl mx-auto text-center">
+            <div className="bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl p-10 shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.25)]">
+              <h2 className="text-3xl md:text-4xl font-black mb-4">Ready to Transform Your SOC?</h2>
+              <p className="text-[#64748b] dark:text-[#94a3b8] mb-8 max-w-lg mx-auto font-medium">
+                Join 50+ security teams that cut triage time by 90% and false positives by 70%. See results in your
+                first week.
+              </p>
+              <div className="flex flex-wrap justify-center gap-3 mb-6">
                 <button
                   onClick={() => setAuthMode("register")}
-                  className={`inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}
+                  className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}
                 >
                   Start Free Trial
                   <ArrowRight className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={scrollToHowItWorks}
-                  className="inline-flex items-center gap-2 px-7 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
+                  onClick={() => setAuthMode("login")}
+                  className="inline-flex items-center px-8 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
                 >
-                  How It Works
+                  Log In
                 </button>
               </div>
-              <div className="flex items-center gap-8">
-                {[
-                  { val: "10K+", sub: "Alerts/Day" },
-                  { val: "50+", sub: "SOC Teams" },
-                  { val: "500+", sub: "Integrations" },
-                ].map((s) => (
-                  <div key={s.sub}>
-                    <div className="text-2xl font-black tracking-tight">{s.val}</div>
-                    <div className="text-xs text-[#94a3b8] font-semibold">{s.sub}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="relative hidden lg:block">
-              <div className="absolute -top-4 -right-4 w-14 h-14 rounded-full border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-red-100 dark:bg-red-500/20 flex items-center justify-center shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.2)] z-20 animate-float">
-                <AlertTriangle className="h-6 w-6 text-red-500" />
-              </div>
-              <div className="absolute -bottom-2 -right-6 w-12 h-12 rounded-full border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.2)] z-20 animate-float delay-300">
-                <Star className="h-5 w-5 text-emerald-500" />
-              </div>
-              <div className="absolute top-1/2 -left-6 w-11 h-11 rounded-full border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-cyan-100 dark:bg-cyan-500/20 flex items-center justify-center shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.2)] z-20 animate-float delay-500">
-                <Shield className="h-5 w-5 text-cyan-500" />
-              </div>
-
-              <div className="bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[8px_8px_0px_#1e293b] dark:shadow-[8px_8px_0px_rgba(6,182,212,0.2)] overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b-[2.5px] border-[#1e293b] dark:border-[#334155] bg-[#f8fafc] dark:bg-[#0f172a]">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-red-400 border border-red-500" />
-                    <div className="w-3 h-3 rounded-full bg-amber-400 border border-amber-500" />
-                    <div className="w-3 h-3 rounded-full bg-emerald-400 border border-emerald-500" />
-                  </div>
-                  <div className="flex-1 text-center">
-                    <span className="text-[10px] font-bold text-[#94a3b8]">SecureNexus Dashboard</span>
-                  </div>
-                </div>
-                <div className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center">
-                        <Shield className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-extrabold">Threat Detection</div>
-                        <div className="text-[10px] text-[#94a3b8] font-medium">
-                          24 active alerts &bull; 3 incidents
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/20">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Protected</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-[#f8fafc] dark:bg-[#0f172a] rounded-xl border-2 border-[#e2e8f0] dark:border-[#1e293b] p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] font-bold text-[#64748b] dark:text-[#94a3b8]">Threat Score</span>
-                      <span className="text-sm font-black text-[#0ea5e9]">87%</span>
-                    </div>
-                    <div className="w-full h-3 rounded-full bg-[#e2e8f0] dark:bg-[#1e293b] border border-[#cbd5e1] dark:border-[#334155] overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#0ea5e9] to-[#06b6d4]"
-                        style={{ width: "87%" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      {
-                        label: "Critical",
-                        val: "3",
-                        cls: "bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20",
-                      },
-                      {
-                        label: "High",
-                        val: "12",
-                        cls: "bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
-                      },
-                      {
-                        label: "Resolved",
-                        val: "156",
-                        cls: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
-                      },
-                    ].map((item) => (
-                      <div
-                        key={item.label}
-                        className={`flex flex-col items-center p-2 rounded-lg border-2 ${item.cls}`}
-                      >
-                        <span className="text-lg font-black">{item.val}</span>
-                        <span className="text-[9px] font-bold">{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => setAuthMode("register")}
-                    className="w-full py-2.5 rounded-xl font-bold text-white bg-[#0ea5e9] border-2 border-[#1e293b] dark:border-cyan-500/30 shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)] hover:shadow-[1px_1px_0px_#1e293b] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all text-sm"
-                  >
-                    View Full Dashboard
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {metrics.map((metric) => (
-              <div key={metric.label} className={`flex flex-col items-center gap-1.5 p-5 rounded-xl ${brutCard}`}>
-                <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center mb-1">
-                  <metric.icon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-                </div>
-                <span className="text-3xl font-black tracking-tight">{metric.value}</span>
-                <span className="text-xs text-[#94a3b8] font-semibold">{metric.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-20 px-6 bg-[#f1f5f9] dark:bg-[#0f172a]">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-red-400 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold mb-4">
-              The Problem
-            </div>
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Your SOC Is Drowning in Noise</h2>
-            <p className="text-[#64748b] dark:text-[#94a3b8] max-w-xl mx-auto font-medium">
-              Security teams spend more time managing tools than stopping threats.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {painPoints.map((point) => (
-              <div key={point.label} className={`${brutCard} p-6 text-center ${brutCardHover} transition-all`}>
-                <div
-                  className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-3 ${point.color}`}
-                >
-                  <point.icon className="h-6 w-6" />
-                </div>
-                <div className="text-3xl font-black tracking-tight mb-0.5">{point.stat}</div>
-                <div className="text-xs font-bold text-[#0ea5e9] mb-2 uppercase tracking-wider">{point.label}</div>
-                <p className="text-xs text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
-                  {point.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section ref={howItWorksRef} id="how-it-works" className="py-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#0ea5e9] dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 text-[#0ea5e9] dark:text-cyan-300 text-xs font-bold mb-4">
-              How It Works
-            </div>
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Three Steps to a Quieter SOC</h2>
-            <p className="text-[#64748b] dark:text-[#94a3b8] max-w-xl mx-auto font-medium">
-              Go from alert overload to clear, actionable intelligence in under 30 minutes.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {howItWorks.map((step) => (
-              <div key={step.step} className="relative">
-                <div className="absolute -top-3 -left-3 w-12 h-12 rounded-xl border-[2.5px] border-[#1e293b] dark:border-cyan-500/30 bg-[#0ea5e9] text-white flex items-center justify-center font-black text-lg shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_rgba(6,182,212,0.3)] z-10">
-                  {step.step}
-                </div>
-                <div className={`${brutCard} p-6 pt-10 h-full`}>
-                  <div className="w-12 h-12 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center mb-4">
-                    <step.icon className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
-                  </div>
-                  <h3 className="font-extrabold text-lg mb-2">{step.title}</h3>
-                  <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
-                    {step.description}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="text-center mt-10">
-            <button
-              onClick={() => setAuthMode("register")}
-              className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] ${brutBtn}`}
-            >
-              Start Free Trial
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 overflow-hidden bg-[#f1f5f9] dark:bg-[#0f172a]">
-        <div className="text-center mb-10 px-6">
-          <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#94a3b8] dark:border-[#475569] bg-white dark:bg-[#1e293b] text-[#475569] dark:text-[#94a3b8] text-xs font-bold mb-4">
-            Integrations
-          </div>
-          <h2 className="text-2xl md:text-3xl font-black mb-2">Works with Your Existing Stack</h2>
-          <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">
-            24+ connectors. Read-only. No agents required.
-          </p>
-        </div>
-        <div className="relative">
-          <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-[#f1f5f9] dark:from-[#0f172a] to-transparent z-10 pointer-events-none" />
-          <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-[#f1f5f9] dark:from-[#0f172a] to-transparent z-10 pointer-events-none" />
-          <div className="flex animate-marquee gap-4">
-            {[...integrations, ...integrations].map((item, i) => (
-              <div
-                key={`${item.name}-${i}`}
-                className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white dark:bg-[#111827] border-2 border-[#1e293b] dark:border-[#334155] shadow-[2px_2px_0px_#1e293b] dark:shadow-[2px_2px_0px_rgba(6,182,212,0.1)] flex-shrink-0"
-              >
-                <item.icon className="h-4 w-4 text-[#475569] dark:text-[#94a3b8] flex-shrink-0" />
-                <span className="text-sm font-bold text-[#475569] dark:text-[#94a3b8] whitespace-nowrap">
-                  {item.name}
+              <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-[#64748b] dark:text-[#94a3b8] font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                  No credit card required
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                  Cancel anytime
                 </span>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="features" className="py-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#0ea5e9] dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 text-[#0ea5e9] dark:text-cyan-300 text-xs font-bold mb-4">
-              Capabilities
             </div>
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Everything You Need to Succeed</h2>
-            <p className="text-[#64748b] dark:text-[#94a3b8] max-w-xl mx-auto font-medium">
-              Every capability is built to deliver a measurable result for your security team.
-            </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {features.map((feature, index) => (
-              <div key={index} className={`${brutCard} p-6 ${brutCardHover} transition-all group`}>
-                <div
-                  className={`inline-flex items-center justify-center w-12 h-12 rounded-xl border-2 border-[#1e293b] dark:border-[#334155] mb-4 ${feature.color}`}
-                >
-                  <feature.icon className="h-6 w-6" />
+        </section>
+
+        <section className="py-20 px-6 bg-white dark:bg-[#0a0f1e] border-t-[2.5px] border-[#1e293b] dark:border-[#334155]">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-10">
+              <h2 className="text-3xl font-black mb-3">Further Reading</h2>
+              <p className="text-[#64748b] dark:text-[#94a3b8] font-medium">
+                Dive deeper into the future of security operations.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <a href="/blog/automated-secops" className={`block ${brutCard} p-6 ${brutCardHover} transition-all`}>
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 border-2 border-[#1e293b] dark:border-indigo-500/20 flex items-center justify-center mb-4">
+                  <Brain className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                 </div>
-                <h3 className="font-extrabold text-lg mb-2">{feature.title}</h3>
-                <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">
-                  {feature.description}
+                <h3 className="font-extrabold text-lg mb-2">Automated SecOps Guide</h3>
+                <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium leading-relaxed">
+                  Discover the evolution from SIEM to Agentic SOC and how to eliminate alert fatigue.
                 </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-20 px-6 bg-[#f1f5f9] dark:bg-[#0f172a]">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-amber-400 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold mb-4">
-              Customer Stories
-            </div>
-            <h2 className="text-3xl md:text-4xl font-black mb-3">What Our Users Say</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {testimonials.map((t, i) => (
-              <div key={i} className={`${brutCard} p-6 flex flex-col`}>
-                <div className="flex gap-1 mb-4">
-                  {Array.from({ length: t.rating }).map((_, si) => (
-                    <Star key={si} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  ))}
+              </a>
+              <a href="/product/agentic-soc" className={`block ${brutCard} p-6 ${brutCardHover} transition-all`}>
+                <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border-2 border-[#1e293b] dark:border-cyan-500/20 flex items-center justify-center mb-4">
+                  <Workflow className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
                 </div>
-                <p className="text-sm text-[#475569] dark:text-[#cbd5e1] leading-relaxed flex-1 mb-5 font-medium">
-                  &ldquo;{t.quote}&rdquo;
+                <h3 className="font-extrabold text-lg mb-2">What is an Agentic SOC?</h3>
+                <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium leading-relaxed">
+                  Learn how AI agents are transforming Tier-1 triage and incident correlation.
                 </p>
-                <div className="flex items-center gap-3 pt-4 border-t-2 border-[#e2e8f0] dark:border-[#1e293b]">
-                  <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/20 bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-500/15 dark:to-cyan-500/5 flex items-center justify-center text-sm font-black text-cyan-600 dark:text-cyan-400">
-                    {t.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold">{t.name}</p>
-                    <p className="text-xs text-[#94a3b8] font-medium">
-                      {t.role}, {t.company}
-                    </p>
-                  </div>
+              </a>
+              <a href="/product/comparison" className={`block ${brutCard} p-6 ${brutCardHover} transition-all`}>
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 border-2 border-[#1e293b] dark:border-emerald-500/20 flex items-center justify-center mb-4">
+                  <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" className="py-20 px-6">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center px-4 py-1.5 rounded-full border-2 border-[#94a3b8] dark:border-[#475569] bg-white dark:bg-[#1e293b] text-[#475569] dark:text-[#94a3b8] text-xs font-bold mb-4">
-              FAQ
-            </div>
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Common Questions</h2>
-          </div>
-          <div className="space-y-3">
-            {faqs.map((faq, i) => (
-              <FaqItem key={i} question={faq.q} answer={faq.a} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-20 px-6 bg-[#dbeafe] dark:bg-[#0c1a3d]">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl p-10 shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.25)]">
-            <h2 className="text-3xl md:text-4xl font-black mb-4">Ready to Transform Your SOC?</h2>
-            <p className="text-[#64748b] dark:text-[#94a3b8] mb-8 max-w-lg mx-auto font-medium">
-              Join 50+ security teams that cut triage time by 90% and false positives by 70%. See results in your first
-              week.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3 mb-6">
-              <button
-                onClick={() => setAuthMode("register")}
-                className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white bg-[#0ea5e9] text-base ${brutBtn}`}
-              >
-                Start Free Trial
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setAuthMode("login")}
-                className="inline-flex items-center px-8 py-3 rounded-xl font-bold text-[#1e293b] dark:text-white bg-white dark:bg-[#1e293b] text-base border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(100,116,139,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(100,116,139,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
-              >
-                Log In
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-[#64748b] dark:text-[#94a3b8] font-semibold">
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                No credit card required
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                Cancel anytime
-              </span>
+                <h3 className="font-extrabold text-lg mb-2">Compare SIEMs</h3>
+                <p className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium leading-relaxed">
+                  See how SecureNexus compares against Microsoft Sentinel, Splunk, and IBM QRadar.
+                </p>
+              </a>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
       <footer className="border-t-[2.5px] border-[#1e293b] dark:border-[#334155] py-10 px-6 bg-white dark:bg-[#0a0f1e]">
         <div className="max-w-6xl mx-auto">

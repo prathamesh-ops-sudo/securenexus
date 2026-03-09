@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { formatDateShort, formatDateTime } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -817,13 +817,15 @@ export default function ConnectorsPage() {
   });
 
   const {
-    data: existingConnectors,
+    data: connectorsResponse,
     isLoading: connectorsLoading,
     isError: connectorsError,
     refetch: refetchConnectors,
-  } = useQuery<ConnectorItem[]>({
-    queryKey: ["/api/connectors"],
+  } = useQuery<PaginatedResponse<ConnectorItem>>({
+    queryKey: ["/api/v1/connectors"],
+    queryFn: () => fetchPaginated<ConnectorItem>("/api/v1/connectors", { offset: 0, limit: 200 }),
   });
+  const existingConnectors = connectorsResponse?.items;
 
   const { data: deadLetters } = useQuery<ConnectorJobRun[]>({
     queryKey: ["/api/connectors/dead-letters"],
@@ -835,7 +837,7 @@ export default function ConnectorsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
       setShowCreateDialog(false);
       resetForm();
       toast({ title: "Connector created", description: "Ready to test and sync." });
@@ -850,7 +852,7 @@ export default function ConnectorsPage() {
       await apiRequest("DELETE", `/api/connectors/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
       toast({ title: "Connector deleted" });
     },
     onError: (err: any) => {
@@ -887,8 +889,8 @@ export default function ConnectorsPage() {
     },
     onSuccess: (data: any) => {
       setSyncingId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ingestion/stats"] });
       if (data.success) {
         toast({
@@ -901,7 +903,7 @@ export default function ConnectorsPage() {
     },
     onError: (err: any) => {
       setSyncingId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
     },
   });
@@ -914,7 +916,7 @@ export default function ConnectorsPage() {
     },
     onSuccess: (data: any) => {
       setHealthCheckingId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
       if (data.status === "healthy") {
         toast({ title: "Health check passed", description: `Latency: ${data.latencyMs}ms` });
       } else {
@@ -933,7 +935,7 @@ export default function ConnectorsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
     },
   });
 

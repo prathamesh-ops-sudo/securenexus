@@ -36,9 +36,10 @@ import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { SeverityBadge, IncidentStatusBadge, PriorityBadge, formatRelativeTime } from "@/components/security-badges";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { CardHeader, CardTitle } from "@/components/ui/card";
+import { useOrgContext } from "@/hooks/use-org-context";
 import type { Incident, IncidentSlaPolicy, SavedView } from "@shared/schema";
 
 function IncidentMiniTimeline({ incident }: { incident: Incident }) {
@@ -139,23 +140,15 @@ interface LocalSavedView {
   queue: QueueTab;
 }
 
-function getSlaStatus(incident: Incident): { label: string; variant: "destructive" | "default" } | null {
-  const now = new Date();
+function getSlaStatus(
+  incident: Incident & { slaLabel?: string; slaVariant?: string },
+): { label: string; variant: "destructive" | "default" } | null {
+  if (incident.slaLabel && incident.slaVariant) {
+    return { label: incident.slaLabel, variant: incident.slaVariant as "destructive" | "default" };
+  }
 
   if (incident.slaBreached) {
     return { label: "SLA Breached", variant: "destructive" };
-  }
-
-  if (incident.ackDueAt && !incident.ackAt && now > new Date(incident.ackDueAt)) {
-    return { label: "ACK Overdue", variant: "destructive" };
-  }
-
-  if (incident.containDueAt && !incident.containedAt && now > new Date(incident.containDueAt)) {
-    return { label: "Contain Overdue", variant: "destructive" };
-  }
-
-  if (incident.resolveDueAt && !incident.resolvedAt && now > new Date(incident.resolveDueAt)) {
-    return { label: "Resolve Overdue", variant: "destructive" };
   }
 
   if (incident.ackDueAt || incident.containDueAt || incident.resolveDueAt) {
@@ -371,30 +364,37 @@ export default function IncidentsPage() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const { currentOrgId } = useOrgContext();
 
   // Optimistic update helper for incident status changes
   const optimisticStatusUpdate = useCallback((incidentId: string, updates: Partial<Incident>) => {
-    queryClient.setQueryData<Incident[]>(["/api/incidents"], (old) => {
+    queryClient.setQueriesData<PaginatedResponse<Incident>>({ queryKey: ["/api/v1/incidents"] }, (old) => {
       if (!old) return old;
-      return old.map((inc) => (inc.id === incidentId ? ({ ...inc, ...updates } as Incident) : inc));
+      return {
+        ...old,
+        items: old.items.map((inc) => (inc.id === incidentId ? ({ ...inc, ...updates } as Incident) : inc)),
+      };
     });
   }, []);
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
-    queryKey: ["/api/orgs/default/saved-views", "incidents"],
+    queryKey: [`/api/orgs/${currentOrgId}/saved-views`, "incidents"],
     queryFn: async () => {
+      if (!currentOrgId) return [];
       try {
-        const res = await apiRequest("GET", "/api/orgs/default/saved-views?resourceType=incidents");
+        const res = await apiRequest("GET", `/api/orgs/${currentOrgId}/saved-views?resourceType=incidents`);
         return res.json();
       } catch {
         return [];
       }
     },
+    enabled: !!currentOrgId,
   });
 
   const createSavedViewMutation = useMutation({
     mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
-      const res = await apiRequest("POST", "/api/orgs/default/saved-views", {
+      if (!currentOrgId) throw new Error("Organization context not available");
+      const res = await apiRequest("POST", `/api/orgs/${currentOrgId}/saved-views`, {
         name: viewData.name,
         resourceType: "incidents",
         filters: viewData.filters,
@@ -413,7 +413,8 @@ export default function IncidentsPage() {
 
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      await apiRequest("DELETE", `/api/orgs/default/saved-views/${viewId}`);
+      if (!currentOrgId) throw new Error("Organization context not available");
+      await apiRequest("DELETE", `/api/orgs/${currentOrgId}/saved-views/${viewId}`);
     },
     onSuccess: () => {
       refetchSavedViews();
@@ -422,13 +423,19 @@ export default function IncidentsPage() {
   });
 
   const {
-    data: incidents,
+    data: incidentsResponse,
     isLoading,
     isError: incidentsError,
     refetch: refetchIncidents,
-  } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+  } = useQuery<PaginatedResponse<Incident>>({
+    queryKey: ["/api/v1/incidents"],
+    queryFn: () =>
+      fetchPaginated<Incident>("/api/v1/incidents", {
+        offset: 0,
+        limit: 200,
+      }),
   });
+  const incidents = incidentsResponse?.items;
 
   const { data: queues, isLoading: queuesLoading } = useQuery<QueuesResponse>({
     queryKey: ["/api/incidents/queues"],
@@ -441,7 +448,7 @@ export default function IncidentsPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/incidents/queues"] });
       toast({ title: "Bulk update complete", description: `Updated ${data.updatedCount || 0} incident(s)` });
       setSelectedIds([]);
@@ -522,7 +529,7 @@ export default function IncidentsPage() {
     if (name && name.trim()) {
       apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { assignedTo: name.trim() })
         .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
           toast({ title: "Assigned", description: `Incident assigned to ${name.trim()}` });
         })
         .catch((err: Error) => {
@@ -536,11 +543,11 @@ export default function IncidentsPage() {
     optimisticStatusUpdate(focusedIncidentId, { escalated: true });
     apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { escalated: true })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
         toast({ title: "Escalated" });
       })
       .catch(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       });
   }, [focusedIncidentId, toast, optimisticStatusUpdate]);
 
@@ -549,11 +556,11 @@ export default function IncidentsPage() {
     optimisticStatusUpdate(focusedIncidentId, { status: "resolved" } as Partial<Incident>);
     apiRequest("PATCH", `/api/incidents/${focusedIncidentId}`, { status: "resolved" })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
         toast({ title: "Resolved" });
       })
       .catch(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       });
   }, [focusedIncidentId, toast, optimisticStatusUpdate]);
 
@@ -737,9 +744,16 @@ export default function IncidentsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setIsDetailOpen((prev) => !prev)}
-          disabled={!selectedIncident}
+          disabled={!filtered || filtered.length === 0}
           data-testid="button-toggle-detail-pane"
+          onClick={() => {
+            if (!focusedIncidentId && filtered && filtered.length > 0) {
+              setFocusedIncidentId(filtered[0].id);
+              setIsDetailOpen(true);
+            } else {
+              setIsDetailOpen((prev) => !prev);
+            }
+          }}
         >
           <PanelRight className="h-3.5 w-3.5 mr-1.5" />
           {isDetailOpen ? "Hide Detail" : "Show Detail"}
@@ -862,7 +876,7 @@ export default function IncidentsPage() {
                     variant="outline"
                     size="sm"
                     className="h-8"
-                    disabled={!savedViewName.trim() || createSavedViewMutation.isPending}
+                    disabled={!savedViewName.trim() || !currentOrgId || createSavedViewMutation.isPending}
                     onClick={() => {
                       createSavedViewMutation.mutate({
                         name: savedViewName.trim(),

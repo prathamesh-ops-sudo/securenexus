@@ -45,12 +45,9 @@ export async function createRollbackRecord(
   });
 }
 
-export async function executeRollback(
-  rollbackId: string,
-  executedBy: string,
-): Promise<ResponseActionRollback | null> {
+export async function executeRollback(rollbackId: string, executedBy: string): Promise<ResponseActionRollback | null> {
   const rollbacks = await storage.getResponseActionRollbacks();
-  const rollback = rollbacks.find(r => r.id === rollbackId);
+  const rollback = rollbacks.find((r) => r.id === rollbackId);
   if (!rollback || rollback.status !== "pending") return null;
 
   try {
@@ -58,7 +55,7 @@ export async function executeRollback(
     const result = await dispatchAction(
       rollbackAction.type,
       { target: rollback.target, reason: rollbackAction.reason },
-      { orgId: rollback.orgId || undefined, storage, userId: executedBy, userName: executedBy }
+      { orgId: rollback.orgId || undefined, storage, userId: executedBy, userName: executedBy },
     );
 
     return await storage.updateResponseActionRollback(rollbackId, {
@@ -79,5 +76,5 @@ export async function executeRollback(
 
 export async function getAvailableRollbacks(orgId?: string): Promise<ResponseActionRollback[]> {
   const rollbacks = await storage.getResponseActionRollbacks(orgId);
-  return rollbacks.filter(r => r.status === "pending");
+  return rollbacks.filter((r) => r.status === "pending");
 }

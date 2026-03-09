@@ -95,6 +95,16 @@ export function registerBillingRoutes(app: Express): void {
           cancelUrl,
           customerEmail: user?.email,
         });
+        await storage.createAuditLog({
+          userId: user?.id,
+          userName: user?.email,
+          orgId,
+          action: "billing_checkout_started",
+          resourceType: "billing",
+          resourceId: orgId,
+          ipAddress: req.ip,
+          details: { planId, billingCycle: billingCycle || "monthly" },
+        });
         return sendEnvelope(res, result);
       } catch (err) {
         log.error("Failed to create checkout session", { error: String(err) });
@@ -126,6 +136,17 @@ export function registerBillingRoutes(app: Express): void {
           });
         }
         const result = await createPortalSession({ orgId, returnUrl });
+        const user = (req as any).user;
+        await storage.createAuditLog({
+          userId: user?.id,
+          userName: user?.email,
+          orgId,
+          action: "billing_portal_opened",
+          resourceType: "billing",
+          resourceId: orgId,
+          ipAddress: req.ip,
+          details: {},
+        });
         return sendEnvelope(res, result);
       } catch (err) {
         log.error("Failed to create portal session", { error: String(err) });
@@ -157,6 +178,17 @@ export function registerBillingRoutes(app: Express): void {
           });
         }
         const success = await changePlan({ orgId, newPlanId, billingCycle });
+        const user = (req as any).user;
+        await storage.createAuditLog({
+          userId: user?.id,
+          userName: user?.email,
+          orgId,
+          action: "billing_plan_changed",
+          resourceType: "billing",
+          resourceId: orgId,
+          ipAddress: req.ip,
+          details: { newPlanId, billingCycle },
+        });
         return sendEnvelope(res, { success });
       } catch (err) {
         log.error("Failed to change plan", { error: String(err) });
@@ -182,6 +214,17 @@ export function registerBillingRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const { reason, immediate } = req.body;
         const success = await cancelSubscription({ orgId, reason, immediate: immediate === true });
+        const user = (req as any).user;
+        await storage.createAuditLog({
+          userId: user?.id,
+          userName: user?.email,
+          orgId,
+          action: "billing_subscription_cancelled",
+          resourceType: "billing",
+          resourceId: orgId,
+          ipAddress: req.ip,
+          details: { reason, immediate: immediate === true },
+        });
         return sendEnvelope(res, { success });
       } catch (err) {
         log.error("Failed to cancel subscription", { error: String(err) });
@@ -206,6 +249,17 @@ export function registerBillingRoutes(app: Express): void {
         }
         const orgId = getOrgId(req);
         const success = await reactivateSubscription({ orgId });
+        const user = (req as any).user;
+        await storage.createAuditLog({
+          userId: user?.id,
+          userName: user?.email,
+          orgId,
+          action: "billing_subscription_reactivated",
+          resourceType: "billing",
+          resourceId: orgId,
+          ipAddress: req.ip,
+          details: {},
+        });
         return sendEnvelope(res, { success });
       } catch (err) {
         log.error("Failed to reactivate subscription", { error: String(err) });
@@ -230,6 +284,36 @@ export function registerBillingRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "INVOICES_FETCH_FAILED", message: "Failed to fetch invoices" }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/billing/activity",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const allLogs = await storage.getAuditLogs(orgId);
+        const billingActions = new Set([
+          "billing_checkout_started",
+          "billing_plan_changed",
+          "billing_subscription_cancelled",
+          "billing_subscription_reactivated",
+          "billing_portal_opened",
+        ]);
+        const billingLogs = allLogs
+          .filter((l) => billingActions.has(l.action) || l.resourceType === "billing")
+          .slice(0, 50);
+        return sendEnvelope(res, billingLogs);
+      } catch (err) {
+        log.error("Failed to fetch billing activity", { error: String(err) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "BILLING_ACTIVITY_FAILED", message: "Failed to fetch billing activity" }],
         });
       }
     },

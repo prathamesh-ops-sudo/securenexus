@@ -5,9 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  CheckCircle2, Circle, ChevronDown, ChevronUp, X, Rocket, ArrowRight,
-} from "lucide-react";
+import { CheckCircle2, Circle, ChevronDown, ChevronUp, X, Rocket, ArrowRight } from "lucide-react";
 
 interface OnboardingStep {
   id: string;
@@ -73,9 +71,9 @@ export function OnboardingChecklist() {
     },
   });
 
-  if (isDismissed || isLoading || !data || data.allDone) return null;
+  if (isDismissed || isLoading || !data || !Array.isArray(data.steps) || data.allDone) return null;
 
-  const nextStep = data.steps.find(s => !s.isCompleted);
+  const nextStep = data.steps.find((s) => !s.isCompleted);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-80">
@@ -87,15 +85,27 @@ export function OnboardingChecklist() {
           <Rocket className="h-5 w-5 shrink-0" />
           <div className="flex-1 text-left">
             <p className="text-sm font-medium">Get Started</p>
-            <p className="text-xs opacity-80">{data.completedCount}/{data.totalSteps} steps complete</p>
+            <p className="text-xs opacity-80">
+              {data.completedCount}/{data.totalSteps} steps complete
+            </p>
           </div>
           <div className="relative h-8 w-8">
             <svg className="h-8 w-8 -rotate-90" viewBox="0 0 32 32">
               <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
-              <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeWidth="2"
-                strokeDasharray={`${data.pctComplete * 0.88} 88`} strokeLinecap="round" />
+              <circle
+                cx="16"
+                cy="16"
+                r="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeDasharray={`${data.pctComplete * 0.88} 88`}
+                strokeLinecap="round"
+              />
             </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{data.pctComplete}%</span>
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
+              {data.pctComplete}%
+            </span>
           </div>
         </button>
       ) : (
@@ -104,7 +114,9 @@ export function OnboardingChecklist() {
             <div className="flex items-center gap-2">
               <Rocket className="h-4 w-4 text-primary" />
               <span className="text-sm font-semibold">Getting Started</span>
-              <Badge variant="outline" className="text-[10px] px-1.5 h-4">{data.pctComplete}%</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 h-4">
+                {data.pctComplete}%
+              </Badge>
             </div>
             <div className="flex items-center gap-1">
               <button onClick={() => setIsOpen(false)} className="p-1 rounded hover:bg-muted transition-colors">
@@ -121,7 +133,7 @@ export function OnboardingChecklist() {
           </div>
 
           <div className="max-h-80 overflow-y-auto px-2 py-1">
-            {data.steps.map(step => (
+            {data.steps.map((step) => (
               <div
                 key={step.stepKey}
                 className={`flex items-start gap-3 px-2 py-2.5 rounded-lg transition-colors ${

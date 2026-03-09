@@ -52,9 +52,7 @@ export const elasticPlugin: ConnectorPlugin = {
       { key: "username", label: "Username", type: "text", placeholder: "elastic" },
       { key: "password", label: "Password", type: "password", placeholder: "Elasticsearch password" },
     ],
-    optionalFields: [
-      { key: "indexPattern", label: "Index Pattern", type: "text", placeholder: ".siem-signals*" },
-    ],
+    optionalFields: [{ key: "indexPattern", label: "Index Pattern", type: "text", placeholder: ".siem-signals*" }],
     icon: "Database",
     docsUrl: "https://www.elastic.co/guide/en/security/current/api-overview.html",
   },

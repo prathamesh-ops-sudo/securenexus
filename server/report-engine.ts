@@ -20,13 +20,20 @@ interface ReportSection {
 export async function generateReportData(reportType: string, orgId?: string): Promise<ReportData> {
   const now = new Date().toISOString();
   switch (reportType) {
-    case "soc_kpi": return generateSocKpiReport(orgId, now);
-    case "incidents": return generateIncidentsReport(orgId, now);
-    case "attack_coverage": return generateAttackCoverageReport(orgId, now);
-    case "connector_health": return generateConnectorHealthReport(orgId, now);
-    case "executive_summary": return generateExecutiveSummaryReport(orgId, now);
-    case "compliance": return generateComplianceReport(orgId, now);
-    default: throw new Error(`Unknown report type: ${reportType}`);
+    case "soc_kpi":
+      return generateSocKpiReport(orgId, now);
+    case "incidents":
+      return generateIncidentsReport(orgId, now);
+    case "attack_coverage":
+      return generateAttackCoverageReport(orgId, now);
+    case "connector_health":
+      return generateConnectorHealthReport(orgId, now);
+    case "executive_summary":
+      return generateExecutiveSummaryReport(orgId, now);
+    case "compliance":
+      return generateComplianceReport(orgId, now);
+    default:
+      throw new Error(`Unknown report type: ${reportType}`);
   }
 }
 
@@ -50,39 +57,39 @@ async function generateSocKpiReport(orgId: string | undefined, now: string): Pro
           "New Alerts Today": stats.newAlertsToday,
           "Escalated Incidents": stats.escalatedIncidents,
           "Mean Time to Resolve (hours)": analytics.mttrHours ?? "N/A",
-        }
+        },
       },
       {
         title: "Severity Distribution",
         type: "table",
         columns: ["Severity", "Count"],
-        rows: analytics.severityDistribution.map(s => [s.name, s.value])
+        rows: analytics.severityDistribution.map((s) => [s.name, s.value]),
       },
       {
         title: "Source Distribution",
         type: "table",
         columns: ["Source", "Count"],
-        rows: analytics.sourceDistribution.map(s => [s.name, s.value])
+        rows: analytics.sourceDistribution.map((s) => [s.name, s.value]),
       },
       {
         title: "Category Distribution",
         type: "table",
         columns: ["Category", "Count"],
-        rows: analytics.categoryDistribution.map(s => [s.name, s.value])
+        rows: analytics.categoryDistribution.map((s) => [s.name, s.value]),
       },
       {
         title: "Alert Trend (7-day)",
         type: "table",
         columns: ["Date", "Count"],
-        rows: analytics.alertTrend.map(t => [t.date, t.count])
+        rows: analytics.alertTrend.map((t) => [t.date, t.count]),
       },
       {
         title: "Top MITRE Tactics",
         type: "table",
         columns: ["Tactic", "Count"],
-        rows: analytics.topMitreTactics.map(t => [t.name, t.value])
-      }
-    ]
+        rows: analytics.topMitreTactics.map((t) => [t.name, t.value]),
+      },
+    ],
   };
 }
 
@@ -99,20 +106,20 @@ async function generateIncidentsReport(orgId: string | undefined, now: string): 
         type: "summary",
         data: {
           "Total Incidents": allIncidents.length,
-          "Open": allIncidents.filter(i => i.status === "open").length,
-          "Investigating": allIncidents.filter(i => i.status === "investigating").length,
-          "Contained": allIncidents.filter(i => i.status === "contained").length,
-          "Resolved": allIncidents.filter(i => i.status === "resolved" || i.status === "closed").length,
-          "Escalated": allIncidents.filter(i => i.escalated).length,
-          "Critical": allIncidents.filter(i => i.severity === "critical").length,
-          "High": allIncidents.filter(i => i.severity === "high").length,
-        }
+          Open: allIncidents.filter((i) => i.status === "open").length,
+          Investigating: allIncidents.filter((i) => i.status === "investigating").length,
+          Contained: allIncidents.filter((i) => i.status === "contained").length,
+          Resolved: allIncidents.filter((i) => i.status === "resolved" || i.status === "closed").length,
+          Escalated: allIncidents.filter((i) => i.escalated).length,
+          Critical: allIncidents.filter((i) => i.severity === "critical").length,
+          High: allIncidents.filter((i) => i.severity === "high").length,
+        },
       },
       {
         title: "Incident Details",
         type: "table",
         columns: ["ID", "Title", "Severity", "Status", "Priority", "Assigned To", "Alert Count", "Created At"],
-        rows: allIncidents.map(i => [
+        rows: allIncidents.map((i) => [
           i.id,
           i.title,
           i.severity,
@@ -121,9 +128,9 @@ async function generateIncidentsReport(orgId: string | undefined, now: string): 
           i.assignedTo ?? "Unassigned",
           i.alertCount ?? 0,
           i.createdAt ? new Date(i.createdAt).toISOString() : "",
-        ])
-      }
-    ]
+        ]),
+      },
+    ],
   };
 }
 
@@ -152,30 +159,34 @@ async function generateAttackCoverageReport(orgId: string | undefined, now: stri
         title: "Coverage Summary",
         type: "summary",
         data: {
-          "Total Alerts with MITRE Mapping": allAlerts.filter(a => a.mitreTactic).length,
+          "Total Alerts with MITRE Mapping": allAlerts.filter((a) => a.mitreTactic).length,
           "Unique Tactics Detected": Object.keys(tacticCounts).length,
           "Unique Techniques Detected": Object.keys(techniqueCounts).length,
-        }
+        },
       },
       {
         title: "Top MITRE Tactics",
         type: "table",
         columns: ["Tactic", "Count"],
-        rows: analytics.topMitreTactics.map(t => [t.name, t.value])
+        rows: analytics.topMitreTactics.map((t) => [t.name, t.value]),
       },
       {
         title: "Tactic Distribution",
         type: "table",
         columns: ["Tactic", "Alert Count"],
-        rows: Object.entries(tacticCounts).sort((a, b) => b[1] - a[1]).map(([tactic, count]) => [tactic, count])
+        rows: Object.entries(tacticCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map(([tactic, count]) => [tactic, count]),
       },
       {
         title: "Technique Distribution",
         type: "table",
         columns: ["Technique", "Alert Count"],
-        rows: Object.entries(techniqueCounts).sort((a, b) => b[1] - a[1]).map(([technique, count]) => [technique, count])
-      }
-    ]
+        rows: Object.entries(techniqueCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map(([technique, count]) => [technique, count]),
+      },
+    ],
   };
 }
 
@@ -192,25 +203,25 @@ async function generateConnectorHealthReport(orgId: string | undefined, now: str
         type: "summary",
         data: {
           "Total Connectors": analytics.connectorHealth.length,
-          "Active": analytics.connectorHealth.filter(c => c.status === "active").length,
-          "Inactive": analytics.connectorHealth.filter(c => c.status === "inactive").length,
-          "Error": analytics.connectorHealth.filter(c => c.status === "error").length,
-        }
+          Active: analytics.connectorHealth.filter((c) => c.status === "active").length,
+          Inactive: analytics.connectorHealth.filter((c) => c.status === "inactive").length,
+          Error: analytics.connectorHealth.filter((c) => c.status === "error").length,
+        },
       },
       {
         title: "Connector Details",
         type: "table",
         columns: ["Name", "Type", "Status", "Last Sync", "Alerts Synced", "Last Error"],
-        rows: analytics.connectorHealth.map(c => [
+        rows: analytics.connectorHealth.map((c) => [
           c.name,
           c.type,
           c.status,
           c.lastSyncAt ?? "Never",
           c.lastSyncAlerts,
           c.lastSyncError ?? "",
-        ])
-      }
-    ]
+        ]),
+      },
+    ],
   };
 }
 
@@ -218,9 +229,7 @@ async function generateExecutiveSummaryReport(orgId: string | undefined, now: st
   const stats = await storage.getDashboardStats(orgId);
   const analytics = await storage.getDashboardAnalytics(orgId);
   const allIncidents = await storage.getIncidents(orgId);
-  const topIncidents = allIncidents
-    .filter(i => i.severity === "critical" || i.severity === "high")
-    .slice(0, 5);
+  const topIncidents = allIncidents.filter((i) => i.severity === "critical" || i.severity === "high").slice(0, 5);
 
   return {
     title: "Executive Security Brief",
@@ -239,39 +248,39 @@ async function generateExecutiveSummaryReport(orgId: string | undefined, now: st
           "MTTR (hours)": analytics.mttrHours ?? "N/A",
           "Escalated Incidents": stats.escalatedIncidents,
           "New Alerts Today": stats.newAlertsToday,
-        }
+        },
       },
       {
         title: "Risk Posture",
         type: "table",
         columns: ["Severity", "Count"],
-        rows: analytics.severityDistribution.map(s => [s.name, s.value])
+        rows: analytics.severityDistribution.map((s) => [s.name, s.value]),
       },
       {
         title: "Top Critical/High Incidents",
         type: "table",
         columns: ["Title", "Severity", "Status", "Assigned To", "Created"],
-        rows: topIncidents.map(i => [
+        rows: topIncidents.map((i) => [
           i.title,
           i.severity,
           i.status,
           i.assignedTo ?? "Unassigned",
           i.createdAt ? new Date(i.createdAt).toISOString() : "",
-        ])
+        ]),
       },
       {
         title: "Connector Health Summary",
         type: "table",
         columns: ["Name", "Status", "Last Sync"],
-        rows: analytics.connectorHealth.map(c => [c.name, c.status, c.lastSyncAt ?? "Never"])
+        rows: analytics.connectorHealth.map((c) => [c.name, c.status, c.lastSyncAt ?? "Never"]),
       },
       {
         title: "Alert Trend (7-day)",
         type: "table",
         columns: ["Date", "Count"],
-        rows: analytics.alertTrend.map(t => [t.date, t.count])
-      }
-    ]
+        rows: analytics.alertTrend.map((t) => [t.date, t.count]),
+      },
+    ],
   };
 }
 
@@ -294,7 +303,7 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
             "Enabled Frameworks": (policy.enabledFrameworks || []).join(", "),
             "DPO Email": policy.dpoEmail ?? "Not set",
             "DSAR SLA (days)": policy.dsarSlaDays ?? 30,
-          }
+          },
         });
       }
 
@@ -304,11 +313,11 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
         type: "summary",
         data: {
           "Total Requests": dsarRequests.length,
-          "Pending": dsarRequests.filter(r => r.status === "pending").length,
-          "In Progress": dsarRequests.filter(r => r.status === "in_progress").length,
-          "Fulfilled": dsarRequests.filter(r => r.status === "fulfilled").length,
-          "Rejected": dsarRequests.filter(r => r.status === "rejected").length,
-        }
+          Pending: dsarRequests.filter((r) => r.status === "pending").length,
+          "In Progress": dsarRequests.filter((r) => r.status === "in_progress").length,
+          Fulfilled: dsarRequests.filter((r) => r.status === "fulfilled").length,
+          Rejected: dsarRequests.filter((r) => r.status === "rejected").length,
+        },
       });
 
       if (dsarRequests.length > 0) {
@@ -316,13 +325,13 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
           title: "DSAR Request Details",
           type: "table",
           columns: ["ID", "Requestor", "Type", "Status", "Due Date"],
-          rows: dsarRequests.map(r => [
+          rows: dsarRequests.map((r) => [
             r.id,
             r.requestorEmail,
             r.requestType,
             r.status,
             r.dueDate ? new Date(r.dueDate).toISOString() : "N/A",
-          ])
+          ]),
         });
       }
     }
@@ -331,7 +340,7 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
     sections.push({
       title: "Compliance Policy",
       type: "summary",
-      data: { "Status": "Error retrieving compliance data" }
+      data: { Status: "Error retrieving compliance data" },
     });
   }
 
@@ -341,7 +350,7 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
     type: "summary",
     data: {
       "Total Audit Log Entries": auditLogCount,
-    }
+    },
   });
 
   return {
@@ -354,27 +363,37 @@ async function generateComplianceReport(orgId: string | undefined, now: string):
 }
 
 export function formatAsCSV(data: ReportData): string {
+  const escapeField = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    const str = String(val);
+    if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+  const formatRow = (fields: unknown[]): string => fields.map(escapeField).join(",");
+
   const lines: string[] = [];
-  lines.push(`# ${data.title}`);
+  lines.push(`# ${escapeField(data.title)}`);
   lines.push(`# Generated: ${data.generatedAt}`);
   lines.push("");
 
   for (const section of data.sections) {
-    lines.push(`## ${section.title}`);
+    lines.push(`## ${escapeField(section.title)}`);
     if (section.type === "summary" && section.data) {
       lines.push("Metric,Value");
       for (const [k, v] of Object.entries(section.data)) {
-        lines.push(`"${k}","${v}"`);
+        lines.push(formatRow([k, v]));
       }
     } else if (section.type === "table" && section.columns && section.rows) {
-      lines.push(section.columns.map(c => `"${c}"`).join(","));
+      lines.push(formatRow(section.columns));
       for (const row of section.rows) {
-        lines.push(row.map((v: any) => `"${v ?? ""}"`).join(","));
+        lines.push(formatRow(row));
       }
     }
     lines.push("");
   }
-  return lines.join("\n");
+  return lines.join("\r\n");
 }
 
 export function formatAsJSON(data: ReportData): string {
