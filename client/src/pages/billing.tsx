@@ -136,7 +136,7 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
 function CurrentPlanSection() {
   const {
     data: subData,
-    isLoading: subLoading,
+    isPending: subPending,
     isError: subError,
     refetch: refetchSub,
   } = useQuery({
@@ -144,7 +144,7 @@ function CurrentPlanSection() {
   });
   const {
     data: usageData,
-    isLoading: usageLoading,
+    isPending: usagePending,
     isError: usageError,
     refetch: refetchUsage,
   } = useQuery({
@@ -154,7 +154,7 @@ function CurrentPlanSection() {
   const sub = (subData as any)?.data || subData;
   const usage = (usageData as any)?.data || usageData;
 
-  if (subLoading || usageLoading) {
+  if (subPending || usagePending) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-32" />
@@ -347,7 +347,7 @@ function CurrentPlanSection() {
 function PlanComparisonSection() {
   const {
     data: plansData,
-    isLoading,
+    isPending,
     isError: plansError,
     refetch: refetchPlans,
   } = useQuery({
@@ -379,7 +379,7 @@ function PlanComparisonSection() {
       } else {
         toast({
           title: "Stripe not configured",
-          description: "Contact sales to upgrade your plan.",
+          description: "Contact sales@aricatech.com to upgrade your plan.",
           variant: "default",
         });
       }
@@ -415,7 +415,7 @@ function PlanComparisonSection() {
 
   const displayPlans = Array.isArray(allPlans) && allPlans.length > 0 ? allPlans : defaultPlans;
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Skeleton className="h-80" />
@@ -533,7 +533,7 @@ function PlanComparisonSection() {
 function InvoicesSection() {
   const {
     data: invoicesData,
-    isLoading,
+    isPending,
     isError: invoicesError,
     refetch: refetchInvoices,
   } = useQuery({
@@ -543,7 +543,7 @@ function InvoicesSection() {
   const raw = (invoicesData as any)?.data || invoicesData;
   const invoicesList = (Array.isArray(raw) ? raw : []) as any[];
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-2">
         <Skeleton className="h-12" />
@@ -629,16 +629,17 @@ function InvoicesSection() {
 function BillingActivitySection() {
   const {
     data: logsData,
-    isLoading,
+    isPending,
     isError: logsError,
     refetch: refetchLogs,
   } = useQuery<AuditLog[]>({
     queryKey: ["/api/billing/activity"],
   });
 
-  const logs = Array.isArray(logsData) ? logsData : [];
+  const raw = (logsData as any)?.data || logsData;
+  const logs = Array.isArray(raw) ? raw : [];
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-2">
         {[1, 2, 3, 4].map((i) => (
