@@ -9,7 +9,7 @@ import {
   Plug,
   Brain,
   Zap,
-  ChevronDown,
+  ChevronRight,
   BarChart3,
   Shield,
   Crosshair,
@@ -98,43 +98,69 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
-type NavItem = { title: string; url: string; icon: any };
+type NavItem = { title: string; url: string; icon: React.ElementType };
+
+type NavGroup = {
+  label: string;
+  icon: React.ElementType;
+  color: string;
+  items: NavItem[];
+};
 
 const coreItems: NavItem[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Alerts", url: "/alerts", icon: AlertTriangle },
-  { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
   { title: "Incidents", url: "/incidents", icon: FileWarning },
 ];
 
-type NavGroup = { label: string; icon: any; items: NavItem[] };
-
 const navGroups: NavGroup[] = [
   {
-    label: "Investigation",
-    icon: Crosshair,
+    label: "Threat Intelligence",
+    icon: Shield,
+    color: "text-red-400",
     items: [
       { title: "Threat Intel", url: "/threat-intel", icon: Shield },
-      { title: "Threat Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
+      { title: "Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
       { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
       { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
       { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
+      { title: "Kill Chain", url: "/kill-chain", icon: Swords },
+      { title: "CVE Browser", url: "/cve-browser", icon: Bug },
+      { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
+    ],
+  },
+  {
+    label: "Investigation",
+    icon: Microscope,
+    color: "text-violet-400",
+    items: [
       { title: "Entity Graph", url: "/entity-graph", icon: Network },
       { title: "Entity Merge", url: "/entity-merge-alias", icon: GitMerge },
       { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
       { title: "Security Graph", url: "/security-graph", icon: Shield },
-      { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
-      { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
       { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
-      { title: "Kill Chain", url: "/kill-chain", icon: Swords },
-      { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
-      { title: "CVE Browser", url: "/cve-browser", icon: Bug },
+      { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
       { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
+      { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
     ],
   },
   {
-    label: "Analytics & Defense",
+    label: "Response & Automation",
+    icon: Bot,
+    color: "text-emerald-400",
+    items: [
+      { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
+      { title: "Playbooks", url: "/playbooks", icon: Workflow },
+      { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
+      { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
+      { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
+      { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
+    ],
+  },
+  {
+    label: "Analytics & Posture",
     icon: BarChart3,
+    color: "text-cyan-400",
     items: [
       { title: "Analytics", url: "/analytics", icon: BarChart3 },
       { title: "Reports", url: "/reports", icon: FileText },
@@ -142,30 +168,17 @@ const navGroups: NavGroup[] = [
       { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
       { title: "Security Posture", url: "/security-posture", icon: Gauge },
       { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
+      { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
     ],
   },
   {
-    label: "Response",
-    icon: Bot,
-    items: [
-      { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
-      { title: "Playbooks", url: "/playbooks", icon: Workflow },
-      { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
-      { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
-      { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
-      { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
-    ],
-  },
-  {
-    label: "Assets & Data",
-    icon: Monitor,
+    label: "Cloud & Assets",
+    icon: Cloud,
+    color: "text-blue-400",
     items: [
       { title: "CSPM", url: "/cspm", icon: Cloud },
       { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
       { title: "Connectors", url: "/connectors", icon: Plug },
-      { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
-      { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
-      { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
       { title: "Integrations", url: "/integrations", icon: Link2 },
       { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
       { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
@@ -174,26 +187,45 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Platform",
+    label: "Security Controls",
+    icon: Lock,
+    color: "text-amber-400",
+    items: [
+      { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
+      { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
+      { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
+      { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
+      { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
+      { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
+      { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
+      { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
+      { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
+      { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
+    ],
+  },
+  {
+    label: "AI Platform",
     icon: Brain,
+    color: "text-fuchsia-400",
     items: [
       { title: "AI Engine", url: "/ai-engine", icon: Brain },
       { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
       { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
       { title: "Engine Controls", url: "/engine-controls", icon: Settings },
       { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
-      { title: "Operations", url: "/operations", icon: Zap },
-      { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
-      { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
-      { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
-      { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
-      { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
-      { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
-      { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
-      { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
       { title: "AI Budget Controls", url: "/ai-budget-controls", icon: DollarSign },
       { title: "AI Model Health", url: "/ai-model-health", icon: HeartPulse },
       { title: "Manual AI Triggers", url: "/manual-ai-triggers", icon: Wand2 },
+    ],
+  },
+  {
+    label: "Operations",
+    icon: Activity,
+    color: "text-orange-400",
+    items: [
+      { title: "Operations", url: "/operations", icon: Zap },
+      { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
+      { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
       { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
       { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3 },
     ],
@@ -201,8 +233,9 @@ const navGroups: NavGroup[] = [
 ];
 
 const adminGroup: NavGroup = {
-  label: "Admin",
+  label: "Administration",
   icon: Settings,
+  color: "text-slate-400",
   items: [
     { title: "Onboarding", url: "/onboarding", icon: Activity },
     { title: "Team & Invites", url: "/team", icon: Users },
@@ -213,7 +246,6 @@ const adminGroup: NavGroup = {
     { title: "Compliance", url: "/compliance", icon: Scale },
     { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
     { title: "Policy Packs", url: "/policy-packs", icon: Shield },
-    { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
     { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
@@ -295,9 +327,14 @@ export function AppSidebar() {
     const isActive = item.url === "/" ? location === "/" : location.startsWith(item.url);
     return (
       <SidebarMenuItem key={item.title}>
-        <SidebarMenuButton asChild isActive={isActive} aria-label={`Navigate to ${item.title}`}>
+        <SidebarMenuButton
+          asChild
+          isActive={isActive}
+          aria-label={`Navigate to ${item.title}`}
+          className="h-7 text-[12.5px] rounded-md transition-all duration-150"
+        >
           <Link href={item.url}>
-            <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <item.icon className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
             <span className="truncate">{item.title}</span>
           </Link>
         </SidebarMenuButton>
@@ -315,16 +352,31 @@ export function AppSidebar() {
       <SidebarMenuItem key={group.label}>
         <Collapsible open={isOpen} onOpenChange={() => toggleGroup(group.label)}>
           <CollapsibleTrigger asChild>
-            <SidebarMenuButton className="w-full" data-active={hasActive || undefined}>
-              <group.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="truncate font-medium">{group.label}</span>
-              <ChevronDown
-                className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-              />
+            <SidebarMenuButton
+              className="w-full h-8 rounded-md group/trigger transition-all duration-150"
+              data-active={hasActive || undefined}
+            >
+              <div
+                className={`flex items-center justify-center w-5 h-5 rounded ${hasActive ? "bg-sidebar-accent" : ""}`}
+              >
+                <group.icon
+                  className={`h-3.5 w-3.5 shrink-0 ${hasActive ? group.color : "opacity-60"}`}
+                  aria-hidden="true"
+                />
+              </div>
+              <span className="truncate text-[12.5px] font-medium">{group.label}</span>
+              <div className="ml-auto flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground/50 tabular-nums">{filtered.length}</span>
+                <ChevronRight
+                  className={`h-3 w-3 shrink-0 text-muted-foreground/40 transition-transform duration-200 ${
+                    isOpen ? "rotate-90" : ""
+                  }`}
+                />
+              </div>
             </SidebarMenuButton>
           </CollapsibleTrigger>
-          <CollapsibleContent>
-            <SidebarMenu className="ml-4 border-l border-sidebar-border pl-2 mt-0.5">
+          <CollapsibleContent className="animate-fade-in">
+            <SidebarMenu className="ml-5 border-l border-sidebar-border/50 pl-2.5 mt-0.5 space-y-0">
               {filtered.map(renderItem)}
             </SidebarMenu>
           </CollapsibleContent>
@@ -336,27 +388,28 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-3 pb-2">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-md bg-gradient-to-br from-cyan-600/20 to-cyan-500/5 border border-cyan-500/20">
-            <img src={atsLogo} alt="ATS" className="w-6 h-6 object-contain" />
+        <Link href="/" className="flex items-center gap-2.5 group/logo">
+          <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 via-blue-500/10 to-violet-500/5 border border-cyan-500/15 shadow-sm shadow-cyan-500/10 transition-all duration-300 group-hover/logo:border-cyan-500/30 group-hover/logo:shadow-cyan-500/20">
+            <img src={atsLogo} alt="ATS" className="w-5 h-5 object-contain" />
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-bold tracking-tight gradient-text-brand">SecureNexus</span>
-            <span className="text-[10px] text-sidebar-foreground/40 leading-none font-medium">
-              AI Security Platform
+            <span className="text-[9px] text-sidebar-foreground/35 leading-none font-medium tracking-wide uppercase">
+              Agentic SOC
             </span>
           </div>
         </Link>
+
         {memberships.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-md glass-subtle hover:bg-sidebar-accent/50 transition-colors text-left">
-                <Building2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" aria-hidden="true" />
+              <button className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-sidebar-accent/30 border border-sidebar-border/50 hover:bg-sidebar-accent/50 hover:border-sidebar-border transition-all duration-200 text-left">
+                <Building2 className="h-3.5 w-3.5 text-cyan-400/70 shrink-0" aria-hidden="true" />
                 <span className="text-[11px] font-medium truncate flex-1">{currentOrg?.name || "Select org"}</span>
-                <ChevronsUpDown className="h-3 w-3 text-muted-foreground shrink-0" aria-hidden="true" />
+                <ChevronsUpDown className="h-3 w-3 text-muted-foreground/40 shrink-0" aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuContent align="start" className="w-56" sideOffset={4}>
               <DropdownMenuLabel className="text-[10px] text-muted-foreground">Organizations</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {memberships.map((m) => (
@@ -373,100 +426,116 @@ export function AppSidebar() {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <div className="mt-1 flex items-center gap-2 px-2 py-1 rounded-md glass-subtle">
+
+        <div className="mt-1.5 flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-sidebar-accent/20 border border-sidebar-border/30">
           <div className="flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
             </span>
-            <span className="text-[10px] text-sidebar-foreground/50 font-medium">System Online</span>
+            <span className="text-[10px] text-emerald-400/80 font-medium">Online</span>
           </div>
-          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 ml-auto gradient-badge glow-cyan-subtle">
-            <Zap className="h-2.5 w-2.5 mr-0.5" aria-hidden="true" />
+          <Badge
+            variant="outline"
+            className="text-[8px] px-1.5 py-0 h-3.5 ml-auto border-cyan-500/20 bg-cyan-500/5 text-cyan-400 font-bold tracking-wider"
+          >
             PRO
           </Badge>
         </div>
       </SidebarHeader>
 
-      <SidebarSeparator />
+      <SidebarSeparator className="opacity-50" />
 
       <SidebarContent className="gap-0 [&>div]:py-0">
-        <SidebarGroup className="px-2 py-1">
+        <SidebarGroup className="px-2 py-1.5">
           <SidebarGroupContent>
-            <SidebarMenu>{coreItems.map(renderItem)}</SidebarMenu>
+            <SidebarMenu className="space-y-0.5">
+              {coreItems.map((item) => {
+                const isActive = item.url === "/" ? location === "/" : location.startsWith(item.url);
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      aria-label={`Navigate to ${item.title}`}
+                      className="h-8 text-[13px] font-medium rounded-md transition-all duration-150"
+                    >
+                      <Link href={item.url}>
+                        <item.icon
+                          className={`h-4 w-4 shrink-0 ${isActive ? "text-cyan-400" : "opacity-60"}`}
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">{item.title}</span>
+                        {item.url === "/alerts" && (
+                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500/15 text-[9px] font-bold text-red-400 px-1 tabular-nums">
+                            !
+                          </span>
+                        )}
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator className="my-0" />
+        <div className="px-3 py-1">
+          <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+        </div>
 
-        <SidebarGroup className="px-2 py-1">
+        <SidebarGroup className="px-2 py-0.5">
           <SidebarGroupContent>
-            <SidebarMenu>{navGroups.map(renderCollapsibleGroup)}</SidebarMenu>
+            <SidebarMenu className="space-y-0">{navGroups.map(renderCollapsibleGroup)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator className="my-0" />
+        <div className="px-3 py-1">
+          <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+        </div>
 
-        <SidebarGroup className="px-2 py-1">
+        <SidebarGroup className="px-2 py-0.5">
           <SidebarGroupContent>
-            <SidebarMenu>{renderCollapsibleGroup(adminGroup)}</SidebarMenu>
+            <SidebarMenu className="space-y-0">{renderCollapsibleGroup(adminGroup)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
         {user?.isSuperAdmin && (
           <>
-            <SidebarSeparator className="my-0" />
-            <SidebarGroup className="px-2 py-1">
+            <div className="px-3 py-1">
+              <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+            </div>
+            <SidebarGroup className="px-2 py-0.5">
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location === "/platform-admin"}
-                      aria-label="Navigate to Platform Admin"
-                    >
-                      <Link href="/platform-admin">
-                        <ShieldCheck className="h-4 w-4 shrink-0 text-yellow-500" aria-hidden="true" />
-                        <span className="truncate font-medium text-yellow-500">Platform Admin</span>
-                      </Link>
-                    </SidebarMenuButton>
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <ShieldCheck className="h-3 w-3 text-yellow-500/70" aria-hidden="true" />
+                      <span className="text-[9px] font-semibold text-yellow-500/60 uppercase tracking-widest">
+                        Super Admin
+                      </span>
+                    </div>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location === "/dev-portal"}
-                      aria-label="Navigate to Developer Portal"
-                    >
-                      <Link href="/dev-portal">
-                        <Code2 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
-                        <span className="truncate font-medium text-cyan-400">Dev Portal</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location === "/email-templates"}
-                      aria-label="Navigate to Email Templates"
-                    >
-                      <Link href="/email-templates">
-                        <Mail className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
-                        <span className="truncate font-medium text-cyan-400">Email Templates</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location === "/metrics-rollup"}
-                      aria-label="Navigate to Metrics Rollup"
-                    >
-                      <Link href="/metrics-rollup">
-                        <BarChart3 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
-                        <span className="truncate font-medium text-cyan-400">Metrics Rollup</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  {[
+                    { title: "Platform Admin", url: "/platform-admin", icon: ShieldCheck, color: "text-yellow-500" },
+                    { title: "Dev Portal", url: "/dev-portal", icon: Code2, color: "text-cyan-400" },
+                    { title: "Email Templates", url: "/email-templates", icon: Mail, color: "text-cyan-400" },
+                    { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3, color: "text-cyan-400" },
+                  ].map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={location === item.url}
+                        aria-label={`Navigate to ${item.title}`}
+                        className="h-7 text-[12px] rounded-md"
+                      >
+                        <Link href={item.url}>
+                          <item.icon className={`h-3.5 w-3.5 shrink-0 ${item.color}`} aria-hidden="true" />
+                          <span className={`truncate font-medium ${item.color}`}>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -475,14 +544,16 @@ export function AppSidebar() {
 
         {recentPages.length > 0 && (
           <>
-            <SidebarSeparator className="my-0" />
-            <SidebarGroup className="px-2 py-1">
+            <div className="px-3 py-1">
+              <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+            </div>
+            <SidebarGroup className="px-2 py-0.5">
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <div className="flex items-center gap-1.5 px-2 py-1">
-                      <History className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
-                      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      <History className="h-3 w-3 text-muted-foreground/40" aria-hidden="true" />
+                      <span className="text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-widest">
                         Recent
                       </span>
                     </div>
@@ -499,29 +570,32 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarSeparator />
+      <SidebarSeparator className="opacity-50" />
 
       <SidebarFooter className="p-2.5">
-        <div className="flex items-center gap-2.5 px-1 mb-1.5">
-          <Avatar className="h-7 w-7 border border-sidebar-border">
+        <div className="flex items-center gap-2.5 px-1.5 py-1.5 rounded-md hover:bg-sidebar-accent/30 transition-colors duration-200">
+          <Avatar className="h-7 w-7 border border-sidebar-border/50 ring-1 ring-cyan-500/10">
             <AvatarImage src={user?.profileImageUrl || ""} />
-            <AvatarFallback className="text-[10px] font-semibold bg-cyan-500/15 text-cyan-400">
+            <AvatarFallback className="text-[10px] font-bold bg-gradient-to-br from-cyan-500/20 to-blue-500/10 text-cyan-400">
               {initials}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium truncate">
+            <p className="text-[11px] font-semibold truncate leading-tight">
               {user?.firstName || "User"} {user?.lastName || ""}
             </p>
-            <p className="text-[10px] text-sidebar-foreground/40 truncate">Security Analyst</p>
+            <p className="text-[9px] text-sidebar-foreground/35 truncate leading-tight">Security Analyst</p>
           </div>
         </div>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild>
+            <SidebarMenuButton
+              asChild
+              className="h-7 text-[12px] text-muted-foreground hover:text-red-400 transition-colors duration-200"
+            >
               <a href="/api/logout">
-                <LogOut className="h-4 w-4" aria-hidden="true" />
-                <span>Log out</span>
+                <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Sign out</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
