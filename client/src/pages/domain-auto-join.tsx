@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { useOrgContext } from "@/hooks/use-org-context";
 import {
   Globe,
   AlertTriangle,
@@ -38,8 +39,11 @@ interface DomainVerification {
 export default function DomainAutoJoinPage() {
   usePageTitle("Domain Auto-Join & DNS Verification");
   const { toast } = useToast();
+  const { currentOrgId } = useOrgContext();
   const [showAdd, setShowAdd] = useState(false);
   const [newDomain, setNewDomain] = useState("");
+
+  const domainsKey = [`/api/orgs/${currentOrgId}/domains`];
 
   const {
     data: domains,
@@ -47,15 +51,16 @@ export default function DomainAutoJoinPage() {
     isError,
     refetch,
   } = useQuery<DomainVerification[]>({
-    queryKey: ["/api/domains"],
-    queryFn: () => apiRequest("GET", "/api/domains").then((r) => r.json()),
+    queryKey: domainsKey,
+    queryFn: () => apiRequest("GET", `/api/orgs/${currentOrgId}/domains`).then((r) => r.json()),
+    enabled: !!currentOrgId,
   });
 
   const addMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/domains", { domain: newDomain }),
+    mutationFn: () => apiRequest("POST", `/api/orgs/${currentOrgId}/domains`, { domain: newDomain }),
     onSuccess: () => {
       toast({ title: "Domain added for verification" });
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      queryClient.invalidateQueries({ queryKey: domainsKey });
       setNewDomain("");
       setShowAdd(false);
     },
@@ -63,19 +68,19 @@ export default function DomainAutoJoinPage() {
   });
 
   const verifyMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/domains/${id}/verify`),
+    mutationFn: (id: string) => apiRequest("POST", `/api/orgs/${currentOrgId}/domains/${id}/verify`),
     onSuccess: () => {
       toast({ title: "Domain verification initiated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      queryClient.invalidateQueries({ queryKey: domainsKey });
     },
     onError: () => toast({ title: "Verification failed", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/domains/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/orgs/${currentOrgId}/domains/${id}`),
     onSuccess: () => {
       toast({ title: "Domain removed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      queryClient.invalidateQueries({ queryKey: domainsKey });
     },
     onError: () => toast({ title: "Failed to remove domain", variant: "destructive" }),
   });
