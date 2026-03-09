@@ -159,24 +159,31 @@ function StatCard({
   badge?: boolean;
 }) {
   const content = (
-    <Card className={`gradient-card group ${href ? "cursor-pointer" : ""}`}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</span>
+    <Card
+      className={`gradient-card group relative overflow-hidden border-border/50 hover:border-border/80 transition-all duration-300 hover:shadow-lg hover:shadow-black/5 ${href ? "cursor-pointer" : ""}`}
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+      <CardContent className="p-4 relative">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest">{title}</span>
           <div className="relative">
-            <Icon className={`h-4 w-4 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
+            <div
+              className={`flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br ${iconColor === "text-red-500" ? "from-red-500/10 to-red-500/5" : iconColor === "text-amber-500" ? "from-amber-500/10 to-amber-500/5" : iconColor === "text-orange-500" ? "from-orange-500/10 to-orange-500/5" : iconColor === "text-cyan-500" ? "from-cyan-500/10 to-cyan-500/5" : iconColor === "text-indigo-500" ? "from-indigo-500/10 to-indigo-500/5" : iconColor === "text-emerald-500" ? "from-emerald-500/10 to-emerald-500/5" : "from-muted/20 to-muted/10"}`}
+            >
+              <Icon className={`h-3.5 w-3.5 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
+            </div>
             {badge && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 items-center justify-center rounded-full bg-red-500 ring-2 ring-card" />
             )}
           </div>
         </div>
         {loading ? (
           <Skeleton className="h-9 w-16" />
         ) : (
-          <div className="text-3xl font-bold tabular-nums tracking-tight">{value}</div>
+          <div className="text-2xl font-bold tabular-nums tracking-tight">{value}</div>
         )}
         {subtitle && (
-          <p className={`text-[11px] mt-1 font-medium ${subtitleColor || "text-muted-foreground"}`}>{subtitle}</p>
+          <p className={`text-[10px] mt-1.5 font-medium ${subtitleColor || "text-muted-foreground/60"}`}>{subtitle}</p>
         )}
       </CardContent>
     </Card>
@@ -1016,8 +1023,8 @@ export default function Dashboard() {
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Security Operations Center</h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight">Security Operations Center</h1>
+            <p className="text-xs text-muted-foreground/60 mt-0.5">
               Real-time threat monitoring and operational intelligence
             </p>
           </div>
@@ -1315,9 +1322,9 @@ export default function Dashboard() {
         )}
       </div>
 
-      <footer className="border-t border-border/40 py-3 px-6 text-center">
-        <span className="text-[11px] text-muted-foreground/60">
-          SecureNexus SOC Platform v3.0.0 (Obsidian Build) &copy; {new Date().getFullYear()}
+      <footer className="border-t border-border/20 py-2.5 px-6 text-center">
+        <span className="text-[10px] text-muted-foreground/40">
+          SecureNexus SOC Platform v3.0.0 &copy; {new Date().getFullYear()}
         </span>
       </footer>
     </div>
