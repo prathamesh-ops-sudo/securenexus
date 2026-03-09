@@ -37,6 +37,7 @@ import { registerMsspRoutes } from "./mssp";
 import { registerUsageRoutes } from "./usage";
 import { registerDevPortalRoutes } from "./dev-portal";
 import { registerAutonomousRoutes } from "./autonomous";
+import { registerPredictiveRoutes } from "./predictive";
 import { registerEngineControlsRoutes } from "./engine-controls";
 import { registerEmailTemplateRoutes } from "./email-templates";
 import { registerMetricsRollupRoutes } from "./metrics-rollup";
@@ -99,6 +100,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerUsageRoutes(app);
   registerDevPortalRoutes(app);
   registerAutonomousRoutes(app);
+  registerPredictiveRoutes(app);
   registerEngineControlsRoutes(app);
   registerEmailTemplateRoutes(app);
   registerMetricsRollupRoutes(app);
