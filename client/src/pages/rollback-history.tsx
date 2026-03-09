@@ -24,16 +24,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface RollbackEntry {
   id: string;
+  orgId: string | null;
+  originalActionId: string | null;
   actionType: string;
-  targetId: string;
-  targetType: string;
-  description: string;
-  status: "completed" | "failed" | "pending" | "reverted";
-  performedBy: string;
-  performedAt: string;
-  revertedAt?: string;
-  revertedBy?: string;
-  details: Record<string, unknown>;
+  target: string;
+  rollbackAction: Record<string, unknown>;
+  status: string;
+  executedBy: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  createdAt: string | null;
+  executedAt: string | null;
 }
 
 export default function RollbackHistoryPage() {
@@ -43,33 +44,33 @@ export default function RollbackHistoryPage() {
 
   const {
     data: entries,
-    isLoading,
+    isPending,
     isError,
     refetch,
   } = useQuery<RollbackEntry[]>({
-    queryKey: ["/api/response-actions/history"],
-    queryFn: () => apiRequest("GET", "/api/response-actions/history").then((r) => r.json()),
+    queryKey: ["/api/autonomous/rollbacks"],
+    queryFn: () => apiRequest("GET", "/api/autonomous/rollbacks").then((r) => r.json()),
   });
 
-  const rollbackMutation = useMutation({
-    mutationFn: (actionId: string) => apiRequest("POST", `/api/response-actions/${actionId}/rollback`),
+  const executeMutation = useMutation({
+    mutationFn: (rollbackId: string) => apiRequest("POST", `/api/autonomous/rollbacks/${rollbackId}/execute`),
     onSuccess: () => {
-      toast({ title: "Action rolled back successfully" });
-      queryClient.invalidateQueries({ queryKey: ["/api/response-actions/history"] });
+      toast({ title: "Rollback executed successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/autonomous/rollbacks"] });
     },
-    onError: () => toast({ title: "Rollback failed", variant: "destructive" }),
+    onError: () => toast({ title: "Rollback execution failed", variant: "destructive" }),
   });
 
   const list = Array.isArray(entries) ? entries : [];
 
   const statusIcon = (s: string) => {
-    if (s === "completed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    if (s === "executed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
-    if (s === "reverted") return <Undo2 className="h-4 w-4 text-blue-500" />;
+    if (s === "completed") return <Undo2 className="h-4 w-4 text-blue-500" />;
     return <Clock className="h-4 w-4 text-yellow-500" />;
   };
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-64" />
@@ -120,7 +121,7 @@ export default function RollbackHistoryPage() {
             <Shield className="h-5 w-5 text-primary" />
             <div>
               <p className="text-2xl font-bold">{list.length}</p>
-              <p className="text-xs text-muted-foreground">Total Actions</p>
+              <p className="text-xs text-muted-foreground">Total Rollbacks</p>
             </div>
           </CardContent>
         </Card>
@@ -128,17 +129,19 @@ export default function RollbackHistoryPage() {
           <CardContent className="pt-4 flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-green-500" />
             <div>
-              <p className="text-2xl font-bold">{list.filter((e) => e.status === "completed").length}</p>
-              <p className="text-xs text-muted-foreground">Completed</p>
+              <p className="text-2xl font-bold">
+                {list.filter((e) => e.status === "executed" || e.status === "completed").length}
+              </p>
+              <p className="text-xs text-muted-foreground">Executed</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 flex items-center gap-2">
-            <Undo2 className="h-5 w-5 text-blue-500" />
+            <Clock className="h-5 w-5 text-yellow-500" />
             <div>
-              <p className="text-2xl font-bold">{list.filter((e) => e.status === "reverted").length}</p>
-              <p className="text-xs text-muted-foreground">Reverted</p>
+              <p className="text-2xl font-bold">{list.filter((e) => e.status === "pending").length}</p>
+              <p className="text-xs text-muted-foreground">Pending</p>
             </div>
           </CardContent>
         </Card>
@@ -157,7 +160,10 @@ export default function RollbackHistoryPage() {
         <Card>
           <CardContent className="flex flex-col items-center py-12 gap-3">
             <RotateCcw className="h-8 w-8 text-muted-foreground" />
-            <p className="text-muted-foreground">No response actions recorded</p>
+            <p className="text-muted-foreground">No rollback entries recorded</p>
+            <p className="text-xs text-muted-foreground">
+              Rollback entries appear when automated response actions are created
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -172,42 +178,42 @@ export default function RollbackHistoryPage() {
                 <div className="flex items-center gap-3">
                   {statusIcon(e.status)}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{e.description}</p>
+                    <p className="font-medium text-sm">
+                      {e.actionType} on {e.target}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {e.actionType} on {e.targetType} &middot; by {e.performedBy} &middot;{" "}
-                      {new Date(e.performedAt).toLocaleString()}
+                      {e.originalActionId ? `Action: ${e.originalActionId.slice(0, 8)}...` : "Manual"} &middot;{" "}
+                      {e.executedBy || "system"} &middot; {e.createdAt ? new Date(e.createdAt).toLocaleString() : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge
                       variant={
-                        e.status === "completed"
+                        e.status === "executed" || e.status === "completed"
                           ? "default"
-                          : e.status === "reverted"
-                            ? "secondary"
-                            : e.status === "failed"
-                              ? "destructive"
-                              : "outline"
+                          : e.status === "failed"
+                            ? "destructive"
+                            : "outline"
                       }
                     >
                       {e.status}
                     </Badge>
-                    {e.status === "completed" && (
+                    {e.status === "pending" && (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={(ev) => {
                           ev.stopPropagation();
-                          rollbackMutation.mutate(e.id);
+                          executeMutation.mutate(e.id);
                         }}
-                        disabled={rollbackMutation.isPending}
+                        disabled={executeMutation.isPending}
                       >
-                        {rollbackMutation.isPending ? (
+                        {executeMutation.isPending ? (
                           <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                         ) : (
                           <Undo2 className="mr-1 h-3 w-3" />
                         )}
-                        Rollback
+                        Execute Rollback
                       </Button>
                     )}
                     {expandedId === e.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -218,26 +224,38 @@ export default function RollbackHistoryPage() {
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-xs text-muted-foreground">Target</p>
-                        <p className="font-mono text-xs">{e.targetId}</p>
+                        <p className="font-mono text-xs">{e.target}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Action Type</p>
                         <p>{e.actionType}</p>
                       </div>
                     </div>
-                    {e.revertedAt && (
+                    {e.executedAt && (
                       <div className="text-sm">
-                        <p className="text-xs text-muted-foreground">Reverted</p>
-                        <p>
-                          {new Date(e.revertedAt).toLocaleString()} by {e.revertedBy}
-                        </p>
+                        <p className="text-xs text-muted-foreground">Executed At</p>
+                        <p>{new Date(e.executedAt).toLocaleString()}</p>
                       </div>
                     )}
-                    {Object.keys(e.details || {}).length > 0 && (
+                    {e.error && (
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">Details</p>
+                        <p className="text-xs font-medium text-destructive mb-1">Error</p>
+                        <p className="text-sm text-destructive">{e.error}</p>
+                      </div>
+                    )}
+                    {e.rollbackAction && Object.keys(e.rollbackAction).length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Rollback Action</p>
                         <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-32">
-                          {JSON.stringify(e.details, null, 2)}
+                          {JSON.stringify(e.rollbackAction, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {e.result && Object.keys(e.result).length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Result</p>
+                        <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-32">
+                          {JSON.stringify(e.result, null, 2)}
                         </pre>
                       </div>
                     )}
