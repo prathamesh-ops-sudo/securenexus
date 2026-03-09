@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +17,8 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
-  Edit,
+  Sparkles,
+  Tag,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,21 +31,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface RunbookStep {
   id: string;
+  templateId: string;
+  stepOrder: number;
   title: string;
-  description: string;
-  type: "manual" | "automated" | "approval";
-  order: number;
+  instructions: string | null;
+  actionType: string | null;
+  isRequired: boolean | null;
+  estimatedMinutes: number | null;
+  createdAt: string | null;
 }
 
 interface RunbookTemplate {
   id: string;
-  name: string;
-  description: string;
-  category: string;
-  severity: string;
-  steps: RunbookStep[];
-  createdAt: string;
-  updatedAt: string;
+  orgId: string | null;
+  incidentType: string;
+  title: string;
+  description: string | null;
+  severity: string | null;
+  estimatedDuration: string | null;
+  tags: string[] | null;
+  isBuiltIn: boolean | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  steps?: RunbookStep[];
 }
 
 export default function RunbookTemplatesPage() {
@@ -52,15 +61,16 @@ export default function RunbookTemplatesPage() {
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [newName, setNewName] = useState("");
+  const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
-  const [newCategory, setNewCategory] = useState("incident-response");
+  const [newIncidentType, setNewIncidentType] = useState("general");
   const [newSeverity, setNewSeverity] = useState("medium");
   const [editSteps, setEditSteps] = useState<Partial<RunbookStep>[]>([]);
+  const [seeded, setSeeded] = useState(false);
 
   const {
     data: templates,
-    isLoading,
+    isPending,
     isError,
     refetch,
   } = useQuery<RunbookTemplate[]>({
@@ -68,27 +78,50 @@ export default function RunbookTemplatesPage() {
     queryFn: () => apiRequest("GET", "/api/runbook-templates").then((r) => r.json()),
   });
 
+  const seedMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/runbook-templates/seed"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/runbook-templates"] });
+      toast({ title: "Built-in templates seeded" });
+      setSeeded(true);
+    },
+    onError: () => toast({ title: "Failed to seed templates", variant: "destructive" }),
+  });
+
+  const list = Array.isArray(templates) ? templates : [];
+
+  useEffect(() => {
+    if (templates && Array.isArray(templates) && templates.length === 0 && !seeded && !seedMutation.isPending) {
+      seedMutation.mutate();
+    }
+  }, [templates, seeded, seedMutation.isPending]);
+
   const createMutation = useMutation({
     mutationFn: async () => {
-      const steps = editSteps.map((s, i) => ({
-        title: s.title || `Step ${i + 1}`,
-        description: s.description || "",
-        type: s.type || "manual",
-        order: i,
-      }));
-      return apiRequest("POST", "/api/runbook-templates", {
-        name: newName,
+      const res = await apiRequest("POST", "/api/runbook-templates", {
+        title: newTitle,
         description: newDesc,
-        category: newCategory,
+        incidentType: newIncidentType,
         severity: newSeverity,
-        steps,
       });
+      const template = await res.json();
+      for (let i = 0; i < editSteps.length; i++) {
+        const s = editSteps[i];
+        await apiRequest("POST", `/api/runbook-templates/${template.id}/steps`, {
+          title: s.title || `Step ${i + 1}`,
+          instructions: s.instructions || "",
+          actionType: s.actionType || "manual",
+          stepOrder: i + 1,
+          isRequired: true,
+        });
+      }
+      return template;
     },
     onSuccess: () => {
       toast({ title: "Runbook template created" });
       queryClient.invalidateQueries({ queryKey: ["/api/runbook-templates"] });
       setShowCreate(false);
-      setNewName("");
+      setNewTitle("");
       setNewDesc("");
       setEditSteps([]);
     },
@@ -104,8 +137,14 @@ export default function RunbookTemplatesPage() {
     onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
   });
 
+  const { data: expandedTemplate, isPending: expandedPending } = useQuery<RunbookTemplate & { steps: RunbookStep[] }>({
+    queryKey: ["/api/runbook-templates", expandedId],
+    queryFn: () => apiRequest("GET", `/api/runbook-templates/${expandedId}`).then((r) => r.json()),
+    enabled: !!expandedId,
+  });
+
   const addStep = () => {
-    setEditSteps([...editSteps, { title: "", description: "", type: "manual" }]);
+    setEditSteps([...editSteps, { title: "", instructions: "", actionType: "manual" }]);
   };
 
   const removeStep = (idx: number) => {
@@ -120,7 +159,7 @@ export default function RunbookTemplatesPage() {
     setEditSteps(arr);
   };
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-64" />
@@ -149,8 +188,6 @@ export default function RunbookTemplatesPage() {
     );
   }
 
-  const list = Array.isArray(templates) ? templates : [];
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -163,6 +200,14 @@ export default function RunbookTemplatesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending}>
+            {seedMutation.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-4 w-4" />
+            )}
+            Seed Built-in
+          </Button>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="mr-2 h-4 w-4" /> Refresh
           </Button>
@@ -180,25 +225,28 @@ export default function RunbookTemplatesPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Name</Label>
+                <Label>Title</Label>
                 <Input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="e.g. Ransomware Response"
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label>Category</Label>
-                  <Select value={newCategory} onValueChange={setNewCategory}>
+                  <Label>Incident Type</Label>
+                  <Select value={newIncidentType} onValueChange={setNewIncidentType}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="incident-response">Incident Response</SelectItem>
-                      <SelectItem value="threat-hunting">Threat Hunting</SelectItem>
-                      <SelectItem value="compliance">Compliance</SelectItem>
-                      <SelectItem value="disaster-recovery">Disaster Recovery</SelectItem>
+                      <SelectItem value="general">General</SelectItem>
+                      <SelectItem value="brute_force">Brute Force</SelectItem>
+                      <SelectItem value="malware">Malware</SelectItem>
+                      <SelectItem value="phishing">Phishing</SelectItem>
+                      <SelectItem value="data_exfiltration">Data Exfiltration</SelectItem>
+                      <SelectItem value="ransomware">Ransomware</SelectItem>
+                      <SelectItem value="ddos">DDoS</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -271,29 +319,37 @@ export default function RunbookTemplatesPage() {
                         className="flex-1"
                       />
                       <Select
-                        value={step.type || "manual"}
+                        value={step.actionType || "manual"}
                         onValueChange={(v) => {
                           const arr = [...editSteps];
-                          arr[idx] = { ...arr[idx], type: v as RunbookStep["type"] };
+                          arr[idx] = { ...arr[idx], actionType: v };
                           setEditSteps(arr);
                         }}
                       >
-                        <SelectTrigger className="w-36">
+                        <SelectTrigger className="w-44">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="manual">Manual</SelectItem>
-                          <SelectItem value="automated">Automated</SelectItem>
-                          <SelectItem value="approval">Approval</SelectItem>
+                          <SelectItem value="gather_alerts">Gather Alerts</SelectItem>
+                          <SelectItem value="block_ip">Block IP</SelectItem>
+                          <SelectItem value="block_domain">Block Domain</SelectItem>
+                          <SelectItem value="isolate_host">Isolate Host</SelectItem>
+                          <SelectItem value="disable_user">Disable User</SelectItem>
+                          <SelectItem value="quarantine_file">Quarantine File</SelectItem>
+                          <SelectItem value="correlate_evidence">Correlate Evidence</SelectItem>
+                          <SelectItem value="ai_analysis">AI Analysis</SelectItem>
+                          <SelectItem value="action_taken">Action Taken</SelectItem>
+                          <SelectItem value="recommendation">Recommendation</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <Textarea
-                      placeholder="Step description..."
-                      value={step.description || ""}
+                      placeholder="Step instructions..."
+                      value={step.instructions || ""}
                       onChange={(e) => {
                         const arr = [...editSteps];
-                        arr[idx] = { ...arr[idx], description: e.target.value };
+                        arr[idx] = { ...arr[idx], instructions: e.target.value };
                         setEditSteps(arr);
                       }}
                       rows={1}
@@ -310,7 +366,7 @@ export default function RunbookTemplatesPage() {
               <Button variant="outline" onClick={() => setShowCreate(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => createMutation.mutate()} disabled={!newName.trim() || createMutation.isPending}>
+              <Button onClick={() => createMutation.mutate()} disabled={!newTitle.trim() || createMutation.isPending}>
                 {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Create Template
               </Button>
@@ -324,9 +380,15 @@ export default function RunbookTemplatesPage() {
           <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
             <FileText className="h-8 w-8 text-muted-foreground" />
             <p className="text-muted-foreground">No runbook templates yet</p>
-            <Button size="sm" onClick={() => setShowCreate(true)}>
-              <Plus className="mr-2 h-4 w-4" /> Create First Template
-            </Button>
+            {seedMutation.isPending ? (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> Seeding built-in templates...
+              </p>
+            ) : (
+              <Button size="sm" onClick={() => seedMutation.mutate()}>
+                <Sparkles className="mr-2 h-4 w-4" /> Seed Built-in Templates
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -341,61 +403,97 @@ export default function RunbookTemplatesPage() {
                   <div className="flex items-center gap-3">
                     <BookOpen className="h-5 w-5 text-primary" />
                     <div>
-                      <CardTitle className="text-base">{t.name}</CardTitle>
+                      <CardTitle className="text-base">{t.title}</CardTitle>
                       <CardDescription className="text-xs">{t.description}</CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline">{t.category}</Badge>
+                    {t.isBuiltIn && (
+                      <Badge variant="outline">
+                        <Sparkles className="mr-1 h-3 w-3" /> Built-in
+                      </Badge>
+                    )}
+                    <Badge variant="outline">{t.incidentType.replace(/_/g, " ")}</Badge>
                     <Badge variant={t.severity === "critical" ? "destructive" : "secondary"}>{t.severity}</Badge>
-                    <Badge variant="outline">
-                      {t.steps?.length || 0} step{(t.steps?.length || 0) !== 1 ? "s" : ""}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteMutation.mutate(t.id);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {t.estimatedDuration && (
+                      <Badge variant="outline">
+                        <Clock className="mr-1 h-3 w-3" /> {t.estimatedDuration}
+                      </Badge>
+                    )}
+                    {t.tags && t.tags.length > 0 && (
+                      <Badge variant="outline">
+                        <Tag className="mr-1 h-3 w-3" /> {t.tags.length} tags
+                      </Badge>
+                    )}
+                    {!t.isBuiltIn && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMutation.mutate(t.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                     {expandedId === t.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                   </div>
                 </div>
               </CardHeader>
               {expandedId === t.id && (
                 <CardContent>
-                  <div className="space-y-2 mt-2">
-                    {(t.steps || []).map((step, idx) => (
-                      <div key={step.id || idx} className="flex items-start gap-3 p-3 border rounded-lg">
-                        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-medium shrink-0">
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{step.title}</span>
-                            <Badge variant="outline" className="text-xs">
-                              {step.type === "automated" ? (
-                                <Play className="mr-1 h-3 w-3" />
-                              ) : step.type === "approval" ? (
-                                <CheckCircle2 className="mr-1 h-3 w-3" />
-                              ) : (
-                                <Edit className="mr-1 h-3 w-3" />
-                              )}
-                              {step.type}
-                            </Badge>
+                  {expandedPending ? (
+                    <div className="space-y-2 mt-2">
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-16" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-2 mt-2">
+                      {(expandedTemplate?.steps || []).map((step, idx) => (
+                        <div key={step.id || idx} className="flex items-start gap-3 p-3 border rounded-lg">
+                          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-medium shrink-0">
+                            {step.stepOrder || idx + 1}
                           </div>
-                          {step.description && <p className="text-xs text-muted-foreground mt-1">{step.description}</p>}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{step.title}</span>
+                              {step.actionType && (
+                                <Badge variant="outline" className="text-xs">
+                                  {step.actionType === "ai_analysis" ? (
+                                    <Sparkles className="mr-1 h-3 w-3" />
+                                  ) : step.actionType === "recommendation" ? (
+                                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                                  ) : (
+                                    <Play className="mr-1 h-3 w-3" />
+                                  )}
+                                  {step.actionType.replace(/_/g, " ")}
+                                </Badge>
+                              )}
+                              {step.isRequired && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Required
+                                </Badge>
+                              )}
+                              {step.estimatedMinutes && (
+                                <Badge variant="outline" className="text-xs">
+                                  <Clock className="mr-1 h-3 w-3" /> {step.estimatedMinutes}m
+                                </Badge>
+                              )}
+                            </div>
+                            {step.instructions && (
+                              <p className="text-xs text-muted-foreground mt-1">{step.instructions}</p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    {(!t.steps || t.steps.length === 0) && (
-                      <p className="text-sm text-muted-foreground text-center py-4">No steps defined</p>
-                    )}
-                  </div>
+                      ))}
+                      {(!expandedTemplate?.steps || expandedTemplate.steps.length === 0) && (
+                        <p className="text-sm text-muted-foreground text-center py-4">No steps defined</p>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               )}
             </Card>

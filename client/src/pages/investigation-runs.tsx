@@ -27,26 +27,32 @@ import { Label } from "@/components/ui/label";
 
 interface Investigation {
   id: string;
-  title: string;
-  hypothesis: string;
-  status: "running" | "completed" | "failed" | "pending_approval";
-  confidence: number;
-  findings: string[];
-  actions: { description: string; status: string; requiresApproval: boolean }[];
-  createdAt: string;
-  completedAt?: string;
+  orgId: string | null;
+  incidentId: string | null;
+  triggeredBy: string;
+  triggerSource: string | null;
+  status: string;
+  summary: string | null;
+  findings: unknown[] | null;
+  recommendedActions: unknown[] | null;
+  evidenceCount: number | null;
+  confidenceScore: number | null;
+  duration: number | null;
+  error: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
 }
 
 export default function InvestigationRunsPage() {
   usePageTitle("Investigation Runs");
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
-  const [hypothesis, setHypothesis] = useState("");
+  const [incidentId, setIncidentId] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const {
     data: investigations,
-    isLoading,
+    isPending,
     isError,
     refetch,
   } = useQuery<Investigation[]>({
@@ -57,14 +63,13 @@ export default function InvestigationRunsPage() {
   const createMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", "/api/autonomous/investigations", {
-        hypothesis,
-        title: hypothesis.slice(0, 80),
+        incidentId,
       }),
     onSuccess: () => {
       toast({ title: "Investigation started" });
       queryClient.invalidateQueries({ queryKey: ["/api/autonomous/investigations"] });
       setShowCreate(false);
-      setHypothesis("");
+      setIncidentId("");
     },
     onError: () => toast({ title: "Failed to start investigation", variant: "destructive" }),
   });
@@ -75,11 +80,11 @@ export default function InvestigationRunsPage() {
     if (s === "running") return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
     if (s === "completed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
-    if (s === "pending_approval") return <Shield className="h-4 w-4 text-yellow-500" />;
+    if (s === "queued") return <Clock className="h-4 w-4 text-yellow-500" />;
     return <Clock className="h-4 w-4 text-muted-foreground" />;
   };
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-64" />
@@ -133,23 +138,22 @@ export default function InvestigationRunsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Start Investigation</CardTitle>
-            <CardDescription>Define a hypothesis for the autonomous SOC to investigate</CardDescription>
+            <CardDescription>Launch an autonomous AI investigation for a specific incident</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Hypothesis</Label>
-              <Textarea
-                value={hypothesis}
-                onChange={(e) => setHypothesis(e.target.value)}
-                placeholder="e.g. Lateral movement from compromised endpoint 10.0.1.42 to domain controller..."
-                rows={3}
+              <Label>Incident ID</Label>
+              <Input
+                value={incidentId}
+                onChange={(e) => setIncidentId(e.target.value)}
+                placeholder="Enter incident ID to investigate..."
               />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowCreate(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => createMutation.mutate()} disabled={!hypothesis.trim() || createMutation.isPending}>
+              <Button onClick={() => createMutation.mutate()} disabled={!incidentId.trim() || createMutation.isPending}>
                 {createMutation.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -185,8 +189,8 @@ export default function InvestigationRunsPage() {
           <CardContent className="pt-4 flex items-center gap-2">
             <Shield className="h-5 w-5 text-yellow-500" />
             <div>
-              <p className="text-2xl font-bold">{list.filter((i) => i.status === "pending_approval").length}</p>
-              <p className="text-xs text-muted-foreground">Awaiting Approval</p>
+              <p className="text-2xl font-bold">{list.filter((i) => i.status === "queued").length}</p>
+              <p className="text-xs text-muted-foreground">Queued</p>
             </div>
           </CardContent>
         </Card>
@@ -214,57 +218,75 @@ export default function InvestigationRunsPage() {
                 <div className="flex items-center gap-3">
                   {statusIcon(inv.status)}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{inv.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{inv.hypothesis}</p>
+                    <p className="font-medium text-sm truncate">
+                      Investigation {inv.incidentId ? `for incident ${inv.incidentId}` : inv.id.slice(0, 8)}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      Triggered by {inv.triggeredBy} ({inv.triggerSource || "manual"})
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {inv.confidence > 0 && <Badge variant="outline">{inv.confidence}% confidence</Badge>}
+                    {inv.confidenceScore != null && inv.confidenceScore > 0 && (
+                      <Badge variant="outline">{Math.round(inv.confidenceScore * 100)}% confidence</Badge>
+                    )}
                     <Badge
                       variant={
                         inv.status === "completed" ? "default" : inv.status === "failed" ? "destructive" : "secondary"
                       }
                     >
-                      {inv.status.replace("_", " ")}
+                      {inv.status.replace(/_/g, " ")}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      {new Date(inv.createdAt).toLocaleDateString()}
+                      {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : ""}
                     </span>
                   </div>
                 </div>
                 {expandedId === inv.id && (
                   <div className="mt-4 space-y-3 border-t pt-3">
-                    {inv.findings && inv.findings.length > 0 && (
+                    {inv.summary && (
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Findings</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Summary</p>
+                        <p className="text-sm">{inv.summary}</p>
+                      </div>
+                    )}
+                    {inv.findings && Array.isArray(inv.findings) && inv.findings.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">
+                          Findings ({inv.evidenceCount || inv.findings.length})
+                        </p>
                         <ul className="space-y-1">
                           {inv.findings.map((f, i) => (
                             <li key={i} className="text-sm flex items-start gap-2">
                               <Eye className="h-3 w-3 mt-1 text-primary shrink-0" />
-                              {f}
+                              {typeof f === "string" ? f : JSON.stringify(f)}
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
-                    {inv.actions && inv.actions.length > 0 && (
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Actions</p>
-                        <ul className="space-y-1">
-                          {inv.actions.map((a, i) => (
-                            <li key={i} className="text-sm flex items-center gap-2">
-                              {a.requiresApproval ? (
+                    {inv.recommendedActions &&
+                      Array.isArray(inv.recommendedActions) &&
+                      inv.recommendedActions.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Recommended Actions</p>
+                          <ul className="space-y-1">
+                            {inv.recommendedActions.map((a, i) => (
+                              <li key={i} className="text-sm flex items-center gap-2">
                                 <Shield className="h-3 w-3 text-yellow-500" />
-                              ) : (
-                                <CheckCircle2 className="h-3 w-3 text-green-500" />
-                              )}
-                              {a.description}
-                              <Badge variant="outline" className="text-xs ml-auto">
-                                {a.status}
-                              </Badge>
-                            </li>
-                          ))}
-                        </ul>
+                                {typeof a === "string" ? a : JSON.stringify(a)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    {inv.error && (
+                      <div>
+                        <p className="text-xs font-medium text-destructive mb-1">Error</p>
+                        <p className="text-sm text-destructive">{inv.error}</p>
                       </div>
+                    )}
+                    {inv.duration != null && (
+                      <p className="text-xs text-muted-foreground">Duration: {inv.duration}ms</p>
                     )}
                   </div>
                 )}
