@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { getOrgId, sendEnvelope, storage, logger } from "./shared";
+import { getOrgId, sendEnvelope, storage, logger, randomBytes } from "./shared";
 import { isAuthenticated } from "../auth";
 import { WIZARD_STEPS } from "@shared/schema";
 import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
@@ -331,6 +331,13 @@ export function registerOnboardingRoutes(app: Express): void {
         const validRoles = ["admin", "analyst", "viewer"];
         const seen = new Set<string>();
 
+        const org = await storage.getOrganization(progress.orgId);
+        const inviterUser = (req as any).user;
+        const inviterName = inviterUser?.firstName
+          ? `${inviterUser.firstName} ${inviterUser.lastName || ""}`.trim()
+          : "An administrator";
+        const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+
         for (const inv of invitations.slice(0, 20)) {
           const email = typeof inv.email === "string" ? inv.email.trim().toLowerCase() : "";
           const role = validRoles.includes(inv.role) ? inv.role : "viewer";
@@ -346,7 +353,7 @@ export function registerOnboardingRoutes(app: Express): void {
           seen.add(email);
 
           try {
-            const token = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const token = randomBytes(32).toString("hex");
             const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
             await storage.createOrgInvitation({
               orgId: progress.orgId,
@@ -358,12 +365,6 @@ export function registerOnboardingRoutes(app: Express): void {
             });
             created.push({ email, role });
 
-            const org = await storage.getOrganization(progress.orgId);
-            const inviterUser = (req as any).user;
-            const inviterName = inviterUser?.firstName
-              ? `${inviterUser.firstName} ${inviterUser.lastName || ""}`.trim()
-              : "An administrator";
-            const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
             const acceptUrl = `${appBaseUrl}/accept-invitation?token=${token}`;
 
             const emailContent = invitationEmail({
