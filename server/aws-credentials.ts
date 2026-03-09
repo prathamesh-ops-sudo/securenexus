@@ -5,8 +5,7 @@ import { logger } from "./logger";
 
 const log = logger.child("aws-credentials");
 
-const CREDENTIAL_MODE: "static" | "irsa" =
-  config.aws.accessKeyId && config.aws.secretAccessKey ? "static" : "irsa";
+const CREDENTIAL_MODE: "static" | "irsa" = config.aws.accessKeyId && config.aws.secretAccessKey ? "static" : "irsa";
 
 if (CREDENTIAL_MODE === "static") {
   log.warn(

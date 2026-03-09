@@ -43,7 +43,7 @@ export const trendmicroPlugin: ConnectorPlugin = {
     const start = Date.now();
     try {
       const res = await httpRequest(`${config.baseUrl}/v3.0/healthcheck/connectivity`, {
-        headers: { "Authorization": `Bearer ${config.token}` },
+        headers: { Authorization: `Bearer ${config.token}` },
       });
       if (res.status >= 400) throw new Error(`Trend Micro returned ${res.status}`);
       return { success: true, message: "Successfully connected to trendmicro", latencyMs: Date.now() - start };
@@ -53,7 +53,10 @@ export const trendmicroPlugin: ConnectorPlugin = {
   },
 
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
-    const headers: Record<string, string> = { "Authorization": `Bearer ${config.token}`, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${config.token}`,
+      "Content-Type": "application/json",
+    };
     let url = `${config.baseUrl}/v3.0/workbench/alerts?top=100&orderBy=createdDateTime%20desc`;
     if (since) {
       url += `&startDateTime=${since.toISOString()}`;

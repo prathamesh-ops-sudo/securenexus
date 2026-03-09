@@ -2,32 +2,37 @@ import { z } from "zod";
 import { CONNECTOR_TYPES } from "@shared/schema";
 import { logger } from "./logger";
 
-const httpsUrl = z.string().url().max(2048).refine(
-  (url) => {
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === "https:" || parsed.protocol === "http:";
-    } catch {
-      return false;
-    }
-  },
-  { message: "URL must use http or https protocol" },
-).refine(
-  (url) => {
-    try {
-      const parsed = new URL(url);
-      const host = parsed.hostname.toLowerCase();
-      if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1") return false;
-      if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("169.254.")) return false;
-      if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
-      if (host.startsWith("fc") || host.startsWith("fd")) return false;
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  { message: "URL must not target private or internal networks" },
-);
+const httpsUrl = z
+  .string()
+  .url()
+  .max(2048)
+  .refine(
+    (url) => {
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === "https:" || parsed.protocol === "http:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "URL must use http or https protocol" },
+  )
+  .refine(
+    (url) => {
+      try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1") return false;
+        if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("169.254.")) return false;
+        if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+        if (host.startsWith("fc") || host.startsWith("fd")) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "URL must not target private or internal networks" },
+  );
 
 const nonEmptyString = z.string().min(1).max(2048);
 const optionalString = z.string().max(2048).optional();
@@ -192,9 +197,7 @@ export function validateConnectorConfig(
 
   const result = schema.safeParse(config);
   if (!result.success) {
-    const errors = result.error.issues.map(
-      (issue) => `${issue.path.join(".")}: ${issue.message}`,
-    );
+    const errors = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
     logger.child("connector-validator").warn("Connector config validation failed", {
       connectorType,
       errorCount: errors.length,

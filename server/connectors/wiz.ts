@@ -39,11 +39,14 @@ export const wizPlugin: ConnectorPlugin = {
     authType: "oauth2",
     requiredFields: [
       { key: "clientId", label: "Service Account Client ID", type: "text", placeholder: "53-character client ID" },
-      { key: "clientSecret", label: "Service Account Secret", type: "password", placeholder: "64-character client secret" },
+      {
+        key: "clientSecret",
+        label: "Service Account Secret",
+        type: "password",
+        placeholder: "64-character client secret",
+      },
     ],
-    optionalFields: [
-      { key: "datacenter", label: "Data Center", type: "text", placeholder: "us1, us2, eu1, eu2" },
-    ],
+    optionalFields: [{ key: "datacenter", label: "Data Center", type: "text", placeholder: "us1, us2, eu1, eu2" }],
     icon: "Cloud",
     docsUrl: "https://docs.wiz.io",
   },

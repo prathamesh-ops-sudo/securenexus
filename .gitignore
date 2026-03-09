@@ -8,11 +8,3 @@ vite.config.ts.*
 .env.local
 .env.*.local
 coverage/
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*

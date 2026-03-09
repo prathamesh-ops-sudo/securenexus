@@ -42,7 +42,7 @@ export const oktaPlugin: ConnectorPlugin = {
     const start = Date.now();
     try {
       const res = await httpRequest(`${config.baseUrl}/api/v1/org`, {
-        headers: { "Authorization": `SSWS ${config.apiKey}` },
+        headers: { Authorization: `SSWS ${config.apiKey}` },
       });
       if (res.status >= 400) throw new Error(`Okta returned ${res.status}`);
       return { success: true, message: "Successfully connected to okta", latencyMs: Date.now() - start };
@@ -52,7 +52,10 @@ export const oktaPlugin: ConnectorPlugin = {
   },
 
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
-    const headers: Record<string, string> = { "Authorization": `SSWS ${config.apiKey}`, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      Authorization: `SSWS ${config.apiKey}`,
+      "Content-Type": "application/json",
+    };
     let url = `${config.baseUrl}/api/v1/logs?filter=${encodeURIComponent('severity eq "WARN" OR severity eq "ERROR"')}&limit=100`;
     if (since) {
       url += `&since=${since.toISOString()}`;

@@ -1,6 +1,16 @@
-import { useState } from "react";
-import { Link } from "wouter";
-import { Shield, ChevronDown, ChevronUp, ChevronRight, ArrowRight } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Link, useLocation } from "wouter";
+import {
+  Shield,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  ArrowRight,
+  Twitter,
+  Linkedin,
+  Link2,
+  Check,
+} from "lucide-react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import atsLogo from "@/assets/logo.jpg";
 
@@ -44,6 +54,58 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
           <p className="text-sm text-[#64748b] dark:text-[#94a3b8] leading-relaxed font-medium">{answer}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ShareButtons({ title }: { title: string }) {
+  const [location] = useLocation();
+  const [copied, setCopied] = useState(false);
+  const fullUrl = `https://nexus.aricatech.xyz${location}`;
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(fullUrl).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      () => {
+        // Clipboard access denied or unavailable
+      },
+    );
+  }, [fullUrl]);
+
+  const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(fullUrl)}`;
+  const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(fullUrl)}`;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider mr-1">Share</span>
+      <a
+        href={twitterUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border-2 border-[#e2e8f0] dark:border-[#334155] hover:border-[#1da1f2] hover:text-[#1da1f2] transition-colors text-[#64748b] dark:text-[#94a3b8]"
+        aria-label="Share on Twitter"
+      >
+        <Twitter className="h-3.5 w-3.5" />
+      </a>
+      <a
+        href={linkedinUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border-2 border-[#e2e8f0] dark:border-[#334155] hover:border-[#0077b5] hover:text-[#0077b5] transition-colors text-[#64748b] dark:text-[#94a3b8]"
+        aria-label="Share on LinkedIn"
+      >
+        <Linkedin className="h-3.5 w-3.5" />
+      </a>
+      <button
+        onClick={handleCopy}
+        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border-2 border-[#e2e8f0] dark:border-[#334155] hover:border-cyan-500 hover:text-cyan-500 transition-colors text-[#64748b] dark:text-[#94a3b8]"
+        aria-label="Copy link to clipboard"
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Link2 className="h-3.5 w-3.5" />}
+      </button>
     </div>
   );
 }
@@ -132,6 +194,9 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
             >
               AI SOC Analyst
             </Link>
+            <Link href="/product/comparison" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
+              Compare
+            </Link>
             <Link href="/about" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
               About
             </Link>
@@ -147,7 +212,10 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
       </header>
 
       <div className="max-w-4xl mx-auto px-6 py-10">
-        <BreadcrumbNav items={breadcrumbs} />
+        <div className="flex items-center justify-between mb-0">
+          <BreadcrumbNav items={breadcrumbs} />
+          <ShareButtons title={title} />
+        </div>
         {children}
 
         {faqs && faqs.length > 0 && (
@@ -184,7 +252,7 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
             <div>
-              <h3 className="font-extrabold text-xs mb-3 text-[#1e293b] dark:text-white">Product</h3>
+              <h3 className="font-extrabold text-xs mb-3 text-[#1e293b] dark:text-white">Product & Resources</h3>
               <ul className="space-y-2 text-xs text-[#64748b] dark:text-[#94a3b8] font-medium">
                 <li>
                   <Link href="/product" className="hover:text-[#1e293b] dark:hover:text-white transition-colors">
@@ -196,7 +264,7 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
                     href="/product/agentic-soc"
                     className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
                   >
-                    Agentic SOC
+                    What is Agentic SOC?
                   </Link>
                 </li>
                 <li>
@@ -205,6 +273,22 @@ export default function ContentLayout({ title, breadcrumbs, children, faqs, json
                     className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
                   >
                     AI SOC Analyst
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/blog/automated-secops"
+                    className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
+                  >
+                    Automated SecOps Guide
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/product/comparison"
+                    className="hover:text-[#1e293b] dark:hover:text-white transition-colors"
+                  >
+                    Compare SIEMs
                   </Link>
                 </li>
               </ul>

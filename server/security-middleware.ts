@@ -64,7 +64,7 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 
   const isSecure = PRODUCTION_ENVS.has(config.nodeEnv) && config.session.forceHttps;
   res.cookie(CSRF_COOKIE, session.csrfToken, {
-    httpOnly: false,
+    httpOnly: true,
     secure: isSecure,
     sameSite: PRODUCTION_ENVS.has(config.nodeEnv) ? "strict" : "lax",
     path: "/",
@@ -92,16 +92,42 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-function configureHelmet(): ReturnType<typeof helmet> {
+function generateCspNonce(): string {
+  return randomBytes(16).toString("base64");
+}
+
+function cspNonceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  res.locals.cspNonce = generateCspNonce();
+  next();
+}
+
+function configureHelmet() {
   return helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        scriptSrc: [
+          "'self'",
+          ((_req: Request, res: Response) => `'nonce-${res.locals.cspNonce}'`) as unknown as string,
+          "https://www.googletagmanager.com",
+          "https://www.google-analytics.com",
+        ],
+        styleSrc: [
+          "'self'",
+          ((_req: Request, res: Response) => `'nonce-${res.locals.cspNonce}'`) as unknown as string,
+          "https://fonts.googleapis.com",
+        ],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
-        connectSrc: ["'self'", "https://accounts.google.com", "https://github.com"],
+        connectSrc: [
+          "'self'",
+          "https://accounts.google.com",
+          "https://github.com",
+          "https://www.google-analytics.com",
+          "https://analytics.google.com",
+          "https://region1.google-analytics.com",
+          "https://*.google-analytics.com",
+        ],
         frameSrc: ["'self'", "https://accounts.google.com"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: config.session.forceHttps ? [] : null,
@@ -129,7 +155,7 @@ function authRateLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown";
+      return req.ip || req.socket.remoteAddress || "unknown";
     },
     handler: (_req, res) => replyRateLimit(res, "Too many authentication attempts. Try again in 5 minutes."),
     skip: (req) => req.method === "GET",
@@ -178,6 +204,7 @@ function permissionsPolicy(_req: Request, res: Response, next: NextFunction): vo
 }
 
 export function applySecurityMiddleware(app: Express): void {
+  app.use(cspNonceMiddleware);
   app.use(configureHelmet());
   app.use(permissionsPolicy);
 

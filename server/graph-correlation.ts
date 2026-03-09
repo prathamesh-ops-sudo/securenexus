@@ -39,10 +39,20 @@ interface CampaignFingerprint {
 }
 
 const KILL_CHAIN_ORDER = [
-  "reconnaissance", "resource-development", "initial-access", "execution",
-  "persistence", "privilege-escalation", "defense-evasion", "credential-access",
-  "discovery", "lateral-movement", "collection", "command-and-control",
-  "exfiltration", "impact",
+  "reconnaissance",
+  "resource-development",
+  "initial-access",
+  "execution",
+  "persistence",
+  "privilege-escalation",
+  "defense-evasion",
+  "credential-access",
+  "discovery",
+  "lateral-movement",
+  "collection",
+  "command-and-control",
+  "exfiltration",
+  "impact",
 ];
 
 const SEVERITY_ORDER: Record<string, number> = {
@@ -141,7 +151,7 @@ export async function buildAlertEntityGraph(orgId?: string): Promise<{
 export function findAttackPaths(
   graph: Map<string, Set<string>>,
   nodeMetadata: Map<string, GraphNode>,
-  maxDepth: number = 6
+  maxDepth: number = 6,
 ): AttackPathResult[] {
   const globalVisited = new Set<string>();
   const results: AttackPathResult[] = [];
@@ -220,11 +230,7 @@ export function findAttackPaths(
       .filter((t): t is string => t !== null);
 
     const techniquesUsed = Array.from(
-      new Set(
-        alertDataList
-          .map((a) => a.mitreTechnique as string | null)
-          .filter((t): t is string => t !== null)
-      )
+      new Set(alertDataList.map((a) => a.mitreTechnique as string | null).filter((t): t is string => t !== null)),
     );
 
     const entityDataList = componentEntities
@@ -241,9 +247,7 @@ export function findAttackPaths(
     const firstAlertAt = timestamps.length > 0 ? new Date(Math.min(...timestamps)) : null;
     const lastAlertAt = timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null;
     const timeSpanHours =
-      firstAlertAt && lastAlertAt
-        ? (lastAlertAt.getTime() - firstAlertAt.getTime()) / (1000 * 60 * 60)
-        : 0;
+      firstAlertAt && lastAlertAt ? (lastAlertAt.getTime() - firstAlertAt.getTime()) / (1000 * 60 * 60) : 0;
 
     const confidence = computePathConfidence(alertDataList, entityDataList, hopCount, timeSpanHours);
 
@@ -269,17 +273,15 @@ export function computePathConfidence(
   alertDataList: any[],
   entityDataList: any[],
   hopCount: number,
-  timeSpanHours: number
+  timeSpanHours: number,
 ): number {
   let score = 0;
 
   const uniqueEntityTypes = new Set(entityDataList.map((e) => e.type));
   const entityDensityScore = Math.min(uniqueEntityTypes.size / 4, 1.0);
-  score += entityDensityScore * 0.20;
+  score += entityDensityScore * 0.2;
 
-  const allTactics = alertDataList
-    .map((a) => a.mitreTactic as string | null)
-    .filter((t): t is string => t !== null);
+  const allTactics = alertDataList.map((a) => a.mitreTactic as string | null).filter((t): t is string => t !== null);
   const uniqueTactics = Array.from(new Set(allTactics));
   const tacticIndices = uniqueTactics
     .map((t) => KILL_CHAIN_ORDER.indexOf(t))
@@ -312,16 +314,14 @@ export function computePathConfidence(
   }
   score += sourceDiversityScore * 0.15;
 
-  const severityValues = alertDataList
-    .map((a) => SEVERITY_ORDER[a.severity] ?? 1)
-    .sort((a, b) => a - b);
+  const severityValues = alertDataList.map((a) => SEVERITY_ORDER[a.severity] ?? 1).sort((a, b) => a - b);
   const minSev = severityValues.length > 0 ? severityValues[0] : 0;
   const maxSev = severityValues.length > 0 ? severityValues[severityValues.length - 1] : 0;
   const severityScore = maxSev > minSev ? Math.min((maxSev - minSev) / 3, 1.0) : 0.2;
   score += severityScore * 0.15;
 
   const hopScore = Math.min(hopCount / 5, 1.0);
-  score += hopScore * 0.10;
+  score += hopScore * 0.1;
 
   const temporalScore = Math.min(timeSpanHours / (24 * 7), 1.0);
   score += temporalScore * 0.15;
@@ -329,18 +329,11 @@ export function computePathConfidence(
   return Math.round(Math.min(score, 1.0) * 100) / 100;
 }
 
-export function generateCampaignFingerprint(
-  attackPath: AttackPathResult,
-  alertDataList: any[]
-): CampaignFingerprint {
+export function generateCampaignFingerprint(attackPath: AttackPathResult, alertDataList: any[]): CampaignFingerprint {
   const sortedTactics = Array.from(new Set(attackPath.tacticsSequence)).sort();
 
   const entityTypes = Array.from(
-    new Set(
-      attackPath.nodes
-        .filter((n) => n.type === "entity")
-        .map((n) => n.data.type as string)
-    )
+    new Set(attackPath.nodes.filter((n) => n.type === "entity").map((n) => n.data.type as string)),
   ).sort();
 
   const sources = Array.from(new Set(alertDataList.map((a) => a.source as string))).sort();
@@ -385,36 +378,42 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
 
     const reasoningTrace = buildReasoningTrace(path, alertDataList);
 
-    const [cluster] = await db.insert(correlationClusters).values({
-      orgId: firstAlertOrgId,
-      confidence: path.confidence,
-      method: "graph_traversal_v2",
-      sharedEntities: path.entityIds.map((eid) => {
-        const meta = nodeMetadata.get(`e:${eid}`);
-        return meta ? { type: meta.data.type, value: meta.data.value } : { type: "unknown", value: eid };
-      }),
-      reasoningTrace,
-      alertIds: path.alertIds,
-      status: path.confidence >= 0.65 ? "confirmed" : "pending",
-    }).returning();
+    const [cluster] = await db
+      .insert(correlationClusters)
+      .values({
+        orgId: firstAlertOrgId,
+        confidence: path.confidence,
+        method: "graph_traversal_v2",
+        sharedEntities: path.entityIds.map((eid) => {
+          const meta = nodeMetadata.get(`e:${eid}`);
+          return meta ? { type: meta.data.type, value: meta.data.value } : { type: "unknown", value: eid };
+        }),
+        reasoningTrace,
+        alertIds: path.alertIds,
+        status: path.confidence >= 0.65 ? "confirmed" : "pending",
+      })
+      .returning();
 
     clustersCreated++;
 
-    const [attackPath] = await db.insert(attackPaths).values({
-      orgId: firstAlertOrgId,
-      clusterId: cluster.id,
-      alertIds: path.alertIds,
-      entityIds: path.entityIds,
-      nodes: path.nodes,
-      edges: path.edges,
-      tacticsSequence: path.tacticsSequence,
-      techniquesUsed: path.techniquesUsed,
-      hopCount: path.hopCount,
-      confidence: path.confidence,
-      timeSpanHours: path.timeSpanHours,
-      firstAlertAt: path.firstAlertAt,
-      lastAlertAt: path.lastAlertAt,
-    }).returning();
+    const [attackPath] = await db
+      .insert(attackPaths)
+      .values({
+        orgId: firstAlertOrgId,
+        clusterId: cluster.id,
+        alertIds: path.alertIds,
+        entityIds: path.entityIds,
+        nodes: path.nodes,
+        edges: path.edges,
+        tacticsSequence: path.tacticsSequence,
+        techniquesUsed: path.techniquesUsed,
+        hopCount: path.hopCount,
+        confidence: path.confidence,
+        timeSpanHours: path.timeSpanHours,
+        firstAlertAt: path.firstAlertAt,
+        lastAlertAt: path.lastAlertAt,
+      })
+      .returning();
 
     const fp = generateCampaignFingerprint(path, alertDataList);
 
@@ -424,8 +423,8 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
       .where(
         and(
           eq(campaigns.fingerprint, fp.fingerprint),
-          firstAlertOrgId ? eq(campaigns.orgId, firstAlertOrgId) : sql`${campaigns.orgId} IS NULL`
-        )
+          firstAlertOrgId ? eq(campaigns.orgId, firstAlertOrgId) : sql`${campaigns.orgId} IS NULL`,
+        ),
       )
       .limit(1);
 
@@ -433,7 +432,8 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
       const existing = existingCampaigns[0];
       const existingClusterIds = (existing.clusterIds || []) as string[];
       const existingPathIds = (existing.attackPathIds || []) as string[];
-      await db.update(campaigns)
+      await db
+        .update(campaigns)
         .set({
           clusterIds: [...existingClusterIds, cluster.id],
           attackPathIds: [...existingPathIds, attackPath.id],
@@ -444,36 +444,36 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
         })
         .where(eq(campaigns.id, existing.id));
 
-      await db.update(attackPaths)
-        .set({ campaignId: existing.id })
-        .where(eq(attackPaths.id, attackPath.id));
+      await db.update(attackPaths).set({ campaignId: existing.id }).where(eq(attackPaths.id, attackPath.id));
     } else {
       const campaignName = generateCampaignName(fp, path);
-      const [newCampaign] = await db.insert(campaigns).values({
-        orgId: firstAlertOrgId,
-        name: campaignName,
-        fingerprint: fp.fingerprint,
-        tacticsSequence: fp.tacticsSequence,
-        entitySignature: fp.entitySignature,
-        sourceSignature: fp.sourceSignature,
-        clusterIds: [cluster.id],
-        attackPathIds: [attackPath.id],
-        confidence: path.confidence,
-        alertCount: path.alertIds.length,
-        status: "active",
-        firstSeenAt: path.firstAlertAt || new Date(),
-        lastSeenAt: path.lastAlertAt || new Date(),
-      }).returning();
+      const [newCampaign] = await db
+        .insert(campaigns)
+        .values({
+          orgId: firstAlertOrgId,
+          name: campaignName,
+          fingerprint: fp.fingerprint,
+          tacticsSequence: fp.tacticsSequence,
+          entitySignature: fp.entitySignature,
+          sourceSignature: fp.sourceSignature,
+          clusterIds: [cluster.id],
+          attackPathIds: [attackPath.id],
+          confidence: path.confidence,
+          alertCount: path.alertIds.length,
+          status: "active",
+          firstSeenAt: path.firstAlertAt || new Date(),
+          lastSeenAt: path.lastAlertAt || new Date(),
+        })
+        .returning();
 
-      await db.update(attackPaths)
-        .set({ campaignId: newCampaign.id })
-        .where(eq(attackPaths.id, attackPath.id));
+      await db.update(attackPaths).set({ campaignId: newCampaign.id }).where(eq(attackPaths.id, attackPath.id));
 
       campaignsCreated++;
     }
 
     if (path.alertIds.length > 0) {
-      await db.update(alerts)
+      await db
+        .update(alerts)
         .set({
           correlationScore: path.confidence,
           correlationClusterId: cluster.id,
@@ -534,12 +534,8 @@ function buildReasoningTrace(path: AttackPathResult, alertDataList: any[]): stri
 }
 
 function generateCampaignName(fp: CampaignFingerprint, path: AttackPathResult): string {
-  const tacticLabel = fp.tacticsSequence.length > 0
-    ? fp.tacticsSequence.slice(0, 2).join("-")
-    : "unknown";
-  const entityLabel = fp.entitySignature.length > 0
-    ? fp.entitySignature[0]
-    : "multi";
+  const tacticLabel = fp.tacticsSequence.length > 0 ? fp.tacticsSequence.slice(0, 2).join("-") : "unknown";
+  const entityLabel = fp.entitySignature.length > 0 ? fp.entitySignature[0] : "multi";
   const dateStr = path.firstAlertAt
     ? path.firstAlertAt.toISOString().split("T")[0]
     : new Date().toISOString().split("T")[0];
@@ -549,36 +545,20 @@ function generateCampaignName(fp: CampaignFingerprint, path: AttackPathResult): 
 
 export async function getAttackPaths(orgId?: string): Promise<AttackPath[]> {
   const conditions = orgId ? eq(attackPaths.orgId, orgId) : undefined;
-  return db
-    .select()
-    .from(attackPaths)
-    .where(conditions)
-    .orderBy(desc(attackPaths.createdAt))
-    .limit(50);
+  return db.select().from(attackPaths).where(conditions).orderBy(desc(attackPaths.createdAt)).limit(50);
 }
 
 export async function getAttackPath(id: string): Promise<AttackPath | undefined> {
-  const [result] = await db
-    .select()
-    .from(attackPaths)
-    .where(eq(attackPaths.id, id));
+  const [result] = await db.select().from(attackPaths).where(eq(attackPaths.id, id));
   return result;
 }
 
 export async function getCampaigns(orgId?: string): Promise<Campaign[]> {
   const conditions = orgId ? eq(campaigns.orgId, orgId) : undefined;
-  return db
-    .select()
-    .from(campaigns)
-    .where(conditions)
-    .orderBy(desc(campaigns.createdAt))
-    .limit(50);
+  return db.select().from(campaigns).where(conditions).orderBy(desc(campaigns.createdAt)).limit(50);
 }
 
 export async function getCampaign(id: string): Promise<Campaign | undefined> {
-  const [result] = await db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.id, id));
+  const [result] = await db.select().from(campaigns).where(eq(campaigns.id, id));
   return result;
 }

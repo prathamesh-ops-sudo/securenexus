@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
 import { useRoleLanding } from "@/hooks/use-role-landing";
+import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useEventStream } from "@/hooks/use-event-stream";
 import type { StreamEvent } from "@/hooks/use-event-stream";
 import { OrgContext, useOrgContextProvider } from "@/hooks/use-org-context";
@@ -20,6 +21,7 @@ import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
@@ -62,10 +64,64 @@ const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
 const ProductOverviewPage = lazy(() => import("@/pages/product-overview"));
 const AgenticSocPage = lazy(() => import("@/pages/agentic-soc"));
 const AiSocAnalystPage = lazy(() => import("@/pages/ai-soc-analyst"));
+const AutomatedSecopsPage = lazy(() => import("@/pages/automated-secops"));
 const SolutionsIndiaPage = lazy(() => import("@/pages/solutions-india"));
 const SolutionsMsspPage = lazy(() => import("@/pages/solutions-mssp"));
 const SolutionsCompliancePage = lazy(() => import("@/pages/solutions-compliance"));
 const AboutPage = lazy(() => import("@/pages/about"));
+const ProductComparisonPage = lazy(() => import("@/pages/product-comparison"));
+const EngineControlsPage = lazy(() => import("@/pages/engine-controls"));
+const EmailTemplatesPage = lazy(() => import("@/pages/email-templates"));
+const MetricsRollupPage = lazy(() => import("@/pages/metrics-rollup"));
+const ModelGatewayPage = lazy(() => import("@/pages/model-gateway"));
+const OsintFeedsConfigPage = lazy(() => import("@/pages/osint-feeds-config"));
+const OutboxMonitoringPage = lazy(() => import("@/pages/outbox-monitoring"));
+const ApiVersioningPage = lazy(() => import("@/pages/api-versioning"));
+const FileManagerPage = lazy(() => import("@/pages/file-manager"));
+const SecretRotationOverviewPage = lazy(() => import("@/pages/secret-rotation-overview"));
+const EvidenceChainViewerPage = lazy(() => import("@/pages/evidence-chain-viewer"));
+const AiFeedbackFormPage = lazy(() => import("@/pages/ai-feedback-form"));
+const SuppressedAlertsPage = lazy(() => import("@/pages/suppressed-alerts"));
+const AiPromptRegistryPage = lazy(() => import("@/pages/ai-prompt-registry"));
+const WebhookSecurityCenterPage = lazy(() => import("@/pages/webhook-security-center"));
+const ReportTemplateVersioningPage = lazy(() => import("@/pages/report-template-versioning"));
+const IocIngestionMatchingPage = lazy(() => import("@/pages/ioc-ingestion-matching"));
+const UnifiedSecurityGraphPage = lazy(() => import("@/pages/unified-security-graph"));
+const PromptToArtifactPage = lazy(() => import("@/pages/prompt-to-artifact"));
+const DeveloperRemediationPage = lazy(() => import("@/pages/developer-remediation"));
+const ThreatIntelFeedsPage = lazy(() => import("@/pages/threat-intel-feeds"));
+const EntityMergeAliasPage = lazy(() => import("@/pages/entity-merge-alias"));
+const FindingLineagePage = lazy(() => import("@/pages/finding-lineage"));
+const RuntimeGuardrailsPage = lazy(() => import("@/pages/runtime-guardrails"));
+const JitSecretAccessPage = lazy(() => import("@/pages/jit-secret-access"));
+const IntegrationMarketplacePage = lazy(() => import("@/pages/integration-marketplace"));
+const NativeCollectorsPage = lazy(() => import("@/pages/native-collectors"));
+const AdversarialTestingPage = lazy(() => import("@/pages/adversarial-testing"));
+const SocCopilotPage = lazy(() => import("@/pages/soc-copilot"));
+const TieredPackagingPage = lazy(() => import("@/pages/tiered-packaging"));
+const TrustCenterPage = lazy(() => import("@/pages/trust-center"));
+const PolicyPacksPage = lazy(() => import("@/pages/policy-packs"));
+const ExecutiveRiskPage = lazy(() => import("@/pages/executive-risk"));
+const AgentToolSecurityPage = lazy(() => import("@/pages/agent-tool-security"));
+const BrowserDefensePage = lazy(() => import("@/pages/browser-defense"));
+const CrossCuttingPage = lazy(() => import("@/pages/cross-cutting"));
+const RunbookTemplatesPage = lazy(() => import("@/pages/runbook-templates"));
+const GapAnalysisPage = lazy(() => import("@/pages/gap-analysis"));
+const AiBudgetControlsPage = lazy(() => import("@/pages/ai-budget-controls"));
+const TenantIsolationPage = lazy(() => import("@/pages/tenant-isolation"));
+const InvestigationRunsPage = lazy(() => import("@/pages/investigation-runs"));
+const CampaignViewerPage = lazy(() => import("@/pages/campaign-viewer"));
+const CveBrowserPage = lazy(() => import("@/pages/cve-browser"));
+const PostIncidentReviewPage = lazy(() => import("@/pages/post-incident-review"));
+const AiModelHealthPage = lazy(() => import("@/pages/ai-model-health"));
+const ManualAiTriggersPage = lazy(() => import("@/pages/manual-ai-triggers"));
+const RoleDashboardPage = lazy(() => import("@/pages/role-dashboard"));
+const DataLifecyclePage = lazy(() => import("@/pages/data-lifecycle"));
+const DrDrillSchedulerPage = lazy(() => import("@/pages/dr-drill-scheduler"));
+const JobQueueDashboardPage = lazy(() => import("@/pages/job-queue-dashboard"));
+const RollbackHistoryPage = lazy(() => import("@/pages/rollback-history"));
+const DomainAutoJoinPage = lazy(() => import("@/pages/domain-auto-join"));
+const UsageMeteringAnalyticsPage = lazy(() => import("@/pages/usage-metering-analytics"));
 
 function PageSkeleton() {
   return (
@@ -90,7 +146,7 @@ interface EventStreamContextType {
   lastEvent: StreamEvent | null;
 }
 
-const EventStreamContext = createContext<EventStreamContextType>({
+export const EventStreamContext = createContext<EventStreamContextType>({
   connected: false,
   connectionState: "disconnected",
   eventCount: 0,
@@ -98,11 +154,15 @@ const EventStreamContext = createContext<EventStreamContextType>({
   lastEvent: null,
 });
 
-export function useEventStreamContext() {
-  return useContext(EventStreamContext);
-}
+const EVENT_STREAM_CONTEXT_DEFAULT = {
+  connected: false,
+  connectionState: "disconnected",
+  eventCount: 0,
+  events: [],
+  lastEvent: null,
+};
 
-const CONTENT_PAGE_PREFIXES = ["/product", "/solutions", "/about"];
+const CONTENT_PAGE_PREFIXES = ["/product", "/solutions", "/about", "/blog"];
 
 function isContentPageRoute(path: string): boolean {
   return CONTENT_PAGE_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
@@ -126,6 +186,8 @@ function AuthenticatedApp() {
         <Switch>
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/blog/automated-secops" component={AutomatedSecopsPage} />
+          <Route path="/product/comparison" component={ProductComparisonPage} />
           <Route path="/product" component={ProductOverviewPage} />
           <Route path="/solutions/india" component={SolutionsIndiaPage} />
           <Route path="/solutions/mssp" component={SolutionsMsspPage} />
@@ -173,7 +235,7 @@ function AuthenticatedApp() {
                 </div>
                 <ThemeToggle />
               </header>
-              <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
+              <main id="main-content" className="flex-1 overflow-auto" tabIndex={0}>
                 <Suspense fallback={<PageSkeleton />}>
                   <Switch>
                     <Route path="/" component={Dashboard} />
@@ -212,6 +274,58 @@ function AuthenticatedApp() {
                     <Route path="/platform-admin" component={PlatformAdminPage} />
                     <Route path="/mssp-dashboard" component={MsspDashboardPage} />
                     <Route path="/dev-portal" component={DevPortalPage} />
+                    <Route path="/engine-controls" component={EngineControlsPage} />
+                    <Route path="/email-templates" component={EmailTemplatesPage} />
+                    <Route path="/metrics-rollup" component={MetricsRollupPage} />
+                    <Route path="/model-gateway" component={ModelGatewayPage} />
+                    <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
+                    <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
+                    <Route path="/api-versioning" component={ApiVersioningPage} />
+                    <Route path="/file-manager" component={FileManagerPage} />
+                    <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />
+                    <Route path="/evidence-chain-viewer" component={EvidenceChainViewerPage} />
+                    <Route path="/ai-feedback" component={AiFeedbackFormPage} />
+                    <Route path="/suppressed-alerts" component={SuppressedAlertsPage} />
+                    <Route path="/ai-prompt-registry" component={AiPromptRegistryPage} />
+                    <Route path="/webhook-security-center" component={WebhookSecurityCenterPage} />
+                    <Route path="/report-template-versioning" component={ReportTemplateVersioningPage} />
+                    <Route path="/ioc-ingestion-matching" component={IocIngestionMatchingPage} />
+                    <Route path="/security-graph" component={UnifiedSecurityGraphPage} />
+                    <Route path="/prompt-to-artifact" component={PromptToArtifactPage} />
+                    <Route path="/developer-remediation" component={DeveloperRemediationPage} />
+                    <Route path="/threat-intel-feeds" component={ThreatIntelFeedsPage} />
+                    <Route path="/entity-merge-alias" component={EntityMergeAliasPage} />
+                    <Route path="/finding-lineage" component={FindingLineagePage} />
+                    <Route path="/runtime-guardrails" component={RuntimeGuardrailsPage} />
+                    <Route path="/jit-secret-access" component={JitSecretAccessPage} />
+                    <Route path="/integration-marketplace" component={IntegrationMarketplacePage} />
+                    <Route path="/native-collectors" component={NativeCollectorsPage} />
+                    <Route path="/adversarial-testing" component={AdversarialTestingPage} />
+                    <Route path="/soc-copilot" component={SocCopilotPage} />
+                    <Route path="/tiered-packaging" component={TieredPackagingPage} />
+                    <Route path="/trust-center" component={TrustCenterPage} />
+                    <Route path="/policy-packs" component={PolicyPacksPage} />
+                    <Route path="/executive-risk" component={ExecutiveRiskPage} />
+                    <Route path="/agent-tool-security" component={AgentToolSecurityPage} />
+                    <Route path="/browser-defense" component={BrowserDefensePage} />
+                    <Route path="/cross-cutting" component={CrossCuttingPage} />
+                    <Route path="/runbook-templates" component={RunbookTemplatesPage} />
+                    <Route path="/gap-analysis" component={GapAnalysisPage} />
+                    <Route path="/ai-budget-controls" component={AiBudgetControlsPage} />
+                    <Route path="/tenant-isolation" component={TenantIsolationPage} />
+                    <Route path="/investigation-runs" component={InvestigationRunsPage} />
+                    <Route path="/campaign-viewer" component={CampaignViewerPage} />
+                    <Route path="/cve-browser" component={CveBrowserPage} />
+                    <Route path="/post-incident-review" component={PostIncidentReviewPage} />
+                    <Route path="/ai-model-health" component={AiModelHealthPage} />
+                    <Route path="/manual-ai-triggers" component={ManualAiTriggersPage} />
+                    <Route path="/role-dashboard" component={RoleDashboardPage} />
+                    <Route path="/data-lifecycle" component={DataLifecyclePage} />
+                    <Route path="/dr-drill-scheduler" component={DrDrillSchedulerPage} />
+                    <Route path="/job-queue-dashboard" component={JobQueueDashboardPage} />
+                    <Route path="/rollback-history" component={RollbackHistoryPage} />
+                    <Route path="/domain-auto-join" component={DomainAutoJoinPage} />
+                    <Route path="/usage-metering-analytics" component={UsageMeteringAnalyticsPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
@@ -227,6 +341,7 @@ function AuthenticatedApp() {
 }
 
 function AppContent() {
+  usePageTracking();
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 
@@ -241,12 +356,12 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <main className="h-screen flex items-center justify-center">
         <div className="space-y-3 text-center">
           <Skeleton className="h-10 w-10 rounded-md mx-auto" />
           <Skeleton className="h-4 w-32" />
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -259,6 +374,8 @@ function AppContent() {
           <Route path="/accept-invitation" component={AcceptInvitationPage} />
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
+          <Route path="/blog/automated-secops" component={AutomatedSecopsPage} />
+          <Route path="/product/comparison" component={ProductComparisonPage} />
           <Route path="/product" component={ProductOverviewPage} />
           <Route path="/solutions/india" component={SolutionsIndiaPage} />
           <Route path="/solutions/mssp" component={SolutionsMsspPage} />
@@ -277,14 +394,16 @@ function AppContent() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <TooltipProvider>
-          <AppContent />
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <TooltipProvider>
+            <AppContent />
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

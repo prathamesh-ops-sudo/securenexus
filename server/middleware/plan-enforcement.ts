@@ -44,19 +44,12 @@ function getCurrentPeriodStart(): Date {
 }
 
 async function resolveOrgLimits(orgId: string): Promise<{ tier: string; limits: Record<string, number> }> {
-  const sub = await storage.getSubscription(orgId);
-  let tier = "free";
-  if (sub) {
-    const plan = await storage.getPlan(sub.planId);
-    if (plan) tier = plan.name;
-  }
-
   const orgPlanLimit = await storage.getOrgPlanLimit(orgId);
-  const baseLimits = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
-
   if (orgPlanLimit) {
+    const tier = orgPlanLimit.planTier || "free";
+    const baseLimits = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
     return {
-      tier: orgPlanLimit.planTier || tier,
+      tier,
       limits: {
         ...baseLimits,
         alerts_ingested: orgPlanLimit.eventsPerMonth,
@@ -68,6 +61,14 @@ async function resolveOrgLimits(orgId: string): Promise<{ tier: string; limits: 
     };
   }
 
+  const sub = await storage.getSubscription(orgId);
+  if (!sub) {
+    return { tier: "none", limits: PLAN_LIMITS.enterprise };
+  }
+
+  const plan = await storage.getPlan(sub.planId);
+  const tier = plan?.name || "free";
+  const baseLimits = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
   return { tier, limits: baseLimits };
 }
 

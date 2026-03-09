@@ -114,6 +114,10 @@ const articleSchema = {
     "AI-powered SOC",
     "next-generation SOC",
   ],
+  speakable: {
+    "@type": "SpeakableSpecification",
+    cssSelector: ["article > header > p", "article > section:first-of-type > p"],
+  },
 };
 
 export default function AgenticSocPage() {
@@ -137,7 +141,7 @@ export default function AgenticSocPage() {
             <br />
             <span className="text-cyan-600 dark:text-cyan-400">The Complete Guide (2026)</span>
           </h1>
-          <p className="text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
+          <p className="speakable-summary text-lg text-[#64748b] dark:text-[#94a3b8] font-medium max-w-2xl leading-relaxed">
             An Agentic SOC is a security operations center where AI agents autonomously detect, investigate, and respond
             to threats — reducing manual analyst workload by 80% or more. This guide explains how Agentic SOC works, how
             it differs from traditional SOCs, and why it represents the future of security operations.

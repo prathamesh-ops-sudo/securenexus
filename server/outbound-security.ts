@@ -27,7 +27,7 @@ const INTERNAL_HOSTNAMES = new Set([
 
 const BLOCKED_SCHEMES = new Set(["file:", "ftp:", "gopher:", "data:", "javascript:"]);
 
-const CLOUD_METADATA_IPS = new Set(["169.254.169.254", "fd00:ec2::254"]);
+const CLOUD_METADATA_IPS = new Set(["169.254.169.254", "fd00:ec2::254", "169.254.170.2", "100.100.100.200"]);
 
 export interface WebhookUrlValidationResult {
   valid: boolean;

@@ -29,7 +29,12 @@ export const sentinelonePlugin: ConnectorPlugin = {
     description: "EDR - Pulls threats from SentinelOne Management API",
     authType: "token",
     requiredFields: [
-      { key: "baseUrl", label: "Management Console URL", type: "url", placeholder: "https://your-instance.sentinelone.net" },
+      {
+        key: "baseUrl",
+        label: "Management Console URL",
+        type: "url",
+        placeholder: "https://your-instance.sentinelone.net",
+      },
       { key: "apiKey", label: "API Token", type: "password", placeholder: "SentinelOne API token" },
     ],
     optionalFields: [],

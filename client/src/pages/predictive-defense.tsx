@@ -127,7 +127,7 @@ export default function PredictiveDefensePage() {
 
   const {
     data: forecasts,
-    isLoading: forecastsLoading,
+    isPending: forecastsPending,
     isError: forecastsError,
     refetch: refetchForecasts,
   } = useQuery<any[]>({
@@ -136,18 +136,18 @@ export default function PredictiveDefensePage() {
 
   const {
     data: anomalies,
-    isLoading: anomaliesLoading,
+    isPending: anomaliesPending,
     isError: anomaliesError,
     refetch: refetchAnomalies,
   } = useQuery<any[]>({
     queryKey: ["/api/predictive/anomalies"],
   });
 
-  const { data: attackSurface, isLoading: surfaceLoading } = useQuery<any[]>({
+  const { data: attackSurface, isPending: surfacePending } = useQuery<any[]>({
     queryKey: ["/api/predictive/attack-surface"],
   });
 
-  const { data: recommendations, isLoading: recsLoading } = useQuery<any[]>({
+  const { data: recommendations, isPending: recsPending } = useQuery<any[]>({
     queryKey: ["/api/predictive/recommendations"],
   });
 
@@ -215,7 +215,7 @@ export default function PredictiveDefensePage() {
     },
   });
 
-  const isLoading = forecastsLoading || anomaliesLoading || surfaceLoading || recsLoading;
+  const isPending = forecastsPending || anomaliesPending || surfacePending || recsPending;
 
   const sortedForecasts = [...(forecasts || [])].sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0));
   const sortedAnomalies = [...(anomalies || [])].sort((a, b) => (b.zScore ?? 0) - (a.zScore ?? 0));
@@ -223,7 +223,7 @@ export default function PredictiveDefensePage() {
 
   const activeForecasts = sortedForecasts.filter((f) => (f.probability ?? 0) > 0.3);
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto" data-testid="page-predictive-defense-loading">
         <div>

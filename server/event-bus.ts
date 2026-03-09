@@ -63,9 +63,7 @@ class EventBus extends EventEmitter {
   }
 
   addClient(client: SSEClient): void {
-    const subs = client.subscriptions && client.subscriptions.length > 0
-      ? new Set(client.subscriptions)
-      : null;
+    const subs = client.subscriptions && client.subscriptions.length > 0 ? new Set(client.subscriptions) : null;
 
     const managed: ManagedClient = {
       id: client.id,
@@ -206,9 +204,11 @@ class EventBus extends EventEmitter {
     logger.child("sse").info("Draining all SSE clients for shutdown", { count });
     for (const [id, client] of Array.from(this.clients.entries())) {
       try {
-        client.res.write("event: system:shutdown\ndata: {\"reason\":\"pod_shutdown\"}\n\n");
+        client.res.write('event: system:shutdown\ndata: {"reason":"pod_shutdown"}\n\n');
         client.res.end();
-      } catch { /* client already gone */ }
+      } catch {
+        /* client already gone */
+      }
       this.clients.delete(id);
     }
     this.orgIndex.clear();

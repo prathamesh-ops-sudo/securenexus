@@ -100,7 +100,7 @@ export function registerApiVersioningRoutes(app: Express): void {
             description: "Paginated alerts with text search, severity/status filters",
           },
           changes: [
-            "Added offset/limit pagination (default limit: 50, max: 200)",
+            "Added offset/limit pagination (default limit: 50, max: 500)",
             "Added search query parameter for full-text search",
             "Added severity and status filters",
             "Response includes meta.total for total count",
@@ -185,93 +185,6 @@ export function registerApiVersioningRoutes(app: Express): void {
         v2planned: "OAuth2 bearer tokens with API key fallback",
       },
     });
-  });
-
-  // ==========================================
-  // v1 Stable Endpoints — Alerts
-  // ==========================================
-
-  app.get("/api/v1/alerts", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
-      const search = typeof req.query.search === "string" ? req.query.search : undefined;
-
-      const { items, total } = await storage.getAlertsPaginated({
-        orgId,
-        offset,
-        limit,
-        search,
-      });
-
-      return sendEnvelope(res, items, {
-        meta: { offset, limit, total, search: search ?? null },
-      });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "ALERTS_FAILED", message: "Failed to fetch alerts" }],
-      });
-    }
-  });
-
-  // ==========================================
-  // v1 Stable Endpoints — Incidents
-  // ==========================================
-
-  app.get("/api/v1/incidents", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
-      const queue = typeof req.query.queue === "string" ? req.query.queue : undefined;
-
-      const { items, total } = await storage.getIncidentsPaginated({
-        orgId,
-        offset,
-        limit,
-        queue,
-      });
-
-      return sendEnvelope(res, items, {
-        meta: { offset, limit, total, queue: queue ?? null },
-      });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "INCIDENTS_FAILED", message: "Failed to fetch incidents" }],
-      });
-    }
-  });
-
-  // ==========================================
-  // v1 Stable Endpoints — Connectors
-  // ==========================================
-
-  app.get("/api/v1/connectors", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
-
-      const { items, total } = await storage.getConnectorsPaginated({ orgId, offset, limit });
-
-      return sendEnvelope(res, items, {
-        meta: { offset, limit, total },
-      });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "CONNECTORS_FAILED", message: "Failed to fetch connectors" }],
-      });
-    }
   });
 
   // ==========================================

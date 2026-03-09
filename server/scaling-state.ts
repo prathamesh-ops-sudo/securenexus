@@ -25,88 +25,106 @@ const STATE_REGISTRY: StateStoreEntry[] = [
     name: "SSE Client Map",
     file: "event-bus.ts",
     tier: "local-ok",
-    description: "SSE connections are inherently per-pod (TCP socket bound to the process). Each pod manages its own connected clients.",
-    sharedStoreUpgrade: "Use Redis Pub/Sub to broadcast events across pods. Each pod subscribes to a shared channel and forwards events to its local SSE clients.",
+    description:
+      "SSE connections are inherently per-pod (TCP socket bound to the process). Each pod manages its own connected clients.",
+    sharedStoreUpgrade:
+      "Use Redis Pub/Sub to broadcast events across pods. Each pod subscribes to a shared channel and forwards events to its local SSE clients.",
     currentBackend: "in-memory",
   },
   {
     name: "Query Cache",
     file: "query-cache.ts",
     tier: "local-ok",
-    description: "Per-instance LRU cache for dashboard/analytics queries. Cache miss simply hits DB — no correctness issue, only redundant DB load across pods.",
-    sharedStoreUpgrade: "Swap Map backing store to Redis GET/SET with TTL. The cacheGetOrLoad API is already designed for this swap.",
+    description:
+      "Per-instance LRU cache for dashboard/analytics queries. Cache miss simply hits DB — no correctness issue, only redundant DB load across pods.",
+    sharedStoreUpgrade:
+      "Swap Map backing store to Redis GET/SET with TTL. The cacheGetOrLoad API is already designed for this swap.",
     currentBackend: "in-memory",
   },
   {
     name: "SLI Metric Buckets",
     file: "sli-middleware.ts",
     tier: "local-ok",
-    description: "Per-pod latency/error buckets flushed to DB every 60s. Metrics are additive — each pod contributes its own slice. DB queries aggregate across all pods.",
-    sharedStoreUpgrade: "No upgrade needed. Per-pod collection with DB aggregation is the correct pattern for distributed metrics.",
+    description:
+      "Per-pod latency/error buckets flushed to DB every 60s. Metrics are additive — each pod contributes its own slice. DB queries aggregate across all pods.",
+    sharedStoreUpgrade:
+      "No upgrade needed. Per-pod collection with DB aggregation is the correct pattern for distributed metrics.",
     currentBackend: "in-memory",
   },
   {
     name: "OSINT Feed Cache",
     file: "osint-feeds.ts",
     tier: "local-ok",
-    description: "Cached OSINT feed results with 1-hour TTL. Multiple pods may fetch the same feed independently — slightly wasteful but no correctness issue.",
-    sharedStoreUpgrade: "Move feed cache to Redis with shared TTL. All pods read from Redis, only one pod fetches on cache miss (use Redis SETNX for distributed lock).",
+    description:
+      "Cached OSINT feed results with 1-hour TTL. Multiple pods may fetch the same feed independently — slightly wasteful but no correctness issue.",
+    sharedStoreUpgrade:
+      "Move feed cache to Redis with shared TTL. All pods read from Redis, only one pod fetches on cache miss (use Redis SETNX for distributed lock).",
     currentBackend: "in-memory",
   },
   {
     name: "Connector Provider Concurrency",
     file: "connector-engine.ts",
-    tier: "local-ok",
-    description: "Per-pod concurrency limits and backoff for connector providers. Each pod independently rate-limits its own outbound requests.",
-    sharedStoreUpgrade: "Use Redis INCR/DECR for global concurrency counting. Backoff state in Redis with TTL keys.",
-    currentBackend: "in-memory",
+    tier: "already-shared",
+    description:
+      "Cluster-wide concurrency limits and backoff for connector providers. Uses connector_provider_state DB table with atomic UPDATE for slot acquire/release. Stale slot reaper runs periodically to recover from pod crashes.",
+    sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed coordination.",
+    currentBackend: "database",
   },
   {
     name: "Slow Query Log",
     file: "db-performance.ts",
     tier: "local-ok",
     description: "Diagnostic-only in-memory ring buffer of recent slow queries. Per-pod is fine for local debugging.",
-    sharedStoreUpgrade: "Write slow queries to a DB table for cross-pod visibility. Or use centralized logging (CloudWatch/Datadog).",
+    sharedStoreUpgrade:
+      "Write slow queries to a DB table for cross-pod visibility. Or use centralized logging (CloudWatch/Datadog).",
     currentBackend: "in-memory",
   },
   {
     name: "AI Circuit Breakers",
     file: "ai/model-gateway.ts",
     tier: "needs-shared-store",
-    description: "Circuit breaker state for AI model endpoints. Per-pod state means pod A can trip its circuit while pod B continues sending requests to a failing model.",
-    sharedStoreUpgrade: "Store circuit state in Redis: INCR failure count with TTL, check count before invocation. Use Redis EXPIRE for automatic reset.",
+    description:
+      "Circuit breaker state for AI model endpoints. Per-pod state means pod A can trip its circuit while pod B continues sending requests to a failing model.",
+    sharedStoreUpgrade:
+      "Store circuit state in Redis: INCR failure count with TTL, check count before invocation. Use Redis EXPIRE for automatic reset.",
     currentBackend: "in-memory",
   },
   {
     name: "AI Response Cache",
     file: "ai/model-gateway.ts",
     tier: "local-ok",
-    description: "Short-lived (5 min) response cache for deterministic AI queries (temperature <= 0.2). Cache miss means a model invocation — acceptable inconsistency.",
-    sharedStoreUpgrade: "Move to Redis for cross-pod cache sharing. Use hash of prompt as key, serialized result as value.",
+    description:
+      "Short-lived (5 min) response cache for deterministic AI queries (temperature <= 0.2). Cache miss means a model invocation — acceptable inconsistency.",
+    sharedStoreUpgrade:
+      "Move to Redis for cross-pod cache sharing. Use hash of prompt as key, serialized result as value.",
     currentBackend: "in-memory",
   },
   {
     name: "AI Budget Tracking",
     file: "ai/budget.ts",
-    tier: "needs-shared-store",
-    description: "Per-org daily budget and invocation tracking. Per-pod state means org can spend N*budget by hitting N pods. Critical for cost control.",
-    sharedStoreUpgrade: "Use Redis INCRBYFLOAT for atomic cost accumulation. Store budget config in DB. Flush usage records to DB periodically.",
-    currentBackend: "in-memory",
+    tier: "already-shared",
+    description:
+      "Cluster-wide per-org daily budget and invocation tracking. Uses org_ai_budgets DB table with atomic UPDATE for spend accumulation. Daily reset scheduler zeros counters at midnight UTC.",
+    sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed coordination.",
+    currentBackend: "database",
   },
   {
     name: "AI Prompt Registry",
     file: "ai/prompt-registry.ts",
-    tier: "needs-shared-store",
-    description: "Prompt templates and version history. Per-pod state means prompt updates on pod A are invisible to pod B. Audit log is also per-pod.",
-    sharedStoreUpgrade: "Store prompts in DB table. Load into memory on startup, refresh periodically or via event-bus notification. Audit log already goes to DB.",
-    currentBackend: "in-memory",
+    tier: "already-shared",
+    description:
+      "Cluster-wide prompt templates, version history, and audit log. Uses ai_prompts, ai_prompt_versions, and ai_prompt_audit_log DB tables with parameterized queries. Default prompts are idempotently registered on startup.",
+    sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed coordination.",
+    currentBackend: "database",
   },
   {
     name: "Webhook Circuit Breakers",
     file: "outbound-security.ts",
     tier: "needs-shared-store",
-    description: "Circuit breaker state for webhook delivery endpoints. Per-pod state means failures on pod A don't protect pod B from sending to a dead endpoint.",
-    sharedStoreUpgrade: "Store circuit state in Redis with TTL. Use INCR for failure count, GET to check before delivery.",
+    description:
+      "Circuit breaker state for webhook delivery endpoints. Per-pod state means failures on pod A don't protect pod B from sending to a dead endpoint.",
+    sharedStoreUpgrade:
+      "Store circuit state in Redis with TTL. Use INCR for failure count, GET to check before delivery.",
     currentBackend: "in-memory",
   },
   {
@@ -121,15 +139,18 @@ const STATE_REGISTRY: StateStoreEntry[] = [
     name: "SLO Breach Cooldown",
     file: "slo-alerting.ts",
     tier: "needs-shared-store",
-    description: "Notification cooldown map to prevent duplicate breach alerts. Per-pod state means each pod sends its own notifications — N pods = N duplicate alerts.",
-    sharedStoreUpgrade: "Use Redis SETNX with TTL for cooldown keys. Only the pod that wins the SETNX sends the notification.",
+    description:
+      "Notification cooldown map to prevent duplicate breach alerts. Per-pod state means each pod sends its own notifications — N pods = N duplicate alerts.",
+    sharedStoreUpgrade:
+      "Use Redis SETNX with TTL for cooldown keys. Only the pod that wins the SETNX sends the notification.",
     currentBackend: "in-memory",
   },
   {
     name: "Job Queue Active IDs",
     file: "job-queue.ts",
     tier: "already-shared",
-    description: "Job dedup and locking uses DB-based FOR UPDATE SKIP LOCKED. The in-memory activeJobIds Set only tracks this worker's own heartbeats — correct for distributed use.",
+    description:
+      "Job dedup and locking uses DB-based FOR UPDATE SKIP LOCKED. The in-memory activeJobIds Set only tracks this worker's own heartbeats — correct for distributed use.",
     sharedStoreUpgrade: "No upgrade needed. Already uses DB-based distributed locking.",
     currentBackend: "database",
   },
@@ -221,5 +242,4 @@ export function initializeScalingState(): void {
       recommendation: "Deploy Redis/ElastiCache and migrate these stores before scaling beyond 1 replica",
     });
   }
-
 }

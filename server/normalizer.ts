@@ -26,10 +26,24 @@ export interface NormalizedAlert {
 }
 
 const SEVERITY_MAP: Record<string, string> = {
-  "5": "critical", "4": "high", "3": "medium", "2": "low", "1": "informational",
-  critical: "critical", high: "high", medium: "medium", low: "low", informational: "informational",
-  urgent: "critical", severe: "critical", warning: "medium", info: "informational", notice: "low",
-  error: "high", alert: "high", emergency: "critical",
+  "5": "critical",
+  "4": "high",
+  "3": "medium",
+  "2": "low",
+  "1": "informational",
+  critical: "critical",
+  high: "high",
+  medium: "medium",
+  low: "low",
+  informational: "informational",
+  urgent: "critical",
+  severe: "critical",
+  warning: "medium",
+  info: "informational",
+  notice: "low",
+  error: "high",
+  alert: "high",
+  emergency: "critical",
 };
 
 function normalizeSeverity(raw: string | number): string {
@@ -38,18 +52,37 @@ function normalizeSeverity(raw: string | number): string {
 }
 
 const CATEGORY_MAP: Record<string, string> = {
-  malware: "malware", ransomware: "malware", trojan: "malware", virus: "malware",
-  intrusion: "intrusion", "unauthorized access": "intrusion", breach: "intrusion",
-  phishing: "phishing", "spear phishing": "phishing", "social engineering": "phishing",
-  exfiltration: "data_exfiltration", "data leak": "data_exfiltration", "data theft": "data_exfiltration",
-  "privilege escalation": "privilege_escalation", "elevation of privilege": "privilege_escalation",
+  malware: "malware",
+  ransomware: "malware",
+  trojan: "malware",
+  virus: "malware",
+  intrusion: "intrusion",
+  "unauthorized access": "intrusion",
+  breach: "intrusion",
+  phishing: "phishing",
+  "spear phishing": "phishing",
+  "social engineering": "phishing",
+  exfiltration: "data_exfiltration",
+  "data leak": "data_exfiltration",
+  "data theft": "data_exfiltration",
+  "privilege escalation": "privilege_escalation",
+  "elevation of privilege": "privilege_escalation",
   "lateral movement": "lateral_movement",
-  "credential access": "credential_access", "credential theft": "credential_access", "brute force": "credential_access",
-  reconnaissance: "reconnaissance", scanning: "reconnaissance", "port scan": "reconnaissance",
-  persistence: "persistence", backdoor: "persistence",
-  "command and control": "command_and_control", c2: "command_and_control", "c&c": "command_and_control",
-  "cloud misconfiguration": "cloud_misconfiguration", misconfiguration: "cloud_misconfiguration",
-  "policy violation": "policy_violation", compliance: "policy_violation",
+  "credential access": "credential_access",
+  "credential theft": "credential_access",
+  "brute force": "credential_access",
+  reconnaissance: "reconnaissance",
+  scanning: "reconnaissance",
+  "port scan": "reconnaissance",
+  persistence: "persistence",
+  backdoor: "persistence",
+  "command and control": "command_and_control",
+  c2: "command_and_control",
+  "c&c": "command_and_control",
+  "cloud misconfiguration": "cloud_misconfiguration",
+  misconfiguration: "cloud_misconfiguration",
+  "policy violation": "policy_violation",
+  compliance: "policy_violation",
 };
 
 function normalizeCategory(raw: string): string {
@@ -232,9 +265,7 @@ function normalizeGuardDuty(payload: any): NormalizedAlert {
     sourceEventId: finding.id || finding.arn || "",
     category: normalizeCategory(finding.type?.split("/")[0] || "other"),
     severity: normalizeSeverity(
-      finding.severity >= 7 ? "critical" :
-      finding.severity >= 4 ? "high" :
-      finding.severity >= 2 ? "medium" : "low"
+      finding.severity >= 7 ? "critical" : finding.severity >= 4 ? "high" : finding.severity >= 2 ? "medium" : "low",
     ),
     title: finding.title || finding.type || "GuardDuty Finding",
     description: finding.description || "",
@@ -285,9 +316,7 @@ function normalizeSuricata(payload: any): NormalizedAlert {
     sourceEventId: event.signature_id?.toString() || event.flow_id?.toString() || "",
     category: normalizeCategory(event.category || "intrusion"),
     severity: normalizeSeverity(
-      event.severity === 1 ? "critical" :
-      event.severity === 2 ? "high" :
-      event.severity === 3 ? "medium" : "low"
+      event.severity === 1 ? "critical" : event.severity === 2 ? "high" : event.severity === 3 ? "medium" : "low",
     ),
     title: event.signature || event.msg || "Suricata Alert",
     description: event.payload_printable || event.signature || "",
@@ -338,8 +367,53 @@ function normalizeSuricata(payload: any): NormalizedAlert {
   };
 }
 
+function collectUnmappedFields(event: Record<string, any>, mappedKeys: string[]): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  const mapped = new Set(mappedKeys);
+  for (const key of Object.keys(event)) {
+    if (!mapped.has(key) && event[key] !== undefined && event[key] !== null) {
+      extra[key] = event[key];
+    }
+  }
+  return extra;
+}
+
 function normalizeDefender(payload: any): NormalizedAlert {
   const event = payload.alert || payload.evidence || payload;
+  const MAPPED_KEYS = [
+    "alertId",
+    "id",
+    "incidentId",
+    "category",
+    "threatFamilyName",
+    "severity",
+    "title",
+    "alertDisplayName",
+    "name",
+    "description",
+    "machineIp",
+    "localIp",
+    "evidence",
+    "remoteIp",
+    "localPort",
+    "remotePort",
+    "computerDnsName",
+    "machineName",
+    "deviceName",
+    "userPrincipalName",
+    "accountName",
+    "sha256",
+    "sha1",
+    "md5",
+    "url",
+    "remoteUrl",
+    "domainName",
+    "mitreTechniques",
+    "alertCreationTime",
+    "firstEventTime",
+    "createdDateTime",
+  ];
+  const unmapped = collectUnmappedFields(event, MAPPED_KEYS);
   return {
     source: "Microsoft Defender",
     sourceEventId: event.alertId || event.id || event.incidentId?.toString() || "",
@@ -348,7 +422,34 @@ function normalizeDefender(payload: any): NormalizedAlert {
     title: event.title || event.alertDisplayName || event.name || "Defender Alert",
     description: event.description || "",
     rawData: payload,
-    normalizedData: { normalized: true, source: "defender", timestamp: new Date().toISOString() },
+    normalizedData: {
+      normalized: true,
+      source: "defender",
+      ocsf_mapped: true,
+      timestamp: new Date().toISOString(),
+      src_ip: event.machineIp || event.localIp || event.evidence?.ipAddress,
+      dest_ip: event.remoteIp,
+      src_host: event.computerDnsName || event.machineName || event.deviceName,
+      username: event.userPrincipalName || event.accountName,
+      sha256: event.sha256,
+      sha1: event.sha1,
+      md5: event.md5,
+      domain_name: event.domainName,
+      url: event.url || event.remoteUrl,
+      detection_source: event.detectionSource,
+      service_source: event.serviceSource,
+      threat_family: event.threatFamilyName,
+      actor_name: event.actorName,
+      incident_id: event.incidentId,
+      alert_status: event.status,
+      assigned_to: event.assignedTo,
+      classification: event.classification,
+      determination: event.determination,
+      investigation_state: event.investigationState,
+      evidence_details: event.evidence,
+      mitre_techniques: event.mitreTechniques,
+      ...unmapped,
+    },
     sourceIp: event.machineIp || event.localIp || event.evidence?.ipAddress,
     destIp: event.remoteIp,
     sourcePort: event.localPort,
@@ -404,10 +505,15 @@ function normalizeQRadar(payload: any): NormalizedAlert {
   const event = payload.event || payload;
   const magnitude = parseInt(event.magnitude, 10) || 5;
   const severityStr =
-    magnitude >= 9 ? "critical" :
-    magnitude >= 7 ? "high" :
-    magnitude >= 4 ? "medium" :
-    magnitude >= 2 ? "low" : "informational";
+    magnitude >= 9
+      ? "critical"
+      : magnitude >= 7
+        ? "high"
+        : magnitude >= 4
+          ? "medium"
+          : magnitude >= 2
+            ? "low"
+            : "informational";
   return {
     source: "IBM QRadar",
     sourceEventId: event.qid?.toString() || event.id?.toString() || "",
@@ -456,10 +562,15 @@ function normalizeCarbonBlack(payload: any): NormalizedAlert {
   const event = payload.alert || payload;
   const severity = parseInt(event.severity, 10) || 5;
   const severityStr =
-    severity >= 9 ? "critical" :
-    severity >= 7 ? "high" :
-    severity >= 4 ? "medium" :
-    severity >= 2 ? "low" : "informational";
+    severity >= 9
+      ? "critical"
+      : severity >= 7
+        ? "high"
+        : severity >= 4
+          ? "medium"
+          : severity >= 2
+            ? "low"
+            : "informational";
   return {
     source: "Carbon Black EDR",
     sourceEventId: event.id?.toString() || event.alert_id?.toString() || "",
@@ -485,10 +596,15 @@ function normalizeQualys(payload: any): NormalizedAlert {
   const event = payload.vulnerability || payload;
   const severity = parseInt(event.severity, 10) || 3;
   const severityStr =
-    severity >= 5 ? "critical" :
-    severity >= 4 ? "high" :
-    severity >= 3 ? "medium" :
-    severity >= 2 ? "low" : "informational";
+    severity >= 5
+      ? "critical"
+      : severity >= 4
+        ? "high"
+        : severity >= 3
+          ? "medium"
+          : severity >= 2
+            ? "low"
+            : "informational";
   return {
     source: "Qualys VMDR",
     sourceEventId: event.id?.toString() || event.qid?.toString() || "",
@@ -514,10 +630,15 @@ function normalizeTenable(payload: any): NormalizedAlert {
   const port = event.port || {};
   const severity = parseInt(event.severity ?? plugin.severity, 10) || 2;
   const severityStr =
-    severity >= 4 ? "critical" :
-    severity >= 3 ? "high" :
-    severity >= 2 ? "medium" :
-    severity >= 1 ? "low" : "informational";
+    severity >= 4
+      ? "critical"
+      : severity >= 3
+        ? "high"
+        : severity >= 2
+          ? "medium"
+          : severity >= 1
+            ? "low"
+            : "informational";
   return {
     source: "Tenable Nessus",
     sourceEventId: plugin.id?.toString() || event.id?.toString() || "",
@@ -541,7 +662,9 @@ function normalizeCiscoUmbrella(payload: any): NormalizedAlert {
     source: "Cisco Umbrella",
     sourceEventId: event.id?.toString() || event.originId?.toString() || "",
     category: normalizeCategory(event.type || event.disposition || "other"),
-    severity: normalizeSeverity(event.disposition === "blocked" ? "high" : event.disposition === "allowed" ? "low" : "medium"),
+    severity: normalizeSeverity(
+      event.disposition === "blocked" ? "high" : event.disposition === "allowed" ? "low" : "medium",
+    ),
     title: event.type ? `Umbrella ${event.type} Event` : "Cisco Umbrella Alert",
     description: event.categories?.join(", ") || event.disposition || "",
     rawData: payload,
@@ -559,10 +682,7 @@ function normalizeDarktrace(payload: any): NormalizedAlert {
   const device = event.device || {};
   const score = parseInt(event.score, 10) || 50;
   const severityStr =
-    score >= 80 ? "critical" :
-    score >= 60 ? "high" :
-    score >= 40 ? "medium" :
-    score >= 20 ? "low" : "informational";
+    score >= 80 ? "critical" : score >= 60 ? "high" : score >= 40 ? "medium" : score >= 20 ? "low" : "informational";
   return {
     source: "Darktrace",
     sourceEventId: event.pbid?.toString() || event.id?.toString() || "",
@@ -660,10 +780,15 @@ function normalizeProofpoint(payload: any): NormalizedAlert {
   const phishScore = parseInt(event.phishScore, 10) || 0;
   const maxScore = Math.max(spamScore, phishScore);
   const severityStr =
-    maxScore >= 90 ? "critical" :
-    maxScore >= 70 ? "high" :
-    maxScore >= 40 ? "medium" :
-    maxScore >= 10 ? "low" : "informational";
+    maxScore >= 90
+      ? "critical"
+      : maxScore >= 70
+        ? "high"
+        : maxScore >= 40
+          ? "medium"
+          : maxScore >= 10
+            ? "low"
+            : "informational";
   return {
     source: "Proofpoint Email",
     sourceEventId: event.GUID || event.guid || event.id || "",
@@ -688,9 +813,7 @@ function normalizeSnort(payload: any): NormalizedAlert {
     sourceEventId: event.signature_id?.toString() || event.sid?.toString() || "",
     category: normalizeCategory(event.classification || "intrusion"),
     severity: normalizeSeverity(
-      event.priority === 1 ? "critical" :
-      event.priority === 2 ? "high" :
-      event.priority === 3 ? "medium" : "low"
+      event.priority === 1 ? "critical" : event.priority === 2 ? "high" : event.priority === 3 ? "medium" : "low",
     ),
     title: event.signature || event.msg || "Snort Alert",
     description: event.classification || event.signature || "",
@@ -804,15 +927,40 @@ export const SOURCE_KEYS = Object.keys(NORMALIZERS);
 
 export function normalizeAlert(source: string, payload: any): NormalizedAlert {
   const key = source.toLowerCase().replace(/[\s\-_]/g, "");
-  const normalizer = Object.entries(NORMALIZERS).find(([k]) =>
-    key.includes(k)
-  );
-  if (normalizer) return normalizer[1](payload);
+  const exact = NORMALIZERS[key];
+  if (exact) return exact(payload);
   return normalizeCustom(payload);
+}
+
+export const ALERT_FIELD_LIMITS = {
+  title: 500,
+  description: 5000,
+  analystNotes: 10000,
+  confidenceNotes: 2000,
+  correlationReason: 5000,
+} as const;
+
+export function validateAlertFieldLengths(fields: Record<string, unknown>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  for (const [field, maxLen] of Object.entries(ALERT_FIELD_LIMITS)) {
+    const value = fields[field];
+    if (typeof value === "string" && value.length > maxLen) {
+      errors.push(`${field} exceeds maximum length of ${maxLen} characters (got ${value.length})`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
 }
 
 export function toInsertAlert(normalized: NormalizedAlert, orgId?: string): InsertAlert {
   const ocsfData = toOCSFSecurityFinding(normalized);
+
+  const lengthCheck = validateAlertFieldLengths({
+    title: normalized.title,
+    description: normalized.description,
+  });
+  if (!lengthCheck.valid) {
+    throw new Error(`Alert field validation failed: ${lengthCheck.errors.join("; ")}`);
+  }
 
   return {
     orgId: orgId || null,
@@ -820,8 +968,8 @@ export function toInsertAlert(normalized: NormalizedAlert, orgId?: string): Inse
     sourceEventId: normalized.sourceEventId || null,
     category: normalized.category,
     severity: normalized.severity,
-    title: normalized.title.slice(0, 500),
-    description: normalized.description?.slice(0, 5000) || null,
+    title: normalized.title,
+    description: normalized.description || null,
     rawData: normalized.rawData,
     normalizedData: normalized.normalizedData,
     ocsfData,

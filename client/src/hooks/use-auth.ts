@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
-import { extractApiError } from "../lib/queryClient";
+import { extractApiError, clearCsrfTokenCache } from "../lib/queryClient";
 
 async function fetchUser(): Promise<User | null> {
   const response = await fetch("/api/auth/user", {
@@ -56,6 +56,7 @@ async function registerFn(data: {
 
 async function logoutFn(): Promise<void> {
   await fetch("/api/logout", { method: "POST", credentials: "include" });
+  clearCsrfTokenCache();
 }
 
 export function useAuth() {

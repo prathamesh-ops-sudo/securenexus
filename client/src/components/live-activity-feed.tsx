@@ -1,5 +1,5 @@
-import { useRef, useEffect } from "react";
-import { useEventStreamContext } from "@/App";
+import { useRef, useEffect, useContext } from "react";
+import { EventStreamContext } from "@/App";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, FileWarning, Network, Shield, Radio, Zap } from "lucide-react";
@@ -59,7 +59,7 @@ function getEventSource(event: StreamEvent): string | null {
 }
 
 export function LiveActivityFeed() {
-  const { connected, events, eventCount } = useEventStreamContext();
+  const { connected, events, eventCount } = useContext(EventStreamContext);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -85,29 +85,25 @@ export function LiveActivityFeed() {
             className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`}
             data-testid="indicator-feed-connection"
           />
-          <span className="text-[10px] text-muted-foreground">
-            {connected ? "Live" : "Offline"}
-          </span>
+          <span className="text-[10px] text-muted-foreground">{connected ? "Live" : "Offline"}</span>
         </div>
       </CardHeader>
       <CardContent>
-        <div
-          ref={scrollRef}
-          className="max-h-[400px] overflow-auto space-y-1.5"
-          data-testid="activity-feed-list"
-        >
+        <div ref={scrollRef} className="max-h-[400px] overflow-auto space-y-1.5" data-testid="activity-feed-list">
           {events.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
               <div className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse" />
               <span>Listening for events...</span>
             </div>
           ) : (
-            events.map((event, index) => {
+            events.map((event: StreamEvent, index: number) => {
               const mapping = EVENT_TYPE_MAP[event.type] || { label: event.type, icon: Zap };
               const Icon = mapping.icon;
               const severity = getEventSeverity(event);
               const source = getEventSource(event);
-              const colorClass = severity ? SEVERITY_COLORS[severity] || "text-muted-foreground" : "text-muted-foreground";
+              const colorClass = severity
+                ? SEVERITY_COLORS[severity] || "text-muted-foreground"
+                : "text-muted-foreground";
 
               return (
                 <div
@@ -130,9 +126,7 @@ export function LiveActivityFeed() {
                           {severity}
                         </Badge>
                       )}
-                      {source && (
-                        <span className="text-[10px] text-muted-foreground truncate">{source}</span>
-                      )}
+                      {source && <span className="text-[10px] text-muted-foreground truncate">{source}</span>}
                     </div>
                   </div>
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">

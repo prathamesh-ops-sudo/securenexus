@@ -30,12 +30,15 @@ export const guarddutyPlugin: ConnectorPlugin = {
     name: "AWS GuardDuty",
     description: "Cloud Threat Detection - Pulls findings via AWS SDK with severity filtering",
     authType: "aws_credentials",
-    requiredFields: [
-      { key: "region", label: "AWS Region", type: "text", placeholder: "us-east-1" },
-    ],
+    requiredFields: [{ key: "region", label: "AWS Region", type: "text", placeholder: "us-east-1" }],
     optionalFields: [
       { key: "accessKeyId", label: "AWS Access Key ID (uses default if empty)", type: "text", placeholder: "AKIA..." },
-      { key: "secretAccessKey", label: "AWS Secret Access Key", type: "password", placeholder: "Override default AWS credentials" },
+      {
+        key: "secretAccessKey",
+        label: "AWS Secret Access Key",
+        type: "password",
+        placeholder: "Override default AWS credentials",
+      },
     ],
     icon: "CloudLightning",
     docsUrl: "https://docs.aws.amazon.com/guardduty/latest/APIReference/",
@@ -58,7 +61,8 @@ export const guarddutyPlugin: ConnectorPlugin = {
   },
 
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
-    const { GuardDutyClient, ListDetectorsCommand, ListFindingsCommand, GetFindingsCommand } = await import("@aws-sdk/client-guardduty");
+    const { GuardDutyClient, ListDetectorsCommand, ListFindingsCommand, GetFindingsCommand } =
+      await import("@aws-sdk/client-guardduty");
     const { getConnectorAwsClientConfig } = await import("../aws-credentials");
     const client = new GuardDutyClient(
       getConnectorAwsClientConfig(config.region, config.accessKeyId, config.secretAccessKey) as any,
@@ -70,16 +74,20 @@ export const guarddutyPlugin: ConnectorPlugin = {
     if (since) {
       criterion.updatedAt = { Gte: since.getTime() };
     }
-    const findingsRes = await client.send(new ListFindingsCommand({
-      DetectorId: detectorId,
-      FindingCriteria: { Criterion: criterion },
-      MaxResults: 50,
-    }));
+    const findingsRes = await client.send(
+      new ListFindingsCommand({
+        DetectorId: detectorId,
+        FindingCriteria: { Criterion: criterion },
+        MaxResults: 50,
+      }),
+    );
     if (!findingsRes.FindingIds?.length) return [];
-    const detailsRes = await client.send(new GetFindingsCommand({
-      DetectorId: detectorId,
-      FindingIds: findingsRes.FindingIds,
-    }));
+    const detailsRes = await client.send(
+      new GetFindingsCommand({
+        DetectorId: detectorId,
+        FindingIds: findingsRes.FindingIds,
+      }),
+    );
     return detailsRes.Findings || [];
   },
 
@@ -95,8 +103,9 @@ export const guarddutyPlugin: ConnectorPlugin = {
       description: r.Description || "",
       severity: mapSeverity(r.Severity),
       category: mapCategory(r.Type),
-      sourceIp: action.NetworkConnectionAction?.RemoteIpDetails?.IpAddressV4 ||
-                action.AwsApiCallAction?.RemoteIpDetails?.IpAddressV4,
+      sourceIp:
+        action.NetworkConnectionAction?.RemoteIpDetails?.IpAddressV4 ||
+        action.AwsApiCallAction?.RemoteIpDetails?.IpAddressV4,
       hostname: resource.InstanceDetails?.InstanceId,
       domain: action.DnsRequestAction?.Domain,
       detectedAt: r.CreatedAt ? new Date(r.CreatedAt) : new Date(),

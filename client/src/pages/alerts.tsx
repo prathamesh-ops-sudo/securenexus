@@ -30,6 +30,8 @@ import {
   Save,
   BookmarkPlus,
   Keyboard,
+  GitBranch,
+  Network,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,8 +43,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useOrgContext } from "@/hooks/use-org-context";
 import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule, SavedView } from "@shared/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -108,6 +111,21 @@ function FilterChips({
   );
 }
 
+interface EntityCorrelationResult {
+  clusterId: string;
+  confidence: number;
+  method: string;
+  alertIds: string[];
+  sharedEntities: { type: string; value: string; count: number }[];
+  reasoningTrace: string;
+}
+
+interface EntityCorrelationScanResponse {
+  scanned: boolean;
+  correlations: number;
+  results: EntityCorrelationResult[];
+}
+
 interface CorrelationGroup {
   groupName: string;
   alertIds: string[];
@@ -155,6 +173,7 @@ export default function AlertsPage() {
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [correlationResult, setCorrelationResult] = useState<CorrelationResult | null>(null);
+  const [entityScanResult, setEntityScanResult] = useState<EntityCorrelationScanResponse | null>(null);
   const [selectedAlertForTriage, setSelectedAlertForTriage] = useState<string | null>(null);
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [showSuppressionRules, setShowSuppressionRules] = useState(false);
@@ -189,22 +208,26 @@ export default function AlertsPage() {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
   const { toast } = useToast();
+  const { currentOrgId } = useOrgContext();
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
-    queryKey: ["/api/orgs/default/saved-views", "alerts"],
+    queryKey: [`/api/orgs/${currentOrgId}/saved-views`, "alerts"],
     queryFn: async () => {
+      if (!currentOrgId) return [];
       try {
-        const res = await apiRequest("GET", "/api/orgs/default/saved-views?resourceType=alerts");
+        const res = await apiRequest("GET", `/api/orgs/${currentOrgId}/saved-views?resourceType=alerts`);
         return res.json();
       } catch {
         return [];
       }
     },
+    enabled: !!currentOrgId,
   });
 
   const createSavedViewMutation = useMutation({
     mutationFn: async (viewData: { name: string; filters: Record<string, unknown> }) => {
-      const res = await apiRequest("POST", "/api/orgs/default/saved-views", {
+      if (!currentOrgId) throw new Error("No organization selected");
+      const res = await apiRequest("POST", `/api/orgs/${currentOrgId}/saved-views`, {
         name: viewData.name,
         resourceType: "alerts",
         filters: viewData.filters,
@@ -223,7 +246,8 @@ export default function AlertsPage() {
 
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      await apiRequest("DELETE", `/api/orgs/default/saved-views/${viewId}`);
+      if (!currentOrgId) throw new Error("No organization selected");
+      await apiRequest("DELETE", `/api/orgs/${currentOrgId}/saved-views/${viewId}`);
     },
     onSuccess: () => {
       refetchSavedViews();
@@ -232,13 +256,19 @@ export default function AlertsPage() {
   });
 
   const {
-    data: alerts,
+    data: alertsResponse,
     isLoading,
     isError: alertsError,
     refetch: refetchAlerts,
-  } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts"],
+    queryFn: () =>
+      fetchPaginated<Alert>("/api/v1/alerts", {
+        offset: 0,
+        limit: 200,
+      }),
   });
+  const alerts = alertsResponse?.items;
 
   const { data: suppressionRules, isLoading: rulesLoading } = useQuery<SuppressionRule[]>({
     queryKey: ["/api/suppression-rules"],
@@ -283,8 +313,8 @@ export default function AlertsPage() {
     },
     onSuccess: (data) => {
       toast({ title: "Incident Created", description: `Created incident: ${data.title}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     },
     onError: (error: any) => {
@@ -298,7 +328,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Alert Suppressed" });
     },
     onError: (error: any) => {
@@ -312,7 +342,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Alert Unsuppressed" });
     },
     onError: (error: any) => {
@@ -386,12 +416,30 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Confidence Updated" });
       setCalibratingAlertId(null);
     },
     onError: (error: any) => {
       toast({ title: "Failed to update confidence", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const correlationScan = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/correlation/scan", {});
+      return res.json();
+    },
+    onSuccess: (data: EntityCorrelationScanResponse) => {
+      setEntityScanResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      toast({
+        title: "Correlation Scan Complete",
+        description: `Scanned alerts — found ${data.correlations} correlation(s)`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Correlation Scan Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -401,7 +449,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Duplicate Scan Complete", description: `Found ${data.clustersCreated ?? 0} cluster(s)` });
     },
     onError: (error: any) => {
@@ -415,7 +463,7 @@ export default function AlertsPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
       toast({ title: "Bulk update complete", description: `Updated ${data.updatedCount || 0} alert(s)` });
       setSelectedIds([]);
     },
@@ -501,7 +549,7 @@ export default function AlertsPage() {
     if (name && name.trim()) {
       apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { assignedTo: name.trim() })
         .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
           toast({ title: "Assigned", description: `Alert assigned to ${name.trim()}` });
         })
         .catch((err: Error) => {
@@ -514,7 +562,7 @@ export default function AlertsPage() {
     if (!focusedAlertId) return;
     apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "triaged", assignedTo: "Tier 2" })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Escalated", description: "Alert escalated to Tier 2" });
       })
       .catch((err: Error) => {
@@ -526,7 +574,7 @@ export default function AlertsPage() {
     if (!focusedAlertId) return;
     apiRequest("PATCH", `/api/alerts/${focusedAlertId}`, { status: "resolved" })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
         toast({ title: "Resolved" });
       })
       .catch((err: Error) => {
@@ -699,6 +747,20 @@ export default function AlertsPage() {
               <Brain className="h-4 w-4 mr-2" aria-hidden="true" />
             )}
             {correlate.isPending ? "Analyzing..." : "AI Correlate Alerts"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => correlationScan.mutate()}
+            disabled={correlationScan.isPending}
+            aria-label="Run entity-based correlation scan on uncorrelated alerts"
+            data-testid="button-correlation-scan"
+          >
+            {correlationScan.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+            ) : (
+              <Network className="h-4 w-4 mr-2" aria-hidden="true" />
+            )}
+            {correlationScan.isPending ? "Scanning..." : "Correlation Scan"}
           </Button>
         </div>
       </div>
@@ -946,7 +1008,7 @@ export default function AlertsPage() {
                       variant="outline"
                       size="sm"
                       className="h-8"
-                      disabled={!savedViewName.trim() || createSavedViewMutation.isPending}
+                      disabled={!savedViewName.trim() || !currentOrgId || createSavedViewMutation.isPending}
                       onClick={() => {
                         createSavedViewMutation.mutate({
                           name: savedViewName.trim(),
@@ -1197,6 +1259,85 @@ export default function AlertsPage() {
               ))
             ) : (
               <p className="text-xs text-muted-foreground">No suppression rules configured</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {entityScanResult && (
+        <Card className="border-cyan-500/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Network className="h-4 w-4 text-cyan-400" />
+                Entity Correlation Scan Results
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEntityScanResult(null)}
+                data-testid="button-dismiss-entity-scan"
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Found {entityScanResult.correlations} correlation cluster(s) from uncorrelated alerts
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {entityScanResult.results.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">
+                No new correlations found. All recent alerts are either already correlated or lack shared entities.
+              </p>
+            ) : (
+              entityScanResult.results.map((result) => (
+                <div
+                  key={result.clusterId}
+                  className="p-3 rounded-md bg-muted/30 space-y-2"
+                  data-testid={`entity-scan-cluster-${result.clusterId}`}
+                >
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <GitBranch className="h-3.5 w-3.5 text-cyan-400" />
+                        Cluster {result.clusterId.slice(0, 8)}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{result.method}</div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge variant="outline" className="text-xs bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
+                        {Math.round(result.confidence * 100)}% confidence
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{result.alertIds.length} alerts</span>
+                    </div>
+                  </div>
+                  {result.sharedEntities.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground">Shared:</span>
+                      {result.sharedEntities.slice(0, 5).map((ent, j) => (
+                        <Badge
+                          key={`${ent.type}-${ent.value}-${j}`}
+                          variant="secondary"
+                          className="text-[10px] font-mono"
+                        >
+                          {ent.type}:{ent.value} ({ent.count})
+                        </Badge>
+                      ))}
+                      {result.sharedEntities.length > 5 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{result.sharedEntities.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {result.reasoningTrace && (
+                    <p className="text-xs text-muted-foreground border-l-2 border-cyan-500/30 pl-2 mt-1">
+                      {result.reasoningTrace}
+                    </p>
+                  )}
+                </div>
+              ))
             )}
           </CardContent>
         </Card>

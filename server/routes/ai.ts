@@ -20,12 +20,14 @@ import {
   getAllAiOrgUsage,
   setAiOrgBudget,
   clearModelCache,
-} from "../ai";
   conductDeepInvestigation,
   conductThreatHunt,
   analyzeBehavior,
   predictAttackPaths,
+} from "../ai";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { invokeModel as gatewayInvoke } from "../ai/model-gateway";
+import { config as appConfig } from "../config";
 
 export function registerAiRoutes(app: Express): void {
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
@@ -40,7 +42,7 @@ export function registerAiRoutes(app: Express): void {
   });
 
   app.get("/api/ai/config", isAuthenticated, async (_req, res) => {
-    res.json(getModelConfig());
+    res.json(await getModelConfig());
   });
 
   app.get("/api/ai/inference-metrics", isAuthenticated, strictLimiter, async (req, res) => {
@@ -55,19 +57,22 @@ export function registerAiRoutes(app: Express): void {
     strictLimiter,
     async (req, res) => {
       try {
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
         const { alertIds } = req.body;
         let alertsToCorrelate;
         if (alertIds && Array.isArray(alertIds) && alertIds.length > 0) {
-          const allAlerts = await storage.getAlerts();
+          const allAlerts = await storage.getAlerts(orgId);
           alertsToCorrelate = allAlerts.filter((a) => alertIds.includes(a.id));
         } else {
-          alertsToCorrelate = (await storage.getAlerts()).filter((a) => a.status === "new" || a.status === "triaged");
+          alertsToCorrelate = (await storage.getAlerts(orgId)).filter(
+            (a) => a.status === "new" || a.status === "triaged",
+          );
         }
         if (alertsToCorrelate.length === 0) {
           return res.status(400).json({ message: "No alerts to correlate" });
         }
         const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
-        const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx);
+        const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx, orgId);
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName
@@ -77,11 +82,26 @@ export function registerAiRoutes(app: Express): void {
           resourceType: "alerts",
           details: { alertCount: alertsToCorrelate.length, groupsFound: result.correlatedGroups.length },
         });
-        storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses").catch(() => {});
+        try {
+          await storage.incrementUsage(orgId, "ai_analyses");
+        } catch (e) {
+          logger.child("ai").warn("Usage tracking failed", { error: String(e), orgId });
+        }
         res.json(result);
       } catch (error: any) {
-        logger.child("ai").error("AI correlation error", { error: String(error) });
-        res.status(500).json({ message: "AI correlation failed. Please try again." });
+        const errMsg = error?.message || String(error);
+        logger.child("ai").error("AI correlation error", { error: errMsg });
+        let userMessage = "AI correlation failed. Please try again.";
+        if (errMsg.includes("Circuit breaker open")) {
+          userMessage = "AI service is temporarily unavailable due to repeated failures. Please try again later.";
+        } else if (errMsg.includes("budget exceeded")) {
+          userMessage = "AI budget exceeded for your organization. Contact your admin to increase limits.";
+        } else if (errMsg.includes("not found in registry")) {
+          userMessage = "AI correlation prompt is not configured. Contact your administrator.";
+        } else if (errMsg.length <= 200) {
+          userMessage = errMsg;
+        }
+        res.status(500).json({ message: userMessage });
       }
     },
   );
@@ -98,7 +118,8 @@ export function registerAiRoutes(app: Express): void {
         if (!incident) return res.status(404).json({ message: "Incident not found" });
         const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
         const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
-        const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx);
+        const narrativeOrgId = (req as any).orgId || (req as any).user?.orgId;
+        const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx, narrativeOrgId);
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           (result as any).threatIntelSources = Array.from(
             new Set([
@@ -131,7 +152,14 @@ export function registerAiRoutes(app: Express): void {
           resourceId: p(req.params.incidentId),
           details: { riskScore: result.riskScore },
         });
-        storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses").catch(() => {});
+        try {
+          await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
+        } catch (e) {
+          logger.child("ai").warn("Usage tracking failed", {
+            error: String(e),
+            orgId: (req as any).orgId || (req as any).user?.orgId,
+          });
+        }
         res.json(result);
       } catch (error: any) {
         logger.child("ai").error("AI narrative error", { error: String(error) });
@@ -151,7 +179,8 @@ export function registerAiRoutes(app: Express): void {
         const alert = await storage.getAlert(p(req.params.alertId));
         if (!alert) return res.status(404).json({ message: "Alert not found" });
         const threatIntelCtx = await buildThreatIntelContext([alert]);
-        const result = await triageAlert(alert, threatIntelCtx);
+        const triageOrgId = (req as any).orgId || (req as any).user?.orgId;
+        const result = await triageAlert(alert, threatIntelCtx, triageOrgId);
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           result.threatIntelSources = Array.from(
             new Set([
@@ -170,7 +199,14 @@ export function registerAiRoutes(app: Express): void {
           resourceId: p(req.params.alertId),
           details: { severity: result.severity, priority: result.priority },
         });
-        storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses").catch(() => {});
+        try {
+          await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
+        } catch (e) {
+          logger.child("ai").warn("Usage tracking failed", {
+            error: String(e),
+            orgId: (req as any).orgId || (req as any).user?.orgId,
+          });
+        }
         res.json(result);
       } catch (error: any) {
         logger.child("ai").error("AI triage error", { error: String(error) });
@@ -282,7 +318,7 @@ export function registerAiRoutes(app: Express): void {
     validateQuery(querySchemas.feedbackMetrics),
     async (req, res) => {
       try {
-        const orgId = (req as any).user?.organizationId;
+        const orgId = (req as any).user?.orgId;
         const { days } = (req as any).validatedQuery;
         const metrics = await storage.getAiFeedbackMetrics(orgId, days);
         res.json(metrics);
@@ -311,48 +347,144 @@ export function registerAiRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ai/playbook-authoring/propose", isAuthenticated, async (req, res) => {
+  app.post("/api/ai/playbook-authoring/propose", isAuthenticated, resolveOrgContext, async (req, res) => {
+    const PROPOSAL_TIMEOUT_MS = 30_000;
+    const log = logger.child("ai-playbook-propose");
     try {
       const { objective, severity = "high", guardrails = [] } = req.body || {};
       const normalized = String(objective || "Contain suspicious activity").trim();
+      const orgId: string | undefined = (req as any).orgId || (req as any).user?.orgId;
+
       const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
-      const actions = [
+      const fallbackActions = [
         { type: "auto_triage", reason: "Initial enrichment and classification" },
         { type: "assign_analyst", reason: "Ensure analyst ownership" },
         severity === "critical"
           ? { type: "isolate_host", reason: "Containment for critical blast radius" }
           : { type: "notify_slack", reason: "Notify response channel" },
       ].filter((a) => !blocked.has(a.type));
+
+      const fallbackResponse = {
+        objective: normalized,
+        guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
+        proposedActions: fallbackActions,
+        requiresAnalystApproval: true,
+        source: "fallback" as const,
+      };
+
+      const systemPrompt = [
+        "You are a SOC playbook architect. Given a security objective and severity, propose a JSON array of response actions.",
+        "Each action must have: type (string), reason (string explaining why this step is needed).",
+        "BLOCKED action types that must never appear: delete_data, shutdown_network, disable_logging.",
+        "Available action types: auto_triage, assign_analyst, notify_slack, isolate_host, block_ip, quarantine_file, enrich_ioc, create_ticket, escalate, snapshot_evidence.",
+        "Output ONLY a valid JSON array of action objects. No preamble, no markdown, no commentary.",
+      ].join(" ");
+
+      const userMessage = `Objective: ${normalized}\nSeverity: ${severity}\nGuardrails: ${guardrails.length > 0 ? guardrails.join(", ") : "none specified"}`;
+
+      const aiPromise = gatewayInvoke({
+        modelId: appConfig.ai.modelId,
+        backend: appConfig.ai.backend,
+        systemPrompt,
+        userMessage,
+        maxTokens: 1024,
+        temperature: 0.3,
+        topP: appConfig.ai.topP,
+        sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+        orgId,
+        promptId: "playbook-propose",
+        skipCache: false,
+      });
+
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("PROPOSAL_TIMEOUT")), PROPOSAL_TIMEOUT_MS);
+      });
+
+      const result = await Promise.race([aiPromise, timeoutPromise]);
+
+      let proposedActions: { type: string; reason: string }[];
+      try {
+        const parsed = JSON.parse(result.text.trim());
+        proposedActions = (Array.isArray(parsed) ? parsed : []).filter(
+          (a: unknown): a is { type: string; reason: string } =>
+            typeof a === "object" &&
+            a !== null &&
+            typeof (a as any).type === "string" &&
+            typeof (a as any).reason === "string" &&
+            !blocked.has((a as any).type),
+        );
+      } catch {
+        log.warn("AI returned non-JSON, using fallback", { raw: result.text.slice(0, 200) });
+        return res.json(fallbackResponse);
+      }
+
+      if (proposedActions.length === 0) {
+        log.warn("AI returned empty actions, using fallback");
+        return res.json(fallbackResponse);
+      }
+
       res.json({
         objective: normalized,
         guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
-        proposedActions: actions,
+        proposedActions,
         requiresAnalystApproval: true,
+        source: "ai",
+        latencyMs: result.latencyMs,
       });
     } catch (error) {
+      const errMsg = String(error);
+      if (errMsg.includes("PROPOSAL_TIMEOUT")) {
+        log.warn("Playbook proposal timed out after 30s, returning fallback");
+        const { objective, severity = "high", guardrails = [] } = req.body || {};
+        const normalized = String(objective || "Contain suspicious activity").trim();
+        const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
+        const fallbackActions = [
+          { type: "auto_triage", reason: "Initial enrichment and classification" },
+          { type: "assign_analyst", reason: "Ensure analyst ownership" },
+          severity === "critical"
+            ? { type: "isolate_host", reason: "Containment for critical blast radius" }
+            : { type: "notify_slack", reason: "Notify response channel" },
+        ].filter((a) => !blocked.has(a.type));
+        return res.json({
+          objective: normalized,
+          guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
+          proposedActions: fallbackActions,
+          requiresAnalystApproval: true,
+          source: "fallback_timeout",
+        });
+      }
+      log.error("Playbook proposal failed", { error: errMsg });
       res.status(500).json({ message: "Failed to generate playbook proposal" });
     }
   });
 
   // ── AI Platform Introspection Routes (3.5) ──
 
-  app.get("/api/ai/budget/usage", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      res.json(getAiOrgUsage(orgId));
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch AI budget usage" });
-    }
-  });
+  app.get(
+    "/api/ai/budget/usage",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        res.json(await getAiOrgUsage(orgId));
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch AI budget usage" });
+      }
+    },
+  );
 
   app.get(
     "/api/ai/budget/usage/all",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
     requireMinRole("admin"),
     async (_req, res) => {
       try {
-        res.json(getAllAiOrgUsage());
+        res.json(await getAllAiOrgUsage());
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch all AI budget usage" });
       }
@@ -375,7 +507,7 @@ export function registerAiRoutes(app: Express): void {
         if (typeof dailyInvocationCap !== "number" || dailyInvocationCap <= 0 || dailyInvocationCap > 100000) {
           return res.status(400).json({ message: "dailyInvocationCap must be a number between 0 and 100000" });
         }
-        setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
+        await setAiOrgBudget(orgId, dailyBudgetUsd, dailyInvocationCap);
         res.json({ orgId, dailyBudgetUsd, dailyInvocationCap, updated: true });
       } catch (error) {
         res.status(500).json({ message: "Failed to update AI budget" });
@@ -385,8 +517,8 @@ export function registerAiRoutes(app: Express): void {
 
   app.get("/api/ai/prompts", isAuthenticated, async (_req, res) => {
     try {
-      const prompts = getAllRegisteredPrompts();
-      const summary = getPromptCatalogSummary();
+      const prompts = await getAllRegisteredPrompts();
+      const summary = await getPromptCatalogSummary();
       res.json({ prompts, summary });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch prompt catalog" });
@@ -395,7 +527,7 @@ export function registerAiRoutes(app: Express): void {
 
   app.get("/api/ai/prompts/:id", isAuthenticated, async (req, res) => {
     try {
-      const prompts = getAllRegisteredPrompts();
+      const prompts = await getAllRegisteredPrompts();
       const prompt = prompts.find((pt) => pt.id === p(req.params.id));
       if (!prompt) return res.status(404).json({ message: "Prompt not found" });
       res.json(prompt);
@@ -406,7 +538,7 @@ export function registerAiRoutes(app: Express): void {
 
   app.get("/api/ai/prompts/:id/history", isAuthenticated, async (req, res) => {
     try {
-      const history = getPromptVersionHistory(p(req.params.id));
+      const history = await getPromptVersionHistory(p(req.params.id));
       if (history.length === 0) return res.status(404).json({ message: "No version history found for prompt" });
       res.json(history);
     } catch (error) {
@@ -417,7 +549,7 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/prompts/:id/audit", isAuthenticated, async (req, res) => {
     try {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
-      const auditEntries = getPromptAuditLog(p(req.params.id), limit);
+      const auditEntries = await getPromptAuditLog(p(req.params.id), limit);
       res.json(auditEntries);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch prompt audit log" });
@@ -427,7 +559,7 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/audit", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (req, res) => {
     try {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit || "100"), 10) || 100, 1), 500);
-      const auditEntries = getPromptAuditLog(undefined, limit);
+      const auditEntries = await getPromptAuditLog(undefined, limit);
       res.json(auditEntries);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch AI audit log" });
@@ -494,7 +626,7 @@ export function registerAiRoutes(app: Express): void {
       try {
         const incident = await storage.getIncident(p(req.params.incidentId));
         if (!incident) return res.status(404).json({ message: "Incident not found" });
-        
+
         const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
         if (incidentAlerts.length === 0) {
           return res.status(400).json({ message: "No alerts associated with this incident" });
@@ -502,7 +634,7 @@ export function registerAiRoutes(app: Express): void {
 
         const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
         const orgId = (req as any).orgId || (req as any).user?.orgId;
-        
+
         const result = await conductDeepInvestigation(incident, incidentAlerts, threatIntelCtx, orgId);
 
         await storage.createAuditLog({
@@ -561,10 +693,10 @@ export function registerAiRoutes(app: Express): void {
             : "Analyst",
           action: "ai_threat_hunt",
           resourceType: "telemetry",
-          details: { 
+          details: {
             huntMissionId: result.huntMissionId,
             threatsFound: result.huntSummary.threatsConfirmed,
-            hypothesesTested: result.huntSummary.hypothesesTested
+            hypothesesTested: result.huntSummary.hypothesesTested,
           },
         });
 
@@ -593,8 +725,8 @@ export function registerAiRoutes(app: Express): void {
         const { entityContext, activityData, baselineData } = req.body;
 
         if (!entityContext || !activityData || !baselineData) {
-          return res.status(400).json({ 
-            message: "entityContext, activityData, and baselineData are required" 
+          return res.status(400).json({
+            message: "entityContext, activityData, and baselineData are required",
           });
         }
 
@@ -609,10 +741,10 @@ export function registerAiRoutes(app: Express): void {
           action: "ai_behavioral_analysis",
           resourceType: "entity",
           resourceId: entityContext.entityId || "unknown",
-          details: { 
+          details: {
             riskLevel: result.riskLevel,
             behavioralScore: result.behavioralScore,
-            anomalyCount: result.anomalies.length
+            anomalyCount: result.anomalies.length,
           },
         });
 
@@ -645,13 +777,13 @@ export function registerAiRoutes(app: Express): void {
         }
 
         const orgId = (req as any).orgId || (req as any).user?.orgId;
-        
+
         const result = await predictAttackPaths(
           compromiseState,
           networkTopology || {},
           crownJewels || [],
           securityControls || {},
-          orgId
+          orgId,
         );
 
         await storage.createAuditLog({
@@ -661,10 +793,10 @@ export function registerAiRoutes(app: Express): void {
             : "Analyst",
           action: "ai_attack_path_prediction",
           resourceType: "compromise",
-          details: { 
+          details: {
             accessLevel: result.currentCompromiseState.accessLevel,
             predictedPaths: result.predictedAttackPaths.length,
-            highestProbability: Math.max(...result.predictedAttackPaths.map(p => p.probability))
+            highestProbability: Math.max(...result.predictedAttackPaths.map((p) => p.probability)),
           },
         });
 
@@ -677,5 +809,4 @@ export function registerAiRoutes(app: Express): void {
       }
     },
   );
-
 }

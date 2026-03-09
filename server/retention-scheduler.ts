@@ -16,17 +16,23 @@ export function startRetentionScheduler(): void {
     });
   }, 60 * 1000);
 
-  retentionTimer = setInterval(() => {
-    runRetentionCleanup().catch((err) => {
-      logger.child("retention-scheduler").error("Retention cleanup error", { error: String(err) });
-    });
-  }, 24 * 60 * 60 * 1000);
+  retentionTimer = setInterval(
+    () => {
+      runRetentionCleanup().catch((err) => {
+        logger.child("retention-scheduler").error("Retention cleanup error", { error: String(err) });
+      });
+    },
+    24 * 60 * 60 * 1000,
+  );
 
-  lifecycleTimer = setInterval(() => {
-    runLifecycleCleanup().catch((err) => {
-      logger.child("retention-scheduler").error("Lifecycle cleanup error", { error: String(err) });
-    });
-  }, 24 * 60 * 60 * 1000);
+  lifecycleTimer = setInterval(
+    () => {
+      runLifecycleCleanup().catch((err) => {
+        logger.child("retention-scheduler").error("Lifecycle cleanup error", { error: String(err) });
+      });
+    },
+    24 * 60 * 60 * 1000,
+  );
 
   registerShutdownHandler("retention-scheduler", () => {
     if (retentionTimer) clearInterval(retentionTimer);
@@ -36,7 +42,9 @@ export function startRetentionScheduler(): void {
   logger.child("retention-scheduler").info("Started - retention + lifecycle cleanup every 24 hours");
 }
 
-export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDeleted: number; incidentsDeleted: number; auditLogsDeleted: number }[]> {
+export async function runRetentionCleanup(): Promise<
+  { orgId: string; alertsDeleted: number; incidentsDeleted: number; auditLogsDeleted: number }[]
+> {
   const policies = await db.select().from(compliancePolicies);
   const results: { orgId: string; alertsDeleted: number; incidentsDeleted: number; auditLogsDeleted: number }[] = [];
 
@@ -58,8 +66,12 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
           await storage.archiveAlerts(orgId, alertIds, "retention");
           alertsDeleted = alertIds.length;
         } catch (archiveErr) {
-          logger.child("retention-scheduler").error("Failed to archive alerts, falling back to delete", { error: String(archiveErr) });
-          const alertResult = await db.execute(sql`DELETE FROM alerts WHERE org_id = ${orgId} AND created_at < ${cutoff}`);
+          logger
+            .child("retention-scheduler")
+            .error("Failed to archive alerts, falling back to delete", { error: String(archiveErr) });
+          const alertResult = await db.execute(
+            sql`DELETE FROM alerts WHERE org_id = ${orgId} AND created_at < ${cutoff}`,
+          );
           alertsDeleted = Number(alertResult.rowCount) || 0;
         }
       }
@@ -68,14 +80,18 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
     if (policy.incidentRetentionDays && policy.incidentRetentionDays > 0) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - policy.incidentRetentionDays);
-      const incidentResult = await db.execute(sql`DELETE FROM incidents WHERE org_id = ${orgId} AND created_at < ${cutoff} AND (status = 'resolved' OR status = 'closed')`);
+      const incidentResult = await db.execute(
+        sql`DELETE FROM incidents WHERE org_id = ${orgId} AND created_at < ${cutoff} AND (status = 'resolved' OR status = 'closed')`,
+      );
       incidentsDeleted = Number(incidentResult.rowCount) || 0;
     }
 
     if (policy.auditLogRetentionDays && policy.auditLogRetentionDays > 0) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - policy.auditLogRetentionDays);
-      const auditResult = await db.execute(sql`DELETE FROM audit_logs WHERE org_id = ${orgId} AND created_at < ${cutoff}`);
+      const auditResult = await db.execute(
+        sql`DELETE FROM audit_logs WHERE org_id = ${orgId} AND created_at < ${cutoff}`,
+      );
       auditLogsDeleted = Number(auditResult.rowCount) || 0;
     }
 
@@ -94,7 +110,9 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
       dsarSlaDays: policy.dsarSlaDays,
     });
 
-    await db.execute(sql`UPDATE compliance_policies SET retention_last_run_at = NOW(), retention_last_deleted_count = ${totalDeleted} WHERE org_id = ${orgId}`);
+    await db.execute(
+      sql`UPDATE compliance_policies SET retention_last_run_at = NOW(), retention_last_deleted_count = ${totalDeleted} WHERE org_id = ${orgId}`,
+    );
 
     try {
       await storage.createAuditLog({
@@ -106,7 +124,9 @@ export async function runRetentionCleanup(): Promise<{ orgId: string; alertsDele
         details: { alertsDeleted, incidentsDeleted, auditLogsDeleted, totalDeleted },
       });
     } catch (e) {
-      logger.child("retention-scheduler").error("Failed to create audit log for retention cleanup", { error: String(e) });
+      logger
+        .child("retention-scheduler")
+        .error("Failed to create audit log for retention cleanup", { error: String(e) });
     }
 
     results.push({ orgId, alertsDeleted, incidentsDeleted, auditLogsDeleted });

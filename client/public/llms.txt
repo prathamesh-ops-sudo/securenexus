@@ -49,6 +49,7 @@ SecureNexus is an Agentic SOC platform that uses AI agents to autonomously detec
 - Product Overview: https://nexus.aricatech.xyz/product
 - What is an Agentic SOC?: https://nexus.aricatech.xyz/product/agentic-soc
 - AI SOC Analyst: https://nexus.aricatech.xyz/product/ai-soc-analyst
+- SecureNexus vs Sentinel vs Splunk vs QRadar: https://nexus.aricatech.xyz/product/comparison
 - Solutions for Indian Enterprises: https://nexus.aricatech.xyz/solutions/india
 - MSSP Multi-Tenant SOC: https://nexus.aricatech.xyz/solutions/mssp
 - Compliance Automation: https://nexus.aricatech.xyz/solutions/compliance

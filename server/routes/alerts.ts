@@ -8,6 +8,7 @@ import { parsePaginationParams } from "../db-performance";
 import { findRelatedAlertsByEntity, getEntitiesForAlert } from "../entity-resolver";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { validateAlertFieldLengths } from "../normalizer";
 
 export function registerAlertsRoutes(app: Express): void {
   // Alerts
@@ -29,7 +30,8 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.get("/api/v1/alerts", isAuthenticated, validateQuery(querySchemas.alertsList), async (req, res) => {
     try {
-      const { offset, limit, search, severity, status, source, sortBy, sortOrder } = (req as any).validatedQuery;
+      const { offset, limit, search, severity, status, source, suppressed, sortBy, sortOrder } = (req as any)
+        .validatedQuery;
 
       const { items, total } = await storage.getAlertsPaginatedWithSort({
         offset,
@@ -38,6 +40,7 @@ export function registerAlertsRoutes(app: Express): void {
         severity,
         status,
         source,
+        suppressed,
         sortBy,
         sortOrder,
       });
@@ -51,6 +54,7 @@ export function registerAlertsRoutes(app: Express): void {
           severity: severity ?? null,
           status: status ?? null,
           source: source ?? null,
+          suppressed: suppressed ?? null,
           sortBy: sortBy ?? "createdAt",
           sortOrder,
         },
@@ -92,6 +96,10 @@ export function registerAlertsRoutes(app: Express): void {
         if (!parsed.success) {
           return res.status(400).json({ message: "Invalid alert data", errors: parsed.error.flatten() });
         }
+        const lengthCheck = validateAlertFieldLengths(parsed.data);
+        if (!lengthCheck.valid) {
+          return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
+        }
         const alert = await storage.createAlert(parsed.data);
         publishOutboxEvent(alert.orgId, "alert.created", "alert", alert.id, {
           title: alert.title,
@@ -100,7 +108,13 @@ export function registerAlertsRoutes(app: Express): void {
           status: alert.status,
         });
         cacheInvalidate("dashboard:");
-        if (alert.orgId) storage.incrementUsage(alert.orgId, "alerts_ingested").catch(() => {});
+        if (alert.orgId) {
+          try {
+            await storage.incrementUsage(alert.orgId, "alerts_ingested");
+          } catch (e) {
+            logger.child("routes").warn("Usage tracking failed", { error: String(e), orgId: alert.orgId });
+          }
+        }
         res.status(201).json(alert);
       } catch (error) {
         logger.child("routes").error("Error creating alert", { error: String(error) });
@@ -121,6 +135,10 @@ export function registerAlertsRoutes(app: Express): void {
         const parsed = insertAlertSchema.partial().safeParse(req.body);
         if (!parsed.success) {
           return res.status(400).json({ message: "Invalid update data", errors: parsed.error.flatten() });
+        }
+        const lengthCheck = validateAlertFieldLengths(parsed.data);
+        if (!lengthCheck.valid) {
+          return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
         }
         const alert = await storage.updateAlert(p(req.params.id), parsed.data);
         if (!alert) return res.status(404).json({ message: "Alert not found" });
@@ -302,6 +320,10 @@ export function registerAlertsRoutes(app: Express): void {
   app.patch("/api/alerts/:id/confidence", isAuthenticated, async (req, res) => {
     try {
       const { confidenceScore, confidenceSource, confidenceNotes } = req.body;
+      const lengthCheck = validateAlertFieldLengths({ confidenceNotes });
+      if (!lengthCheck.valid) {
+        return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
+      }
       const alert = await storage.updateAlert(p(req.params.id), { confidenceScore, confidenceSource, confidenceNotes });
       if (!alert) return res.status(404).json({ message: "Alert not found" });
       res.json(alert);
