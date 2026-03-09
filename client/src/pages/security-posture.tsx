@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ensureArray } from "@/lib/queryClient";
 import { formatDateTime as formatTimestamp } from "@/lib/i18n";
 import {
   Shield,
@@ -150,16 +150,30 @@ function PostureScoreTab() {
 
   const {
     data: latestScore,
-    isLoading: latestLoading,
+    isPending: latestPending,
     isError: latestError,
+    error: latestErrorObj,
     refetch: refetchLatest,
   } = useQuery<any>({
     queryKey: ["/api/posture/latest"],
+    queryFn: async () => {
+      const reqHeaders: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) reqHeaders["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* SSR / privacy mode */
+      }
+      const res = await apiRequest("GET", "/api/posture/latest");
+      if (res.status === 404) return null;
+      const body = await res.json();
+      return body;
+    },
   });
 
   const {
     data: scoreHistory,
-    isLoading: historyLoading,
+    isPending: historyPending,
     isError: historyError,
     refetch: refetchHistory,
   } = useQuery<any[]>({
@@ -180,10 +194,10 @@ function PostureScoreTab() {
     },
   });
 
-  const isLoading = latestLoading || historyLoading;
+  const isPending = latestPending || historyPending;
   const hasScore = latestScore && latestScore.overallScore != null;
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-6" data-testid="posture-score-loading">
         <div className="flex justify-center py-8">
@@ -313,37 +327,42 @@ function PostureScoreTab() {
                         </tr>
                       </thead>
                       <tbody>
-                        {scoreHistory.slice(0, 10).map((entry: any, idx: number) => (
-                          <tr
-                            key={entry.id || idx}
-                            className="border-b last:border-b-0"
-                            data-testid={`row-score-history-${idx}`}
-                          >
-                            <td className="p-3 text-xs text-muted-foreground" data-testid={`text-history-date-${idx}`}>
-                              {formatTimestamp(entry.generatedAt || entry.createdAt)}
-                            </td>
-                            <td className="p-3">
-                              <span
-                                className={`font-bold tabular-nums ${scoreColor(entry.overallScore ?? 0)}`}
-                                data-testid={`value-history-overall-${idx}`}
+                        {ensureArray(scoreHistory)
+                          .slice(0, 10)
+                          .map((entry: any, idx: number) => (
+                            <tr
+                              key={entry.id || idx}
+                              className="border-b last:border-b-0"
+                              data-testid={`row-score-history-${idx}`}
+                            >
+                              <td
+                                className="p-3 text-xs text-muted-foreground"
+                                data-testid={`text-history-date-${idx}`}
                               >
-                                {entry.overallScore ?? 0}
-                              </span>
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-cspm-${idx}`}>
-                              {entry.cspmScore ?? "—"}
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-endpoint-${idx}`}>
-                              {entry.endpointScore ?? "—"}
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-incident-${idx}`}>
-                              {entry.incidentScore ?? "—"}
-                            </td>
-                            <td className="p-3 text-xs tabular-nums" data-testid={`value-history-compliance-${idx}`}>
-                              {entry.complianceScore ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
+                                {formatTimestamp(entry.generatedAt || entry.createdAt)}
+                              </td>
+                              <td className="p-3">
+                                <span
+                                  className={`font-bold tabular-nums ${scoreColor(entry.overallScore ?? 0)}`}
+                                  data-testid={`value-history-overall-${idx}`}
+                                >
+                                  {entry.overallScore ?? 0}
+                                </span>
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-cspm-${idx}`}>
+                                {entry.cspmScore ?? "—"}
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-endpoint-${idx}`}>
+                                {entry.endpointScore ?? "—"}
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-incident-${idx}`}>
+                                {entry.incidentScore ?? "—"}
+                              </td>
+                              <td className="p-3 text-xs tabular-nums" data-testid={`value-history-compliance-${idx}`}>
+                                {entry.complianceScore ?? "—"}
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </div>
@@ -360,7 +379,7 @@ function PostureScoreTab() {
 function AIDeploymentTab() {
   const { toast } = useToast();
 
-  const { data: config, isLoading } = useQuery<any>({
+  const { data: config, isPending } = useQuery<any>({
     queryKey: ["/api/ai-deployment/config"],
   });
 
@@ -402,7 +421,7 @@ function AIDeploymentTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-4" data-testid="ai-deployment-loading">
         <Card>

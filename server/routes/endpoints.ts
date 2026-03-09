@@ -75,7 +75,9 @@ export function registerEndpointsRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const account = await storage.getCspmAccount(p(req.params.accountId));
       if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
-      runCspmScan(orgId, p(req.params.accountId)).catch(err => logger.child("routes").error("CSPM scan error", { error: String(err) }));
+      runCspmScan(orgId, p(req.params.accountId)).catch((err) =>
+        logger.child("routes").error("CSPM scan error", { error: String(err) }),
+      );
       res.json({ message: "Scan started" });
     } catch (error) {
       res.status(500).json({ message: "Failed to start CSPM scan" });
@@ -98,7 +100,7 @@ export function registerEndpointsRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const findings = await storage.getCspmFindings(orgId);
-      const existing = findings.find(f => f.id === p(req.params.id));
+      const existing = findings.find((f) => f.id === p(req.params.id));
       if (!existing) return res.status(404).json({ message: "CSPM finding not found" });
       const finding = await storage.updateCspmFinding(p(req.params.id), req.body);
       if (!finding) return res.status(404).json({ message: "CSPM finding not found" });
@@ -248,5 +250,4 @@ export function registerEndpointsRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to fetch latest posture score" });
     }
   });
-
 }

@@ -35,9 +35,7 @@ export const wazuhPlugin: ConnectorPlugin = {
       { key: "username", label: "Username", type: "text", placeholder: "admin" },
       { key: "password", label: "Password", type: "password", placeholder: "Wazuh indexer password" },
     ],
-    optionalFields: [
-      { key: "indexPattern", label: "Index Pattern", type: "text", placeholder: "wazuh-alerts*" },
-    ],
+    optionalFields: [{ key: "indexPattern", label: "Index Pattern", type: "text", placeholder: "wazuh-alerts*" }],
     icon: "Eye",
     docsUrl: "https://documentation.wazuh.com/current/user-manual/indexer-api/",
   },
@@ -63,7 +61,9 @@ export const wazuhPlugin: ConnectorPlugin = {
       query: { bool: { must: [{ range: { "rule.level": { gte: 7 } } }] as Record<string, unknown>[] } },
     };
     if (since) {
-      ((query.query as Record<string, any>).bool.must as Record<string, unknown>[]).push({ range: { timestamp: { gte: since.toISOString() } } });
+      ((query.query as Record<string, any>).bool.must as Record<string, unknown>[]).push({
+        range: { timestamp: { gte: since.toISOString() } },
+      });
     }
     const res = await httpRequest(url, {
       method: "POST",

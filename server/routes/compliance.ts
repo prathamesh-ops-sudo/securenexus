@@ -399,13 +399,37 @@ export function registerComplianceRoutes(app: Express): void {
       const user = (req as any).user;
       const orgId = user?.orgId;
       if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+
+      const startDate = typeof req.query.startDate === "string" ? new Date(req.query.startDate) : undefined;
+      const endDate = typeof req.query.endDate === "string" ? new Date(req.query.endDate) : undefined;
+
+      if (startDate && isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: "Invalid startDate format" });
+      }
+      if (endDate && isNaN(endDate.getTime())) {
+        return res.status(400).json({ message: "Invalid endDate format" });
+      }
+
       const logs = await storage.getAuditLogs(orgId);
-      const sortedLogs = logs.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+      let filtered = logs;
+      if (startDate) {
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
+      }
+      if (endDate) {
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endOfDay);
+      }
+      const sortedLogs = filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
+      const isFiltered = !!(startDate || endDate);
+
       res.json({
         exportedAt: new Date().toISOString(),
         organization: orgId,
         totalEntries: sortedLogs.length,
-        hashChainIntact: true,
+        startDate: startDate?.toISOString() ?? null,
+        endDate: endDate?.toISOString() ?? null,
+        hashChainIntact: isFiltered ? null : true,
         entries: sortedLogs.map((l) => ({
           id: l.id,
           sequenceNum: l.sequenceNum,
@@ -482,13 +506,41 @@ export function registerComplianceRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/suppression-rules", isAuthenticated, async (req, res) => {
+  app.post("/api/suppression-rules", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId;
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
       const userId = (req as any).user?.id;
-      const rule = await storage.createSuppressionRule({ ...req.body, orgId, createdBy: userId });
+      const { name, scope, scopeValue, description, matcher, reason, source, severity, category, enabled, expiresAt } =
+        req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "name is required" });
+      }
+      if (!scope || typeof scope !== "string" || !scope.trim()) {
+        return res.status(400).json({ message: "scope is required" });
+      }
+      if (!scopeValue || typeof scopeValue !== "string" || !scopeValue.trim()) {
+        return res.status(400).json({ message: "scopeValue is required" });
+      }
+      const ruleData: Record<string, unknown> = {
+        name: name.trim(),
+        scope: scope.trim(),
+        scopeValue: scopeValue.trim(),
+        orgId,
+        createdBy: userId,
+        ownedBy: userId,
+      };
+      if (description !== undefined) ruleData.description = description;
+      if (matcher !== undefined) ruleData.matcher = matcher;
+      if (reason !== undefined) ruleData.reason = reason;
+      if (source !== undefined) ruleData.source = source;
+      if (severity !== undefined) ruleData.severity = severity;
+      if (category !== undefined) ruleData.category = category;
+      if (enabled !== undefined) ruleData.enabled = enabled;
+      if (expiresAt !== undefined) ruleData.expiresAt = expiresAt ? new Date(expiresAt) : null;
+      const rule = await storage.createSuppressionRule(ruleData as any);
       res.status(201).json(rule);
     } catch (error) {
+      logger.child("compliance").error("Failed to create suppression rule", { error: String(error) });
       res.status(500).json({ message: "Failed to create suppression rule" });
     }
   });
@@ -1190,7 +1242,7 @@ export function registerComplianceRoutes(app: Express): void {
       const policy = await storage.getCompliancePolicy(orgId);
       const dsarReqs = await storage.getDsarRequests(orgId);
       const evidenceItems = await storage.getEvidenceLockerItems(orgId);
-      const controls = await storage.getComplianceControls(orgId);
+      const controls = await storage.getComplianceControls();
       const mappings = await storage.getComplianceControlMappings(orgId);
 
       const enabledFrameworks = (policy?.enabledFrameworks as string[]) || [];
@@ -1280,7 +1332,9 @@ export function registerComplianceRoutes(app: Express): void {
         filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) >= startDate);
       }
       if (endDate) {
-        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endDate);
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filtered = filtered.filter((l) => l.createdAt && new Date(l.createdAt) <= endOfDay);
       }
       filtered.sort((a, b) => (a.sequenceNum || 0) - (b.sequenceNum || 0));
 
@@ -1303,7 +1357,7 @@ export function registerComplianceRoutes(app: Express): void {
       const escapeCSV = (val: string | null | undefined): string => {
         if (val === null || val === undefined) return "";
         const str = String(val);
-        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
           return `"${str.replace(/"/g, '""')}"`;
         }
         return str;
@@ -1333,7 +1387,7 @@ export function registerComplianceRoutes(app: Express): void {
       const filename = `audit-logs-${orgId}-${new Date().toISOString().slice(0, 10)}.csv`;
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(csvRows.join("\n"));
+      res.send(csvRows.join("\r\n") + "\r\n");
 
       try {
         await storage.createAuditLog({

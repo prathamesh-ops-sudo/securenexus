@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,24 +128,28 @@ export default function KillChainPage() {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   const {
-    data: alerts,
-    isLoading: alertsLoading,
+    data: alertsResponse,
+    isPending: alertsPending,
     isError: alertsError,
     refetch: refetchAlerts,
-  } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts", "kill-chain"],
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 200 }),
   });
+  const alerts = alertsResponse?.items;
 
   const {
-    data: incidents,
-    isLoading: incidentsLoading,
+    data: incidentsResponse,
+    isPending: incidentsPending,
     isError: incidentsError,
     refetch: refetchIncidents,
-  } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+  } = useQuery<PaginatedResponse<Incident>>({
+    queryKey: ["/api/v1/incidents", "kill-chain"],
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 200 }),
   });
+  const incidents = incidentsResponse?.items;
 
-  const isLoading = alertsLoading || incidentsLoading;
+  const isPending = alertsPending || incidentsPending;
 
   const {
     mappedItems,
@@ -287,7 +292,7 @@ export default function KillChainPage() {
     });
   }, [mappedItems]);
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
         <div>
@@ -321,23 +326,38 @@ export default function KillChainPage() {
 
   if (alertsError || incidentsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
+      <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto" data-testid="page-kill-chain">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            <span className="gradient-text-red">Kill Chain Analysis</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Interactive cyber kill chain timeline and attack progression analysis
+          </p>
+          <div className="gradient-accent-line w-24 mt-2" />
         </div>
-        <p className="text-sm font-medium">Failed to load kill chain data</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            refetchAlerts();
-            refetchIncidents();
-          }}
-        >
-          Try Again
-        </Button>
+        <Card>
+          <CardContent className="py-12">
+            <div className="flex flex-col items-center justify-center text-center" role="alert">
+              <AlertTriangle className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium">Could not load alert or incident data</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Check your connection and try again. The kill chain will populate once data is available.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => {
+                  refetchAlerts();
+                  refetchIncidents();
+                }}
+              >
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

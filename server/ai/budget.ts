@@ -1,6 +1,21 @@
+import { pool } from "../db";
 import { logger } from "../logger";
 
 const log = logger.child("ai-budget");
+
+interface PlanAiBudget {
+  budgetUsd: number;
+  invocationCap: number;
+}
+
+const PLAN_AI_BUDGETS: Record<string, PlanAiBudget> = {
+  free: { budgetUsd: 5, invocationCap: 500 },
+  starter: { budgetUsd: 50, invocationCap: 5000 },
+  professional: { budgetUsd: 500, invocationCap: 50000 },
+  enterprise: { budgetUsd: 10000, invocationCap: 1000000 },
+};
+
+const FALLBACK_BUDGET: PlanAiBudget = PLAN_AI_BUDGETS["free"];
 
 export interface UsageRecord {
   inputTokens: number;
@@ -13,90 +28,148 @@ export interface UsageRecord {
   timestamp?: number;
 }
 
-interface OrgBudgetState {
-  totalCostUsd: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  invocationCount: number;
-  records: UsageRecord[];
-  windowStart: number;
+interface BudgetRow {
+  org_id: string;
+  budget_usd: number;
+  invocation_cap: number;
+  daily_spend_usd: number;
+  daily_invocations: number;
+  daily_input_tokens: number;
+  daily_output_tokens: number;
+  last_reset_at: Date | null;
+  updated_at: Date | null;
 }
 
-const orgBudgets = new Map<string, OrgBudgetState>();
+const TABLE_ENSURED = { done: false };
 
-const DEFAULT_DAILY_BUDGET_USD = 50;
-const DEFAULT_DAILY_INVOCATION_CAP = 5000;
-const BUDGET_WINDOW_MS = 24 * 60 * 60 * 1000;
-const MAX_RECORDS_PER_ORG = 500;
-
-interface OrgBudgetConfig {
-  dailyBudgetUsd: number;
-  dailyInvocationCap: number;
+async function ensureTable(): Promise<void> {
+  if (TABLE_ENSURED.done) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS org_ai_budgets (
+      org_id VARCHAR PRIMARY KEY,
+      budget_usd DOUBLE PRECISION NOT NULL DEFAULT 50,
+      invocation_cap INTEGER NOT NULL DEFAULT 5000,
+      daily_spend_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+      daily_invocations INTEGER NOT NULL DEFAULT 0,
+      daily_input_tokens INTEGER NOT NULL DEFAULT 0,
+      daily_output_tokens INTEGER NOT NULL DEFAULT 0,
+      last_reset_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_org_ai_budgets_org_id ON org_ai_budgets (org_id)
+  `);
+  TABLE_ENSURED.done = true;
 }
 
-const orgBudgetConfigs = new Map<string, OrgBudgetConfig>();
-
-export function setOrgBudget(orgId: string, budgetUsd: number, invocationCap: number): void {
-  orgBudgetConfigs.set(orgId, { dailyBudgetUsd: budgetUsd, dailyInvocationCap: invocationCap });
+async function resolveOrgAiBudget(orgId: string): Promise<PlanAiBudget> {
+  try {
+    const result = await pool.query(`SELECT plan_tier FROM org_plan_limits WHERE org_id = $1 LIMIT 1`, [orgId]);
+    if (result.rows.length > 0) {
+      const tier = (result.rows[0] as { plan_tier: string }).plan_tier;
+      const budget = PLAN_AI_BUDGETS[tier];
+      if (budget) return budget;
+    }
+  } catch {
+    log.warn("Failed to resolve org plan tier for AI budget, using fallback", { orgId });
+  }
+  return FALLBACK_BUDGET;
 }
 
-function getOrgConfig(orgId: string): OrgBudgetConfig {
-  return orgBudgetConfigs.get(orgId) || { dailyBudgetUsd: DEFAULT_DAILY_BUDGET_USD, dailyInvocationCap: DEFAULT_DAILY_INVOCATION_CAP };
+async function ensureOrgRow(orgId: string): Promise<void> {
+  await ensureTable();
+  const budget = await resolveOrgAiBudget(orgId);
+  await pool.query(
+    `INSERT INTO org_ai_budgets (org_id, budget_usd, invocation_cap, daily_spend_usd, daily_invocations, daily_input_tokens, daily_output_tokens, last_reset_at, updated_at)
+     VALUES ($1, $2, $3, 0, 0, 0, 0, NOW(), NOW())
+     ON CONFLICT (org_id) DO NOTHING`,
+    [orgId, budget.budgetUsd, budget.invocationCap],
+  );
 }
 
-function getOrCreateState(orgId: string): OrgBudgetState {
-  let state = orgBudgets.get(orgId);
-  const now = Date.now();
+async function getRow(orgId: string): Promise<BudgetRow> {
+  await ensureOrgRow(orgId);
+  const result = await pool.query(`SELECT * FROM org_ai_budgets WHERE org_id = $1`, [orgId]);
+  return result.rows[0] as BudgetRow;
+}
 
-  if (!state || (now - state.windowStart) > BUDGET_WINDOW_MS) {
-    state = {
-      totalCostUsd: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      invocationCount: 0,
-      records: [],
-      windowStart: now,
+export async function setOrgBudget(orgId: string, budgetUsd: number, invocationCap: number): Promise<void> {
+  await ensureOrgRow(orgId);
+  await pool.query(
+    `UPDATE org_ai_budgets
+     SET budget_usd = $2, invocation_cap = $3, updated_at = NOW()
+     WHERE org_id = $1`,
+    [orgId, budgetUsd, invocationCap],
+  );
+  log.info("Org AI budget updated", { orgId, budgetUsd, invocationCap });
+}
+
+export async function syncOrgAiBudgetWithPlan(orgId: string, planTier: string): Promise<void> {
+  const budget = PLAN_AI_BUDGETS[planTier] || FALLBACK_BUDGET;
+  await ensureOrgRow(orgId);
+  await pool.query(
+    `UPDATE org_ai_budgets
+     SET budget_usd = $2, invocation_cap = $3, updated_at = NOW()
+     WHERE org_id = $1`,
+    [orgId, budget.budgetUsd, budget.invocationCap],
+  );
+  log.info("Org AI budget synced with plan tier", {
+    orgId,
+    planTier,
+    budgetUsd: budget.budgetUsd,
+    invocationCap: budget.invocationCap,
+  });
+}
+
+export async function checkBudget(orgId: string): Promise<{ allowed: boolean; reason?: string }> {
+  const row = await getRow(orgId);
+
+  if (row.daily_spend_usd >= row.budget_usd) {
+    log.warn("AI budget exceeded", { orgId, spent: row.daily_spend_usd, limit: row.budget_usd });
+    return {
+      allowed: false,
+      reason: `Daily AI spend limit of $${row.budget_usd.toFixed(2)} reached ($${row.daily_spend_usd.toFixed(4)} used)`,
     };
-    orgBudgets.set(orgId, state);
   }
 
-  return state;
-}
-
-export function checkBudget(orgId: string): { allowed: boolean; reason?: string } {
-  const state = getOrCreateState(orgId);
-  const budgetConfig = getOrgConfig(orgId);
-
-  if (state.totalCostUsd >= budgetConfig.dailyBudgetUsd) {
-    log.warn("AI budget exceeded", { orgId, spent: state.totalCostUsd, limit: budgetConfig.dailyBudgetUsd });
-    return { allowed: false, reason: `Daily AI spend limit of $${budgetConfig.dailyBudgetUsd.toFixed(2)} reached ($${state.totalCostUsd.toFixed(4)} used)` };
-  }
-
-  if (state.invocationCount >= budgetConfig.dailyInvocationCap) {
-    log.warn("AI invocation cap reached", { orgId, count: state.invocationCount, cap: budgetConfig.dailyInvocationCap });
-    return { allowed: false, reason: `Daily invocation cap of ${budgetConfig.dailyInvocationCap} reached (${state.invocationCount} used)` };
+  if (row.daily_invocations >= row.invocation_cap) {
+    log.warn("AI invocation cap reached", { orgId, count: row.daily_invocations, cap: row.invocation_cap });
+    return {
+      allowed: false,
+      reason: `Daily invocation cap of ${row.invocation_cap} reached (${row.daily_invocations} used)`,
+    };
   }
 
   return { allowed: true };
 }
 
-export function trackUsage(orgId: string, record: UsageRecord): void {
-  const state = getOrCreateState(orgId);
+export async function trackUsage(orgId: string, record: UsageRecord): Promise<void> {
+  await ensureOrgRow(orgId);
 
-  state.totalCostUsd += record.costUsd;
-  state.totalInputTokens += record.inputTokens;
-  state.totalOutputTokens += record.outputTokens;
-  state.invocationCount++;
+  const result = await pool.query(
+    `UPDATE org_ai_budgets
+     SET daily_spend_usd = daily_spend_usd + $2,
+         daily_invocations = daily_invocations + 1,
+         daily_input_tokens = daily_input_tokens + $3,
+         daily_output_tokens = daily_output_tokens + $4,
+         updated_at = NOW()
+     WHERE org_id = $1
+     RETURNING daily_spend_usd, budget_usd`,
+    [orgId, record.costUsd, record.inputTokens, record.outputTokens],
+  );
 
-  state.records.push({ ...record, timestamp: Date.now() });
-  if (state.records.length > MAX_RECORDS_PER_ORG) {
-    state.records.splice(0, state.records.length - MAX_RECORDS_PER_ORG);
-  }
-
-  const budgetConfig = getOrgConfig(orgId);
-  const usagePercent = (state.totalCostUsd / budgetConfig.dailyBudgetUsd) * 100;
-  if (usagePercent >= 80 && usagePercent < 100) {
-    log.warn("AI budget at 80%+", { orgId, spent: state.totalCostUsd, limit: budgetConfig.dailyBudgetUsd, percent: Math.round(usagePercent) });
+  if (result.rows.length > 0) {
+    const updated = result.rows[0] as { daily_spend_usd: number; budget_usd: number };
+    const usagePercent = (updated.daily_spend_usd / updated.budget_usd) * 100;
+    if (usagePercent >= 80 && usagePercent < 100) {
+      log.warn("AI budget at 80%+", {
+        orgId,
+        spent: updated.daily_spend_usd,
+        limit: updated.budget_usd,
+        percent: Math.round(usagePercent),
+      });
+    }
   }
 }
 
@@ -116,54 +189,96 @@ export interface OrgUsageSummary {
   byPrompt: Record<string, { count: number; costUsd: number; avgLatencyMs: number }>;
 }
 
-export function getOrgUsageSummary(orgId: string): OrgUsageSummary {
-  const state = getOrCreateState(orgId);
-  const budgetConfig = getOrgConfig(orgId);
-
-  const byModel: Record<string, { count: number; costUsd: number; avgLatencyMs: number }> = {};
-  const byPrompt: Record<string, { count: number; costUsd: number; avgLatencyMs: number }> = {};
-
-  for (const r of state.records) {
-    if (!byModel[r.modelId]) byModel[r.modelId] = { count: 0, costUsd: 0, avgLatencyMs: 0 };
-    byModel[r.modelId].count++;
-    byModel[r.modelId].costUsd += r.costUsd;
-    byModel[r.modelId].avgLatencyMs += r.latencyMs;
-
-    const pk = r.promptId || "unknown";
-    if (!byPrompt[pk]) byPrompt[pk] = { count: 0, costUsd: 0, avgLatencyMs: 0 };
-    byPrompt[pk].count++;
-    byPrompt[pk].costUsd += r.costUsd;
-    byPrompt[pk].avgLatencyMs += r.latencyMs;
-  }
-
-  for (const key of Object.keys(byModel)) {
-    if (byModel[key].count > 0) byModel[key].avgLatencyMs = Math.round(byModel[key].avgLatencyMs / byModel[key].count);
-  }
-  for (const key of Object.keys(byPrompt)) {
-    if (byPrompt[key].count > 0) byPrompt[key].avgLatencyMs = Math.round(byPrompt[key].avgLatencyMs / byPrompt[key].count);
-  }
+function rowToSummary(row: BudgetRow): OrgUsageSummary {
+  const budgetUsd = row.budget_usd;
+  const invocationCap = row.invocation_cap;
+  const windowStart = row.last_reset_at ? new Date(row.last_reset_at).toISOString() : new Date().toISOString();
 
   return {
-    orgId,
-    windowStart: new Date(state.windowStart).toISOString(),
-    totalCostUsd: Math.round(state.totalCostUsd * 1000000) / 1000000,
-    totalInputTokens: state.totalInputTokens,
-    totalOutputTokens: state.totalOutputTokens,
-    invocationCount: state.invocationCount,
-    budgetLimitUsd: budgetConfig.dailyBudgetUsd,
-    invocationCap: budgetConfig.dailyInvocationCap,
-    budgetUsedPercent: Math.round((state.totalCostUsd / budgetConfig.dailyBudgetUsd) * 10000) / 100,
-    invocationUsedPercent: Math.round((state.invocationCount / budgetConfig.dailyInvocationCap) * 10000) / 100,
-    recentRecords: state.records.slice(-20),
-    byModel,
-    byPrompt,
+    orgId: row.org_id,
+    windowStart,
+    totalCostUsd: Math.round(row.daily_spend_usd * 1000000) / 1000000,
+    totalInputTokens: row.daily_input_tokens,
+    totalOutputTokens: row.daily_output_tokens,
+    invocationCount: row.daily_invocations,
+    budgetLimitUsd: budgetUsd,
+    invocationCap,
+    budgetUsedPercent: budgetUsd > 0 ? Math.round((row.daily_spend_usd / budgetUsd) * 10000) / 100 : 0,
+    invocationUsedPercent: invocationCap > 0 ? Math.round((row.daily_invocations / invocationCap) * 10000) / 100 : 0,
+    recentRecords: [],
+    byModel: {},
+    byPrompt: {},
   };
 }
 
-export function getAllOrgUsageSummaries(): OrgUsageSummary[] {
-  const summaries: OrgUsageSummary[] = [];
-  for (const orgId of Array.from(orgBudgets.keys())) {
-    summaries.push(getOrgUsageSummary(orgId));
+export async function getOrgUsageSummary(orgId: string): Promise<OrgUsageSummary> {
+  const row = await getRow(orgId);
+  return rowToSummary(row);
+}
+
+export async function getAllOrgUsageSummaries(): Promise<OrgUsageSummary[]> {
+  await ensureTable();
+  const result = await pool.query(`SELECT * FROM org_ai_budgets ORDER BY org_id`);
+  return (result.rows as BudgetRow[]).map(rowToSummary);
+}
+
+export async function resetDailyBudgets(): Promise<number> {
+  await ensureTable();
+  const result = await pool.query(
+    `UPDATE org_ai_budgets
+     SET daily_spend_usd = 0,
+         daily_invocations = 0,
+         daily_input_tokens = 0,
+         daily_output_tokens = 0,
+         last_reset_at = NOW(),
+         updated_at = NOW()
+     WHERE daily_spend_usd > 0 OR daily_invocations > 0`,
+  );
+
+  const count = result.rowCount ?? 0;
+  if (count > 0) {
+    log.info("Daily AI budgets reset", { orgsReset: count });
   }
-  return summaries;
+  return count;
+}
+
+let resetTimer: ReturnType<typeof setTimeout> | null = null;
+
+function msUntilMidnightUTC(): number {
+  const now = new Date();
+  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+  return tomorrow.getTime() - now.getTime();
+}
+
+export function startBudgetResetScheduler(): void {
+  if (resetTimer) return;
+
+  function scheduleNext(): void {
+    const delayMs = msUntilMidnightUTC();
+    log.info("Next AI budget reset scheduled", { delayMs, resetAt: new Date(Date.now() + delayMs).toISOString() });
+
+    resetTimer = setTimeout(() => {
+      resetDailyBudgets()
+        .then((count) => {
+          log.info("Scheduled daily budget reset completed", { orgsReset: count });
+        })
+        .catch((err) => {
+          log.error("Scheduled daily budget reset failed", { error: String(err) });
+        })
+        .finally(() => {
+          resetTimer = null;
+          scheduleNext();
+        });
+    }, delayMs);
+  }
+
+  scheduleNext();
+}
+
+export function stopBudgetResetScheduler(): void {
+  if (resetTimer) {
+    clearTimeout(resetTimer);
+    resetTimer = null;
+    log.info("AI budget reset scheduler stopped");
+  }
 }

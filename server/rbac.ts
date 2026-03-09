@@ -1,11 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { ROLE_PERMISSIONS } from "@shared/schema";
-import {
-  replyUnauthenticated,
-  replyForbidden,
-  ERROR_CODES,
-} from "./api-response";
+import { replyUnauthenticated, replyForbidden, ERROR_CODES } from "./api-response";
 import { logger } from "./logger";
 
 const log = logger.child("rbac");
@@ -25,7 +21,7 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
 
   const userId = user.id;
   const memberships = await storage.getUserMemberships(userId);
-  const activeMemberships = memberships.filter(m => m.status === "active");
+  const activeMemberships = memberships.filter((m) => m.status === "active");
 
   if (activeMemberships.length === 0) {
     (req as any).orgId = null;
@@ -39,7 +35,7 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
 
   let membership;
   if (requestedOrgId) {
-    membership = activeMemberships.find(m => m.orgId === requestedOrgId);
+    membership = activeMemberships.find((m) => m.orgId === requestedOrgId);
     if (!membership) {
       log.warn("Org access denied: user attempted access to non-member org", {
         userId,
@@ -47,14 +43,16 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
         route: req.path,
         method: req.method,
       });
-      storage.createAuditLog({
-        userId,
-        userName: user.email || "unknown",
-        action: "org_access_denied",
-        resourceType: "organization",
-        resourceId: requestedOrgId,
-        details: { route: req.path, method: req.method },
-      }).catch((err) => log.warn("Failed to audit org access denial", { error: String(err) }));
+      storage
+        .createAuditLog({
+          userId,
+          userName: user.email || "unknown",
+          action: "org_access_denied",
+          resourceType: "organization",
+          resourceId: requestedOrgId,
+          details: { route: req.path, method: req.method },
+        })
+        .catch((err) => log.warn("Failed to audit org access denial", { error: String(err) }));
       return replyForbidden(res, "You do not have access to this organization", ERROR_CODES.ORG_ACCESS_DENIED);
     }
   } else {
@@ -68,14 +66,16 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
       newOrgId: membership.orgId,
       route: req.path,
     });
-    storage.createAuditLog({
-      userId,
-      userName: user.email || "unknown",
-      action: "org_context_switch",
-      resourceType: "organization",
-      resourceId: membership.orgId,
-      details: { previousOrgId, newOrgId: membership.orgId, route: req.path },
-    }).catch((err) => log.warn("Failed to audit org context switch", { error: String(err) }));
+    storage
+      .createAuditLog({
+        userId,
+        userName: user.email || "unknown",
+        action: "org_context_switch",
+        resourceType: "organization",
+        resourceId: membership.orgId,
+        details: { previousOrgId, newOrgId: membership.orgId, route: req.path },
+      })
+      .catch((err) => log.warn("Failed to audit org context switch", { error: String(err) }));
   }
 
   (req as any).orgId = membership.orgId;
@@ -93,14 +93,16 @@ export function requireOrgId(req: Request, res: Response, next: NextFunction) {
       route: req.path,
       method: req.method,
     });
-    storage.createAuditLog({
-      userId,
-      userName: (req as any).user?.email || "unknown",
-      action: "org_context_missing",
-      resourceType: "route",
-      resourceId: req.path,
-      details: { method: req.method },
-    }).catch((err) => log.warn("Failed to audit org context missing", { error: String(err) }));
+    storage
+      .createAuditLog({
+        userId,
+        userName: (req as any).user?.email || "unknown",
+        action: "org_context_missing",
+        resourceType: "route",
+        resourceId: req.path,
+        details: { method: req.method },
+      })
+      .catch((err) => log.warn("Failed to audit org context missing", { error: String(err) }));
     return replyForbidden(
       res,
       "Organization context is required for this endpoint. Join or select an organization first.",
@@ -117,7 +119,8 @@ export function requireOrgRole(...allowedRoles: string[]) {
       return replyForbidden(res, "No organization membership found", ERROR_CODES.ORG_MEMBERSHIP_REQUIRED);
     }
     if (!allowedRoles.includes(role)) {
-      return replyForbidden(res, `Requires one of: ${allowedRoles.join(", ")}`);
+      log.warn("RBAC role check failed", { userRole: role, allowedRoles, route: req.path, method: req.method });
+      return replyForbidden(res, "Forbidden");
     }
     next();
   };
@@ -132,7 +135,8 @@ export function requireMinRole(minRole: string) {
     const userLevel = ROLE_HIERARCHY[role] || 0;
     const requiredLevel = ROLE_HIERARCHY[minRole] || 0;
     if (userLevel < requiredLevel) {
-      return replyForbidden(res, `Requires at least ${minRole} role`);
+      log.warn("RBAC min-role check failed", { userRole: role, minRole, route: req.path, method: req.method });
+      return replyForbidden(res, "Forbidden");
     }
     next();
   };
@@ -146,7 +150,8 @@ export function requirePermission(scope: string, action: string) {
     }
     const rolePerms = ROLE_PERMISSIONS[role];
     if (!rolePerms || !rolePerms[scope] || !rolePerms[scope].includes(action)) {
-      return replyForbidden(res, `Insufficient permissions: requires ${scope}:${action}`, ERROR_CODES.PERMISSION_DENIED);
+      log.warn("RBAC permission check failed", { userRole: role, scope, action, route: req.path, method: req.method });
+      return replyForbidden(res, "Insufficient permissions", ERROR_CODES.PERMISSION_DENIED);
     }
     next();
   };

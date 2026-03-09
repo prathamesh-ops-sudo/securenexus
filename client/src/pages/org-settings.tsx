@@ -39,7 +39,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, fetchCsrfToken } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useOrgContext } from "@/hooks/use-org-context";
 
@@ -162,8 +162,8 @@ export default function OrgSettingsPage() {
       const formData = new FormData();
       formData.append("logo", file);
       const hdrs: Record<string, string> = {};
-      const csrfMatch = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
-      if (csrfMatch) hdrs["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
+      const csrfToken = await fetchCsrfToken();
+      if (csrfToken) hdrs["X-CSRF-Token"] = csrfToken;
       try {
         const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
         if (activeOrgId) hdrs["X-Org-Id"] = activeOrgId;

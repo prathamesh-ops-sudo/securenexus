@@ -39,7 +39,7 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.get("/api/connectors/dead-letters", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any).user?.orgId;
       const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
       const runs = await storage.getDeadLetterJobRuns(orgId);
       res.json(runs.slice(offset, offset + limit));
@@ -554,7 +554,7 @@ export function registerConnectorsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (_req, res) => {
       try {
-        return sendEnvelope(res, getProviderSyncStats());
+        return sendEnvelope(res, await getProviderSyncStats());
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -588,7 +588,7 @@ export function registerConnectorsRoutes(app: Express): void {
             errors: [{ code: "INVALID_REQUEST", message: "maxConcurrency must be between 1 and 20" }],
           });
         }
-        setProviderConcurrency(provider, limit);
+        await setProviderConcurrency(provider, limit);
         return sendEnvelope(res, { provider, maxConcurrency: limit });
       } catch (error: any) {
         return sendEnvelope(res, null, {

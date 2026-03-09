@@ -291,7 +291,7 @@ function ChoosePlanStep({
 
       {selected !== "free" && (
         <p className="text-xs text-muted-foreground text-center">
-          Paid plans will be activated as trials. Stripe Checkout integration coming in Phase 3.
+          Paid plans include a trial period. You can add payment details anytime from Billing settings.
         </p>
       )}
     </div>
@@ -564,7 +564,7 @@ export default function OnboardingWizardPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const { data: status, isLoading: statusLoading } = useQuery<WizardStatus>({
+  const { data: status, isPending: statusPending } = useQuery<WizardStatus>({
     queryKey: ["/api/wizard/status"],
     staleTime: 0,
   });
@@ -602,10 +602,27 @@ export default function OnboardingWizardPage() {
       const res = await apiRequest("POST", "/api/wizard/select-plan", { planId });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: {
+      planId: string;
+      requiresPayment?: boolean;
+      checkoutUrl?: string;
+      trialActivated?: boolean;
+      message?: string;
+    }) => {
+      if (data.requiresPayment && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/wizard/status"] });
       setActiveStep(2);
-      toast({ title: "Plan selected" });
+      if (data.trialActivated) {
+        toast({
+          title: "Trial activated",
+          description: data.message || "You can upgrade to a paid plan anytime from Billing.",
+        });
+      } else {
+        toast({ title: "Plan selected" });
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Failed to select plan", description: err.message, variant: "destructive" });
@@ -680,7 +697,7 @@ export default function OnboardingWizardPage() {
     [skipStepMutation],
   );
 
-  if (statusLoading) {
+  if (statusPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-full max-w-2xl mx-auto p-6 space-y-6">

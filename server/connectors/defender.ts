@@ -36,7 +36,12 @@ export const defenderPlugin: ConnectorPlugin = {
     requiredFields: [
       { key: "tenantId", label: "Azure Tenant ID", type: "text", placeholder: "Your Azure AD Tenant ID" },
       { key: "clientId", label: "App Client ID", type: "text", placeholder: "Azure AD App Registration Client ID" },
-      { key: "clientSecret", label: "App Client Secret", type: "password", placeholder: "Azure AD App Registration Secret" },
+      {
+        key: "clientSecret",
+        label: "App Client Secret",
+        type: "password",
+        placeholder: "Azure AD App Registration Secret",
+      },
     ],
     optionalFields: [],
     icon: "ShieldCheck",

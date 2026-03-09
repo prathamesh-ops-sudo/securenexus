@@ -1,4 +1,10 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "./config";
 import { getAwsClientConfig } from "./aws-credentials";
@@ -37,7 +43,12 @@ export async function deleteFile(key: string) {
 }
 
 export async function listFiles(prefix?: string) {
-  const allItems: Array<{ key: string | undefined; size: number | undefined; lastModified: Date | undefined; etag: string | undefined }> = [];
+  const allItems: Array<{
+    key: string | undefined;
+    size: number | undefined;
+    lastModified: Date | undefined;
+    etag: string | undefined;
+  }> = [];
   let continuationToken: string | undefined;
 
   do {

@@ -3,7 +3,7 @@ import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./co
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(priority?: number | string): string {
-  const n = typeof priority === "string" ? parseInt(priority, 10) || 3 : (priority || 3);
+  const n = typeof priority === "string" ? parseInt(priority, 10) || 3 : priority || 3;
   if (n <= 1) return "critical";
   if (n <= 2) return "high";
   if (n <= 3) return "medium";
@@ -77,7 +77,8 @@ export const snortPlugin: ConnectorPlugin = {
     const r = raw as Record<string, any>;
     return {
       source: "Snort IDS",
-      sourceEventId: r.sid?.toString() || r.gid?.toString() || `snort_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId:
+        r.sid?.toString() || r.gid?.toString() || `snort_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       title: r.msg || r.message || "Snort Alert",
       description: r.msg || r.reference || "",
       severity: mapSeverity(r.priority || r.rev),

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Brain,
@@ -186,16 +186,21 @@ export default function AIEnginePage() {
     queryKey: ["/api/ai/health"],
   });
 
-  const { data: alerts, isLoading: alertsLoading } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  const { data: alertsResponse, isLoading: alertsLoading } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts"],
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 200 }),
   });
+  const alerts = alertsResponse?.items;
 
   const { data: feedbackMetrics, isLoading: metricsLoading } = useQuery<FeedbackMetric[]>({
     queryKey: ["/api/ai/feedback/metrics", driftDays],
     queryFn: async () => {
-      const res = await fetch(`/api/ai/feedback/metrics?days=${driftDays}`);
-      if (!res.ok) return [];
-      return res.json();
+      try {
+        const res = await apiRequest("GET", `/api/ai/feedback/metrics?days=${driftDays}`);
+        return await res.json();
+      } catch {
+        return [];
+      }
     },
   });
 
@@ -246,8 +251,8 @@ export default function AIEnginePage() {
     },
     onSuccess: (data) => {
       toast({ title: "Incident Created", description: `Created incident: ${data.title}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     },
     onError: (error: any) => {

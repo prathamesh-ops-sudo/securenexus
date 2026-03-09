@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -134,15 +134,15 @@ function extractIOCsFromAlerts(alerts: Alert[]): IOCEntry[] {
       { field: alert.hostname, type: "hostname" },
     ];
     for (const { field, type } of fields) {
-      if (field && field.trim()) {
+      if (typeof field === "string" && field.trim()) {
         iocs.push({
           value: field.trim(),
           type,
-          source: alert.source,
-          alertTitle: alert.title,
-          severity: alert.severity,
-          firstSeen: alert.detectedAt || alert.createdAt,
-          alertId: alert.id,
+          source: alert.source || "Alert",
+          alertTitle: alert.title || "",
+          severity: alert.severity || "medium",
+          firstSeen: alert.detectedAt || alert.createdAt || "",
+          alertId: alert.id ?? "",
         });
       }
     }
@@ -154,16 +154,18 @@ function extractIOCsFromIncidents(incidents: Incident[]): IOCEntry[] {
   const iocs: IOCEntry[] = [];
   for (const incident of incidents) {
     if (!incident.iocs || !Array.isArray(incident.iocs)) continue;
-    for (const iocStr of incident.iocs as string[]) {
+    for (const raw of incident.iocs) {
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      const iocStr = raw as string;
       const match = iocStr.match(/^(.+?)\s*\((\w+):\s*(.+?)\)$/);
       if (match) {
         iocs.push({
           value: match[1].trim(),
           type: match[2].trim().toLowerCase(),
           source: "Incident Analysis",
-          alertTitle: incident.title,
-          severity: incident.severity,
-          firstSeen: incident.createdAt,
+          alertTitle: incident.title || "",
+          severity: incident.severity || "medium",
+          firstSeen: incident.createdAt || "",
           alertId: "",
         });
       } else {
@@ -171,9 +173,9 @@ function extractIOCsFromIncidents(incidents: Incident[]): IOCEntry[] {
           value: iocStr.trim(),
           type: "unknown",
           source: "Incident Analysis",
-          alertTitle: incident.title,
-          severity: incident.severity,
-          firstSeen: incident.createdAt,
+          alertTitle: incident.title || "",
+          severity: incident.severity || "medium",
+          firstSeen: incident.createdAt || "",
           alertId: "",
         });
       }
@@ -197,17 +199,21 @@ export default function ThreatIntelPage() {
   const { toast } = useToast();
 
   const {
-    data: alerts,
+    data: alertsResponse,
     isLoading: alertsLoading,
     isError: _alertsError,
     refetch: _refetchAlerts,
-  } = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
+  } = useQuery<PaginatedResponse<Alert>>({
+    queryKey: ["/api/v1/alerts"],
+    queryFn: () => fetchPaginated<Alert>("/api/v1/alerts", { offset: 0, limit: 200 }),
   });
+  const alerts = alertsResponse?.items;
 
-  const { data: incidents, isLoading: incidentsLoading } = useQuery<Incident[]>({
-    queryKey: ["/api/incidents"],
+  const { data: incidentsResponse, isLoading: incidentsLoading } = useQuery<PaginatedResponse<Incident>>({
+    queryKey: ["/api/v1/incidents"],
+    queryFn: () => fetchPaginated<Incident>("/api/v1/incidents", { offset: 0, limit: 200 }),
   });
+  const incidents = incidentsResponse?.items;
 
   const {
     data: providers,
@@ -253,27 +259,39 @@ export default function ThreatIntelPage() {
   const refreshAllMutation = useMutation({
     mutationFn: async () => {
       const statuses = feedStatuses || [];
-      const results = await Promise.all(
+      const settled = await Promise.allSettled(
         statuses.map(async (feed) => {
           const res = await apiRequest("POST", `/api/osint-feeds/${encodeURIComponent(feed.slug)}/refresh`);
-          return res.json() as Promise<OsintFeedResult>;
+          return { slug: feed.slug, result: (await res.json()) as OsintFeedResult };
         }),
       );
-      return results;
+      const successes: { slug: string; result: OsintFeedResult }[] = [];
+      const failures: string[] = [];
+      for (const s of settled) {
+        if (s.status === "fulfilled") successes.push(s.value);
+        else failures.push(String((s.reason as Error)?.message || "Unknown error"));
+      }
+      return { successes, failures };
     },
-    onSuccess: (results) => {
+    onSuccess: ({ successes, failures }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/osint-feeds/status"] });
       const newMap: Record<string, OsintFeedResult> = {};
-      const statuses = feedStatuses || [];
-      for (let i = 0; i < results.length; i++) {
-        const slug = statuses[i]?.slug || results[i].feedName;
-        newMap[slug] = results[i];
+      for (const s of successes) {
+        newMap[s.slug] = s.result;
       }
       setFeedDataMap((prev) => ({ ...prev, ...newMap }));
-      toast({
-        title: "All feeds refreshed",
-        description: `${results.length} feeds updated`,
-      });
+      if (failures.length > 0) {
+        toast({
+          title: `Refreshed ${successes.length} feeds, ${failures.length} failed`,
+          description: failures.slice(0, 2).join("; "),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "All feeds refreshed",
+          description: `${successes.length} feeds updated`,
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -330,8 +348,7 @@ export default function ThreatIntelPage() {
       const params = new URLSearchParams();
       if (iocTypeFilter !== "all") params.set("iocType", iocTypeFilter);
       params.set("limit", "200");
-      const res = await fetch(`/api/ioc-entries?${params.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
+      const res = await apiRequest("GET", `/api/ioc-entries?${params.toString()}`);
       return res.json();
     },
   });
@@ -468,10 +485,11 @@ export default function ThreatIntelPage() {
   });
 
   const filteredIocEntries = useMemo(() => {
-    if (!iocEntriesData) return [];
-    if (!iocSearch.trim()) return iocEntriesData;
+    const entries = Array.isArray(iocEntriesData) ? iocEntriesData : [];
+    if (entries.length === 0) return [];
+    if (!iocSearch.trim()) return entries;
     const q = iocSearch.toLowerCase();
-    return iocEntriesData.filter(
+    return entries.filter(
       (e: any) =>
         e.iocValue?.toLowerCase().includes(q) ||
         e.malwareFamily?.toLowerCase().includes(q) ||
@@ -484,9 +502,13 @@ export default function ThreatIntelPage() {
   const anyProviderConfigured = providers?.some((p) => p.configured) ?? false;
 
   const allIOCs = useMemo(() => {
-    const alertIOCs = alerts ? extractIOCsFromAlerts(alerts) : [];
-    const incidentIOCs = incidents ? extractIOCsFromIncidents(incidents) : [];
-    return [...alertIOCs, ...incidentIOCs];
+    try {
+      const alertIOCs = alerts ? extractIOCsFromAlerts(alerts) : [];
+      const incidentIOCs = incidents ? extractIOCsFromIncidents(incidents) : [];
+      return [...alertIOCs, ...incidentIOCs];
+    } catch {
+      return [];
+    }
   }, [alerts, incidents]);
 
   const filteredIOCs = useMemo(() => {
@@ -494,15 +516,16 @@ export default function ThreatIntelPage() {
     const q = search.toLowerCase();
     return allIOCs.filter(
       (ioc) =>
-        ioc.value.toLowerCase().includes(q) ||
-        ioc.type.toLowerCase().includes(q) ||
-        ioc.source.toLowerCase().includes(q),
+        (ioc.value ?? "").toLowerCase().includes(q) ||
+        (ioc.type ?? "").toLowerCase().includes(q) ||
+        (ioc.source ?? "").toLowerCase().includes(q),
     );
   }, [allIOCs, search]);
 
   const stats = useMemo(() => {
-    const uniqueDomains = new Set(allIOCs.filter((i) => i.type === "domain").map((i) => i.value.toLowerCase())).size;
-    const uniqueIPs = new Set(allIOCs.filter((i) => i.type === "ip").map((i) => i.value)).size;
+    const uniqueDomains = new Set(allIOCs.filter((i) => i.type === "domain").map((i) => (i.value ?? "").toLowerCase()))
+      .size;
+    const uniqueIPs = new Set(allIOCs.filter((i) => i.type === "ip").map((i) => i.value ?? "")).size;
     return { total: allIOCs.length, uniqueDomains, uniqueIPs };
   }, [allIOCs]);
 

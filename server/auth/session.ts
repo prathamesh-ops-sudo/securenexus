@@ -7,6 +7,10 @@ import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 import { storage } from "../storage";
+import { db } from "../db";
+import { eq, and } from "drizzle-orm";
+import { users } from "@shared/models/auth";
+import { organizationMemberships } from "@shared/schema";
 import { config } from "../config";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
@@ -14,6 +18,39 @@ import { replyUnauthenticated } from "../api-response";
 import { logger } from "../logger";
 
 const scryptAsync = promisify(scrypt);
+
+const DESERIALIZE_CACHE_TTL_MS = 30_000;
+const DESERIALIZE_CACHE_MAX = 500;
+
+interface CachedUser {
+  user: any;
+  expiresAt: number;
+}
+
+const deserializeCache = new Map<string, CachedUser>();
+
+function pruneDeserializeCache() {
+  if (deserializeCache.size <= DESERIALIZE_CACHE_MAX) return;
+  const now = Date.now();
+  const keys = Array.from(deserializeCache.keys());
+  for (let i = 0; i < keys.length; i++) {
+    const entry = deserializeCache.get(keys[i]);
+    if (entry && entry.expiresAt <= now) deserializeCache.delete(keys[i]);
+  }
+  if (deserializeCache.size > DESERIALIZE_CACHE_MAX) {
+    const oldest = Array.from(deserializeCache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    const toRemove = oldest.slice(0, deserializeCache.size - DESERIALIZE_CACHE_MAX);
+    for (let i = 0; i < toRemove.length; i++) deserializeCache.delete(toRemove[i][0]);
+  }
+}
+
+export function invalidateDeserializeCache(userId?: string) {
+  if (userId) {
+    deserializeCache.delete(userId);
+  } else {
+    deserializeCache.clear();
+  }
+}
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -36,6 +73,7 @@ export function getSession() {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  const isProduction = new Set(["production", "staging", "uat"]).has(config.nodeEnv);
   return session({
     secret: config.session.secret,
     store: sessionStore,
@@ -43,9 +81,9 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: config.session.forceHttps,
+      secure: isProduction,
       maxAge: sessionTtl,
-      sameSite: "lax",
+      sameSite: isProduction ? "strict" : "lax",
     },
   });
 }
@@ -61,6 +99,9 @@ export async function setupAuth(app: Express) {
       try {
         const user = await authStorage.getUserByEmail(email);
         if (!user || !user.passwordHash) {
+          return done(null, false, { message: "Invalid email or password" });
+        }
+        if (user.disabledAt) {
           return done(null, false, { message: "Invalid email or password" });
         }
         const isValid = await comparePasswords(password, user.passwordHash);
@@ -95,6 +136,9 @@ export async function setupAuth(app: Express) {
                 profileImageUrl: profile.photos?.[0]?.value || null,
               });
             }
+            if (user.disabledAt) {
+              return done(null, false, { message: "Account is disabled" });
+            }
             return done(null, user);
           } catch (err) {
             return done(err);
@@ -116,7 +160,12 @@ export async function setupAuth(app: Express) {
         },
         async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
           try {
-            const email = profile.emails?.[0]?.value || `${profile.username}@github.local`;
+            const emails: Array<{ value?: string; primary?: boolean; verified?: boolean }> = profile.emails || [];
+            const verified = emails.find((e) => e.primary && e.verified && e.value);
+            if (!verified?.value) {
+              return done(null, false, { message: "No verified primary email from GitHub" });
+            }
+            const email = verified.value;
             let user = await authStorage.getUserByEmail(email);
             if (!user) {
               user = await authStorage.upsertUser({
@@ -125,6 +174,9 @@ export async function setupAuth(app: Express) {
                 lastName: profile.displayName?.split(" ").slice(1).join(" ") || null,
                 profileImageUrl: profile.photos?.[0]?.value || null,
               });
+            }
+            if (user.disabledAt) {
+              return done(null, false, { message: "Account is disabled" });
             }
             return done(null, user);
           } catch (err) {
@@ -139,12 +191,42 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: any, cb) => cb(null, user.id));
   passport.deserializeUser(async (id: string, cb) => {
     try {
-      const user = await authStorage.getUser(id);
-      if (!user) return cb(null, null);
-      const memberships = await storage.getUserMemberships(user.id);
-      const active = memberships.find((m) => m.status === "active");
-      (user as any).orgId = active?.orgId || null;
-      (user as any).orgRole = active?.role || null;
+      const now = Date.now();
+      const cached = deserializeCache.get(id);
+      if (cached && cached.expiresAt > now) {
+        return cb(null, cached.user);
+      }
+
+      const rows = await db
+        .select({
+          user: users,
+          membershipOrgId: organizationMemberships.orgId,
+          membershipRole: organizationMemberships.role,
+          membershipStatus: organizationMemberships.status,
+        })
+        .from(users)
+        .leftJoin(
+          organizationMemberships,
+          and(eq(organizationMemberships.userId, users.id), eq(organizationMemberships.status, "active")),
+        )
+        .where(eq(users.id, id))
+        .limit(1);
+      if (rows.length === 0) {
+        deserializeCache.delete(id);
+        return cb(null, null);
+      }
+      const row = rows[0];
+      const user = row.user;
+      if (user.disabledAt) {
+        deserializeCache.delete(id);
+        return cb(null, null);
+      }
+      (user as any).orgId = row.membershipOrgId || null;
+      (user as any).orgRole = row.membershipRole || null;
+
+      deserializeCache.set(id, { user, expiresAt: now + DESERIALIZE_CACHE_TTL_MS });
+      pruneDeserializeCache();
+
       cb(null, user);
     } catch (err) {
       cb(err);

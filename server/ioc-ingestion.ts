@@ -31,17 +31,38 @@ interface RawIOC {
 function normalizeIocType(raw: string): string {
   const lower = raw.toLowerCase().trim();
   const map: Record<string, string> = {
-    "ipv4-addr": "ip", "ipv6-addr": "ip", "ip-src": "ip", "ip-dst": "ip",
-    "ip-src|port": "ip", "ip-dst|port": "ip", "ip": "ip",
-    "domain-name": "domain", "domain": "domain", "hostname": "domain",
-    "url": "url", "uri": "url", "link": "url",
-    "file:hashes.'SHA-256'": "hash", "file:hashes.'MD5'": "hash", "file:hashes.'SHA-1'": "hash",
-    "sha256": "hash", "sha1": "hash", "md5": "hash", "hash": "hash",
-    "file-hash": "hash", "filename|sha256": "hash", "filename|md5": "hash",
-    "email-addr": "email", "email-src": "email", "email-dst": "email", "email": "email",
-    "vulnerability": "cve", "cve": "cve",
+    "ipv4-addr": "ip",
+    "ipv6-addr": "ip",
+    "ip-src": "ip",
+    "ip-dst": "ip",
+    "ip-src|port": "ip",
+    "ip-dst|port": "ip",
+    ip: "ip",
+    "domain-name": "domain",
+    domain: "domain",
+    hostname: "domain",
+    url: "url",
+    uri: "url",
+    link: "url",
+    "file:hashes.'SHA-256'": "hash",
+    "file:hashes.'MD5'": "hash",
+    "file:hashes.'SHA-1'": "hash",
+    sha256: "hash",
+    sha1: "hash",
+    md5: "hash",
+    hash: "hash",
+    "file-hash": "hash",
+    "filename|sha256": "hash",
+    "filename|md5": "hash",
+    "email-addr": "email",
+    "email-src": "email",
+    "email-dst": "email",
+    email: "email",
+    vulnerability: "cve",
+    cve: "cve",
     "network-traffic:dst_ref.type = 'ipv4-addr'": "ip",
-    "autonomous-system": "cidr", "cidr": "cidr",
+    "autonomous-system": "cidr",
+    cidr: "cidr",
   };
   return map[lower] || lower;
 }
@@ -57,7 +78,15 @@ function cleanIocValue(value: string): string {
 export function parseMISPFeed(data: any): RawIOC[] {
   const iocs: RawIOC[] = [];
   try {
-    const events = Array.isArray(data) ? data : data?.response ? (Array.isArray(data.response) ? data.response : [data.response]) : data?.Event ? [data] : [];
+    const events = Array.isArray(data)
+      ? data
+      : data?.response
+        ? Array.isArray(data.response)
+          ? data.response
+          : [data.response]
+        : data?.Event
+          ? [data]
+          : [];
     for (const item of events) {
       const event = item?.Event || item;
       const eventTags = (event?.Tag || []).map((t: any) => t?.name).filter(Boolean);
@@ -140,15 +169,35 @@ export function parseSTIXBundle(data: any): RawIOC[] {
 function extractFromSTIXPattern(pattern: string): { type: string; value: string }[] {
   const results: { type: string; value: string }[] = [];
   const ipMatch = pattern.match(/ipv[46]-addr:value\s*=\s*'([^']+)'/g);
-  if (ipMatch) ipMatch.forEach(m => { const v = m.match(/'([^']+)'/); if (v) results.push({ type: "ip", value: v[1] }); });
+  if (ipMatch)
+    ipMatch.forEach((m) => {
+      const v = m.match(/'([^']+)'/);
+      if (v) results.push({ type: "ip", value: v[1] });
+    });
   const domainMatch = pattern.match(/domain-name:value\s*=\s*'([^']+)'/g);
-  if (domainMatch) domainMatch.forEach(m => { const v = m.match(/'([^']+)'/); if (v) results.push({ type: "domain", value: v[1] }); });
+  if (domainMatch)
+    domainMatch.forEach((m) => {
+      const v = m.match(/'([^']+)'/);
+      if (v) results.push({ type: "domain", value: v[1] });
+    });
   const urlMatch = pattern.match(/url:value\s*=\s*'([^']+)'/g);
-  if (urlMatch) urlMatch.forEach(m => { const v = m.match(/'([^']+)'/); if (v) results.push({ type: "url", value: v[1] }); });
+  if (urlMatch)
+    urlMatch.forEach((m) => {
+      const v = m.match(/'([^']+)'/);
+      if (v) results.push({ type: "url", value: v[1] });
+    });
   const hashMatch = pattern.match(/file:hashes\.[^=]+=\s*'([^']+)'/g);
-  if (hashMatch) hashMatch.forEach(m => { const v = m.match(/'([^']+)'/); if (v) results.push({ type: "hash", value: v[1] }); });
+  if (hashMatch)
+    hashMatch.forEach((m) => {
+      const v = m.match(/'([^']+)'/);
+      if (v) results.push({ type: "hash", value: v[1] });
+    });
   const emailMatch = pattern.match(/email-addr:value\s*=\s*'([^']+)'/g);
-  if (emailMatch) emailMatch.forEach(m => { const v = m.match(/'([^']+)'/); if (v) results.push({ type: "email", value: v[1] }); });
+  if (emailMatch)
+    emailMatch.forEach((m) => {
+      const v = m.match(/'([^']+)'/);
+      if (v) results.push({ type: "email", value: v[1] });
+    });
   return results;
 }
 
@@ -202,13 +251,30 @@ export function parseVirusTotalFeed(data: any): RawIOC[] {
     const items = Array.isArray(data) ? data : data?.data ? (Array.isArray(data.data) ? data.data : [data.data]) : [];
     for (const item of items) {
       const attrs = item.attributes || item;
-      const type = item.type === "file" ? "hash" : item.type === "domain" ? "domain" : item.type === "ip_address" ? "ip" : item.type === "url" ? "url" : normalizeIocType(item.type || "");
-      const value = type === "hash" ? (attrs.sha256 || attrs.sha1 || attrs.md5 || item.id) : (item.id || attrs.id || "");
+      const type =
+        item.type === "file"
+          ? "hash"
+          : item.type === "domain"
+            ? "domain"
+            : item.type === "ip_address"
+              ? "ip"
+              : item.type === "url"
+                ? "url"
+                : normalizeIocType(item.type || "");
+      const value = type === "hash" ? attrs.sha256 || attrs.sha1 || attrs.md5 || item.id : item.id || attrs.id || "";
       if (!value) continue;
       const malicious = attrs.last_analysis_stats?.malicious || 0;
-      const total = (attrs.last_analysis_stats?.malicious || 0) + (attrs.last_analysis_stats?.undetected || 0) + (attrs.last_analysis_stats?.harmless || 0);
+      const total =
+        (attrs.last_analysis_stats?.malicious || 0) +
+        (attrs.last_analysis_stats?.undetected || 0) +
+        (attrs.last_analysis_stats?.harmless || 0);
       const confidence = total > 0 ? Math.round((malicious / total) * 100) : 50;
-      const tags = [...(attrs.tags || []), ...(attrs.popular_threat_classification?.suggested_threat_label ? [attrs.popular_threat_classification.suggested_threat_label] : [])];
+      const tags = [
+        ...(attrs.tags || []),
+        ...(attrs.popular_threat_classification?.suggested_threat_label
+          ? [attrs.popular_threat_classification.suggested_threat_label]
+          : []),
+      ];
       iocs.push({
         type,
         value: cleanIocValue(value),
@@ -228,7 +294,10 @@ export function parseVirusTotalFeed(data: any): RawIOC[] {
   return iocs;
 }
 
-export function parseCSVFeed(data: string, config?: { typeColumn?: number; valueColumn?: number; separator?: string; skipHeader?: boolean }): RawIOC[] {
+export function parseCSVFeed(
+  data: string,
+  config?: { typeColumn?: number; valueColumn?: number; separator?: string; skipHeader?: boolean },
+): RawIOC[] {
   const iocs: RawIOC[] = [];
   try {
     const lines = data.trim().split("\n");
@@ -237,7 +306,7 @@ export function parseCSVFeed(data: string, config?: { typeColumn?: number; value
     const valueCol = config?.valueColumn || 1;
     const start = config?.skipHeader !== false ? 1 : 0;
     for (let i = start; i < lines.length; i++) {
-      const cols = lines[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ""));
+      const cols = lines[i].split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
       const type = normalizeIocType(cols[typeCol] || "");
       const value = cleanIocValue(cols[valueCol] || "");
       if (!type || !value) continue;
@@ -275,7 +344,28 @@ function mapOTXAdversaryLevel(adversary: string | undefined): string {
 }
 
 function extractMalwareFamily(tags: string[]): string | undefined {
-  const families = ["emotet", "trickbot", "cobalt strike", "mimikatz", "ryuk", "lockbit", "conti", "revil", "dridex", "qakbot", "icedid", "bumblebee", "asyncrat", "remcos", "redline", "raccoon", "vidar", "formbook", "agent tesla", "njrat"];
+  const families = [
+    "emotet",
+    "trickbot",
+    "cobalt strike",
+    "mimikatz",
+    "ryuk",
+    "lockbit",
+    "conti",
+    "revil",
+    "dridex",
+    "qakbot",
+    "icedid",
+    "bumblebee",
+    "asyncrat",
+    "remcos",
+    "redline",
+    "raccoon",
+    "vidar",
+    "formbook",
+    "agent tesla",
+    "njrat",
+  ];
   for (const tag of tags) {
     const lower = tag.toLowerCase();
     for (const family of families) {
@@ -287,18 +377,39 @@ function extractMalwareFamily(tags: string[]): string | undefined {
 
 export async function ingestFeed(feed: IocFeed, rawData: any): Promise<IngestionResult> {
   const start = Date.now();
-  const result: IngestionResult = { feedId: feed.id, feedName: feed.name, newEntries: 0, updatedEntries: 0, totalParsed: 0, errors: [], duration: 0 };
+  const result: IngestionResult = {
+    feedId: feed.id,
+    feedName: feed.name,
+    newEntries: 0,
+    updatedEntries: 0,
+    totalParsed: 0,
+    errors: [],
+    duration: 0,
+  };
 
   let rawIocs: RawIOC[] = [];
   try {
     switch (feed.feedType) {
-      case "misp": rawIocs = parseMISPFeed(rawData); break;
-      case "stix": rawIocs = parseSTIXBundle(rawData); break;
-      case "taxii": rawIocs = parseTAXIICollection(rawData); break;
-      case "otx": rawIocs = parseOTXPulses(rawData); break;
-      case "virustotal": rawIocs = parseVirusTotalFeed(rawData); break;
-      case "csv": rawIocs = parseCSVFeed(typeof rawData === "string" ? rawData : JSON.stringify(rawData), feed.config as any); break;
-      default: rawIocs = parseSTIXBundle(rawData);
+      case "misp":
+        rawIocs = parseMISPFeed(rawData);
+        break;
+      case "stix":
+        rawIocs = parseSTIXBundle(rawData);
+        break;
+      case "taxii":
+        rawIocs = parseTAXIICollection(rawData);
+        break;
+      case "otx":
+        rawIocs = parseOTXPulses(rawData);
+        break;
+      case "virustotal":
+        rawIocs = parseVirusTotalFeed(rawData);
+        break;
+      case "csv":
+        rawIocs = parseCSVFeed(typeof rawData === "string" ? rawData : JSON.stringify(rawData), feed.config as any);
+        break;
+      default:
+        rawIocs = parseSTIXBundle(rawData);
     }
   } catch (e: any) {
     result.errors.push(`Parse error: ${e.message}`);
@@ -343,13 +454,16 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
   }
 
   try {
-    await db.update(iocFeeds).set({
-      lastFetchAt: new Date(),
-      lastFetchStatus: result.errors.length > 0 ? "partial" : "success",
-      lastFetchCount: result.newEntries,
-      totalIocCount: sql`${iocFeeds.totalIocCount} + ${result.newEntries}`,
-      updatedAt: new Date(),
-    }).where(eq(iocFeeds.id, feed.id));
+    await db
+      .update(iocFeeds)
+      .set({
+        lastFetchAt: new Date(),
+        lastFetchStatus: result.errors.length > 0 ? "partial" : "success",
+        lastFetchCount: result.newEntries,
+        totalIocCount: sql`${iocFeeds.totalIocCount} + ${result.newEntries}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(iocFeeds.id, feed.id));
   } catch (e: any) {
     result.errors.push(`Feed update error: ${e.message}`);
   }
@@ -360,11 +474,19 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
 
 export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult> {
   if (!feed.url) {
-    return { feedId: feed.id, feedName: feed.name, newEntries: 0, updatedEntries: 0, totalParsed: 0, errors: ["No URL configured for feed"], duration: 0 };
+    return {
+      feedId: feed.id,
+      feedName: feed.name,
+      newEntries: 0,
+      updatedEntries: 0,
+      totalParsed: 0,
+      errors: ["No URL configured for feed"],
+      duration: 0,
+    };
   }
 
   try {
-    const headers: Record<string, string> = { "Accept": "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json" };
     if (feed.apiKeyRef) {
       const apiKey = process.env[feed.apiKeyRef] || feed.apiKeyRef;
       if (feed.feedType === "otx") headers["X-OTX-API-KEY"] = apiKey;
@@ -375,8 +497,19 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
     const response = await fetch(feed.url, { headers, signal: AbortSignal.timeout(30000) });
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      await db.update(iocFeeds).set({ lastFetchAt: new Date(), lastFetchStatus: `error: ${response.status}`, updatedAt: new Date() }).where(eq(iocFeeds.id, feed.id));
-      return { feedId: feed.id, feedName: feed.name, newEntries: 0, updatedEntries: 0, totalParsed: 0, errors: [`HTTP ${response.status}: ${errorText.slice(0, 200)}`], duration: 0 };
+      await db
+        .update(iocFeeds)
+        .set({ lastFetchAt: new Date(), lastFetchStatus: `error: ${response.status}`, updatedAt: new Date() })
+        .where(eq(iocFeeds.id, feed.id));
+      return {
+        feedId: feed.id,
+        feedName: feed.name,
+        newEntries: 0,
+        updatedEntries: 0,
+        totalParsed: 0,
+        errors: [`HTTP ${response.status}: ${errorText.slice(0, 200)}`],
+        duration: 0,
+      };
     }
 
     const contentType = response.headers.get("content-type") || "";
@@ -389,7 +522,18 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
 
     return await ingestFeed(feed, rawData);
   } catch (e: any) {
-    await db.update(iocFeeds).set({ lastFetchAt: new Date(), lastFetchStatus: `error: ${e.message}`, updatedAt: new Date() }).where(eq(iocFeeds.id, feed.id));
-    return { feedId: feed.id, feedName: feed.name, newEntries: 0, updatedEntries: 0, totalParsed: 0, errors: [`Fetch error: ${e.message}`], duration: 0 };
+    await db
+      .update(iocFeeds)
+      .set({ lastFetchAt: new Date(), lastFetchStatus: `error: ${e.message}`, updatedAt: new Date() })
+      .where(eq(iocFeeds.id, feed.id));
+    return {
+      feedId: feed.id,
+      feedName: feed.name,
+      newEntries: 0,
+      updatedEntries: 0,
+      totalParsed: 0,
+      errors: [`Fetch error: ${e.message}`],
+      duration: 0,
+    };
   }
 }

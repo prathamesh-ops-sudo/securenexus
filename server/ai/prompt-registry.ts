@@ -1,3 +1,4 @@
+import { pool } from "../db";
 import { logger } from "../logger";
 
 const log = logger.child("prompt-registry");
@@ -19,6 +20,7 @@ export interface PromptTemplate {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+  isActive?: boolean;
 }
 
 interface PromptAuditEntry {
@@ -29,99 +31,361 @@ interface PromptAuditEntry {
   metadata?: Record<string, unknown>;
 }
 
-const registry = new Map<string, PromptTemplate>();
-const versionHistory = new Map<string, PromptTemplate[]>();
-const auditLog: PromptAuditEntry[] = [];
-const MAX_AUDIT_ENTRIES = 2000;
+const TABLE_ENSURED = { done: false };
 
-function recordAudit(promptId: string, version: number, action: PromptAuditEntry["action"], metadata?: Record<string, unknown>): void {
-  auditLog.push({ promptId, version, action, timestamp: new Date().toISOString(), metadata });
-  if (auditLog.length > MAX_AUDIT_ENTRIES) auditLog.splice(0, auditLog.length - MAX_AUDIT_ENTRIES);
+async function ensureTables(): Promise<void> {
+  if (TABLE_ENSURED.done) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_prompts (
+      id VARCHAR PRIMARY KEY,
+      org_id VARCHAR,
+      name VARCHAR NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      tier VARCHAR NOT NULL DEFAULT 'general',
+      system_prompt TEXT NOT NULL,
+      user_template TEXT NOT NULL,
+      output_schema JSONB,
+      max_tokens INTEGER NOT NULL DEFAULT 2048,
+      temperature DOUBLE PRECISION NOT NULL DEFAULT 0.1,
+      version INTEGER NOT NULL DEFAULT 1,
+      deprecated BOOLEAN NOT NULL DEFAULT false,
+      deprecated_at TIMESTAMP,
+      superseded_by VARCHAR,
+      tags JSONB NOT NULL DEFAULT '[]',
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompts_org ON ai_prompts (org_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompts_tier ON ai_prompts (tier)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_prompt_versions (
+      id SERIAL PRIMARY KEY,
+      prompt_id VARCHAR NOT NULL,
+      org_id VARCHAR,
+      version INTEGER NOT NULL,
+      name VARCHAR NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      tier VARCHAR NOT NULL DEFAULT 'general',
+      system_prompt TEXT NOT NULL,
+      user_template TEXT NOT NULL,
+      output_schema JSONB,
+      max_tokens INTEGER NOT NULL DEFAULT 2048,
+      temperature DOUBLE PRECISION NOT NULL DEFAULT 0.1,
+      tags JSONB NOT NULL DEFAULT '[]',
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_prompt_versions_prompt_version ON ai_prompt_versions (prompt_id, version)`,
+  );
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_prompt ON ai_prompt_versions (prompt_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_org ON ai_prompt_versions (org_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_prompt_audit_log (
+      id SERIAL PRIMARY KEY,
+      prompt_id VARCHAR NOT NULL,
+      version INTEGER NOT NULL,
+      action VARCHAR NOT NULL,
+      metadata JSONB,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_audit_prompt ON ai_prompt_audit_log (prompt_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_audit_action ON ai_prompt_audit_log (action)`);
+
+  TABLE_ENSURED.done = true;
 }
 
-export function registerPrompt(template: PromptTemplate): void {
-  const existing = registry.get(template.id);
-  if (existing && existing.version >= template.version) {
-    log.warn("Skipping prompt registration — same or newer version exists", { id: template.id, existing: existing.version, incoming: template.version });
+function rowToTemplate(row: Record<string, unknown>): PromptTemplate {
+  return {
+    id: row.id as string,
+    version: row.version as number,
+    name: row.name as string,
+    description: (row.description as string) || "",
+    tier: (row.tier as PromptTemplate["tier"]) || "general",
+    systemPrompt: row.system_prompt as string,
+    userTemplate: row.user_template as string,
+    outputSchema: row.output_schema as Record<string, string> | undefined,
+    maxTokens: row.max_tokens as number,
+    temperature: row.temperature as number,
+    deprecated: (row.deprecated as boolean) || false,
+    deprecatedAt: row.deprecated_at ? (row.deprecated_at as Date).toISOString() : undefined,
+    supersededBy: row.superseded_by as string | undefined,
+    createdAt: row.created_at ? (row.created_at as Date).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? (row.updated_at as Date).toISOString() : new Date().toISOString(),
+    tags: (row.tags as string[]) || [],
+    isActive: row.is_active as boolean,
+  };
+}
+
+async function recordAudit(
+  promptId: string,
+  version: number,
+  action: PromptAuditEntry["action"],
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  await ensureTables();
+  await pool.query(`INSERT INTO ai_prompt_audit_log (prompt_id, version, action, metadata) VALUES ($1, $2, $3, $4)`, [
+    promptId,
+    version,
+    action,
+    metadata ? JSON.stringify(metadata) : null,
+  ]);
+}
+
+export async function registerPrompt(template: PromptTemplate): Promise<void> {
+  await ensureTables();
+
+  const existing = await pool.query(`SELECT id, version FROM ai_prompts WHERE id = $1`, [template.id]);
+
+  if (existing.rows.length > 0 && existing.rows[0].version >= template.version) {
+    log.warn("Skipping prompt registration \u2014 same or newer version exists", {
+      id: template.id,
+      existing: existing.rows[0].version,
+      incoming: template.version,
+    });
     return;
   }
 
-  registry.set(template.id, template);
+  const action = existing.rows.length > 0 ? "updated" : "registered";
 
-  const history = versionHistory.get(template.id) || [];
-  history.push({ ...template });
-  versionHistory.set(template.id, history);
+  await pool.query(
+    `INSERT INTO ai_prompts (id, org_id, name, description, tier, system_prompt, user_template, output_schema, max_tokens, temperature, version, deprecated, deprecated_at, superseded_by, tags, is_active, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       description = EXCLUDED.description,
+       tier = EXCLUDED.tier,
+       system_prompt = EXCLUDED.system_prompt,
+       user_template = EXCLUDED.user_template,
+       output_schema = EXCLUDED.output_schema,
+       max_tokens = EXCLUDED.max_tokens,
+       temperature = EXCLUDED.temperature,
+       version = EXCLUDED.version,
+       deprecated = EXCLUDED.deprecated,
+       deprecated_at = EXCLUDED.deprecated_at,
+       superseded_by = EXCLUDED.superseded_by,
+       is_active = EXCLUDED.is_active,
+       tags = EXCLUDED.tags,
+       updated_at = NOW()`,
+    [
+      template.id,
+      null,
+      template.name,
+      template.description,
+      template.tier,
+      template.systemPrompt,
+      template.userTemplate,
+      template.outputSchema ? JSON.stringify(template.outputSchema) : null,
+      template.maxTokens,
+      template.temperature,
+      template.version,
+      template.deprecated || false,
+      template.deprecatedAt || null,
+      template.supersededBy || null,
+      JSON.stringify(template.tags || []),
+      true,
+    ],
+  );
 
-  recordAudit(template.id, template.version, existing ? "updated" : "registered");
+  await pool.query(
+    `INSERT INTO ai_prompt_versions (prompt_id, org_id, version, name, description, tier, system_prompt, user_template, output_schema, max_tokens, temperature, tags)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT (prompt_id, version) DO NOTHING`,
+    [
+      template.id,
+      null,
+      template.version,
+      template.name,
+      template.description,
+      template.tier,
+      template.systemPrompt,
+      template.userTemplate,
+      template.outputSchema ? JSON.stringify(template.outputSchema) : null,
+      template.maxTokens,
+      template.temperature,
+      JSON.stringify(template.tags || []),
+    ],
+  );
+
+  await recordAudit(template.id, template.version, action);
   log.info("Prompt registered", { id: template.id, version: template.version, tier: template.tier });
 }
 
-export function getPrompt(id: string): PromptTemplate | undefined {
-  return registry.get(id);
+export async function getPrompt(id: string): Promise<PromptTemplate | undefined> {
+  await ensureTables();
+  const result = await pool.query(`SELECT * FROM ai_prompts WHERE id = $1 AND is_active = true`, [id]);
+  if (result.rows.length === 0) return undefined;
+  return rowToTemplate(result.rows[0]);
 }
 
-export function getPromptVersion(id: string, version: number): PromptTemplate | undefined {
-  const history = versionHistory.get(id);
-  if (!history) return undefined;
-  return history.find((p) => p.version === version);
+export async function getPromptVersion(id: string, version: number): Promise<PromptTemplate | undefined> {
+  await ensureTables();
+  const result = await pool.query(
+    `SELECT pv.*, p.deprecated, p.deprecated_at, p.superseded_by, p.is_active, p.updated_at
+     FROM ai_prompt_versions pv
+     JOIN ai_prompts p ON p.id = pv.prompt_id
+     WHERE pv.prompt_id = $1 AND pv.version = $2`,
+    [id, version],
+  );
+  if (result.rows.length === 0) return undefined;
+  const row = result.rows[0];
+  return {
+    id: row.prompt_id as string,
+    version: row.version as number,
+    name: row.name as string,
+    description: (row.description as string) || "",
+    tier: (row.tier as PromptTemplate["tier"]) || "general",
+    systemPrompt: row.system_prompt as string,
+    userTemplate: row.user_template as string,
+    outputSchema: row.output_schema as Record<string, string> | undefined,
+    maxTokens: row.max_tokens as number,
+    temperature: row.temperature as number,
+    deprecated: (row.deprecated as boolean) || false,
+    deprecatedAt: row.deprecated_at ? (row.deprecated_at as Date).toISOString() : undefined,
+    supersededBy: row.superseded_by as string | undefined,
+    createdAt: row.created_at ? (row.created_at as Date).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? (row.updated_at as Date).toISOString() : new Date().toISOString(),
+    tags: (row.tags as string[]) || [],
+  };
 }
 
-export function getAllPrompts(): PromptTemplate[] {
-  return Array.from(registry.values());
+export async function getAllPrompts(): Promise<PromptTemplate[]> {
+  await ensureTables();
+  const result = await pool.query(`SELECT * FROM ai_prompts WHERE is_active = true ORDER BY tier, name`);
+  return result.rows.map(rowToTemplate);
 }
 
-export function getPromptsByTier(tier: PromptTemplate["tier"]): PromptTemplate[] {
-  return Array.from(registry.values()).filter((p) => p.tier === tier);
+export async function getPromptsByTier(tier: PromptTemplate["tier"]): Promise<PromptTemplate[]> {
+  await ensureTables();
+  const result = await pool.query(`SELECT * FROM ai_prompts WHERE tier = $1 AND is_active = true ORDER BY name`, [
+    tier,
+  ]);
+  return result.rows.map(rowToTemplate);
 }
 
-export function deprecatePrompt(id: string, supersededBy?: string): boolean {
-  const prompt = registry.get(id);
-  if (!prompt) return false;
-  prompt.deprecated = true;
-  prompt.deprecatedAt = new Date().toISOString();
-  if (supersededBy) prompt.supersededBy = supersededBy;
-  recordAudit(id, prompt.version, "deprecated", { supersededBy });
-  log.info("Prompt deprecated", { id, version: prompt.version, supersededBy });
+export async function deprecatePrompt(id: string, supersededBy?: string): Promise<boolean> {
+  await ensureTables();
+  const result = await pool.query(
+    `UPDATE ai_prompts SET deprecated = true, deprecated_at = NOW(), superseded_by = $2, updated_at = NOW()
+     WHERE id = $1 AND is_active = true
+     RETURNING version`,
+    [id, supersededBy || null],
+  );
+  if (result.rows.length === 0) return false;
+  await recordAudit(id, result.rows[0].version as number, "deprecated", { supersededBy });
+  log.info("Prompt deprecated", { id, version: result.rows[0].version, supersededBy });
   return true;
 }
 
-export function recordPromptInvocation(id: string, version: number, metadata?: Record<string, unknown>): void {
-  recordAudit(id, version, "invoked", metadata);
+export async function deletePrompt(id: string): Promise<boolean> {
+  await ensureTables();
+  const result = await pool.query(
+    `UPDATE ai_prompts SET is_active = false, updated_at = NOW() WHERE id = $1 AND is_active = true RETURNING version`,
+    [id],
+  );
+  if (result.rows.length === 0) return false;
+  log.info("Prompt soft-deleted", { id, version: result.rows[0].version });
+  return true;
 }
 
-export function getPromptAuditLog(promptId?: string, limit: number = 50): PromptAuditEntry[] {
-  const filtered = promptId ? auditLog.filter((e) => e.promptId === promptId) : auditLog;
-  return filtered.slice(-limit);
+export async function recordPromptInvocation(
+  id: string,
+  version: number,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  await recordAudit(id, version, "invoked", metadata);
 }
 
-export function getPromptVersionHistory(id: string): PromptTemplate[] {
-  return versionHistory.get(id) || [];
+export async function getPromptAuditLog(promptId?: string, limit: number = 50): Promise<PromptAuditEntry[]> {
+  await ensureTables();
+  const safeLimit = Math.min(Math.max(limit, 1), 500);
+
+  let result;
+  if (promptId) {
+    result = await pool.query(
+      `SELECT prompt_id, version, action, metadata, created_at FROM ai_prompt_audit_log WHERE prompt_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [promptId, safeLimit],
+    );
+  } else {
+    result = await pool.query(
+      `SELECT prompt_id, version, action, metadata, created_at FROM ai_prompt_audit_log ORDER BY created_at DESC LIMIT $1`,
+      [safeLimit],
+    );
+  }
+
+  return result.rows.map((row: Record<string, unknown>) => ({
+    promptId: row.prompt_id as string,
+    version: row.version as number,
+    action: row.action as PromptAuditEntry["action"],
+    timestamp: row.created_at ? (row.created_at as Date).toISOString() : new Date().toISOString(),
+    metadata: row.metadata as Record<string, unknown> | undefined,
+  }));
 }
 
-export function getPromptCatalogSummary(): {
+export async function getPromptVersionHistory(id: string): Promise<PromptTemplate[]> {
+  await ensureTables();
+  const result = await pool.query(
+    `SELECT pv.*, p.deprecated, p.deprecated_at, p.superseded_by, p.is_active, p.updated_at
+     FROM ai_prompt_versions pv
+     JOIN ai_prompts p ON p.id = pv.prompt_id
+     WHERE pv.prompt_id = $1
+     ORDER BY pv.version DESC`,
+    [id],
+  );
+
+  return result.rows.map((row: Record<string, unknown>) => ({
+    id: row.prompt_id as string,
+    version: row.version as number,
+    name: row.name as string,
+    description: (row.description as string) || "",
+    tier: (row.tier as PromptTemplate["tier"]) || "general",
+    systemPrompt: row.system_prompt as string,
+    userTemplate: row.user_template as string,
+    outputSchema: row.output_schema as Record<string, string> | undefined,
+    maxTokens: row.max_tokens as number,
+    temperature: row.temperature as number,
+    deprecated: (row.deprecated as boolean) || false,
+    deprecatedAt: row.deprecated_at ? (row.deprecated_at as Date).toISOString() : undefined,
+    supersededBy: row.superseded_by as string | undefined,
+    createdAt: row.created_at ? (row.created_at as Date).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? (row.updated_at as Date).toISOString() : new Date().toISOString(),
+    tags: (row.tags as string[]) || [],
+  }));
+}
+
+export async function getPromptCatalogSummary(): Promise<{
   totalPrompts: number;
   byTier: Record<string, number>;
   deprecated: number;
   totalVersions: number;
   totalInvocations: number;
-} {
+}> {
+  await ensureTables();
+
+  const promptsResult = await pool.query(`SELECT tier, deprecated FROM ai_prompts WHERE is_active = true`);
   const byTier: Record<string, number> = {};
   let deprecated = 0;
-  let totalVersions = 0;
-
-  for (const prompt of Array.from(registry.values())) {
-    byTier[prompt.tier] = (byTier[prompt.tier] || 0) + 1;
-    if (prompt.deprecated) deprecated++;
+  for (const row of promptsResult.rows) {
+    const tier = row.tier as string;
+    byTier[tier] = (byTier[tier] || 0) + 1;
+    if (row.deprecated) deprecated++;
   }
 
-  for (const history of Array.from(versionHistory.values())) {
-    totalVersions += history.length;
-  }
+  const versionsResult = await pool.query(`SELECT COUNT(*) as cnt FROM ai_prompt_versions`);
+  const totalVersions = parseInt(String(versionsResult.rows[0].cnt), 10) || 0;
 
-  const totalInvocations = auditLog.filter((e) => e.action === "invoked").length;
+  const invocationsResult = await pool.query(
+    `SELECT COUNT(*) as cnt FROM ai_prompt_audit_log WHERE action = 'invoked'`,
+  );
+  const totalInvocations = parseInt(String(invocationsResult.rows[0].cnt), 10) || 0;
 
   return {
-    totalPrompts: registry.size,
+    totalPrompts: promptsResult.rows.length,
     byTier,
     deprecated,
     totalVersions,
@@ -153,14 +417,15 @@ OUTPUT REQUIREMENTS:
 - All MITRE references use official technique IDs (e.g., T1059.001)
 - All IOCs extracted and categorized by type`;
 
-export function initializeDefaultPrompts(): void {
+export async function initializeDefaultPrompts(): Promise<void> {
   const now = new Date().toISOString();
 
-  registerPrompt({
+  await registerPrompt({
     id: "correlation",
     version: 1,
     name: "Alert Correlation Engine",
-    description: "Correlates security alerts into attack chains using MITRE ATT&CK, Kill Chain, and Diamond Model frameworks.",
+    description:
+      "Correlates security alerts into attack chains using MITRE ATT&CK, Kill Chain, and Diamond Model frameworks.",
     tier: "correlation",
     systemPrompt: `${CYBER_ENGINE_IDENTITY}
 
@@ -221,11 +486,12 @@ Respond with this exact JSON structure:
     tags: ["correlation", "mitre", "kill-chain", "diamond-model"],
   });
 
-  registerPrompt({
+  await registerPrompt({
     id: "narrative",
     version: 1,
     name: "Incident Narrative Generator",
-    description: "Generates attacker-centric incident narratives with full MITRE mapping, IOC extraction, and citation-backed analysis.",
+    description:
+      "Generates attacker-centric incident narratives with full MITRE mapping, IOC extraction, and citation-backed analysis.",
     tier: "narrative",
     systemPrompt: `${CYBER_ENGINE_IDENTITY}
 
@@ -300,11 +566,12 @@ Respond with this exact JSON structure:
     tags: ["narrative", "incident-response", "mitre", "kill-chain", "ioc-extraction"],
   });
 
-  registerPrompt({
+  await registerPrompt({
     id: "triage",
     version: 1,
     name: "Alert Triage Analyst",
-    description: "Real-time alert triage with MITRE classification, false positive assessment, and actionable containment advice.",
+    description:
+      "Real-time alert triage with MITRE classification, false positive assessment, and actionable containment advice.",
     tier: "triage",
     systemPrompt: `${CYBER_ENGINE_IDENTITY}
 
@@ -369,7 +636,7 @@ Respond with this exact JSON structure:
     tags: ["triage", "classification", "mitre", "false-positive"],
   });
 
-  registerPrompt({
+  await registerPrompt({
     id: "health-check",
     version: 1,
     name: "Model Health Check",
@@ -384,5 +651,6 @@ Respond with this exact JSON structure:
     tags: ["health", "diagnostic"],
   });
 
-  log.info("Default prompts initialized", { count: registry.size });
+  const count = await pool.query(`SELECT COUNT(*) as cnt FROM ai_prompts WHERE is_active = true`);
+  log.info("Default prompts initialized", { count: parseInt(String(count.rows[0].cnt), 10) });
 }

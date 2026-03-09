@@ -137,14 +137,14 @@ function templateIcon(icon: string | null) {
 function UsageMeteringTab() {
   const {
     data: usage,
-    isLoading,
+    isPending,
     isError: usageError,
     refetch: refetchUsage,
   } = useQuery<UsageData>({
     queryKey: ["/api/usage-metering"],
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-4">
         {[1, 2, 3, 4].map((i) => (
@@ -279,11 +279,11 @@ function UsageMeteringTab() {
 }
 
 function CurrentLimitsTab() {
-  const { data: plan, isLoading } = useQuery<PlanData>({
+  const { data: plan, isPending } = useQuery<PlanData>({
     queryKey: ["/api/plan-limits"],
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-48 w-full rounded-lg" />
@@ -338,7 +338,7 @@ function WorkspaceTemplatesTab() {
   const { toast } = useToast();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const { data: templates, isLoading } = useQuery<WorkspaceTemplate[]>({
+  const { data: templates, isPending } = useQuery<WorkspaceTemplate[]>({
     queryKey: ["/api/workspace-templates"],
   });
 
@@ -352,7 +352,7 @@ function WorkspaceTemplatesTab() {
         title: `Template "${data.templateName}" applied`,
         description: `${data.applied.length} items configured`,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/playbooks"] });
     },
     onError: () => {
@@ -360,7 +360,7 @@ function WorkspaceTemplatesTab() {
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[1, 2, 3].map((i) => (

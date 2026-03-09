@@ -11,7 +11,14 @@ interface FlagEvaluationContext {
 interface EvaluationResult {
   key: string;
   enabled: boolean;
-  reason: "flag_not_found" | "globally_disabled" | "globally_enabled" | "org_targeted" | "role_targeted" | "rollout_included" | "rollout_excluded";
+  reason:
+    | "flag_not_found"
+    | "globally_disabled"
+    | "globally_enabled"
+    | "org_targeted"
+    | "role_targeted"
+    | "rollout_included"
+    | "rollout_excluded";
 }
 
 export async function evaluateFlag(key: string, ctx: FlagEvaluationContext): Promise<EvaluationResult> {
@@ -73,7 +80,7 @@ function deterministicHash(key: string, identifier: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
   return Math.abs(hash);

@@ -33,6 +33,41 @@ import {
   ChevronsUpDown,
   ShieldCheck,
   Code2,
+  Mail,
+  Rss,
+  Send,
+  FolderOpen,
+  KeyRound,
+  Fingerprint,
+  MessageSquare,
+  EyeOff,
+  BookOpen,
+  Webhook as WebhookIcon,
+  Upload,
+  Newspaper,
+  GitMerge,
+  ShieldBan,
+  Lock,
+  HardDrive,
+  Package,
+  BadgeCheck,
+  Layers,
+  ClipboardList,
+  Search,
+  DollarSign,
+  Server,
+  Microscope,
+  Target,
+  Bug,
+  HeartPulse,
+  Wand2,
+  LayoutGrid,
+  Database,
+  Flame,
+  ListTodo,
+  RotateCcw,
+  Globe,
+  Cpu,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -68,6 +103,7 @@ type NavItem = { title: string; url: string; icon: any };
 const coreItems: NavItem[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Alerts", url: "/alerts", icon: AlertTriangle },
+  { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
   { title: "Incidents", url: "/incidents", icon: FileWarning },
 ];
 
@@ -79,10 +115,21 @@ const navGroups: NavGroup[] = [
     icon: Crosshair,
     items: [
       { title: "Threat Intel", url: "/threat-intel", icon: Shield },
+      { title: "Threat Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
+      { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
+      { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
       { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
       { title: "Entity Graph", url: "/entity-graph", icon: Network },
+      { title: "Entity Merge", url: "/entity-merge-alias", icon: GitMerge },
       { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
+      { title: "Security Graph", url: "/security-graph", icon: Shield },
+      { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
+      { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
+      { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
       { title: "Kill Chain", url: "/kill-chain", icon: Swords },
+      { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
+      { title: "CVE Browser", url: "/cve-browser", icon: Bug },
+      { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
     ],
   },
   {
@@ -91,8 +138,10 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Analytics", url: "/analytics", icon: BarChart3 },
       { title: "Reports", url: "/reports", icon: FileText },
+      { title: "Template Versioning", url: "/report-template-versioning", icon: GitBranch },
       { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
       { title: "Security Posture", url: "/security-posture", icon: Gauge },
+      { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
     ],
   },
   {
@@ -101,6 +150,10 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
       { title: "Playbooks", url: "/playbooks", icon: Workflow },
+      { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
+      { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
+      { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
+      { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
     ],
   },
   {
@@ -110,8 +163,14 @@ const navGroups: NavGroup[] = [
       { title: "CSPM", url: "/cspm", icon: Cloud },
       { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
       { title: "Connectors", url: "/connectors", icon: Plug },
+      { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
+      { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
+      { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
       { title: "Integrations", url: "/integrations", icon: Link2 },
+      { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
+      { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
       { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
+      { title: "File Manager", url: "/file-manager", icon: FolderOpen },
     ],
   },
   {
@@ -119,7 +178,24 @@ const navGroups: NavGroup[] = [
     icon: Brain,
     items: [
       { title: "AI Engine", url: "/ai-engine", icon: Brain },
+      { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
+      { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
+      { title: "Engine Controls", url: "/engine-controls", icon: Settings },
+      { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
       { title: "Operations", url: "/operations", icon: Zap },
+      { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
+      { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
+      { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
+      { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
+      { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
+      { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
+      { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
+      { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
+      { title: "AI Budget Controls", url: "/ai-budget-controls", icon: DollarSign },
+      { title: "AI Model Health", url: "/ai-model-health", icon: HeartPulse },
+      { title: "Manual AI Triggers", url: "/manual-ai-triggers", icon: Wand2 },
+      { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
+      { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3 },
     ],
   },
 ];
@@ -132,11 +208,21 @@ const adminGroup: NavGroup = {
     { title: "Team & Invites", url: "/team", icon: Users },
     { title: "Billing", url: "/billing", icon: CreditCard },
     { title: "Usage", url: "/usage-billing", icon: BarChart3 },
+    { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },
     { title: "Audit Log", url: "/audit-log", icon: Activity },
     { title: "Compliance", url: "/compliance", icon: Scale },
+    { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
+    { title: "Policy Packs", url: "/policy-packs", icon: Shield },
+    { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
     { title: "Settings", url: "/settings", icon: Settings },
     { title: "Org Settings", url: "/org-settings", icon: Building2 },
     { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
+    { title: "Role Dashboard", url: "/role-dashboard", icon: LayoutGrid },
+    { title: "Tenant Isolation", url: "/tenant-isolation", icon: Server },
+    { title: "Data Lifecycle", url: "/data-lifecycle", icon: Database },
+    { title: "DR Drill Scheduler", url: "/dr-drill-scheduler", icon: Flame },
+    { title: "Domain Auto-Join", url: "/domain-auto-join", icon: Globe },
+    { title: "Usage Analytics", url: "/usage-metering-analytics", icon: Cpu },
   ],
 };
 
@@ -226,8 +312,8 @@ export function AppSidebar() {
     const hasActive = filtered.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)));
 
     return (
-      <Collapsible key={group.label} open={isOpen} onOpenChange={() => toggleGroup(group.label)}>
-        <SidebarMenuItem>
+      <SidebarMenuItem key={group.label}>
+        <Collapsible open={isOpen} onOpenChange={() => toggleGroup(group.label)}>
           <CollapsibleTrigger asChild>
             <SidebarMenuButton className="w-full" data-active={hasActive || undefined}>
               <group.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -242,8 +328,8 @@ export function AppSidebar() {
               {filtered.map(renderItem)}
             </SidebarMenu>
           </CollapsibleContent>
-        </SidebarMenuItem>
-      </Collapsible>
+        </Collapsible>
+      </SidebarMenuItem>
     );
   }
 
@@ -354,6 +440,30 @@ export function AppSidebar() {
                       <Link href="/dev-portal">
                         <Code2 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
                         <span className="truncate font-medium text-cyan-400">Dev Portal</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === "/email-templates"}
+                      aria-label="Navigate to Email Templates"
+                    >
+                      <Link href="/email-templates">
+                        <Mail className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
+                        <span className="truncate font-medium text-cyan-400">Email Templates</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === "/metrics-rollup"}
+                      aria-label="Navigate to Metrics Rollup"
+                    >
+                      <Link href="/metrics-rollup">
+                        <BarChart3 className="h-4 w-4 shrink-0 text-cyan-400" aria-hidden="true" />
+                        <span className="truncate font-medium text-cyan-400">Metrics Rollup</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

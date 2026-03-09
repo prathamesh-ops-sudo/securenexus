@@ -41,7 +41,7 @@ export const umbrellaPlugin: ConnectorPlugin = {
     const start = Date.now();
     try {
       const res = await httpRequest(`${config.baseUrl}/v2/events?limit=1`, {
-        headers: { "Authorization": `Bearer ${config.apiKey}` },
+        headers: { Authorization: `Bearer ${config.apiKey}` },
       });
       if (res.status >= 400) throw new Error(`Umbrella returned ${res.status}`);
       return { success: true, message: "Successfully connected to umbrella", latencyMs: Date.now() - start };
@@ -51,7 +51,10 @@ export const umbrellaPlugin: ConnectorPlugin = {
   },
 
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
-    const headers: Record<string, string> = { "Authorization": `Bearer ${config.apiKey}`, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+    };
     let url = `${config.baseUrl}/v2/events?limit=100`;
     if (since) {
       url += `&from=${since.toISOString()}`;

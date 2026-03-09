@@ -151,6 +151,66 @@ async function dispatchToPagerDuty(
   }
 }
 
+async function dispatchToTeams(
+  channel: NotificationChannel,
+  payload: NotificationPayload,
+): Promise<{ success: boolean; error?: string }> {
+  const config = channel.config as Record<string, unknown>;
+  const webhookUrl = config.webhookUrl as string | undefined;
+  if (!webhookUrl) {
+    return { success: false, error: "Missing webhookUrl in Teams channel config" };
+  }
+
+  const urlCheck = validateWebhookUrl(webhookUrl);
+  if (!urlCheck.valid) {
+    return { success: false, error: `URL validation failed: ${urlCheck.reason}` };
+  }
+
+  const colorMap: Record<string, string> = {
+    info: "#2196F3",
+    warning: "#FF9800",
+    critical: "#F44336",
+  };
+
+  const teamsPayload = {
+    "@type": "MessageCard",
+    "@context": "http://schema.org/extensions",
+    themeColor: colorMap[payload.severity] ?? "2196F3",
+    title: payload.title,
+    text: payload.body,
+    summary: payload.title,
+    sections: [
+      {
+        activityTitle: payload.source,
+        facts: [
+          { name: "Severity", value: payload.severity.toUpperCase() },
+          { name: "Source", value: payload.source },
+        ],
+      },
+    ],
+  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DISPATCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(teamsPayload),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return { success: false, error: `Teams returned HTTP ${response.status}` };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function dispatchToWebhook(
   channel: NotificationChannel,
   payload: NotificationPayload,
@@ -196,6 +256,7 @@ const CHANNEL_DISPATCHERS: Record<
   (channel: NotificationChannel, payload: NotificationPayload) => Promise<{ success: boolean; error?: string }>
 > = {
   slack: dispatchToSlack,
+  teams: dispatchToTeams,
   email: dispatchToEmail,
   pagerduty: dispatchToPagerDuty,
   webhook: dispatchToWebhook,
@@ -226,25 +287,60 @@ export async function dispatchNotification(
     for (const channel of activeChannels) {
       const dispatcher = CHANNEL_DISPATCHERS[channel.type];
       if (!dispatcher) {
+        const errMsg = `Unsupported channel type: ${channel.type}`;
         results.push({
           channelId: channel.id,
           channelName: channel.name,
           channelType: channel.type,
           success: false,
-          error: `Unsupported channel type: ${channel.type}`,
+          error: errMsg,
         });
+        await storage
+          .createNotificationDeliveryLog({
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            orgId: orgId ?? channel.orgId ?? undefined,
+            eventType,
+            title: payload.title,
+            severity: payload.severity,
+            success: false,
+            errorMessage: errMsg,
+            metadata: payload.metadata,
+          })
+          .catch((logErr) => {
+            log.warn("Failed to write delivery log", { channelId: channel.id, error: String(logErr) });
+          });
         continue;
       }
 
       try {
         const result = await dispatcher(channel, payload);
-        results.push({
+        const dispatchResult: DispatchResult = {
           channelId: channel.id,
           channelName: channel.name,
           channelType: channel.type,
           success: result.success,
           error: result.error,
-        });
+        };
+        results.push(dispatchResult);
+
+        await storage
+          .createNotificationDeliveryLog({
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            orgId: orgId ?? channel.orgId ?? undefined,
+            eventType,
+            title: payload.title,
+            severity: payload.severity,
+            success: result.success,
+            errorMessage: result.error ?? undefined,
+            metadata: payload.metadata,
+          })
+          .catch((err) => {
+            log.warn("Failed to write delivery log", { channelId: channel.id, error: String(err) });
+          });
 
         if (result.success) {
           await storage
@@ -262,13 +358,30 @@ export async function dispatchNotification(
           });
         }
       } catch (err) {
+        const errMessage = (err as Error).message;
         results.push({
           channelId: channel.id,
           channelName: channel.name,
           channelType: channel.type,
           success: false,
-          error: (err as Error).message,
+          error: errMessage,
         });
+        await storage
+          .createNotificationDeliveryLog({
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            orgId: orgId ?? channel.orgId ?? undefined,
+            eventType,
+            title: payload.title,
+            severity: payload.severity,
+            success: false,
+            errorMessage: errMessage,
+            metadata: payload.metadata,
+          })
+          .catch((logErr) => {
+            log.warn("Failed to write delivery log", { channelId: channel.id, error: String(logErr) });
+          });
       }
     }
 

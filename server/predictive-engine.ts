@@ -1,7 +1,16 @@
 import { IStorage } from "./storage";
-import type { Alert, InsertPredictiveAnomaly, InsertAttackSurfaceAsset, InsertRiskForecast, InsertHardeningRecommendation } from "@shared/schema";
+import type {
+  Alert,
+  InsertPredictiveAnomaly,
+  InsertAttackSurfaceAsset,
+  InsertRiskForecast,
+  InsertHardeningRecommendation,
+} from "@shared/schema";
 
-export async function runPredictiveAnalysis(orgId: string, storage: IStorage): Promise<{
+export async function runPredictiveAnalysis(
+  orgId: string,
+  storage: IStorage,
+): Promise<{
   anomalies: number;
   assets: number;
   forecasts: number;
@@ -29,28 +38,32 @@ async function detectAnomalies(orgId: string, allAlerts: Alert[], storage: IStor
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const recentAlerts = allAlerts.filter(a => a.createdAt && new Date(a.createdAt) >= oneDayAgo);
-  const weekAlerts = allAlerts.filter(a => a.createdAt && new Date(a.createdAt) >= sevenDaysAgo);
-  const priorAlerts = weekAlerts.filter(a => a.createdAt && new Date(a.createdAt) < oneDayAgo);
+  const recentAlerts = allAlerts.filter((a) => a.createdAt && new Date(a.createdAt) >= oneDayAgo);
+  const weekAlerts = allAlerts.filter((a) => a.createdAt && new Date(a.createdAt) >= sevenDaysAgo);
+  const priorAlerts = weekAlerts.filter((a) => a.createdAt && new Date(a.createdAt) < oneDayAgo);
 
   let count = 0;
 
-  const categoryCount24h = groupCount(recentAlerts, a => a.category || "other");
-  const categoryCountWeek = groupCount(priorAlerts, a => a.category || "other");
+  const categoryCount24h = groupCount(recentAlerts, (a) => a.category || "other");
+  const categoryCountWeek = groupCount(priorAlerts, (a) => a.category || "other");
   const daysInPrior = Math.max(1, (oneDayAgo.getTime() - sevenDaysAgo.getTime()) / (24 * 60 * 60 * 1000));
 
   for (const [category, current] of Object.entries(categoryCount24h)) {
     const weekTotal = categoryCountWeek[category] || 0;
     const dailyAvg = weekTotal / daysInPrior;
-    const dailyCounts = getDailyCounts(priorAlerts.filter(a => (a.category || "other") === category), sevenDaysAgo, oneDayAgo);
+    const dailyCounts = getDailyCounts(
+      priorAlerts.filter((a) => (a.category || "other") === category),
+      sevenDaysAgo,
+      oneDayAgo,
+    );
     const stddev = computeStddev(dailyCounts);
-    const zScore = stddev > 0 ? (current - dailyAvg) / stddev : (current > dailyAvg ? 3 : 0);
+    const zScore = stddev > 0 ? (current - dailyAvg) / stddev : current > dailyAvg ? 3 : 0;
 
     if (current > dailyAvg + 2.5 * stddev && current > 2) {
       const topSignals = recentAlerts
-        .filter(a => (a.category || "other") === category)
+        .filter((a) => (a.category || "other") === category)
         .slice(0, 5)
-        .map(a => ({ id: a.id, title: a.title }));
+        .map((a) => ({ id: a.id, title: a.title }));
 
       const anomaly: InsertPredictiveAnomaly = {
         orgId,
@@ -73,9 +86,9 @@ async function detectAnomalies(orgId: string, allAlerts: Alert[], storage: IStor
   for (const [category, _current] of Object.entries(categoryCount24h)) {
     if (!categoryCountWeek[category]) {
       const topSignals = recentAlerts
-        .filter(a => (a.category || "other") === category)
+        .filter((a) => (a.category || "other") === category)
         .slice(0, 5)
-        .map(a => ({ id: a.id, title: a.title }));
+        .map((a) => ({ id: a.id, title: a.title }));
 
       const anomaly: InsertPredictiveAnomaly = {
         orgId,
@@ -95,12 +108,12 @@ async function detectAnomalies(orgId: string, allAlerts: Alert[], storage: IStor
     }
   }
 
-  const offHourRecent = recentAlerts.filter(a => {
+  const offHourRecent = recentAlerts.filter((a) => {
     if (!a.createdAt) return false;
     const hour = new Date(a.createdAt).getUTCHours();
     return hour >= 0 && hour < 6;
   });
-  const offHourPrior = priorAlerts.filter(a => {
+  const offHourPrior = priorAlerts.filter((a) => {
     if (!a.createdAt) return false;
     const hour = new Date(a.createdAt).getUTCHours();
     return hour >= 0 && hour < 6;
@@ -120,15 +133,15 @@ async function detectAnomalies(orgId: string, allAlerts: Alert[], storage: IStor
       severity: recentOffRatio > 0.5 ? "high" : "medium",
       windowStart: oneDayAgo,
       windowEnd: now,
-      topSignals: offHourRecent.slice(0, 5).map(a => ({ id: a.id, title: a.title })),
+      topSignals: offHourRecent.slice(0, 5).map((a) => ({ id: a.id, title: a.title })),
       description: `Off-hours alert ratio increased to ${(recentOffRatio * 100).toFixed(1)}% (baseline: ${(priorOffRatio * 100).toFixed(1)}%)`,
     };
     await storage.createPredictiveAnomaly(anomaly);
     count++;
   }
 
-  const severityCount24h = groupCount(recentAlerts, a => a.severity);
-  const severityCountWeek = groupCount(priorAlerts, a => a.severity);
+  const severityCount24h = groupCount(recentAlerts, (a) => a.severity);
+  const severityCountWeek = groupCount(priorAlerts, (a) => a.severity);
   const criticalRecent = severityCount24h["critical"] || 0;
   const criticalPrior = (severityCountWeek["critical"] || 0) / daysInPrior;
 
@@ -144,7 +157,10 @@ async function detectAnomalies(orgId: string, allAlerts: Alert[], storage: IStor
       severity: "critical",
       windowStart: oneDayAgo,
       windowEnd: now,
-      topSignals: recentAlerts.filter(a => a.severity === "critical").slice(0, 5).map(a => ({ id: a.id, title: a.title })),
+      topSignals: recentAlerts
+        .filter((a) => a.severity === "critical")
+        .slice(0, 5)
+        .map((a) => ({ id: a.id, title: a.title })),
       description: `Critical alert count spiked to ${criticalRecent} (baseline: ${criticalPrior.toFixed(1)}/day)`,
     };
     await storage.createPredictiveAnomaly(anomaly);
@@ -155,15 +171,18 @@ async function detectAnomalies(orgId: string, allAlerts: Alert[], storage: IStor
 }
 
 async function mapAttackSurface(orgId: string, allAlerts: Alert[], storage: IStorage): Promise<number> {
-  const entityMap = new Map<string, {
-    entityType: string;
-    entityValue: string;
-    severities: string[];
-    sources: Set<string>;
-    firstSeen: Date;
-    lastSeen: Date;
-    alertCount: number;
-  }>();
+  const entityMap = new Map<
+    string,
+    {
+      entityType: string;
+      entityValue: string;
+      severities: string[];
+      sources: Set<string>;
+      firstSeen: Date;
+      lastSeen: Date;
+      alertCount: number;
+    }
+  >();
 
   for (const alert of allAlerts) {
     const extractedEntities: { type: string; value: string }[] = [];
@@ -240,27 +259,40 @@ async function generateForecasts(orgId: string, allAlerts: Alert[], storage: ISt
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
-  const recentAlerts = allAlerts.filter(a => a.createdAt && new Date(a.createdAt) >= oneDayAgo);
-  const priorAlerts = allAlerts.filter(a => a.createdAt && new Date(a.createdAt) >= threeDaysAgo && new Date(a.createdAt!) < oneDayAgo);
+  const recentAlerts = allAlerts.filter((a) => a.createdAt && new Date(a.createdAt) >= oneDayAgo);
+  const priorAlerts = allAlerts.filter(
+    (a) => a.createdAt && new Date(a.createdAt) >= threeDaysAgo && new Date(a.createdAt!) < oneDayAgo,
+  );
 
-  const alertVelocity = priorAlerts.length > 0 ? recentAlerts.length / (priorAlerts.length / 2) : recentAlerts.length > 0 ? 2 : 0;
+  const alertVelocity =
+    priorAlerts.length > 0 ? recentAlerts.length / (priorAlerts.length / 2) : recentAlerts.length > 0 ? 2 : 0;
 
-  const tactics = new Set(allAlerts.filter(a => a.mitreTactic).map(a => a.mitreTactic!.toLowerCase()));
-  const categories = new Set(allAlerts.map(a => a.category || "other"));
+  const tactics = new Set(allAlerts.filter((a) => a.mitreTactic).map((a) => a.mitreTactic!.toLowerCase()));
+  const categories = new Set(allAlerts.map((a) => a.category || "other"));
 
-  const hasLateralMovement = tactics.has("lateral_movement") || tactics.has("lateral movement") || categories.has("lateral_movement");
-  const hasPrivilegeEscalation = tactics.has("privilege_escalation") || tactics.has("privilege escalation") || categories.has("privilege_escalation");
+  const hasLateralMovement =
+    tactics.has("lateral_movement") || tactics.has("lateral movement") || categories.has("lateral_movement");
+  const hasPrivilegeEscalation =
+    tactics.has("privilege_escalation") ||
+    tactics.has("privilege escalation") ||
+    categories.has("privilege_escalation");
   const hasPersistence = tactics.has("persistence");
   const hasReconnaissance = tactics.has("reconnaissance") || categories.has("reconnaissance");
   const hasCollection = tactics.has("collection");
-  const hasC2 = tactics.has("command_and_control") || tactics.has("command and control") || categories.has("command_and_control");
-  const hasCredentialAccess = tactics.has("credential_access") || tactics.has("credential access") || categories.has("credential_access");
+  const hasC2 =
+    tactics.has("command_and_control") || tactics.has("command and control") || categories.has("command_and_control");
+  const hasCredentialAccess =
+    tactics.has("credential_access") || tactics.has("credential access") || categories.has("credential_access");
   const hasExfiltration = tactics.has("exfiltration") || categories.has("data_exfiltration");
 
   const baseWindow = alertVelocity > 2 ? 24 : alertVelocity > 1 ? 48 : 72;
 
   if (hasLateralMovement || hasPrivilegeEscalation || hasPersistence) {
-    const factors = [hasLateralMovement && "lateral_movement", hasPrivilegeEscalation && "privilege_escalation", hasPersistence && "persistence"].filter(Boolean);
+    const factors = [
+      hasLateralMovement && "lateral_movement",
+      hasPrivilegeEscalation && "privilege_escalation",
+      hasPersistence && "persistence",
+    ].filter(Boolean);
     const probability = Math.min(0.95, 0.3 + factors.length * 0.2 + (alertVelocity > 1.5 ? 0.1 : 0));
     const forecast: InsertRiskForecast = {
       orgId,
@@ -277,7 +309,12 @@ async function generateForecasts(orgId: string, allAlerts: Alert[], storage: ISt
   }
 
   if (hasReconnaissance || hasCollection || hasC2 || hasExfiltration) {
-    const factors = [hasReconnaissance && "reconnaissance", hasCollection && "collection", hasC2 && "command_and_control", hasExfiltration && "data_exfiltration"].filter(Boolean);
+    const factors = [
+      hasReconnaissance && "reconnaissance",
+      hasCollection && "collection",
+      hasC2 && "command_and_control",
+      hasExfiltration && "data_exfiltration",
+    ].filter(Boolean);
     const probability = Math.min(0.95, 0.25 + factors.length * 0.18);
     const forecast: InsertRiskForecast = {
       orgId,
@@ -293,10 +330,18 @@ async function generateForecasts(orgId: string, allAlerts: Alert[], storage: ISt
     count++;
   }
 
-  const phishingAlerts = allAlerts.filter(a => a.category === "phishing" || (a.source && a.source.toLowerCase().includes("email")));
+  const phishingAlerts = allAlerts.filter(
+    (a) => a.category === "phishing" || (a.source && a.source.toLowerCase().includes("email")),
+  );
   if (hasCredentialAccess || phishingAlerts.length > 5) {
-    const factors = [hasCredentialAccess && "credential_access", phishingAlerts.length > 5 && `${phishingAlerts.length}_phishing_alerts`].filter(Boolean);
-    const probability = Math.min(0.9, 0.3 + (hasCredentialAccess ? 0.25 : 0) + Math.min(0.3, phishingAlerts.length * 0.03));
+    const factors = [
+      hasCredentialAccess && "credential_access",
+      phishingAlerts.length > 5 && `${phishingAlerts.length}_phishing_alerts`,
+    ].filter(Boolean);
+    const probability = Math.min(
+      0.9,
+      0.3 + (hasCredentialAccess ? 0.25 : 0) + Math.min(0.3, phishingAlerts.length * 0.03),
+    );
     const forecast: InsertRiskForecast = {
       orgId,
       forecastType: "phishing_campaign",
@@ -312,7 +357,12 @@ async function generateForecasts(orgId: string, allAlerts: Alert[], storage: ISt
   }
 
   if (hasLateralMovement && hasC2) {
-    const factors = ["lateral_movement", "command_and_control", hasReconnaissance && "reconnaissance", hasPrivilegeEscalation && "privilege_escalation"].filter(Boolean);
+    const factors = [
+      "lateral_movement",
+      "command_and_control",
+      hasReconnaissance && "reconnaissance",
+      hasPrivilegeEscalation && "privilege_escalation",
+    ].filter(Boolean);
     const probability = Math.min(0.9, 0.35 + factors.length * 0.12);
     const forecast: InsertRiskForecast = {
       orgId,
@@ -351,7 +401,7 @@ async function generateRecommendations(
   allAlerts: Alert[],
   anomalies: { kind: string; metric: string; severity: string; description: string | null }[],
   forecasts: { forecastType: string; probability: number; description: string | null }[],
-  storage: IStorage
+  storage: IStorage,
 ): Promise<number> {
   let count = 0;
 
@@ -388,7 +438,9 @@ async function generateRecommendations(
       const rec: InsertHardeningRecommendation = {
         orgId,
         title: "Investigate unusual off-hours activity",
-        rationale: anomaly.description || "Elevated alert activity during off-hours (00:00-06:00 UTC) suggests automated attacks or compromised systems.",
+        rationale:
+          anomaly.description ||
+          "Elevated alert activity during off-hours (00:00-06:00 UTC) suggests automated attacks or compromised systems.",
         priority: "high",
         category: "monitoring",
         status: "open",
@@ -465,10 +517,22 @@ async function generateRecommendations(
     }
   }
 
-  const tactics = new Set(allAlerts.filter(a => a.mitreTactic).map(a => a.mitreTactic!.toLowerCase()));
-  const allTactics = ["initial_access", "execution", "persistence", "privilege_escalation", "defense_evasion",
-    "credential_access", "discovery", "lateral_movement", "collection", "command_and_control", "exfiltration", "impact"];
-  const missingTactics = allTactics.filter(t => !tactics.has(t) && !tactics.has(t.replace(/_/g, " ")));
+  const tactics = new Set(allAlerts.filter((a) => a.mitreTactic).map((a) => a.mitreTactic!.toLowerCase()));
+  const allTactics = [
+    "initial_access",
+    "execution",
+    "persistence",
+    "privilege_escalation",
+    "defense_evasion",
+    "credential_access",
+    "discovery",
+    "lateral_movement",
+    "collection",
+    "command_and_control",
+    "exfiltration",
+    "impact",
+  ];
+  const missingTactics = allTactics.filter((t) => !tactics.has(t) && !tactics.has(t.replace(/_/g, " ")));
 
   if (missingTactics.length > 0 && missingTactics.length < allTactics.length) {
     const rec: InsertHardeningRecommendation = {
@@ -477,7 +541,7 @@ async function generateRecommendations(
       rationale: `Detection coverage missing for: ${missingTactics.slice(0, 5).join(", ")}. Consider adding detection rules for these tactics.`,
       priority: "medium",
       category: "detection_engineering",
-      relatedEntities: missingTactics.map(t => ({ tactic: t })),
+      relatedEntities: missingTactics.map((t) => ({ tactic: t })),
       status: "open",
     };
     await storage.createHardeningRecommendation(rec);
@@ -485,7 +549,7 @@ async function generateRecommendations(
   }
 
   const highRiskIps = allAlerts
-    .filter(a => a.sourceIp && (a.severity === "critical" || a.severity === "high"))
+    .filter((a) => a.sourceIp && (a.severity === "critical" || a.severity === "high"))
     .reduce((acc, a) => {
       const ip = a.sourceIp!;
       acc.set(ip, (acc.get(ip) || 0) + 1);
@@ -497,7 +561,10 @@ async function generateRecommendations(
     const rec: InsertHardeningRecommendation = {
       orgId,
       title: "Block or investigate suspicious source IPs",
-      rationale: `${suspiciousIps.length} source IP(s) linked to multiple high/critical alerts: ${suspiciousIps.slice(0, 5).map(([ip, cnt]) => `${ip} (${cnt} alerts)`).join(", ")}`,
+      rationale: `${suspiciousIps.length} source IP(s) linked to multiple high/critical alerts: ${suspiciousIps
+        .slice(0, 5)
+        .map(([ip, cnt]) => `${ip} (${cnt} alerts)`)
+        .join(", ")}`,
       priority: "high",
       category: "network_security",
       relatedEntities: suspiciousIps.slice(0, 10).map(([ip, cnt]) => ({ ip, alertCount: cnt })),

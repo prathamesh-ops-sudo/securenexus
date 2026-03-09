@@ -8,6 +8,7 @@ import {
   boolean,
   jsonb,
   real,
+  doublePrecision,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -980,6 +981,60 @@ export const notificationChannels = pgTable(
   ],
 );
 
+export const notificationUserPreferences = pgTable(
+  "notification_user_preferences",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull(),
+    orgId: varchar("org_id").references(() => organizations.id),
+    channelIds: text("channel_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    eventTypes: text("event_types")
+      .array()
+      .default(sql`ARRAY['incident_created']`),
+    minSeverity: text("min_severity").default("info"),
+    quietHoursStart: integer("quiet_hours_start"),
+    quietHoursEnd: integer("quiet_hours_end"),
+    digestEnabled: boolean("digest_enabled").default(false),
+    digestFrequencyHours: integer("digest_frequency_hours").default(24),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_notification_user_prefs_user").on(table.userId),
+    index("idx_notification_user_prefs_org").on(table.orgId),
+    uniqueIndex("idx_notification_user_prefs_user_org").on(table.userId, table.orgId),
+  ],
+);
+
+export const notificationDeliveryLog = pgTable(
+  "notification_delivery_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    channelId: varchar("channel_id").notNull(),
+    channelName: text("channel_name").notNull(),
+    channelType: text("channel_type").notNull(),
+    orgId: varchar("org_id").references(() => organizations.id),
+    eventType: text("event_type").notNull(),
+    title: text("title").notNull(),
+    severity: text("severity").notNull(),
+    success: boolean("success").notNull(),
+    errorMessage: text("error_message"),
+    deliveredAt: timestamp("delivered_at").defaultNow(),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [
+    index("idx_notification_delivery_log_channel").on(table.channelId),
+    index("idx_notification_delivery_log_org_delivered").on(table.orgId, table.deliveredAt),
+    index("idx_notification_delivery_log_delivered").on(table.deliveredAt),
+  ],
+);
+
 export const responseActions = pgTable(
   "response_actions",
   {
@@ -1609,6 +1664,14 @@ export const notificationChannelsRelations = relations(notificationChannels, ({ 
   organization: one(organizations, { fields: [notificationChannels.orgId], references: [organizations.id] }),
 }));
 
+export const notificationUserPreferencesRelations = relations(notificationUserPreferences, ({ one }) => ({
+  organization: one(organizations, { fields: [notificationUserPreferences.orgId], references: [organizations.id] }),
+}));
+
+export const notificationDeliveryLogRelations = relations(notificationDeliveryLog, ({ one }) => ({
+  organization: one(organizations, { fields: [notificationDeliveryLog.orgId], references: [organizations.id] }),
+}));
+
 export const responseActionsRelations = relations(responseActions, ({ one }) => ({
   organization: one(organizations, { fields: [responseActions.orgId], references: [organizations.id] }),
   incident: one(incidents, { fields: [responseActions.incidentId], references: [incidents.id] }),
@@ -1768,6 +1831,15 @@ export const insertNotificationChannelSchema = createInsertSchema(notificationCh
   updatedAt: true,
   lastNotifiedAt: true,
 });
+export const insertNotificationUserPreferencesSchema = createInsertSchema(notificationUserPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertNotificationDeliveryLogSchema = createInsertSchema(notificationDeliveryLog).omit({
+  id: true,
+  deliveredAt: true,
+});
 export const insertResponseActionSchema = createInsertSchema(responseActions).omit({
   id: true,
   createdAt: true,
@@ -1915,6 +1987,10 @@ export type IntegrationConfig = typeof integrationConfigs.$inferSelect;
 export type InsertIntegrationConfig = z.infer<typeof insertIntegrationConfigSchema>;
 export type NotificationChannel = typeof notificationChannels.$inferSelect;
 export type InsertNotificationChannel = z.infer<typeof insertNotificationChannelSchema>;
+export type NotificationUserPreferences = typeof notificationUserPreferences.$inferSelect;
+export type InsertNotificationUserPreferences = z.infer<typeof insertNotificationUserPreferencesSchema>;
+export type NotificationDeliveryLog = typeof notificationDeliveryLog.$inferSelect;
+export type InsertNotificationDeliveryLog = z.infer<typeof insertNotificationDeliveryLogSchema>;
 export type ResponseAction = typeof responseActions.$inferSelect;
 export type InsertResponseAction = z.infer<typeof insertResponseActionSchema>;
 export type PredictiveAnomaly = typeof predictiveAnomalies.$inferSelect;
@@ -2417,6 +2493,7 @@ export const iocMatchRules = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     orgId: varchar("org_id").references(() => organizations.id),
+    feedId: varchar("feed_id").references(() => iocFeeds.id),
     name: text("name").notNull(),
     description: text("description"),
     iocTypes: text("ioc_types")
@@ -3001,6 +3078,35 @@ export const connectorJobRuns = pgTable(
     index("idx_connector_job_runs_connector_started").on(table.connectorId, table.startedAt),
   ],
 );
+
+export const connectorProviderState = pgTable("connector_provider_state", {
+  provider: varchar("provider").primaryKey(),
+  activeCount: integer("active_count").notNull().default(0),
+  maxConcurrency: integer("max_concurrency").notNull().default(3),
+  backoffUntil: timestamp("backoff_until"),
+  backoffFactor: integer("backoff_factor").notNull().default(1),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type ConnectorProviderState = typeof connectorProviderState.$inferSelect;
+
+export const orgAiBudgets = pgTable(
+  "org_ai_budgets",
+  {
+    orgId: varchar("org_id").primaryKey(),
+    budgetUsd: doublePrecision("budget_usd").notNull().default(50),
+    invocationCap: integer("invocation_cap").notNull().default(5000),
+    dailySpendUsd: doublePrecision("daily_spend_usd").notNull().default(0),
+    dailyInvocations: integer("daily_invocations").notNull().default(0),
+    dailyInputTokens: integer("daily_input_tokens").notNull().default(0),
+    dailyOutputTokens: integer("daily_output_tokens").notNull().default(0),
+    lastResetAt: timestamp("last_reset_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_org_ai_budgets_org_id").on(table.orgId)],
+);
+
+export type OrgAiBudget = typeof orgAiBudgets.$inferSelect;
 
 export const connectorHealthChecks = pgTable(
   "connector_health_checks",
@@ -4815,3 +4921,203 @@ export const insertUsageRecordSchema = createInsertSchema(usageRecords).omit({
 
 export type UsageRecord = typeof usageRecords.$inferSelect;
 export type InsertUsageRecord = z.infer<typeof insertUsageRecordSchema>;
+
+// Engine Controls: per-org, per-engine policy tuning, dry-run, explainability
+export const ENGINE_NAMES = ["predictive", "pii", "posture", "rollback"] as const;
+
+export const engineConfigs = pgTable(
+  "engine_configs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    engineName: text("engine_name").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    dryRunMode: boolean("dry_run_mode").notNull().default(false),
+    policyConfig: jsonb("policy_config").notNull().default({}),
+    lastDryRunAt: timestamp("last_dry_run_at"),
+    lastDryRunResult: jsonb("last_dry_run_result"),
+    updatedBy: varchar("updated_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_engine_configs_org_engine").on(table.orgId, table.engineName),
+    index("idx_engine_configs_org").on(table.orgId),
+  ],
+);
+
+export const engineConfigsRelations = relations(engineConfigs, ({ one }) => ({
+  organization: one(organizations, { fields: [engineConfigs.orgId], references: [organizations.id] }),
+}));
+
+export const insertEngineConfigSchema = createInsertSchema(engineConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type EngineConfig = typeof engineConfigs.$inferSelect;
+export type InsertEngineConfig = z.infer<typeof insertEngineConfigSchema>;
+
+export const engineDryRuns = pgTable(
+  "engine_dry_runs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    engineName: text("engine_name").notNull(),
+    inputParams: jsonb("input_params").notNull().default({}),
+    simulatedResult: jsonb("simulated_result"),
+    status: text("status").notNull().default("pending"),
+    durationMs: integer("duration_ms"),
+    executedBy: varchar("executed_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_engine_dry_runs_org").on(table.orgId),
+    index("idx_engine_dry_runs_engine").on(table.orgId, table.engineName),
+  ],
+);
+
+export const engineDryRunsRelations = relations(engineDryRuns, ({ one }) => ({
+  organization: one(organizations, { fields: [engineDryRuns.orgId], references: [organizations.id] }),
+}));
+
+export const insertEngineDryRunSchema = createInsertSchema(engineDryRuns).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type EngineDryRun = typeof engineDryRuns.$inferSelect;
+export type InsertEngineDryRun = z.infer<typeof insertEngineDryRunSchema>;
+
+export const engineExplainabilityLogs = pgTable(
+  "engine_explainability_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    engineName: text("engine_name").notNull(),
+    executionId: varchar("execution_id"),
+    decisionType: text("decision_type").notNull(),
+    decisionOutcome: text("decision_outcome").notNull(),
+    drivers: jsonb("drivers").notNull().default([]),
+    confidence: integer("confidence"),
+    inputSnapshot: jsonb("input_snapshot"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_engine_explain_org").on(table.orgId),
+    index("idx_engine_explain_engine").on(table.orgId, table.engineName),
+  ],
+);
+
+export const engineExplainabilityLogsRelations = relations(engineExplainabilityLogs, ({ one }) => ({
+  organization: one(organizations, { fields: [engineExplainabilityLogs.orgId], references: [organizations.id] }),
+}));
+
+export const insertEngineExplainabilityLogSchema = createInsertSchema(engineExplainabilityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type EngineExplainabilityLog = typeof engineExplainabilityLogs.$inferSelect;
+export type InsertEngineExplainabilityLog = z.infer<typeof insertEngineExplainabilityLogSchema>;
+
+export const PROMPT_TIERS = ["triage", "narrative", "correlation", "health", "general"] as const;
+
+export const aiPrompts = pgTable(
+  "ai_prompts",
+  {
+    id: varchar("id").primaryKey(),
+    orgId: varchar("org_id"),
+    name: varchar("name").notNull(),
+    description: text("description").notNull().default(""),
+    tier: varchar("tier").notNull().default("general"),
+    systemPrompt: text("system_prompt").notNull(),
+    userTemplate: text("user_template").notNull(),
+    outputSchema: jsonb("output_schema"),
+    maxTokens: integer("max_tokens").notNull().default(2048),
+    temperature: doublePrecision("temperature").notNull().default(0.1),
+    version: integer("version").notNull().default(1),
+    deprecated: boolean("deprecated").notNull().default(false),
+    deprecatedAt: timestamp("deprecated_at"),
+    supersededBy: varchar("superseded_by"),
+    tags: jsonb("tags").notNull().default([]),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ai_prompts_org").on(table.orgId), index("idx_ai_prompts_tier").on(table.tier)],
+);
+
+export const aiPromptsRelations = relations(aiPrompts, ({ one }) => ({
+  organization: one(organizations, { fields: [aiPrompts.orgId], references: [organizations.id] }),
+}));
+
+export const insertAiPromptSchema = createInsertSchema(aiPrompts).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type AiPrompt = typeof aiPrompts.$inferSelect;
+export type InsertAiPrompt = z.infer<typeof insertAiPromptSchema>;
+
+export const aiPromptVersions = pgTable(
+  "ai_prompt_versions",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    promptId: varchar("prompt_id").notNull(),
+    orgId: varchar("org_id"),
+    version: integer("version").notNull(),
+    name: varchar("name").notNull(),
+    description: text("description").notNull().default(""),
+    tier: varchar("tier").notNull().default("general"),
+    systemPrompt: text("system_prompt").notNull(),
+    userTemplate: text("user_template").notNull(),
+    outputSchema: jsonb("output_schema"),
+    maxTokens: integer("max_tokens").notNull().default(2048),
+    temperature: doublePrecision("temperature").notNull().default(0.1),
+    tags: jsonb("tags").notNull().default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_ai_prompt_versions_prompt_version").on(table.promptId, table.version),
+    index("idx_ai_prompt_versions_prompt").on(table.promptId),
+    index("idx_ai_prompt_versions_org").on(table.orgId),
+  ],
+);
+
+export const aiPromptVersionsRelations = relations(aiPromptVersions, ({ one }) => ({
+  organization: one(organizations, { fields: [aiPromptVersions.orgId], references: [organizations.id] }),
+}));
+
+export type AiPromptVersion = typeof aiPromptVersions.$inferSelect;
+
+export const aiPromptAuditLog = pgTable(
+  "ai_prompt_audit_log",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    promptId: varchar("prompt_id").notNull(),
+    version: integer("version").notNull(),
+    action: varchar("action").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_prompt_audit_prompt").on(table.promptId),
+    index("idx_ai_prompt_audit_action").on(table.action),
+  ],
+);
+
+export type AiPromptAuditEntry = typeof aiPromptAuditLog.$inferSelect;

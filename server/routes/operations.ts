@@ -24,7 +24,7 @@ export function registerOperationsRoutes(app: Express): void {
   // === Job Queue ===
   app.get("/api/ops/jobs", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string;
+      const orgId = getOrgId(req);
       const status = req.query.status as string;
       const type = req.query.type as string;
       const limit = parseInt(req.query.limit as string, 10) || 50;
@@ -1100,7 +1100,7 @@ export function registerOperationsRoutes(app: Express): void {
   // ============================
   app.get("/api/ops/dr-drill-results", isAuthenticated, async (req, res) => {
     try {
-      const orgId = req.query.orgId as string;
+      const orgId = getOrgId(req);
       const runbookId = req.query.runbookId as string;
       const limit = parseInt(req.query.limit as string, 10) || 50;
       const results = await storage.getDrDrillResults(orgId, runbookId, limit);

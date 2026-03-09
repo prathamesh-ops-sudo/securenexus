@@ -27,7 +27,12 @@ export const splunkPlugin: ConnectorPlugin = {
       { key: "password", label: "Password", type: "password", placeholder: "Splunk password" },
     ],
     optionalFields: [
-      { key: "searchQuery", label: "SPL Search Query", type: "text", placeholder: "search index=main sourcetype=syslog level=error | head 100" },
+      {
+        key: "searchQuery",
+        label: "SPL Search Query",
+        type: "text",
+        placeholder: "search index=main sourcetype=syslog level=error | head 100",
+      },
     ],
     icon: "Database",
     docsUrl: "https://docs.splunk.com/Documentation/Splunk/latest/RESTREF/RESTsearch",
@@ -50,7 +55,9 @@ export const splunkPlugin: ConnectorPlugin = {
   async fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]> {
     const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
     const headers = { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" };
-    const searchQuery = config.searchQuery || "search index=main sourcetype=syslog OR sourcetype=WinEventLog level=error OR level=critical | head 100";
+    const searchQuery =
+      config.searchQuery ||
+      "search index=main sourcetype=syslog OR sourcetype=WinEventLog level=error OR level=critical | head 100";
     const earliest = since ? since.toISOString() : "-24h";
     const jobRes = await fetch(`${config.baseUrl}/services/search/jobs/export`, {
       method: "POST",
@@ -59,12 +66,14 @@ export const splunkPlugin: ConnectorPlugin = {
     });
     const text = await jobRes.text();
     const results: unknown[] = [];
-    for (const line of text.split("\n").filter(l => l.trim())) {
+    for (const line of text.split("\n").filter((l) => l.trim())) {
       try {
         const parsed = JSON.parse(line);
         if (parsed.result) results.push(parsed.result);
       } catch (parseErr) {
-        logger.child("connector-splunk").warn("Skipping malformed JSON line", { line: line.slice(0, 200), error: String(parseErr) });
+        logger
+          .child("connector-splunk")
+          .warn("Skipping malformed JSON line", { line: line.slice(0, 200), error: String(parseErr) });
       }
     }
     return results;
