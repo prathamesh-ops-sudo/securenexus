@@ -17,7 +17,7 @@ export async function fetchCsrfToken(): Promise<string | null> {
     const res = await fetch("/api/csrf-token", { credentials: "include" });
     if (res.ok) {
       const body = await res.json();
-      csrfTokenCache = body.token ?? null;
+      csrfTokenCache = body.data?.token ?? body.token ?? null;
       csrfTokenFetchedAt = Date.now();
       return csrfTokenCache;
     }
