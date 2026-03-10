@@ -126,6 +126,13 @@ const UsageMeteringAnalyticsPage = lazy(() => import("@/pages/usage-metering-ana
 const StunningDashboardPage = lazy(() => import("@/pages/dashboard-stunning"));
 const AccountLockoutPage = lazy(() => import("@/pages/account-lockout"));
 const MfaSetupPage = lazy(() => import("@/pages/mfa-setup"));
+const TenantDataPage = lazy(() => import("@/pages/tenant-data"));
+const WarRoomPage = lazy(() => import("@/pages/war-room"));
+const PlaybookTemplatesPage = lazy(() => import("@/pages/playbook-templates"));
+const InvestigationTimelinePage = lazy(() => import("@/pages/investigation-timeline"));
+const EvidenceCustodyPage = lazy(() => import("@/pages/evidence-custody"));
+const ComplianceGapPage = lazy(() => import("@/pages/compliance-gap"));
+const ReportSchedulingPage = lazy(() => import("@/pages/report-scheduling"));
 
 function PageSkeleton() {
   return (
@@ -334,6 +341,13 @@ function AuthenticatedApp() {
                     <Route path="/stunning-dashboard" component={StunningDashboardPage} />
                     <Route path="/account-lockout" component={AccountLockoutPage} />
                     <Route path="/mfa-setup" component={MfaSetupPage} />
+                    <Route path="/tenant-data" component={TenantDataPage} />
+                    <Route path="/war-room" component={WarRoomPage} />
+                    <Route path="/playbook-templates" component={PlaybookTemplatesPage} />
+                    <Route path="/investigation-timeline" component={InvestigationTimelinePage} />
+                    <Route path="/evidence-custody" component={EvidenceCustodyPage} />
+                    <Route path="/compliance-gap" component={ComplianceGapPage} />
+                    <Route path="/report-scheduling" component={ReportSchedulingPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
