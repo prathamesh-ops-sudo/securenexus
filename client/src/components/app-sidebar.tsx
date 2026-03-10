@@ -101,11 +101,16 @@ import {
 
 type NavItem = { title: string; url: string; icon: React.ElementType };
 
+type NavSection = {
+  label: string;
+  items: NavItem[];
+};
+
 type NavGroup = {
   label: string;
   icon: React.ElementType;
   color: string;
-  items: NavItem[];
+  sections: NavSection[];
 };
 
 const coreItems: NavItem[] = [
@@ -116,162 +121,268 @@ const coreItems: NavItem[] = [
 
 const navGroups: NavGroup[] = [
   {
-    label: "Threat Intelligence",
-    icon: Shield,
-    color: "text-red-400",
-    items: [
-      { title: "Threat Intel", url: "/threat-intel", icon: Shield },
-      { title: "Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
-      { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
-      { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
-      { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
-      { title: "Kill Chain", url: "/kill-chain", icon: Swords },
-      { title: "CVE Browser", url: "/cve-browser", icon: Bug },
-      { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
+    label: "Watch & Recon",
+    icon: Globe,
+    color: "text-cyan-400",
+    sections: [
+      {
+        label: "Early warning",
+        items: [
+          { title: "Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
+          { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
+        ],
+      },
+      {
+        label: "Indicators & enrichment",
+        items: [
+          { title: "Threat Intel", url: "/threat-intel", icon: Shield },
+          { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
+          { title: "CVE Browser", url: "/cve-browser", icon: Bug },
+        ],
+      },
+      {
+        label: "Adversary frameworks",
+        items: [
+          { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
+          { title: "Kill Chain", url: "/kill-chain", icon: Swords },
+          { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
+        ],
+      },
     ],
   },
   {
-    label: "Investigation",
+    label: "Investigate",
     icon: Microscope,
     color: "text-violet-400",
-    items: [
-      { title: "Entity Graph", url: "/entity-graph", icon: Network },
-      { title: "Entity Merge", url: "/entity-merge-alias", icon: GitMerge },
-      { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
-      { title: "Security Graph", url: "/security-graph", icon: Shield },
-      { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
-      { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
-      { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
-      { title: "Investigation Timeline", url: "/investigation-timeline", icon: GitBranch },
-      { title: "Evidence Custody", url: "/evidence-custody", icon: Link2 },
-      { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
+    sections: [
+      {
+        label: "Graph workspaces",
+        items: [
+          { title: "Entity Graph", url: "/entity-graph", icon: Network },
+          { title: "Entity Merge", url: "/entity-merge-alias", icon: GitMerge },
+          { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
+          { title: "Security Graph", url: "/security-graph", icon: Shield },
+          { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
+        ],
+      },
+      {
+        label: "Cases & timeline",
+        items: [
+          { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
+          { title: "Investigation Timeline", url: "/investigation-timeline", icon: GitBranch },
+          { title: "War Room", url: "/war-room", icon: Shield },
+        ],
+      },
+      {
+        label: "Evidence & hygiene",
+        items: [
+          { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
+          { title: "Evidence Custody", url: "/evidence-custody", icon: Link2 },
+          { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
+        ],
+      },
     ],
   },
   {
-    label: "Response & Automation",
+    label: "Respond & Automate",
     icon: Bot,
     color: "text-emerald-400",
-    items: [
-      { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
-      { title: "Playbooks", url: "/playbooks", icon: Workflow },
-      { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
-      { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
-      { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
-      { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
-      { title: "War Room", url: "/war-room", icon: Shield },
-      { title: "Playbook Templates", url: "/playbook-templates", icon: BookOpen },
+    sections: [
+      {
+        label: "Playbooks & runbooks",
+        items: [
+          { title: "Playbooks", url: "/playbooks", icon: Workflow },
+          { title: "Playbook Templates", url: "/playbook-templates", icon: BookOpen },
+          { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
+        ],
+      },
+      {
+        label: "Safety & rollback",
+        items: [
+          { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
+          { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
+          { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
+        ],
+      },
     ],
   },
   {
-    label: "Analytics & Posture",
-    icon: BarChart3,
-    color: "text-cyan-400",
-    items: [
-      { title: "Analytics", url: "/analytics", icon: BarChart3 },
-      { title: "Reports", url: "/reports", icon: FileText },
-      { title: "Template Versioning", url: "/report-template-versioning", icon: GitBranch },
-      { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
-      { title: "Security Posture", url: "/security-posture", icon: Gauge },
-      { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
-      { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
-      { title: "Compliance Gap", url: "/compliance-gap", icon: Scale },
-      { title: "Report Scheduling", url: "/report-scheduling", icon: Calendar },
-    ],
-  },
-  {
-    label: "Cloud & Assets",
-    icon: Cloud,
+    label: "Posture & Risk",
+    icon: Gauge,
     color: "text-blue-400",
-    items: [
-      { title: "CSPM", url: "/cspm", icon: Cloud },
-      { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
-      { title: "Connectors", url: "/connectors", icon: Plug },
-      { title: "Integrations", url: "/integrations", icon: Link2 },
-      { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
-      { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
-      { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
-      { title: "File Manager", url: "/file-manager", icon: FolderOpen },
+    sections: [
+      {
+        label: "Security posture",
+        items: [
+          { title: "Security Posture", url: "/security-posture", icon: Gauge },
+          { title: "CSPM", url: "/cspm", icon: Cloud },
+          { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
+        ],
+      },
+      {
+        label: "Analytics & forecasting",
+        items: [
+          { title: "Analytics", url: "/analytics", icon: BarChart3 },
+          { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
+          { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
+        ],
+      },
+      {
+        label: "Reporting & compliance",
+        items: [
+          { title: "Reports", url: "/reports", icon: FileText },
+          { title: "Template Versioning", url: "/report-template-versioning", icon: GitBranch },
+          { title: "Report Scheduling", url: "/report-scheduling", icon: Calendar },
+          { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
+          { title: "Compliance Gap", url: "/compliance-gap", icon: Scale },
+        ],
+      },
     ],
   },
   {
-    label: "Security Controls",
-    icon: Lock,
-    color: "text-amber-400",
-    items: [
-      { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
-      { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
-      { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
-      { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
-      { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
-      { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
-      { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
-      { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
-      { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
-      { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
+    label: "Integrations & Data",
+    icon: Plug,
+    color: "text-sky-400",
+    sections: [
+      {
+        label: "Inbound telemetry",
+        items: [
+          { title: "Connectors", url: "/connectors", icon: Plug },
+          { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
+          { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
+        ],
+      },
+      {
+        label: "Outbound & collaboration",
+        items: [
+          { title: "Integrations", url: "/integrations", icon: Link2 },
+          { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
+          { title: "File Manager", url: "/file-manager", icon: FolderOpen },
+        ],
+      },
     ],
   },
   {
-    label: "AI Platform",
+    label: "AI Analyst",
     icon: Brain,
     color: "text-fuchsia-400",
-    items: [
-      { title: "AI Engine", url: "/ai-engine", icon: Brain },
-      { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
-      { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
-      { title: "Engine Controls", url: "/engine-controls", icon: Settings },
-      { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
-      { title: "AI Budget Controls", url: "/ai-budget-controls", icon: DollarSign },
-      { title: "AI Model Health", url: "/ai-model-health", icon: HeartPulse },
-      { title: "Manual AI Triggers", url: "/manual-ai-triggers", icon: Wand2 },
+    sections: [
+      {
+        label: "Assist",
+        items: [
+          { title: "AI Engine", url: "/ai-engine", icon: Brain },
+          { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
+          { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
+          { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
+        ],
+      },
+      {
+        label: "Govern",
+        items: [
+          { title: "Engine Controls", url: "/engine-controls", icon: Settings },
+          { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
+          { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
+          { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
+          { title: "AI Budget Controls", url: "/ai-budget-controls", icon: DollarSign },
+          { title: "AI Model Health", url: "/ai-model-health", icon: HeartPulse },
+          { title: "Manual AI Triggers", url: "/manual-ai-triggers", icon: Wand2 },
+        ],
+      },
     ],
   },
   {
-    label: "Operations",
+    label: "Govern & Defend",
+    icon: Lock,
+    color: "text-amber-400",
+    sections: [
+      {
+        label: "Secrets & access",
+        items: [
+          { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
+          { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
+          { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
+        ],
+      },
+      {
+        label: "Guardrails & testing",
+        items: [
+          { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
+          { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
+          { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
+          { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
+          { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Platform Ops",
     icon: Activity,
     color: "text-orange-400",
-    items: [
-      { title: "Operations", url: "/operations", icon: Zap },
-      { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
-      { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
-      { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
-      { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3 },
+    sections: [
+      {
+        label: "Operate",
+        items: [
+          { title: "Operations", url: "/operations", icon: Zap },
+          { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
+          { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
+          { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3 },
+          { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
+        ],
+      },
     ],
   },
 ];
 
 const adminGroup: NavGroup = {
-  label: "Administration",
+  label: "Admin & Settings",
   icon: Settings,
   color: "text-slate-400",
-  items: [
-    { title: "Onboarding", url: "/onboarding", icon: Activity },
-    { title: "Team & Invites", url: "/team", icon: Users },
-    { title: "Developer Portal", url: "/developer-portal", icon: Code2 },
-    { title: "Billing", url: "/billing", icon: CreditCard },
-    { title: "Usage", url: "/usage-billing", icon: BarChart3 },
-    { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },
-    { title: "Audit Log", url: "/audit-log", icon: Activity },
-    { title: "Compliance", url: "/compliance", icon: Scale },
-    { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
-    { title: "Policy Packs", url: "/policy-packs", icon: Shield },
-    { title: "MFA Setup", url: "/mfa-setup", icon: Shield },
-    { title: "Settings", url: "/settings", icon: Settings },
-    { title: "Org Settings", url: "/org-settings", icon: Building2 },
-    { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Network },
-    { title: "Role Dashboard", url: "/role-dashboard", icon: LayoutGrid },
-    { title: "Tenant Isolation", url: "/tenant-isolation", icon: Server },
-    { title: "Data Lifecycle", url: "/data-lifecycle", icon: Database },
-    { title: "DR Drill Scheduler", url: "/dr-drill-scheduler", icon: Flame },
-    { title: "Domain Auto-Join", url: "/domain-auto-join", icon: Globe },
-    { title: "Usage Analytics", url: "/usage-metering-analytics", icon: Cpu },
-    { title: "Tenant Data (GDPR)", url: "/tenant-data", icon: Database },
+  sections: [
+    {
+      label: "Team & Org",
+      items: [
+        { title: "Onboarding", url: "/onboarding", icon: Activity },
+        { title: "Team & Invites", url: "/team", icon: Users },
+        { title: "Org Settings", url: "/org-settings", icon: Building2 },
+      ],
+    },
+    {
+      label: "Developer & Commercial",
+      items: [
+        { title: "Developer Portal", url: "/developer-portal", icon: Code2 },
+        { title: "Billing", url: "/billing", icon: CreditCard },
+        { title: "Usage", url: "/usage-billing", icon: BarChart3 },
+        { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },
+      ],
+    },
+    {
+      label: "Governance",
+      items: [
+        { title: "Audit Log", url: "/audit-log", icon: Activity },
+        { title: "Compliance", url: "/compliance", icon: Scale },
+        { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
+        { title: "Policy Packs", url: "/policy-packs", icon: Shield },
+      ],
+    },
+    {
+      label: "Account",
+      items: [
+        { title: "MFA Setup", url: "/mfa-setup", icon: Shield },
+        { title: "Settings", url: "/settings", icon: Settings },
+      ],
+    },
   ],
 };
 
 const ADMIN_ONLY_URLS = ["/team", "/onboarding", "/settings", "/compliance"];
 const ANALYST_HIDDEN_URLS = ["/team", "/onboarding"];
 
-const ALL_NAV_ITEMS: NavItem[] = [...coreItems, ...navGroups.flatMap((g) => g.items), ...adminGroup.items];
+const ALL_NAV_ITEMS: NavItem[] = [
+  ...coreItems,
+  ...navGroups.flatMap((g) => g.sections.flatMap((s) => s.items)),
+  ...adminGroup.sections.flatMap((s) => s.items),
+];
 
 const RECENT_PAGES_KEY = "securenexus.recentPages.v1";
 const MAX_RECENT = 5;
@@ -305,14 +416,15 @@ function useRecentPages(currentPath: string) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { currentOrg, currentOrgId, memberships, switchOrg } = useOrgContext();
+  const { currentOrg, currentOrgId, memberships, switchOrg, currentRole } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
 
   useEffect(() => {
     const initial: Record<string, boolean> = {};
     [...navGroups, adminGroup].forEach((g) => {
-      if (g.items.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)))) {
+      const flatItems = g.sections.flatMap((s) => s.items);
+      if (flatItems.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)))) {
         initial[g.label] = true;
       }
     });
@@ -323,7 +435,8 @@ export function AppSidebar() {
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const userRole = (user as any)?.role || "analyst";
+  const userRole = currentRole || "analyst";
+  const roleLabel = userRole === "read_only" ? "Read-only" : userRole[0].toUpperCase() + userRole.slice(1);
 
   const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
 
@@ -353,10 +466,15 @@ export function AppSidebar() {
   }
 
   function renderCollapsibleGroup(group: NavGroup) {
-    const filtered = filterItems(group.items);
-    if (filtered.length === 0) return null;
+    const filteredSections = group.sections
+      .map((section) => ({ ...section, items: filterItems(section.items) }))
+      .filter((section) => section.items.length > 0);
+
+    const flatItems = filteredSections.flatMap((section) => section.items);
+    if (flatItems.length === 0) return null;
+
     const isOpen = !!openGroups[group.label];
-    const hasActive = filtered.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)));
+    const hasActive = flatItems.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)));
 
     return (
       <SidebarMenuItem key={group.label}>
@@ -374,9 +492,9 @@ export function AppSidebar() {
                   aria-hidden="true"
                 />
               </div>
-              <span className="truncate text-[12.5px] font-medium">{group.label}</span>
+              <span className="truncate text-[12.5px] font-semibold">{group.label}</span>
               <div className="ml-auto flex items-center gap-1">
-                <span className="text-[10px] text-muted-foreground/50 tabular-nums">{filtered.length}</span>
+                <span className="text-[10px] text-muted-foreground/50 tabular-nums">{flatItems.length}</span>
                 <ChevronRight
                   className={`h-3 w-3 shrink-0 text-muted-foreground/40 transition-transform duration-200 ${
                     isOpen ? "rotate-90" : ""
@@ -386,9 +504,16 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </CollapsibleTrigger>
           <CollapsibleContent className="animate-fade-in">
-            <SidebarMenu className="ml-5 border-l border-sidebar-border/50 pl-2.5 mt-0.5 space-y-0">
-              {filtered.map(renderItem)}
-            </SidebarMenu>
+            <div className="ml-5 border-l border-sidebar-border/50 pl-2.5 mt-0.5 space-y-2">
+              {filteredSections.map((section) => (
+                <div key={section.label}>
+                  <div className="px-2 py-1 text-[9px] font-semibold text-muted-foreground/45 uppercase tracking-widest">
+                    {section.label}
+                  </div>
+                  <SidebarMenu className="space-y-0">{section.items.map(renderItem)}</SidebarMenu>
+                </div>
+              ))}
+            </div>
           </CollapsibleContent>
         </Collapsible>
       </SidebarMenuItem>
@@ -399,12 +524,12 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-3 pb-2">
         <Link href="/" className="flex items-center gap-2.5 group/logo">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 via-blue-500/10 to-violet-500/5 border border-cyan-500/15 shadow-sm shadow-cyan-500/10 transition-all duration-300 group-hover/logo:border-cyan-500/30 group-hover/logo:shadow-cyan-500/20">
-            <img src={atsLogo} alt="ATS" className="w-5 h-5 object-contain" />
+          <div className="relative flex items-center justify-center w-8 h-8 rounded-md bg-sidebar-accent/40 border border-sidebar-border/60 shadow-sm transition-colors duration-200 group-hover/logo:bg-sidebar-accent/55">
+            <img src={atsLogo} alt="SecureNexus" className="w-5 h-5 object-contain" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-bold tracking-tight gradient-text-brand">SecureNexus</span>
-            <span className="text-[9px] text-sidebar-foreground/35 leading-none font-medium tracking-wide uppercase">
+            <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">SecureNexus</span>
+            <span className="text-[9px] text-sidebar-foreground/40 leading-none font-medium tracking-wide uppercase">
               Agentic SOC
             </span>
           </div>
@@ -436,6 +561,21 @@ export function AppSidebar() {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }));
+          }}
+          className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-sidebar-accent/20 border border-sidebar-border/40 hover:bg-sidebar-accent/45 hover:border-sidebar-border transition-all duration-200 text-left"
+          aria-label="Open command palette"
+        >
+          <Search className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" aria-hidden="true" />
+          <span className="text-[11px] font-medium truncate flex-1">Search</span>
+          <kbd className="text-[9px] font-semibold text-muted-foreground/40 border border-sidebar-border/40 rounded px-1.5 py-0.5">
+            ⌘K
+          </kbd>
+        </button>
 
         <div className="mt-1.5 flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-sidebar-accent/20 border border-sidebar-border/30">
           <div className="flex items-center gap-1.5">
@@ -491,7 +631,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <div className="px-3 py-1">
-          <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+          <div className="h-px bg-sidebar-border/60" />
         </div>
 
         <SidebarGroup className="px-2 py-0.5">
@@ -501,7 +641,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <div className="px-3 py-1">
-          <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+          <div className="h-px bg-sidebar-border/60" />
         </div>
 
         <SidebarGroup className="px-2 py-0.5">
@@ -513,7 +653,7 @@ export function AppSidebar() {
         {user?.isSuperAdmin && (
           <>
             <div className="px-3 py-1">
-              <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+              <div className="h-px bg-sidebar-border/60" />
             </div>
             <SidebarGroup className="px-2 py-0.5">
               <SidebarGroupContent>
@@ -556,7 +696,7 @@ export function AppSidebar() {
         {recentPages.length > 0 && (
           <>
             <div className="px-3 py-1">
-              <div className="h-px bg-gradient-to-r from-transparent via-sidebar-border/60 to-transparent" />
+              <div className="h-px bg-sidebar-border/60" />
             </div>
             <SidebarGroup className="px-2 py-0.5">
               <SidebarGroupContent>
@@ -595,7 +735,7 @@ export function AppSidebar() {
             <p className="text-[11px] font-semibold truncate leading-tight">
               {user?.firstName || "User"} {user?.lastName || ""}
             </p>
-            <p className="text-[9px] text-sidebar-foreground/35 truncate leading-tight">Security Analyst</p>
+            <p className="text-[9px] text-sidebar-foreground/35 truncate leading-tight">{roleLabel}</p>
           </div>
         </div>
         <SidebarMenu>
