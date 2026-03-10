@@ -4758,23 +4758,26 @@ export class DatabaseStorage implements IStorage {
 
   async countUserActiveSessions(userId: string): Promise<number> {
     const result = await db.execute(
-      sql`SELECT COUNT(*) as count FROM sessions WHERE sess->>'passport'->>'user' = ${userId} AND expire > NOW()`,
+      sql`SELECT COUNT(*) as count FROM sessions WHERE sess#>>'{passport,user}' = ${userId} AND expire > NOW()`,
     );
-    const rows = result as unknown as Array<{ count: string }>;
-    return parseInt(String(rows[0]?.count ?? "0"), 10);
+    const rows = (result as any).rows ?? result;
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    return parseInt(String(row?.count ?? "0"), 10);
   }
 
   async evictOldestUserSessions(userId: string, count: number): Promise<number> {
     const result = await db.execute(
       sql`DELETE FROM sessions WHERE sid IN (
         SELECT sid FROM sessions
-        WHERE sess->>'passport'->>'user' = ${userId} AND expire > NOW()
+        WHERE sess#>>'{passport,user}' = ${userId} AND expire > NOW()
         ORDER BY expire ASC
         LIMIT ${count}
       )`,
     );
-    const affected = result as unknown as Array<Record<string, unknown>>;
-    return Array.isArray(affected) ? affected.length : 0;
+    const rowCount = (result as any).rowCount;
+    if (typeof rowCount === "number") return rowCount;
+    const rows = (result as any).rows;
+    return Array.isArray(rows) ? rows.length : 0;
   }
 
   // Org Domain Verifications

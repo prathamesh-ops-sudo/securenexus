@@ -55,10 +55,15 @@ export function invalidatePolicyCache(orgId?: string): void {
   }
 }
 
+function normalizeIp(raw: string): string {
+  if (raw.startsWith("::ffff:")) return raw.slice(7);
+  return raw;
+}
+
 function resolveIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
-  return req.socket.remoteAddress || "unknown";
+  const raw = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.socket.remoteAddress || "unknown";
+  return normalizeIp(raw);
 }
 
 function ipToLong(ip: string): number {
