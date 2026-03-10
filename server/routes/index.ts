@@ -59,6 +59,7 @@ import { registerExecutiveRiskRoutes } from "./executive-risk";
 import { registerAgentToolSecurityRoutes } from "./agent-tool-security";
 import { registerBrowserDefenseRoutes } from "./browser-defense";
 import { registerCrossCuttingRoutes } from "./cross-cutting";
+import { registerStunningDashboardRoutes } from "./stunning-dashboard";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -122,4 +123,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerAgentToolSecurityRoutes(app);
   registerBrowserDefenseRoutes(app);
   registerCrossCuttingRoutes(app);
+  registerStunningDashboardRoutes(app);
 }

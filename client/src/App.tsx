@@ -122,6 +122,7 @@ const JobQueueDashboardPage = lazy(() => import("@/pages/job-queue-dashboard"));
 const RollbackHistoryPage = lazy(() => import("@/pages/rollback-history"));
 const DomainAutoJoinPage = lazy(() => import("@/pages/domain-auto-join"));
 const UsageMeteringAnalyticsPage = lazy(() => import("@/pages/usage-metering-analytics"));
+const StunningDashboardPage = lazy(() => import("@/pages/dashboard-stunning"));
 
 function PageSkeleton() {
   return (
@@ -326,6 +327,7 @@ function AuthenticatedApp() {
                     <Route path="/rollback-history" component={RollbackHistoryPage} />
                     <Route path="/domain-auto-join" component={DomainAutoJoinPage} />
                     <Route path="/usage-metering-analytics" component={UsageMeteringAnalyticsPage} />
+                    <Route path="/stunning-dashboard" component={StunningDashboardPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
