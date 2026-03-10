@@ -22,7 +22,6 @@ import {
   recordFailedLogin,
   clearLoginBuckets,
   registerRateLimit,
-  forgotPasswordRateLimit,
 } from "../middleware/auth-rate-limit";
 
 const CONSUMER_EMAIL_DOMAINS = new Set([
