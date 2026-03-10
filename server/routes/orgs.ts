@@ -281,6 +281,107 @@ export function registerOrgsRoutes(app: Express): void {
     },
   );
 
+  // List pending members awaiting approval
+  app.get(
+    "/api/orgs/:orgId/members/pending",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = p(req.params.orgId);
+        const userOrgId = (req as any).orgId;
+        if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
+
+        const members = await storage.getOrgMemberships(orgId);
+        const pending = members.filter((m) => m.status === "pending");
+        res.json(pending);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch pending members" });
+      }
+    },
+  );
+
+  // Approve pending member
+  app.post(
+    "/api/orgs/:orgId/members/:memberId/approve",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = p(req.params.orgId);
+        const memberId = p(req.params.memberId);
+        const userOrgId = (req as any).orgId;
+        if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
+
+        const target = await storage.getMembershipById(memberId);
+        if (!target || target.orgId !== orgId) return res.status(404).json({ error: "Member not found" });
+        if (target.status !== "pending") return res.status(400).json({ error: "Member is not in pending state" });
+
+        const updated = await storage.updateOrgMembership(memberId, { status: "active", joinedAt: new Date() });
+        invalidateDeserializeCache(target.userId);
+
+        const userId = (req as any).user?.id;
+        await storage.createAuditLog({
+          userId,
+          orgId,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Admin",
+          action: "member_approved",
+          resourceType: "membership",
+          resourceId: memberId,
+          details: { targetUserId: target.userId, approvedBy: userId },
+        });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to approve member" });
+      }
+    },
+  );
+
+  // Reject pending member
+  app.post(
+    "/api/orgs/:orgId/members/:memberId/reject",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = p(req.params.orgId);
+        const memberId = p(req.params.memberId);
+        const userOrgId = (req as any).orgId;
+        if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
+
+        const target = await storage.getMembershipById(memberId);
+        if (!target || target.orgId !== orgId) return res.status(404).json({ error: "Member not found" });
+        if (target.status !== "pending") return res.status(400).json({ error: "Member is not in pending state" });
+
+        await storage.deleteOrgMembership(memberId);
+
+        const userId = (req as any).user?.id;
+        await storage.createAuditLog({
+          userId,
+          orgId,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Admin",
+          action: "member_rejected",
+          resourceType: "membership",
+          resourceId: memberId,
+          details: { targetUserId: target.userId, rejectedBy: userId },
+        });
+        res.json({ message: "Membership request rejected" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to reject member" });
+      }
+    },
+  );
+
   // Remove member
   app.delete(
     "/api/orgs/:orgId/members/:memberId",
@@ -536,6 +637,8 @@ export function registerOrgsRoutes(app: Express): void {
           "primaryColor",
           "timezone",
           "locale",
+          "defaultMemberRole",
+          "requireApproval",
         ];
         const updateData: Record<string, unknown> = {};
         for (const field of allowedFields) {
@@ -589,6 +692,19 @@ export function registerOrgsRoutes(app: Express): void {
               return res.status(400).json({ error: "Invalid billing email format" });
             }
             updateData.billingEmail = email;
+          }
+        }
+
+        if (updateData.defaultMemberRole !== undefined) {
+          const validRoles = ["analyst", "admin", "read_only"];
+          if (!validRoles.includes(String(updateData.defaultMemberRole))) {
+            return res.status(400).json({ error: "defaultMemberRole must be one of: analyst, admin, read_only" });
+          }
+        }
+
+        if (updateData.requireApproval !== undefined) {
+          if (typeof updateData.requireApproval !== "boolean") {
+            return res.status(400).json({ error: "requireApproval must be a boolean" });
           }
         }
 

@@ -74,6 +74,7 @@ const STATUS_COLORS: Record<string, string> = {
   active: "border-green-500/30 text-green-400",
   suspended: "border-red-500/30 text-red-400",
   invited: "border-yellow-500/30 text-yellow-400",
+  pending: "border-amber-500/30 text-amber-400",
 };
 
 const ASSIGNABLE_ROLES = ["admin", "analyst", "read_only"];
@@ -180,6 +181,32 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     },
     onError: (error: Error) => {
       toast({ title: "Failed to remove member", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const approveMember = useMutation({
+    mutationFn: async (memberId: string) => {
+      await apiRequest("POST", `/api/orgs/${orgId}/members/${memberId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orgs", orgId, "members"] });
+      toast({ title: "Member approved", description: "Member has been approved and activated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to approve member", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const rejectMember = useMutation({
+    mutationFn: async (memberId: string) => {
+      await apiRequest("POST", `/api/orgs/${orgId}/members/${memberId}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orgs", orgId, "members"] });
+      toast({ title: "Member rejected", description: "Membership request has been rejected." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to reject member", description: error.message, variant: "destructive" });
     },
   });
 
@@ -338,6 +365,24 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                                       <UserCheck className="h-4 w-4 mr-2" />
                                       Activate
                                     </DropdownMenuItem>
+                                  ) : member.status === "pending" ? (
+                                    <>
+                                      <DropdownMenuItem
+                                        onClick={() => approveMember.mutate(member.id)}
+                                        data-testid={`action-approve-${member.id}`}
+                                      >
+                                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                                        Approve
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => rejectMember.mutate(member.id)}
+                                        className="text-red-400"
+                                        data-testid={`action-reject-${member.id}`}
+                                      >
+                                        <XCircle className="h-4 w-4 mr-2" />
+                                        Reject
+                                      </DropdownMenuItem>
+                                    </>
                                   ) : null}
                                   <DropdownMenuItem
                                     onClick={() => removeMember.mutate(member.id)}
@@ -627,7 +672,34 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
 function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
   const { toast } = useToast();
   const isOwner = orgRole === "owner";
-  const [activeSection, setActiveSection] = useState<string>("policies");
+  const [activeSection, setActiveSection] = useState<string>("access");
+
+  const { data: orgSettings, isLoading: orgSettingsLoading } = useQuery<any>({
+    queryKey: ["/api/orgs", orgId, "settings"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/orgs/${orgId}/settings`);
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!orgId,
+  });
+
+  const updateOrgSettings = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("PUT", `/api/orgs/${orgId}/settings`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orgs", orgId, "settings"] });
+      toast({ title: "Access settings updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update access settings", description: error.message, variant: "destructive" });
+    },
+  });
 
   const { data: securityPolicy, isLoading: policyLoading } = useQuery<any>({
     queryKey: ["/api/orgs", orgId, "security-policy"],
@@ -818,7 +890,7 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     },
   });
 
-  if (policyLoading || domainsLoading || ssoLoading || scimLoading) {
+  if (policyLoading || domainsLoading || ssoLoading || scimLoading || orgSettingsLoading) {
     return (
       <Card>
         <CardContent className="p-6 space-y-4">
@@ -845,6 +917,7 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
   }
 
   const SECTIONS = [
+    { key: "access", label: "Access Settings", icon: UserCheck },
     { key: "policies", label: "MFA & Session", icon: Fingerprint },
     { key: "domains", label: "Domains", icon: Globe },
     { key: "sso", label: "SSO", icon: Key },
@@ -874,6 +947,78 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
           );
         })}
       </div>
+
+      {activeSection === "access" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-primary" />
+              New Member Access Settings
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Configure how new members are onboarded when they join via domain auto-join or SSO.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 border rounded-md space-y-2">
+                <Label className="text-sm font-medium">Default Member Role</Label>
+                <p className="text-xs text-muted-foreground">
+                  Role assigned to new members who join via domain auto-join or SSO auto-provision.
+                </p>
+                <Select
+                  value={orgSettings?.defaultMemberRole || "analyst"}
+                  onValueChange={(value) => updateOrgSettings.mutate({ defaultMemberRole: value })}
+                >
+                  <SelectTrigger data-testid="select-default-role">
+                    <SelectValue placeholder="Select default role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="analyst">Analyst</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="read_only">Read Only</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Owner role cannot be set as default. The first user creating an org always gets owner.
+                </p>
+              </div>
+              <div className="flex items-start justify-between p-3 border rounded-md">
+                <div className="space-y-1 flex-1 mr-3">
+                  <div className="text-sm font-medium">Require Admin Approval</div>
+                  <div className="text-xs text-muted-foreground">
+                    New members who join via domain auto-join or SSO will be placed in a &quot;pending&quot; state until
+                    an admin approves them. Invited members bypass this gate.
+                  </div>
+                  {orgSettings?.requireApproval && (
+                    <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400 mt-1">
+                      <Clock className="h-2.5 w-2.5 mr-0.5" />
+                      Approval required
+                    </Badge>
+                  )}
+                </div>
+                <Switch
+                  checked={orgSettings?.requireApproval || false}
+                  onCheckedChange={(checked) => updateOrgSettings.mutate({ requireApproval: checked })}
+                  data-testid="switch-require-approval"
+                />
+              </div>
+            </div>
+            {orgSettings?.requireApproval && (
+              <div className="p-3 border border-amber-500/20 rounded-md bg-amber-500/5">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium text-amber-400">Approval mode is active.</span> New members joining via
+                    domain auto-join or SSO will not have access until an admin approves them from the Members tab.
+                    Pending members appear in the members list with a &quot;pending&quot; status badge.
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {activeSection === "policies" && (
         <Card>

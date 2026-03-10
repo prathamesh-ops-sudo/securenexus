@@ -99,29 +99,41 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
       if (emailDomain) {
         const domainMatch = await storage.getVerifiedAutoJoinDomain(emailDomain);
         if (domainMatch) {
+          const org = await storage.getOrganization(domainMatch.orgId);
+          const resolvedRole = domainMatch.defaultRole || org?.defaultMemberRole || "analyst";
+          const needsApproval = org?.requireApproval ?? false;
+
           await storage.createOrgMembership({
             orgId: domainMatch.orgId,
             userId: user.id,
-            role: domainMatch.defaultRole || "analyst",
-            status: "active",
-            joinedAt: new Date(),
+            role: resolvedRole,
+            status: needsApproval ? "pending" : "active",
+            joinedAt: needsApproval ? undefined : new Date(),
           });
           storage
             .createAuditLog({
               userId: user.id,
               userName: user.email,
-              action: "domain_auto_join",
+              action: needsApproval ? "domain_auto_join_pending_approval" : "domain_auto_join",
               resourceType: "membership",
               resourceId: user.id,
-              details: { domain: emailDomain, orgId: domainMatch.orgId, role: domainMatch.defaultRole },
+              details: {
+                domain: emailDomain,
+                orgId: domainMatch.orgId,
+                role: resolvedRole,
+                pendingApproval: needsApproval,
+              },
             })
             .catch(() => {});
-          logger.child("auth").info("User auto-joined org via domain match", {
-            userId: user.id,
-            email: user.email,
-            domain: emailDomain,
-            orgId: domainMatch.orgId,
-          });
+          logger
+            .child("auth")
+            .info(needsApproval ? "User pending approval via domain match" : "User auto-joined org via domain match", {
+              userId: user.id,
+              email: user.email,
+              domain: emailDomain,
+              orgId: domainMatch.orgId,
+              pendingApproval: needsApproval,
+            });
           return true;
         }
       }
