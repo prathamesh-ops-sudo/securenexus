@@ -68,6 +68,7 @@ import {
   RotateCcw,
   Globe,
   Cpu,
+  Calendar,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.jpg";
 import { useLocation, Link } from "wouter";
@@ -141,6 +142,8 @@ const navGroups: NavGroup[] = [
       { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
       { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
       { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
+      { title: "Investigation Timeline", url: "/investigation-timeline", icon: GitBranch },
+      { title: "Evidence Custody", url: "/evidence-custody", icon: Link2 },
       { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
     ],
   },
@@ -155,6 +158,8 @@ const navGroups: NavGroup[] = [
       { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
       { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
       { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
+      { title: "War Room", url: "/war-room", icon: Shield },
+      { title: "Playbook Templates", url: "/playbook-templates", icon: BookOpen },
     ],
   },
   {
@@ -169,6 +174,8 @@ const navGroups: NavGroup[] = [
       { title: "Security Posture", url: "/security-posture", icon: Gauge },
       { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
       { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
+      { title: "Compliance Gap", url: "/compliance-gap", icon: Scale },
+      { title: "Report Scheduling", url: "/report-scheduling", icon: Calendar },
     ],
   },
   {
@@ -257,6 +264,7 @@ const adminGroup: NavGroup = {
     { title: "DR Drill Scheduler", url: "/dr-drill-scheduler", icon: Flame },
     { title: "Domain Auto-Join", url: "/domain-auto-join", icon: Globe },
     { title: "Usage Analytics", url: "/usage-metering-analytics", icon: Cpu },
+    { title: "Tenant Data (GDPR)", url: "/tenant-data", icon: Database },
   ],
 };
 

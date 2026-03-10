@@ -62,6 +62,13 @@ import { registerCrossCuttingRoutes } from "./cross-cutting";
 import { registerStunningDashboardRoutes } from "./stunning-dashboard";
 import { registerPhase2StubRoutes } from "./phase2-stubs";
 import { registerMfaRoutes } from "./mfa";
+import { registerTenantDataRoutes } from "./tenant-data";
+import { registerWarRoomRoutes } from "./war-room";
+import { registerPlaybookTemplateRoutes } from "./playbook-templates";
+import { registerInvestigationTimelineRoutes } from "./investigation-timeline";
+import { registerEvidenceCustodyRoutes } from "./evidence-custody";
+import { registerComplianceGapRoutes } from "./compliance-gap";
+import { registerReportSchedulingRoutes } from "./report-scheduling";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -128,4 +135,11 @@ export function registerAllDomainRoutes(app: Express): void {
   registerStunningDashboardRoutes(app);
   registerPhase2StubRoutes(app);
   registerMfaRoutes(app);
+  registerTenantDataRoutes(app);
+  registerWarRoomRoutes(app);
+  registerPlaybookTemplateRoutes(app);
+  registerInvestigationTimelineRoutes(app);
+  registerEvidenceCustodyRoutes(app);
+  registerComplianceGapRoutes(app);
+  registerReportSchedulingRoutes(app);
 }
