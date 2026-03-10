@@ -20,6 +20,12 @@ import { eq, desc, sql, and, count, ilike, or, isNull, gte, lte } from "drizzle-
 import { getPoolHealth, checkPoolConnectivity } from "../db";
 import { logger } from "../logger";
 import { randomBytes } from "crypto";
+import {
+  getLockedAccounts,
+  adminUnlockAccount,
+  getFailedLoginHistory,
+  getFailedLoginStats,
+} from "../middleware/auth-rate-limit";
 
 const log = logger.child("platform-admin");
 
@@ -1018,4 +1024,106 @@ export function registerPlatformAdminRoutes(app: Express): void {
       });
     }
   });
+
+  app.get(
+    "/api/platform-admin/locked-accounts",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (_req: Request, res: Response) => {
+      try {
+        const locked = await getLockedAccounts();
+        return sendEnvelope(res, locked);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error("Failed to get locked accounts", { error: message });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "LOCKED_ACCOUNTS_FAILED", message: "Failed to fetch locked accounts" }],
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/platform-admin/unlock-account/:userId",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const { userId } = req.params;
+        if (!userId || typeof userId !== "string") {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_USER_ID", message: "userId is required" }],
+          });
+        }
+        const success = await adminUnlockAccount(userId);
+        if (!success) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "USER_NOT_FOUND", message: "User not found" }],
+          });
+        }
+        const admin = (req as any).user;
+        await storage
+          .createAuditLog({
+            userId: admin?.id,
+            userName: admin?.email || "admin",
+            action: "account_unlocked",
+            resourceType: "user",
+            resourceId: userId,
+            details: { unlockedBy: admin?.email },
+          })
+          .catch((err: unknown) => log.warn("Failed to audit account unlock", { error: String(err) }));
+        return sendEnvelope(res, { unlocked: true, userId });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error("Failed to unlock account", { error: message });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "UNLOCK_FAILED", message: "Failed to unlock account" }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/platform-admin/failed-login-history",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
+        const offset = Math.max(parseInt(String(req.query.offset || "0"), 10) || 0, 0);
+        const result = await getFailedLoginHistory(limit, offset);
+        return sendEnvelope(res, result.attempts, { meta: { total: result.total, limit, offset } });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error("Failed to get failed login history", { error: message });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "HISTORY_FAILED", message: "Failed to fetch failed login history" }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/platform-admin/failed-login-stats",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (_req: Request, res: Response) => {
+      try {
+        const stats = await getFailedLoginStats();
+        return sendEnvelope(res, stats);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error("Failed to get failed login stats", { error: message });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "STATS_FAILED", message: "Failed to fetch failed login stats" }],
+        });
+      }
+    },
+  );
 }

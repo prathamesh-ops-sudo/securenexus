@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table.
 export const sessions = pgTable(
@@ -26,6 +26,8 @@ export const users = pgTable("users", {
   disabledAt: timestamp("disabled_at"),
   lastLoginAt: timestamp("last_login_at"),
   passwordChangedAt: timestamp("password_changed_at"),
+  lockedUntil: timestamp("locked_until"),
+  failedLoginCount: integer("failed_login_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -58,3 +60,26 @@ export const impersonationSessions = pgTable(
 );
 
 export type ImpersonationSession = typeof impersonationSessions.$inferSelect;
+
+export const failedLoginAttempts = pgTable(
+  "failed_login_attempts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+    email: varchar("email").notNull(),
+    ipAddress: text("ip_address").notNull(),
+    userAgent: text("user_agent"),
+    reason: text("reason").notNull(),
+    attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_failed_login_email").on(table.email),
+    index("idx_failed_login_user").on(table.userId),
+    index("idx_failed_login_ip").on(table.ipAddress),
+    index("idx_failed_login_attempted").on(table.attemptedAt),
+  ],
+);
+
+export type FailedLoginAttempt = typeof failedLoginAttempts.$inferSelect;
