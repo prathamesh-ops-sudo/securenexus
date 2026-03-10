@@ -98,13 +98,13 @@ export function registerPasswordResetRoutes(app: Express): void {
         ]);
       }
 
-      const resetToken = await storage.consumePasswordResetToken(token);
+      const pendingToken = await storage.getPasswordResetToken(token);
 
-      if (!resetToken) {
+      if (!pendingToken || pendingToken.usedAt || new Date(pendingToken.expiresAt) < new Date()) {
         return replyBadRequest(res, "Invalid, expired, or already used reset token");
       }
 
-      const user = await authStorage.getUser(resetToken.userId);
+      const user = await authStorage.getUser(pendingToken.userId);
       if (!user) {
         return replyBadRequest(res, "Invalid reset token");
       }
@@ -117,6 +117,11 @@ export function registerPasswordResetRoutes(app: Express): void {
           res,
           complexity.errors.map((msg) => ({ message: msg, field: "password" })),
         );
+      }
+
+      const consumed = await storage.consumePasswordResetToken(token);
+      if (!consumed) {
+        return replyBadRequest(res, "Reset token has already been used");
       }
 
       const hashedPassword = await hashPassword(password);
