@@ -7,6 +7,7 @@ import { config } from "../config";
 import {
   reply,
   replyUnauthenticated,
+  replyForbidden,
   replyNotFound,
   replyConflict,
   replyValidation,
@@ -23,6 +24,11 @@ import {
   clearLoginBuckets,
   registerRateLimit,
 } from "../middleware/auth-rate-limit";
+import {
+  checkLoginPolicy,
+  enforceMaxConcurrentSessions,
+  validatePasswordComplexity,
+} from "../middleware/security-policy-enforcement";
 
 const CONSUMER_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -247,12 +253,33 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
 
+      const pendingInvitations = await storage.getPendingInvitationsByEmail(email.toLowerCase()).catch(() => []);
+      let registrationOrgId: string | null = null;
+      if (pendingInvitations.length > 0) {
+        registrationOrgId = pendingInvitations[0].orgId;
+      } else {
+        const emailDomain = email.split("@")[1]?.toLowerCase();
+        if (emailDomain) {
+          const domainMatch = await storage.getVerifiedAutoJoinDomain(emailDomain).catch(() => null);
+          if (domainMatch) registrationOrgId = domainMatch.orgId;
+        }
+      }
+
+      const complexity = await validatePasswordComplexity(password, registrationOrgId);
+      if (!complexity.valid) {
+        return replyValidation(
+          res,
+          complexity.errors.map((msg) => ({ message: msg, field: "password" })),
+        );
+      }
+
       const hashedPw = await hashPassword(password);
       const user = await authStorage.upsertUser({
         email,
         passwordHash: hashedPw,
         firstName: firstName || null,
         lastName: lastName || null,
+        passwordChangedAt: new Date(),
       });
 
       req.login(user, async (err) => {
@@ -294,8 +321,36 @@ export function registerAuthRoutes(app: Express): void {
       req.login(user, async (loginErr) => {
         if (loginErr) return next(loginErr);
         await ensureOrgMembership(user);
+
+        const memberships = await storage.getUserMemberships(user.id).catch(() => []);
+        const userOrgId = memberships.length > 0 ? memberships[0].orgId : null;
+
+        const clientIp = (() => {
+          const fwd = req.headers["x-forwarded-for"];
+          if (typeof fwd === "string") return fwd.split(",")[0].trim();
+          return req.socket.remoteAddress || "unknown";
+        })();
+
+        const policyResult = await checkLoginPolicy(user, userOrgId, clientIp);
+        if (!policyResult.allowed) {
+          req.logout(() => {
+            req.session.destroy(() => {
+              return replyForbidden(res, policyResult.reason || "Access denied", policyResult.code || "FORBIDDEN");
+            });
+          });
+          return;
+        }
+
+        if (userOrgId) {
+          await enforceMaxConcurrentSessions(user.id, userOrgId);
+        }
+
         const { passwordHash, ...safeUser } = user;
-        return reply(res, safeUser);
+        return reply(res, {
+          ...safeUser,
+          mfaRequired: policyResult.mfaRequired || false,
+          passwordExpired: policyResult.passwordExpired || false,
+        });
       });
     })(req, res, next);
   });
@@ -347,6 +402,26 @@ export function registerAuthRoutes(app: Express): void {
           }
         }
         await ensureOrgMembership(req.user);
+
+        const oauthMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+        const oauthOrgId = oauthMemberships.length > 0 ? oauthMemberships[0].orgId : null;
+        const oauthIp = (() => {
+          const fwd = req.headers["x-forwarded-for"];
+          if (typeof fwd === "string") return fwd.split(",")[0].trim();
+          return req.socket.remoteAddress || "unknown";
+        })();
+        const oauthPolicy = await checkLoginPolicy(req.user, oauthOrgId, oauthIp);
+        if (!oauthPolicy.allowed) {
+          req.logout(() => {
+            req.session.destroy(() => {
+              return res.redirect("/?error=ip_not_allowed");
+            });
+          });
+          return;
+        }
+        if (oauthOrgId) {
+          await enforceMaxConcurrentSessions(req.user.id, oauthOrgId);
+        }
       }
       res.redirect("/");
     },
@@ -383,6 +458,26 @@ export function registerAuthRoutes(app: Express): void {
           }
         }
         await ensureOrgMembership(req.user);
+
+        const ghMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+        const ghOrgId = ghMemberships.length > 0 ? ghMemberships[0].orgId : null;
+        const ghIp = (() => {
+          const fwd = req.headers["x-forwarded-for"];
+          if (typeof fwd === "string") return fwd.split(",")[0].trim();
+          return req.socket.remoteAddress || "unknown";
+        })();
+        const ghPolicy = await checkLoginPolicy(req.user, ghOrgId, ghIp);
+        if (!ghPolicy.allowed) {
+          req.logout(() => {
+            req.session.destroy(() => {
+              return res.redirect("/?error=ip_not_allowed");
+            });
+          });
+          return;
+        }
+        if (ghOrgId) {
+          await enforceMaxConcurrentSessions(req.user.id, ghOrgId);
+        }
       }
       res.redirect("/");
     },

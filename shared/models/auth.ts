@@ -25,6 +25,7 @@ export const users = pgTable("users", {
   isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
   disabledAt: timestamp("disabled_at"),
   lastLoginAt: timestamp("last_login_at"),
+  passwordChangedAt: timestamp("password_changed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

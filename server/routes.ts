@@ -6,6 +6,7 @@ import { startOutboxProcessor } from "./outbox-processor";
 import { registerOpenApiRoutes } from "./openapi";
 import { registerAllDomainRoutes } from "./routes/index";
 import { orgRateLimitMiddleware } from "./middleware/org-rate-limit";
+import { securityPolicyEnforcement } from "./middleware/security-policy-enforcement";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   await setupAuth(app);
@@ -15,6 +16,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/csrf-token", getCsrfEndpointHandler);
 
   app.use("/api", orgRateLimitMiddleware);
+  app.use("/api", securityPolicyEnforcement);
 
   startOutboxProcessor();
 

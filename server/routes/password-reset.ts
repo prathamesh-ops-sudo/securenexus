@@ -7,6 +7,7 @@ import { sendEmail } from "../email-service";
 import { passwordResetEmail } from "../email-templates";
 import { reply, replyValidation, replyBadRequest, replyInternal } from "../api-response";
 import { forgotPasswordRateLimit } from "../middleware/auth-rate-limit";
+import { validatePasswordComplexity } from "../middleware/security-policy-enforcement";
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const RESET_TOKEN_EXPIRY_MINUTES = 60;
@@ -108,11 +109,22 @@ export function registerPasswordResetRoutes(app: Express): void {
         return replyBadRequest(res, "Invalid reset token");
       }
 
+      const memberships = await storage.getUserMemberships(user.id).catch(() => []);
+      const userOrgId = memberships.length > 0 ? memberships[0].orgId : null;
+      const complexity = await validatePasswordComplexity(password, userOrgId);
+      if (!complexity.valid) {
+        return replyValidation(
+          res,
+          complexity.errors.map((msg) => ({ message: msg, field: "password" })),
+        );
+      }
+
       const hashedPassword = await hashPassword(password);
 
       await authStorage.upsertUser({
         ...user,
         passwordHash: hashedPassword,
+        passwordChangedAt: new Date(),
       });
 
       await storage.invalidateAllUserPasswordResetTokens(user.id);
