@@ -977,6 +977,10 @@ export interface IStorage {
   getOrgSecurityPolicy(orgId: string): Promise<OrgSecurityPolicy | undefined>;
   upsertOrgSecurityPolicy(policy: InsertOrgSecurityPolicy): Promise<OrgSecurityPolicy>;
 
+  // Session management for max concurrent sessions
+  countUserActiveSessions(userId: string): Promise<number>;
+  evictOldestUserSessions(userId: string, count: number): Promise<number>;
+
   // Org Domain Verifications
   getOrgDomainVerifications(orgId: string): Promise<OrgDomainVerification[]>;
   getOrgDomainVerification(id: string): Promise<OrgDomainVerification | undefined>;
@@ -4750,6 +4754,27 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(orgSecurityPolicies).values(policy).returning();
     return created;
+  }
+
+  async countUserActiveSessions(userId: string): Promise<number> {
+    const result = await db.execute(
+      sql`SELECT COUNT(*) as count FROM sessions WHERE sess->>'passport'->>'user' = ${userId} AND expire > NOW()`,
+    );
+    const rows = result as unknown as Array<{ count: string }>;
+    return parseInt(String(rows[0]?.count ?? "0"), 10);
+  }
+
+  async evictOldestUserSessions(userId: string, count: number): Promise<number> {
+    const result = await db.execute(
+      sql`DELETE FROM sessions WHERE sid IN (
+        SELECT sid FROM sessions
+        WHERE sess->>'passport'->>'user' = ${userId} AND expire > NOW()
+        ORDER BY expire ASC
+        LIMIT ${count}
+      )`,
+    );
+    const affected = result as unknown as Array<Record<string, unknown>>;
+    return Array.isArray(affected) ? affected.length : 0;
   }
 
   // Org Domain Verifications

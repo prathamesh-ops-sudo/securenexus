@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { z } from "zod";
 import { encryptSsoSecret as encryptSecret } from "../sso-crypto";
+import { invalidatePolicyCache } from "../middleware/security-policy-enforcement";
 
 function hashSecret(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -180,6 +181,7 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
       if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
       const userId = (req as any).user?.id;
       const policy = await storage.upsertOrgSecurityPolicy({ orgId, ...parsed.data });
+      invalidatePolicyCache(orgId);
       await storage.createAuditLog({
         userId,
         userName: (req as any).user?.firstName
@@ -189,6 +191,11 @@ export function registerEnterpriseOrgRoutes(app: Express): void {
         resourceType: "security_policy",
         resourceId: orgId,
         details: parsed.data,
+      });
+      logger.child("security-policy").info("Security policy updated and cache invalidated", {
+        orgId,
+        updatedBy: userId,
+        fields: Object.keys(parsed.data),
       });
       res.json(policy);
     } catch (error) {
