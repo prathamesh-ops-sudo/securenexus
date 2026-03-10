@@ -239,6 +239,7 @@ const adminGroup: NavGroup = {
   items: [
     { title: "Onboarding", url: "/onboarding", icon: Activity },
     { title: "Team & Invites", url: "/team", icon: Users },
+    { title: "Developer Portal", url: "/developer-portal", icon: Code2 },
     { title: "Billing", url: "/billing", icon: CreditCard },
     { title: "Usage", url: "/usage-billing", icon: BarChart3 },
     { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },

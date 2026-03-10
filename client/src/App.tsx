@@ -61,6 +61,7 @@ const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 const MsspDashboardPage = lazy(() => import("@/pages/mssp-dashboard"));
 const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
+const DeveloperPortalPage = lazy(() => import("@/pages/developer-portal"));
 const ProductOverviewPage = lazy(() => import("@/pages/product-overview"));
 const AgenticSocPage = lazy(() => import("@/pages/agentic-soc"));
 const AiSocAnalystPage = lazy(() => import("@/pages/ai-soc-analyst"));
@@ -276,6 +277,7 @@ function AuthenticatedApp() {
                     <Route path="/platform-admin" component={PlatformAdminPage} />
                     <Route path="/mssp-dashboard" component={MsspDashboardPage} />
                     <Route path="/dev-portal" component={DevPortalPage} />
+                    <Route path="/developer-portal" component={DeveloperPortalPage} />
                     <Route path="/engine-controls" component={EngineControlsPage} />
                     <Route path="/email-templates" component={EmailTemplatesPage} />
                     <Route path="/metrics-rollup" component={MetricsRollupPage} />
