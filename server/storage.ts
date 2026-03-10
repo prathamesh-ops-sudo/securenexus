@@ -619,6 +619,7 @@ export interface IStorage {
 
   getOrgInvitations(orgId: string): Promise<OrgInvitation[]>;
   getOrgInvitationByToken(token: string): Promise<OrgInvitation | undefined>;
+  getPendingInvitationsByEmail(email: string): Promise<OrgInvitation[]>;
   createOrgInvitation(invitation: InsertOrgInvitation): Promise<OrgInvitation>;
   updateOrgInvitation(id: string, data: Partial<OrgInvitation>): Promise<OrgInvitation | undefined>;
   deleteOrgInvitation(id: string): Promise<boolean>;
@@ -2743,6 +2744,15 @@ export class DatabaseStorage implements IStorage {
   async getOrgInvitationByToken(token: string): Promise<OrgInvitation | undefined> {
     const [invitation] = await db.select().from(orgInvitations).where(eq(orgInvitations.token, token));
     return invitation;
+  }
+
+  async getPendingInvitationsByEmail(email: string): Promise<OrgInvitation[]> {
+    const normalizedEmail = email.toLowerCase();
+    return db
+      .select()
+      .from(orgInvitations)
+      .where(and(eq(orgInvitations.email, normalizedEmail), isNull(orgInvitations.acceptedAt)))
+      .orderBy(desc(orgInvitations.createdAt));
   }
 
   async createOrgInvitation(invitation: InsertOrgInvitation): Promise<OrgInvitation> {
