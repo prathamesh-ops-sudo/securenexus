@@ -118,14 +118,14 @@ function progressColor(pct: number): string {
 
 function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <Card className="glass-card border-destructive/30">
+    <Card data-testid="billing-card-1" className="glass-card border-destructive/30">
       <CardContent className="p-8 text-center">
         <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mx-auto w-fit mb-3">
           <AlertTriangle className="h-6 w-6 text-destructive" />
         </div>
         <p className="text-sm font-medium">{message}</p>
         <p className="text-xs text-muted-foreground mt-1">Check your connection and try again.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+        <Button data-testid="billing-btn-outline-0" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5 mr-1" /> Try Again
         </Button>
       </CardContent>
@@ -156,7 +156,7 @@ function CurrentPlanSection() {
 
   if (subPending || usagePending) {
     return (
-      <div className="space-y-4">
+      <div data-testid="billing-page" className="space-y-4">
         <Skeleton className="h-32" />
         <div className="grid grid-cols-2 gap-4">
           <Skeleton className="h-20" />
@@ -197,7 +197,7 @@ function CurrentPlanSection() {
 
   return (
     <div className="space-y-4">
-      <Card className="glass-card border-border/50">
+      <Card data-testid="billing-card-2" className="glass-card border-border/50">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -250,6 +250,7 @@ function CurrentPlanSection() {
                 </p>
               </div>
               <Button
+                data-testid="billing-btn-outline-1"
                 size="sm"
                 variant="outline"
                 className="ml-auto border-red-500/30 text-red-400 hover:bg-red-500/10 shrink-0"
@@ -274,6 +275,7 @@ function CurrentPlanSection() {
                   </p>
                 </div>
                 <Button
+                  data-testid="billing-btn-outline-2"
                   size="sm"
                   variant="outline"
                   className="ml-auto border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 shrink-0"
@@ -290,6 +292,7 @@ function CurrentPlanSection() {
               .filter(([_, m]) => m.limit !== -1)
               .map(([key, metric]) => (
                 <Card
+                  data-testid="billing-card-3"
                   key={key}
                   className={`glass-card border-border/50 ${
                     metric.status === "critical"
@@ -494,11 +497,12 @@ function PlanComparisonSection() {
 
               <div className="pt-2">
                 {isCurrent ? (
-                  <Button variant="outline" className="w-full" disabled>
+                  <Button data-testid="billing-btn-outline-3" variant="outline" className="w-full" disabled>
                     Current Plan
                   </Button>
                 ) : plan.name === "custom" || plan.name === "enterprise" ? (
                   <Button
+                    data-testid="billing-btn-outline-4"
                     variant="outline"
                     className="w-full"
                     onClick={() =>

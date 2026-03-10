@@ -309,7 +309,10 @@ export default function LandingPage() {
     "hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.15)] hover:translate-x-[2px] hover:translate-y-[2px]";
 
   return (
-    <div className="min-h-screen bg-[#FFF8F0] dark:bg-[#0a0f1e] text-[#1e293b] dark:text-[#e2e8f0] font-sans">
+    <div
+      data-testid="landing-page"
+      className="min-h-screen bg-[#FFF8F0] dark:bg-[#0a0f1e] text-[#1e293b] dark:text-[#e2e8f0] font-sans"
+    >
       {authMode && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"

@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, resolveOrgContext } from "../rbac";
+import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";

@@ -25,6 +25,7 @@ import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
 import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
+import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
 
 const startedAt = Date.now();
 
@@ -92,6 +93,8 @@ export function log(message: string, source = "express") {
 
   const { seedDatabase } = await import("./seed");
   await seedDatabase();
+
+  await bootstrapSuperAdmin();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -5,6 +5,7 @@ import { WIZARD_STEPS } from "@shared/schema";
 import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
 import { sendEmail } from "../email-service";
 import { invitationEmail } from "../email-templates";
+import { resolveOrgContext, requireOrgId } from "../rbac";
 
 const INDUSTRY_OPTIONS = [
   "Technology",
@@ -57,7 +58,7 @@ const PLAN_OPTIONS = [
 ] as const;
 
 export function registerOnboardingRoutes(app: Express): void {
-  app.get("/api/v1/onboarding/status", isAuthenticated, async (req, res) => {
+  app.get("/api/v1/onboarding/status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
 
@@ -101,7 +102,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/wizard/status", isAuthenticated, async (req, res) => {
+  app.get("/api/wizard/status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -142,7 +143,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/wizard/options", isAuthenticated, async (_req, res) => {
+  app.get("/api/wizard/options", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
     return sendEnvelope(res, {
       industries: INDUSTRY_OPTIONS,
       companySizes: COMPANY_SIZE_OPTIONS,
@@ -150,7 +151,7 @@ export function registerOnboardingRoutes(app: Express): void {
     });
   });
 
-  app.post("/api/wizard/create-org", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/create-org", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       const userEmail = (req as any).user?.email;
@@ -217,7 +218,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/select-plan", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/select-plan", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -305,7 +306,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/invite-team", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/invite-team", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -409,7 +410,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/skip-step", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/skip-step", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -461,7 +462,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/connect-integration", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/connect-integration", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -497,7 +498,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/complete-tour", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/complete-tour", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -535,7 +536,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/complete", isAuthenticated, async (req, res) => {
+  app.post("/api/wizard/complete", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)

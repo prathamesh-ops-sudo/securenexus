@@ -125,6 +125,7 @@ const DomainAutoJoinPage = lazy(() => import("@/pages/domain-auto-join"));
 const UsageMeteringAnalyticsPage = lazy(() => import("@/pages/usage-metering-analytics"));
 const StunningDashboardPage = lazy(() => import("@/pages/dashboard-stunning"));
 const AccountLockoutPage = lazy(() => import("@/pages/account-lockout"));
+const MfaSetupPage = lazy(() => import("@/pages/mfa-setup"));
 
 function PageSkeleton() {
   return (
@@ -332,6 +333,7 @@ function AuthenticatedApp() {
                     <Route path="/usage-metering-analytics" component={UsageMeteringAnalyticsPage} />
                     <Route path="/stunning-dashboard" component={StunningDashboardPage} />
                     <Route path="/account-lockout" component={AccountLockoutPage} />
+                    <Route path="/mfa-setup" component={MfaSetupPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

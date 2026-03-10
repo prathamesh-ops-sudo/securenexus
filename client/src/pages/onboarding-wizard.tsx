@@ -211,7 +211,12 @@ function CreateOrgStep({
         </div>
       </div>
 
-      <Button onClick={handleSubmit} disabled={isLoading || !name.trim()} className="w-full">
+      <Button
+        data-testid="onboarding-wizard-btn-0"
+        onClick={handleSubmit}
+        disabled={isLoading || !name.trim()}
+        className="w-full"
+      >
         {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Building2 className="h-4 w-4 mr-2" />}
         Create Organization
       </Button>
@@ -244,6 +249,7 @@ function ChoosePlanStep({
       <div className="grid gap-4 md:grid-cols-3">
         {options?.plans.map((plan) => (
           <Card
+            data-testid="onboarding-wizard-card-1"
             key={plan.id}
             className={`cursor-pointer transition-all hover:shadow-md ${
               selected === plan.id ? "border-primary ring-2 ring-primary/20" : "border-border/50 hover:border-border"
@@ -280,11 +286,22 @@ function ChoosePlanStep({
       </div>
 
       <div className="flex items-center gap-3">
-        <Button onClick={() => onSelect(selected)} disabled={isLoading} className="flex-1">
+        <Button
+          data-testid="onboarding-wizard-btn-1"
+          onClick={() => onSelect(selected)}
+          disabled={isLoading}
+          className="flex-1"
+        >
           {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
           {selected === "free" ? "Start Free" : `Select ${selected.charAt(0).toUpperCase() + selected.slice(1)}`}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onSkip} disabled={isLoading}>
+        <Button
+          data-testid="onboarding-wizard-btn-ghost-2"
+          variant="ghost"
+          size="sm"
+          onClick={onSkip}
+          disabled={isLoading}
+        >
           <SkipForward className="h-4 w-4 mr-1" /> Skip
         </Button>
       </div>
@@ -356,7 +373,13 @@ function InviteTeamStep({
               <option value="viewer">Viewer</option>
             </select>
             {entries.length > 1 && (
-              <Button variant="ghost" size="icon" onClick={() => removeEntry(index)} className="shrink-0 h-9 w-9">
+              <Button
+                data-testid="onboarding-wizard-btn-ghost-3"
+                variant="ghost"
+                size="icon"
+                onClick={() => removeEntry(index)}
+                className="shrink-0 h-9 w-9"
+              >
                 <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
               </Button>
             )}
@@ -365,7 +388,7 @@ function InviteTeamStep({
       </div>
 
       {entries.length < 20 && (
-        <Button variant="outline" size="sm" onClick={addEntry}>
+        <Button data-testid="onboarding-wizard-btn-outline-4" variant="outline" size="sm" onClick={addEntry}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Add Another
         </Button>
       )}
@@ -420,6 +443,7 @@ function ConnectIntegrationStep({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {connectorTypes.map((connector) => (
           <Card
+            data-testid="onboarding-wizard-card-2"
             key={connector.name}
             className={`cursor-pointer transition-all hover:shadow-sm group ${
               selected === connector.name ? "border-primary ring-2 ring-primary/20" : "hover:border-primary/50"
@@ -521,7 +545,7 @@ function DashboardTourStep({ onComplete, isLoading }: { onComplete: () => void; 
         ))}
       </div>
 
-      <Card className="border-primary/20 bg-primary/5">
+      <Card data-testid="onboarding-wizard-card-3" className="border-primary/20 bg-primary/5">
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">

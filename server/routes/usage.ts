@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, resolveOrgContext } from "../rbac";
+import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
 import { storage, logger, getOrgId, sendEnvelope } from "./shared";
 import { getUsageSummary } from "../middleware/plan-enforcement";
 import { sendEmail, isEmailEnabled } from "../email-service";
@@ -22,6 +22,7 @@ export function registerUsageRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -42,6 +43,7 @@ export function registerUsageRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -62,6 +64,7 @@ export function registerUsageRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);

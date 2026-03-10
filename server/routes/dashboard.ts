@@ -2,10 +2,11 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad } from "../query-cache";
+import { resolveOrgContext, requireOrgId } from "../rbac";
 
 export function registerDashboardRoutes(app: Express): void {
   // Dashboard (with query-level caching)
-  app.get("/api/dashboard/stats", isAuthenticated, async (req, res) => {
+  app.get("/api/dashboard/stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:stats", { orgId });
@@ -16,7 +17,7 @@ export function registerDashboardRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/dashboard/analytics", isAuthenticated, async (req, res) => {
+  app.get("/api/dashboard/analytics", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const cacheKey = buildCacheKey("dashboard:analytics", { orgId });
@@ -31,7 +32,7 @@ export function registerDashboardRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/dashboard/:role", isAuthenticated, async (req, res) => {
+  app.get("/api/dashboard/:role", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const user = req.user as any;
     const role = p(req.params.role);
     if (!["ciso", "soc_manager", "analyst"].includes(role)) {

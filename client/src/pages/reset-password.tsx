@@ -97,8 +97,14 @@ export default function ResetPasswordPage() {
 
   if (isValidating) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] dark:bg-[#0a0f1e] p-4">
-        <Card className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]">
+      <div
+        data-testid="reset-password-page"
+        className="min-h-screen flex items-center justify-center bg-[#FFF8F0] dark:bg-[#0a0f1e] p-4"
+      >
+        <Card
+          data-testid="reset-password-card-1"
+          className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]"
+        >
           <CardContent className="p-8 space-y-4">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-4 w-full" />
@@ -113,7 +119,10 @@ export default function ResetPasswordPage() {
   if (!token || !isTokenValid) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] dark:bg-[#0a0f1e] p-4">
-        <Card className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]">
+        <Card
+          data-testid="reset-password-card-2"
+          className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]"
+        >
           <CardContent className="p-8 space-y-4">
             <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10">
               <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -124,10 +133,19 @@ export default function ResetPasswordPage() {
                 </p>
               </div>
             </div>
-            <Button className="w-full font-semibold" onClick={() => navigate("/forgot-password")}>
+            <Button
+              data-testid="reset-password-btn-0"
+              className="w-full font-semibold"
+              onClick={() => navigate("/forgot-password")}
+            >
               Request new reset link
             </Button>
-            <Button variant="ghost" className="w-full text-sm" onClick={() => navigate("/")}>
+            <Button
+              data-testid="reset-password-btn-ghost-1"
+              variant="ghost"
+              className="w-full text-sm"
+              onClick={() => navigate("/")}
+            >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to login
             </Button>
@@ -139,7 +157,10 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] dark:bg-[#0a0f1e] p-4">
-      <Card className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]">
+      <Card
+        data-testid="reset-password-card-3"
+        className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]"
+      >
         <CardHeader className="space-y-3">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/30 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-500/10 dark:to-transparent">
@@ -166,6 +187,7 @@ export default function ResetPasswordPage() {
                 </p>
               </div>
               <Button
+                data-testid="reset-password-btn-2"
                 className="w-full h-11 font-bold border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all bg-cyan-600 hover:bg-cyan-700 text-white"
                 onClick={() => navigate("/")}
               >
@@ -246,6 +268,7 @@ export default function ResetPasswordPage() {
                 )}
               </div>
               <Button
+                data-testid="reset-password-btn-3"
                 type="submit"
                 disabled={isSubmitting || password.length < 8 || password !== confirmPassword}
                 className="w-full h-11 font-bold border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all bg-cyan-600 hover:bg-cyan-700 text-white"

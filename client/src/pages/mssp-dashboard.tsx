@@ -88,7 +88,7 @@ function StatCard({
     success: "text-emerald-400",
   };
   return (
-    <Card className="glass-subtle hover:glass-strong transition-all duration-200">
+    <Card data-testid="mssp-dashboard-card-1" className="glass-subtle hover:glass-strong transition-all duration-200">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div>
@@ -106,9 +106,9 @@ function StatCard({
 
 function StatsSkeletons() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div data-testid="mssp-dashboard-page" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {Array.from({ length: 5 }).map((_, i) => (
-        <Card key={`stat-skeleton-${i}`} className="glass-subtle">
+        <Card data-testid="mssp-dashboard-card-2" key={`stat-skeleton-${i}`} className="glass-subtle">
           <CardContent className="p-4">
             <Skeleton className="h-3 w-20 mb-2" />
             <Skeleton className="h-8 w-16" />
@@ -162,7 +162,7 @@ function CreateChildOrgDialog({ onCreated }: { onCreated: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className="gap-1.5">
+        <Button data-testid="mssp-dashboard-btn-0" size="sm" className="gap-1.5">
           <Plus className="h-4 w-4" />
           Add Client Org
         </Button>
@@ -217,9 +217,12 @@ function CreateChildOrgDialog({ onCreated }: { onCreated: () => void }) {
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
+            <Button data-testid="mssp-dashboard-btn-outline-1" variant="outline">
+              Cancel
+            </Button>
           </DialogClose>
           <Button
+            data-testid="mssp-dashboard-btn-2"
             onClick={() => createMutation.mutate()}
             disabled={!name.trim() || !slug.trim() || createMutation.isPending}
           >
@@ -256,7 +259,7 @@ function GrantAccessDialog({ childOrgs, onGranted }: { childOrgs: ChildOrg[]; on
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-1.5">
+        <Button data-testid="mssp-dashboard-btn-outline-3" size="sm" variant="outline" className="gap-1.5">
           <UserPlus className="h-4 w-4" />
           Grant Access
         </Button>
@@ -298,7 +301,9 @@ function GrantAccessDialog({ childOrgs, onGranted }: { childOrgs: ChildOrg[]; on
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
+            <Button data-testid="mssp-dashboard-btn-outline-4" variant="outline">
+              Cancel
+            </Button>
           </DialogClose>
           <Button onClick={() => grantMutation.mutate()} disabled={!childOrgId || grantMutation.isPending}>
             {grantMutation.isPending ? "Granting..." : "Grant Access"}
@@ -356,7 +361,7 @@ export default function MsspDashboardPage() {
   if (!isMsspParent) {
     return (
       <div className="p-6">
-        <Card className="glass-subtle">
+        <Card data-testid="mssp-dashboard-card-3" className="glass-subtle">
           <CardContent className="p-8 text-center">
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h2 className="text-lg font-semibold mb-2">MSSP Dashboard</h2>

@@ -133,7 +133,7 @@ export default function StunningDashboard() {
   }
 
   return (
-    <div className="min-h-screen p-6 space-y-6">
+    <div data-testid="dashboard-stunning-page" className="min-h-screen p-6 space-y-6">
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
         <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
           {greeting}, Security Hero!
@@ -144,7 +144,10 @@ export default function StunningDashboard() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
-        <Card className="border-0 bg-gradient-to-br from-card to-card/80 shadow-2xl overflow-hidden relative">
+        <Card
+          data-testid="dashboard-stunning-card-1"
+          className="border-0 bg-gradient-to-br from-card to-card/80 shadow-2xl overflow-hidden relative"
+        >
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-purple-500/5 to-pink-500/5" />
           <CardContent className="pt-8 pb-8 relative">
             <div className="grid md:grid-cols-3 gap-8 items-center">
@@ -244,7 +247,10 @@ export default function StunningDashboard() {
           transition={{ delay: 0.2 }}
           className="md:col-span-2"
         >
-          <Card className="border-0 bg-gradient-to-br from-card to-card/80 h-full">
+          <Card
+            data-testid="dashboard-stunning-card-2"
+            className="border-0 bg-gradient-to-br from-card to-card/80 h-full"
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-yellow-400" />
@@ -271,7 +277,10 @@ export default function StunningDashboard() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}>
-          <Card className="border-0 bg-gradient-to-br from-card to-card/80 h-full">
+          <Card
+            data-testid="dashboard-stunning-card-3"
+            className="border-0 bg-gradient-to-br from-card to-card/80 h-full"
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-amber-400" />

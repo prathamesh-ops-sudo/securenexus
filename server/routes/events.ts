@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { eventBus } from "../event-bus";
 import { replyUnauthenticated } from "../api-response";
+import { resolveOrgContext } from "../rbac";
 
 export function registerEventsRoutes(app: Express): void {
   app.get("/api/events/stream", (req: Request, res: Response) => {

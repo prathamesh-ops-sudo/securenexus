@@ -146,7 +146,7 @@ function UsageMeteringTab() {
 
   if (isPending) {
     return (
-      <div className="space-y-4">
+      <div data-testid="usage-billing-page" className="space-y-4">
         {[1, 2, 3, 4].map((i) => (
           <Skeleton key={i} className="h-32 w-full rounded-lg" />
         ))}
@@ -163,6 +163,7 @@ function UsageMeteringTab() {
         <p className="text-sm font-medium">Failed to load usage data</p>
         <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
         <Button
+          data-testid="usage-billing-btn-outline-0"
           variant="outline"
           size="sm"
           className="mt-3"
@@ -178,7 +179,7 @@ function UsageMeteringTab() {
 
   if (!usage) {
     return (
-      <Card className="glass">
+      <Card data-testid="usage-billing-card-1" className="glass">
         <CardContent className="py-12 text-center">
           <Activity className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
           <p className="text-muted-foreground">No usage data available yet</p>
@@ -214,7 +215,11 @@ function UsageMeteringTab() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {usage.metrics.map((metric) => (
-          <Card key={metric.type} className={`glass border ${statusBg(metric.status)}`}>
+          <Card
+            data-testid="usage-billing-card-2"
+            key={metric.type}
+            className={`glass border ${statusBg(metric.status)}`}
+          >
             <CardContent className="pt-5 pb-4">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -253,7 +258,7 @@ function UsageMeteringTab() {
       </div>
 
       {usage.warnings.length > 0 && (
-        <Card className="glass border border-yellow-500/30 bg-yellow-500/5">
+        <Card data-testid="usage-billing-card-3" className="glass border border-yellow-500/30 bg-yellow-500/5">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-yellow-400">
               <AlertTriangle className="h-4 w-4" />
@@ -461,6 +466,7 @@ function WorkspaceTemplatesTab() {
 
                 <div className="flex gap-2 pt-2">
                   <Button
+                    data-testid="usage-billing-btn-outline-1"
                     size="sm"
                     variant="outline"
                     className="flex-1"
@@ -469,6 +475,7 @@ function WorkspaceTemplatesTab() {
                     {isExpanded ? "Less" : "Details"}
                   </Button>
                   <Button
+                    data-testid="usage-billing-btn-2"
                     size="sm"
                     className="flex-1 gap-1"
                     disabled={applyMutation.isPending}

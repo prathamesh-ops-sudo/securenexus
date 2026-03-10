@@ -48,8 +48,14 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] dark:bg-[#0a0f1e] p-4">
-      <Card className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]">
+    <div
+      data-testid="forgot-password-page"
+      className="min-h-screen flex items-center justify-center bg-[#FFF8F0] dark:bg-[#0a0f1e] p-4"
+    >
+      <Card
+        data-testid="forgot-password-card-1"
+        className="w-full max-w-md border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_rgba(6,182,212,0.3)] bg-white dark:bg-[#111827]"
+      >
         <CardHeader className="space-y-3">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/30 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-500/10 dark:to-transparent">
@@ -79,6 +85,7 @@ export default function ForgotPasswordPage() {
                 The link will expire in 60 minutes. Check your spam folder if you don't see it.
               </p>
               <Button
+                data-testid="forgot-password-btn-outline-0"
                 variant="outline"
                 className="w-full border-[2px] border-[#1e293b] dark:border-[#334155] font-semibold"
                 onClick={() => navigate("/")}
@@ -116,6 +123,7 @@ export default function ForgotPasswordPage() {
                 </div>
               </div>
               <Button
+                data-testid="forgot-password-btn-1"
                 type="submit"
                 disabled={isSubmitting}
                 className="w-full h-11 font-bold border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all bg-cyan-600 hover:bg-cyan-700 text-white"
@@ -130,6 +138,7 @@ export default function ForgotPasswordPage() {
                 )}
               </Button>
               <Button
+                data-testid="forgot-password-btn-ghost-2"
                 type="button"
                 variant="ghost"
                 className="w-full text-sm font-medium text-[#64748b] hover:text-[#1e293b] dark:text-[#94a3b8] dark:hover:text-[#e2e8f0]"
