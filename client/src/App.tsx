@@ -227,8 +227,6 @@ function AuthenticatedApp() {
       <OrgContext.Provider value={orgContext}>
         <SidebarProvider style={style as React.CSSProperties}>
           <div className="flex h-screen w-full relative">
-            <div className="ambient-mesh" />
-            <div className="noise-overlay" />
             <AppSidebar />
             <a
               href="#main-content"
@@ -239,7 +237,7 @@ function AuthenticatedApp() {
             <div className="flex flex-col flex-1 min-w-0 relative z-10">
               <ImpersonationBanner />
               <PlanLimitBanner />
-              <header className="flex items-center justify-between gap-4 px-3 py-2 border-b border-border/50 sticky top-0 z-40 glass-strong gradient-bg-red-subtle">
+              <header className="flex items-center justify-between gap-4 px-3 py-2 border-b border-border/60 sticky top-0 z-40 bg-background/80 backdrop-blur-md">
                 <div className="flex items-center gap-2">
                   <SidebarTrigger data-testid="button-sidebar-toggle" />
                   <div className={`w-2 h-2 rounded-full ${dotColor}`} data-testid="indicator-sse-status" />

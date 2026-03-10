@@ -30,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import { GuidedWorkflowBanner } from "@/components/guided-workflow";
 import {
   ResponsiveContainer,
@@ -202,6 +203,52 @@ function ChartSkeleton() {
       <Skeleton className="h-4 w-32" />
       <Skeleton className="h-[180px] w-full" />
       <span className="sr-only">Loading chart...</span>
+    </div>
+  );
+}
+
+function clampNumber(value: number, minValue: number, maxValue: number) {
+  return Math.min(maxValue, Math.max(minValue, value));
+}
+
+function SecurityScorePill({ score }: { score: number }) {
+  const color =
+    score >= 90 ? "text-emerald-400" : score >= 70 ? "text-cyan-400" : score >= 50 ? "text-amber-400" : "text-red-400";
+  const stroke = score >= 90 ? "#34d399" : score >= 70 ? "#22d3ee" : score >= 50 ? "#fbbf24" : "#ef4444";
+  const radius = 14;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+
+  return (
+    <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-muted/30">
+      <div className="relative h-8 w-8">
+        <svg className="h-8 w-8 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r={radius} stroke="rgba(148,163,184,0.18)" strokeWidth="4" fill="none" />
+          <circle
+            cx="20"
+            cy="20"
+            r={radius}
+            stroke={stroke}
+            strokeWidth="4"
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 650ms ease-out" }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`text-[11px] font-bold tabular-nums ${color}`}>{score}</span>
+        </div>
+      </div>
+      <div className="leading-tight">
+        <div className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest">
+          Security score
+        </div>
+        <div className={`text-[11px] font-semibold ${color}`}>
+          {score >= 90 ? "Excellent" : score >= 70 ? "Good" : score >= 50 ? "At risk" : "Critical"}
+        </div>
+      </div>
     </div>
   );
 }
@@ -925,12 +972,20 @@ function WidgetCustomizer({
 
 export default function Dashboard() {
   usePageTitle("Security Dashboard — SecureNexus Agentic SOC", true);
+  const { user } = useAuth();
   const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig[]>(loadWidgetConfig);
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  }, []);
 
   const {
     data: stats,
@@ -1025,6 +1080,18 @@ export default function Dashboard() {
     return bottomIds.filter((id) => isWidgetVisible(id));
   }, [isWidgetVisible]);
 
+  const securityScore = useMemo(() => {
+    if (!stats) return null;
+
+    const criticalPenalty = Math.min(stats.criticalAlerts, 6) * 5;
+    const incidentPenalty = Math.min(stats.openIncidents, 5) * 3;
+    const recovery = Math.min(stats.resolvedIncidents, 5) * 2;
+
+    return clampNumber(100 - criticalPenalty - incidentPenalty + recovery, 0, 100);
+  }, [stats]);
+
+  const showSecurityScore = securityScore !== null && !statsLoading && !statsError;
+
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]" aria-label="Security Operations Dashboard">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
@@ -1033,12 +1100,17 @@ export default function Dashboard() {
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight">Security Operations Center</h1>
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight">
+              {greeting}
+              {user?.firstName ? `, ${user.firstName}` : ""}
+            </h1>
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Real-time threat monitoring and operational intelligence
+              Your brief for {timeRange === "live" ? "right now" : "the last 24 hours"} · Updated{" "}
+              {formatTime(lastUpdated)}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {showSecurityScore && <SecurityScorePill score={securityScore} />}
             <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
               <Button
                 data-testid="dashboard-btn-4"
