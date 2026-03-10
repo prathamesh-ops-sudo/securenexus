@@ -518,6 +518,7 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                   {[
                     { title: "Platform Admin", url: "/platform-admin", icon: ShieldCheck, color: "text-yellow-500" },
+                    { title: "Account Lockout", url: "/account-lockout", icon: Lock, color: "text-red-400" },
                     { title: "Dev Portal", url: "/dev-portal", icon: Code2, color: "text-cyan-400" },
                     { title: "Email Templates", url: "/email-templates", icon: Mail, color: "text-cyan-400" },
                     { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3, color: "text-cyan-400" },

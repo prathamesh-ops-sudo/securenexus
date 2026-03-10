@@ -1,8 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
-import { replyRateLimit } from "../api-response";
+import { replyRateLimit, replyError, ERROR_CODES } from "../api-response";
 import { logger } from "../logger";
 import { sendEmail } from "../email-service";
 import { accountLockedEmail } from "../email-templates";
+import { db } from "../db";
+import { users, failedLoginAttempts } from "@shared/schema";
+import { eq, sql, and, gte, desc, count } from "drizzle-orm";
 
 const log = logger.child("auth-rate-limit");
 
@@ -27,6 +30,27 @@ const REGISTER_IP_WINDOW_MS = 60 * 60 * 1000;
 
 const FORGOT_EMAIL_MAX = 3;
 const FORGOT_EMAIL_WINDOW_MS = 60 * 60 * 1000;
+
+const DEFAULT_LOCKOUT_THRESHOLD = 10;
+const DEFAULT_LOCKOUT_DURATION_MS = 30 * 60 * 1000;
+
+export async function isAccountLocked(email: string): Promise<{ locked: boolean; lockedUntil: Date | null }> {
+  try {
+    const [user] = await db
+      .select({ lockedUntil: users.lockedUntil })
+      .from(users)
+      .where(eq(users.email, email.toLowerCase()))
+      .limit(1);
+    if (!user || !user.lockedUntil) return { locked: false, lockedUntil: null };
+    if (new Date(user.lockedUntil) > new Date()) {
+      return { locked: true, lockedUntil: user.lockedUntil };
+    }
+    return { locked: false, lockedUntil: null };
+  } catch (err) {
+    log.error("Failed to check account lock status", { email, error: String(err) });
+    return { locked: false, lockedUntil: null };
+  }
+}
 
 function cleanupMap(map: Map<string, RateBucket>): void {
   const now = Date.now();
@@ -121,9 +145,85 @@ export function loginRateLimitPre(req: Request, res: Response, next: NextFunctio
       );
       return;
     }
+
+    isAccountLocked(email)
+      .then(({ locked, lockedUntil }) => {
+        if (locked && lockedUntil) {
+          const remainMin = Math.ceil((lockedUntil.getTime() - Date.now()) / 60_000);
+          log.warn("Login blocked: DB account lockout active", { email, ip, lockedUntil: lockedUntil.toISOString() });
+          replyError(res, 423, [
+            {
+              code: ERROR_CODES.ACCOUNT_LOCKED,
+              message: `Account is locked due to repeated failed login attempts. Try again in ${remainMin} minutes.`,
+            },
+          ]);
+          return;
+        }
+        next();
+      })
+      .catch(() => {
+        next();
+      });
+    return;
   }
 
   next();
+}
+
+async function recordFailedLoginDb(
+  email: string,
+  ip: string,
+  userAgent: string | undefined,
+  reason: string,
+): Promise<void> {
+  try {
+    await db.insert(failedLoginAttempts).values({
+      email: email.toLowerCase(),
+      ipAddress: ip,
+      userAgent: userAgent || null,
+      reason,
+    });
+
+    const windowStart = new Date(Date.now() - DEFAULT_LOCKOUT_DURATION_MS);
+    const [result] = await db
+      .select({ value: count() })
+      .from(failedLoginAttempts)
+      .where(
+        and(eq(failedLoginAttempts.email, email.toLowerCase()), gte(failedLoginAttempts.attemptedAt, windowStart)),
+      );
+
+    const failCount = result?.value ?? 0;
+
+    if (failCount >= DEFAULT_LOCKOUT_THRESHOLD) {
+      const lockUntil = new Date(Date.now() + DEFAULT_LOCKOUT_DURATION_MS);
+      await db
+        .update(users)
+        .set({ lockedUntil: lockUntil, failedLoginCount: failCount })
+        .where(eq(users.email, email.toLowerCase()));
+
+      log.warn("Account locked: failed login threshold reached", {
+        email,
+        ip,
+        failCount,
+        lockedUntil: lockUntil.toISOString(),
+      });
+
+      const resetMinutes = Math.ceil(DEFAULT_LOCKOUT_DURATION_MS / 60_000);
+      const emailContent = accountLockedEmail({ email, lockoutMinutes: resetMinutes });
+      sendEmail({
+        to: email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      }).catch((err) => {
+        log.error("Failed to send account lockout notification email", { email, error: String(err) });
+      });
+    } else {
+      await db.update(users).set({ failedLoginCount: failCount }).where(eq(users.email, email.toLowerCase()));
+    }
+  } catch (err) {
+    log.error("Failed to record failed login in DB", { email, ip, error: String(err) });
+  }
 }
 
 export function recordFailedLogin(req: Request): void {
@@ -134,26 +234,23 @@ export function recordFailedLogin(req: Request): void {
 
   if (email) {
     incrementBucket(emailLoginBuckets, email, LOGIN_EMAIL_WINDOW_MS);
-
-    const bucket = emailLoginBuckets.get(email);
-    if (bucket && bucket.count === LOGIN_EMAIL_MAX) {
-      log.warn("Account temporarily locked due to repeated failed login attempts", { email, ip });
-      const resetMinutes = Math.ceil(LOGIN_EMAIL_WINDOW_MS / 60_000);
-      const emailContent = accountLockedEmail({ email, lockoutMinutes: resetMinutes });
-      sendEmail({
-        to: email,
-        subject: emailContent.subject,
-        html: emailContent.html,
-        text: emailContent.text,
-      }).catch((err) => {
-        log.error("Failed to send account lockout notification email", { email, error: String(err) });
-      });
-    }
+    const ua = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined;
+    recordFailedLoginDb(email, ip, ua, "invalid_credentials").catch((err) => {
+      log.error("recordFailedLoginDb background error", { error: String(err) });
+    });
   }
 }
 
 export function clearLoginBuckets(email: string): void {
   emailLoginBuckets.delete(email.toLowerCase());
+}
+
+export async function clearLockout(email: string): Promise<void> {
+  try {
+    await db.update(users).set({ lockedUntil: null, failedLoginCount: 0 }).where(eq(users.email, email.toLowerCase()));
+  } catch (err) {
+    log.error("Failed to clear lockout", { email, error: String(err) });
+  }
 }
 
 export function registerRateLimit(req: Request, res: Response, next: NextFunction): void {
@@ -197,6 +294,125 @@ export function forgotPasswordRateLimit(req: Request, res: Response, next: NextF
   incrementBucket(emailForgotBuckets, email, FORGOT_EMAIL_WINDOW_MS);
   setRateLimitHeaders(res, FORGOT_EMAIL_MAX, emailCheck.remaining - 1, emailCheck.resetSeconds);
   next();
+}
+
+export async function getLockedAccounts(): Promise<
+  Array<{
+    id: string;
+    email: string | null;
+    lockedUntil: Date | null;
+    failedLoginCount: number;
+    lastFailedAt: Date | null;
+    lastFailedIp: string | null;
+  }>
+> {
+  const now = new Date();
+  const lockedUsers = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      lockedUntil: users.lockedUntil,
+      failedLoginCount: users.failedLoginCount,
+    })
+    .from(users)
+    .where(gte(users.lockedUntil, now))
+    .orderBy(desc(users.lockedUntil));
+
+  const results: Array<{
+    id: string;
+    email: string | null;
+    lockedUntil: Date | null;
+    failedLoginCount: number;
+    lastFailedAt: Date | null;
+    lastFailedIp: string | null;
+  }> = [];
+
+  for (const u of lockedUsers) {
+    const [lastAttempt] = await db
+      .select({
+        attemptedAt: failedLoginAttempts.attemptedAt,
+        ipAddress: failedLoginAttempts.ipAddress,
+      })
+      .from(failedLoginAttempts)
+      .where(eq(failedLoginAttempts.email, (u.email || "").toLowerCase()))
+      .orderBy(desc(failedLoginAttempts.attemptedAt))
+      .limit(1);
+
+    results.push({
+      id: u.id,
+      email: u.email,
+      lockedUntil: u.lockedUntil,
+      failedLoginCount: u.failedLoginCount,
+      lastFailedAt: lastAttempt?.attemptedAt ?? null,
+      lastFailedIp: lastAttempt?.ipAddress ?? null,
+    });
+  }
+
+  return results;
+}
+
+export async function adminUnlockAccount(userId: string): Promise<boolean> {
+  try {
+    const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) return false;
+    await db.update(users).set({ lockedUntil: null, failedLoginCount: 0 }).where(eq(users.id, userId));
+    if (user.email) {
+      emailLoginBuckets.delete(user.email.toLowerCase());
+    }
+    log.info("Account unlocked by admin", { userId, email: user.email });
+    return true;
+  } catch (err) {
+    log.error("Failed to unlock account", { userId, error: String(err) });
+    return false;
+  }
+}
+
+export async function getFailedLoginHistory(
+  limit = 50,
+  offset = 0,
+): Promise<{ attempts: Array<typeof failedLoginAttempts.$inferSelect>; total: number }> {
+  const [totalResult] = await db.select({ value: count() }).from(failedLoginAttempts);
+  const total = totalResult?.value ?? 0;
+  const attempts = await db
+    .select()
+    .from(failedLoginAttempts)
+    .orderBy(desc(failedLoginAttempts.attemptedAt))
+    .limit(limit)
+    .offset(offset);
+  return { attempts, total };
+}
+
+export async function getFailedLoginStats(): Promise<{
+  totalAttempts24h: number;
+  lockedAccountsCount: number;
+  topIps: Array<{ ip: string; count: number }>;
+}> {
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const now = new Date();
+
+  const [total24h] = await db
+    .select({ value: count() })
+    .from(failedLoginAttempts)
+    .where(gte(failedLoginAttempts.attemptedAt, oneDayAgo));
+
+  const [lockedCount] = await db.select({ value: count() }).from(users).where(gte(users.lockedUntil, now));
+
+  const topIpsResult = await db
+    .select({
+      ip: failedLoginAttempts.ipAddress,
+      cnt: sql<number>`count(*)::int`,
+    })
+    .from(failedLoginAttempts)
+    .where(gte(failedLoginAttempts.attemptedAt, oneDayAgo))
+    .groupBy(failedLoginAttempts.ipAddress)
+    .orderBy(sql`count(*) desc`)
+    .limit(10);
+
+  return {
+    totalAttempts24h: total24h?.value ?? 0,
+    lockedAccountsCount: lockedCount?.value ?? 0,
+    topIps: topIpsResult.map((r) => ({ ip: r.ip, count: r.cnt })),
+  };
 }
 
 export function getAuthRateLimitStats(): {
