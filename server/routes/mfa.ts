@@ -5,88 +5,16 @@ import { logger } from "../logger";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { users } from "@shared/models/auth";
-import crypto from "crypto";
-
-function generateBase32Secret(length = 20): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const bytes = crypto.randomBytes(length);
-  let result = "";
-  for (let i = 0; i < length; i++) {
-    result += chars[bytes[i] % 32];
-  }
-  return result;
-}
-
-function generateTOTP(secret: string, timeStep = 30, digits = 6): string {
-  const epoch = Math.floor(Date.now() / 1000);
-  const counter = Math.floor(epoch / timeStep);
-  const counterBuffer = Buffer.alloc(8);
-  counterBuffer.writeUInt32BE(0, 0);
-  counterBuffer.writeUInt32BE(counter, 4);
-
-  const decodedSecret = base32Decode(secret);
-  const hmac = crypto.createHmac("sha1", decodedSecret);
-  hmac.update(counterBuffer);
-  const hmacResult = hmac.digest();
-
-  const offset = hmacResult[hmacResult.length - 1] & 0xf;
-  const code =
-    ((hmacResult[offset] & 0x7f) << 24) |
-    ((hmacResult[offset + 1] & 0xff) << 16) |
-    ((hmacResult[offset + 2] & 0xff) << 8) |
-    (hmacResult[offset + 3] & 0xff);
-
-  const otp = code % Math.pow(10, digits);
-  return otp.toString().padStart(digits, "0");
-}
-
-function base32Decode(encoded: string): Buffer {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = "";
-  for (const c of encoded.toUpperCase()) {
-    const val = chars.indexOf(c);
-    if (val === -1) continue;
-    bits += val.toString(2).padStart(5, "0");
-  }
-  const bytes: number[] = [];
-  for (let i = 0; i + 8 <= bits.length; i += 8) {
-    bytes.push(parseInt(bits.substring(i, i + 8), 2));
-  }
-  return Buffer.from(bytes);
-}
-
-function verifyTOTP(secret: string, token: string, window = 1): boolean {
-  for (let i = -window; i <= window; i++) {
-    const epoch = Math.floor(Date.now() / 1000) + i * 30;
-    const counter = Math.floor(epoch / 30);
-    const counterBuffer = Buffer.alloc(8);
-    counterBuffer.writeUInt32BE(0, 0);
-    counterBuffer.writeUInt32BE(counter, 4);
-
-    const decodedSecret = base32Decode(secret);
-    const hmac = crypto.createHmac("sha1", decodedSecret);
-    hmac.update(counterBuffer);
-    const hmacResult = hmac.digest();
-
-    const offset = hmacResult[hmacResult.length - 1] & 0xf;
-    const code =
-      ((hmacResult[offset] & 0x7f) << 24) |
-      ((hmacResult[offset + 1] & 0xff) << 16) |
-      ((hmacResult[offset + 2] & 0xff) << 8) |
-      (hmacResult[offset + 3] & 0xff);
-
-    const otp = (code % 1000000).toString().padStart(6, "0");
-    if (otp === token) return true;
-  }
-  return false;
-}
+import { authenticator } from "otplib";
+import QRCode from "qrcode";
+import { encryptSsoSecret, decryptSsoSecret } from "../sso-crypto";
 
 export function registerMfaRoutes(app: Express): void {
   const log = logger.child("mfa");
 
   app.get("/api/mfa/status", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { id: string };
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
       const [dbUser] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
       if (!dbUser) return res.status(404).json({ message: "User not found" });
@@ -102,20 +30,22 @@ export function registerMfaRoutes(app: Express): void {
 
   app.post("/api/mfa/setup", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { id: string };
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
       const [dbUser] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
       if (!dbUser) return res.status(404).json({ message: "User not found" });
       if (dbUser.mfaEnabled) return res.status(400).json({ message: "MFA is already enabled" });
 
-      const secret = generateBase32Secret();
-      await db.update(users).set({ mfaSecret: secret }).where(eq(users.id, user.id));
+      const secret = authenticator.generateSecret();
+      const encryptedSecret = encryptSsoSecret(secret);
+      await db.update(users).set({ mfaSecret: encryptedSecret }).where(eq(users.id, user.id));
 
       const issuer = "SecureNexus";
       const accountName = dbUser.email || user.id;
-      const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(accountName)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+      const otpauthUrl = authenticator.keyuri(accountName, issuer, secret);
+      const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
 
-      res.json({ secret, otpauthUrl });
+      res.json({ secret, otpauthUrl, qrCodeDataUrl });
     } catch (error) {
       log.error("Failed to setup MFA", { error: String(error) });
       res.status(500).json({ message: "Failed to setup MFA" });
@@ -124,7 +54,7 @@ export function registerMfaRoutes(app: Express): void {
 
   app.post("/api/mfa/verify", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { id: string };
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
       const { token } = req.body;
       if (!token || typeof token !== "string" || !/^\d{6}$/.test(token)) {
@@ -135,7 +65,11 @@ export function registerMfaRoutes(app: Express): void {
       if (!dbUser) return res.status(404).json({ message: "User not found" });
       if (!dbUser.mfaSecret) return res.status(400).json({ message: "MFA not set up. Call /api/mfa/setup first." });
 
-      const isValid = verifyTOTP(dbUser.mfaSecret, token);
+      const decryptedSecret = decryptSsoSecret(dbUser.mfaSecret);
+      const isValid = authenticator.verify({
+        token,
+        secret: decryptedSecret,
+      });
       if (!isValid) return res.status(400).json({ message: "Invalid verification code" });
 
       await db.update(users).set({ mfaEnabled: true, mfaVerifiedAt: new Date() }).where(eq(users.id, user.id));
@@ -150,7 +84,7 @@ export function registerMfaRoutes(app: Express): void {
 
   app.post("/api/mfa/disable", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { id: string };
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
       const { token } = req.body;
       if (!token || typeof token !== "string" || !/^\d{6}$/.test(token)) {
@@ -163,7 +97,11 @@ export function registerMfaRoutes(app: Express): void {
         return res.status(400).json({ message: "MFA is not enabled" });
       }
 
-      const isValid = verifyTOTP(dbUser.mfaSecret, token);
+      const decryptedSecret = decryptSsoSecret(dbUser.mfaSecret);
+      const isValid = authenticator.verify({
+        token,
+        secret: decryptedSecret,
+      });
       if (!isValid) return res.status(400).json({ message: "Invalid verification code" });
 
       await db
@@ -181,7 +119,7 @@ export function registerMfaRoutes(app: Express): void {
 
   app.post("/api/mfa/validate", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { id: string };
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
       const { token } = req.body;
       if (!token || typeof token !== "string" || !/^\d{6}$/.test(token)) {
@@ -193,7 +131,11 @@ export function registerMfaRoutes(app: Express): void {
         return res.status(400).json({ message: "MFA not configured" });
       }
 
-      const isValid = verifyTOTP(dbUser.mfaSecret, token);
+      const decryptedSecret = decryptSsoSecret(dbUser.mfaSecret);
+      const isValid = authenticator.verify({
+        token,
+        secret: decryptedSecret,
+      });
       if (!isValid) return res.status(401).json({ message: "Invalid MFA code" });
 
       res.json({ success: true });
