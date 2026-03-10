@@ -28,9 +28,29 @@ import {
   Globe,
   Clock,
   AlertTriangle,
+  Shield,
+  ShieldOff,
+  Pause,
+  Play,
+  ToggleLeft,
+  ToggleRight,
+  Mail,
+  Flag,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
 } from "lucide-react";
 
-type AdminTab = "overview" | "organizations" | "users" | "subscriptions" | "revenue" | "audit" | "health";
+type AdminTab =
+  | "overview"
+  | "organizations"
+  | "users"
+  | "subscriptions"
+  | "revenue"
+  | "audit"
+  | "health"
+  | "flags"
+  | "email-logs";
 
 interface PlatformStats {
   totalOrgs: number;
@@ -194,6 +214,8 @@ function OrganizationsTab() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const limit = 20;
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data, isPending } = useQuery({
     queryKey: ["/api/platform-admin/organizations", search, page],
@@ -204,6 +226,30 @@ function OrganizationsTab() {
       const body = await res.json();
       return { items: body.data as OrgListItem[], total: body.meta?.total ?? 0 };
     },
+  });
+
+  const suspendMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      await apiRequest("POST", `/api/platform-admin/organizations/${orgId}/suspend`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/stats"] });
+      toast({ title: "Organization suspended" });
+    },
+    onError: () => toast({ title: "Failed to suspend organization", variant: "destructive" }),
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      await apiRequest("POST", `/api/platform-admin/organizations/${orgId}/activate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/stats"] });
+      toast({ title: "Organization activated" });
+    },
+    onError: () => toast({ title: "Failed to activate organization", variant: "destructive" }),
   });
 
   return (
@@ -248,6 +294,7 @@ function OrganizationsTab() {
                   <th className="text-right p-3 font-medium">Members</th>
                   <th className="text-right p-3 font-medium">Alerts</th>
                   <th className="text-left p-3 font-medium">Created</th>
+                  <th className="text-right p-3 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -271,6 +318,35 @@ function OrganizationsTab() {
                     <td className="p-3 text-right">{org.alertCount.toLocaleString()}</td>
                     <td className="p-3 text-xs text-muted-foreground">
                       {new Date(org.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {org.deletedAt ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-green-500 hover:text-green-400"
+                            onClick={() => activateMutation.mutate(org.id)}
+                            disabled={activateMutation.isPending}
+                            title="Activate"
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Activate
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-orange-500 hover:text-orange-400"
+                            onClick={() => suspendMutation.mutate(org.id)}
+                            disabled={suspendMutation.isPending}
+                            title="Suspend"
+                          >
+                            <Pause className="h-3 w-3 mr-1" />
+                            Suspend
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -364,6 +440,28 @@ function UsersTab() {
       window.location.reload();
     },
     onError: () => toast({ title: "Failed to start impersonation", variant: "destructive" }),
+  });
+
+  const grantAdminMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("POST", `/api/platform-admin/users/${userId}/grant-super-admin`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/users"] });
+      toast({ title: "Super-admin access granted" });
+    },
+    onError: () => toast({ title: "Failed to grant super-admin", variant: "destructive" }),
+  });
+
+  const revokeAdminMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("POST", `/api/platform-admin/users/${userId}/revoke-super-admin`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/users"] });
+      toast({ title: "Super-admin access revoked" });
+    },
+    onError: () => toast({ title: "Failed to revoke super-admin", variant: "destructive" }),
   });
 
   return (
@@ -498,6 +596,29 @@ function UsersTab() {
                             title="Force Password Reset"
                           >
                             <KeyRound className="h-3 w-3" />
+                          </Button>
+                        )}
+                        {!user.isSuperAdmin ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-yellow-500 hover:text-yellow-400"
+                            onClick={() => grantAdminMutation.mutate(user.id)}
+                            disabled={grantAdminMutation.isPending}
+                            title="Grant Super Admin"
+                          >
+                            <Shield className="h-3 w-3" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-orange-500 hover:text-orange-400"
+                            onClick={() => revokeAdminMutation.mutate(user.id)}
+                            disabled={revokeAdminMutation.isPending}
+                            title="Revoke Super Admin"
+                          >
+                            <ShieldOff className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
@@ -904,12 +1025,298 @@ function HealthTab() {
   );
 }
 
+interface FeatureFlagItem {
+  id: string;
+  key: string;
+  description: string | null;
+  enabled: boolean;
+  rolloutPct: number | null;
+  targetOrgs: string[] | null;
+  targetRoles: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function FeatureFlagsTab() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data, isPending } = useQuery<FeatureFlagItem[]>({
+    queryKey: ["/api/platform-admin/feature-flags"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/platform-admin/feature-flags");
+      const body = await res.json();
+      return body.data ?? body;
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ key, enabled }: { key: string; enabled: boolean }) => {
+      await apiRequest("PATCH", `/api/platform-admin/feature-flags/${key}`, { enabled });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/feature-flags"] });
+      toast({ title: "Feature flag updated" });
+    },
+    onError: () => toast({ title: "Failed to update feature flag", variant: "destructive" }),
+  });
+
+  const rolloutMutation = useMutation({
+    mutationFn: async ({ key, rolloutPct }: { key: string; rolloutPct: number }) => {
+      await apiRequest("PATCH", `/api/platform-admin/feature-flags/${key}`, { rolloutPct });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/feature-flags"] });
+      toast({ title: "Rollout percentage updated" });
+    },
+    onError: () => toast({ title: "Failed to update rollout", variant: "destructive" }),
+  });
+
+  if (isPending) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-20" />
+        ))}
+      </div>
+    );
+  }
+
+  const flags = Array.isArray(data) ? data : [];
+
+  if (flags.length === 0) {
+    return (
+      <Card className="glass-card border-border/40">
+        <CardContent className="py-8 text-center text-muted-foreground">
+          <Flag className="h-10 w-10 mx-auto mb-2 opacity-40" />
+          <p>No feature flags configured</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {flags.map((flag) => (
+        <Card key={flag.id} className="glass-card border-border/40">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-sm font-medium">{flag.key}</span>
+                  <Badge variant={flag.enabled ? "default" : "secondary"} className="text-xs">
+                    {flag.enabled ? "Enabled" : "Disabled"}
+                  </Badge>
+                </div>
+                {flag.description && <p className="text-xs text-muted-foreground mt-1">{flag.description}</p>}
+                <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                  <span>Rollout: {flag.rolloutPct ?? 100}%</span>
+                  {flag.targetOrgs && flag.targetOrgs.length > 0 && <span>Orgs: {flag.targetOrgs.length}</span>}
+                  {flag.targetRoles && flag.targetRoles.length > 0 && <span>Roles: {flag.targetRoles.join(", ")}</span>}
+                  <span>Updated: {new Date(flag.updatedAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    defaultValue={flag.rolloutPct ?? 100}
+                    className="w-16 h-7 text-xs"
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val) && val >= 0 && val <= 100 && val !== (flag.rolloutPct ?? 100)) {
+                        rolloutMutation.mutate({ key: flag.key, rolloutPct: val });
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => toggleMutation.mutate({ key: flag.key, enabled: !flag.enabled })}
+                  disabled={toggleMutation.isPending}
+                >
+                  {flag.enabled ? (
+                    <ToggleRight className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+interface EmailLogEntry {
+  id: string;
+  channelId: string;
+  channelName: string;
+  channelType: string;
+  orgId: string | null;
+  eventType: string;
+  title: string;
+  severity: string;
+  success: boolean;
+  errorMessage: string | null;
+  deliveredAt: string;
+}
+
+function EmailLogsTab() {
+  const [page, setPage] = useState(0);
+  const [successFilter, setSuccessFilter] = useState<string>("");
+  const limit = 30;
+
+  const { data, isPending, refetch } = useQuery({
+    queryKey: ["/api/platform-admin/email-logs", page, successFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
+      if (successFilter) params.set("success", successFilter);
+      const res = await apiRequest("GET", `/api/platform-admin/email-logs?${params}`);
+      const body = await res.json();
+      return { items: (body.data ?? body) as EmailLogEntry[], total: body.meta?.total ?? 0 };
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <select
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          value={successFilter}
+          onChange={(e) => {
+            setSuccessFilter(e.target.value);
+            setPage(0);
+          }}
+        >
+          <option value="">All deliveries</option>
+          <option value="true">Successful</option>
+          <option value="false">Failed</option>
+        </select>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-1" />
+          Refresh
+        </Button>
+      </div>
+
+      {isPending ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12" />
+          ))}
+        </div>
+      ) : !data?.items.length ? (
+        <Card className="glass-card border-border/40">
+          <CardContent className="py-8 text-center text-muted-foreground">
+            <Mail className="h-10 w-10 mx-auto mb-2 opacity-40" />
+            <p>No email delivery logs found</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="rounded-lg border border-border/40 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/40 bg-muted/30">
+                  <th className="text-left p-3 font-medium">Timestamp</th>
+                  <th className="text-left p-3 font-medium">Channel</th>
+                  <th className="text-left p-3 font-medium">Event</th>
+                  <th className="text-left p-3 font-medium">Title</th>
+                  <th className="text-left p-3 font-medium">Severity</th>
+                  <th className="text-left p-3 font-medium">Status</th>
+                  <th className="text-left p-3 font-medium">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((entry) => (
+                  <tr key={entry.id} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
+                    <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {new Date(entry.deliveredAt).toLocaleString()}
+                    </td>
+                    <td className="p-3">
+                      <div className="text-xs font-medium">{entry.channelName}</div>
+                      <div className="text-xs text-muted-foreground">{entry.channelType}</div>
+                    </td>
+                    <td className="p-3">
+                      <Badge variant="outline" className="text-xs font-mono">
+                        {entry.eventType}
+                      </Badge>
+                    </td>
+                    <td className="p-3 text-xs max-w-[200px] truncate" title={entry.title}>
+                      {entry.title}
+                    </td>
+                    <td className="p-3">
+                      <Badge
+                        variant={
+                          entry.severity === "critical"
+                            ? "destructive"
+                            : entry.severity === "high"
+                              ? "destructive"
+                              : "secondary"
+                        }
+                        className="text-xs"
+                      >
+                        {entry.severity}
+                      </Badge>
+                    </td>
+                    <td className="p-3">
+                      {entry.success ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500" />
+                      )}
+                    </td>
+                    <td
+                      className="p-3 text-xs text-muted-foreground max-w-[150px] truncate"
+                      title={entry.errorMessage ?? ""}
+                    >
+                      {entry.errorMessage ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing {page * limit + 1}-{Math.min((page + 1) * limit, data.total)} of {data.total}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(page + 1) * limit >= data.total}
+                onClick={() => setPage(page + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const TABS: { id: AdminTab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "organizations", label: "Organizations", icon: Building2 },
   { id: "users", label: "Users", icon: Users },
   { id: "subscriptions", label: "Subscriptions", icon: DollarSign },
   { id: "revenue", label: "Revenue", icon: TrendingUp },
+  { id: "flags", label: "Feature Flags", icon: Flag },
+  { id: "email-logs", label: "Email Logs", icon: Mail },
   { id: "audit", label: "Audit Log", icon: ScrollText },
   { id: "health", label: "Health", icon: HeartPulse },
 ];
@@ -939,7 +1346,7 @@ export default function PlatformAdminPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Platform Administration</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Manage organizations, users, subscriptions, and platform health
+          Manage organizations, users, subscriptions, feature flags, and platform health
         </p>
       </div>
 
@@ -969,6 +1376,8 @@ export default function PlatformAdminPage() {
         {activeTab === "users" && <UsersTab />}
         {activeTab === "subscriptions" && <SubscriptionsTab />}
         {activeTab === "revenue" && <RevenueTab />}
+        {activeTab === "flags" && <FeatureFlagsTab />}
+        {activeTab === "email-logs" && <EmailLogsTab />}
         {activeTab === "audit" && <AuditLogTab />}
         {activeTab === "health" && <HealthTab />}
       </div>

@@ -15,6 +15,8 @@ import {
   connectors,
   organizationMemberships,
   impersonationSessions,
+  featureFlags,
+  notificationDeliveryLog,
 } from "@shared/schema";
 import { eq, desc, sql, and, count, ilike, or, isNull, gte, lte } from "drizzle-orm";
 import { getPoolHealth, checkPoolConnectivity } from "../db";
@@ -1021,6 +1023,264 @@ export function registerPlatformAdminRoutes(app: Express): void {
       return sendEnvelope(res, null, {
         status: 500,
         errors: [{ code: "ME_FAILED", message: "Failed to fetch admin info", details: message }],
+      });
+    }
+  });
+
+  app.post(
+    "/api/platform-admin/users/:id/grant-super-admin",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const targetId = req.params.id;
+        if (!targetId || typeof targetId !== "string" || targetId.length > 64) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_ID", message: "Invalid user ID" }],
+          });
+        }
+
+        if (targetId === (req as any).user.id) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "SELF_GRANT", message: "Cannot grant super-admin to yourself" }],
+          });
+        }
+
+        const [target] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+        if (!target) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          });
+        }
+
+        if (target.isSuperAdmin) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "ALREADY_ADMIN", message: "User is already a super-admin" }],
+          });
+        }
+
+        const [updated] = await db
+          .update(users)
+          .set({ isSuperAdmin: true, updatedAt: new Date() })
+          .where(eq(users.id, targetId))
+          .returning();
+
+        await storage.createAuditLog({
+          userId: (req as any).user.id,
+          userName: (req as any).user.email,
+          action: "platform_admin_grant_super_admin",
+          resourceType: "user",
+          resourceId: targetId,
+          details: { targetEmail: target.email },
+        });
+
+        invalidateDeserializeCache(targetId);
+        return sendEnvelope(res, { id: updated.id, email: updated.email, isSuperAdmin: true });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "GRANT_ADMIN_FAILED", message: "Failed to grant super-admin", details: message }],
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/platform-admin/users/:id/revoke-super-admin",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const targetId = req.params.id;
+        if (!targetId || typeof targetId !== "string" || targetId.length > 64) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_ID", message: "Invalid user ID" }],
+          });
+        }
+
+        if (targetId === (req as any).user.id) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "SELF_REVOKE", message: "Cannot revoke your own super-admin access" }],
+          });
+        }
+
+        const [target] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+        if (!target) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          });
+        }
+
+        if (!target.isSuperAdmin) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "NOT_ADMIN", message: "User is not a super-admin" }],
+          });
+        }
+
+        const adminCount = await db.select({ value: count() }).from(users).where(eq(users.isSuperAdmin, true));
+        if (adminCount[0].value <= 1) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "LAST_ADMIN", message: "Cannot revoke the last super-admin" }],
+          });
+        }
+
+        const [updated] = await db
+          .update(users)
+          .set({ isSuperAdmin: false, updatedAt: new Date() })
+          .where(eq(users.id, targetId))
+          .returning();
+
+        await storage.createAuditLog({
+          userId: (req as any).user.id,
+          userName: (req as any).user.email,
+          action: "platform_admin_revoke_super_admin",
+          resourceType: "user",
+          resourceId: targetId,
+          details: { targetEmail: target.email },
+        });
+
+        invalidateDeserializeCache(targetId);
+        return sendEnvelope(res, { id: updated.id, email: updated.email, isSuperAdmin: false });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "REVOKE_ADMIN_FAILED", message: "Failed to revoke super-admin", details: message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/platform-admin/feature-flags",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (_req: Request, res: Response) => {
+      try {
+        const flags = await storage.listFeatureFlags();
+        return sendEnvelope(res, flags);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "FLAGS_LIST_FAILED", message: "Failed to list feature flags", details: message }],
+        });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/platform-admin/feature-flags/:key",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const flagKey = req.params.key;
+        if (!flagKey || typeof flagKey !== "string" || flagKey.length > 128) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_KEY", message: "Invalid feature flag key" }],
+          });
+        }
+
+        const existing = await storage.getFeatureFlag(flagKey);
+        if (!existing) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
+          });
+        }
+
+        const allowedFields = ["enabled", "rolloutPct", "targetOrgs", "targetRoles", "description"];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
+        }
+
+        if (typeof updates.enabled !== "undefined" && typeof updates.enabled !== "boolean") {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_VALUE", message: "enabled must be a boolean" }],
+          });
+        }
+        if (typeof updates.rolloutPct !== "undefined") {
+          const pct = Number(updates.rolloutPct);
+          if (isNaN(pct) || pct < 0 || pct > 100) {
+            return sendEnvelope(res, null, {
+              status: 400,
+              errors: [{ code: "INVALID_VALUE", message: "rolloutPct must be 0-100" }],
+            });
+          }
+          updates.rolloutPct = pct;
+        }
+
+        updates.updatedAt = new Date();
+        const updated = await storage.updateFeatureFlag(flagKey, updates as any);
+
+        await storage.createAuditLog({
+          userId: (req as any).user.id,
+          userName: (req as any).user.email,
+          action: "platform_admin_update_feature_flag",
+          resourceType: "feature_flag",
+          resourceId: flagKey,
+          details: { updates: Object.keys(updates).filter((k) => k !== "updatedAt") },
+        });
+
+        return sendEnvelope(res, updated);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "FLAG_UPDATE_FAILED", message: "Failed to update feature flag", details: message }],
+        });
+      }
+    },
+  );
+
+  app.get("/api/platform-admin/email-logs", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+      const offset = Number(req.query.offset ?? 0) || 0;
+      const successFilter = typeof req.query.success === "string" ? req.query.success : undefined;
+      const channelType = typeof req.query.channelType === "string" ? req.query.channelType : undefined;
+
+      const conditions = [];
+      if (successFilter === "true") conditions.push(eq(notificationDeliveryLog.success, true));
+      if (successFilter === "false") conditions.push(eq(notificationDeliveryLog.success, false));
+      if (channelType) conditions.push(eq(notificationDeliveryLog.channelType, channelType));
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [totalResult] = await db.select({ value: count() }).from(notificationDeliveryLog).where(whereClause);
+
+      const items = await db
+        .select()
+        .from(notificationDeliveryLog)
+        .where(whereClause)
+        .orderBy(desc(notificationDeliveryLog.deliveredAt))
+        .limit(limit)
+        .offset(offset);
+
+      return sendEnvelope(res, items, {
+        meta: { offset, limit, total: totalResult.value },
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "EMAIL_LOGS_FAILED", message: "Failed to fetch email delivery logs", details: message }],
       });
     }
   });
