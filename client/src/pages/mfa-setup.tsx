@@ -11,7 +11,11 @@ import { Shield, ShieldCheck, ShieldOff, Copy, Loader2 } from "lucide-react";
 export default function MfaSetupPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [setupData, setSetupData] = useState<{ secret: string; otpauthUrl: string } | null>(null);
+  const [setupData, setSetupData] = useState<{
+    secret: string;
+    otpauthUrl: string;
+    qrCodeDataUrl: string;
+  } | null>(null);
   const [verifyToken, setVerifyToken] = useState("");
   const [disableToken, setDisableToken] = useState("");
 
@@ -24,7 +28,7 @@ export default function MfaSetupPage() {
       const res = await apiRequest("POST", "/api/mfa/setup");
       return res.json();
     },
-    onSuccess: (data: { secret: string; otpauthUrl: string }) => {
+    onSuccess: (data: { secret: string; otpauthUrl: string; qrCodeDataUrl: string }) => {
       setSetupData(data);
       toast({ title: "MFA setup initiated", description: "Scan the QR code or enter the secret manually." });
     },
@@ -147,7 +151,7 @@ export default function MfaSetupPage() {
           <CardContent className="space-y-4">
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.otpauthUrl)}`}
+                src={setupData.qrCodeDataUrl}
                 alt="MFA QR Code"
                 width={200}
                 height={200}

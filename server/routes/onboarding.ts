@@ -102,7 +102,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/wizard/status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.get("/api/wizard/status", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -143,7 +143,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/wizard/options", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
+  app.get("/api/wizard/options", isAuthenticated, async (_req, res) => {
     return sendEnvelope(res, {
       industries: INDUSTRY_OPTIONS,
       companySizes: COMPANY_SIZE_OPTIONS,
@@ -151,7 +151,7 @@ export function registerOnboardingRoutes(app: Express): void {
     });
   });
 
-  app.post("/api/wizard/create-org", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/create-org", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       const userEmail = (req as any).user?.email;
@@ -218,7 +218,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/select-plan", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/select-plan", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -306,7 +306,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/invite-team", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/invite-team", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -410,7 +410,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/skip-step", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/skip-step", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -462,7 +462,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/connect-integration", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/connect-integration", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -498,7 +498,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/complete-tour", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/complete-tour", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
@@ -536,7 +536,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/wizard/complete", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.post("/api/wizard/complete", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId)
