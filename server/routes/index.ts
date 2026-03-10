@@ -38,6 +38,7 @@ import { registerUsageRoutes } from "./usage";
 import { registerDevPortalRoutes } from "./dev-portal";
 import { registerAutonomousRoutes } from "./autonomous";
 import { registerPredictiveRoutes } from "./predictive";
+import { registerStunningDashboardRoutes } from "./stunning-dashboard";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -80,4 +81,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerDevPortalRoutes(app);
   registerAutonomousRoutes(app);
   registerPredictiveRoutes(app);
+  registerStunningDashboardRoutes(app);
 }
