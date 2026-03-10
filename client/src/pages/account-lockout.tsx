@@ -103,11 +103,19 @@ export default function AccountLockoutPage() {
   const historyQuery = useQuery<{ attempts: FailedAttempt[]; total: number }>({
     queryKey: ["/api/platform-admin/failed-login-history", historyPage],
     queryFn: async () => {
-      const res = await apiRequest(
-        "GET",
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* localStorage unavailable */
+      }
+      const rawRes = await fetch(
         `/api/platform-admin/failed-login-history?limit=${pageSize}&offset=${historyPage * pageSize}`,
+        { credentials: "include", headers },
       );
-      const json = await res.json();
+      if (!rawRes.ok) throw new Error(`${rawRes.status}: ${rawRes.statusText}`);
+      const json = await rawRes.json();
       const data = json?.data ?? json;
       const meta = json?.meta ?? {};
       return {
