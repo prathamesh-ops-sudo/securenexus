@@ -316,6 +316,7 @@ function EvidenceTab() {
 
   const { data: evidence, isLoading } = useQuery<EvidenceRecord[]>({
     queryKey: ["/api/cross-cutting/evidence"],
+    queryFn: () => apiRequest("GET", "/api/cross-cutting/evidence").then((r) => r.json()),
   });
 
   if (isLoading)
@@ -451,6 +452,7 @@ function OverridesTab() {
 
   const { data: overrides, isLoading } = useQuery<HumanOverrideRequest[]>({
     queryKey: ["/api/cross-cutting/overrides"],
+    queryFn: () => apiRequest("GET", "/api/cross-cutting/overrides").then((r) => r.json()),
   });
 
   const approveMutation = useMutation({
@@ -626,6 +628,8 @@ function DriftTab() {
 
   const { data: drift, isLoading } = useQuery<DriftSignal[]>({
     queryKey: ["/api/cross-cutting/drift", activeOnly ? "active=true" : ""],
+    queryFn: () =>
+      apiRequest("GET", `/api/cross-cutting/drift${activeOnly ? "?active=true" : ""}`).then((r) => r.json()),
   });
 
   const scanMutation = useMutation({
@@ -807,6 +811,7 @@ function ReliabilityTab() {
 
   const { data: killSwitches, isLoading } = useQuery<KillSwitch[]>({
     queryKey: ["/api/cross-cutting/reliability"],
+    queryFn: () => apiRequest("GET", "/api/cross-cutting/reliability").then((r) => r.json()),
   });
 
   const toggleMutation = useMutation({
@@ -934,6 +939,7 @@ function ReliabilityTab() {
 function TimeToValueTab() {
   const { data: milestones, isLoading } = useQuery<TimeToValueMilestone[]>({
     queryKey: ["/api/cross-cutting/time-to-value"],
+    queryFn: () => apiRequest("GET", "/api/cross-cutting/time-to-value").then((r) => r.json()),
   });
 
   if (isLoading)
@@ -1007,6 +1013,7 @@ function TimeToValueTab() {
 export default function CrossCuttingPage() {
   const { data: stats, isLoading: statsLoading } = useQuery<CrossCuttingStats>({
     queryKey: ["/api/cross-cutting/stats"],
+    queryFn: () => apiRequest("GET", "/api/cross-cutting/stats").then((r) => r.json()),
   });
 
   return (

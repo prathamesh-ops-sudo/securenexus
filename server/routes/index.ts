@@ -60,6 +60,7 @@ import { registerAgentToolSecurityRoutes } from "./agent-tool-security";
 import { registerBrowserDefenseRoutes } from "./browser-defense";
 import { registerCrossCuttingRoutes } from "./cross-cutting";
 import { registerStunningDashboardRoutes } from "./stunning-dashboard";
+import { registerPhase2StubRoutes } from "./phase2-stubs";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -124,4 +125,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerBrowserDefenseRoutes(app);
   registerCrossCuttingRoutes(app);
   registerStunningDashboardRoutes(app);
+  registerPhase2StubRoutes(app);
 }

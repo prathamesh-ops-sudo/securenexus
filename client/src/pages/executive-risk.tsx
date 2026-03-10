@@ -983,12 +983,12 @@ export default function ExecutiveRiskPage() {
 
   const { data: dashboardRaw, isLoading: dashLoading } = useQuery({
     queryKey: ["/api/executive-risk/dashboard"],
-    queryFn: () => apiRequest("GET", "/api/executive-risk/dashboard"),
+    queryFn: () => apiRequest("GET", "/api/executive-risk/dashboard").then((r) => r.json()),
   });
 
   const { data: summariesRaw, isLoading: summLoading } = useQuery({
     queryKey: ["/api/executive-risk/summaries"],
-    queryFn: () => apiRequest("GET", "/api/executive-risk/summaries"),
+    queryFn: () => apiRequest("GET", "/api/executive-risk/summaries").then((r) => r.json()),
   });
 
   const generateMutation = useMutation({
