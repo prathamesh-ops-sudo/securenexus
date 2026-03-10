@@ -208,11 +208,8 @@ export function applySecurityMiddleware(app: Express): void {
   app.use(configureHelmet());
   app.use(permissionsPolicy);
 
-  app.use("/api/login", authRateLimiter());
-  app.use("/api/register", authRateLimiter());
   app.use("/api/auth/google", authRateLimiter());
   app.use("/api/auth/github", authRateLimiter());
-  app.use("/api/auth/forgot-password", authRateLimiter());
   app.use("/api/auth/reset-password", authRateLimiter());
 
   logger.child("security").info("Security middleware applied: helmet, permissions-policy, auth rate limiting");

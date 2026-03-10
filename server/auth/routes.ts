@@ -17,6 +17,13 @@ import {
 import { logger } from "../logger";
 import { sendEmail } from "../email-service";
 import { welcomeEmail } from "../email-templates";
+import {
+  loginRateLimitPre,
+  recordFailedLogin,
+  clearLoginBuckets,
+  registerRateLimit,
+  forgotPasswordRateLimit,
+} from "../middleware/auth-rate-limit";
 
 const CONSUMER_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -209,7 +216,7 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", registerRateLimit, async (req, res, next) => {
     try {
       const { email, password, firstName, lastName } = req.body;
       if (!email || !password) {
@@ -220,6 +227,7 @@ export function registerAuthRoutes(app: Express): void {
 
       const existing = await authStorage.getUserByEmail(email);
       if (existing) {
+        await hashPassword("timing-safe-dummy-password");
         return replyConflict(res, "An account with this email already exists");
       }
 
@@ -276,12 +284,14 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/login", (req, res, next) => {
+  app.post("/api/login", loginRateLimitPre, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
+        recordFailedLogin(req);
         return replyUnauthenticated(res, info?.message || "Invalid credentials");
       }
+      clearLoginBuckets(user.email);
       req.login(user, async (loginErr) => {
         if (loginErr) return next(loginErr);
         await ensureOrgMembership(user);

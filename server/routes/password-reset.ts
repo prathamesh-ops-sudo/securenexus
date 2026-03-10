@@ -6,6 +6,7 @@ import { hashPassword } from "../auth/session";
 import { sendEmail } from "../email-service";
 import { passwordResetEmail } from "../email-templates";
 import { reply, replyValidation, replyBadRequest, replyInternal } from "../api-response";
+import { forgotPasswordRateLimit } from "../middleware/auth-rate-limit";
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const RESET_TOKEN_EXPIRY_MINUTES = 60;
@@ -29,7 +30,7 @@ function getAppBaseUrl(): string {
 }
 
 export function registerPasswordResetRoutes(app: Express): void {
-  app.post("/api/auth/forgot-password", async (req, res) => {
+  app.post("/api/auth/forgot-password", forgotPasswordRateLimit, async (req, res) => {
     const { email } = req.body;
     if (!email || typeof email !== "string" || !isValidEmail(email.trim())) {
       return replyValidation(res, [{ message: "A valid email address is required", field: "email" }]);

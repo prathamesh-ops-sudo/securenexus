@@ -277,3 +277,30 @@ export function memberRoleChangedEmail(params: {
 
   return { subject: `Your role in ${params.orgName} has been updated`, html, text };
 }
+
+export function accountLockedEmail(params: { email: string; lockoutMinutes: number }): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const html = baseLayout(`
+    <h1 style="margin:0 0 16px;font-size:22px;color:#ef4444;">Account Temporarily Locked</h1>
+    <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
+      We detected multiple failed login attempts on the account associated with <strong>${esc(params.email)}</strong>.
+    </p>
+    <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
+      As a security precaution, login has been temporarily disabled for <strong>${params.lockoutMinutes} minutes</strong>.
+    </p>
+    <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
+      If this was you, please wait and try again later. If you did not attempt to log in, someone may be trying to access your account.
+      We recommend changing your password immediately after the lockout expires.
+    </p>
+    <p style="margin:0;font-size:13px;color:${MUTED_COLOR};">
+      This is an automated security notification from SecureNexus.
+    </p>
+  `);
+
+  const text = `Account Temporarily Locked\n\nWe detected multiple failed login attempts on ${params.email}.\n\nLogin has been temporarily disabled for ${params.lockoutMinutes} minutes.\n\nIf this was not you, please change your password immediately after the lockout expires.`;
+
+  return { subject: "Security Alert: Account Temporarily Locked", html, text };
+}
