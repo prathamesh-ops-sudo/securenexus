@@ -56,18 +56,6 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
       }
     }
 
-    const orgs = await storage.getOrganizations();
-    if (orgs.length > 0) {
-      await storage.createOrgMembership({
-        orgId: orgs[0].id,
-        userId: user.id,
-        role: "owner",
-        status: "active",
-        joinedAt: new Date(),
-      });
-      return true;
-    }
-
     const newOrg = await storage.createOrganization({
       name: `${user.email ? user.email.split("@")[0] : "User"}'s Organization`,
       slug: `org-${Date.now()}`,
@@ -79,6 +67,22 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
       role: "owner",
       status: "active",
       joinedAt: new Date(),
+    });
+    storage
+      .createAuditLog({
+        userId: user.id,
+        userName: user.email || "unknown",
+        action: "new_org_created_on_signup",
+        resourceType: "organization",
+        resourceId: String(newOrg.id),
+        details: { orgName: newOrg.name, orgSlug: newOrg.slug },
+      })
+      .catch(() => {});
+    logger.child("auth").info("New user created own organization (no domain match)", {
+      userId: user.id,
+      email: user.email,
+      orgId: newOrg.id,
+      orgSlug: newOrg.slug,
     });
     return true;
   } catch (err) {
