@@ -317,8 +317,12 @@ export function registerAuthRoutes(app: Express): void {
               email: req.user.email,
               provider: "google",
             });
-            req.logout(() => {});
-            return res.redirect("/?error=consumer_email_blocked");
+            req.logout(() => {
+              req.session.destroy(() => {
+                return res.redirect("/?error=consumer_email_blocked");
+              });
+            });
+            return;
           }
         }
         await ensureOrgMembership(req.user);
@@ -349,8 +353,12 @@ export function registerAuthRoutes(app: Express): void {
               email: req.user.email,
               provider: "github",
             });
-            req.logout(() => {});
-            return res.redirect("/?error=consumer_email_blocked");
+            req.logout(() => {
+              req.session.destroy(() => {
+                return res.redirect("/?error=consumer_email_blocked");
+              });
+            });
+            return;
           }
         }
         await ensureOrgMembership(req.user);
