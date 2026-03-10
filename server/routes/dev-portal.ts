@@ -46,6 +46,64 @@ const MAX_WHERE_CLAUSES = 20;
 const MAX_IN_VALUES = 200;
 
 export function registerDevPortalRoutes(app: Express): void {
+  app.get("/api/developer-portal/openapi", isAuthenticated, (_req: Request, res: Response) => {
+    try {
+      const spec = buildOpenApiSpec();
+      res.json(spec);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Failed to build OpenAPI spec", { error: message });
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "OPENAPI_FAILED", message: "Failed to generate OpenAPI spec" }],
+      });
+    }
+  });
+
+  app.get("/api/developer-portal/openapi/summary", isAuthenticated, (_req: Request, res: Response) => {
+    try {
+      const spec = buildOpenApiSpec();
+      const paths = spec.paths || {};
+      const tags = new Map<string, { endpoints: number; methods: string[] }>();
+
+      for (const [, methods] of Object.entries(paths)) {
+        for (const [method, operation] of Object.entries(methods as Record<string, any>)) {
+          const opTags = operation.tags || ["Untagged"];
+          for (const tag of opTags) {
+            const existing = tags.get(tag) || { endpoints: 0, methods: [] };
+            existing.endpoints++;
+            if (!existing.methods.includes(method.toUpperCase())) {
+              existing.methods.push(method.toUpperCase());
+            }
+            tags.set(tag, existing);
+          }
+        }
+      }
+
+      const totalEndpoints = Object.keys(paths).length;
+      const totalOperations = Object.values(paths).reduce(
+        (sum, methods) => sum + Object.keys(methods as object).length,
+        0,
+      );
+
+      return sendEnvelope(res, {
+        totalEndpoints,
+        totalOperations,
+        tags: Array.from(tags.entries()).map(([name, data]) => ({
+          name,
+          ...data,
+        })),
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Failed to build OpenAPI summary (developer-portal)", { error: message });
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "OPENAPI_SUMMARY_FAILED", message: "Failed to generate API summary" }],
+      });
+    }
+  });
+
   app.get("/api/dev-portal/openapi", isAuthenticated, requireSuperAdmin, (_req: Request, res: Response) => {
     try {
       const spec = buildOpenApiSpec();
