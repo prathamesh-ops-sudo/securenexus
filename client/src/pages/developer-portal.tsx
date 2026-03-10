@@ -138,9 +138,9 @@ function ApiKeysTab() {
   const revokedKeys = keys?.filter((k) => !k.isActive) || [];
 
   return (
-    <div className="space-y-6">
+    <div data-testid="developer-portal-page" className="space-y-6">
       {createdKey && (
-        <Card className="border-emerald-500/30 bg-emerald-500/5">
+        <Card data-testid="developer-portal-card-1" className="border-emerald-500/30 bg-emerald-500/5">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <ShieldCheck className="h-5 w-5 text-emerald-400 mt-0.5 shrink-0" />
@@ -153,15 +153,32 @@ function ApiKeysTab() {
                   <code className="text-xs font-mono bg-muted/30 px-2 py-1 rounded flex-1 truncate">
                     {keyVisible ? createdKey : "••••••••••••••••••••••••••••••••"}
                   </code>
-                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setKeyVisible(!keyVisible)}>
+                  <Button
+                    data-testid="developer-portal-btn-ghost-0"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => setKeyVisible(!keyVisible)}
+                  >
                     {keyVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </Button>
-                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => copyToClipboard(createdKey)}>
+                  <Button
+                    data-testid="developer-portal-btn-ghost-1"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => copyToClipboard(createdKey)}
+                  >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setCreatedKey(null)}>
+              <Button
+                data-testid="developer-portal-btn-ghost-2"
+                variant="ghost"
+                size="sm"
+                onClick={() => setCreatedKey(null)}
+              >
                 <XCircle className="h-4 w-4" />
               </Button>
             </div>
@@ -174,14 +191,14 @@ function ApiKeysTab() {
           <h3 className="text-sm font-medium">Active Keys ({activeKeys.length})</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Manage API keys for programmatic access</p>
         </div>
-        <Button size="sm" onClick={() => setShowCreateForm(!showCreateForm)}>
+        <Button data-testid="developer-portal-btn-3" size="sm" onClick={() => setShowCreateForm(!showCreateForm)}>
           <Plus className="h-3.5 w-3.5 mr-1" />
           Create Key
         </Button>
       </div>
 
       {showCreateForm && (
-        <Card className="glass-card border-border/40">
+        <Card data-testid="developer-portal-card-2" className="glass-card border-border/40">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Create New API Key</CardTitle>
           </CardHeader>
@@ -227,7 +244,12 @@ function ApiKeysTab() {
               </div>
             </div>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setShowCreateForm(false)}>
+              <Button
+                data-testid="developer-portal-btn-outline-4"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCreateForm(false)}
+              >
                 Cancel
               </Button>
               <Button
@@ -249,7 +271,7 @@ function ApiKeysTab() {
           ))}
         </div>
       ) : activeKeys.length === 0 ? (
-        <Card className="glass-card border-border/40">
+        <Card data-testid="developer-portal-card-3" className="glass-card border-border/40">
           <CardContent className="py-12 text-center">
             <Key className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
             <p className="text-sm font-medium text-muted-foreground">No active API keys</p>

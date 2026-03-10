@@ -323,7 +323,13 @@ export default function OrgSettingsPage() {
         </div>
         <p className="text-sm font-medium">Failed to load organization settings</p>
         <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+        <Button
+          data-testid="org-settings-btn-outline-0"
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => refetch()}
+        >
           Try Again
         </Button>
       </div>
@@ -369,7 +375,13 @@ export default function OrgSettingsPage() {
               <Label htmlFor="org-slug" className="text-xs">
                 Slug (read-only)
               </Label>
-              <Input id="org-slug" value={org.slug} disabled className="bg-muted/50" />
+              <Input
+                data-testid="org-settings-input-org-slug"
+                id="org-slug"
+                value={org.slug}
+                disabled
+                className="bg-muted/50"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="org-industry" className="text-xs">
@@ -437,7 +449,12 @@ export default function OrgSettingsPage() {
           </div>
           {isAdmin && (
             <div className="flex justify-end pt-2">
-              <Button size="sm" onClick={handleSaveGeneral} disabled={updateSettings.isPending}>
+              <Button
+                data-testid="org-settings-btn-1"
+                size="sm"
+                onClick={handleSaveGeneral}
+                disabled={updateSettings.isPending}
+              >
                 {updateSettings.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                 Save General
               </Button>
@@ -541,7 +558,12 @@ export default function OrgSettingsPage() {
 
           {isAdmin && (
             <div className="flex justify-end pt-2">
-              <Button size="sm" onClick={handleSaveContact} disabled={updateSettings.isPending}>
+              <Button
+                data-testid="org-settings-btn-2"
+                size="sm"
+                onClick={handleSaveContact}
+                disabled={updateSettings.isPending}
+              >
                 {updateSettings.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                 Save Contact
               </Button>
@@ -581,6 +603,7 @@ export default function OrgSettingsPage() {
                       onChange={handleLogoSelect}
                     />
                     <Button
+                      data-testid="org-settings-btn-outline-3"
                       variant="outline"
                       size="sm"
                       className="text-xs"
@@ -596,6 +619,7 @@ export default function OrgSettingsPage() {
                     </Button>
                     {org.logoUrl && (
                       <Button
+                        data-testid="org-settings-btn-ghost-4"
                         variant="ghost"
                         size="sm"
                         className="text-xs text-destructive"
@@ -719,7 +743,7 @@ export default function OrgSettingsPage() {
 
       {/* Danger Zone (owner only) */}
       {isOwner && (
-        <Card className="border-destructive/30">
+        <Card data-testid="org-settings-card-1" className="border-destructive/30">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-destructive flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
@@ -1158,7 +1182,7 @@ function SsoConfigSection({ orgId, toast }: { orgId: string; toast: any }) {
 
   if (!hasSsoFeature) {
     return (
-      <Card className="opacity-60">
+      <Card data-testid="org-settings-card-2" className="opacity-60">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Lock className="h-4 w-4" />

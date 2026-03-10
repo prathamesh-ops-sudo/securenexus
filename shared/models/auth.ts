@@ -28,6 +28,9 @@ export const users = pgTable("users", {
   passwordChangedAt: timestamp("password_changed_at"),
   lockedUntil: timestamp("locked_until"),
   failedLoginCount: integer("failed_login_count").default(0).notNull(),
+  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+  mfaSecret: varchar("mfa_secret"),
+  mfaVerifiedAt: timestamp("mfa_verified_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

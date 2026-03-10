@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { isAuthenticated } from "../auth";
 import { sendEnvelope, storage, getOrgId, logger } from "./shared";
+import { resolveOrgContext, requireOrgId } from "../rbac";
 
 const API_V1_STABILITY_DATE = "2026-02-17";
 const API_V1_SUNSET_DATE = "2028-02-17";
@@ -191,85 +192,117 @@ export function registerApiVersioningRoutes(app: Express): void {
   // v1 Stable Endpoints — Report Template Versions
   // ==========================================
 
-  app.get("/api/v1/report-templates/:templateId/versions", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const templateId = String(req.params.templateId);
-      const template = await storage.getReportTemplate(templateId);
-      if (!template)
-        return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Template not found" }] });
-      const versions = await storage.getReportTemplateVersions(template.id, orgId);
-      return sendEnvelope(res, versions, { meta: { templateId: template.id, total: versions.length } });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "VERSIONS_FAILED", message: "Failed to fetch versions" }],
-      });
-    }
-  });
+  app.get(
+    "/api/v1/report-templates/:templateId/versions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    versionHeader,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const templateId = String(req.params.templateId);
+        const template = await storage.getReportTemplate(templateId);
+        if (!template)
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Template not found" }],
+          });
+        const versions = await storage.getReportTemplateVersions(template.id, orgId);
+        return sendEnvelope(res, versions, { meta: { templateId: template.id, total: versions.length } });
+      } catch (error: any) {
+        if (error.message === "ORG_CONTEXT_MISSING")
+          return res.status(403).json({ message: "Organization context required" });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "VERSIONS_FAILED", message: "Failed to fetch versions" }],
+        });
+      }
+    },
+  );
 
   // ==========================================
   // v1 Stable Endpoints — Evidence Attachments
   // ==========================================
 
-  app.get("/api/v1/evidence-attachments", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const controlMappingId = typeof req.query.controlMappingId === "string" ? req.query.controlMappingId : undefined;
-      const attachments = await storage.getEvidenceAttachments(orgId, controlMappingId);
-      return sendEnvelope(res, attachments, { meta: { total: attachments.length } });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "ATTACHMENTS_FAILED", message: "Failed to fetch attachments" }],
-      });
-    }
-  });
+  app.get(
+    "/api/v1/evidence-attachments",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    versionHeader,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const controlMappingId =
+          typeof req.query.controlMappingId === "string" ? req.query.controlMappingId : undefined;
+        const attachments = await storage.getEvidenceAttachments(orgId, controlMappingId);
+        return sendEnvelope(res, attachments, { meta: { total: attachments.length } });
+      } catch (error: any) {
+        if (error.message === "ORG_CONTEXT_MISSING")
+          return res.status(403).json({ message: "Organization context required" });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "ATTACHMENTS_FAILED", message: "Failed to fetch attachments" }],
+        });
+      }
+    },
+  );
 
   // ==========================================
   // v1 Stable Endpoints — Compliance Helpers
   // ==========================================
 
-  app.get("/api/v1/compliance-helpers", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const helperType = typeof req.query.helperType === "string" ? req.query.helperType : undefined;
-      const helpers = await storage.getComplianceControlHelpers(orgId, helperType);
-      return sendEnvelope(res, helpers, { meta: { total: helpers.length } });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "HELPERS_FAILED", message: "Failed to fetch helpers" }],
-      });
-    }
-  });
+  app.get(
+    "/api/v1/compliance-helpers",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    versionHeader,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const helperType = typeof req.query.helperType === "string" ? req.query.helperType : undefined;
+        const helpers = await storage.getComplianceControlHelpers(orgId, helperType);
+        return sendEnvelope(res, helpers, { meta: { total: helpers.length } });
+      } catch (error: any) {
+        if (error.message === "ORG_CONTEXT_MISSING")
+          return res.status(403).json({ message: "Organization context required" });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "HELPERS_FAILED", message: "Failed to fetch helpers" }],
+        });
+      }
+    },
+  );
 
   // ==========================================
   // v1 Stable Endpoints — Ingestion Logs
   // ==========================================
 
-  app.get("/api/v1/ingestion-logs", isAuthenticated, versionHeader, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
-      const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
+  app.get(
+    "/api/v1/ingestion-logs",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    versionHeader,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
+        const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
 
-      const { items, total } = await storage.getIngestionLogsPaginated({ orgId, offset, limit });
+        const { items, total } = await storage.getIngestionLogsPaginated({ orgId, offset, limit });
 
-      return sendEnvelope(res, items, { meta: { offset, limit, total } });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "INGESTION_FAILED", message: "Failed to fetch ingestion logs" }],
-      });
-    }
-  });
+        return sendEnvelope(res, items, { meta: { offset, limit, total } });
+      } catch (error: any) {
+        if (error.message === "ORG_CONTEXT_MISSING")
+          return res.status(403).json({ message: "Organization context required" });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INGESTION_FAILED", message: "Failed to fetch ingestion logs" }],
+        });
+      }
+    },
+  );
 }

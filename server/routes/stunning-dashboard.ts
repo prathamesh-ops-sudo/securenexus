@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { getOrgId, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { logger } from "../logger";
+import { resolveOrgContext, requireOrgId } from "../rbac";
 
 const log = logger.child("stunning-dashboard");
 
@@ -17,7 +18,7 @@ interface AchievementDef {
 }
 
 export function registerStunningDashboardRoutes(app: Express): void {
-  app.get("/api/dashboard/stunning-stats", isAuthenticated, async (req, res) => {
+  app.get("/api/dashboard/stunning-stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
 

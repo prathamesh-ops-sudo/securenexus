@@ -21,6 +21,7 @@ import { parsePaginationParams } from "../db-performance";
 import { getEntitiesForIncident } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
+import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
 function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string } | null {
   const now = new Date();
@@ -140,6 +141,7 @@ export function registerIncidentsRoutes(app: Express): void {
     resolveOrgContext,
     requireOrgId,
     requirePermission("incidents", "write"),
+    enforcePlanLimit("incidents"),
     async (req, res) => {
       try {
         const parsed = insertIncidentSchema.safeParse(req.body);

@@ -123,7 +123,7 @@ const TACTIC_COLORS = ["#f97316", "#3b82f6", "#eab308", "#8b5cf6", "#10b981", "#
 
 function StatCardSkeleton() {
   return (
-    <Card className="gradient-card">
+    <Card data-testid="dashboard-card-1" className="gradient-card">
       <CardContent className="p-4" role="status" aria-label="Loading statistic">
         <div className="flex items-center justify-between mb-3">
           <Skeleton className="h-3 w-20" />
@@ -160,6 +160,7 @@ function StatCard({
 }) {
   const content = (
     <Card
+      data-testid="dashboard-card-2"
       className={`gradient-card group relative overflow-hidden border-border/50 hover:border-border/80 transition-all duration-300 hover:shadow-lg hover:shadow-black/5 ${href ? "cursor-pointer" : ""}`}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
@@ -197,7 +198,7 @@ function StatCard({
 
 function ChartSkeleton() {
   return (
-    <div className="space-y-3 p-4" role="status" aria-label="Loading chart">
+    <div data-testid="dashboard-page" className="space-y-3 p-4" role="status" aria-label="Loading chart">
       <Skeleton className="h-4 w-32" />
       <Skeleton className="h-[180px] w-full" />
       <span className="sr-only">Loading chart...</span>
@@ -258,7 +259,7 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
   const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
-    <Card className="gradient-card chart-glow h-full">
+    <Card data-testid="dashboard-card-3" className="gradient-card chart-glow h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <div className="w-1 h-4 rounded-full bg-purple-500" />
@@ -867,6 +868,7 @@ function WidgetCustomizer({
         <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Presets:</span>
         {LAYOUT_PRESETS.map((p) => (
           <Button
+            data-testid="dashboard-btn-outline-0"
             key={p.key}
             size="sm"
             variant="outline"
@@ -877,7 +879,13 @@ function WidgetCustomizer({
             {p.name}
           </Button>
         ))}
-        <Button size="sm" variant="ghost" className="text-[10px] h-6 px-2" onClick={onReset}>
+        <Button
+          data-testid="dashboard-btn-ghost-1"
+          size="sm"
+          variant="ghost"
+          className="text-[10px] h-6 px-2"
+          onClick={onReset}
+        >
           <RotateCcw className="h-3 w-3 mr-1" />
           Reset
         </Button>
@@ -889,6 +897,7 @@ function WidgetCustomizer({
           .map((w) => (
             <div key={w.id} className="flex items-center gap-1">
               <Button
+                data-testid="dashboard-btn-2"
                 size="sm"
                 variant={w.visible ? "secondary" : "outline"}
                 className={`text-[10px] h-6 px-2 ${!w.visible ? "opacity-50" : ""}`}
@@ -898,6 +907,7 @@ function WidgetCustomizer({
                 {w.label}
               </Button>
               <Button
+                data-testid="dashboard-btn-ghost-3"
                 size="sm"
                 variant="ghost"
                 className={`h-6 w-6 p-0 ${w.pinned ? "text-amber-400" : "text-muted-foreground/40"}`}
@@ -1031,6 +1041,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
               <Button
+                data-testid="dashboard-btn-4"
                 size="sm"
                 variant={timeRange === "24h" ? "secondary" : "ghost"}
                 className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "24h" ? "shadow-sm" : "hover:bg-muted/50"}`}

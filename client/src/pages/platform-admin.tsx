@@ -143,7 +143,7 @@ function StatCard({
   subtitle?: string;
 }) {
   return (
-    <Card className="glass-card border-border/40">
+    <Card data-testid="platform-admin-card-1" className="glass-card border-border/40">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div>
@@ -172,7 +172,7 @@ function OverviewTab() {
 
   if (isPending) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-testid="platform-admin-page" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-24" />
         ))}
@@ -276,7 +276,7 @@ function OrganizationsTab() {
           ))}
         </div>
       ) : !data?.items.length ? (
-        <Card className="glass-card border-border/40">
+        <Card data-testid="platform-admin-card-2" className="glass-card border-border/40">
           <CardContent className="py-8 text-center text-muted-foreground">
             <Building2 className="h-10 w-10 mx-auto mb-2 opacity-40" />
             <p>No organizations found</p>
@@ -323,6 +323,7 @@ function OrganizationsTab() {
                       <div className="flex items-center justify-end gap-1">
                         {org.deletedAt ? (
                           <Button
+                            data-testid="platform-admin-btn-ghost-0"
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs text-green-500 hover:text-green-400"
@@ -335,6 +336,7 @@ function OrganizationsTab() {
                           </Button>
                         ) : (
                           <Button
+                            data-testid="platform-admin-btn-ghost-1"
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs text-orange-500 hover:text-orange-400"
@@ -359,10 +361,17 @@ function OrganizationsTab() {
               Showing {page * limit + 1}-{Math.min((page + 1) * limit, data.total)} of {data.total}
             </p>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+              <Button
+                data-testid="platform-admin-btn-outline-2"
+                variant="outline"
+                size="sm"
+                disabled={page === 0}
+                onClick={() => setPage(page - 1)}
+              >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <Button
+                data-testid="platform-admin-btn-outline-3"
                 variant="outline"
                 size="sm"
                 disabled={(page + 1) * limit >= data.total}
@@ -488,7 +497,7 @@ function UsersTab() {
           ))}
         </div>
       ) : !data?.items.length ? (
-        <Card className="glass-card border-border/40">
+        <Card data-testid="platform-admin-card-3" className="glass-card border-border/40">
           <CardContent className="py-8 text-center text-muted-foreground">
             <Users className="h-10 w-10 mx-auto mb-2 opacity-40" />
             <p>No users found</p>
@@ -553,6 +562,7 @@ function UsersTab() {
                       <div className="flex items-center justify-end gap-1">
                         {!user.isSuperAdmin && (
                           <Button
+                            data-testid="platform-admin-btn-ghost-4"
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"

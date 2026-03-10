@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { logger, p, sanitizeConfig, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, resolveOrgContext } from "../rbac";
+import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
 
@@ -327,16 +327,23 @@ export function registerIntegrationsRoutes(app: Express): void {
   // ============================
   // Ticket Sync (Bi-directional Jira/ServiceNow)
   // ============================
-  app.get("/api/ticket-sync", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const integrationId = req.query.integrationId as string | undefined;
-      const jobs = await storage.getTicketSyncJobs(orgId, integrationId);
-      res.json(jobs);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch ticket sync jobs" });
-    }
-  });
+  app.get(
+    "/api/ticket-sync",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const integrationId = req.query.integrationId as string | undefined;
+        const jobs = await storage.getTicketSyncJobs(orgId, integrationId);
+        res.json(jobs);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch ticket sync jobs" });
+      }
+    },
+  );
 
   app.get("/api/ticket-sync/:id", isAuthenticated, async (req, res) => {
     try {
@@ -348,58 +355,72 @@ export function registerIntegrationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ticket-sync", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const user = (req as any).user;
-      const { integrationId, incidentId, direction, fieldMapping, statusMapping } = req.body;
-      if (!integrationId) return res.status(400).json({ message: "integrationId is required" });
-      const job = await storage.createTicketSyncJob({
-        orgId,
-        integrationId,
-        incidentId,
-        direction: direction || "bidirectional",
-        fieldMapping: fieldMapping || {},
-        statusMapping: statusMapping || {},
-        createdBy: user?.id,
-      });
-      await storage.createAuditLog({
-        orgId,
-        userId: user?.id,
-        userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "System",
-        action: "ticket_sync_created",
-        resourceType: "ticket_sync",
-        resourceId: job.id,
-        details: { integrationId, incidentId, direction },
-      });
-      res.status(201).json(job);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create ticket sync job" });
-    }
-  });
+  app.post(
+    "/api/ticket-sync",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const user = (req as any).user;
+        const { integrationId, incidentId, direction, fieldMapping, statusMapping } = req.body;
+        if (!integrationId) return res.status(400).json({ message: "integrationId is required" });
+        const job = await storage.createTicketSyncJob({
+          orgId,
+          integrationId,
+          incidentId,
+          direction: direction || "bidirectional",
+          fieldMapping: fieldMapping || {},
+          statusMapping: statusMapping || {},
+          createdBy: user?.id,
+        });
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "System",
+          action: "ticket_sync_created",
+          resourceType: "ticket_sync",
+          resourceId: job.id,
+          details: { integrationId, incidentId, direction },
+        });
+        res.status(201).json(job);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create ticket sync job" });
+      }
+    },
+  );
 
-  app.post("/api/ticket-sync/:id/sync", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const job = await storage.getTicketSyncJob(p(req.params.id));
-      if (!job) return res.status(404).json({ message: "Ticket sync job not found" });
-      await storage.updateTicketSyncJob(job.id, {
-        syncStatus: "syncing",
-        lastSyncedAt: new Date(),
-        lastSyncError: null,
-      });
-      const commentsMirrored = (job.commentsMirrored || 0) + Math.floor(Math.random() * 3);
-      const statusSyncs = (job.statusSyncs || 0) + 1;
-      const updated = await storage.updateTicketSyncJob(job.id, {
-        syncStatus: "synced",
-        lastSyncedAt: new Date(),
-        commentsMirrored,
-        statusSyncs,
-      });
-      res.json({ success: true, job: updated, commentsMirrored, statusSyncs });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to sync ticket" });
-    }
-  });
+  app.post(
+    "/api/ticket-sync/:id/sync",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const job = await storage.getTicketSyncJob(p(req.params.id));
+        if (!job) return res.status(404).json({ message: "Ticket sync job not found" });
+        await storage.updateTicketSyncJob(job.id, {
+          syncStatus: "syncing",
+          lastSyncedAt: new Date(),
+          lastSyncError: null,
+        });
+        const commentsMirrored = (job.commentsMirrored || 0) + Math.floor(Math.random() * 3);
+        const statusSyncs = (job.statusSyncs || 0) + 1;
+        const updated = await storage.updateTicketSyncJob(job.id, {
+          syncStatus: "synced",
+          lastSyncedAt: new Date(),
+          commentsMirrored,
+          statusSyncs,
+        });
+        res.json({ success: true, job: updated, commentsMirrored, statusSyncs });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to sync ticket" });
+      }
+    },
+  );
 
   app.patch("/api/ticket-sync/:id", isAuthenticated, async (req, res) => {
     try {
@@ -424,16 +445,23 @@ export function registerIntegrationsRoutes(app: Express): void {
   // ============================
   // Response Action Approvals (with dry-run simulation)
   // ============================
-  app.get("/api/response-approvals", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const status = req.query.status as string | undefined;
-      const approvals = await storage.getResponseActionApprovals(orgId, status);
-      res.json(approvals);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch response approvals" });
-    }
-  });
+  app.get(
+    "/api/response-approvals",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const status = req.query.status as string | undefined;
+        const approvals = await storage.getResponseActionApprovals(orgId, status);
+        res.json(approvals);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch response approvals" });
+      }
+    },
+  );
 
   app.get("/api/response-approvals/:id", isAuthenticated, async (req, res) => {
     try {
@@ -445,68 +473,75 @@ export function registerIntegrationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/response-approvals", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const user = (req as any).user;
-      const { actionType, targetType, targetValue, incidentId, requestPayload, requiredApprovers } = req.body;
-      if (!actionType) return res.status(400).json({ message: "actionType is required" });
-
-      let dryRunResult = null;
+  app.post(
+    "/api/response-approvals",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
       try {
-        const context: ActionContext = {
+        const orgId = (req as any).orgId;
+        const user = (req as any).user;
+        const { actionType, targetType, targetValue, incidentId, requestPayload, requiredApprovers } = req.body;
+        if (!actionType) return res.status(400).json({ message: "actionType is required" });
+
+        let dryRunResult = null;
+        try {
+          const context: ActionContext = {
+            orgId,
+            incidentId,
+            userId: user?.id,
+            userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+            storage,
+          };
+          dryRunResult = {
+            simulatedAt: new Date().toISOString(),
+            actionType,
+            targetType,
+            targetValue,
+            estimatedImpact: actionType.includes("block")
+              ? "High - will block network traffic"
+              : actionType.includes("isolate")
+                ? "High - will isolate endpoint"
+                : actionType.includes("disable")
+                  ? "Medium - will disable user account"
+                  : "Low",
+            reversible: !actionType.includes("delete"),
+            affectedResources: [{ type: targetType || "unknown", value: targetValue || "N/A" }],
+          };
+        } catch (err) {
+          dryRunResult = { error: "Dry-run simulation failed", details: (err as Error).message };
+        }
+
+        const approval = await storage.createResponseActionApproval({
           orgId,
-          incidentId,
-          userId: user?.id,
-          userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
-          storage,
-        };
-        dryRunResult = {
-          simulatedAt: new Date().toISOString(),
           actionType,
           targetType,
           targetValue,
-          estimatedImpact: actionType.includes("block")
-            ? "High - will block network traffic"
-            : actionType.includes("isolate")
-              ? "High - will isolate endpoint"
-              : actionType.includes("disable")
-                ? "Medium - will disable user account"
-                : "Low",
-          reversible: !actionType.includes("delete"),
-          affectedResources: [{ type: targetType || "unknown", value: targetValue || "N/A" }],
-        };
-      } catch (err) {
-        dryRunResult = { error: "Dry-run simulation failed", details: (err as Error).message };
+          incidentId,
+          requestPayload: requestPayload || {},
+          dryRunResult,
+          requiredApprovers: requiredApprovers || 1,
+          requestedBy: user?.id,
+          requestedByName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        });
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "System",
+          action: "response_approval_requested",
+          resourceType: "response_approval",
+          resourceId: approval.id,
+          details: { actionType, targetType, targetValue, requiredApprovers },
+        });
+        res.status(201).json(approval);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create approval request" });
       }
-
-      const approval = await storage.createResponseActionApproval({
-        orgId,
-        actionType,
-        targetType,
-        targetValue,
-        incidentId,
-        requestPayload: requestPayload || {},
-        dryRunResult,
-        requiredApprovers: requiredApprovers || 1,
-        requestedBy: user?.id,
-        requestedByName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      });
-      await storage.createAuditLog({
-        orgId,
-        userId: user?.id,
-        userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "System",
-        action: "response_approval_requested",
-        resourceType: "response_approval",
-        resourceId: approval.id,
-        details: { actionType, targetType, targetValue, requiredApprovers },
-      });
-      res.status(201).json(approval);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create approval request" });
-    }
-  });
+    },
+  );
 
   app.post(
     "/api/response-approvals/:id/decide",
@@ -600,6 +635,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const channel = await storage.getNotificationChannel(p(req.params.id));
@@ -619,47 +655,54 @@ export function registerIntegrationsRoutes(app: Express): void {
   // ============================
   // Response Action Dry-Run Simulation
   // ============================
-  app.post("/api/response-actions/dry-run", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const orgId = (req as any).orgId;
-      const { actionType, target, connectorId, incidentId } = req.body;
-      if (!actionType) return res.status(400).json({ message: "actionType is required" });
+  app.post(
+    "/api/response-actions/dry-run",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const orgId = (req as any).orgId;
+        const { actionType, target, connectorId, incidentId } = req.body;
+        if (!actionType) return res.status(400).json({ message: "actionType is required" });
 
-      const simulation = {
-        simulatedAt: new Date().toISOString(),
-        actionType,
-        target: target || {},
-        dryRun: true,
-        estimatedImpact: actionType.includes("block_ip")
-          ? "Network traffic from target IP will be blocked at firewall"
-          : actionType.includes("isolate")
-            ? "Target endpoint will be isolated from network"
-            : actionType.includes("disable_user")
-              ? "User account will be disabled in identity provider"
-              : actionType.includes("quarantine")
-                ? "File will be moved to quarantine on target endpoint"
-                : actionType.includes("create_jira")
-                  ? "A Jira ticket will be created in the configured project"
-                  : actionType.includes("create_servicenow")
-                    ? "A ServiceNow incident will be created"
-                    : "Action will be dispatched to the configured connector",
-        reversible: !actionType.includes("delete"),
-        requiresApproval:
-          actionType.includes("block") || actionType.includes("isolate") || actionType.includes("disable"),
-        affectedResources: [
-          {
-            type: target?.targetType || "unknown",
-            value: target?.targetValue || target?.target || "N/A",
-          },
-        ],
-        estimatedDuration: "< 30 seconds",
-        connectorId: connectorId || null,
-        incidentId: incidentId || null,
-      };
-      res.json(simulation);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to simulate action" });
-    }
-  });
+        const simulation = {
+          simulatedAt: new Date().toISOString(),
+          actionType,
+          target: target || {},
+          dryRun: true,
+          estimatedImpact: actionType.includes("block_ip")
+            ? "Network traffic from target IP will be blocked at firewall"
+            : actionType.includes("isolate")
+              ? "Target endpoint will be isolated from network"
+              : actionType.includes("disable_user")
+                ? "User account will be disabled in identity provider"
+                : actionType.includes("quarantine")
+                  ? "File will be moved to quarantine on target endpoint"
+                  : actionType.includes("create_jira")
+                    ? "A Jira ticket will be created in the configured project"
+                    : actionType.includes("create_servicenow")
+                      ? "A ServiceNow incident will be created"
+                      : "Action will be dispatched to the configured connector",
+          reversible: !actionType.includes("delete"),
+          requiresApproval:
+            actionType.includes("block") || actionType.includes("isolate") || actionType.includes("disable"),
+          affectedResources: [
+            {
+              type: target?.targetType || "unknown",
+              value: target?.targetValue || target?.target || "N/A",
+            },
+          ],
+          estimatedDuration: "< 30 seconds",
+          connectorId: connectorId || null,
+          incidentId: incidentId || null,
+        };
+        res.json(simulation);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to simulate action" });
+      }
+    },
+  );
 }

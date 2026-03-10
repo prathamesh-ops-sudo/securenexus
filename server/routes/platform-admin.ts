@@ -1347,6 +1347,119 @@ export function registerPlatformAdminRoutes(app: Express): void {
     },
   );
 
+  app.post(
+    "/api/platform-admin/users/:id/promote-super-admin",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const userId = req.params.id;
+        if (!userId || typeof userId !== "string" || userId.length > 64) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_ID", message: "Invalid user ID" }],
+          });
+        }
+
+        const [target] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!target) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          });
+        }
+
+        if (target.isSuperAdmin) {
+          return sendEnvelope(res, null, {
+            status: 409,
+            errors: [{ code: "ALREADY_SUPER_ADMIN", message: "User is already a super admin" }],
+          });
+        }
+
+        await db.update(users).set({ isSuperAdmin: true, updatedAt: new Date() }).where(eq(users.id, userId));
+
+        await storage.createAuditLog({
+          userId: (req as any).user.id,
+          userName: (req as any).user.email,
+          action: "platform_admin_promote_super_admin",
+          resourceType: "user",
+          resourceId: userId,
+          details: { targetEmail: target.email },
+        });
+
+        invalidateDeserializeCache(userId);
+        log.info("User promoted to super admin", { promotedBy: (req as any).user.id, targetUserId: userId });
+        return sendEnvelope(res, { id: target.id, email: target.email, isSuperAdmin: true });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "PROMOTE_FAILED", message: "Failed to promote user to super admin", details: message }],
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/platform-admin/users/:id/demote-super-admin",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const userId = req.params.id;
+        if (!userId || typeof userId !== "string" || userId.length > 64) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_ID", message: "Invalid user ID" }],
+          });
+        }
+
+        if (userId === (req as any).user.id) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "SELF_DEMOTE", message: "Cannot demote your own super admin status" }],
+          });
+        }
+
+        const [target] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!target) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          });
+        }
+
+        if (!target.isSuperAdmin) {
+          return sendEnvelope(res, null, {
+            status: 409,
+            errors: [{ code: "NOT_SUPER_ADMIN", message: "User is not a super admin" }],
+          });
+        }
+
+        await db.update(users).set({ isSuperAdmin: false, updatedAt: new Date() }).where(eq(users.id, userId));
+
+        await storage.createAuditLog({
+          userId: (req as any).user.id,
+          userName: (req as any).user.email,
+          action: "platform_admin_demote_super_admin",
+          resourceType: "user",
+          resourceId: userId,
+          details: { targetEmail: target.email },
+        });
+
+        invalidateDeserializeCache(userId);
+        log.info("User demoted from super admin", { demotedBy: (req as any).user.id, targetUserId: userId });
+        return sendEnvelope(res, { id: target.id, email: target.email, isSuperAdmin: false });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "DEMOTE_FAILED", message: "Failed to demote user from super admin", details: message }],
+        });
+      }
+    },
+  );
+
   app.get(
     "/api/platform-admin/failed-login-history",
     isAuthenticated,

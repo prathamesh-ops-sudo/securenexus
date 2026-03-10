@@ -3,6 +3,7 @@ import multer from "multer";
 import { getOrgId, logger } from "./shared";
 import { isAuthenticated } from "../auth";
 import { deleteFile, getSignedUrl, listFiles, uploadFile } from "../s3";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE_BYTES } });
@@ -77,71 +78,100 @@ function sanitizeFilename(raw: string): string {
 }
 
 export function registerFilesRoutes(app: Express): void {
-  app.post("/api/files/upload", isAuthenticated, upload.single("file"), async (req, res) => {
-    try {
-      if (!req.file) return res.status(400).json({ message: "No file provided" });
-      const orgId = getOrgId(req);
-      const rawPrefix = (req.query.prefix as string) || (req.body?.prefix as string) || "uploads/";
-      const prefix = sanitizePrefix(rawPrefix);
-      if (!prefix) {
-        return res.status(400).json({ message: "Invalid prefix" });
+  app.post(
+    "/api/files/upload",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        if (!req.file) return res.status(400).json({ message: "No file provided" });
+        const orgId = getOrgId(req);
+        const rawPrefix = (req.query.prefix as string) || (req.body?.prefix as string) || "uploads/";
+        const prefix = sanitizePrefix(rawPrefix);
+        if (!prefix) {
+          return res.status(400).json({ message: "Invalid prefix" });
+        }
+
+        const baseName = req.file.originalname.split(/[/\\]/).pop() || req.file.originalname;
+        const ext = baseName.split(".").pop()?.toLowerCase().trim() || "";
+        if (BLOCKED_EXTENSIONS.has(ext)) {
+          return res.status(400).json({ message: `File type .${ext} is not allowed` });
+        }
+
+        const safeName = sanitizeFilename(baseName);
+        const key = `orgs/${orgId}/${prefix}${Date.now()}-${safeName}`;
+        const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
+        res.status(201).json(result);
+      } catch (error) {
+        logger.child("routes").error("File upload error", { error: String(error) });
+        res.status(500).json({ message: "Failed to upload file" });
       }
+    },
+  );
 
-      const baseName = req.file.originalname.split(/[/\\]/).pop() || req.file.originalname;
-      const ext = baseName.split(".").pop()?.toLowerCase().trim() || "";
-      if (BLOCKED_EXTENSIONS.has(ext)) {
-        return res.status(400).json({ message: `File type .${ext} is not allowed` });
+  app.get(
+    "/api/files",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const rawSub = (req.query.prefix as string) || "";
+        const subPrefix = sanitizePrefix(rawSub, { allowEmpty: true });
+        if (subPrefix === null) {
+          return res.status(400).json({ message: "Invalid prefix" });
+        }
+        const prefix = `orgs/${orgId}/${subPrefix}`;
+        const files = await listFiles(prefix);
+        res.json(files);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to list files" });
       }
+    },
+  );
 
-      const safeName = sanitizeFilename(baseName);
-      const key = `orgs/${orgId}/${prefix}${Date.now()}-${safeName}`;
-      const result = await uploadFile(key, req.file.buffer, req.file.mimetype);
-      res.status(201).json(result);
-    } catch (error) {
-      logger.child("routes").error("File upload error", { error: String(error) });
-      res.status(500).json({ message: "Failed to upload file" });
-    }
-  });
-
-  app.get("/api/files", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const rawSub = (req.query.prefix as string) || "";
-      const subPrefix = sanitizePrefix(rawSub, { allowEmpty: true });
-      if (subPrefix === null) {
-        return res.status(400).json({ message: "Invalid prefix" });
+  app.get(
+    "/api/files/download",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const key = req.query.key as string;
+        if (!key) return res.status(400).json({ message: "key query param required" });
+        if (!isValidS3Key(key, orgId)) return res.status(403).json({ message: "Access denied" });
+        const url = await getSignedUrl(key);
+        res.json({ url });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to get signed URL" });
       }
-      const prefix = `orgs/${orgId}/${subPrefix}`;
-      const files = await listFiles(prefix);
-      res.json(files);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to list files" });
-    }
-  });
+    },
+  );
 
-  app.get("/api/files/download", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const key = req.query.key as string;
-      if (!key) return res.status(400).json({ message: "key query param required" });
-      if (!isValidS3Key(key, orgId)) return res.status(403).json({ message: "Access denied" });
-      const url = await getSignedUrl(key);
-      res.json({ url });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get signed URL" });
-    }
-  });
-
-  app.delete("/api/files/remove", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const key = req.query.key as string;
-      if (!key) return res.status(400).json({ message: "key query param required" });
-      if (!isValidS3Key(key, orgId)) return res.status(403).json({ message: "Access denied" });
-      const result = await deleteFile(key);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete file" });
-    }
-  });
+  app.delete(
+    "/api/files/remove",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const key = req.query.key as string;
+        if (!key) return res.status(400).json({ message: "key query param required" });
+        if (!isValidS3Key(key, orgId)) return res.status(403).json({ message: "Access denied" });
+        const result = await deleteFile(key);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete file" });
+      }
+    },
+  );
 }
