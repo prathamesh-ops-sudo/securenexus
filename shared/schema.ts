@@ -243,6 +243,8 @@ export const organizations = pgTable("organizations", {
   orgType: text("org_type").notNull().default("standard"),
   parentOrgId: varchar("parent_org_id"),
   dataResidency: text("data_residency").default("us-east-1"),
+  defaultMemberRole: text("default_member_role").notNull().default("analyst"),
+  requireApproval: boolean("require_approval").notNull().default(false),
   deletedAt: timestamp("deleted_at"),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),

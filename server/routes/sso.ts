@@ -711,12 +711,15 @@ async function handleSsoUserProvision(
 
     const existingMembership = await storage.getOrgMembership(orgId, user.id);
     if (!existingMembership) {
+      const org = await storage.getOrganization(orgId);
+      const resolvedRole = config.defaultRole || org?.defaultMemberRole || "analyst";
+      const needsApproval = org?.requireApproval ?? false;
       await storage.createOrgMembership({
         orgId,
         userId: user.id,
-        role: config.defaultRole || "analyst",
-        status: "active",
-        joinedAt: new Date(),
+        role: resolvedRole,
+        status: needsApproval ? "pending" : "active",
+        joinedAt: needsApproval ? undefined : new Date(),
       });
     }
 
