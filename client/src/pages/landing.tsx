@@ -909,6 +909,129 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* Pricing */}
+        <section id="pricing" className="py-24 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center px-3.5 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-medium mb-4">
+                Pricing
+              </div>
+              <h2 className="text-[1.875rem] md:text-[2.25rem] font-bold tracking-[-0.02em] mb-3">
+                Plans for Every Security Team
+              </h2>
+              <p className="text-slate-400 max-w-xl mx-auto">
+                All prices in INR. Annual billing available with discounts. Start free, scale as you grow.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                {
+                  name: "Free Trial",
+                  price: "\u20B90",
+                  period: "/month",
+                  description: "Evaluate the platform with limited capacity",
+                  features: ["500 events/month", "2 connectors", "5K AI tokens", "Community support"],
+                  cta: "Start Free",
+                  highlight: false,
+                },
+                {
+                  name: "Starter",
+                  price: "\u20B91.5L",
+                  period: "/month",
+                  description: "For SMBs and growing security teams",
+                  features: [
+                    "50K events/month",
+                    "10 connectors",
+                    "100K AI tokens",
+                    "Email support",
+                    "Basic compliance",
+                  ],
+                  cta: "Get Started",
+                  highlight: false,
+                },
+                {
+                  name: "Growth",
+                  price: "\u20B94L",
+                  period: "/month",
+                  description: "For mid-market enterprises scaling security ops",
+                  features: [
+                    "500K events/month",
+                    "50 connectors",
+                    "500K AI tokens",
+                    "Priority support",
+                    "Full compliance suite",
+                    "MITRE ATT&CK mapping",
+                  ],
+                  cta: "Choose Growth",
+                  highlight: true,
+                  badge: "Most Popular",
+                },
+                {
+                  name: "Enterprise",
+                  price: "\u20B910L",
+                  period: "/month",
+                  description: "For large organizations with advanced needs",
+                  features: [
+                    "Unlimited events",
+                    "Unlimited connectors",
+                    "2M AI tokens",
+                    "24/7 dedicated support",
+                    "SSO & RBAC",
+                    "Custom integrations",
+                  ],
+                  cta: "Contact Sales",
+                  highlight: false,
+                },
+              ].map((plan) => (
+                <div
+                  key={plan.name}
+                  className={`relative bg-white/[0.02] border rounded-xl p-6 flex flex-col ${
+                    plan.highlight ? "border-blue-500/40 shadow-[0_0_30px_rgba(37,99,235,0.1)]" : "border-white/[0.06]"
+                  } hover:bg-white/[0.04] hover:border-white/[0.1] transition-[background,border-color] duration-200`}
+                >
+                  {plan.badge && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="px-3 py-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold uppercase tracking-wide">
+                        {plan.badge}
+                      </span>
+                    </div>
+                  )}
+                  <h3 className="font-semibold text-base mb-1">{plan.name}</h3>
+                  <p className="text-xs text-slate-500 mb-4">{plan.description}</p>
+                  <div className="flex items-baseline gap-1 mb-5">
+                    <span className="text-2xl font-bold">{plan.price}</span>
+                    <span className="text-sm text-slate-500">{plan.period}</span>
+                  </div>
+                  <ul className="space-y-2 mb-6 flex-1">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex items-center gap-2 text-sm text-slate-400">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => setAuthMode("register")}
+                    className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${
+                      plan.highlight
+                        ? "bg-blue-600 hover:bg-blue-700 text-white shadow-[0_1px_2px_rgba(0,0,0,0.1),0_4px_12px_rgba(37,99,235,0.25)]"
+                        : "bg-white/5 hover:bg-white/10 text-white border border-white/15"
+                    }`}
+                  >
+                    {plan.cta}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-center text-xs text-slate-500 mt-6">
+              Government &amp; PSU pricing available on request.{" "}
+              <a href="mailto:sales@aricatech.com" className="text-blue-400 hover:underline">
+                Contact sales
+              </a>
+            </p>
+          </div>
+        </section>
+
         {/* FAQ */}
         <section id="faq" className="py-20 px-6">
           <div className="max-w-3xl mx-auto">

@@ -101,7 +101,7 @@ const faqs = [
   },
   {
     q: "What is the pricing for Indian enterprises?",
-    a: "SecureNexus offers a free tier for startups and small teams, Pro at $49/month for growing organizations, and Enterprise at $199/month for large SOCs requiring multi-tenant RBAC, SSO, and custom integrations. Volume discounts are available for Indian enterprises.",
+    a: "Arica Cyber Security Suite is priced in INR for the Indian market: Free Trial for evaluation, Starter at \u20B91.5L/month for SMBs, Growth at \u20B94L/month for mid-market teams, and Enterprise at \u20B910L/month for large organizations. A dedicated Government/PSU tier with custom pricing is also available. All plans include annual billing discounts. Contact sales@aricatech.com for details.",
   },
 ];
 

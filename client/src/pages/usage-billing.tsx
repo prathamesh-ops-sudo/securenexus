@@ -117,8 +117,10 @@ function tierBadge(tier: string) {
   const styles: Record<string, string> = {
     free: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
     starter: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    growth: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
     professional: "bg-purple-500/10 text-purple-400 border-purple-500/20",
     enterprise: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    government: "bg-orange-500/10 text-orange-400 border-orange-500/20",
   };
   return styles[tier] || styles.free;
 }

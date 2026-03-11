@@ -10,10 +10,25 @@ export interface PlanTier {
   description: string;
   monthlyPriceCents: number;
   annualPriceCents: number;
+  currency: string;
   limits: PlanLimits;
   features: string[];
   recommended?: boolean;
   badge?: string;
+  onboardingFeeCents?: number;
+  supportHours?: string;
+  targetSegment?: string;
+}
+
+export interface AddOnModule {
+  id: string;
+  name: string;
+  description: string;
+  annualPriceCents: number;
+  currency: string;
+  pricingModel: "annual" | "per_batch" | "one_time";
+  bestFor: string[];
+  unitLabel?: string;
 }
 
 export interface PlanLimits {
@@ -95,13 +110,14 @@ const PLAN_TIERS: PlanTier[] = [
   {
     id: "free",
     name: "free",
-    displayName: "Free",
-    description: "Get started with essential security monitoring for small teams",
+    displayName: "Free Trial",
+    description: "Evaluate the Arica Cyber Security Suite with essential monitoring",
     monthlyPriceCents: 0,
     annualPriceCents: 0,
+    currency: "INR",
     limits: {
       users: 5,
-      dataSources: 3,
+      dataSources: 2,
       retentionDays: 7,
       automationRunsPerMonth: 100,
       aiTokensPerMonth: 5000,
@@ -112,79 +128,128 @@ const PLAN_TIERS: PlanTier[] = [
     },
     features: [
       "Basic alert triage",
-      "3 data source connectors",
+      "2 data source connectors",
       "7-day log retention",
       "Community support",
       "Basic dashboards",
+      "30-day trial period",
     ],
+    targetSegment: "Evaluation & pilots",
   },
   {
     id: "starter",
     name: "starter",
     displayName: "Starter",
-    description: "For growing teams that need more visibility and automation",
-    monthlyPriceCents: 4900,
-    annualPriceCents: 47000,
+    description: "For startups and SMBs getting serious about security operations",
+    monthlyPriceCents: 1500000,
+    annualPriceCents: 18000000,
+    currency: "INR",
+    onboardingFeeCents: 2500000,
     limits: {
-      users: 25,
-      dataSources: 10,
+      users: 50,
+      dataSources: 5,
       retentionDays: 30,
-      automationRunsPerMonth: 1000,
+      automationRunsPerMonth: 500,
       aiTokensPerMonth: 50000,
       apiCallsPerMonth: 50000,
       storageGb: 10,
-      eventsPerMonth: 100000,
+      eventsPerMonth: 150000,
       burstAllowancePct: 10,
     },
     features: [
-      "AI-assisted triage",
-      "10 data source connectors",
-      "30-day log retention",
-      "Email support",
-      "Custom dashboards",
-      "Playbook automation",
-      "API access",
+      "Agentic SOC Platform — core threat detection & triage",
+      "AI Alert Triage Engine (up to 5,000 events/day)",
+      "Cloud monitoring — 1 provider (AWS or Azure or GCP)",
+      "MITRE ATT&CK mapping & basic incident reports",
+      "ISO 27001 & DPDP Compliance Dashboard (read-only)",
+      "Email alerts + WhatsApp / Slack notifications",
+      "Monthly Compliance Score Report (PDF)",
+      "8x5 analyst support via email",
     ],
+    supportHours: "8x5",
+    targetSegment: "Startups & SMBs (1-50 employees)",
   },
   {
-    id: "professional",
-    name: "professional",
-    displayName: "Professional",
-    description: "Full-featured SOC platform for mid-size security teams",
-    monthlyPriceCents: 14900,
-    annualPriceCents: 143000,
+    id: "growth",
+    name: "growth",
+    displayName: "Growth",
+    description: "Full-featured SOC platform for mid-market security teams",
+    monthlyPriceCents: 4000000,
+    annualPriceCents: 48000000,
+    currency: "INR",
+    onboardingFeeCents: 5000000,
     limits: {
-      users: 100,
-      dataSources: 50,
+      users: 300,
+      dataSources: 25,
       retentionDays: 90,
-      automationRunsPerMonth: 10000,
+      automationRunsPerMonth: 5000,
       aiTokensPerMonth: 500000,
       apiCallsPerMonth: 500000,
       storageGb: 100,
-      eventsPerMonth: 1000000,
+      eventsPerMonth: 1500000,
       burstAllowancePct: 20,
     },
     features: [
-      "SOC Co-Pilot AI analyst",
-      "50 data source connectors",
-      "90-day log retention",
-      "Priority support (4h SLA)",
-      "Advanced analytics & reporting",
-      "SOAR automation",
-      "Threat intelligence feeds",
-      "Compliance frameworks",
-      "Custom integrations",
+      "Everything in Starter, plus:",
+      "AI Triage Engine (up to 50,000 events/day)",
+      "Multi-cloud monitoring — 2 providers",
+      "Agentic Incident Response (auto-containment playbooks)",
+      "Full Compliance Automation — ISO 27001, DPDP, CERT-In",
+      "SOAR integration (Jira, ServiceNow, PagerDuty)",
+      "Quarterly Executive Report + Risk Heatmap",
+      "Phishing Simulation Module (up to 200 employees/year)",
+      "16x5 analyst support (chat + video)",
+      "Dedicated Customer Success Manager",
     ],
     recommended: true,
     badge: "Most Popular",
+    supportHours: "16x5",
+    targetSegment: "Mid-Market (51-300 employees)",
   },
   {
     id: "enterprise",
     name: "enterprise",
     displayName: "Enterprise",
     description: "Unlimited scale with dedicated support for large organizations",
+    monthlyPriceCents: 10000000,
+    annualPriceCents: 120000000,
+    currency: "INR",
+    onboardingFeeCents: 10000000,
+    limits: {
+      users: 2000,
+      dataSources: -1,
+      retentionDays: 365,
+      automationRunsPerMonth: -1,
+      aiTokensPerMonth: -1,
+      apiCallsPerMonth: -1,
+      storageGb: -1,
+      eventsPerMonth: -1,
+      burstAllowancePct: 50,
+    },
+    features: [
+      "Everything in Growth, plus:",
+      "Unlimited event ingestion & retention (12 months hot)",
+      "All cloud providers + on-premise SIEM integration",
+      "Full SOAR with custom playbook development",
+      "RBI / SEBI / IRDAI Compliance Automation modules",
+      "White-label option for internal SOC branding",
+      "Dedicated AI models fine-tuned to client environment",
+      "24x7 analyst support with < 1-hour SLA",
+      "Bi-annual Penetration Testing report",
+      "Executive threat intelligence briefing (monthly)",
+      "API access for custom integrations",
+    ],
+    supportHours: "24x7",
+    targetSegment: "Large Enterprises (300-2,000 employees)",
+  },
+  {
+    id: "government",
+    name: "government",
+    displayName: "Government / PSU",
+    description: "Custom deployment for government bodies, PSUs, and large banks",
     monthlyPriceCents: 0,
     annualPriceCents: 0,
+    currency: "INR",
     limits: {
       users: -1,
       dataSources: -1,
@@ -197,18 +262,88 @@ const PLAN_TIERS: PlanTier[] = [
       burstAllowancePct: 50,
     },
     features: [
-      "Unlimited users & data sources",
-      "365-day log retention",
-      "Dedicated success manager",
-      "24/7 premium support (1h SLA)",
-      "Custom AI model training",
-      "MSSP / multi-tenant support",
-      "SSO & SCIM provisioning",
-      "Data residency controls",
-      "Audit log exports",
-      "Custom SLAs",
+      "Everything in Enterprise, plus:",
+      "Full on-premise or sovereign cloud deployment",
+      "CERT-In empanelled incident response SLA (4-hour response)",
+      "OT/SCADA security monitoring module",
+      "RBI / SEBI / IRDAI full compliance suite",
+      "GeM Portal procurement compatible",
+      "Custom MoU with Arica Tech Security LLP",
+      "Training for internal IT/SOC team included",
+      "Annual security posture audit included",
+      "Dedicated deployment engineer + account manager",
     ],
     badge: "Contact Sales",
+    supportHours: "24x7",
+    targetSegment: "Government, PSUs, Large Banks",
+  },
+];
+
+const ADD_ON_MODULES: AddOnModule[] = [
+  {
+    id: "threat-intel-premium",
+    name: "Threat Intelligence Feed (Premium)",
+    description: "Premium threat intelligence feeds with real-time IOC updates and industry-specific threat reports",
+    annualPriceCents: 6000000,
+    currency: "INR",
+    pricingModel: "annual",
+    bestFor: ["Finance", "Pharma", "Government"],
+  },
+  {
+    id: "dark-web-monitoring",
+    name: "Dark Web Monitoring",
+    description:
+      "Continuous monitoring of dark web forums, marketplaces, and paste sites for leaked credentials and data",
+    annualPriceCents: 4800000,
+    currency: "INR",
+    pricingModel: "annual",
+    bestFor: ["All sectors"],
+  },
+  {
+    id: "cloud-dlp",
+    name: "Cloud DLP (Data Loss Prevention)",
+    description: "Real-time monitoring and prevention of unauthorized data movement across cloud environments",
+    annualPriceCents: 7200000,
+    currency: "INR",
+    pricingModel: "annual",
+    bestFor: ["Healthcare", "BFSI"],
+  },
+  {
+    id: "phishing-simulation",
+    name: "Phishing Simulation",
+    description: "Simulated phishing campaigns to test and train employees on security awareness",
+    annualPriceCents: 1500000,
+    currency: "INR",
+    pricingModel: "per_batch",
+    bestFor: ["Corporates", "Hospitals"],
+    unitLabel: "per 100 users",
+  },
+  {
+    id: "vapt-integration-report",
+    name: "VAPT-to-Suite Integration Report",
+    description: "Comprehensive report mapping VAPT findings to Suite detection rules and compliance controls",
+    annualPriceCents: 2500000,
+    currency: "INR",
+    pricingModel: "one_time",
+    bestFor: ["Post-VAPT clients"],
+  },
+  {
+    id: "custom-compliance-mapping",
+    name: "Custom Compliance Framework Mapping",
+    description: "Bespoke compliance framework mapping for industry-specific or international regulatory requirements",
+    annualPriceCents: 4000000,
+    currency: "INR",
+    pricingModel: "one_time",
+    bestFor: ["Global enterprises"],
+  },
+  {
+    id: "mssaas-whitelabel",
+    name: "MSSaaS White-Label License",
+    description: "White-label the Arica Cyber Security Suite under your brand for managed security service delivery",
+    annualPriceCents: 20000000,
+    currency: "INR",
+    pricingModel: "annual",
+    bestFor: ["MSSPs", "IT firms"],
   },
 ];
 
@@ -219,6 +354,14 @@ const burstStore = new Map<string, BurstEntry[]>();
 
 export function getAllPlanTiers(): PlanTier[] {
   return PLAN_TIERS;
+}
+
+export function getAllAddOnModules(): AddOnModule[] {
+  return ADD_ON_MODULES;
+}
+
+export function getAddOnModuleById(moduleId: string): AddOnModule | undefined {
+  return ADD_ON_MODULES.find((m) => m.id === moduleId);
 }
 
 export function getPlanTierById(tierId: string): PlanTier | undefined {
