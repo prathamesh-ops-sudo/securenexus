@@ -412,7 +412,7 @@ function PlanComparisonSection() {
       displayName: "Starter",
       description: "For startups & SMBs (1-50 employees)",
       monthlyPriceCents: 1500000,
-      annualPriceCents: 18000000,
+      annualPriceCents: 15000000,
       currency: "INR",
       features: { events: "5K/day", connectors: 5, retention: "30 days", support: "8x5 Email" },
     },
@@ -421,7 +421,7 @@ function PlanComparisonSection() {
       displayName: "Growth",
       description: "For mid-market teams (51-300 employees)",
       monthlyPriceCents: 4000000,
-      annualPriceCents: 48000000,
+      annualPriceCents: 40000000,
       currency: "INR",
       features: { events: "50K/day", connectors: 25, retention: "90 days", support: "16x5 Chat" },
       recommended: true,
@@ -431,7 +431,7 @@ function PlanComparisonSection() {
       displayName: "Enterprise",
       description: "For large enterprises (300-2,000 employees)",
       monthlyPriceCents: 10000000,
-      annualPriceCents: 120000000,
+      annualPriceCents: 100000000,
       currency: "INR",
       features: { events: "Unlimited", connectors: "Unlimited", retention: "365 days", support: "24x7 SLA" },
     },
@@ -522,11 +522,19 @@ function PlanComparisonSection() {
                         <span className="text-xl font-bold">{formatCents(plan.monthlyPriceCents, planCurrency)}</span>
                         <span className="text-xs text-muted-foreground">/mo</span>
                       </div>
-                      {plan.annualPriceCents > 0 && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {formatCents(plan.annualPriceCents, planCurrency)}/yr (save ~17%)
-                        </p>
-                      )}
+                      {plan.annualPriceCents > 0 &&
+                        plan.monthlyPriceCents > 0 &&
+                        (() => {
+                          const savingsPct = Math.round(
+                            (1 - plan.annualPriceCents / (plan.monthlyPriceCents * 12)) * 100,
+                          );
+                          return (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {formatCents(plan.annualPriceCents, planCurrency)}/yr
+                              {savingsPct > 0 ? ` (save ~${savingsPct}%)` : ""}
+                            </p>
+                          );
+                        })()}
                     </>
                   )}
                 </div>
@@ -746,7 +754,7 @@ function InvoicesSection() {
             {invoicesList.map((inv: any) => (
               <tr key={inv.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
                 <td className="px-4 py-3">{formatDate(inv.paidAt || inv.createdAt)}</td>
-                <td className="px-4 py-3 font-medium">{formatCents(inv.amountDueCents)}</td>
+                <td className="px-4 py-3 font-medium">{formatCents(inv.amountDueCents, inv.currency || "usd")}</td>
                 <td className="px-4 py-3">{statusBadge(inv.status)}</td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {formatDate(inv.periodStart)} — {formatDate(inv.periodEnd)}
