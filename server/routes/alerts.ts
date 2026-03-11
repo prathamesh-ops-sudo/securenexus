@@ -193,7 +193,7 @@ export function registerAlertsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const { alertIds, status, suppressed, assignedTo } = req.body || {};
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         if (!Array.isArray(alertIds) || alertIds.length === 0) {
           return res.status(400).json({ message: "alertIds array is required" });
         }
@@ -202,7 +202,7 @@ export function registerAlertsRoutes(app: Express): void {
         for (const id of alertIds) {
           const alertId = p(String(id));
           const existing = await storage.getAlert(alertId);
-          if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) continue;
+          if (!existing || existing.orgId !== orgId) continue;
           const patch: Record<string, any> = {};
           if (typeof status === "string" && status.length > 0) patch.status = status;
           if (typeof suppressed === "boolean") {
