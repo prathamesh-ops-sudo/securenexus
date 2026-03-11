@@ -302,52 +302,48 @@ export default function LandingPage() {
   const isSubmitting = authMode === "register" ? isRegistering : isLoggingIn;
 
   const brutBtn =
-    "border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.3)] hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all";
+    "border-[1px] border-[#1e293b]/20 dark:border-[#334155]/50 shadow-sm hover:shadow-md hover:translate-y-[-1px] active:translate-y-[0px] transition-all rounded-lg font-medium";
   const brutCard =
-    "bg-white dark:bg-[#111827] border-[2.5px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[4px_4px_0px_#1e293b] dark:shadow-[4px_4px_0px_rgba(6,182,212,0.15)]";
-  const brutCardHover =
-    "hover:shadow-[2px_2px_0px_#1e293b] dark:hover:shadow-[2px_2px_0px_rgba(6,182,212,0.15)] hover:translate-x-[2px] hover:translate-y-[2px]";
+    "bg-white dark:bg-[#111827] border-[1px] border-[#1e293b]/10 dark:border-[#334155]/50 rounded-xl shadow-sm hover:shadow-md transition-all duration-300";
+  const brutCardHover = "hover:shadow-lg hover:translate-y-[-2px] transition-all duration-300";
 
   return (
-    <div
-      data-testid="landing-page"
-      className="min-h-screen bg-[#FFF8F0] dark:bg-[#0a0f1e] text-[#1e293b] dark:text-[#e2e8f0] font-sans"
-    >
+    <div data-testid="landing-page" className="min-h-screen bg-background text-foreground font-sans refined-ui">
       {authMode && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
           onClick={() => setAuthMode(null)}
         >
           <div
-            className="w-full max-w-md mx-4 bg-white dark:bg-[#111827] border-[3px] border-[#1e293b] dark:border-[#334155] rounded-2xl shadow-[6px_6px_0px_#1e293b] dark:shadow-[6px_6px_0px_#0ea5e9]"
+            className="w-full max-w-md mx-4 bg-card border border-border rounded-xl shadow-2xl animate-fade-in-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-8">
-              <div className="flex items-center gap-2.5 mb-6">
-                <div className="w-10 h-10 rounded-xl border-2 border-[#1e293b] dark:border-cyan-500/30 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-500/10 dark:to-transparent">
-                  <img src={atsLogo} alt="SecureNexus" className="w-7 h-7 object-contain" />
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <img src={atsLogo} alt="SecureNexus" className="w-6 h-6 object-contain" />
                 </div>
-                <span className="font-bold text-lg tracking-tight">SecureNexus</span>
+                <span className="font-bold text-xl tracking-tight font-display">SecureNexus</span>
               </div>
-              <h2 className="text-xl font-extrabold mb-1">
+              <h2 className="text-2xl font-bold mb-2 font-display">
                 {authMode === "register" ? "Start your free trial" : "Welcome back"}
               </h2>
-              <p className="text-sm text-[#64748b] dark:text-[#94a3b8] mb-6">
+              <p className="text-sm text-muted-foreground mb-6">
                 {authMode === "register" ? "14 days free. No credit card required." : "Log in to your account"}
               </p>
               {authError && (
-                <div className="mb-4 p-3 rounded-xl border-2 border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium">
+                <div className="mb-4 p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive text-sm font-medium">
                   {authError.message}
                 </div>
               )}
-              <div className="space-y-2 mb-4">
+              <div className="space-y-3 mb-6">
                 {oauthError && (
-                  <div className="mb-2 p-2.5 rounded-xl border-2 border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-medium">
+                  <div className="mb-2 p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-medium">
                     {oauthError}
                   </div>
                 )}
                 <button
-                  className="w-full h-11 flex items-center justify-center gap-2 text-sm font-semibold rounded-xl bg-white dark:bg-[#1e293b] hover:bg-gray-50 dark:hover:bg-[#253044] border-[2.5px] border-[#1e293b] dark:border-[#334155] shadow-[3px_3px_0px_#1e293b] dark:shadow-[3px_3px_0px_#0ea5e9] hover:shadow-[1px_1px_0px_#1e293b] dark:hover:shadow-[1px_1px_0px_#0ea5e9] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all"
+                  className="w-full h-10 flex items-center justify-center gap-2 text-sm font-medium rounded-lg bg-background hover:bg-muted border border-border transition-colors"
                   disabled={oauthLoading === "google"}
                   onClick={() => handleOAuth("google")}
                 >

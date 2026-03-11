@@ -162,30 +162,35 @@ function StatCard({
   const content = (
     <Card
       data-testid="dashboard-card-2"
-      className={`gradient-card group relative overflow-hidden border-border/50 hover:border-border/80 transition-all duration-300 hover:shadow-lg hover:shadow-black/5 ${href ? "cursor-pointer" : ""}`}
+      className={`gradient-card group relative overflow-hidden border-border/50 hover:border-border/80 transition-all duration-300 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 ${href ? "cursor-pointer" : ""}`}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
       <CardContent className="p-4 relative">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest">{title}</span>
+          <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-display">
+            {title}
+          </span>
           <div className="relative">
             <div
-              className={`flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br ${iconColor === "text-red-500" ? "from-red-500/10 to-red-500/5" : iconColor === "text-amber-500" ? "from-amber-500/10 to-amber-500/5" : iconColor === "text-orange-500" ? "from-orange-500/10 to-orange-500/5" : iconColor === "text-cyan-500" ? "from-cyan-500/10 to-cyan-500/5" : iconColor === "text-indigo-500" ? "from-indigo-500/10 to-indigo-500/5" : iconColor === "text-emerald-500" ? "from-emerald-500/10 to-emerald-500/5" : "from-muted/20 to-muted/10"}`}
+              className={`flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br ${iconColor === "text-red-500" ? "from-red-500/10 to-red-500/5" : iconColor === "text-amber-500" ? "from-amber-500/10 to-amber-500/5" : iconColor === "text-orange-500" ? "from-orange-500/10 to-orange-500/5" : iconColor === "text-cyan-500" ? "from-cyan-500/10 to-cyan-500/5" : iconColor === "text-indigo-500" ? "from-indigo-500/10 to-indigo-500/5" : iconColor === "text-emerald-500" ? "from-emerald-500/10 to-emerald-500/5" : "from-muted/20 to-muted/10"} group-hover:scale-110 transition-transform duration-300`}
             >
-              <Icon className={`h-3.5 w-3.5 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
+              <Icon className={`h-4 w-4 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
             </div>
             {badge && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 items-center justify-center rounded-full bg-red-500 ring-2 ring-card" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 items-center justify-center rounded-full bg-red-500 ring-2 ring-card animate-pulse" />
             )}
           </div>
         </div>
         {loading ? (
-          <Skeleton className="h-9 w-16" />
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-3 w-32" />
+          </div>
         ) : (
-          <div className="text-2xl font-bold tabular-nums tracking-tight">{value}</div>
+          <div className="text-3xl font-bold tabular-nums tracking-tight font-display">{value}</div>
         )}
         {subtitle && (
-          <p className={`text-[10px] mt-1.5 font-medium ${subtitleColor || "text-muted-foreground/60"}`}>{subtitle}</p>
+          <p className={`text-[11px] mt-1.5 font-medium ${subtitleColor || "text-muted-foreground/60"}`}>{subtitle}</p>
         )}
       </CardContent>
     </Card>
