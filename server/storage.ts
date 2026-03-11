@@ -905,6 +905,7 @@ export interface IStorage {
   createOutboxEvent(event: InsertOutboxEvent): Promise<OutboxEvent>;
   getPendingOutboxEvents(batchSize: number): Promise<OutboxEvent[]>;
   updateOutboxEvent(id: string, data: Partial<OutboxEvent>): Promise<OutboxEvent | undefined>;
+  getOutboxEvent(id: string): Promise<OutboxEvent | undefined>;
   getOutboxEvents(
     orgId?: string,
     status?: string,
@@ -4450,6 +4451,11 @@ export class DatabaseStorage implements IStorage {
   async updateOutboxEvent(id: string, data: Partial<OutboxEvent>): Promise<OutboxEvent | undefined> {
     const [updated] = await db.update(outboxEvents).set(data).where(eq(outboxEvents.id, id)).returning();
     return updated;
+  }
+
+  async getOutboxEvent(id: string): Promise<OutboxEvent | undefined> {
+    const [event] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id)).limit(1);
+    return event;
   }
 
   async getOutboxEvents(
