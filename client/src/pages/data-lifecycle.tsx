@@ -14,6 +14,7 @@ import {
   Shield,
   Loader2,
   CheckCircle2,
+  Construction,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,11 +50,14 @@ export default function DataLifecyclePage() {
     data: stats,
     isLoading,
     isError,
+    error,
     refetch,
   } = useQuery<LifecycleStats>({
     queryKey: ["/api/data-lifecycle/status"],
     queryFn: () => apiRequest("GET", "/api/data-lifecycle/status").then((r) => r.json()),
   });
+
+  const isNotImplemented = isError && error?.message?.startsWith("501:");
 
   const purgeMutation = useMutation({
     mutationFn: (policyId: string) => apiRequest("POST", `/api/data-lifecycle/purge/${policyId}`),
@@ -73,6 +77,31 @@ export default function DataLifecyclePage() {
             <Skeleton key={i} className="h-24" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (isNotImplemented) {
+    return (
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Database className="h-6 w-6" /> Data Lifecycle Management
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">Retention policies, archival, and data purge management</p>
+        </div>
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
+            <Construction className="h-10 w-10 text-muted-foreground" />
+            <div className="text-center">
+              <p className="text-lg font-semibold">Coming Soon</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                Data lifecycle management is under development. This will provide automated retention policies,
+                compliance-aware archival, and scheduled data purge workflows.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

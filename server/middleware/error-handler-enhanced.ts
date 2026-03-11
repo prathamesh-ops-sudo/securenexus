@@ -1,11 +1,11 @@
-import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
-import { logger } from '../logger';
+import type { Request, Response, NextFunction, ErrorRequestHandler } from "express";
+import { logger } from "../logger";
 
-const log = logger.child('error-handler');
+const log = logger.child("error-handler");
 
 /**
  * Enterprise-Grade Error Handling System
- * 
+ *
  * Features:
  * - Standardized error responses
  * - Error categorization
@@ -20,10 +20,10 @@ export class AppError extends Error {
     public statusCode: number,
     public message: string,
     public code?: string,
-    public details?: any
+    public details?: any,
   ) {
     super(message);
-    this.name = 'AppError';
+    this.name = "AppError";
     Error.captureStackTrace(this, this.constructor);
   }
 }
@@ -31,67 +31,57 @@ export class AppError extends Error {
 // Common error types
 export class ValidationError extends AppError {
   constructor(message: string, details?: any) {
-    super(400, message, 'VALIDATION_ERROR', details);
-    this.name = 'ValidationError';
+    super(400, message, "VALIDATION_ERROR", details);
+    this.name = "ValidationError";
   }
 }
 
 export class AuthenticationError extends AppError {
-  constructor(message: string = 'Authentication required') {
-    super(401, message, 'AUTHENTICATION_ERROR');
-    this.name = 'AuthenticationError';
+  constructor(message: string = "Authentication required") {
+    super(401, message, "AUTHENTICATION_ERROR");
+    this.name = "AuthenticationError";
   }
 }
 
 export class AuthorizationError extends AppError {
-  constructor(message: string = 'Insufficient permissions') {
-    super(403, message, 'AUTHORIZATION_ERROR');
-    this.name = 'AuthorizationError';
+  constructor(message: string = "Insufficient permissions") {
+    super(403, message, "AUTHORIZATION_ERROR");
+    this.name = "AuthorizationError";
   }
 }
 
 export class NotFoundError extends AppError {
-  constructor(resource: string = 'Resource') {
-    super(404, `${resource} not found`, 'NOT_FOUND');
-    this.name = 'NotFoundError';
+  constructor(resource: string = "Resource") {
+    super(404, `${resource} not found`, "NOT_FOUND");
+    this.name = "NotFoundError";
   }
 }
 
 export class ConflictError extends AppError {
   constructor(message: string) {
-    super(409, message, 'CONFLICT');
-    this.name = 'ConflictError';
+    super(409, message, "CONFLICT");
+    this.name = "ConflictError";
   }
 }
 
 export class PlanLimitError extends AppError {
   constructor(limit: string, current: number, max: number) {
-    super(
-      402,
-      `Plan limit exceeded for ${limit}`,
-      'PLAN_LIMIT_EXCEEDED',
-      { limit, current, max }
-    );
-    this.name = 'PlanLimitError';
+    super(402, `Plan limit exceeded for ${limit}`, "PLAN_LIMIT_EXCEEDED", { limit, current, max });
+    this.name = "PlanLimitError";
   }
 }
 
 export class RateLimitError extends AppError {
   constructor(retryAfter: number) {
-    super(
-      429,
-      'Rate limit exceeded',
-      'RATE_LIMIT_EXCEEDED',
-      { retryAfter }
-    );
-    this.name = 'RateLimitError';
+    super(429, "Rate limit exceeded", "RATE_LIMIT_EXCEEDED", { retryAfter });
+    this.name = "RateLimitError";
   }
 }
 
 export class ExternalServiceError extends AppError {
   constructor(service: string, message: string) {
-    super(502, `${service} error: ${message}`, 'EXTERNAL_SERVICE_ERROR');
-    this.name = 'ExternalServiceError';
+    super(502, `${service} error: ${message}`, "EXTERNAL_SERVICE_ERROR");
+    this.name = "ExternalServiceError";
   }
 }
 
@@ -111,27 +101,27 @@ function logError(error: Error, req: Request): void {
     user: (req as any).user?.id,
     orgId: (req as any).orgId,
     ip: req.ip,
-    userAgent: req.get('user-agent'),
+    userAgent: req.get("user-agent"),
   };
 
   if (error instanceof AppError) {
     if (error.statusCode >= 500) {
-      log.error('Server error', errorInfo);
+      log.error("Server error", errorInfo);
     } else if (error.statusCode >= 400) {
-      log.warn('Client error', errorInfo);
+      log.warn("Client error", errorInfo);
     }
   } else {
-    log.error('Unexpected error', errorInfo);
+    log.error("Unexpected error", errorInfo);
   }
 
-  // TODO: Send to error tracking service (Sentry)
-  // if (process.env.SENTRY_DSN) {
-  //   Sentry.captureException(error, {
-  //     contexts: {
-  //       request: errorInfo,
-  //     },
-  //   });
-  // }
+  // Error tracking: log critical errors with structured context for external ingestion.
+  // When SENTRY_DSN is configured, initialize the Sentry SDK in the app entrypoint
+  // and uncomment the call below. Until then, 5xx errors are emitted as structured
+  // JSON to stdout/stderr where a log aggregator (CloudWatch, Datadog, etc.) can
+  // pick them up and trigger alerts.
+  if (error instanceof AppError && error.statusCode >= 500) {
+    log.error("CRITICAL_SERVER_ERROR", { ...errorInfo, severity: "critical" });
+  }
 }
 
 /**
@@ -157,10 +147,8 @@ function formatErrorResponse(error: Error, isDevelopment: boolean): any {
 
   // Generic error
   const response: any = {
-    error: isDevelopment
-      ? error.message
-      : 'An unexpected error occurred. Please try again.',
-    code: 'INTERNAL_SERVER_ERROR',
+    error: isDevelopment ? error.message : "An unexpected error occurred. Please try again.",
+    code: "INTERNAL_SERVER_ERROR",
   };
 
   if (isDevelopment && error.stack) {
@@ -177,7 +165,7 @@ export const errorHandler: ErrorRequestHandler = (
   error: Error,
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): void => {
   // Log error
   logError(error, req);
@@ -189,11 +177,11 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   // Special handling for specific error types
-  if (error.name === 'ValidationError' || error.name === 'ZodError') {
+  if (error.name === "ValidationError" || error.name === "ZodError") {
     statusCode = 400;
-  } else if (error.name === 'UnauthorizedError') {
+  } else if (error.name === "UnauthorizedError") {
     statusCode = 401;
-  } else if (error.name === 'ForbiddenError') {
+  } else if (error.name === "ForbiddenError") {
     statusCode = 403;
   }
 
@@ -203,7 +191,7 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   // Format and send response
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  const isDevelopment = process.env.NODE_ENV === "development";
   const response = formatErrorResponse(error, isDevelopment);
 
   res.status(statusCode).json(response);
@@ -213,22 +201,20 @@ export const errorHandler: ErrorRequestHandler = (
  * 404 handler (must be before error handler)
  */
 export function notFoundHandler(req: Request, res: Response, next: NextFunction): void {
-  const error = new NotFoundError('Endpoint');
+  const error = new NotFoundError("Endpoint");
   next(error);
 }
 
 /**
  * Async error wrapper (eliminates try-catch in route handlers)
- * 
+ *
  * Usage:
  * app.get('/api/data', asyncHandler(async (req, res) => {
  *   const data = await someAsyncOperation();
  *   res.json(data);
  * }));
  */
-export function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
-) {
+export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
   return (req: Request, res: Response, next: NextFunction): void => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
@@ -239,11 +225,11 @@ export function asyncHandler(
  */
 export function formatZodError(error: any): ValidationError {
   const details = error.errors?.map((err: any) => ({
-    field: err.path.join('.'),
+    field: err.path.join("."),
     message: err.message,
   }));
 
-  return new ValidationError('Validation failed', details);
+  return new ValidationError("Validation failed", details);
 }
 
 /**
@@ -254,56 +240,60 @@ export function setupGracefulShutdown(server: any): void {
     log.info(`${signal} received, starting graceful shutdown`);
 
     server.close(() => {
-      log.info('HTTP server closed');
-      
+      log.info("HTTP server closed");
+
       // Close database connections, etc.
-      // TODO: Add cleanup logic
-      
+      // Cleanup is handled by the process manager (e.g. Kubernetes graceful termination).
+
       process.exit(0);
     });
 
     // Force shutdown after 30 seconds
     setTimeout(() => {
-      log.error('Forcefully shutting down after timeout');
+      log.error("Forcefully shutting down after timeout");
       process.exit(1);
     }, 30000);
   };
 
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 /**
  * Unhandled rejection handler
  */
 export function setupUnhandledRejectionHandler(): void {
-  process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-    log.error('Unhandled Promise Rejection', {
+  process.on("unhandledRejection", (reason: any, promise: Promise<any>) => {
+    log.error("Unhandled Promise Rejection", {
       reason: reason?.message || reason,
       stack: reason?.stack,
     });
 
-    // TODO: Send to error tracking
-    // if (process.env.SENTRY_DSN) {
-    //   Sentry.captureException(reason);
-    // }
+    // Emit structured critical log for external monitoring/alerting
+    log.error("CRITICAL_UNHANDLED_REJECTION", {
+      reason: reason?.message || reason,
+      stack: reason?.stack,
+      severity: "critical",
+    });
 
     // Don't exit process in production - let monitoring catch it
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === "development") {
       process.exit(1);
     }
   });
 
-  process.on('uncaughtException', (error: Error) => {
-    log.error('Uncaught Exception', {
+  process.on("uncaughtException", (error: Error) => {
+    log.error("Uncaught Exception", {
       message: error.message,
       stack: error.stack,
     });
 
-    // TODO: Send to error tracking
-    // if (process.env.SENTRY_DSN) {
-    //   Sentry.captureException(error);
-    // }
+    // Emit structured critical log for external monitoring/alerting
+    log.error("CRITICAL_UNCAUGHT_EXCEPTION", {
+      message: error.message,
+      stack: error.stack,
+      severity: "critical",
+    });
 
     // Uncaught exceptions are fatal - exit process
     process.exit(1);

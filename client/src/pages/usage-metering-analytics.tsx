@@ -14,6 +14,7 @@ import {
   DollarSign,
   Activity,
   Filter,
+  Construction,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,11 +50,14 @@ export default function UsageMeteringAnalyticsPage() {
     data: metering,
     isLoading,
     isError,
+    error,
     refetch,
   } = useQuery<MeteringData>({
     queryKey: ["/api/usage-metering/analytics", period],
     queryFn: () => apiRequest("GET", `/api/usage-metering/analytics?period=${period}`).then((r) => r.json()),
   });
+
+  const isNotImplemented = isError && error?.message?.startsWith("501:");
 
   if (isLoading) {
     return (
@@ -65,6 +69,33 @@ export default function UsageMeteringAnalyticsPage() {
           ))}
         </div>
         <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  if (isNotImplemented) {
+    return (
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <BarChart3 className="h-6 w-6" /> Usage & Metering Analytics
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Monitor resource consumption, plan usage, and cost analytics
+          </p>
+        </div>
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
+            <Construction className="h-10 w-10 text-muted-foreground" />
+            <div className="text-center">
+              <p className="text-lg font-semibold">Coming Soon</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                Usage metering and analytics are under development. This will provide detailed resource consumption
+                tracking, quota monitoring, and cost breakdowns by user and feature.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

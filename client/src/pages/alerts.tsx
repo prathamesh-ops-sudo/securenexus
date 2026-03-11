@@ -58,7 +58,7 @@ function MiniTimeline({ alert }: { alert: Alert }) {
   if (alert.status === "resolved" || alert.status === "false_positive") {
     events.push({ label: alert.status === "resolved" ? "Resolved" : "False Positive" });
   }
-  if (events.length === 0) return null;
+  if (events.length === 0) return <span className="text-[9px] text-muted-foreground/50 mt-1">No timeline events</span>;
   const recent = events.slice(-3);
   return (
     <div className="flex items-center gap-1 mt-1">
@@ -82,7 +82,7 @@ function FilterChips({
   onRemove: (key: string) => void;
   onClearAll: () => void;
 }) {
-  if (filters.length === 0) return null;
+  if (filters.length === 0) return <span className="text-[10px] text-muted-foreground/50">No active filters</span>;
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Active Filters:</span>
@@ -1963,7 +1963,8 @@ export default function AlertsPage() {
                   {(() => {
                     const qs = getQueueState(selectedAlert);
                     const countdown = getQueueCountdown(selectedAlert);
-                    if (qs === "other") return null;
+                    if (qs === "other")
+                      return <span className="text-[9px] text-muted-foreground/50">Queue: N/A (not new)</span>;
                     return (
                       <div className="flex items-center gap-2">
                         <Clock className="h-3 w-3 text-muted-foreground" />
