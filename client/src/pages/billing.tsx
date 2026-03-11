@@ -483,7 +483,8 @@ function PlanComparisonSection() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {displayPlans.map((plan: any) => {
           const isCurrent = plan.name === currentPlanName;
-          const features = plan.features || {};
+          const featureList: string[] = plan.featureList || [];
+          const limits = plan.features || {};
           const borderClass = tierColors[plan.name] || "border-border/50";
           const isContactSales =
             plan.name === "government" || (plan.name === "enterprise" && plan.monthlyPriceCents === 0);
@@ -541,14 +542,21 @@ function PlanComparisonSection() {
                 </div>
 
                 <div className="space-y-1.5">
-                  {Object.entries(features).map(([key, val]) => (
-                    <div key={key} className="flex items-center gap-2 text-xs">
-                      <Check className="h-3 w-3 text-emerald-400 shrink-0" />
-                      <span className="text-muted-foreground capitalize">
-                        {String(val)} {key}
-                      </span>
-                    </div>
-                  ))}
+                  {featureList.length > 0
+                    ? featureList.slice(0, 6).map((feat: string, idx: number) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs">
+                          <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                          <span className="text-muted-foreground">{feat}</span>
+                        </div>
+                      ))
+                    : Object.entries(limits).map(([key, val]) => (
+                        <div key={key} className="flex items-center gap-2 text-xs">
+                          <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                          <span className="text-muted-foreground capitalize">
+                            {String(val)} {key}
+                          </span>
+                        </div>
+                      ))}
                 </div>
 
                 <div className="pt-2">
