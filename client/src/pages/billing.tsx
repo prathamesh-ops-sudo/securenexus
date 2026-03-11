@@ -32,7 +32,21 @@ import {
   Globe,
 } from "lucide-react";
 
-function formatCents(cents: number): string {
+function formatCents(cents: number, currency: string = "INR"): string {
+  if (currency === "INR") {
+    const rupees = cents / 100;
+    if (rupees >= 100000) return `\u20B9${(rupees / 100000).toFixed(1)}L`;
+    if (rupees >= 1000) return `\u20B9${(rupees / 1000).toFixed(rupees >= 10000 ? 0 : 1)}K`;
+    return `\u20B9${rupees.toLocaleString("en-IN")}`;
+  }
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function formatCentsExact(cents: number, currency: string = "INR"): string {
+  if (currency === "INR") {
+    const rupees = cents / 100;
+    return `\u20B9${rupees.toLocaleString("en-IN")}`;
+  }
   return `$${(cents / 100).toFixed(2)}`;
 }
 
@@ -226,7 +240,7 @@ function CurrentPlanSection() {
         <CardContent>
           <div className="flex items-baseline gap-2 mb-4">
             <span className="text-3xl font-bold">
-              {plan?.monthlyPriceCents ? formatCents(plan.monthlyPriceCents) : "$0"}
+              {plan?.monthlyPriceCents ? formatCents(plan.monthlyPriceCents, plan?.currency || "INR") : "\u20B90"}
             </span>
             <span className="text-muted-foreground text-sm">/month</span>
           </div>
@@ -395,24 +409,47 @@ function PlanComparisonSection() {
   const defaultPlans = [
     {
       name: "free",
-      displayName: "Free",
-      description: "For evaluation and small teams",
+      displayName: "Free Trial",
+      description: "Evaluate with essential monitoring",
       monthlyPriceCents: 0,
-      features: { events: "10K", connectors: 3, aiTokens: "5K", automations: 100 },
+      currency: "INR",
+      features: { events: "10K", connectors: 2, retention: "7 days", support: "Community" },
     },
     {
-      name: "pro",
-      displayName: "Pro",
-      description: "For growing security teams",
-      monthlyPriceCents: 4900,
-      features: { events: "100K", connectors: 25, aiTokens: "50K", automations: 1000 },
+      name: "starter",
+      displayName: "Starter",
+      description: "For startups & SMBs (1-50 employees)",
+      monthlyPriceCents: 1500000,
+      annualPriceCents: 18000000,
+      currency: "INR",
+      features: { events: "5K/day", connectors: 5, retention: "30 days", support: "8x5 Email" },
+    },
+    {
+      name: "growth",
+      displayName: "Growth",
+      description: "For mid-market teams (51-300 employees)",
+      monthlyPriceCents: 4000000,
+      annualPriceCents: 48000000,
+      currency: "INR",
+      features: { events: "50K/day", connectors: 25, retention: "90 days", support: "16x5 Chat" },
+      recommended: true,
     },
     {
       name: "enterprise",
       displayName: "Enterprise",
-      description: "Unlimited scale with SLA",
-      monthlyPriceCents: 19900,
-      features: { events: "Unlimited", connectors: "Unlimited", aiTokens: "1M+", automations: "50K+" },
+      description: "For large enterprises (300-2,000 employees)",
+      monthlyPriceCents: 10000000,
+      annualPriceCents: 120000000,
+      currency: "INR",
+      features: { events: "Unlimited", connectors: "Unlimited", retention: "365 days", support: "24x7 SLA" },
+    },
+    {
+      name: "government",
+      displayName: "Government / PSU",
+      description: "Custom deployment for govt & PSUs",
+      monthlyPriceCents: 0,
+      currency: "INR",
+      features: { events: "Unlimited", connectors: "Unlimited", retention: "365 days", support: "24x7 + CERT-In" },
     },
   ];
 
@@ -434,102 +471,229 @@ function PlanComparisonSection() {
 
   const tierColors: Record<string, string> = {
     free: "border-zinc-500/30",
-    pro: "border-cyan-500/30",
+    starter: "border-blue-500/30",
+    growth: "border-cyan-500/30",
     enterprise: "border-purple-500/30",
-    custom: "border-amber-500/30",
+    government: "border-amber-500/30",
   };
 
   const tierIcons: Record<string, React.ReactNode> = {
     free: <Shield className="h-5 w-5 text-zinc-400" />,
-    pro: <Zap className="h-5 w-5 text-cyan-400" />,
+    starter: <Zap className="h-5 w-5 text-blue-400" />,
+    growth: <Activity className="h-5 w-5 text-cyan-400" />,
     enterprise: <Building2 className="h-5 w-5 text-purple-400" />,
-    custom: <Crown className="h-5 w-5 text-amber-400" />,
+    government: <Crown className="h-5 w-5 text-amber-400" />,
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {displayPlans.map((plan: any) => {
-        const isCurrent = plan.name === currentPlanName;
-        const features = plan.features || {};
-        const borderClass = tierColors[plan.name] || "border-border/50";
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        {displayPlans.map((plan: any) => {
+          const isCurrent = plan.name === currentPlanName;
+          const features = plan.features || {};
+          const borderClass = tierColors[plan.name] || "border-border/50";
+          const isContactSales =
+            plan.name === "government" || (plan.name === "enterprise" && plan.monthlyPriceCents === 0);
+          const planCurrency = plan.currency || "INR";
 
-        return (
-          <Card
-            key={plan.name}
-            className={`glass-card relative ${borderClass} ${isCurrent ? "ring-2 ring-cyan-500/30" : ""}`}
-          >
-            {isCurrent && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">Current Plan</Badge>
+          return (
+            <Card
+              key={plan.name}
+              className={`glass-card relative ${borderClass} ${isCurrent ? "ring-2 ring-cyan-500/30" : ""} ${plan.recommended ? "ring-2 ring-cyan-500/40" : ""}`}
+            >
+              {isCurrent && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">Current Plan</Badge>
+                </div>
+              )}
+              {!isCurrent && plan.recommended && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">Most Popular</Badge>
+                </div>
+              )}
+              <CardHeader className="pb-2 pt-5">
+                <div className="flex items-center gap-2 mb-1">
+                  {tierIcons[plan.name] || <Shield className="h-5 w-5" />}
+                  <CardTitle className="text-base">{plan.displayName}</CardTitle>
+                </div>
+                <CardDescription className="text-xs">{plan.description}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  {isContactSales ? (
+                    <span className="text-xl font-bold">Custom Pricing</span>
+                  ) : plan.monthlyPriceCents === 0 ? (
+                    <span className="text-xl font-bold">Free</span>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-bold">{formatCents(plan.monthlyPriceCents, planCurrency)}</span>
+                        <span className="text-xs text-muted-foreground">/mo</span>
+                      </div>
+                      {plan.annualPriceCents > 0 && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatCents(plan.annualPriceCents, planCurrency)}/yr (save ~17%)
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  {Object.entries(features).map(([key, val]) => (
+                    <div key={key} className="flex items-center gap-2 text-xs">
+                      <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                      <span className="text-muted-foreground capitalize">
+                        {String(val)} {key}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-2">
+                  {isCurrent ? (
+                    <Button data-testid="billing-btn-outline-3" variant="outline" className="w-full" size="sm" disabled>
+                      Current Plan
+                    </Button>
+                  ) : isContactSales ? (
+                    <Button
+                      data-testid="billing-btn-outline-4"
+                      variant="outline"
+                      className="w-full"
+                      size="sm"
+                      onClick={() =>
+                        window.open("mailto:sales@aricatech.com?subject=Enterprise%20Plan%20Inquiry", "_blank")
+                      }
+                    >
+                      Contact Sales <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  ) : plan.monthlyPriceCents > 0 ? (
+                    <Button
+                      className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
+                      size="sm"
+                      disabled={checkoutMutation.isPending}
+                      onClick={() => checkoutMutation.mutate({ planId: plan.id || plan.name, billingCycle: "annual" })}
+                    >
+                      {checkoutMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Zap className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Upgrade
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <AddOnModulesSection />
+    </div>
+  );
+}
+
+function AddOnModulesSection() {
+  const {
+    data: addOnsData,
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: ["/api/billing/add-ons"],
+  });
+
+  const raw = (addOnsData as any)?.data || addOnsData;
+  const addOns = Array.isArray(raw) ? raw : [];
+
+  if (isPending) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-6 w-48" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || addOns.length === 0) {
+    if (isError) return <ErrorCard message="Failed to load add-on modules" onRetry={() => refetch()} />;
+    return null;
+  }
+
+  const pricingModelLabel = (model: string) => {
+    switch (model) {
+      case "annual":
+        return "/yr";
+      case "per_batch":
+        return "/batch";
+      case "one_time":
+        return " (one-time)";
+      default:
+        return "";
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-lg font-semibold">Add-On Modules</h3>
+        <p className="text-xs text-muted-foreground">Enhance your plan with specialized security capabilities</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {addOns.map((addon: any) => (
+          <Card key={addon.id} className="glass-card border-border/50">
+            <CardContent className="p-4 space-y-2">
+              <div className="flex items-start justify-between">
+                <h4 className="text-sm font-semibold leading-tight">{addon.name}</h4>
+                <Badge variant="outline" className="text-[10px] shrink-0 ml-2">
+                  {addon.pricingModel === "one_time"
+                    ? "One-time"
+                    : addon.pricingModel === "per_batch"
+                      ? "Per batch"
+                      : "Annual"}
+                </Badge>
               </div>
-            )}
-            <CardHeader className="pb-2 pt-5">
-              <div className="flex items-center gap-2 mb-1">
-                {tierIcons[plan.name] || <Shield className="h-5 w-5" />}
-                <CardTitle className="text-lg">{plan.displayName}</CardTitle>
-              </div>
-              <CardDescription>{plan.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold">
-                  {plan.monthlyPriceCents === 0
-                    ? "$0"
-                    : plan.name === "custom"
-                      ? "Custom"
-                      : formatCents(plan.monthlyPriceCents)}
+              <p className="text-xs text-muted-foreground leading-relaxed">{addon.description}</p>
+              <div className="flex items-baseline gap-1 pt-1">
+                <span className="text-sm font-bold">
+                  {formatCents(addon.annualPriceCents, addon.currency || "INR")}
                 </span>
-                {plan.monthlyPriceCents > 0 && plan.name !== "custom" && (
-                  <span className="text-sm text-muted-foreground">/mo</span>
-                )}
+                <span className="text-xs text-muted-foreground">
+                  {pricingModelLabel(addon.pricingModel)}
+                  {addon.unitLabel ? ` (${addon.unitLabel})` : ""}
+                </span>
               </div>
-
-              <div className="space-y-2">
-                {Object.entries(features).map(([key, val]) => (
-                  <div key={key} className="flex items-center gap-2 text-sm">
-                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                    <span className="text-muted-foreground capitalize">
-                      {String(val)} {key}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-2">
-                {isCurrent ? (
-                  <Button data-testid="billing-btn-outline-3" variant="outline" className="w-full" disabled>
-                    Current Plan
-                  </Button>
-                ) : plan.name === "custom" || plan.name === "enterprise" ? (
-                  <Button
-                    data-testid="billing-btn-outline-4"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() =>
-                      window.open("mailto:sales@aricatech.com?subject=Enterprise%20Plan%20Inquiry", "_blank")
-                    }
-                  >
-                    Contact Sales <ArrowRight className="h-4 w-4 ml-1" />
-                  </Button>
-                ) : (
-                  <Button
-                    className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
-                    disabled={checkoutMutation.isPending}
-                    onClick={() => checkoutMutation.mutate({ planId: plan.id || plan.name, billingCycle: "monthly" })}
-                  >
-                    {checkoutMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <Zap className="h-4 w-4 mr-1" />
-                    )}
-                    Upgrade
-                  </Button>
-                )}
-              </div>
+              {addon.bestFor && addon.bestFor.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {addon.bestFor.map((sector: string) => (
+                    <Badge key={sector} variant="outline" className="text-[10px] bg-muted/30">
+                      {sector}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() =>
+                  window.open(
+                    `mailto:sales@aricatech.com?subject=Add-On%20Inquiry%3A%20${encodeURIComponent(addon.name)}`,
+                    "_blank",
+                  )
+                }
+              >
+                Enquire <ArrowRight className="h-3 w-3 ml-1" />
+              </Button>
             </CardContent>
           </Card>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
@@ -921,14 +1085,14 @@ function DangerZoneSection() {
 }
 
 export default function BillingPage() {
-  usePageTitle("Pricing — SecureNexus AI SOC Platform | Free, Pro & Enterprise", true);
+  usePageTitle("Pricing — Arica Cyber Security Suite | Starter, Growth & Enterprise", true);
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Subscription & Billing</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Manage your subscription, view invoices, and update payment methods
+            Manage your subscription, view invoices, and explore add-on modules
           </p>
         </div>
       </div>

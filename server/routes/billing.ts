@@ -12,6 +12,7 @@ import {
   handleWebhookEvent,
   getUsageVsLimits,
 } from "../stripe-service";
+import { getAllAddOnModules } from "../tiered-packaging-engine";
 
 const log = logger.child("billing");
 
@@ -318,6 +319,19 @@ export function registerBillingRoutes(app: Express): void {
       }
     },
   );
+
+  app.get("/api/billing/add-ons", isAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const addOns = getAllAddOnModules();
+      return sendEnvelope(res, addOns);
+    } catch (err) {
+      log.error("Failed to fetch add-on modules", { error: String(err) });
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "ADDONS_FETCH_FAILED", message: "Failed to fetch add-on modules" }],
+      });
+    }
+  });
 
   app.get(
     "/api/billing/usage-vs-limits",
