@@ -38,7 +38,7 @@ import {
   SiOkta,
   SiTrendmicro,
 } from "react-icons/si";
-import atsLogo from "@/assets/logo.jpg";
+import atsLogo from "@/assets/logo.png";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";

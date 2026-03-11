@@ -12,7 +12,7 @@ import {
   Check,
 } from "lucide-react";
 import { usePageTitle } from "@/hooks/use-page-title";
-import atsLogo from "@/assets/logo.jpg";
+import atsLogo from "@/assets/logo.png";
 
 interface Breadcrumb {
   label: string;

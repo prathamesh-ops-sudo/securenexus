@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import atsLogo from "@/assets/logo.jpg";
+import atsLogo from "@/assets/logo.png";
 
 export default function AcceptInvitationPage() {
   const [, navigate] = useLocation();

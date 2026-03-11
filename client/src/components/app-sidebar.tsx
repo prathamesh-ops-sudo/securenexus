@@ -70,7 +70,7 @@ import {
   Cpu,
   Calendar,
 } from "lucide-react";
-import atsLogo from "@/assets/logo.jpg";
+import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrgContext } from "@/hooks/use-org-context";

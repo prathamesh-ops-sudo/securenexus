@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import atsLogo from "@/assets/logo.jpg";
+import atsLogo from "@/assets/logo.png";
 
 export default function ForgotPasswordPage() {
   const [, navigate] = useLocation();
