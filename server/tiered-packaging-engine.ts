@@ -142,7 +142,7 @@ const PLAN_TIERS: PlanTier[] = [
     displayName: "Starter",
     description: "For startups and SMBs getting serious about security operations",
     monthlyPriceCents: 1500000,
-    annualPriceCents: 18000000,
+    annualPriceCents: 15000000,
     currency: "INR",
     onboardingFeeCents: 2500000,
     limits: {
@@ -175,7 +175,7 @@ const PLAN_TIERS: PlanTier[] = [
     displayName: "Growth",
     description: "Full-featured SOC platform for mid-market security teams",
     monthlyPriceCents: 4000000,
-    annualPriceCents: 48000000,
+    annualPriceCents: 40000000,
     currency: "INR",
     onboardingFeeCents: 5000000,
     limits: {
@@ -212,7 +212,7 @@ const PLAN_TIERS: PlanTier[] = [
     displayName: "Enterprise",
     description: "Unlimited scale with dedicated support for large organizations",
     monthlyPriceCents: 10000000,
-    annualPriceCents: 120000000,
+    annualPriceCents: 100000000,
     currency: "INR",
     onboardingFeeCents: 10000000,
     limits: {
