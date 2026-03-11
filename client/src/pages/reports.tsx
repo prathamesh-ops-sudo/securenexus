@@ -214,6 +214,7 @@ export default function ReportsPage() {
             description: "Use the download button in Report Runs",
             variant: "destructive",
           });
+          return;
         }
       } else if (data.content) {
         const blob = new Blob([data.content], { type: format === "csv" ? "text/csv" : "application/json" });
