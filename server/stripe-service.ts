@@ -454,7 +454,11 @@ export async function getUsageVsLimits(orgId: string): Promise<{
   const sub = await storage.getSubscription(orgId);
   let planInfo = { name: "free", displayName: "Free", tier: summary.tier };
   if (sub) {
-    const plan = await storage.getPlan(sub.planId);
+    // Support both DB UUID and tier name lookups (billing plans API returns tier names)
+    let plan = await storage.getPlan(sub.planId);
+    if (!plan) {
+      plan = await storage.getPlanByName(sub.planId);
+    }
     if (plan) {
       planInfo = { name: plan.name, displayName: plan.displayName, tier: summary.tier };
     }
