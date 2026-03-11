@@ -16,7 +16,6 @@ import {
   Activity,
   Timer,
   BarChart3,
-  Construction,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,8 +53,6 @@ export default function DrDrillSchedulerPage() {
     queryFn: () => apiRequest("GET", "/api/dr-drills").then((r) => r.json()),
   });
 
-  const isNotImplemented = isError && error?.message?.startsWith("501:");
-
   const runDrillMutation = useMutation({
     mutationFn: (type: string) =>
       apiRequest("POST", "/api/dr-drills", { type, name: `${type} drill - ${new Date().toISOString().slice(0, 10)}` }),
@@ -85,33 +82,6 @@ export default function DrDrillSchedulerPage() {
             <Skeleton key={i} className="h-24" />
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (isNotImplemented) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Shield className="h-6 w-6" /> DR Drill Scheduler & Canary Analysis
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Schedule and monitor disaster recovery drills with RPO/RTO tracking
-          </p>
-        </div>
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <Construction className="h-10 w-10 text-muted-foreground" />
-            <div className="text-center">
-              <p className="text-lg font-semibold">Coming Soon</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                Disaster recovery drill scheduling and canary analysis are under development. This will enable automated
-                DR testing with RPO/RTO measurement and trend tracking.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }

@@ -15,7 +15,6 @@ import {
   BarChart3,
   Trash2,
   RotateCcw,
-  Construction,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -63,8 +62,6 @@ export default function JobQueueDashboardPage() {
     queryFn: () => apiRequest("GET", "/api/jobs/stats").then((r) => r.json()),
   });
 
-  const isNotImplemented = isError && error?.message?.startsWith("501:");
-
   const retryMutation = useMutation({
     mutationFn: (jobId: string) => apiRequest("POST", `/api/jobs/${jobId}/retry`),
     onSuccess: () => {
@@ -92,33 +89,6 @@ export default function JobQueueDashboardPage() {
             <Skeleton key={i} className="h-24" />
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (isNotImplemented) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ListTodo className="h-6 w-6" /> Job Queue Dashboard
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Monitor background job processing, throughput, and failures
-          </p>
-        </div>
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <Construction className="h-10 w-10 text-muted-foreground" />
-            <div className="text-center">
-              <p className="text-lg font-semibold">Coming Soon</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                The job queue dashboard is under development. This will provide real-time monitoring of background jobs,
-                retry management, and throughput analytics.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }

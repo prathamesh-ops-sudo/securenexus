@@ -14,7 +14,6 @@ import {
   Zap,
   Clock,
   Shield,
-  Construction,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,8 +59,6 @@ export default function AiBudgetControlsPage() {
     queryFn: () => apiRequest("GET", "/api/ai/budget-usage").then((r) => r.json()),
   });
 
-  const isNotImplemented = isError && error?.message?.startsWith("501:");
-
   const { data: alerts } = useQuery<BudgetAlert[]>({
     queryKey: ["/api/ai/budget-alerts"],
     queryFn: () => apiRequest("GET", "/api/ai/budget-alerts").then((r) => r.json()),
@@ -87,33 +84,6 @@ export default function AiBudgetControlsPage() {
           ))}
         </div>
         <Skeleton className="h-64" />
-      </div>
-    );
-  }
-
-  if (isNotImplemented) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <DollarSign className="h-6 w-6" /> AI Budget Controls
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Monitor and control AI spending across models and features
-          </p>
-        </div>
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <Construction className="h-10 w-10 text-muted-foreground" />
-            <div className="text-center">
-              <p className="text-lg font-semibold">Coming Soon</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                AI budget controls and usage tracking are under development. This will let you set spending limits,
-                monitor token usage, and receive budget alerts.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }
