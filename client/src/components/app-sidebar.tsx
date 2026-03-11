@@ -406,10 +406,10 @@ export function AppSidebar() {
           asChild
           isActive={isActive}
           aria-label={`Navigate to ${item.title}`}
-          className="h-7 text-[12.5px] rounded-md transition-all duration-150"
+          className="h-7 text-[13px] rounded-md transition-colors duration-150"
         >
           <Link href={item.url}>
-            <item.icon className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
+            <item.icon className="h-3.5 w-3.5 shrink-0 opacity-50" aria-hidden="true" />
             <span className="truncate">{item.title}</span>
           </Link>
         </SidebarMenuButton>
@@ -440,11 +440,11 @@ export function AppSidebar() {
                 className={`flex items-center justify-center w-5 h-5 rounded ${hasActive ? "bg-sidebar-accent" : ""}`}
               >
                 <group.icon
-                  className={`h-3.5 w-3.5 shrink-0 ${hasActive ? group.color : "opacity-60"}`}
+                  className={`h-3.5 w-3.5 shrink-0 ${hasActive ? group.color : group.color + " opacity-50"}`}
                   aria-hidden="true"
                 />
               </div>
-              <span className="truncate text-[12.5px] font-semibold">{group.label}</span>
+              <span className="truncate text-[13px] font-semibold">{group.label}</span>
               <div className="ml-auto flex items-center gap-1">
                 <span className="text-[10px] text-muted-foreground/50 tabular-nums">{flatItems.length}</span>
                 <ChevronRight
@@ -455,11 +455,14 @@ export function AppSidebar() {
               </div>
             </SidebarMenuButton>
           </CollapsibleTrigger>
-          <CollapsibleContent className="animate-fade-in">
+          <CollapsibleContent
+            className="animate-fade-in"
+            style={{ transition: "height 200ms ease-out, opacity 200ms ease-out" }}
+          >
             <div className="ml-5 border-l border-sidebar-border/50 pl-2.5 mt-0.5 space-y-2">
               {filteredSections.map((section) => (
                 <div key={section.label}>
-                  <div className="px-2 py-1 text-[9px] font-semibold text-muted-foreground/45 uppercase tracking-widest">
+                  <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">
                     {section.label}
                   </div>
                   <SidebarMenu className="space-y-0">{section.items.map(renderItem)}</SidebarMenu>
@@ -613,7 +616,7 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <div className="flex items-center gap-1.5 px-2 py-1">
                       <ShieldCheck className="h-3 w-3 text-yellow-500/70" aria-hidden="true" />
-                      <span className="text-[9px] font-semibold text-yellow-500/60 uppercase tracking-widest">
+                      <span className="text-[10px] font-medium text-yellow-500/60 uppercase tracking-wider">
                         Super Admin
                       </span>
                     </div>
@@ -656,7 +659,7 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <div className="flex items-center gap-1.5 px-2 py-1">
                       <History className="h-3 w-3 text-muted-foreground/40" aria-hidden="true" />
-                      <span className="text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-widest">
+                      <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
                         Recent
                       </span>
                     </div>
@@ -677,11 +680,9 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-2.5">
         <div className="flex items-center gap-2.5 px-1.5 py-1.5 rounded-md hover:bg-sidebar-accent/30 transition-colors duration-200">
-          <Avatar className="h-7 w-7 border border-sidebar-border/50 ring-1 ring-cyan-500/10">
+          <Avatar className="h-7 w-7 border border-sidebar-border/50">
             <AvatarImage src={user?.profileImageUrl || ""} />
-            <AvatarFallback className="text-[10px] font-bold bg-gradient-to-br from-cyan-500/20 to-blue-500/10 text-cyan-400">
-              {initials}
-            </AvatarFallback>
+            <AvatarFallback className="text-[10px] font-bold bg-blue-600/15 text-blue-400">{initials}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-semibold truncate leading-tight">
