@@ -15,9 +15,10 @@ import {
 
 export function registerPlaybooksRoutes(app: Express): void {
   // Playbooks (Phase 13 - SOAR-Lite)
-  app.get("/api/playbooks", isAuthenticated, async (_req, res) => {
+  app.get("/api/playbooks", isAuthenticated, async (req, res) => {
     try {
-      res.json(await storage.getPlaybooks());
+      const orgId = (req as any).user?.orgId;
+      res.json(await storage.getPlaybooks(orgId));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch playbooks" });
     }
@@ -25,8 +26,11 @@ export function registerPlaybooksRoutes(app: Express): void {
 
   app.get("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const pb = await storage.getPlaybook(p(req.params.id));
-      if (!pb) return res.status(404).json({ message: "Playbook not found" });
+      if (!pb || (orgId && pb.orgId && pb.orgId !== orgId)) {
+        return res.status(404).json({ message: "Playbook not found" });
+      }
       res.json(pb);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch playbook" });
@@ -73,8 +77,11 @@ export function registerPlaybooksRoutes(app: Express): void {
 
   app.patch("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const existing = await storage.getPlaybook(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Playbook not found" });
+      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        return res.status(404).json({ message: "Playbook not found" });
+      }
       const updated = await storage.updatePlaybook(p(req.params.id), {
         ...req.body,
         updatedAt: new Date(),
@@ -87,6 +94,11 @@ export function registerPlaybooksRoutes(app: Express): void {
 
   app.delete("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
+      const existing = await storage.getPlaybook(p(req.params.id));
+      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        return res.status(404).json({ message: "Playbook not found" });
+      }
       const deleted = await storage.deletePlaybook(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Playbook not found" });
       await storage.createAuditLog({

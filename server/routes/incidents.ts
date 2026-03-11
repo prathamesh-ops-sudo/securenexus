@@ -46,8 +46,9 @@ export function registerIncidentsRoutes(app: Express): void {
   // Incidents
   app.get("/api/incidents", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
-      const allIncidents = await storage.getIncidents();
+      const allIncidents = await storage.getIncidents(orgId);
       const sorted = sortOrder === "asc" ? [...allIncidents].reverse() : allIncidents;
       res.json(sorted.slice(offset, offset + limit).map(enrichWithSla));
     } catch (error) {
@@ -118,8 +119,11 @@ export function registerIncidentsRoutes(app: Express): void {
 
   app.get("/api/incidents/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const incident = await storage.getIncident(p(req.params.id));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
+      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
       res.json(enrichWithSla(incident));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch incident" });
@@ -128,6 +132,11 @@ export function registerIncidentsRoutes(app: Express): void {
 
   app.get("/api/incidents/:id/alerts", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
+      const incident = await storage.getIncident(p(req.params.id));
+      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
       const incidentAlerts = await storage.getAlertsByIncident(p(req.params.id));
       res.json(incidentAlerts);
     } catch (error) {
