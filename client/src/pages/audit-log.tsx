@@ -87,6 +87,7 @@ const ACTION_CATEGORIES = {
   comments: "Comments",
   tags: "Tags",
   escalations: "Escalations",
+  "org-events": "Org Events",
 } as const;
 
 const ACTION_TO_CATEGORY: Record<string, string> = {
@@ -96,11 +97,20 @@ const ACTION_TO_CATEGORY: Record<string, string> = {
   ai_correlation_applied: "ai-actions",
   ai_narrative_generated: "ai-actions",
   ai_triage: "ai-actions",
+  ai_correlation: "ai-actions",
+  ai_feedback_submitted: "ai-actions",
+  ai_deep_investigation: "ai-actions",
+  ai_threat_hunt: "ai-actions",
+  ai_behavioral_analysis: "ai-actions",
+  ai_attack_path_prediction: "ai-actions",
   comment_added: "comments",
   tag_added: "tags",
   tag_removed: "tags",
   incident_escalated: "escalations",
   incident_assignment_change: "escalations",
+  org_access_denied: "org-events",
+  org_context_missing: "org-events",
+  org_context_switch: "org-events",
 };
 
 const ITEMS_PER_PAGE = 50;
