@@ -22,6 +22,7 @@ import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { LoadingScreen } from "@/components/loading-screen";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
@@ -375,14 +376,7 @@ function AppContent() {
   }, [user, isLoading, setLocation]);
 
   if (isLoading) {
-    return (
-      <main className="h-screen flex items-center justify-center">
-        <div className="space-y-3 text-center">
-          <Skeleton className="h-10 w-10 rounded-md mx-auto" />
-          <Skeleton className="h-4 w-32" />
-        </div>
-      </main>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) {

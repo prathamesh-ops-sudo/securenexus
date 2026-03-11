@@ -2,6 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ================================================================
+   Animated Loading Screen (Wiz-style)
+   ================================================================ */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2e;
+}
+
+.loading-screen-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.loading-screen-logo {
+  width: 120px;
+  height: auto;
+  animation: loading-logo-pulse 2s ease-in-out infinite;
+}
+
+@keyframes loading-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+.loading-screen-bar-track {
+  width: 280px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.loading-screen-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #3b82f6;
+  transition: width 80ms linear;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+}
+
 :root {
   --button-outline: rgba(0, 0, 0, 0.1);
   --badge-outline: rgba(0, 0, 0, 0.05);
