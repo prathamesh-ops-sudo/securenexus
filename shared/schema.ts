@@ -3883,6 +3883,43 @@ export type InsertDrRunbook = z.infer<typeof insertDrRunbooksSchema>;
 export type DrDrillResult = typeof drDrillResults.$inferSelect;
 export type InsertDrDrillResult = z.infer<typeof insertDrDrillResultsSchema>;
 
+// ==========================================================================
+// CVE Entries (for CVE Browser)
+// ==========================================================================
+
+export const CVE_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+
+export const cveEntries = pgTable(
+  "cve_entries",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    cveId: text("cve_id").notNull().unique(),
+    description: text("description").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    cvssScore: doublePrecision("cvss_score").default(0),
+    publishedDate: timestamp("published_date"),
+    modifiedDate: timestamp("modified_date"),
+    affectedProducts: jsonb("affected_products").default(sql`'[]'::jsonb`),
+    references: jsonb("references").default(sql`'[]'::jsonb`),
+    cweIds: jsonb("cwe_ids").default(sql`'[]'::jsonb`),
+    exploitAvailable: boolean("exploit_available").default(false),
+    source: text("source").default("NVD"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cve_entries_cve_id").on(table.cveId),
+    index("idx_cve_entries_severity").on(table.severity),
+    index("idx_cve_entries_cvss").on(table.cvssScore),
+    index("idx_cve_entries_published").on(table.publishedDate),
+  ],
+);
+
+export type CveEntry = typeof cveEntries.$inferSelect;
+export const insertCveEntrySchema = createInsertSchema(cveEntries).omit({ id: true, createdAt: true });
+export type InsertCveEntry = z.infer<typeof insertCveEntrySchema>;
+
 export const TICKET_SYNC_STATUSES = ["pending", "syncing", "synced", "error"] as const;
 export const TICKET_SYNC_DIRECTIONS = ["outbound", "inbound", "bidirectional"] as const;
 

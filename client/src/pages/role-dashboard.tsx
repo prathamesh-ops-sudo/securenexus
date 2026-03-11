@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   Clock,
   TrendingUp,
-  Construction,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,8 +43,6 @@ export default function RoleDashboardPage() {
     queryFn: () => apiRequest("GET", "/api/dashboard/role").then((r) => r.json()),
   });
 
-  const isNotImplemented = isError && error?.message?.startsWith("501:");
-
   if (isLoading) {
     return (
       <div className="p-6 space-y-4">
@@ -56,31 +53,6 @@ export default function RoleDashboardPage() {
           ))}
         </div>
         <Skeleton className="h-64" />
-      </div>
-    );
-  }
-
-  if (isNotImplemented) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <LayoutDashboard className="h-6 w-6" /> Role-Specific Dashboard
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">Personalized views based on your security role</p>
-        </div>
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <Construction className="h-10 w-10 text-muted-foreground" />
-            <div className="text-center">
-              <p className="text-lg font-semibold">Coming Soon</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                Role-based dashboard customization is under development. This will provide tailored widget layouts based
-                on your security role and responsibilities.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }

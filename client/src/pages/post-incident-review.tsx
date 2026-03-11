@@ -18,7 +18,6 @@ import {
   Calendar,
   ListChecks,
   Trash2,
-  Construction,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -70,8 +69,6 @@ export default function PostIncidentReviewPage() {
     queryFn: () => apiRequest("GET", "/api/pir").then((r) => r.json()),
   });
 
-  const isNotImplemented = isError && error?.message?.startsWith("501:");
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/pir/${id}`),
     onSuccess: () => {
@@ -102,33 +99,6 @@ export default function PostIncidentReviewPage() {
             <Skeleton key={i} className="h-28" />
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (isNotImplemented) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileText className="h-6 w-6" /> Post-Incident Reviews
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Blameless post-mortems with root cause analysis, lessons learned, and action items
-          </p>
-        </div>
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <Construction className="h-10 w-10 text-muted-foreground" />
-            <div className="text-center">
-              <p className="text-lg font-semibold">Coming Soon</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                Post-incident review management is under development. This will enable structured blameless post-mortems
-                with root cause tracking, lessons learned, and actionable follow-up items.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }
