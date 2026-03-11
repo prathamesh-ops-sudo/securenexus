@@ -33,7 +33,8 @@ import {
 } from "lucide-react";
 
 function formatCents(cents: number, currency: string = "INR"): string {
-  if (currency === "INR") {
+  const cur = currency.toUpperCase();
+  if (cur === "INR") {
     const rupees = cents / 100;
     if (rupees >= 100000) return `\u20B9${(rupees / 100000).toFixed(1)}L`;
     if (rupees >= 1000) return `\u20B9${(rupees / 1000).toFixed(rupees >= 10000 ? 0 : 1)}K`;
