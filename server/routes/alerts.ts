@@ -31,10 +31,12 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.get("/api/v1/alerts", isAuthenticated, validateQuery(querySchemas.alertsList), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const { offset, limit, search, severity, status, source, suppressed, sortBy, sortOrder } = (req as any)
         .validatedQuery;
 
       const { items, total } = await storage.getAlertsPaginatedWithSort({
+        orgId,
         offset,
         limit,
         search,
@@ -78,7 +80,7 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const alert = await storage.getAlert(p(req.params.id));
-      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+      if (!alert || !orgId || alert.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       res.json(alert);
@@ -244,7 +246,7 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const alert = await storage.getAlert(p(req.params.id));
-      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+      if (!alert || !orgId || alert.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       const alertTags = await storage.getAlertTags(p(req.params.id));
@@ -289,7 +291,7 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const alert = await storage.getAlert(p(req.params.id));
-      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+      if (!alert || !orgId || alert.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       const alertEntityList = await getEntitiesForAlert(p(req.params.id));
@@ -303,7 +305,7 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const alert = await storage.getAlert(p(req.params.id));
-      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+      if (!alert || !orgId || alert.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       const related = await findRelatedAlertsByEntity(p(req.params.id), alert.orgId);
@@ -318,7 +320,7 @@ export function registerAlertsRoutes(app: Express): void {
       const orgId = (req as any).user?.orgId;
       const userId = (req as any).user?.id;
       const existing = await storage.getAlert(p(req.params.id));
-      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+      if (!existing || !orgId || existing.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       const alert = await storage.updateAlert(p(req.params.id), { suppressed: true, suppressedBy: userId });
@@ -333,7 +335,7 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const existing = await storage.getAlert(p(req.params.id));
-      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+      if (!existing || !orgId || existing.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       const alert = await storage.updateAlert(p(req.params.id), { suppressed: false, suppressedBy: null });
@@ -349,7 +351,7 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const existing = await storage.getAlert(p(req.params.id));
-      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+      if (!existing || !orgId || existing.orgId !== orgId) {
         return res.status(404).json({ message: "Alert not found" });
       }
       const { confidenceScore, confidenceSource, confidenceNotes } = req.body;

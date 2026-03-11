@@ -58,9 +58,11 @@ export function registerIncidentsRoutes(app: Express): void {
 
   app.get("/api/v1/incidents", isAuthenticated, validateQuery(querySchemas.incidentsList), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const { offset, limit, queue, search, severity, status, sortBy, sortOrder } = (req as any).validatedQuery;
 
       const { items, total } = await storage.getIncidentsPaginatedWithSort({
+        orgId,
         offset,
         limit,
         search,
@@ -121,7 +123,7 @@ export function registerIncidentsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const incident = await storage.getIncident(p(req.params.id));
-      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+      if (!incident || !orgId || incident.orgId !== orgId) {
         return res.status(404).json({ message: "Incident not found" });
       }
       res.json(enrichWithSla(incident));
@@ -134,7 +136,7 @@ export function registerIncidentsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const incident = await storage.getIncident(p(req.params.id));
-      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+      if (!incident || !orgId || incident.orgId !== orgId) {
         return res.status(404).json({ message: "Incident not found" });
       }
       const incidentAlerts = await storage.getAlertsByIncident(p(req.params.id));
@@ -316,7 +318,7 @@ export function registerIncidentsRoutes(app: Express): void {
         for (const id of incidentIds) {
           const incidentId = p(String(id));
           const existing = await storage.getIncident(incidentId);
-          if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) continue;
+          if (!existing || !orgId || existing.orgId !== orgId) continue;
           const patch: Record<string, any> = { updatedAt: new Date() };
           if (typeof status === "string" && status.length > 0) {
             patch.status = status;
