@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { logger, p, publishOutboxEvent, sanitizeConfig, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
+import { requireMinRole, requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
 import { bodySchemas, validateBody, validatePathId } from "../request-validator";
 import { validateConnectorConfig } from "../connector-config-validator";
 import {
@@ -112,6 +112,8 @@ export function registerConnectorsRoutes(app: Express): void {
   app.patch(
     "/api/connectors/:id",
     isAuthenticated,
+    resolveOrgContext,
+    requirePermission("connectors", "write"),
     validatePathId("id"),
     validateBody(bodySchemas.connectorUpdate),
     async (req, res) => {
@@ -145,29 +147,36 @@ export function registerConnectorsRoutes(app: Express): void {
     },
   );
 
-  app.delete("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const connector = await storage.getConnector(p(req.params.id));
-      if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
-        return res.status(404).json({ message: "Connector not found" });
+  app.delete(
+    "/api/connectors/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requirePermission("connectors", "admin"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+          return res.status(404).json({ message: "Connector not found" });
+        }
+        await storage.deleteConnector(p(req.params.id));
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "connector_deleted",
+          resourceType: "connector",
+          resourceId: p(req.params.id),
+          details: { type: connector.type, name: connector.name },
+        });
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete connector" });
       }
-      await storage.deleteConnector(p(req.params.id));
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "connector_deleted",
-        resourceType: "connector",
-        resourceId: p(req.params.id),
-        details: { type: connector.type, name: connector.name },
-      });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete connector" });
-    }
-  });
+    },
+  );
 
   app.post("/api/connectors/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
