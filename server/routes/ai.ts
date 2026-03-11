@@ -114,11 +114,13 @@ export function registerAiRoutes(app: Express): void {
     strictLimiter,
     async (req, res) => {
       try {
+        const narrativeOrgId = (req as any).orgId || (req as any).user?.orgId;
         const incident = await storage.getIncident(p(req.params.incidentId));
-        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (!incident || (narrativeOrgId && incident.orgId && incident.orgId !== narrativeOrgId)) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
         const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
         const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
-        const narrativeOrgId = (req as any).orgId || (req as any).user?.orgId;
         const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx, narrativeOrgId);
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           (result as any).threatIntelSources = Array.from(
@@ -176,10 +178,12 @@ export function registerAiRoutes(app: Express): void {
     strictLimiter,
     async (req, res) => {
       try {
-        const alert = await storage.getAlert(p(req.params.alertId));
-        if (!alert) return res.status(404).json({ message: "Alert not found" });
-        const threatIntelCtx = await buildThreatIntelContext([alert]);
         const triageOrgId = (req as any).orgId || (req as any).user?.orgId;
+        const alert = await storage.getAlert(p(req.params.alertId));
+        if (!alert || (triageOrgId && alert.orgId && alert.orgId !== triageOrgId)) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const threatIntelCtx = await buildThreatIntelContext([alert]);
         const result = await triageAlert(alert, threatIntelCtx, triageOrgId);
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           result.threatIntelSources = Array.from(

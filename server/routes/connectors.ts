@@ -28,8 +28,9 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.get("/api/connectors", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
-      const allConnectors = await storage.getConnectors();
+      const allConnectors = await storage.getConnectors(orgId);
       const sanitized = allConnectors.map((c) => ({ ...c, config: sanitizeConfig(c.config) }));
       res.json(sanitized.slice(offset, offset + limit));
     } catch (error) {
@@ -50,8 +51,11 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.get("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const connector = await storage.getConnector(p(req.params.id));
-      if (!connector) return res.status(404).json({ message: "Connector not found" });
+      if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
       const safeConfig = sanitizeConfig(connector.config);
       res.json({ ...connector, config: safeConfig });
     } catch (error) {
@@ -112,8 +116,11 @@ export function registerConnectorsRoutes(app: Express): void {
     validateBody(bodySchemas.connectorUpdate),
     async (req, res) => {
       try {
+        const orgId = (req as any).user?.orgId;
         const connector = await storage.getConnector(p(req.params.id));
-        if (!connector) return res.status(404).json({ message: "Connector not found" });
+        if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+          return res.status(404).json({ message: "Connector not found" });
+        }
         const { name, config, status, pollingIntervalMin } = (req as any).validatedBody;
         const updateData: any = {};
         if (name) updateData.name = name;
@@ -140,8 +147,11 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.delete("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const connector = await storage.getConnector(p(req.params.id));
-      if (!connector) return res.status(404).json({ message: "Connector not found" });
+      if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
       await storage.deleteConnector(p(req.params.id));
       await storage.createAuditLog({
         userId: (req as any).user?.id,

@@ -14,13 +14,14 @@ export function registerAlertsRoutes(app: Express): void {
   // Alerts
   app.get("/api/alerts", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const { search } = req.query;
       const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
       if (search && typeof search === "string") {
-        const results = await storage.searchAlerts(search);
+        const results = await storage.searchAlerts(search, orgId);
         return res.json(results.slice(offset, offset + limit));
       }
-      const allAlerts = await storage.getAlerts();
+      const allAlerts = await storage.getAlerts(orgId);
       const sorted = sortOrder === "asc" ? [...allAlerts].reverse() : allAlerts;
       res.json(sorted.slice(offset, offset + limit));
     } catch (error) {
@@ -75,8 +76,11 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.get("/api/alerts/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const alert = await storage.getAlert(p(req.params.id));
-      if (!alert) return res.status(404).json({ message: "Alert not found" });
+      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
       res.json(alert);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch alert" });
@@ -238,6 +242,11 @@ export function registerAlertsRoutes(app: Express): void {
   // Alert tags
   app.get("/api/alerts/:id/tags", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
+      const alert = await storage.getAlert(p(req.params.id));
+      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
       const alertTags = await storage.getAlertTags(p(req.params.id));
       res.json(alertTags);
     } catch (error) {
@@ -278,6 +287,11 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.get("/api/alerts/:id/entities", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
+      const alert = await storage.getAlert(p(req.params.id));
+      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
       const alertEntityList = await getEntitiesForAlert(p(req.params.id));
       res.json(alertEntityList);
     } catch (error) {
@@ -287,8 +301,12 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.get("/api/alerts/:id/related", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const alert = await storage.getAlert(p(req.params.id));
-      const related = await findRelatedAlertsByEntity(p(req.params.id), alert?.orgId);
+      if (!alert || (orgId && alert.orgId && alert.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      const related = await findRelatedAlertsByEntity(p(req.params.id), alert.orgId);
       res.json(related);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch related alerts" });
@@ -297,7 +315,12 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.post("/api/alerts/:id/suppress", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const userId = (req as any).user?.id;
+      const existing = await storage.getAlert(p(req.params.id));
+      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
       const alert = await storage.updateAlert(p(req.params.id), { suppressed: true, suppressedBy: userId });
       if (!alert) return res.status(404).json({ message: "Alert not found" });
       res.json(alert);
@@ -308,6 +331,11 @@ export function registerAlertsRoutes(app: Express): void {
 
   app.post("/api/alerts/:id/unsuppress", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
+      const existing = await storage.getAlert(p(req.params.id));
+      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
       const alert = await storage.updateAlert(p(req.params.id), { suppressed: false, suppressedBy: null });
       if (!alert) return res.status(404).json({ message: "Alert not found" });
       res.json(alert);
@@ -319,6 +347,11 @@ export function registerAlertsRoutes(app: Express): void {
   // Alert Confidence Calibration
   app.patch("/api/alerts/:id/confidence", isAuthenticated, async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
+      const existing = await storage.getAlert(p(req.params.id));
+      if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
       const { confidenceScore, confidenceSource, confidenceNotes } = req.body;
       const lengthCheck = validateAlertFieldLengths({ confidenceNotes });
       if (!lengthCheck.valid) {
