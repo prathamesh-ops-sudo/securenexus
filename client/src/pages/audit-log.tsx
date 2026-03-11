@@ -36,11 +36,20 @@ const ACTION_ICONS: Record<string, any> = {
   ai_correlation_applied: Shield,
   ai_narrative_generated: FileWarning,
   ai_triage: AlertTriangle,
+  ai_correlation: Shield,
+  ai_feedback_submitted: Activity,
+  ai_deep_investigation: Shield,
+  ai_threat_hunt: Shield,
+  ai_behavioral_analysis: Shield,
+  ai_attack_path_prediction: Shield,
   comment_added: User,
   tag_added: Activity,
   tag_removed: Activity,
   incident_escalated: FileWarning,
   incident_assignment_change: User,
+  org_access_denied: Shield,
+  org_context_missing: Shield,
+  org_context_switch: Activity,
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -55,11 +64,20 @@ const ACTION_LABELS: Record<string, string> = {
   ai_correlation_applied: "AI correlation applied",
   ai_narrative_generated: "AI narrative generated",
   ai_triage: "AI triage",
+  ai_correlation: "AI correlation",
+  ai_feedback_submitted: "AI feedback submitted",
+  ai_deep_investigation: "AI deep investigation",
+  ai_threat_hunt: "AI threat hunt",
+  ai_behavioral_analysis: "AI behavioral analysis",
+  ai_attack_path_prediction: "AI attack path prediction",
   comment_added: "Comment added",
   tag_added: "Tag added",
   tag_removed: "Tag removed",
   incident_escalated: "Incident escalated",
   incident_assignment_change: "Assignment changed",
+  org_access_denied: "Organization access denied",
+  org_context_missing: "Organization context missing",
+  org_context_switch: "Organization context switched",
 };
 
 const ACTION_CATEGORIES = {
@@ -393,7 +411,7 @@ export default function AuditLogPage() {
             <div className="space-y-0">
               {paginatedLogs.map((log) => {
                 const Icon = ACTION_ICONS[log.action] || Activity;
-                const label = ACTION_LABELS[log.action] || log.action;
+                const label = ACTION_LABELS[log.action] || log.action.replace(/_/g, " ");
                 const details = log.details
                   ? ((typeof log.details === "string" ? JSON.parse(log.details) : log.details) as Record<
                       string,

@@ -580,11 +580,11 @@ export function registerAiRoutes(app: Express): void {
   });
 
   // ── AI Deployment Config Routes ──
-  app.get("/api/ai-deployment/config", isAuthenticated, async (req, res) => {
+  app.get("/api/ai-deployment/config", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const config = await storage.getAiDeploymentConfig(orgId);
-      if (!config) return res.status(404).json({ message: "AI deployment config not found" });
+      if (!config) return res.json(null);
       res.json(config);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch AI deployment config" });
