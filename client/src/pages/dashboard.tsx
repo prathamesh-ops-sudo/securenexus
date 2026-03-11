@@ -100,31 +100,31 @@ function saveWidgetConfig(config: WidgetConfig[]) {
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#22c55e",
+  critical: "#dc2626",
+  high: "#ea580c",
+  medium: "#ca8a04",
+  low: "#16a34a",
   informational: "#6b7280",
 };
 
 const SOURCE_COLORS = [
-  "#06b6d4",
-  "#3b82f6",
-  "#10b981",
-  "#8b5cf6",
-  "#f59e0b",
+  "#0891b2",
+  "#2563eb",
+  "#059669",
+  "#7c3aed",
+  "#d97706",
+  "#be123c",
+  "#0d9488",
   "#e11d48",
-  "#14b8a6",
-  "#f43f5e",
-  "#d946ef",
-  "#84cc16",
+  "#c026d3",
+  "#65a30d",
 ];
 
 const TACTIC_COLORS = ["#f97316", "#3b82f6", "#eab308", "#8b5cf6", "#10b981", "#ef4444", "#06b6d4", "#ec4899"];
 
 function StatCardSkeleton() {
   return (
-    <Card data-testid="dashboard-card-1" className="gradient-card">
+    <Card data-testid="dashboard-card-1">
       <CardContent className="p-4" role="status" aria-label="Loading statistic">
         <div className="flex items-center justify-between mb-3">
           <Skeleton className="h-3 w-20" />
@@ -162,19 +162,16 @@ function StatCard({
   const content = (
     <Card
       data-testid="dashboard-card-2"
-      className={`gradient-card group relative overflow-hidden border-border/50 hover:border-border/80 transition-all duration-300 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 ${href ? "cursor-pointer" : ""}`}
+      className={`group relative overflow-hidden border-border/50 hover:border-border/80 transition-[border-color,box-shadow] duration-200 hover:shadow-lg hover:shadow-black/5 ${href ? "cursor-pointer hover:-translate-y-px" : ""}`}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
       <CardContent className="p-4 relative">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-display">
-            {title}
-          </span>
+          <span className="text-[11px] font-medium text-muted-foreground tracking-wide">{title}</span>
           <div className="relative">
             <div
-              className={`flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br ${iconColor === "text-red-500" ? "from-red-500/10 to-red-500/5" : iconColor === "text-amber-500" ? "from-amber-500/10 to-amber-500/5" : iconColor === "text-orange-500" ? "from-orange-500/10 to-orange-500/5" : iconColor === "text-cyan-500" ? "from-cyan-500/10 to-cyan-500/5" : iconColor === "text-indigo-500" ? "from-indigo-500/10 to-indigo-500/5" : iconColor === "text-emerald-500" ? "from-emerald-500/10 to-emerald-500/5" : "from-muted/20 to-muted/10"} group-hover:scale-110 transition-transform duration-300`}
+              className={`flex items-center justify-center w-8 h-8 rounded-lg ${iconColor === "text-red-500" ? "bg-red-500/8" : iconColor === "text-amber-500" ? "bg-amber-500/8" : iconColor === "text-orange-500" ? "bg-orange-500/8" : iconColor === "text-cyan-500" ? "bg-cyan-500/8" : iconColor === "text-indigo-500" ? "bg-indigo-500/8" : iconColor === "text-emerald-500" ? "bg-emerald-500/8" : "bg-muted/15"} group-hover:scale-105 transition-transform duration-200`}
             >
-              <Icon className={`h-4 w-4 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
+              <Icon className={`h-5 w-5 ${iconColor || "text-muted-foreground"}`} aria-hidden="true" />
             </div>
             {badge && (
               <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 items-center justify-center rounded-full bg-red-500 ring-2 ring-card animate-pulse" />
@@ -187,7 +184,7 @@ function StatCard({
             <Skeleton className="h-3 w-32" />
           </div>
         ) : (
-          <div className="text-3xl font-bold tabular-nums tracking-tight font-display">{value}</div>
+          <div className="text-2xl font-semibold tabular-nums tracking-tight font-mono">{value}</div>
         )}
         {subtitle && (
           <p className={`text-[11px] mt-1.5 font-medium ${subtitleColor || "text-muted-foreground/60"}`}>{subtitle}</p>
@@ -226,15 +223,15 @@ function SecurityScorePill({ score }: { score: number }) {
 
   return (
     <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-muted/30">
-      <div className="relative h-8 w-8">
-        <svg className="h-8 w-8 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
-          <circle cx="20" cy="20" r={radius} stroke="rgba(148,163,184,0.18)" strokeWidth="4" fill="none" />
+      <div className="relative h-10 w-10">
+        <svg className="h-10 w-10 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r={radius} stroke="rgba(148,163,184,0.18)" strokeWidth="5" fill="none" />
           <circle
             cx="20"
             cy="20"
             r={radius}
             stroke={stroke}
-            strokeWidth="4"
+            strokeWidth="5"
             fill="none"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
@@ -247,9 +244,7 @@ function SecurityScorePill({ score }: { score: number }) {
         </div>
       </div>
       <div className="leading-tight">
-        <div className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest">
-          Security score
-        </div>
+        <div className="text-[10px] font-medium text-muted-foreground tracking-wider">Security score</div>
         <div className={`text-[11px] font-semibold ${color}`}>
           {score >= 90 ? "Excellent" : score >= 70 ? "Good" : score >= 50 ? "At risk" : "Critical"}
         </div>
@@ -311,11 +306,10 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
   const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
-    <Card data-testid="dashboard-card-3" className="gradient-card chart-glow h-full">
+    <Card data-testid="dashboard-card-3" className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-purple-500" />
-          <CardTitle className="text-sm font-semibold">Severity Distribution</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Severity Distribution</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -335,25 +329,7 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
             <div className="w-[150px] h-[150px] flex-shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <defs>
-                    <filter id="donutGlow">
-                      <feGaussianBlur stdDeviation="3" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  <Pie
-                    data={sorted}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={70}
-                    dataKey="value"
-                    stroke="none"
-                    filter="url(#donutGlow)"
-                  >
+                  <Pie data={sorted} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
                     {sorted.map((entry) => (
                       <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name] || "#6b7280"} />
                     ))}
@@ -394,11 +370,10 @@ function SeverityChart({ data }: { data: { name: string; value: number }[] }) {
 
 function SourceChart({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <Card className="gradient-card chart-glow h-full">
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-cyan-500" />
-          <CardTitle className="text-sm font-semibold">Alerts by Source</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Alerts by Source</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -418,13 +393,6 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ left: 0, right: 12, top: 4, bottom: 4 }}>
                 <defs>
-                  <filter id="barGlow">
-                    <feGaussianBlur stdDeviation="2" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
                   {SOURCE_COLORS.map((color, i) => (
                     <linearGradient key={i} id={`barGrad${i}`} x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor={color} stopOpacity={0.85} />
@@ -449,7 +417,7 @@ function SourceChart({ data }: { data: { name: string; value: number }[] }) {
                   tickLine={false}
                 />
                 <RechartsTooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" name="Alerts" radius={[0, 4, 4, 0]} barSize={16} filter="url(#barGlow)">
+                <Bar dataKey="value" name="Alerts" radius={[0, 4, 4, 0]} barSize={16}>
                   {data.map((_, i) => (
                     <Cell key={i} fill={`url(#barGrad${i % SOURCE_COLORS.length})`} />
                   ))}
@@ -470,11 +438,10 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
   }));
 
   return (
-    <Card className="gradient-card chart-glow h-full">
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-indigo-500" />
-          <CardTitle className="text-sm font-semibold">Alert Trend (7 Days)</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Alert Trend (7 Days)</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -499,13 +466,6 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
                     <stop offset="50%" stopColor="#818cf8" stopOpacity={0.2} />
                     <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
                   </linearGradient>
-                  <filter id="trendLineGlow">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis
@@ -530,7 +490,6 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
                   stroke="#818cf8"
                   strokeWidth={2.5}
                   fill="url(#trendGradient)"
-                  filter="url(#trendLineGlow)"
                   dot={{ r: 3, fill: "#a78bfa", strokeWidth: 2, stroke: "#818cf8" }}
                   activeDot={{ r: 6, fill: "#a78bfa", strokeWidth: 2, stroke: "#fff" }}
                 />
@@ -546,11 +505,11 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
 function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] }) {
   const maxVal = Math.max(...data.map((d) => d.value), 1);
   return (
-    <Card className="gradient-card h-full">
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <Crosshair className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-semibold">Top MITRE Tactics</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Top MITRE Tactics</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -593,11 +552,11 @@ function MitreTacticsWidget({ data }: { data: { name: string; value: number }[] 
 
 function CategoryWidget({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <Card className="gradient-card h-full">
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-semibold">Threat Categories</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Threat Categories</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -644,11 +603,11 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
   }
 
   return (
-    <Card className="gradient-card h-full">
+    <Card className="h-full">
       <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
         <div className="flex items-center gap-2">
           <Plug className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-semibold">Connector Health</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Connector Health</CardTitle>
         </div>
         <Link href="/connectors" className="text-xs text-primary hover:underline font-medium">
           Manage
@@ -691,11 +650,11 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
   }));
 
   return (
-    <Card className="gradient-card h-full">
+    <Card className="h-full">
       <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-semibold">Ingestion Rate</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">Ingestion Rate</CardTitle>
         </div>
         <Link href="/ingestion" className="text-xs text-primary hover:underline font-medium">
           Details
@@ -716,13 +675,6 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
                     <stop offset="50%" stopColor="#818cf8" stopOpacity={0.15} />
                     <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
                   </linearGradient>
-                  <filter id="ingestionGlow">
-                    <feGaussianBlur stdDeviation="2.5" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis
@@ -747,7 +699,6 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
                   stroke="#a855f7"
                   strokeWidth={2.5}
                   fill="url(#ingestionGradient)"
-                  filter="url(#ingestionGlow)"
                   dot={{ r: 2, fill: "#c084fc", strokeWidth: 0 }}
                   activeDot={{ r: 5, fill: "#c084fc", strokeWidth: 2, stroke: "#fff" }}
                 />
@@ -852,11 +803,11 @@ function WhatChangedWidget({
   }, [stats]);
 
   return (
-    <Card className="gradient-card h-full">
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-semibold">What Changed (Last 24h)</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-tight">What Changed (Last 24h)</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -1105,7 +1056,7 @@ export default function Dashboard() {
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight">
+            <h1 className="text-lg md:text-xl font-semibold tracking-tight font-display">
               {greeting}
               {user?.firstName ? `, ${user.firstName}` : ""}
             </h1>
@@ -1185,7 +1136,7 @@ export default function Dashboard() {
               >
                 <Bell className="h-4 w-4" aria-hidden="true" />
                 {(stats?.criticalAlerts ?? 0) > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white animate-pulse">
+                  <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white animate-subtle-ping">
                     {stats?.criticalAlerts}
                   </span>
                 )}
@@ -1253,7 +1204,7 @@ export default function Dashboard() {
         </div>
 
         {showCustomizer && (
-          <Card className="gradient-card">
+          <Card>
             <CardContent className="p-4">
               <WidgetCustomizer
                 widgets={widgetConfig}
@@ -1267,10 +1218,11 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* Stat cards row - tighter grouping */}
           {statsLoading ? (
             Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
           ) : statsError ? (
-            <Card className="col-span-full gradient-card">
+            <Card className="col-span-full">
               <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
                 <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
                   <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -1348,12 +1300,12 @@ export default function Dashboard() {
           >
             {analyticsLoading ? (
               visibleChartWidgets.map((_, i) => (
-                <Card key={i} className="gradient-card">
+                <Card key={i}>
                   <ChartSkeleton />
                 </Card>
               ))
             ) : analyticsError ? (
-              <Card className="gradient-card col-span-full">
+              <Card className="col-span-full">
                 <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
                   <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
                     <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -1372,7 +1324,7 @@ export default function Dashboard() {
                 {isWidgetVisible("trend") && <TrendChart data={analytics.alertTrend} />}
               </>
             ) : (
-              <Card className="gradient-card col-span-3">
+              <Card className="col-span-3">
                 <div
                   className="flex flex-col items-center justify-center h-[240px] text-sm text-muted-foreground"
                   role="status"
@@ -1393,7 +1345,7 @@ export default function Dashboard() {
           >
             {analyticsLoading ? (
               visibleBottomWidgets.map((_, i) => (
-                <Card key={i} className="gradient-card">
+                <Card key={i}>
                   <ChartSkeleton />
                 </Card>
               ))
