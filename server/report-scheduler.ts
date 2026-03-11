@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import { generateReportData, formatAsCSV } from "./report-engine";
-import { generatePdfReport } from "./report-pdf";
+import { generatePdfReport, CONFIDENTIAL_REPORT_TYPES } from "./report-pdf";
 import { uploadFile } from "./s3";
 import { logger } from "./logger";
 import { calculateNextRunTimeInTimezone, safeTimezone, formatInTimezone } from "./timezone-utils";
@@ -56,7 +56,7 @@ async function executeScheduledReport(schedule: any) {
     let contentType: string;
     let ext: string;
     if (template.format === "pdf") {
-      const isConfidential = ["executive_summary", "compliance", "incidents"].includes(template.reportType);
+      const isConfidential = CONFIDENTIAL_REPORT_TYPES.includes(template.reportType);
       content = await generatePdfReport(data, { confidential: isConfidential, orgName: "Arica Tech Solutions" });
       contentType = "application/pdf";
       ext = "pdf";
@@ -172,7 +172,7 @@ export async function runReportOnDemand(templateId: string, orgId?: string, crea
     const data = await generateReportData(template.reportType, orgId ?? template.orgId ?? undefined);
     let content: string | Buffer;
     if (template.format === "pdf") {
-      const isConfidential = ["executive_summary", "compliance", "incidents"].includes(template.reportType);
+      const isConfidential = CONFIDENTIAL_REPORT_TYPES.includes(template.reportType);
       content = await generatePdfReport(data, { confidential: isConfidential, orgName: "Arica Tech Solutions" });
     } else {
       content = template.format === "csv" ? formatAsCSV(data) : JSON.stringify(data, null, 2);

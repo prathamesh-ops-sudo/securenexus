@@ -24,6 +24,9 @@ interface PdfOptions {
   generatedBy?: string;
 }
 
+/** Report types that should be marked CONFIDENTIAL in PDF output */
+export const CONFIDENTIAL_REPORT_TYPES = ["executive_summary", "compliance", "incidents"];
+
 // ATS brand color
 const ATS_BLUE = "#0040FF";
 const HEADER_BG = "#F0F4FF";

@@ -190,10 +190,32 @@ export default function ReportsPage() {
       const res = await apiRequest("POST", "/api/reports/generate", { templateId });
       return res.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/report-runs"] });
-      if (data.content) {
-        const format = data.run?.format || "json";
+      const format = data.run?.format || "json";
+      const runId = data.run?.id;
+
+      if (format === "pdf" && runId) {
+        // PDF must be downloaded via the binary download endpoint to avoid Buffer corruption
+        try {
+          const res = await fetch(`/api/reports/${runId}/download`, { credentials: "include" });
+          if (!res.ok) throw new Error("Download failed");
+          const buf = await res.arrayBuffer();
+          const blob = new Blob([buf], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `report-${runId}.pdf`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch {
+          toast({
+            title: "Report generated but download failed",
+            description: "Use the download button in Report Runs",
+            variant: "destructive",
+          });
+        }
+      } else if (data.content) {
         const blob = new Blob([data.content], { type: format === "csv" ? "text/csv" : "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
