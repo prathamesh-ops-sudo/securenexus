@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,6 @@ import {
   TrendingUp,
   BarChart3,
   Globe,
-  Clock,
   AlertTriangle,
   Shield,
   ShieldOff,
@@ -166,7 +165,7 @@ function OverviewTab() {
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/stats");
       const body = await res.json();
-      return body.data;
+      return body as PlatformStats;
     },
   });
 
@@ -217,15 +216,14 @@ function OrganizationsTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data, isPending } = useQuery({
+  const { data, isPending } = useQuery<PaginatedResponse<OrgListItem>>({
     queryKey: ["/api/platform-admin/organizations", search, page],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
-      if (search) params.set("search", search);
-      const res = await apiRequest("GET", `/api/platform-admin/organizations?${params}`);
-      const body = await res.json();
-      return { items: body.data as OrgListItem[], total: body.meta?.total ?? 0 };
-    },
+    queryFn: async () =>
+      fetchPaginated<OrgListItem>("/api/platform-admin/organizations", {
+        limit,
+        offset: page * limit,
+        search,
+      }),
   });
 
   const suspendMutation = useMutation({
@@ -394,15 +392,14 @@ function UsersTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data, isPending } = useQuery({
+  const { data, isPending } = useQuery<PaginatedResponse<UserListItem>>({
     queryKey: ["/api/platform-admin/users", search, page],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
-      if (search) params.set("search", search);
-      const res = await apiRequest("GET", `/api/platform-admin/users?${params}`);
-      const body = await res.json();
-      return { items: body.data as UserListItem[], total: body.meta?.total ?? 0 };
-    },
+    queryFn: async () =>
+      fetchPaginated<UserListItem>("/api/platform-admin/users", {
+        limit,
+        offset: page * limit,
+        search,
+      }),
   });
 
   const disableMutation = useMutation({
@@ -439,7 +436,7 @@ function UsersTab() {
     mutationFn: async (userId: string) => {
       const res = await apiRequest("POST", `/api/platform-admin/impersonate/${userId}`);
       const body = await res.json();
-      return body.data;
+      return body as { impersonationToken: string; targetUser: { email: string }; expiresAt: string };
     },
     onSuccess: (data: { impersonationToken: string; targetUser: { email: string }; expiresAt: string }) => {
       sessionStorage.setItem("impersonationToken", data.impersonationToken);
@@ -667,14 +664,13 @@ function SubscriptionsTab() {
   const [page, setPage] = useState(0);
   const limit = 20;
 
-  const { data, isPending } = useQuery({
+  const { data, isPending } = useQuery<PaginatedResponse<SubscriptionListItem>>({
     queryKey: ["/api/platform-admin/subscriptions", page],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
-      const res = await apiRequest("GET", `/api/platform-admin/subscriptions?${params}`);
-      const body = await res.json();
-      return { items: body.data as SubscriptionListItem[], total: body.meta?.total ?? 0 };
-    },
+    queryFn: async () =>
+      fetchPaginated<SubscriptionListItem>("/api/platform-admin/subscriptions", {
+        limit,
+        offset: page * limit,
+      }),
   });
 
   if (isPending) {
@@ -770,7 +766,7 @@ function RevenueTab() {
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/revenue");
       const body = await res.json();
-      return body.data;
+      return body as RevenueData;
     },
   });
 
@@ -840,15 +836,14 @@ function AuditLogTab() {
   const [actionFilter, setActionFilter] = useState("");
   const limit = 30;
 
-  const { data, isPending } = useQuery({
+  const { data, isPending } = useQuery<PaginatedResponse<AuditLogEntry>>({
     queryKey: ["/api/platform-admin/audit-logs", page, actionFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
-      if (actionFilter) params.set("action", actionFilter);
-      const res = await apiRequest("GET", `/api/platform-admin/audit-logs?${params}`);
-      const body = await res.json();
-      return { items: body.data as AuditLogEntry[], total: body.meta?.total ?? 0 };
-    },
+    queryFn: async () =>
+      fetchPaginated<AuditLogEntry>("/api/platform-admin/audit-logs", {
+        limit,
+        offset: page * limit,
+        action: actionFilter,
+      }),
   });
 
   return (
@@ -944,7 +939,7 @@ function HealthTab() {
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/health");
       const body = await res.json();
-      return body.data;
+      return body as HealthData;
     },
     refetchInterval: 30000,
   });
@@ -1184,15 +1179,14 @@ function EmailLogsTab() {
   const [successFilter, setSuccessFilter] = useState<string>("");
   const limit = 30;
 
-  const { data, isPending, refetch } = useQuery({
+  const { data, isPending, refetch } = useQuery<PaginatedResponse<EmailLogEntry>>({
     queryKey: ["/api/platform-admin/email-logs", page, successFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
-      if (successFilter) params.set("success", successFilter);
-      const res = await apiRequest("GET", `/api/platform-admin/email-logs?${params}`);
-      const body = await res.json();
-      return { items: (body.data ?? body) as EmailLogEntry[], total: body.meta?.total ?? 0 };
-    },
+    queryFn: async () =>
+      fetchPaginated<EmailLogEntry>("/api/platform-admin/email-logs", {
+        limit,
+        offset: page * limit,
+        success: successFilter,
+      }),
   });
 
   return (
