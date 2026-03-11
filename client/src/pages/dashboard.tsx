@@ -120,7 +120,7 @@ const SOURCE_COLORS = [
   "#65a30d",
 ];
 
-const TACTIC_COLORS = ["#f97316", "#3b82f6", "#eab308", "#8b5cf6", "#10b981", "#ef4444", "#06b6d4", "#ec4899"];
+const TACTIC_COLORS = ["#ea580c", "#2563eb", "#ca8a04", "#7c3aed", "#059669", "#dc2626", "#0891b2", "#db2777"];
 
 function StatCardSkeleton() {
   return (

@@ -255,7 +255,7 @@ export default function AlertDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <Card className="gradient-card">
+          <Card className="">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FileText className="h-4 w-4" />
@@ -339,7 +339,7 @@ export default function AlertDetailPage() {
           </Card>
 
           {hasNetworkData && (
-            <Card className="gradient-card">
+            <Card className="">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Network className="h-4 w-4" />
@@ -872,7 +872,7 @@ export default function AlertDetailPage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="gradient-card">
+          <Card className="">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Shield className="h-4 w-4" />
