@@ -936,7 +936,7 @@ export default function LandingPage() {
                 },
                 {
                   name: "Starter",
-                  price: "\u20B91.5L",
+                  price: "\u20B915K",
                   period: "/month",
                   description: "For SMBs and growing security teams",
                   features: [
@@ -951,7 +951,7 @@ export default function LandingPage() {
                 },
                 {
                   name: "Growth",
-                  price: "\u20B94L",
+                  price: "\u20B940K",
                   period: "/month",
                   description: "For mid-market enterprises scaling security ops",
                   features: [
@@ -968,7 +968,7 @@ export default function LandingPage() {
                 },
                 {
                   name: "Enterprise",
-                  price: "\u20B910L",
+                  price: "\u20B91L",
                   period: "/month",
                   description: "For large organizations with advanced needs",
                   features: [

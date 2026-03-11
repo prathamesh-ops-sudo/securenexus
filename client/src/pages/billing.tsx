@@ -42,14 +42,6 @@ function formatCents(cents: number, currency: string = "INR"): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function formatCentsExact(cents: number, currency: string = "INR"): string {
-  if (currency === "INR") {
-    const rupees = cents / 100;
-    return `\u20B9${rupees.toLocaleString("en-IN")}`;
-  }
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
   return new Date(dateStr).toLocaleDateString("en-US", {
