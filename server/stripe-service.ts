@@ -58,7 +58,7 @@ export async function createCheckoutSession(params: {
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: params.successUrl,
     cancel_url: params.cancelUrl,
-    metadata: { orgId: params.orgId, planId: params.planId, billingCycle: params.billingCycle },
+    metadata: { orgId: params.orgId, planId: plan.id, billingCycle: params.billingCycle },
     subscription_data: { metadata: { orgId: params.orgId } },
   };
 
@@ -119,11 +119,11 @@ export async function changePlan(params: {
   await client.subscriptions.update(sub.stripeSubscriptionId, {
     items: [{ id: itemId, price: priceId }],
     proration_behavior: "create_prorations",
-    metadata: { orgId: params.orgId, planId: params.newPlanId },
+    metadata: { orgId: params.orgId, planId: newPlan.id },
   });
 
   await storage.updateSubscription(sub.id, {
-    planId: params.newPlanId,
+    planId: newPlan.id,
     billingCycle: cycle,
   });
 
