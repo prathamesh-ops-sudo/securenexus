@@ -212,14 +212,12 @@ export function registerReportGovernanceRoutes(app: Express): void {
         }
         res.json({ url: presignedUrl, bucket, key, expiresIn: 3600, action });
       } catch (s3Error) {
-        logger.child("report-governance").warn("S3 presign failed, returning placeholder", { error: String(s3Error) });
-        res.json({
-          url: `https://${bucket}.s3.amazonaws.com/${key}?placeholder=true`,
+        logger.child("report-governance").error("S3 presign failed", { error: String(s3Error) });
+        res.status(502).json({
+          message: "Failed to generate presigned URL — S3 service unavailable",
           bucket,
           key,
-          expiresIn: 3600,
           action,
-          note: "S3 presigning unavailable — use this key for manual upload",
         });
       }
     } catch (error: any) {
