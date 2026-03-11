@@ -370,6 +370,18 @@ export function registerReportsRoutes(app: Express): void {
       try {
         const { generateReportData, formatAsCSV } = await import("../report-engine");
         const data = await generateReportData(template.reportType, run.orgId || undefined);
+        if (run.format === "pdf") {
+          const { generatePdfReport } = await import("../report-pdf");
+          const isConfidential = ["executive_summary", "compliance", "incidents"].includes(template.reportType);
+          const pdf = await generatePdfReport(data, {
+            confidential: isConfidential,
+            orgName: "Arica Tech Solutions",
+            generatedBy: (req.user as any)?.email || "System",
+          });
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", `attachment; filename="${template.reportType}-report.pdf"`);
+          return res.send(pdf);
+        }
         if (run.format === "csv") {
           const csv = formatAsCSV(data);
           res.setHeader("Content-Type", "text/csv");
@@ -424,7 +436,7 @@ export function registerReportsRoutes(app: Express): void {
             description:
               "Key performance indicators for SOC operations including alert volumes, response times, and severity distribution",
             reportType: "soc_kpi",
-            format: "csv",
+            format: "pdf",
             dashboardRole: "soc_manager",
             isBuiltIn: true,
             orgId,
@@ -434,7 +446,7 @@ export function registerReportsRoutes(app: Express): void {
             name: "Incident Summary Report",
             description: "Detailed listing of all incidents with status, severity, assignees, and resolution metrics",
             reportType: "incidents",
-            format: "csv",
+            format: "pdf",
             dashboardRole: "analyst",
             isBuiltIn: true,
             orgId,
@@ -444,7 +456,7 @@ export function registerReportsRoutes(app: Express): void {
             name: "MITRE ATT&CK Coverage Report",
             description: "Analysis of detected attack techniques mapped to the MITRE ATT&CK framework",
             reportType: "attack_coverage",
-            format: "csv",
+            format: "pdf",
             dashboardRole: "ciso",
             isBuiltIn: true,
             orgId,
@@ -454,7 +466,7 @@ export function registerReportsRoutes(app: Express): void {
             name: "Connector Health Report",
             description: "Status and performance metrics for all configured data connectors",
             reportType: "connector_health",
-            format: "csv",
+            format: "pdf",
             dashboardRole: "soc_manager",
             isBuiltIn: true,
             orgId,
@@ -465,7 +477,7 @@ export function registerReportsRoutes(app: Express): void {
             description:
               "High-level security posture summary for executive leadership including risk trends and key metrics",
             reportType: "executive_summary",
-            format: "json",
+            format: "pdf",
             dashboardRole: "ciso",
             isBuiltIn: true,
             orgId,
@@ -475,7 +487,7 @@ export function registerReportsRoutes(app: Express): void {
             name: "Compliance Status Report",
             description: "Compliance framework coverage, data retention status, and DSAR request tracking",
             reportType: "compliance",
-            format: "csv",
+            format: "pdf",
             dashboardRole: "ciso",
             isBuiltIn: true,
             orgId,

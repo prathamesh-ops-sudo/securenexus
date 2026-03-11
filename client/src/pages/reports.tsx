@@ -96,7 +96,7 @@ export default function ReportsPage() {
   const [templateName, setTemplateName] = useState("");
   const [templateDescription, setTemplateDescription] = useState("");
   const [templateType, setTemplateType] = useState("soc_kpi");
-  const [templateFormat, setTemplateFormat] = useState("csv");
+  const [templateFormat, setTemplateFormat] = useState("pdf");
   const [templateRole, setTemplateRole] = useState("soc_manager");
 
   const [showCreateSchedule, setShowCreateSchedule] = useState(false);
@@ -168,7 +168,7 @@ export default function ReportsPage() {
       setTemplateName("");
       setTemplateDescription("");
       setTemplateType("soc_kpi");
-      setTemplateFormat("csv");
+      setTemplateFormat("pdf");
       setTemplateRole("soc_manager");
       toast({ title: "Template Created" });
     },
@@ -600,13 +600,27 @@ export default function ReportsPage() {
                                       });
                                       if (!res.ok) throw new Error("Download failed");
                                       const contentType = res.headers.get("content-type") || "";
+                                      const isPDF = contentType.includes("pdf");
                                       const isCSV = contentType.includes("csv");
-                                      const text = await res.text();
-                                      const blob = new Blob([text], { type: isCSV ? "text/csv" : "application/json" });
+                                      let blob: Blob;
+                                      let ext: string;
+                                      if (isPDF) {
+                                        const buf = await res.arrayBuffer();
+                                        blob = new Blob([buf], { type: "application/pdf" });
+                                        ext = "pdf";
+                                      } else if (isCSV) {
+                                        const text = await res.text();
+                                        blob = new Blob([text], { type: "text/csv" });
+                                        ext = "csv";
+                                      } else {
+                                        const text = await res.text();
+                                        blob = new Blob([text], { type: "application/json" });
+                                        ext = "json";
+                                      }
                                       const url = URL.createObjectURL(blob);
                                       const a = document.createElement("a");
                                       a.href = url;
-                                      a.download = `report-${r.id}.${isCSV ? "csv" : "json"}`;
+                                      a.download = `report-${r.id}.${ext}`;
                                       a.click();
                                       URL.revokeObjectURL(url);
                                     } catch (e: any) {
@@ -972,6 +986,7 @@ export default function ReportsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="pdf">PDF</SelectItem>
                     <SelectItem value="csv">CSV</SelectItem>
                     <SelectItem value="json">JSON</SelectItem>
                   </SelectContent>

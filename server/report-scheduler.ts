@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { generateReportData, formatAsCSV } from "./report-engine";
+import { generatePdfReport } from "./report-pdf";
 import { uploadFile } from "./s3";
 import { logger } from "./logger";
 import { calculateNextRunTimeInTimezone, safeTimezone, formatInTimezone } from "./timezone-utils";
@@ -51,9 +52,23 @@ async function executeScheduledReport(schedule: any) {
     await storage.updateReportRun(run.id, { startedAt: new Date() });
 
     const data = await generateReportData(template.reportType, template.orgId || undefined);
-    const content = template.format === "csv" ? formatAsCSV(data) : JSON.stringify(data, null, 2);
-    const contentType = template.format === "csv" ? "text/csv" : "application/json";
-    const ext = template.format === "csv" ? "csv" : "json";
+    let content: string | Buffer;
+    let contentType: string;
+    let ext: string;
+    if (template.format === "pdf") {
+      const isConfidential = ["executive_summary", "compliance", "incidents"].includes(template.reportType);
+      content = await generatePdfReport(data, { confidential: isConfidential, orgName: "Arica Tech Solutions" });
+      contentType = "application/pdf";
+      ext = "pdf";
+    } else if (template.format === "csv") {
+      content = formatAsCSV(data);
+      contentType = "text/csv";
+      ext = "csv";
+    } else {
+      content = JSON.stringify(data, null, 2);
+      contentType = "application/json";
+      ext = "json";
+    }
 
     const s3Key = `reports/${schedule.orgId ?? "_global"}/${template.reportType}_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
 
@@ -155,7 +170,13 @@ export async function runReportOnDemand(templateId: string, orgId?: string, crea
   try {
     await storage.updateReportRun(run.id, { startedAt: new Date() });
     const data = await generateReportData(template.reportType, orgId ?? template.orgId ?? undefined);
-    const content = template.format === "csv" ? formatAsCSV(data) : JSON.stringify(data, null, 2);
+    let content: string | Buffer;
+    if (template.format === "pdf") {
+      const isConfidential = ["executive_summary", "compliance", "incidents"].includes(template.reportType);
+      content = await generatePdfReport(data, { confidential: isConfidential, orgName: "Arica Tech Solutions" });
+    } else {
+      content = template.format === "csv" ? formatAsCSV(data) : JSON.stringify(data, null, 2);
+    }
 
     await storage.updateReportRun(run.id, {
       status: "completed",
