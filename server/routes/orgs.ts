@@ -103,7 +103,21 @@ export function registerOrgsRoutes(app: Express): void {
       const userOrgId = (req as any).orgId;
       if (orgId !== userOrgId) return res.status(403).json({ error: "Access denied" });
       const members = await storage.getOrgMemberships(orgId);
-      res.json(members);
+      const enriched = await Promise.all(
+        members.map(async (m) => {
+          try {
+            const user = await authStorage.getUser(m.userId);
+            return {
+              ...m,
+              user: user ? { firstName: user.firstName, lastName: user.lastName, email: user.email } : null,
+              email: user?.email || null,
+            };
+          } catch {
+            return { ...m, user: null };
+          }
+        }),
+      );
+      res.json(enriched);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch members" });
     }

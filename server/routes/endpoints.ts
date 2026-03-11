@@ -386,7 +386,7 @@ export function registerEndpointsRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const score = await storage.getLatestPostureScore(orgId);
-        if (!score) return res.status(404).json({ message: "No posture score found" });
+        if (!score) return res.json(null);
         res.json(score);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch latest posture score" });
