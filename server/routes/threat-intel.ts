@@ -893,7 +893,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const alert = await storage.getAlert(p(req.params.alertId));
-        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        if (!alert || alert.orgId !== orgId) return res.status(404).json({ message: "Alert not found" });
         const { matchAlertAgainstIOCs, matchAlertAgainstRules } = await import("../ioc-matcher");
         const result = await matchAlertAgainstIOCs(alert, orgId);
         await matchAlertAgainstRules(alert, orgId);
