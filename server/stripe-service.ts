@@ -41,7 +41,11 @@ export async function createCheckoutSession(params: {
   const client = stripe();
   if (!client) return null;
 
-  const plan = await storage.getPlan(params.planId);
+  // Support both DB UUID and tier name lookups (billing plans API returns tier names)
+  let plan = await storage.getPlan(params.planId);
+  if (!plan) {
+    plan = await storage.getPlanByName(params.planId);
+  }
   if (!plan) throw new Error("Plan not found");
 
   const priceId = params.billingCycle === "annual" ? plan.stripePriceIdAnnual : plan.stripePriceIdMonthly;
@@ -97,7 +101,11 @@ export async function changePlan(params: {
   const sub = await storage.getSubscription(params.orgId);
   if (!sub?.stripeSubscriptionId) throw new Error("No active Stripe subscription");
 
-  const newPlan = await storage.getPlan(params.newPlanId);
+  // Support both DB UUID and tier name lookups (billing plans API returns tier names)
+  let newPlan = await storage.getPlan(params.newPlanId);
+  if (!newPlan) {
+    newPlan = await storage.getPlanByName(params.newPlanId);
+  }
   if (!newPlan) throw new Error("Target plan not found");
 
   const cycle = params.billingCycle || sub.billingCycle || "monthly";
