@@ -65,8 +65,8 @@ export function registerAdminRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const eventId = p(req.params.id);
         // Verify event belongs to this org before replaying
-        const { items: orgEvents } = await storage.getOutboxEvents(orgId, undefined, 10000, 0);
-        if (!orgEvents.some((e) => e.id === eventId)) {
+        const event = await storage.getOutboxEvent(eventId);
+        if (!event || event.orgId !== orgId) {
           return sendEnvelope(res, null, {
             status: 404,
             errors: [{ code: "NOT_FOUND", message: "Event not found or not eligible for replay" }],
@@ -114,10 +114,17 @@ export function registerAdminRoutes(app: Express): void {
             errors: [{ code: "INVALID_REQUEST", message: "eventIds array is required" }],
           });
         }
+        const orgId = getOrgId(req);
         const maxBatchSize = 50;
         const ids = eventIds.slice(0, maxBatchSize);
         const results: { id: string; replayed: boolean }[] = [];
         for (const id of ids) {
+          // Verify each event belongs to the caller's org before replaying
+          const event = await storage.getOutboxEvent(id);
+          if (!event || event.orgId !== orgId) {
+            results.push({ id, replayed: false });
+            continue;
+          }
           const replayed = await storage.replayOutboxEvent(id);
           results.push({ id, replayed: !!replayed });
         }
