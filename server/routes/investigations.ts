@@ -404,7 +404,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const orgId = (req as any).user?.orgId;
         const run = await storage.getInvestigationRun(req.params.id as string);
         if (!run) return res.status(404).json({ message: "Investigation not found" });
-        if (orgId && run.orgId !== orgId) return res.status(404).json({ message: "Investigation not found" });
+        if (!orgId || run.orgId !== orgId) return res.status(404).json({ message: "Investigation not found" });
         const steps = await storage.getInvestigationSteps(run.id);
         res.json({ ...run, steps });
       } catch (error) {
@@ -538,7 +538,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const user = (req as any).user;
         const template = await storage.getRunbookTemplate(p(req.params.id));
         if (!template) return res.status(404).json({ message: "Runbook template not found" });
-        if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+        if (!user?.orgId || (template.orgId && template.orgId !== user.orgId))
           return res.status(403).json({ message: "Access denied" });
         const steps = await storage.getRunbookSteps(template.id);
         res.json({ ...template, steps });
@@ -586,7 +586,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const user = (req as any).user;
         const existing = await storage.getRunbookTemplate(p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Runbook template not found" });
-        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+        if (!user?.orgId || (existing.orgId && existing.orgId !== user.orgId))
           return res.status(403).json({ message: "Access denied" });
         if (existing.isBuiltIn) return res.status(403).json({ message: "Cannot delete built-in runbook templates" });
         const deleted = await storage.deleteRunbookTemplate(p(req.params.id));
@@ -610,7 +610,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const user = (req as any).user;
         const template = await storage.getRunbookTemplate(p(req.params.id));
         if (!template) return res.status(404).json({ message: "Runbook template not found" });
-        if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+        if (!user?.orgId || (template.orgId && template.orgId !== user.orgId))
           return res.status(403).json({ message: "Access denied" });
         const steps = await storage.getRunbookSteps(p(req.params.id));
         res.json(steps);
@@ -631,7 +631,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const user = (req as any).user;
         const template = await storage.getRunbookTemplate(p(req.params.id));
         if (!template) return res.status(404).json({ message: "Runbook template not found" });
-        if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+        if (!user?.orgId || (template.orgId && template.orgId !== user.orgId))
           return res.status(403).json({ message: "Access denied" });
         const parsed = insertRunbookStepSchema.safeParse({
           ...req.body,
@@ -659,7 +659,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const user = (req as any).user;
         const template = await storage.getRunbookTemplate(p(req.params.id));
         if (!template) return res.status(404).json({ message: "Runbook template not found" });
-        if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+        if (!user?.orgId || (template.orgId && template.orgId !== user.orgId))
           return res.status(403).json({ message: "Access denied" });
         const { templateId: _ignoreTemplateId, ...updateData } = req.body;
         const step = await storage.updateRunbookStep(p(req.params.stepId), updateData);
@@ -682,7 +682,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const user = (req as any).user;
         const template = await storage.getRunbookTemplate(p(req.params.id));
         if (!template) return res.status(404).json({ message: "Runbook template not found" });
-        if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+        if (!user?.orgId || (template.orgId && template.orgId !== user.orgId))
           return res.status(403).json({ message: "Access denied" });
         const deleted = await storage.deleteRunbookStep(p(req.params.stepId));
         if (!deleted) return res.status(404).json({ message: "Runbook step not found" });
