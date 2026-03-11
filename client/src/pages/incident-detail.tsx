@@ -1287,7 +1287,7 @@ export default function IncidentDetailPage() {
           </div>
 
           {incident.aiNarrative && (
-            <Card className="gradient-card">
+            <Card className="">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Shield className="h-4 w-4 text-primary" />
@@ -1383,7 +1383,7 @@ export default function IncidentDetailPage() {
           )}
 
           {rootCauseSummary && (
-            <Card className="gradient-card border-amber-500/20">
+            <Card className="border-amber-500/20">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Target className="h-4 w-4 text-amber-500" />
@@ -1429,7 +1429,7 @@ export default function IncidentDetailPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {incident.mitreTactics && incident.mitreTactics.length > 0 && (
-              <Card className="gradient-card">
+              <Card className="">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-semibold">MITRE ATT&CK Mapping</CardTitle>
                 </CardHeader>
@@ -1485,7 +1485,7 @@ export default function IncidentDetailPage() {
           </div>
 
           {affectedAssets.length > 0 && (
-            <Card className="gradient-card">
+            <Card className="">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Affected Assets</CardTitle>
               </CardHeader>
@@ -1688,7 +1688,7 @@ export default function IncidentDetailPage() {
             </CardContent>
           </Card>
 
-          <Card className="gradient-card" data-testid="executive-attack-summary">
+          <Card className="" data-testid="executive-attack-summary">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FileText className="h-4 w-4 text-red-500" />

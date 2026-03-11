@@ -69,7 +69,7 @@ export function LiveActivityFeed() {
   }, [events.length]);
 
   return (
-    <Card className="gradient-card" data-testid="live-activity-feed">
+    <Card className="" data-testid="live-activity-feed">
       <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-muted-foreground" />
