@@ -12,14 +12,30 @@ import {
   handleWebhookEvent,
   getUsageVsLimits,
 } from "../stripe-service";
-import { getAllAddOnModules } from "../tiered-packaging-engine";
+import { getAllAddOnModules, getAllPlanTiers } from "../tiered-packaging-engine";
 
 const log = logger.child("billing");
 
 export function registerBillingRoutes(app: Express): void {
   app.get("/api/billing/plans", isAuthenticated, async (_req: Request, res: Response) => {
     try {
-      const plansList = await storage.getPlans(true);
+      const tiers = getAllPlanTiers();
+      const plansList = tiers.map((t) => ({
+        id: t.id,
+        name: t.name,
+        displayName: t.displayName,
+        description: t.description,
+        monthlyPriceCents: t.monthlyPriceCents,
+        annualPriceCents: t.annualPriceCents,
+        currency: t.currency,
+        features: t.limits,
+        featureList: t.features,
+        recommended: t.recommended || false,
+        badge: t.badge || null,
+        onboardingFeeCents: t.onboardingFeeCents || 0,
+        supportHours: t.supportHours || null,
+        targetSegment: t.targetSegment || null,
+      }));
       return sendEnvelope(res, plansList);
     } catch (err) {
       log.error("Failed to fetch plans", { error: String(err) });
