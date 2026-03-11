@@ -31,9 +31,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const orgId = user?.orgId;
-        if (!orgId) return res.json([]);
+        const orgId = getOrgId(req);
         const configs = await storage.getThreatIntelConfigs(orgId);
         const masked = configs.map((c) => ({
           ...c,
@@ -54,9 +52,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const orgId = user?.orgId;
-        if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+        const orgId = getOrgId(req);
         const { provider, apiKey, enabled } = req.body;
         if (!provider) return res.status(400).json({ message: "provider is required" });
         const validProviders = ["abuseipdb", "virustotal", "otx"];
@@ -88,9 +84,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const orgId = user?.orgId;
-        if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+        const orgId = getOrgId(req);
         await storage.deleteThreatIntelConfig(orgId, p(req.params.provider));
         res.json({ success: true });
       } catch (error) {
@@ -107,9 +101,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const orgId = user?.orgId;
-        if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+        const orgId = getOrgId(req);
         const provider = p(req.params.provider);
         const config = await storage.getThreatIntelConfig(orgId, provider);
         if (!config || !config.apiKey) {
@@ -182,8 +174,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     async (req, res) => {
       try {
         const { getProviderStatuses } = await import("../threat-enrichment");
-        const user = (req as any).user;
-        const orgId = user?.orgId;
+        const orgId = getOrgId(req);
         res.json(await getProviderStatuses(orgId));
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch provider statuses" });
@@ -394,8 +385,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const feeds = await storage.getIocFeeds(user?.orgId);
+        const orgId = getOrgId(req);
+        const feeds = await storage.getIocFeeds(orgId);
         res.json(feeds);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch IOC feeds" });
@@ -411,11 +402,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const feed = await storage.getIocFeed(p(req.params.id));
-        if (!feed) return res.status(404).json({ message: "Feed not found" });
-        if (feed.orgId && user?.orgId && feed.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
         res.json(feed);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch IOC feed" });
@@ -432,7 +421,6 @@ export function registerThreatIntelRoutes(app: Express): void {
     enforcePlanLimit("threat_intel_feeds"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
         const orgId = getOrgId(req);
         const parsed = insertIocFeedSchema.safeParse({ ...req.body, orgId });
         if (!parsed.success) {
@@ -461,11 +449,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const existing = await storage.getIocFeed(p(req.params.id));
-        if (!existing) return res.status(404).json({ message: "Feed not found" });
-        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
         if (req.body.url && !validateFeedUrl(req.body.url)) {
           return res
             .status(400)
@@ -489,11 +475,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const existing = await storage.getIocFeed(p(req.params.id));
-        if (!existing) return res.status(404).json({ message: "Feed not found" });
-        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
         const deleted = await storage.deleteIocFeed(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "Feed not found" });
         res.json({ message: "Feed deleted" });
@@ -511,11 +495,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const feed = await storage.getIocFeed(p(req.params.id));
-        if (!feed) return res.status(404).json({ message: "Feed not found" });
-        if (feed.orgId && user?.orgId && feed.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
         const { fetchAndIngestFeed, ingestFeed } = await import("../ioc-ingestion");
         let result;
         if (req.body && req.body.data) {
@@ -539,10 +521,10 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const { feedId, iocType, status, limit } = req.query;
         const entries = await storage.getIocEntries(
-          user?.orgId,
+          orgId,
           feedId as string | undefined,
           iocType as string | undefined,
           status as string | undefined,
@@ -563,11 +545,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const entry = await storage.getIocEntry(p(req.params.id));
-        if (!entry) return res.status(404).json({ message: "IOC entry not found" });
-        if (entry.orgId && user?.orgId && entry.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!entry || entry.orgId !== orgId) return res.status(404).json({ message: "IOC entry not found" });
         res.json(entry);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch IOC entry" });
@@ -583,7 +563,6 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
         const orgId = getOrgId(req);
         const parsed = insertIocEntrySchema.safeParse({ ...req.body, orgId });
         if (!parsed.success) {
@@ -607,11 +586,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const existing = await storage.getIocEntry(p(req.params.id));
-        if (!existing) return res.status(404).json({ message: "IOC entry not found" });
-        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "IOC entry not found" });
         const { orgId: _ignoreOrgId, ...updateData } = req.body;
         const entry = await storage.updateIocEntry(p(req.params.id), updateData);
         if (!entry) return res.status(404).json({ message: "IOC entry not found" });
@@ -630,11 +607,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const existing = await storage.getIocEntry(p(req.params.id));
-        if (!existing) return res.status(404).json({ message: "IOC entry not found" });
-        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "IOC entry not found" });
         const deleted = await storage.deleteIocEntry(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "IOC entry not found" });
         res.json({ message: "IOC entry deleted" });
@@ -652,8 +627,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const entries = await storage.getIocEntriesByValue(p(req.params.type), p(req.params.value), user?.orgId);
+        const orgId = getOrgId(req);
+        const entries = await storage.getIocEntriesByValue(p(req.params.type), p(req.params.value), orgId);
         res.json(entries);
       } catch (error) {
         res.status(500).json({ message: "Failed to search IOC entries" });
@@ -669,8 +644,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const watchlists = await storage.getIocWatchlists(user?.orgId);
+        const orgId = getOrgId(req);
+        const watchlists = await storage.getIocWatchlists(orgId);
         res.json(watchlists);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch watchlists" });
@@ -686,9 +661,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-        const orgId = getOrgId(req);
         const parsed = insertIocWatchlistSchema.safeParse({ ...req.body, orgId, createdBy: userName });
         if (!parsed.success) {
           return res.status(400).json({ message: "Invalid watchlist data", errors: parsed.error.flatten() });
@@ -711,12 +686,11 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const existing = (await storage.getIocWatchlist)
           ? await (storage as any).getIocWatchlist(p(req.params.id))
           : null;
-        if (existing && existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (existing && existing.orgId !== orgId) return res.status(404).json({ message: "Watchlist not found" });
         const { orgId: _ignoreOrgId, ...updateData } = req.body;
         const watchlist = await storage.updateIocWatchlist(p(req.params.id), updateData);
         if (!watchlist) return res.status(404).json({ message: "Watchlist not found" });
@@ -735,8 +709,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const watchlists = await storage.getIocWatchlists(user?.orgId);
+        const orgId = getOrgId(req);
+        const watchlists = await storage.getIocWatchlists(orgId);
         const existing = watchlists.find((w: any) => w.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Watchlist not found" });
         const deleted = await storage.deleteIocWatchlist(p(req.params.id));
@@ -811,8 +785,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const rules = await storage.getIocMatchRules(user?.orgId);
+        const orgId = getOrgId(req);
+        const rules = await storage.getIocMatchRules(orgId);
         res.json(rules);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch match rules" });
@@ -828,7 +802,6 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
         const orgId = getOrgId(req);
         const parsed = insertIocMatchRuleSchema.safeParse({ ...req.body, orgId });
         if (!parsed.success) {
@@ -852,8 +825,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const rules = await storage.getIocMatchRules(user?.orgId);
+        const orgId = getOrgId(req);
+        const rules = await storage.getIocMatchRules(orgId);
         const existing = rules.find((r: any) => r.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Match rule not found" });
         const { orgId: _ignoreOrgId, ...updateData } = req.body;
@@ -874,8 +847,8 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
-        const rules = await storage.getIocMatchRules(user?.orgId);
+        const orgId = getOrgId(req);
+        const rules = await storage.getIocMatchRules(orgId);
         const existing = rules.find((r: any) => r.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Match rule not found" });
         const deleted = await storage.deleteIocMatchRule(p(req.params.id));
@@ -895,10 +868,10 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const { alertId, iocEntryId, limit } = req.query;
         const matches = await storage.getIocMatches(
-          user?.orgId,
+          orgId,
           alertId as string | undefined,
           iocEntryId as string | undefined,
           limit ? parseInt(limit as string, 10) : undefined,
@@ -918,12 +891,12 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const alert = await storage.getAlert(p(req.params.alertId));
         if (!alert) return res.status(404).json({ message: "Alert not found" });
         const { matchAlertAgainstIOCs, matchAlertAgainstRules } = await import("../ioc-matcher");
-        const result = await matchAlertAgainstIOCs(alert, user?.orgId);
-        await matchAlertAgainstRules(alert, user?.orgId);
+        const result = await matchAlertAgainstIOCs(alert, orgId);
+        await matchAlertAgainstRules(alert, orgId);
         res.json(result);
       } catch (error) {
         logger.child("routes").error("IOC matching error", { error: String(error) });
@@ -940,9 +913,9 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const { getIOCStats } = await import("../ioc-matcher");
-        const stats = await getIOCStats(user?.orgId);
+        const stats = await getIOCStats(orgId);
         res.json(stats);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch IOC stats" });
@@ -975,11 +948,10 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const orgId = getOrgId(req);
         const review = await storage.getPostIncidentReview(p(req.params.id));
-        if (!review) return res.status(404).json({ message: "Post-incident review not found" });
-        if (review.orgId && user?.orgId && review.orgId !== user.orgId)
-          return res.status(403).json({ message: "Access denied" });
+        if (!review || review.orgId !== orgId)
+          return res.status(404).json({ message: "Post-incident review not found" });
         res.json(review);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch post-incident review" });
@@ -1028,7 +1000,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     (req: Request, res: Response) => {
       try {
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         res.json(getThreatIntelFeedStatuses(orgId));
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch feed statuses" });
@@ -1051,7 +1023,7 @@ export function registerThreatIntelRoutes(app: Express): void {
         if (isNaN(limit) || limit < 1 || limit > 5000) {
           return res.status(400).json({ message: "limit must be between 1 and 5000" });
         }
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug, orgId });
         res.json({ articles, total: articles.length });
       } catch (error) {
@@ -1068,7 +1040,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         const result = await fetchAllThreatIntelFeeds(true, orgId);
         const { items: _strip, ...summary } = result;
         res.json(summary);
@@ -1129,7 +1101,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     (req: Request, res: Response) => {
       try {
         const slug = p(req.params.slug);
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         if (!setThreatIntelFeedEnabled(slug, true, orgId)) {
           return res.status(404).json({ message: "Unknown feed slug" });
         }
@@ -1149,7 +1121,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     (req: Request, res: Response) => {
       try {
         const slug = p(req.params.slug);
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         if (!setThreatIntelFeedEnabled(slug, false, orgId)) {
           return res.status(404).json({ message: "Unknown feed slug" });
         }

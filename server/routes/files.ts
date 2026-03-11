@@ -8,6 +8,34 @@ import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE_BYTES } });
 
+// Magic byte signatures for dangerous file types
+const DANGEROUS_MAGIC_BYTES: Array<{ bytes: number[]; offset?: number; description: string }> = [
+  { bytes: [0x4d, 0x5a], description: "PE executable (EXE/DLL/SCR)" }, // MZ header
+  { bytes: [0x7f, 0x45, 0x4c, 0x46], description: "ELF executable" }, // Linux ELF
+  { bytes: [0xfe, 0xed, 0xfa, 0xce], description: "Mach-O executable (32-bit)" },
+  { bytes: [0xfe, 0xed, 0xfa, 0xcf], description: "Mach-O executable (64-bit)" },
+  { bytes: [0xce, 0xfa, 0xed, 0xfe], description: "Mach-O executable (reverse 32-bit)" },
+  { bytes: [0xcf, 0xfa, 0xed, 0xfe], description: "Mach-O executable (reverse 64-bit)" },
+  { bytes: [0xca, 0xfe, 0xba, 0xbe], description: "Mach-O universal binary / Java class" },
+  { bytes: [0x23, 0x21], description: "Script with shebang (#!)" }, // #!/bin/sh, #!/usr/bin/env python, etc.
+];
+
+function hasDangerousMagicBytes(buffer: Buffer): string | null {
+  for (const sig of DANGEROUS_MAGIC_BYTES) {
+    const offset = sig.offset ?? 0;
+    if (buffer.length < offset + sig.bytes.length) continue;
+    let match = true;
+    for (let i = 0; i < sig.bytes.length; i++) {
+      if (buffer[offset + i] !== sig.bytes[i]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return sig.description;
+  }
+  return null;
+}
+
 const BLOCKED_EXTENSIONS = new Set([
   "exe",
   "bat",
@@ -99,6 +127,12 @@ export function registerFilesRoutes(app: Express): void {
         const ext = baseName.split(".").pop()?.toLowerCase().trim() || "";
         if (BLOCKED_EXTENSIONS.has(ext)) {
           return res.status(400).json({ message: `File type .${ext} is not allowed` });
+        }
+
+        // Validate actual file content via magic bytes (defense against renamed executables)
+        const magicMatch = hasDangerousMagicBytes(req.file.buffer);
+        if (magicMatch) {
+          return res.status(400).json({ message: `File rejected: detected ${magicMatch}` });
         }
 
         const safeName = sanitizeFilename(baseName);
