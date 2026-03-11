@@ -126,26 +126,20 @@ const navGroups: NavGroup[] = [
     color: "text-cyan-400",
     sections: [
       {
-        label: "Early warning",
+        label: "Intelligence Collection",
         items: [
-          { title: "Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
-          { title: "OSINT Feeds", url: "/osint-feeds-config", icon: Rss },
+          { title: "Threat Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
+          { title: "OSINT Monitoring", url: "/osint-feeds-config", icon: Rss },
+          { title: "IOC Management", url: "/ioc-ingestion-matching", icon: Upload },
+          { title: "CVE Database", url: "/cve-browser", icon: Bug },
         ],
       },
       {
-        label: "Indicators & enrichment",
+        label: "Adversary Tracking",
         items: [
-          { title: "Threat Intel", url: "/threat-intel", icon: Shield },
-          { title: "IOC Ingestion", url: "/ioc-ingestion-matching", icon: Upload },
-          { title: "CVE Browser", url: "/cve-browser", icon: Bug },
-        ],
-      },
-      {
-        label: "Adversary frameworks",
-        items: [
+          { title: "Campaigns", url: "/campaign-viewer", icon: Target },
           { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
           { title: "Kill Chain", url: "/kill-chain", icon: Swords },
-          { title: "Campaign Viewer", url: "/campaign-viewer", icon: Target },
         ],
       },
     ],
@@ -156,108 +150,65 @@ const navGroups: NavGroup[] = [
     color: "text-violet-400",
     sections: [
       {
-        label: "Graph workspaces",
+        label: "Graph Analysis",
         items: [
-          { title: "Entity Graph", url: "/entity-graph", icon: Network },
-          { title: "Entity Merge", url: "/entity-merge-alias", icon: GitMerge },
-          { title: "Attack Graph", url: "/attack-graph", icon: GitBranch },
-          { title: "Security Graph", url: "/security-graph", icon: Shield },
-          { title: "Finding Lineage", url: "/finding-lineage", icon: Fingerprint },
+          { title: "Security Graph", url: "/security-graph", icon: Network },
+          { title: "Attack Paths", url: "/attack-graph", icon: GitBranch },
+          { title: "Entity Explorer", url: "/entity-graph", icon: Search },
+          { title: "Entity Resolution", url: "/entity-merge-alias", icon: GitMerge },
         ],
       },
       {
-        label: "Cases & timeline",
+        label: "Case Management",
         items: [
-          { title: "Investigation Runs", url: "/investigation-runs", icon: Microscope },
-          { title: "Investigation Timeline", url: "/investigation-timeline", icon: GitBranch },
           { title: "War Room", url: "/war-room", icon: Shield },
-        ],
-      },
-      {
-        label: "Evidence & hygiene",
-        items: [
+          { title: "Timeline", url: "/investigation-timeline", icon: History },
           { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
-          { title: "Evidence Custody", url: "/evidence-custody", icon: Link2 },
-          { title: "Suppressed Alerts", url: "/suppressed-alerts", icon: EyeOff },
+          { title: "Evidence Locker", url: "/evidence-custody", icon: Link2 },
         ],
       },
     ],
   },
   {
-    label: "Respond & Automate",
-    icon: Bot,
+    label: "Respond",
+    icon: Zap,
     color: "text-emerald-400",
     sections: [
       {
-        label: "Playbooks & runbooks",
+        label: "Automation",
         items: [
           { title: "Playbooks", url: "/playbooks", icon: Workflow },
-          { title: "Playbook Templates", url: "/playbook-templates", icon: BookOpen },
-          { title: "Runbook Templates", url: "/runbook-templates", icon: ClipboardList },
+          { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
+          { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
         ],
       },
       {
-        label: "Safety & rollback",
+        label: "Templates",
         items: [
-          { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
-          { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
-          { title: "Post-Incident Review", url: "/post-incident-review", icon: FileText },
+          { title: "Playbook Library", url: "/playbook-templates", icon: BookOpen },
+          { title: "Runbook Library", url: "/runbook-templates", icon: ClipboardList },
         ],
       },
     ],
   },
   {
-    label: "Posture & Risk",
-    icon: Gauge,
+    label: "Posture",
+    icon: ShieldCheck,
     color: "text-blue-400",
     sections: [
       {
-        label: "Security posture",
+        label: "Cloud & Infrastructure",
         items: [
-          { title: "Security Posture", url: "/security-posture", icon: Gauge },
           { title: "CSPM", url: "/cspm", icon: Cloud },
           { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
+          { title: "Vulnerability Mgmt", url: "/security-posture", icon: Gauge },
         ],
       },
       {
-        label: "Analytics & forecasting",
+        label: "Identity & Access",
         items: [
-          { title: "Analytics", url: "/analytics", icon: BarChart3 },
-          { title: "Predictive Defense", url: "/predictive-defense", icon: TrendingUp },
-          { title: "Executive Risk", url: "/executive-risk", icon: TrendingUp },
-        ],
-      },
-      {
-        label: "Reporting & compliance",
-        items: [
-          { title: "Reports", url: "/reports", icon: FileText },
-          { title: "Template Versioning", url: "/report-template-versioning", icon: GitBranch },
-          { title: "Report Scheduling", url: "/report-scheduling", icon: Calendar },
-          { title: "Gap Analysis", url: "/gap-analysis", icon: Search },
-          { title: "Compliance Gap", url: "/compliance-gap", icon: Scale },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Integrations & Data",
-    icon: Plug,
-    color: "text-sky-400",
-    sections: [
-      {
-        label: "Inbound telemetry",
-        items: [
-          { title: "Connectors", url: "/connectors", icon: Plug },
-          { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
-          { title: "Ingestion", url: "/ingestion", icon: ArrowDownToLine },
-        ],
-      },
-      {
-        label: "Outbound & collaboration",
-        items: [
-          { title: "Integrations", url: "/integrations", icon: Link2 },
-          { title: "Marketplace", url: "/integration-marketplace", icon: Zap },
-          { title: "File Manager", url: "/file-manager", icon: FolderOpen },
+          { title: "JIT Access", url: "/jit-secret-access", icon: KeyRound },
+          { title: "Secret Rotation", url: "/secret-rotation-overview", icon: RotateCcw },
         ],
       },
     ],
@@ -268,66 +219,67 @@ const navGroups: NavGroup[] = [
     color: "text-fuchsia-400",
     sections: [
       {
-        label: "Assist",
+        label: "Capabilities",
         items: [
           { title: "AI Engine", url: "/ai-engine", icon: Brain },
-          { title: "SOC Co-Pilot", url: "/soc-copilot", icon: Brain },
-          { title: "Prompt to Artifact", url: "/prompt-to-artifact", icon: Zap },
-          { title: "Dev Remediation", url: "/developer-remediation", icon: Code2 },
+          { title: "SOC Co-Pilot", url: "/soc-copilot", icon: MessageSquare },
+          { title: "Prompt Builder", url: "/prompt-to-artifact", icon: Wand2 },
         ],
       },
       {
-        label: "Govern",
+        label: "Governance",
         items: [
-          { title: "Engine Controls", url: "/engine-controls", icon: Settings },
+          { title: "Model Gateway", url: "/model-gateway", icon: Server },
           { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
-          { title: "AI Feedback", url: "/ai-feedback", icon: MessageSquare },
-          { title: "Model Gateway", url: "/model-gateway", icon: ShieldCheck },
-          { title: "AI Budget Controls", url: "/ai-budget-controls", icon: DollarSign },
-          { title: "AI Model Health", url: "/ai-model-health", icon: HeartPulse },
-          { title: "Manual AI Triggers", url: "/manual-ai-triggers", icon: Wand2 },
+          { title: "Feedback Loop", url: "/ai-feedback", icon: MessageSquare },
+          { title: "Budget & Limits", url: "/ai-budget-controls", icon: DollarSign },
         ],
       },
     ],
   },
   {
-    label: "Govern & Defend",
-    icon: Lock,
+    label: "Data & Integrations",
+    icon: Database,
+    color: "text-sky-400",
+    sections: [
+      {
+        label: "Connectivity",
+        items: [
+          { title: "Connectors", url: "/connectors", icon: Plug },
+          { title: "Marketplace", url: "/integration-marketplace", icon: Package },
+          { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
+          { title: "Webhooks", url: "/webhook-security-center", icon: WebhookIcon },
+        ],
+      },
+      {
+        label: "Pipeline",
+        items: [
+          { title: "Ingestion Status", url: "/ingestion", icon: Activity },
+          { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
+          { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Governance",
+    icon: Building2,
     color: "text-amber-400",
     sections: [
       {
-        label: "Secrets & access",
+        label: "Compliance",
         items: [
-          { title: "Secret Rotations", url: "/secret-rotation-overview", icon: KeyRound },
-          { title: "JIT Secret Access", url: "/jit-secret-access", icon: Lock },
-          { title: "Webhook Security", url: "/webhook-security-center", icon: WebhookIcon },
+          { title: "Compliance Center", url: "/compliance", icon: Scale },
+          { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
+          { title: "Gap Analysis", url: "/compliance-gap", icon: Search },
         ],
       },
       {
-        label: "Guardrails & testing",
+        label: "Audit & Policy",
         items: [
-          { title: "Runtime Guardrails", url: "/runtime-guardrails", icon: ShieldBan },
-          { title: "Browser Defense", url: "/browser-defense", icon: ShieldBan },
-          { title: "Agent Tool Security", url: "/agent-tool-security", icon: ShieldCheck },
-          { title: "Adversarial Testing", url: "/adversarial-testing", icon: Shield },
-          { title: "Cross-Cutting Controls", url: "/cross-cutting", icon: Layers },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Platform Ops",
-    icon: Activity,
-    color: "text-orange-400",
-    sections: [
-      {
-        label: "Operate",
-        items: [
-          { title: "Operations", url: "/operations", icon: Zap },
-          { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
-          { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
-          { title: "Metrics Rollup", url: "/metrics-rollup", icon: BarChart3 },
-          { title: "API Versioning", url: "/api-versioning", icon: GitBranch },
+          { title: "Audit Log", url: "/audit-log", icon: FileText },
+          { title: "Policy Packs", url: "/policy-packs", icon: Shield },
+          { title: "Reports", url: "/reports", icon: FileText },
         ],
       },
     ],
