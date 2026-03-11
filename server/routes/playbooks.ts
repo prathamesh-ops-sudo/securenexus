@@ -28,7 +28,7 @@ export function registerPlaybooksRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const pb = await storage.getPlaybook(p(req.params.id));
-      if (!pb || (orgId && pb.orgId && pb.orgId !== orgId)) {
+      if (!pb || !orgId || pb.orgId !== orgId) {
         return res.status(404).json({ message: "Playbook not found" });
       }
       res.json(pb);
@@ -85,7 +85,7 @@ export function registerPlaybooksRoutes(app: Express): void {
       try {
         const orgId = (req as any).user?.orgId;
         const existing = await storage.getPlaybook(p(req.params.id));
-        if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        if (!existing || !orgId || existing.orgId !== orgId) {
           return res.status(404).json({ message: "Playbook not found" });
         }
         const updated = await storage.updatePlaybook(p(req.params.id), {
@@ -109,7 +109,7 @@ export function registerPlaybooksRoutes(app: Express): void {
       try {
         const orgId = (req as any).user?.orgId;
         const existing = await storage.getPlaybook(p(req.params.id));
-        if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) {
+        if (!existing || !orgId || existing.orgId !== orgId) {
           return res.status(404).json({ message: "Playbook not found" });
         }
         const deleted = await storage.deletePlaybook(p(req.params.id));
@@ -132,8 +132,11 @@ export function registerPlaybooksRoutes(app: Express): void {
 
   app.post("/api/playbooks/:id/execute", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const pb = await storage.getPlaybook(p(req.params.id));
-      if (!pb) return res.status(404).json({ message: "Playbook not found" });
+      if (!pb || !orgId || pb.orgId !== orgId) {
+        return res.status(404).json({ message: "Playbook not found" });
+      }
       const startTime = Date.now();
       const user = (req as any).user;
       const isDryRun = req.body.dryRun === true;

@@ -53,7 +53,7 @@ export function registerConnectorsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const connector = await storage.getConnector(p(req.params.id));
-      if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+      if (!connector || !orgId || connector.orgId !== orgId) {
         return res.status(404).json({ message: "Connector not found" });
       }
       const safeConfig = sanitizeConfig(connector.config);
@@ -120,7 +120,7 @@ export function registerConnectorsRoutes(app: Express): void {
       try {
         const orgId = (req as any).user?.orgId;
         const connector = await storage.getConnector(p(req.params.id));
-        if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+        if (!connector || !orgId || connector.orgId !== orgId) {
           return res.status(404).json({ message: "Connector not found" });
         }
         const { name, config, status, pollingIntervalMin } = (req as any).validatedBody;
@@ -157,7 +157,7 @@ export function registerConnectorsRoutes(app: Express): void {
       try {
         const orgId = (req as any).user?.orgId;
         const connector = await storage.getConnector(p(req.params.id));
-        if (!connector || (orgId && connector.orgId && connector.orgId !== orgId)) {
+        if (!connector || !orgId || connector.orgId !== orgId) {
           return res.status(404).json({ message: "Connector not found" });
         }
         await storage.deleteConnector(p(req.params.id));
@@ -180,8 +180,11 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.post("/api/connectors/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const connector = await storage.getConnector(p(req.params.id));
-      if (!connector) return res.status(404).json({ message: "Connector not found" });
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
       const config = connector.config as ConnectorConfig;
       const result = await testConnector(connector.type, config);
       res.json(result);
@@ -210,8 +213,11 @@ export function registerConnectorsRoutes(app: Express): void {
 
   app.post("/api/connectors/:id/sync", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
+      const orgId = (req as any).user?.orgId;
       const connector = await storage.getConnector(p(req.params.id));
-      if (!connector) return res.status(404).json({ message: "Connector not found" });
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
 
       await storage.updateConnector(connector.id, { status: "syncing" } as any);
 
