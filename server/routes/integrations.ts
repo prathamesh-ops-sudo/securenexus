@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { logger, p, sanitizeConfig, storage } from "./shared";
+import { getOrgId, logger, p, sanitizeConfig, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
@@ -9,9 +9,10 @@ export function registerIntegrationsRoutes(app: Express): void {
   // ============================
   // Phase 7: Integration Configs
   // ============================
-  app.get("/api/integrations", isAuthenticated, async (req, res) => {
+  app.get("/api/integrations", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
-      const configs = await storage.getIntegrationConfigs();
+      const orgId = getOrgId(req);
+      const configs = await storage.getIntegrationConfigs(orgId);
       const sanitized = configs.map((c) => ({
         ...c,
         config: sanitizeConfig(c.config as any),
@@ -22,16 +23,24 @@ export function registerIntegrationsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/integrations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const config = await storage.getIntegrationConfig(p(req.params.id));
-      if (!config) return res.status(404).json({ message: "Integration not found" });
-      const safeConfig = { ...config, config: sanitizeConfig(config.config as any) };
-      res.json(safeConfig);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch integration" });
-    }
-  });
+  app.get(
+    "/api/integrations/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const config = await storage.getIntegrationConfig(p(req.params.id));
+        if (!config || config.orgId !== orgId) return res.status(404).json({ message: "Integration not found" });
+        const safeConfig = { ...config, config: sanitizeConfig(config.config as any) };
+        res.json(safeConfig);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch integration" });
+      }
+    },
+  );
 
   app.post("/api/integrations", isAuthenticated, validateBody(bodySchemas.integrationCreate), async (req, res) => {
     try {
@@ -61,77 +70,102 @@ export function registerIntegrationsRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/integrations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const existing = await storage.getIntegrationConfig(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Integration not found" });
-      const { name, config, status } = req.body;
-      const updateData: any = {};
-      if (name) updateData.name = name;
-      if (status) updateData.status = status;
-      if (config) {
-        const existingConfig = existing.config as any;
-        const newConfig = { ...existingConfig };
-        for (const [key, value] of Object.entries(config)) {
-          if (value !== "••••••••" && value !== undefined) {
-            (newConfig as any)[key] = value;
+  app.patch(
+    "/api/integrations/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getIntegrationConfig(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Integration not found" });
+        const { name, config, status } = req.body;
+        const updateData: any = {};
+        if (name) updateData.name = name;
+        if (status) updateData.status = status;
+        if (config) {
+          const existingConfig = existing.config as any;
+          const newConfig = { ...existingConfig };
+          for (const [key, value] of Object.entries(config)) {
+            if (value !== "••••••••" && value !== undefined) {
+              (newConfig as any)[key] = value;
+            }
           }
+          updateData.config = newConfig;
         }
-        updateData.config = newConfig;
+        const updated = await storage.updateIntegrationConfig(p(req.params.id), updateData);
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update integration" });
       }
-      const updated = await storage.updateIntegrationConfig(p(req.params.id), updateData);
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update integration" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/integrations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const existing = await storage.getIntegrationConfig(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Integration not found" });
-      await storage.deleteIntegrationConfig(p(req.params.id));
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "integration_deleted",
-        resourceType: "integration",
-        resourceId: p(req.params.id),
-        details: { type: existing.type, name: existing.name },
-      });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete integration" });
-    }
-  });
+  app.delete(
+    "/api/integrations/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getIntegrationConfig(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Integration not found" });
+        await storage.deleteIntegrationConfig(p(req.params.id));
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "integration_deleted",
+          resourceType: "integration",
+          resourceId: p(req.params.id),
+          details: { type: existing.type, name: existing.name },
+        });
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete integration" });
+      }
+    },
+  );
 
-  app.post("/api/integrations/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const config = await storage.getIntegrationConfig(p(req.params.id));
-      if (!config) return res.status(404).json({ message: "Integration not found" });
-      await storage.updateIntegrationConfig(p(req.params.id), {
-        lastTestedAt: new Date(),
-        lastTestStatus: "success",
-        status: "active",
-      } as any);
-      res.json({
-        success: true,
-        message: `${config.type} integration test successful (simulated)`,
-        testedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Integration test failed" });
-    }
-  });
+  app.post(
+    "/api/integrations/:id/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const config = await storage.getIntegrationConfig(p(req.params.id));
+        if (!config || config.orgId !== orgId) return res.status(404).json({ message: "Integration not found" });
+        await storage.updateIntegrationConfig(p(req.params.id), {
+          lastTestedAt: new Date(),
+          lastTestStatus: "success",
+          status: "active",
+        } as any);
+        res.json({
+          success: true,
+          message: `${config.type} integration test successful (simulated)`,
+          testedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Integration test failed" });
+      }
+    },
+  );
 
   // ================================
   // Phase 7: Notification Channels
   // ================================
-  app.get("/api/notification-channels", isAuthenticated, async (req, res) => {
+  app.get("/api/notification-channels", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
-      const channels = await storage.getNotificationChannels();
+      const orgId = getOrgId(req);
+      const channels = await storage.getNotificationChannels(orgId);
       const sanitized = channels.map((c) => ({
         ...c,
         config: sanitizeConfig(c.config as any),
@@ -176,41 +210,65 @@ export function registerIntegrationsRoutes(app: Express): void {
     },
   );
 
-  app.patch("/api/notification-channels/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const existing = await storage.getNotificationChannel(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Channel not found" });
-      const updated = await storage.updateNotificationChannel(p(req.params.id), req.body);
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update channel" });
-    }
-  });
+  app.patch(
+    "/api/notification-channels/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getNotificationChannel(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Channel not found" });
+        const updated = await storage.updateNotificationChannel(p(req.params.id), req.body);
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update channel" });
+      }
+    },
+  );
 
-  app.delete("/api/notification-channels/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const existing = await storage.getNotificationChannel(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Channel not found" });
-      await storage.deleteNotificationChannel(p(req.params.id));
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete channel" });
-    }
-  });
+  app.delete(
+    "/api/notification-channels/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getNotificationChannel(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Channel not found" });
+        await storage.deleteNotificationChannel(p(req.params.id));
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete channel" });
+      }
+    },
+  );
 
-  app.post("/api/notification-channels/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const channel = await storage.getNotificationChannel(p(req.params.id));
-      if (!channel) return res.status(404).json({ message: "Channel not found" });
-      res.json({
-        success: true,
-        message: `Test notification sent to ${channel.type} channel "${channel.name}" (simulated)`,
-        sentAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to test notification" });
-    }
-  });
+  app.post(
+    "/api/notification-channels/:id/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const channel = await storage.getNotificationChannel(p(req.params.id));
+        if (!channel || channel.orgId !== orgId) return res.status(404).json({ message: "Channel not found" });
+        res.json({
+          success: true,
+          message: `Test notification sent to ${channel.type} channel "${channel.name}" (simulated)`,
+          sentAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to test notification" });
+      }
+    },
+  );
 
   // Per-user notification preferences
   app.get("/api/notification-preferences", isAuthenticated, async (req, res) => {
@@ -345,10 +403,11 @@ export function registerIntegrationsRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/ticket-sync/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/ticket-sync/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const job = await storage.getTicketSyncJob(p(req.params.id));
-      if (!job) return res.status(404).json({ message: "Ticket sync job not found" });
+      if (!job || job.orgId !== orgId) return res.status(404).json({ message: "Ticket sync job not found" });
       res.json(job);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch ticket sync job" });
@@ -422,8 +481,11 @@ export function registerIntegrationsRoutes(app: Express): void {
     },
   );
 
-  app.patch("/api/ticket-sync/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/ticket-sync/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const existing = await storage.getTicketSyncJob(p(req.params.id));
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Ticket sync job not found" });
       const updated = await storage.updateTicketSyncJob(p(req.params.id), req.body);
       if (!updated) return res.status(404).json({ message: "Ticket sync job not found" });
       res.json(updated);
@@ -432,8 +494,11 @@ export function registerIntegrationsRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/ticket-sync/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/ticket-sync/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const existing = await storage.getTicketSyncJob(p(req.params.id));
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Ticket sync job not found" });
       const deleted = await storage.deleteTicketSyncJob(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Ticket sync job not found" });
       res.json({ success: true });
@@ -463,10 +528,11 @@ export function registerIntegrationsRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/response-approvals/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/response-approvals/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const approval = await storage.getResponseActionApproval(p(req.params.id));
-      if (!approval) return res.status(404).json({ message: "Approval not found" });
+      if (!approval || approval.orgId !== orgId) return res.status(404).json({ message: "Approval not found" });
       res.json(approval);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch approval" });

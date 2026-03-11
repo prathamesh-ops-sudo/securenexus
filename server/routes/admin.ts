@@ -39,7 +39,7 @@ export function registerAdminRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         const status = typeof req.query.status === "string" ? req.query.status : undefined;
         const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
         const offset = Number(req.query.offset ?? 0) || 0;
@@ -62,7 +62,16 @@ export function registerAdminRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const eventId = p(req.params.id);
+        // Verify event belongs to this org before replaying
+        const { items: orgEvents } = await storage.getOutboxEvents(orgId, undefined, 10000, 0);
+        if (!orgEvents.some((e) => e.id === eventId)) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Event not found or not eligible for replay" }],
+          });
+        }
         const replayed = await storage.replayOutboxEvent(eventId);
         if (!replayed) {
           return sendEnvelope(res, null, {
@@ -71,7 +80,7 @@ export function registerAdminRoutes(app: Express): void {
           });
         }
         await storage.createAuditLog({
-          orgId: (req as any).user?.orgId,
+          orgId,
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName
             ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()

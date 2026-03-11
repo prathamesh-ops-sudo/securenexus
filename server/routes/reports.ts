@@ -15,7 +15,8 @@ export function registerReportsRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const allAlerts = await storage.getAlerts();
+        const orgId = getOrgId(req);
+        const allAlerts = await storage.getAlerts(orgId);
         const csvHeader = formatCSVRow([
           "ID",
           "Title",
@@ -70,7 +71,8 @@ export function registerReportsRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const allIncidents = await storage.getIncidents();
+        const orgId = getOrgId(req);
+        const allIncidents = await storage.getIncidents(orgId);
         const csvHeader = formatCSVRow([
           "ID",
           "Title",
@@ -121,8 +123,9 @@ export function registerReportsRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const incident = await storage.getIncident(p(req.params.id));
-        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (!incident || incident.orgId !== orgId) return res.status(404).json({ message: "Incident not found" });
         const incidentAlerts = await storage.getAlertsByIncident(incident.id);
         const comments = await storage.getComments(incident.id);
         const report = {
@@ -156,11 +159,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
+      const orgId = getOrgId(req);
       const template = await storage.getReportTemplate(p(req.params.id));
-      if (!template) return res.status(404).json({ message: "Template not found" });
-      const user = req.user as any;
-      if (template.orgId && user?.orgId && template.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!template || template.orgId !== orgId) return res.status(404).json({ message: "Template not found" });
       res.json(template);
     },
   );
@@ -194,11 +195,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
-      const user = req.user as any;
+      const orgId = getOrgId(req);
       const existing = await storage.getReportTemplate(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Template not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Template not found" });
       const { id: _id, orgId: _org, ...updateData } = req.body;
       const template = await storage.updateReportTemplate(p(req.params.id), updateData);
       res.json(template);
@@ -212,11 +211,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
-      const user = req.user as any;
+      const orgId = getOrgId(req);
       const existing = await storage.getReportTemplate(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Template not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Template not found" });
       await storage.deleteReportTemplate(p(req.params.id));
       res.json({ success: true });
     },
@@ -242,11 +239,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
+      const orgId = getOrgId(req);
       const schedule = await storage.getReportSchedule(p(req.params.id));
-      if (!schedule) return res.status(404).json({ message: "Schedule not found" });
-      const user = req.user as any;
-      if (schedule.orgId && user?.orgId && schedule.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!schedule || schedule.orgId !== orgId) return res.status(404).json({ message: "Schedule not found" });
       res.json(schedule);
     },
   );
@@ -265,9 +260,7 @@ export function registerReportsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const data = insertReportScheduleSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
         const template = await storage.getReportTemplate(data.templateId);
-        if (!template) return res.status(404).json({ message: "Template not found" });
-        if (template.orgId && user?.orgId && template.orgId !== user.orgId)
-          return res.status(403).json({ message: "Template access denied" });
+        if (!template || template.orgId !== orgId) return res.status(404).json({ message: "Template not found" });
         const schedule = await storage.createReportSchedule(data);
         await storage.updateReportSchedule(schedule.id, { nextRunAt });
         const updated = await storage.getReportSchedule(schedule.id);
@@ -287,11 +280,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
-      const user = req.user as any;
+      const orgId = getOrgId(req);
       const existing = await storage.getReportSchedule(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Schedule not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Schedule not found" });
       const { id: _id, orgId: _org, ...updateData } = req.body;
       if (updateData.cadence) {
         updateData.nextRunAt = calculateNextRunFromCadence(updateData.cadence);
@@ -308,11 +299,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
-      const user = req.user as any;
+      const orgId = getOrgId(req);
       const existing = await storage.getReportSchedule(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Schedule not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Schedule not found" });
       await storage.deleteReportSchedule(p(req.params.id));
       res.json({ success: true });
     },
@@ -339,11 +328,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
+      const orgId = getOrgId(req);
       const run = await storage.getReportRun(p(req.params.id));
-      if (!run) return res.status(404).json({ message: "Run not found" });
-      const user = req.user as any;
-      if (run.orgId && user?.orgId && run.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!run || run.orgId !== orgId) return res.status(404).json({ message: "Run not found" });
       res.json(run);
     },
   );
@@ -375,11 +362,9 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
+      const orgId = getOrgId(req);
       const run = await storage.getReportRun(p(req.params.runId));
-      if (!run) return res.status(404).json({ message: "Report run not found" });
-      const user = req.user as any;
-      if (run.orgId && user?.orgId && run.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
+      if (!run || run.orgId !== orgId) return res.status(404).json({ message: "Report run not found" });
       const template = await storage.getReportTemplate(run.templateId);
       if (!template) return res.status(404).json({ message: "Template not found" });
       try {

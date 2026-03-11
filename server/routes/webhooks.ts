@@ -59,6 +59,9 @@ export function registerWebhooksRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getOutboundWebhook(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Webhook not found" });
         if (req.body.url) {
           const urlCheck = validateWebhookUrl(req.body.url);
           if (!urlCheck.valid) {
@@ -82,6 +85,9 @@ export function registerWebhooksRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getOutboundWebhook(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Webhook not found" });
         const deleted = await storage.deleteOutboundWebhook(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "Webhook not found" });
         res.json({ message: "Webhook deleted" });
@@ -99,6 +105,9 @@ export function registerWebhooksRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
+        const wh = await storage.getOutboundWebhook(p(req.params.id));
+        if (!wh || wh.orgId !== orgId) return res.status(404).json({ message: "Webhook not found" });
         const logs = await storage.getOutboundWebhookLogs(p(req.params.id), 50);
         res.json(logs);
       } catch (error) {
@@ -115,8 +124,9 @@ export function registerWebhooksRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const webhook = await storage.getOutboundWebhook(p(req.params.id));
-        if (!webhook) return res.status(404).json({ message: "Webhook not found" });
+        if (!webhook || webhook.orgId !== orgId) return res.status(404).json({ message: "Webhook not found" });
         const urlCheck = validateWebhookUrl(webhook.url);
         if (!urlCheck.valid) {
           return res.status(400).json({ message: `Webhook URL blocked: ${urlCheck.reason}` });
@@ -237,6 +247,14 @@ export function registerWebhooksRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getOutboundWebhook(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "WEBHOOK_NOT_FOUND", message: "Webhook not found" }],
+          });
+        }
         const webhook = await storage.updateOutboundWebhook(p(req.params.id), req.body);
         if (!webhook) {
           return sendEnvelope(res, null, {
@@ -268,6 +286,14 @@ export function registerWebhooksRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getOutboundWebhook(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "WEBHOOK_NOT_FOUND", message: "Webhook not found" }],
+          });
+        }
         const deleted = await storage.deleteOutboundWebhook(p(req.params.id));
         if (!deleted) {
           return sendEnvelope(res, null, {
@@ -301,6 +327,14 @@ export function registerWebhooksRoutes(app: Express): void {
       try {
         const offset = Number(req.query.offset ?? 0) || 0;
         const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+        const orgId = getOrgId(req);
+        const wh = await storage.getOutboundWebhook(p(req.params.id));
+        if (!wh || wh.orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "WEBHOOK_NOT_FOUND", message: "Webhook not found" }],
+          });
+        }
         const allLogs = await storage.getOutboundWebhookLogs(p(req.params.id), offset + limit);
         const items = allLogs.slice(offset, offset + limit);
         return sendEnvelope(res, items, {
