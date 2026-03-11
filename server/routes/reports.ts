@@ -371,8 +371,8 @@ export function registerReportsRoutes(app: Express): void {
         const { generateReportData, formatAsCSV } = await import("../report-engine");
         const data = await generateReportData(template.reportType, run.orgId || undefined);
         if (run.format === "pdf") {
-          const { generatePdfReport } = await import("../report-pdf");
-          const isConfidential = ["executive_summary", "compliance", "incidents"].includes(template.reportType);
+          const { generatePdfReport, CONFIDENTIAL_REPORT_TYPES } = await import("../report-pdf");
+          const isConfidential = CONFIDENTIAL_REPORT_TYPES.includes(template.reportType);
           const pdf = await generatePdfReport(data, {
             confidential: isConfidential,
             orgName: "Arica Tech Solutions",
