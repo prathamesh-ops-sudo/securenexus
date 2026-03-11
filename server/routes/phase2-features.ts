@@ -231,28 +231,27 @@ export function registerPhase2FeatureRoutes(app: Express): void {
         return res.status(400).json({ message: "invocationCap must be a positive number" });
       }
 
-      const updateData: Record<string, any> = { updatedAt: new Date() };
-      if (monthlyLimit !== undefined) updateData.budgetUsd = monthlyLimit;
-      if (invocationCap !== undefined) updateData.invocationCap = invocationCap;
-
-      // Upsert: create if doesn't exist, update if it does
-      const [existing] = await db.select().from(orgAiBudgets).where(eq(orgAiBudgets.orgId, orgId));
-
-      if (existing) {
-        await db.update(orgAiBudgets).set(updateData).where(eq(orgAiBudgets.orgId, orgId));
-      } else {
-        await db.insert(orgAiBudgets).values({
+      // Atomic upsert using onConflictDoUpdate to avoid TOCTOU race condition
+      const [updated] = await db
+        .insert(orgAiBudgets)
+        .values({
           orgId,
-          budgetUsd: monthlyLimit || 50,
-          invocationCap: invocationCap || 5000,
+          budgetUsd: monthlyLimit ?? 50,
+          invocationCap: invocationCap ?? 5000,
           dailySpendUsd: 0,
           dailyInvocations: 0,
           dailyInputTokens: 0,
           dailyOutputTokens: 0,
-        });
-      }
-
-      const [updated] = await db.select().from(orgAiBudgets).where(eq(orgAiBudgets.orgId, orgId));
+        })
+        .onConflictDoUpdate({
+          target: orgAiBudgets.orgId,
+          set: {
+            ...(monthlyLimit !== undefined ? { budgetUsd: monthlyLimit } : {}),
+            ...(invocationCap !== undefined ? { invocationCap } : {}),
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
 
       res.json({
         monthlyLimit: updated?.budgetUsd ?? 50,
@@ -339,10 +338,9 @@ export function registerPhase2FeatureRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const jobId = String(req.params.jobId);
 
-      // Verify job belongs to this org
-      const jobs = await storage.getJobs(orgId);
-      const job = jobs.find((j) => j.id === jobId);
-      if (!job) {
+      // Verify job exists and belongs to this org (use direct lookup, not bulk fetch)
+      const job = await storage.getJob(jobId);
+      if (!job || job.orgId !== orgId) {
         return res.status(404).json({ message: "Job not found" });
       }
 
