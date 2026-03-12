@@ -286,7 +286,7 @@ export default function PredictiveDefensePage() {
             <span className="gradient-text-red">Predictive Defense</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1" data-testid="text-page-description">
-            AI-Powered Threat Forecasting & Attack Surface Analysis
+            Statistical Threat Forecasting & Attack Surface Analysis
           </p>
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
