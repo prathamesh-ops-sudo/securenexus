@@ -9893,3 +9893,136 @@ export type MsspBillingRecord = typeof msspBillingRecords.$inferSelect;
 export type InsertMsspBillingRecord = typeof msspBillingRecords.$inferInsert;
 export type MsspClientOnboardingRecord = typeof msspClientOnboarding.$inferSelect;
 export type InsertMsspClientOnboardingRecord = typeof msspClientOnboarding.$inferInsert;
+
+// ── Autonomous SOC — AI Analyst Tiers ─────────────────────────────
+
+export const AI_ANALYST_TIERS = ["tier1_autonomous", "tier2_semi_autonomous", "tier3_assisted"] as const;
+export const AI_DECISION_OUTCOMES = [
+  "true_positive",
+  "false_positive",
+  "escalate_tier2",
+  "escalate_tier3",
+  "escalate_human",
+  "needs_investigation",
+  "auto_resolved",
+  "auto_contained",
+] as const;
+export const AUTONOMY_LOG_ACTIONS = [
+  "alert_triaged",
+  "alert_enriched",
+  "correlation_run",
+  "hypothesis_tested",
+  "action_executed",
+  "action_blocked",
+  "escalated",
+  "case_closed",
+  "case_reopened",
+  "confidence_updated",
+  "human_override",
+] as const;
+
+export const aiAnalystDecisions = pgTable(
+  "ai_analyst_decisions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    alertId: varchar("alert_id").references(() => alerts.id, { onDelete: "set null" }),
+    incidentId: varchar("incident_id").references(() => incidents.id, { onDelete: "set null" }),
+    tier: text("tier").notNull().default("tier1_autonomous"),
+    outcome: text("outcome").notNull(),
+    confidenceScore: real("confidence_score").notNull(),
+    confidenceFactors: jsonb("confidence_factors"),
+    enrichmentData: jsonb("enrichment_data"),
+    correlationResults: jsonb("correlation_results"),
+    hypotheses: jsonb("hypotheses"),
+    reasoning: text("reasoning"),
+    executiveSummary: text("executive_summary"),
+    recommendedActions: jsonb("recommended_actions"),
+    executedActions: jsonb("executed_actions"),
+    mitreTactics: text("mitre_tactics").array(),
+    mitreTechniques: text("mitre_techniques").array(),
+    relatedAlertIds: text("related_alert_ids").array(),
+    timeToDecisionMs: integer("time_to_decision_ms"),
+    humanOverride: boolean("human_override").notNull().default(false),
+    humanOverrideBy: text("human_override_by"),
+    humanOverrideReason: text("human_override_reason"),
+    humanOverrideAt: timestamp("human_override_at"),
+    status: text("status").notNull().default("pending"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_decisions_org").on(table.orgId),
+    index("idx_ai_decisions_alert").on(table.alertId),
+    index("idx_ai_decisions_incident").on(table.incidentId),
+    index("idx_ai_decisions_tier").on(table.orgId, table.tier),
+    index("idx_ai_decisions_outcome").on(table.orgId, table.outcome),
+    index("idx_ai_decisions_status").on(table.orgId, table.status),
+    index("idx_ai_decisions_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const autonomyLog = pgTable(
+  "autonomy_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    decisionId: varchar("decision_id").references(() => aiAnalystDecisions.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    tier: text("tier").notNull(),
+    alertId: varchar("alert_id"),
+    incidentId: varchar("incident_id"),
+    details: jsonb("details"),
+    confidenceBefore: real("confidence_before"),
+    confidenceAfter: real("confidence_after"),
+    durationMs: integer("duration_ms"),
+    success: boolean("success").notNull().default(true),
+    error: text("error"),
+    triggeredBy: text("triggered_by").notNull().default("ai_analyst"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_autonomy_log_org").on(table.orgId),
+    index("idx_autonomy_log_decision").on(table.decisionId),
+    index("idx_autonomy_log_action").on(table.orgId, table.action),
+    index("idx_autonomy_log_tier").on(table.orgId, table.tier),
+    index("idx_autonomy_log_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const aiAnalystDecisionsRelations = relations(aiAnalystDecisions, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [aiAnalystDecisions.orgId],
+    references: [organizations.id],
+  }),
+  alert: one(alerts, {
+    fields: [aiAnalystDecisions.alertId],
+    references: [alerts.id],
+  }),
+  incident: one(incidents, {
+    fields: [aiAnalystDecisions.incidentId],
+    references: [incidents.id],
+  }),
+}));
+
+export const autonomyLogRelations = relations(autonomyLog, ({ one }) => ({
+  decision: one(aiAnalystDecisions, {
+    fields: [autonomyLog.decisionId],
+    references: [aiAnalystDecisions.id],
+  }),
+}));
+
+export type AiAnalystDecision = typeof aiAnalystDecisions.$inferSelect;
+export type InsertAiAnalystDecision = typeof aiAnalystDecisions.$inferInsert;
+export type AutonomyLogEntry = typeof autonomyLog.$inferSelect;
+export type InsertAutonomyLogEntry = typeof autonomyLog.$inferInsert;

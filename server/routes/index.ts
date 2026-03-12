@@ -94,6 +94,7 @@ import { registerPostureTrustRoutes } from "./posture-trust";
 import { registerChaosEngineeringRoutes } from "./chaos-engineering";
 import { registerAiDetectionRulesRoutes } from "./ai-detection-rules";
 import { registerMsspPortalRoutes } from "./mssp-portal";
+import { registerAutonomousSocRoutes } from "./autonomous-soc";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -192,4 +193,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerChaosEngineeringRoutes(app);
   registerAiDetectionRulesRoutes(app);
   registerMsspPortalRoutes(app);
+  registerAutonomousSocRoutes(app);
 }
