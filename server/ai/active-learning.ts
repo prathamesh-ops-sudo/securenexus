@@ -206,10 +206,10 @@ export async function deactivateFewShotExample(id: string, orgId?: string): Prom
   await ensureActiveLearningTables();
 
   const result = orgId
-    ? await pool.query(
-        `UPDATE ai_few_shot_examples SET active = false WHERE id = $1 AND (org_id = $2 OR org_id IS NULL) RETURNING id`,
-        [id, orgId],
-      )
+    ? await pool.query(`UPDATE ai_few_shot_examples SET active = false WHERE id = $1 AND org_id = $2 RETURNING id`, [
+        id,
+        orgId,
+      ])
     : await pool.query(`UPDATE ai_few_shot_examples SET active = false WHERE id = $1 RETURNING id`, [id]);
 
   return (result.rowCount ?? 0) > 0;
@@ -219,10 +219,7 @@ export async function deleteFewShotExample(id: string, orgId?: string): Promise<
   await ensureActiveLearningTables();
 
   const result = orgId
-    ? await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1 AND (org_id = $2 OR org_id IS NULL)`, [
-        id,
-        orgId,
-      ])
+    ? await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1 AND org_id = $2`, [id, orgId])
     : await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1`, [id]);
 
   return (result.rowCount ?? 0) > 0;

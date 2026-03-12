@@ -240,6 +240,27 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
       if (alert.fileHash) iocSet.set(alert.fileHash, "file_hash");
     }
 
+    // Check suppressed sources BEFORE early return so alerts without IOCs still get suppression info
+    try {
+      const orgId = alerts[0]?.orgId;
+      if (orgId) {
+        const suppressedKeys = await getSuppressedSourcesForContext(orgId);
+        if (suppressedKeys.size > 0) {
+          const suppressedList: string[] = [];
+          suppressedKeys.forEach((key) => {
+            suppressedList.push(key.replace("::", "/"));
+          });
+          result.suppressedSources = suppressedList;
+          log.info("Active learning: suppressed low-signal sources from AI context", {
+            orgId,
+            suppressedCount: suppressedList.length,
+          });
+        }
+      }
+    } catch (err) {
+      log.warn("Failed to check suppressed sources", { error: String(err) });
+    }
+
     if (iocSet.size === 0) return result;
 
     const iocValues = Array.from(iocSet.keys());
@@ -298,27 +319,6 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     result.enrichmentResults = result.enrichmentResults.slice(0, 20);
     result.osintMatches = result.osintMatches.slice(0, 20);
 
-    // Filter out alerts from suppressed sources (high FP rate)
-    try {
-      const orgId = alerts[0]?.orgId;
-      if (orgId) {
-        const suppressedKeys = await getSuppressedSourcesForContext(orgId);
-        if (suppressedKeys.size > 0) {
-          const suppressedList: string[] = [];
-          suppressedKeys.forEach((key) => {
-            suppressedList.push(key.replace("::", "/"));
-          });
-          result.suppressedSources = suppressedList;
-          log.info("Active learning: suppressed low-signal sources from AI context", {
-            orgId,
-            suppressedCount: suppressedList.length,
-          });
-        }
-      }
-    } catch (err) {
-      log.warn("Failed to check suppressed sources", { error: String(err) });
-    }
-
     // Build RAG context from alert data
     try {
       const representativeAlert = alerts[0] || {};
@@ -365,7 +365,11 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
 }
 
 export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
-  if (ctx.enrichmentResults.length === 0 && ctx.osintMatches.length === 0) {
+  const hasEnrichment = ctx.enrichmentResults.length > 0;
+  const hasOsint = ctx.osintMatches.length > 0;
+  const hasSuppressed = ctx.suppressedSources && ctx.suppressedSources.length > 0;
+  const hasHistorical = !!ctx.historicalContext;
+  if (!hasEnrichment && !hasOsint && !hasSuppressed && !hasHistorical) {
     return "";
   }
 
