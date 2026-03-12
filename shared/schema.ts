@@ -5512,3 +5512,266 @@ export const threatReportsRelations = relations(threatReports, ({ one }) => ({
 
 export type ThreatReport = typeof threatReports.$inferSelect;
 export type InsertThreatReport = typeof threatReports.$inferInsert;
+
+// ==========================================
+// NATIVE SECURITY STACK — No EDR/XDR Required
+// ==========================================
+// These tables power SecureNexus as a fully self-contained security platform.
+// Companies deploy our lightweight sensor agent and get full detection coverage
+// without needing CrowdStrike, SentinelOne, Splunk, Qualys, or Darktrace.
+
+export const SENSOR_PLATFORMS = ["windows", "linux", "macos", "docker", "kubernetes"] as const;
+export const SENSOR_STATUSES = ["online", "degraded", "offline", "unregistered"] as const;
+export const SENSOR_TYPES = ["endpoint", "log_forwarder", "network_tap", "cloud_sensor"] as const;
+
+export const nativeSensors = pgTable(
+  "native_sensors",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    // Identity
+    hostname: text("hostname").notNull(),
+    displayName: text("display_name"),
+    platform: text("platform").notNull().default("linux"),
+    sensorType: text("sensor_type").notNull().default("endpoint"),
+    agentVersion: text("agent_version"),
+    // Network / location
+    ipAddress: text("ip_address"),
+    macAddress: text("mac_address"),
+    environment: text("environment").default("production"), // production, staging, dev
+    tags: jsonb("tags").default([]),
+    // Status
+    status: text("status").notNull().default("unregistered"),
+    lastHeartbeatAt: timestamp("last_heartbeat_at"),
+    lastEventAt: timestamp("last_event_at"),
+    eventsLast24h: integer("events_last_24h").default(0),
+    alertsLast24h: integer("alerts_last_24h").default(0),
+    // Registration
+    registrationToken: text("registration_token").notNull(),
+    tokenExpiresAt: timestamp("token_expires_at"),
+    isActive: boolean("is_active").notNull().default(true),
+    // Capabilities reported by agent
+    capabilities: jsonb("capabilities").default([]), // ["process_events","network_events","file_events","login_events"]
+    osVersion: text("os_version"),
+    kernelVersion: text("kernel_version"),
+    // Config pushed to agent
+    config: jsonb("config").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_native_sensors_org").on(table.orgId),
+    index("idx_native_sensors_status").on(table.orgId, table.status),
+    index("idx_native_sensors_host").on(table.orgId, table.hostname),
+    uniqueIndex("idx_native_sensors_token").on(table.registrationToken),
+  ],
+);
+
+export const nativeSensorsRelations = relations(nativeSensors, ({ one }) => ({
+  organization: one(organizations, { fields: [nativeSensors.orgId], references: [organizations.id] }),
+}));
+
+export type NativeSensor = typeof nativeSensors.$inferSelect;
+export type InsertNativeSensor = typeof nativeSensors.$inferInsert;
+
+// Raw telemetry events streamed from sensors
+export const SENSOR_EVENT_TYPES = [
+  "process_create",
+  "process_terminate",
+  "network_connect",
+  "network_listen",
+  "network_dns",
+  "file_create",
+  "file_modify",
+  "file_delete",
+  "file_rename",
+  "registry_set",
+  "registry_delete",
+  "login_success",
+  "login_failure",
+  "privilege_escalation",
+  "scheduled_task",
+  "service_install",
+  "driver_load",
+  "pipe_create",
+  "log_line",
+  "package_install",
+  "cron_job",
+] as const;
+
+export const sensorEvents = pgTable(
+  "sensor_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sensorId: varchar("sensor_id").notNull().references(() => nativeSensors.id),
+    eventType: text("event_type").notNull(),
+    // Timing
+    occurredAt: timestamp("occurred_at").notNull(),
+    receivedAt: timestamp("received_at").defaultNow(),
+    // Context
+    hostname: text("hostname"),
+    processId: integer("process_id"),
+    processName: text("process_name"),
+    processPath: text("process_path"),
+    parentProcessId: integer("parent_process_id"),
+    parentProcessName: text("parent_process_name"),
+    userId: text("user_id"),
+    username: text("username"),
+    // Network fields
+    srcIp: text("src_ip"),
+    dstIp: text("dst_ip"),
+    dstPort: integer("dst_port"),
+    protocol: text("protocol"),
+    dnsQuery: text("dns_query"),
+    // File fields
+    filePath: text("file_path"),
+    fileHash: text("file_hash"),
+    // Log ingestion fields
+    rawLog: text("raw_log"),
+    logSource: text("log_source"),
+    // Full event payload
+    rawData: jsonb("raw_data").notNull().default({}),
+    // Detection engine result
+    ruleMatchIds: jsonb("rule_match_ids").default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sensor_events_org").on(table.orgId),
+    index("idx_sensor_events_sensor").on(table.sensorId),
+    index("idx_sensor_events_type").on(table.orgId, table.eventType),
+    index("idx_sensor_events_occurred").on(table.orgId, table.occurredAt),
+    index("idx_sensor_events_host").on(table.orgId, table.hostname),
+  ],
+);
+
+export const sensorEventsRelations = relations(sensorEvents, ({ one }) => ({
+  sensor: one(nativeSensors, { fields: [sensorEvents.sensorId], references: [nativeSensors.id] }),
+}));
+
+export type SensorEvent = typeof sensorEvents.$inferSelect;
+export type InsertSensorEvent = typeof sensorEvents.$inferInsert;
+
+// Detection rules — Sigma-compatible rule definitions evaluated against sensor events
+export const DETECTION_RULE_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const DETECTION_RULE_STATUSES = ["active", "disabled", "testing"] as const;
+export const DETECTION_RULE_SOURCES = ["builtin", "custom", "sigma_community", "imported"] as const;
+
+export const detectionRules = pgTable(
+  "detection_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id"), // null = global built-in rule
+    // Identity
+    name: text("name").notNull(),
+    description: text("description"),
+    author: text("author"),
+    ruleSource: text("rule_source").notNull().default("builtin"),
+    externalId: text("external_id"), // Sigma rule UUID or CVE
+    // Classification
+    severity: text("severity").notNull().default("medium"),
+    category: text("category").notNull().default("other"),
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    mitreTechniqueId: text("mitre_technique_id"),
+    tags: jsonb("tags").default([]),
+    // Applicability
+    platforms: jsonb("platforms").default(["windows", "linux", "macos"]),
+    eventTypes: jsonb("event_types").default([]),
+    // Rule logic — condition tree evaluated against sensor events
+    conditions: jsonb("conditions").notNull(), // RuleCondition[]
+    // Response
+    alertTitle: text("alert_title"),
+    alertTemplate: text("alert_template"),
+    responseActions: jsonb("response_actions").default([]),
+    // Status
+    status: text("status").notNull().default("active"),
+    isBuiltin: boolean("is_builtin").notNull().default(false),
+    isCommunity: boolean("is_community").notNull().default(false),
+    // Stats
+    totalMatches: integer("total_matches").default(0),
+    lastMatchedAt: timestamp("last_matched_at"),
+    falsePositiveRate: real("false_positive_rate").default(0),
+    // Versioning
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_detection_rules_org").on(table.orgId),
+    index("idx_detection_rules_status").on(table.status),
+    index("idx_detection_rules_severity").on(table.severity),
+    index("idx_detection_rules_mitre").on(table.mitreTechniqueId),
+  ],
+);
+
+export const detectionRulesRelations = relations(detectionRules, ({ one }) => ({
+  organization: one(organizations, { fields: [detectionRules.orgId], references: [organizations.id] }),
+}));
+
+export type DetectionRule = typeof detectionRules.$inferSelect;
+export type InsertDetectionRule = typeof detectionRules.$inferInsert;
+
+// Log sources — syslog, Windows Event, application logs ingested natively
+export const LOG_SOURCE_TYPES = [
+  "syslog_udp",
+  "syslog_tcp",
+  "windows_event_log",
+  "http_push",
+  "file_tail",
+  "journald",
+  "cloudwatch",
+  "azure_monitor",
+] as const;
+export const LOG_SOURCE_STATUSES = ["active", "inactive", "error"] as const;
+
+export const logSources = pgTable(
+  "log_sources",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    sourceType: text("source_type").notNull(),
+    description: text("description"),
+    // Connection details
+    endpoint: text("endpoint"),
+    port: integer("port"),
+    protocol: text("protocol"),
+    authConfig: jsonb("auth_config").default({}),
+    // Parsing
+    logFormat: text("log_format").default("auto"), // auto, json, cef, leef, syslog, plaintext
+    parseRules: jsonb("parse_rules").default([]),
+    // Status
+    status: text("status").notNull().default("inactive"),
+    lastLogAt: timestamp("last_log_at"),
+    logsLast24h: integer("logs_last_24h").default(0),
+    bytesLast24h: integer("bytes_last_24h").default(0),
+    errorMessage: text("error_message"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_log_sources_org").on(table.orgId),
+    index("idx_log_sources_status").on(table.orgId, table.status),
+  ],
+);
+
+export const logSourcesRelations = relations(logSources, ({ one }) => ({
+  organization: one(organizations, { fields: [logSources.orgId], references: [organizations.id] }),
+}));
+
+export type LogSource = typeof logSources.$inferSelect;
+export type InsertLogSource = typeof logSources.$inferInsert;

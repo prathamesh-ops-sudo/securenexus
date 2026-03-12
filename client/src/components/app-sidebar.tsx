@@ -270,6 +270,13 @@ const navGroups: NavGroup[] = [
     color: "text-teal-400",
     sections: [
       {
+        label: "Native Detection",
+        items: [
+          { title: "Sensor Agents", url: "/native-sensors", icon: Cpu },
+          { title: "Detection Rules", url: "/detection-rules", icon: Crosshair },
+        ],
+      },
+      {
         label: "Asset & Risk",
         items: [
           { title: "Asset Inventory", url: "/asset-inventory", icon: Server },
