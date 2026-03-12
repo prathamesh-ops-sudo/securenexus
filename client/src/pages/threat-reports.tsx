@@ -308,7 +308,7 @@ export default function ThreatReportsPage() {
     data: reports,
     isLoading,
     refetch,
-  } = useQuery<ThreatReport[]>({
+  } = useQuery<{ reports: ThreatReport[]; stats: any }>({
     queryKey: ["/api/threat-reports", statusFilter, categoryFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -344,7 +344,7 @@ export default function ThreatReportsPage() {
     },
   });
 
-  const list = reports || [];
+  const list = reports?.reports || [];
 
   const stats = {
     total: list.length,
