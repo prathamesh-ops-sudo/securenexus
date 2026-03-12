@@ -200,9 +200,17 @@ export function registerPhase2StubRoutes(app: Express): void {
 
   app.post("/api/jobs/:jobId/retry", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = (req as any).orgId;
       const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0] : req.params.jobId;
       const job = await storage.getJob(jobId as string);
       if (!job) {
+        return sendEnvelope(res, null, {
+          status: 404,
+          errors: [{ code: "NOT_FOUND", message: "Job not found" }],
+        });
+      }
+      // Verify job belongs to requesting user's org (IDOR protection)
+      if ((job as any).orgId && (job as any).orgId !== orgId) {
         return sendEnvelope(res, null, {
           status: 404,
           errors: [{ code: "NOT_FOUND", message: "Job not found" }],

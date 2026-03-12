@@ -3,6 +3,7 @@ import { db } from "./db";
 import { agentResponseActions, nativeSensors } from "../shared/schema";
 import { eq, and, or, ilike } from "drizzle-orm";
 import { logger } from "./routes/shared";
+import { validateWebhookUrl } from "./outbound-security";
 
 const log = logger.child("action-dispatcher");
 
@@ -89,30 +90,36 @@ async function executeTicketing(
   let message = `Created ${platform} ticket ${ticketId}: "${summary}" (Priority: ${priority})`;
 
   if (webhookUrl) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config?.authHeader ? { Authorization: config.authHeader } : {}),
-        },
-        body: JSON.stringify({ summary, priority, project, incidentId: context.incidentId, source: "SecureNexus" }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (response.ok) {
-        const data = await response.json().catch(() => ({}));
-        ticketUrl = (data as any)?.url || (data as any)?.ticketUrl || ticketUrl;
-        message = `Created ${platform} ticket via API: "${summary}" (Priority: ${priority})`;
-      } else {
-        status = "failed";
-        message = `${platform} API returned HTTP ${response.status}`;
-      }
-    } catch (err) {
+    const urlCheck = validateWebhookUrl(webhookUrl);
+    if (!urlCheck.valid) {
       status = "failed";
-      message = `${platform} API call failed: ${(err as Error).message}`;
+      message = `${platform} webhook URL validation failed: ${urlCheck.reason}`;
+    } else {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        const response = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(config?.authHeader ? { Authorization: config.authHeader } : {}),
+          },
+          body: JSON.stringify({ summary, priority, project, incidentId: context.incidentId, source: "SecureNexus" }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (response.ok) {
+          const data = await response.json().catch(() => ({}));
+          ticketUrl = (data as any)?.url || (data as any)?.ticketUrl || ticketUrl;
+          message = `Created ${platform} ticket via API: "${summary}" (Priority: ${priority})`;
+        } else {
+          status = "failed";
+          message = `${platform} API returned HTTP ${response.status}`;
+        }
+      } catch (err) {
+        status = "failed";
+        message = `${platform} API call failed: ${(err as Error).message}`;
+      }
     }
   }
 
@@ -327,7 +334,7 @@ async function executeAgentResponseAction(
         targetUserName: config?.userName || config?.targetUserName || (actionType === "disable_user" ? target : null),
         targetDomain: config?.domain || config?.targetDomain || (actionType === "block_domain" ? target : null),
         targetServiceName: config?.serviceName || config?.targetServiceName || null,
-        parameters: config?.parameters || config?.allowedIps ? { allowedIps: config.allowedIps } : null,
+        parameters: config?.parameters || (config?.allowedIps ? { allowedIps: config.allowedIps } : null),
         requestedBy: context.userId || null,
         requestedByName: context.userName || "Autonomous Action",
         reason: config?.reason || `Dispatched by SecureNexus for incident ${context.incidentId || "N/A"}`,
