@@ -184,7 +184,7 @@ export async function executeTieringJob(
         checksumSha256: checksum,
         tieringJobId: job.id,
         retentionPolicyId: retentionPolicyId || null,
-        purgeEligibleAt: computePurgeDate(cutoffDate, retentionPolicyId),
+        purgeEligibleAt: await computePurgeDate(cutoffDate, retentionPolicyId),
       });
 
       result.recordCount += records.length;
@@ -435,9 +435,26 @@ function convertToColumnar(
   return { columns, rowCount: records.length, schema };
 }
 
-function computePurgeDate(cutoffDate: Date, _retentionPolicyId?: string | null): Date | null {
-  // Default: purge eligibility 7 years from now
+async function computePurgeDate(cutoffDate: Date, retentionPolicyId?: string | null): Promise<Date | null> {
+  let purgeAfterDays: number | null = null;
+
+  if (retentionPolicyId) {
+    const [policy] = await db
+      .select({ purgeAfterDays: dataLakeRetentionPolicies.purgeAfterDays })
+      .from(dataLakeRetentionPolicies)
+      .where(eq(dataLakeRetentionPolicies.id, retentionPolicyId));
+
+    if (policy?.purgeAfterDays != null) {
+      purgeAfterDays = policy.purgeAfterDays;
+    }
+  }
+
+  // If no policy or purgeAfterDays is null, never purge
+  if (purgeAfterDays == null) {
+    return null;
+  }
+
   const purgeDate = new Date(cutoffDate);
-  purgeDate.setFullYear(purgeDate.getFullYear() + 7);
+  purgeDate.setDate(purgeDate.getDate() + purgeAfterDays);
   return purgeDate;
 }
