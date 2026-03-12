@@ -6489,3 +6489,298 @@ export type DependencyGraphEntry = typeof dependencyGraph.$inferSelect;
 export type InsertDependencyGraphEntry = typeof dependencyGraph.$inferInsert;
 export type SupplyChainFinding = typeof supplyChainFindings.$inferSelect;
 export type InsertSupplyChainFinding = typeof supplyChainFindings.$inferInsert;
+
+// =============================================================================
+// IDENTITY GOVERNANCE & PAM
+// =============================================================================
+
+export const ACCESS_REVIEW_STATUSES = ["pending", "approved", "revoked", "expired", "cancelled"] as const;
+export const ACCESS_REVIEW_CAMPAIGN_STATUSES = ["draft", "active", "completed", "cancelled"] as const;
+export const PAM_SESSION_STATUSES = [
+  "requested",
+  "approved",
+  "active",
+  "completed",
+  "denied",
+  "expired",
+  "terminated",
+] as const;
+export const SCIM_OPERATION_TYPES = [
+  "create",
+  "update",
+  "delete",
+  "activate",
+  "deactivate",
+  "group_add",
+  "group_remove",
+] as const;
+export const SCIM_PROVIDER_TYPES = ["azure_ad", "okta", "google_workspace", "onelogin", "jumpcloud"] as const;
+export const IDENTITY_RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
+
+export const accessReviewCampaigns = pgTable(
+  "access_review_campaigns",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    cadence: text("cadence").notNull().default("quarterly"), // quarterly, monthly, annual
+    status: text("status").notNull().default("draft"),
+    reviewerUserId: varchar("reviewer_user_id"),
+    reviewerName: text("reviewer_name"),
+    totalEntitlements: integer("total_entitlements").notNull().default(0),
+    reviewedCount: integer("reviewed_count").notNull().default(0),
+    approvedCount: integer("approved_count").notNull().default(0),
+    revokedCount: integer("revoked_count").notNull().default(0),
+    dueDate: timestamp("due_date"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_arc_org").on(table.orgId), index("idx_arc_status").on(table.orgId, table.status)],
+);
+
+export const accessReviewEntitlements = pgTable(
+  "access_review_entitlements",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    campaignId: varchar("campaign_id")
+      .notNull()
+      .references(() => accessReviewCampaigns.id, { onDelete: "cascade" }),
+    userId: varchar("user_id").notNull(),
+    userName: text("user_name").notNull(),
+    userEmail: text("user_email"),
+    entitlementType: text("entitlement_type").notNull(), // role, permission, group, resource
+    entitlementName: text("entitlement_name").notNull(),
+    entitlementDescription: text("entitlement_description"),
+    grantedAt: timestamp("granted_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    riskLevel: text("risk_level").default("low"),
+    status: text("status").notNull().default("pending"),
+    decision: text("decision"), // approve, revoke
+    decisionBy: varchar("decision_by"),
+    decisionAt: timestamp("decision_at"),
+    decisionReason: text("decision_reason"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_are_org").on(table.orgId),
+    index("idx_are_campaign").on(table.campaignId),
+    index("idx_are_user").on(table.userId),
+    index("idx_are_status").on(table.orgId, table.status),
+  ],
+);
+
+export const pamSessions = pgTable(
+  "pam_sessions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    requesterId: varchar("requester_id").notNull(),
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email"),
+    targetSystem: text("target_system").notNull(),
+    targetHost: text("target_host"),
+    targetAccount: text("target_account").notNull(), // e.g. root, admin, db_admin
+    accessLevel: text("access_level").notNull(), // read, write, admin, superadmin
+    justification: text("justification").notNull(),
+    incidentId: varchar("incident_id"),
+    status: text("status").notNull().default("requested"),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    deniedBy: varchar("denied_by"),
+    deniedReason: text("denied_reason"),
+    activatedAt: timestamp("activated_at"),
+    expiresAt: timestamp("expires_at"),
+    terminatedAt: timestamp("terminated_at"),
+    terminatedBy: varchar("terminated_by"),
+    terminationReason: text("termination_reason"),
+    sessionToken: text("session_token"),
+    // Session recording
+    recordingEnabled: boolean("recording_enabled").notNull().default(true),
+    recordingSize: integer("recording_size"), // bytes
+    commandCount: integer("command_count").default(0),
+    keystrokeCount: integer("keystroke_count").default(0),
+    // Risk assessment
+    riskScore: integer("risk_score"), // 0-100
+    riskFactors: jsonb("risk_factors"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pam_org").on(table.orgId),
+    index("idx_pam_requester").on(table.orgId, table.requesterId),
+    index("idx_pam_status").on(table.orgId, table.status),
+    index("idx_pam_target").on(table.orgId, table.targetSystem),
+    index("idx_pam_expires").on(table.expiresAt),
+  ],
+);
+
+export const scimProvisioningLogs = pgTable(
+  "scim_provisioning_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    provider: text("provider").notNull(), // azure_ad, okta, google_workspace
+    operationType: text("operation_type").notNull(),
+    externalUserId: text("external_user_id"),
+    externalUserName: text("external_user_name"),
+    externalEmail: text("external_email"),
+    internalUserId: varchar("internal_user_id"),
+    groupName: text("group_name"),
+    success: boolean("success").notNull().default(true),
+    errorMessage: text("error_message"),
+    rawPayload: jsonb("raw_payload"),
+    processedAt: timestamp("processed_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_scim_org").on(table.orgId),
+    index("idx_scim_provider").on(table.orgId, table.provider),
+    index("idx_scim_operation").on(table.orgId, table.operationType),
+    index("idx_scim_ext_user").on(table.externalUserId),
+  ],
+);
+
+export const identityRiskProfiles = pgTable(
+  "identity_risk_profiles",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    userId: varchar("user_id").notNull(),
+    userName: text("user_name").notNull(),
+    userEmail: text("user_email"),
+    riskLevel: text("risk_level").notNull().default("low"),
+    riskScore: integer("risk_score").notNull().default(0), // 0-100
+    // Stale account detection
+    isStale: boolean("is_stale").default(false),
+    lastActivityAt: timestamp("last_activity_at"),
+    daysSinceActivity: integer("days_since_activity"),
+    isServiceAccount: boolean("is_service_account").default(false),
+    lastCredentialRotation: timestamp("last_credential_rotation"),
+    credentialAge: integer("credential_age_days"),
+    // Blast radius
+    blastRadiusScore: integer("blast_radius_score").default(0), // 0-100
+    accessibleSystems: integer("accessible_systems").default(0),
+    accessibleSecrets: integer("accessible_secrets").default(0),
+    privilegedRoles: jsonb("privileged_roles"), // array of role names
+    // Lateral movement
+    lateralMovementPaths: integer("lateral_movement_paths").default(0),
+    canReachCritical: boolean("can_reach_critical").default(false),
+    pivotPoints: jsonb("pivot_points"), // systems this identity can pivot through
+    // Risk factors
+    mfaEnabled: boolean("mfa_enabled").default(false),
+    hasExcessivePermissions: boolean("has_excessive_permissions").default(false),
+    unusedPermissions: jsonb("unused_permissions"),
+    anomalousLoginCount: integer("anomalous_login_count").default(0),
+    failedLoginCount: integer("failed_login_count").default(0),
+    // Metadata
+    lastAssessedAt: timestamp("last_assessed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_irp_org").on(table.orgId),
+    index("idx_irp_user").on(table.orgId, table.userId),
+    index("idx_irp_risk").on(table.orgId, table.riskLevel),
+    index("idx_irp_stale").on(table.orgId, table.isStale),
+    index("idx_irp_blast").on(table.orgId, table.blastRadiusScore),
+  ],
+);
+
+export const identityAccessGraph = pgTable(
+  "identity_access_graph",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sourceUserId: varchar("source_user_id").notNull(),
+    sourceUserName: text("source_user_name").notNull(),
+    targetSystem: text("target_system").notNull(),
+    targetResource: text("target_resource"),
+    accessType: text("access_type").notNull(), // direct, inherited, delegated
+    permissionLevel: text("permission_level").notNull(), // read, write, admin, superadmin
+    grantedVia: text("granted_via"), // role name, group name, direct assignment
+    isActive: boolean("is_active").notNull().default(true),
+    lastUsedAt: timestamp("last_used_at"),
+    expiresAt: timestamp("expires_at"),
+    riskWeight: integer("risk_weight").default(1), // higher = riskier path
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_iag_org").on(table.orgId),
+    index("idx_iag_source").on(table.orgId, table.sourceUserId),
+    index("idx_iag_target").on(table.orgId, table.targetSystem),
+    index("idx_iag_active").on(table.orgId, table.isActive),
+  ],
+);
+
+// Relations
+export const accessReviewCampaignsRelations = relations(accessReviewCampaigns, ({ one, many }) => ({
+  organization: one(organizations, { fields: [accessReviewCampaigns.orgId], references: [organizations.id] }),
+  entitlements: many(accessReviewEntitlements),
+}));
+
+export const accessReviewEntitlementsRelations = relations(accessReviewEntitlements, ({ one }) => ({
+  organization: one(organizations, { fields: [accessReviewEntitlements.orgId], references: [organizations.id] }),
+  campaign: one(accessReviewCampaigns, {
+    fields: [accessReviewEntitlements.campaignId],
+    references: [accessReviewCampaigns.id],
+  }),
+}));
+
+export const pamSessionsRelations = relations(pamSessions, ({ one }) => ({
+  organization: one(organizations, { fields: [pamSessions.orgId], references: [organizations.id] }),
+}));
+
+export const scimProvisioningLogsRelations = relations(scimProvisioningLogs, ({ one }) => ({
+  organization: one(organizations, { fields: [scimProvisioningLogs.orgId], references: [organizations.id] }),
+}));
+
+export const identityRiskProfilesRelations = relations(identityRiskProfiles, ({ one }) => ({
+  organization: one(organizations, { fields: [identityRiskProfiles.orgId], references: [organizations.id] }),
+}));
+
+export const identityAccessGraphRelations = relations(identityAccessGraph, ({ one }) => ({
+  organization: one(organizations, { fields: [identityAccessGraph.orgId], references: [organizations.id] }),
+}));
+
+// Types
+export type AccessReviewCampaign = typeof accessReviewCampaigns.$inferSelect;
+export type InsertAccessReviewCampaign = typeof accessReviewCampaigns.$inferInsert;
+export type AccessReviewEntitlement = typeof accessReviewEntitlements.$inferSelect;
+export type InsertAccessReviewEntitlement = typeof accessReviewEntitlements.$inferInsert;
+export type PamSession = typeof pamSessions.$inferSelect;
+export type InsertPamSession = typeof pamSessions.$inferInsert;
+export type ScimProvisioningLog = typeof scimProvisioningLogs.$inferSelect;
+export type InsertScimProvisioningLog = typeof scimProvisioningLogs.$inferInsert;
+export type IdentityRiskProfile = typeof identityRiskProfiles.$inferSelect;
+export type InsertIdentityRiskProfile = typeof identityRiskProfiles.$inferInsert;
+export type IdentityAccessGraphEntry = typeof identityAccessGraph.$inferSelect;
+export type InsertIdentityAccessGraphEntry = typeof identityAccessGraph.$inferInsert;

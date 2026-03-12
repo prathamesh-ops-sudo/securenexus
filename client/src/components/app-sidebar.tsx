@@ -298,6 +298,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Supply Chain Security", url: "/supply-chain", icon: GitBranch }],
       },
       {
+        label: "Identity & PAM",
+        items: [{ title: "Identity Governance", url: "/identity-governance", icon: Shield }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
