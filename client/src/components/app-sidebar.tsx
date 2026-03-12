@@ -329,6 +329,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Ransomware Defense", url: "/ransomware-defense", icon: ShieldAlert }],
       },
       {
+        label: "Community Intel",
+        items: [{ title: "Community Threat Intel", url: "/community-intel", icon: Network }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
