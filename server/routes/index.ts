@@ -84,6 +84,7 @@ import { registerDeceptionRoutes } from "./deception";
 import { registerOtSecurityRoutes } from "./ot-security";
 import { registerThreatHuntingRoutes } from "./threat-hunting";
 import { registerDataLakeRoutes } from "./data-lake";
+import { registerAdvancedReportsRoutes } from "./advanced-reports";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -172,4 +173,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerOtSecurityRoutes(app);
   registerThreatHuntingRoutes(app);
   registerDataLakeRoutes(app);
+  registerAdvancedReportsRoutes(app);
 }

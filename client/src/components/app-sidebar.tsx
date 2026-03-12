@@ -320,6 +320,7 @@ const navGroups: NavGroup[] = [
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
           { title: "Threat Reports", url: "/threat-reports", icon: Flag },
+          { title: "Advanced Reports", url: "/advanced-reporting", icon: BarChart3 },
         ],
       },
     ],
