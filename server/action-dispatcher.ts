@@ -106,6 +106,7 @@ async function executeTicketing(
           },
           body: JSON.stringify({ summary, priority, project, incidentId: context.incidentId, source: "SecureNexus" }),
           signal: controller.signal,
+          redirect: "error",
         });
         clearTimeout(timeout);
         if (response.ok) {
