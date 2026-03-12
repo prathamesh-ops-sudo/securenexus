@@ -88,10 +88,15 @@ async function ensureActiveLearningTables(): Promise<void> {
       dismissed_count INTEGER NOT NULL DEFAULT 0,
       fp_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
       suppressed BOOLEAN NOT NULL DEFAULT false,
+      manual_override BOOLEAN NOT NULL DEFAULT false,
       last_updated TIMESTAMP DEFAULT NOW(),
       UNIQUE (org_id, source, category)
     )
   `);
+  // Add manual_override column if it doesn't exist (migration-safe)
+  await pool.query(
+    `ALTER TABLE ai_source_signal_scores ADD COLUMN IF NOT EXISTS manual_override BOOLEAN NOT NULL DEFAULT false`,
+  );
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_source_signal_org ON ai_source_signal_scores (org_id)`);
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_source_signal_suppressed ON ai_source_signal_scores (org_id, suppressed)`,
@@ -291,10 +296,11 @@ export async function recordFeedbackOutcome(params: {
   );
 
   // Auto-suppress sources with high FP rate (>= 70% FP rate with at least 5 samples)
+  // Skip rows where manual_override is true — admin toggles take precedence
   await pool.query(
     `UPDATE ai_source_signal_scores
      SET suppressed = (fp_rate >= 0.7 AND total_feedback >= 5)
-     WHERE org_id = $1 AND source = $2 AND category = $3`,
+     WHERE org_id = $1 AND source = $2 AND category = $3 AND manual_override = false`,
     [params.orgId, params.source || "unknown", params.category || "unknown"],
   );
 
@@ -395,7 +401,7 @@ export async function toggleSourceSuppression(
   await ensureActiveLearningTables();
 
   const result = await pool.query(
-    `UPDATE ai_source_signal_scores SET suppressed = $4, last_updated = NOW()
+    `UPDATE ai_source_signal_scores SET suppressed = $4, manual_override = true, last_updated = NOW()
      WHERE org_id = $1 AND source = $2 AND category = $3
      RETURNING id`,
     [orgId, source, category, suppressed],
