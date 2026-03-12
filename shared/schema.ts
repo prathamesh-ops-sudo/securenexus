@@ -8200,3 +8200,236 @@ export type CrossBorderFlowRule = typeof crossBorderFlowRules.$inferSelect;
 export type InsertCrossBorderFlowRule = typeof crossBorderFlowRules.$inferInsert;
 export type CrossBorderFlowAuditEntry = typeof crossBorderFlowAudit.$inferSelect;
 export type InsertCrossBorderFlowAuditEntry = typeof crossBorderFlowAudit.$inferInsert;
+
+/* ========================================================================
+ * MOBILE & REMOTE WORKER SECURITY
+ * ======================================================================== */
+
+export const MOBILE_PLATFORMS = ["android", "ios", "windows", "macos", "linux", "chromeos"] as const;
+export type MobilePlatform = (typeof MOBILE_PLATFORMS)[number];
+
+export const DEVICE_COMPLIANCE_STATUSES = ["compliant", "non-compliant", "pending", "unknown"] as const;
+export type DeviceComplianceStatus = (typeof DEVICE_COMPLIANCE_STATUSES)[number];
+
+export const MDM_PROVIDERS = ["jamf", "intune", "workspace-one", "manual"] as const;
+export type MdmProvider = (typeof MDM_PROVIDERS)[number];
+
+export const ZTNA_ACTIONS = ["allow", "deny", "step-up-mfa", "quarantine", "monitor"] as const;
+export type ZtnaAction = (typeof ZTNA_ACTIONS)[number];
+
+export const DEVICE_RISK_LEVELS = ["low", "medium", "high", "critical"] as const;
+export type DeviceRiskLevel = (typeof DEVICE_RISK_LEVELS)[number];
+
+export const MOBILE_THREAT_TYPES = [
+  "sideloaded-app",
+  "rooted-jailbroken",
+  "outdated-os",
+  "missing-encryption",
+  "malicious-app",
+  "network-attack",
+  "phishing",
+  "data-leakage",
+  "suspicious-permissions",
+  "unknown-wifi",
+  "vpn-bypass",
+  "certificate-anomaly",
+] as const;
+export type MobileThreatType = (typeof MOBILE_THREAT_TYPES)[number];
+
+export const mobileDevices = pgTable(
+  "mobile_devices",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    userId: varchar("user_id", { length: 36 }),
+    deviceName: text("device_name").notNull(),
+    platform: text("platform").notNull(),
+    osVersion: text("os_version"),
+    model: text("model"),
+    manufacturer: text("manufacturer"),
+    serialNumber: text("serial_number"),
+    imei: text("imei"),
+    macAddress: text("mac_address"),
+    mdmProvider: text("mdm_provider"),
+    mdmDeviceId: text("mdm_device_id"),
+    mdmEnrolledAt: timestamp("mdm_enrolled_at"),
+    lastCheckIn: timestamp("last_check_in"),
+    complianceStatus: text("compliance_status").notNull().default("unknown"),
+    riskLevel: text("risk_level").notNull().default("low"),
+    riskScore: integer("risk_score").notNull().default(0),
+    isEncrypted: boolean("is_encrypted").default(false),
+    isRooted: boolean("is_rooted").default(false),
+    isJailbroken: boolean("is_jailbroken").default(false),
+    hasMdm: boolean("has_mdm").default(false),
+    hasScreenLock: boolean("has_screen_lock").default(false),
+    hasFirewall: boolean("has_firewall").default(false),
+    isVpnActive: boolean("is_vpn_active").default(false),
+    vpnProvider: text("vpn_provider"),
+    lastKnownIp: text("last_known_ip"),
+    lastKnownLocation: text("last_known_location"),
+    lastKnownCountry: text("last_known_country"),
+    installedApps: jsonb("installed_apps"),
+    sideloadedApps: jsonb("sideloaded_apps"),
+    certificates: jsonb("certificates"),
+    tags: jsonb("tags"),
+    metadata: jsonb("metadata"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mobile_devices_org").on(table.orgId),
+    index("idx_mobile_devices_user").on(table.userId),
+    index("idx_mobile_devices_compliance").on(table.complianceStatus),
+    index("idx_mobile_devices_risk").on(table.riskLevel),
+  ],
+);
+
+export const devicePostureChecks = pgTable(
+  "device_posture_checks",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    deviceId: varchar("device_id", { length: 36 }).notNull(),
+    checkType: text("check_type").notNull(),
+    checkName: text("check_name").notNull(),
+    passed: boolean("passed").notNull(),
+    details: text("details"),
+    severity: text("severity").notNull().default("medium"),
+    remediationHint: text("remediation_hint"),
+    checkedAt: timestamp("checked_at").defaultNow(),
+  },
+  (table) => [index("idx_posture_checks_org").on(table.orgId), index("idx_posture_checks_device").on(table.deviceId)],
+);
+
+export const mobileThreats = pgTable(
+  "mobile_threats",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    deviceId: varchar("device_id", { length: 36 }).notNull(),
+    threatType: text("threat_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description"),
+    appName: text("app_name"),
+    appPackage: text("app_package"),
+    networkSsid: text("network_ssid"),
+    sourceIp: text("source_ip"),
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    status: text("status").notNull().default("new"),
+    resolvedBy: varchar("resolved_by", { length: 36 }),
+    resolvedAt: timestamp("resolved_at"),
+    alertId: varchar("alert_id", { length: 36 }),
+    metadata: jsonb("metadata"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mobile_threats_org").on(table.orgId),
+    index("idx_mobile_threats_device").on(table.deviceId),
+    index("idx_mobile_threats_status").on(table.status),
+  ],
+);
+
+export const ztnaPolicies = pgTable(
+  "ztna_policies",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    enabled: boolean("enabled").notNull().default(true),
+    priority: integer("priority").notNull().default(100),
+    conditions: jsonb("conditions").notNull(),
+    action: text("action").notNull().default("deny"),
+    requireMfa: boolean("require_mfa").default(false),
+    allowedPlatforms: jsonb("allowed_platforms"),
+    minOsVersion: jsonb("min_os_version"),
+    requireEncryption: boolean("require_encryption").default(false),
+    requireMdm: boolean("require_mdm").default(false),
+    requireScreenLock: boolean("require_screen_lock").default(false),
+    blockRooted: boolean("block_rooted").default(true),
+    maxRiskScore: integer("max_risk_score").default(70),
+    allowedCountries: jsonb("allowed_countries"),
+    blockedCountries: jsonb("blocked_countries"),
+    timeRestrictions: jsonb("time_restrictions"),
+    createdBy: varchar("created_by", { length: 36 }),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ztna_policies_org").on(table.orgId)],
+);
+
+export const remoteWorkerSessions = pgTable(
+  "remote_worker_sessions",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    userId: varchar("user_id", { length: 36 }).notNull(),
+    deviceId: varchar("device_id", { length: 36 }),
+    sessionStart: timestamp("session_start").defaultNow(),
+    sessionEnd: timestamp("session_end"),
+    ipAddress: text("ip_address"),
+    country: text("country"),
+    city: text("city"),
+    vpnConnected: boolean("vpn_connected").default(false),
+    vpnProvider: text("vpn_provider"),
+    isOffHours: boolean("is_off_hours").default(false),
+    isNewLocation: boolean("is_new_location").default(false),
+    riskScore: integer("risk_score").notNull().default(0),
+    riskFactors: jsonb("risk_factors"),
+    ztnaDecision: text("ztna_decision"),
+    policyId: varchar("policy_id", { length: 36 }),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [
+    index("idx_remote_sessions_org").on(table.orgId),
+    index("idx_remote_sessions_user").on(table.userId),
+    index("idx_remote_sessions_device").on(table.deviceId),
+  ],
+);
+
+export const mobileDevicesRelations = relations(mobileDevices, ({ one }) => ({
+  organization: one(organizations, { fields: [mobileDevices.orgId], references: [organizations.id] }),
+}));
+
+export const devicePostureChecksRelations = relations(devicePostureChecks, ({ one }) => ({
+  organization: one(organizations, { fields: [devicePostureChecks.orgId], references: [organizations.id] }),
+  device: one(mobileDevices, { fields: [devicePostureChecks.deviceId], references: [mobileDevices.id] }),
+}));
+
+export const mobileThreatsRelations = relations(mobileThreats, ({ one }) => ({
+  organization: one(organizations, { fields: [mobileThreats.orgId], references: [organizations.id] }),
+  device: one(mobileDevices, { fields: [mobileThreats.deviceId], references: [mobileDevices.id] }),
+}));
+
+export const ztnaPoliciesRelations = relations(ztnaPolicies, ({ one }) => ({
+  organization: one(organizations, { fields: [ztnaPolicies.orgId], references: [organizations.id] }),
+}));
+
+export const remoteWorkerSessionsRelations = relations(remoteWorkerSessions, ({ one }) => ({
+  organization: one(organizations, { fields: [remoteWorkerSessions.orgId], references: [organizations.id] }),
+  device: one(mobileDevices, { fields: [remoteWorkerSessions.deviceId], references: [mobileDevices.id] }),
+}));
+
+export type MobileDevice = typeof mobileDevices.$inferSelect;
+export type InsertMobileDevice = typeof mobileDevices.$inferInsert;
+export type DevicePostureCheck = typeof devicePostureChecks.$inferSelect;
+export type InsertDevicePostureCheck = typeof devicePostureChecks.$inferInsert;
+export type MobileThreat = typeof mobileThreats.$inferSelect;
+export type InsertMobileThreat = typeof mobileThreats.$inferInsert;
+export type ZtnaPolicy = typeof ztnaPolicies.$inferSelect;
+export type InsertZtnaPolicy = typeof ztnaPolicies.$inferInsert;
+export type RemoteWorkerSession = typeof remoteWorkerSessions.$inferSelect;
+export type InsertRemoteWorkerSession = typeof remoteWorkerSessions.$inferInsert;
