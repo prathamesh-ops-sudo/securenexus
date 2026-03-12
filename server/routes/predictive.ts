@@ -199,22 +199,6 @@ export function registerPredictiveRoutes(app: Express): void {
         // Sort by probability descending
         forecasts.sort((a, b) => b.probability - a.probability);
 
-        // Persist a quality snapshot for each forecast module
-        const modules = Array.from(new Set(forecasts.map((f) => f.attackType)));
-        for (const mod of modules) {
-          const forecast = forecasts.find((f) => f.attackType === mod);
-          if (forecast) {
-            const matchingAlerts = last30Days.filter((a) => a.category === mod).length;
-            await storage.createForecastQualitySnapshot({
-              orgId,
-              module: mod,
-              precision: forecast.confidence,
-              recall: matchingAlerts > 0 ? Math.min(1, matchingAlerts / totalAlerts + 0.3) : 0.3,
-              sampleSize: totalAlerts,
-            });
-          }
-        }
-
         log.info("Generated statistical forecasts", { orgId, count: forecasts.length });
 
         return res.json(forecasts);
@@ -770,8 +754,55 @@ export function registerPredictiveRoutes(app: Express): void {
         // Recomputation re-runs statistical analysis on current alert data
         // This recalculates pattern weights, not ML model retraining
 
+        // Persist quality snapshots during recompute (side-effect belongs here, not on GET)
+        const recentAlerts = await storage.getAlerts(orgId);
+        const last30Days = recentAlerts.filter((a) => {
+          const createdAt = new Date(a.createdAt);
+          const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          return createdAt >= thirtyDaysAgo;
+        });
+        const totalAlerts = last30Days.length || 1;
+        const categoryCount: Record<string, number> = {};
+        for (const alert of last30Days) {
+          if (alert.category) {
+            categoryCount[alert.category] = (categoryCount[alert.category] || 0) + 1;
+          }
+        }
+
+        const forecastModules = [
+          "phishing",
+          "malware",
+          "ransomware",
+          "insider_threat",
+          "network_intrusion",
+          "data_exfiltration",
+        ];
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const existingSnapshots = await storage.getForecastQualitySnapshots(orgId);
+        const snapshotsByKey = new Map(
+          existingSnapshots.map((s) => [`${s.module}_${new Date(s.measuredAt).toISOString().slice(0, 10)}`, s]),
+        );
+
+        let snapshotsCreated = 0;
+        for (const mod of forecastModules) {
+          const key = `${mod}_${today}`;
+          if (snapshotsByKey.has(key)) continue; // deduplicate: one per module per day
+          const count = categoryCount[mod] || 0;
+          const precision = Math.min(0.95, 0.5 + totalAlerts / 200);
+          const recall = count > 0 ? Math.min(1, count / totalAlerts + 0.3) : 0.3;
+          await storage.createForecastQualitySnapshot({
+            orgId,
+            module: mod,
+            precision,
+            recall,
+            sampleSize: totalAlerts,
+          });
+          snapshotsCreated++;
+        }
+
         return res.json({
           message: "Predictive models recomputation initiated",
+          snapshotsCreated,
           estimatedCompletionTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
           modelsAffected: [
             "attack_forecasting",
