@@ -1489,6 +1489,7 @@ export function registerComplianceRoutes(app: Express): void {
 
   // ── Per-org compliance framework management ──────────────────────────────
   const AVAILABLE_FRAMEWORKS = [
+    // Original frameworks
     { id: "gdpr", name: "GDPR", description: "General Data Protection Regulation (EU)" },
     { id: "dpdp", name: "DPDP", description: "Digital Personal Data Protection Act (India)" },
     { id: "hipaa", name: "HIPAA", description: "Health Insurance Portability and Accountability Act (US)" },
@@ -1497,6 +1498,50 @@ export function registerComplianceRoutes(app: Express): void {
     { id: "iso_27001", name: "ISO 27001", description: "Information Security Management System" },
     { id: "nist_csf", name: "NIST CSF", description: "NIST Cybersecurity Framework" },
     { id: "soc2", name: "SOC 2", description: "Service Organization Control 2" },
+    // Global compliance frameworks
+    {
+      id: "nis2",
+      name: "NIS2",
+      description: "Network and Information Security Directive 2 (EU Critical Infrastructure)",
+    },
+    { id: "dora", name: "DORA", description: "Digital Operational Resilience Act (EU Financial Services)" },
+    {
+      id: "cbest",
+      name: "CBEST",
+      description: "Bank of England Threat Intelligence-Led Penetration Testing (UK Financial)",
+    },
+    { id: "mas_trm", name: "MAS TRM", description: "Monetary Authority of Singapore Technology Risk Management" },
+    { id: "ifsca", name: "IFSCA", description: "International Financial Services Centres Authority (India Financial)" },
+    { id: "pdpa", name: "PDPA", description: "Personal Data Protection Act (Thailand/Singapore)" },
+    { id: "popia", name: "POPIA", description: "Protection of Personal Information Act (South Africa)" },
+    { id: "lgpd", name: "LGPD", description: "Lei Geral de Proteção de Dados (Brazil)" },
+    {
+      id: "pipeda",
+      name: "PIPEDA",
+      description: "Personal Information Protection and Electronic Documents Act (Canada)",
+    },
+    {
+      id: "asd_essential8",
+      name: "ASD Essential 8",
+      description: "Australian Signals Directorate Essential Eight Maturity Model",
+    },
+    {
+      id: "ccpa",
+      name: "CCPA/CPRA",
+      description: "California Consumer Privacy Act / California Privacy Rights Act (US)",
+    },
+    { id: "cmmc", name: "CMMC", description: "Cybersecurity Maturity Model Certification (US Defense Contractors)" },
+    {
+      id: "nerc_cip",
+      name: "NERC CIP",
+      description: "North American Electric Reliability Corporation Critical Infrastructure Protection (US Energy)",
+    },
+    { id: "swift_csp", name: "SWIFT CSP", description: "SWIFT Customer Security Programme (Global Banking)" },
+    {
+      id: "iec_62443",
+      name: "IEC 62443",
+      description: "Industrial Automation and Control Systems Security (Global OT/ICS)",
+    },
   ] as const;
 
   const VALID_FRAMEWORK_IDS = AVAILABLE_FRAMEWORKS.map((f) => f.id);

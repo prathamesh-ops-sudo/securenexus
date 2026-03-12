@@ -860,7 +860,31 @@ export const campaigns = pgTable(
   ],
 );
 
-export const COMPLIANCE_FRAMEWORKS = ["gdpr", "dpdp", "hipaa", "sox", "pci_dss", "iso27001", "nist"] as const;
+export const COMPLIANCE_FRAMEWORKS = [
+  "gdpr",
+  "dpdp",
+  "hipaa",
+  "sox",
+  "pci_dss",
+  "iso27001",
+  "nist",
+  "soc2",
+  "nis2",
+  "dora",
+  "cbest",
+  "mas_trm",
+  "ifsca",
+  "pdpa",
+  "popia",
+  "lgpd",
+  "pipeda",
+  "asd_essential8",
+  "ccpa",
+  "cmmc",
+  "nerc_cip",
+  "swift_csp",
+  "iec_62443",
+] as const;
 export const DSAR_STATUSES = ["pending", "in_progress", "fulfilled", "rejected", "expired"] as const;
 
 export const compliancePolicies = pgTable(
@@ -2188,7 +2212,23 @@ export const CLOUD_PROVIDERS = ["aws", "azure", "gcp"] as const;
 export const CSPM_SCAN_STATUSES = ["pending", "running", "completed", "failed"] as const;
 export const CSPM_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
 export const CSPM_FINDING_STATUSES = ["open", "resolved", "suppressed", "accepted_risk"] as const;
-export const CSPM_COMPLIANCE_FRAMEWORKS = ["cis", "nist", "pci_dss", "hipaa", "soc2", "gdpr", "iso27001"] as const;
+export const CSPM_COMPLIANCE_FRAMEWORKS = [
+  "cis",
+  "nist",
+  "pci_dss",
+  "hipaa",
+  "soc2",
+  "gdpr",
+  "iso27001",
+  "nis2",
+  "dora",
+  "ccpa",
+  "cmmc",
+  "nerc_cip",
+  "swift_csp",
+  "iec_62443",
+  "asd_essential8",
+] as const;
 export const ENDPOINT_OS_TYPES = ["windows", "linux", "macos"] as const;
 export const ENDPOINT_STATUSES = ["online", "offline", "degraded", "isolated"] as const;
 export const AI_BACKENDS = ["bedrock", "sagemaker", "on_prem", "azure_openai"] as const;
@@ -7838,6 +7878,22 @@ export const DATA_LAKE_COMPLIANCE_FRAMEWORKS = [
   "pci_dss",
   "iso27001",
   "nist",
+  "soc2",
+  "nis2",
+  "dora",
+  "cbest",
+  "mas_trm",
+  "ifsca",
+  "pdpa",
+  "popia",
+  "lgpd",
+  "pipeda",
+  "asd_essential8",
+  "ccpa",
+  "cmmc",
+  "nerc_cip",
+  "swift_csp",
+  "iec_62443",
   "custom",
 ] as const;
 export const TIERING_JOB_STATUSES = ["pending", "running", "completed", "failed", "cancelled"] as const;
