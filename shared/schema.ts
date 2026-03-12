@@ -9469,3 +9469,185 @@ export type ChaosSchedule = typeof chaosSchedules.$inferSelect;
 export type InsertChaosSchedule = typeof chaosSchedules.$inferInsert;
 export type PurpleTeamExercise = typeof purpleTeamExercises.$inferSelect;
 export type InsertPurpleTeamExercise = typeof purpleTeamExercises.$inferInsert;
+
+// ─── AI-Native Detection Rule Generation ──────────────────────────────────────
+
+export const RULE_GENERATION_SOURCES = ["incident", "threat_intel", "manual", "log_analysis"] as const;
+
+export const RULE_GENERATION_STATUSES = ["pending", "generating", "completed", "failed"] as const;
+
+export const RULE_FORMATS = ["sigma", "yara", "custom"] as const;
+
+export const AB_TEST_STATUSES = ["pending", "running", "completed", "cancelled"] as const;
+
+export const MARKETPLACE_STATUSES = ["draft", "published", "deprecated", "removed"] as const;
+
+export const LIFECYCLE_ACTIONS = [
+  "created",
+  "enabled",
+  "disabled",
+  "shadow_mode",
+  "promoted",
+  "deprecated",
+  "archived",
+] as const;
+
+export const ruleGenerationJobs = pgTable(
+  "rule_generation_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    source: text("source").notNull().default("manual"),
+    sourceId: text("source_id"),
+    sourceContext: text("source_context"),
+    ruleFormat: text("rule_format").notNull().default("sigma"),
+    status: text("status").notNull().default("pending"),
+    generatedRuleId: varchar("generated_rule_id"),
+    generatedSigmaYaml: text("generated_sigma_yaml"),
+    generatedYaraRule: text("generated_yara_rule"),
+    generatedConditionTree: jsonb("generated_condition_tree"),
+    generatedName: text("generated_name"),
+    generatedDescription: text("generated_description"),
+    generatedSeverity: text("generated_severity"),
+    generatedMitreTactic: text("generated_mitre_tactic"),
+    generatedMitreTechnique: text("generated_mitre_technique"),
+    generatedTags: text("generated_tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    qualityScore: integer("quality_score"),
+    estimatedFpRate: real("estimated_fp_rate"),
+    qualityBreakdown: jsonb("quality_breakdown"),
+    modelId: text("model_id"),
+    promptVersion: integer("prompt_version"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costUsd: real("cost_usd"),
+    latencyMs: integer("latency_ms"),
+    errorMessage: text("error_message"),
+    requestedBy: text("requested_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_rule_gen_jobs_org").on(table.orgId), index("idx_rule_gen_jobs_status").on(table.status)],
+);
+
+export const ruleAbTests = pgTable(
+  "rule_ab_tests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    ruleId: varchar("rule_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    shadowModeEnabled: boolean("shadow_mode_enabled").notNull().default(true),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    durationDays: integer("duration_days").notNull().default(7),
+    shadowMatches: integer("shadow_matches").notNull().default(0),
+    falsePositives: integer("false_positives").notNull().default(0),
+    truePositives: integer("true_positives").notNull().default(0),
+    matchSamples: jsonb("match_samples").default(sql`'[]'::jsonb`),
+    verdict: text("verdict"),
+    verdictReason: text("verdict_reason"),
+    promotedAt: timestamp("promoted_at"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_rule_ab_tests_org").on(table.orgId),
+    index("idx_rule_ab_tests_rule").on(table.ruleId),
+    index("idx_rule_ab_tests_status").on(table.status),
+  ],
+);
+
+export const ruleMarketplace = pgTable(
+  "rule_marketplace",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    ruleId: varchar("rule_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    category: text("category").notNull().default("general"),
+    ruleFormat: text("rule_format").notNull().default("sigma"),
+    sigmaYaml: text("sigma_yaml"),
+    yaraRule: text("yara_rule"),
+    conditionTree: jsonb("condition_tree"),
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    severity: text("severity").notNull().default("medium"),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    status: text("status").notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    downloads: integer("downloads").notNull().default(0),
+    rating: real("rating"),
+    ratingCount: integer("rating_count").notNull().default(0),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_rule_marketplace_status").on(table.status),
+    index("idx_rule_marketplace_category").on(table.category),
+  ],
+);
+
+export const ruleLifecycleEvents = pgTable(
+  "rule_lifecycle_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    ruleId: varchar("rule_id").notNull(),
+    action: text("action").notNull(),
+    previousStatus: text("previous_status"),
+    newStatus: text("new_status"),
+    reason: text("reason"),
+    matchCountAtAction: integer("match_count_at_action").notNull().default(0),
+    performedBy: text("performed_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_rule_lifecycle_org").on(table.orgId), index("idx_rule_lifecycle_rule").on(table.ruleId)],
+);
+
+export const ruleGenerationJobsRelations = relations(ruleGenerationJobs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleGenerationJobs.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ruleAbTestsRelations = relations(ruleAbTests, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleAbTests.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ruleMarketplaceRelations = relations(ruleMarketplace, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleMarketplace.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ruleLifecycleEventsRelations = relations(ruleLifecycleEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleLifecycleEvents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type RuleGenerationJob = typeof ruleGenerationJobs.$inferSelect;
+export type InsertRuleGenerationJob = typeof ruleGenerationJobs.$inferInsert;
+export type RuleAbTest = typeof ruleAbTests.$inferSelect;
+export type InsertRuleAbTest = typeof ruleAbTests.$inferInsert;
+export type RuleMarketplaceEntry = typeof ruleMarketplace.$inferSelect;
+export type InsertRuleMarketplaceEntry = typeof ruleMarketplace.$inferInsert;
+export type RuleLifecycleEvent = typeof ruleLifecycleEvents.$inferSelect;
+export type InsertRuleLifecycleEvent = typeof ruleLifecycleEvents.$inferInsert;
