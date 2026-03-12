@@ -134,6 +134,10 @@ const InvestigationTimelinePage = lazy(() => import("@/pages/investigation-timel
 const EvidenceCustodyPage = lazy(() => import("@/pages/evidence-custody"));
 const ComplianceGapPage = lazy(() => import("@/pages/compliance-gap"));
 const ReportSchedulingPage = lazy(() => import("@/pages/report-scheduling"));
+const AssetInventoryPage = lazy(() => import("@/pages/asset-inventory"));
+const RiskRegisterPage = lazy(() => import("@/pages/risk-register"));
+const SecurityAssessmentsPage = lazy(() => import("@/pages/security-assessments"));
+const ThreatReportsPage = lazy(() => import("@/pages/threat-reports"));
 
 function PageSkeleton() {
   return (
@@ -347,6 +351,10 @@ function AuthenticatedApp() {
                     <Route path="/evidence-custody" component={EvidenceCustodyPage} />
                     <Route path="/compliance-gap" component={ComplianceGapPage} />
                     <Route path="/report-scheduling" component={ReportSchedulingPage} />
+                    <Route path="/asset-inventory" component={AssetInventoryPage} />
+                    <Route path="/risk-register" component={RiskRegisterPage} />
+                    <Route path="/security-assessments" component={SecurityAssessmentsPage} />
+                    <Route path="/threat-reports" component={ThreatReportsPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

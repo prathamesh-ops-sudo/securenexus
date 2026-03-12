@@ -5160,3 +5160,355 @@ export const aiPromptAuditLog = pgTable(
 );
 
 export type AiPromptAuditEntry = typeof aiPromptAuditLog.$inferSelect;
+
+// ==========================================
+// STANDALONE SECURITY PLATFORM — Asset Inventory
+// ==========================================
+
+export const ASSET_TYPES = [
+  "server",
+  "workstation",
+  "laptop",
+  "mobile",
+  "network_device",
+  "firewall",
+  "cloud_instance",
+  "container",
+  "database",
+  "application",
+  "iot_device",
+  "printer",
+  "storage",
+  "virtual_machine",
+  "other",
+] as const;
+
+export const ASSET_CRITICALITIES = ["critical", "high", "medium", "low"] as const;
+export const ASSET_LIFECYCLE_STATUSES = ["procurement", "active", "maintenance", "decommissioning", "retired"] as const;
+export const ASSET_ENVIRONMENTS = ["production", "staging", "development", "testing", "dr"] as const;
+
+export const assetInventory = pgTable(
+  "asset_inventory",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    assetType: text("asset_type").notNull(),
+    criticality: text("criticality").notNull().default("medium"),
+    lifecycleStatus: text("lifecycle_status").notNull().default("active"),
+    environment: text("environment").default("production"),
+    // Network info
+    ipAddress: text("ip_address"),
+    macAddress: text("mac_address"),
+    hostname: text("hostname"),
+    fqdn: text("fqdn"),
+    // Ownership
+    owner: text("owner"),
+    department: text("department"),
+    location: text("location"),
+    // Technical details
+    operatingSystem: text("operating_system"),
+    osVersion: text("os_version"),
+    manufacturer: text("manufacturer"),
+    model: text("model"),
+    serialNumber: text("serial_number"),
+    // Software & patches
+    installedSoftware: jsonb("installed_software").default([]),
+    lastPatchDate: timestamp("last_patch_date"),
+    // Risk
+    riskScore: integer("risk_score").notNull().default(0),
+    vulnerabilityCount: integer("vulnerability_count").notNull().default(0),
+    openFindings: integer("open_findings").notNull().default(0),
+    // Compliance
+    complianceTags: text("compliance_tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    // Metadata
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    notes: text("notes"),
+    purchaseDate: timestamp("purchase_date"),
+    warrantyExpiry: timestamp("warranty_expiry"),
+    endOfLife: timestamp("end_of_life"),
+    lastSeenAt: timestamp("last_seen_at"),
+    discoveredBy: text("discovered_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_asset_inv_org").on(table.orgId),
+    index("idx_asset_inv_type").on(table.orgId, table.assetType),
+    index("idx_asset_inv_criticality").on(table.orgId, table.criticality),
+    index("idx_asset_inv_status").on(table.orgId, table.lifecycleStatus),
+    index("idx_asset_inv_risk").on(table.orgId, table.riskScore),
+  ],
+);
+
+export const assetInventoryRelations = relations(assetInventory, ({ one }) => ({
+  organization: one(organizations, { fields: [assetInventory.orgId], references: [organizations.id] }),
+}));
+
+export type AssetInventoryItem = typeof assetInventory.$inferSelect;
+export type InsertAssetInventoryItem = typeof assetInventory.$inferInsert;
+
+// ==========================================
+// STANDALONE SECURITY PLATFORM — Risk Register
+// ==========================================
+
+export const RISK_CATEGORIES = [
+  "operational",
+  "technical",
+  "compliance",
+  "strategic",
+  "financial",
+  "reputational",
+  "third_party",
+  "physical",
+] as const;
+
+export const RISK_TREATMENTS = ["mitigate", "accept", "transfer", "avoid"] as const;
+export const RISK_STATUSES = ["identified", "assessing", "treating", "monitoring", "closed"] as const;
+
+export const riskRegister = pgTable(
+  "risk_register",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    category: text("category").notNull(),
+    // Risk scoring (1-5 scale)
+    likelihood: integer("likelihood").notNull().default(3),
+    impact: integer("impact").notNull().default(3),
+    inherentRiskScore: integer("inherent_risk_score").notNull().default(9),
+    // Residual risk after controls
+    residualLikelihood: integer("residual_likelihood"),
+    residualImpact: integer("residual_impact"),
+    residualRiskScore: integer("residual_risk_score"),
+    // Treatment
+    treatment: text("treatment").notNull().default("mitigate"),
+    treatmentPlan: text("treatment_plan"),
+    controls: jsonb("controls").default([]),
+    // Ownership
+    riskOwner: text("risk_owner"),
+    status: text("status").notNull().default("identified"),
+    // Review
+    lastReviewDate: timestamp("last_review_date"),
+    nextReviewDate: timestamp("next_review_date"),
+    // Related items
+    relatedAssets: text("related_assets")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    relatedFrameworks: text("related_frameworks")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_risk_reg_org").on(table.orgId),
+    index("idx_risk_reg_category").on(table.orgId, table.category),
+    index("idx_risk_reg_status").on(table.orgId, table.status),
+    index("idx_risk_reg_score").on(table.orgId, table.inherentRiskScore),
+  ],
+);
+
+export const riskRegisterRelations = relations(riskRegister, ({ one }) => ({
+  organization: one(organizations, { fields: [riskRegister.orgId], references: [organizations.id] }),
+}));
+
+export type RiskRegisterEntry = typeof riskRegister.$inferSelect;
+export type InsertRiskRegisterEntry = typeof riskRegister.$inferInsert;
+
+// ==========================================
+// STANDALONE SECURITY PLATFORM — Security Assessments
+// ==========================================
+
+export const ASSESSMENT_FRAMEWORKS = [
+  "cis_controls_v8",
+  "nist_csf_2",
+  "iso_27001",
+  "soc2_type2",
+  "pci_dss_4",
+  "hipaa",
+  "gdpr",
+  "essential_eight",
+] as const;
+
+export const ASSESSMENT_STATUSES = ["draft", "in_progress", "completed", "archived"] as const;
+
+export const securityAssessments = pgTable(
+  "security_assessments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    framework: text("framework").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("draft"),
+    // Scoring
+    totalControls: integer("total_controls").notNull().default(0),
+    implementedControls: integer("implemented_controls").notNull().default(0),
+    partialControls: integer("partial_controls").notNull().default(0),
+    notImplementedControls: integer("not_implemented_controls").notNull().default(0),
+    notApplicableControls: integer("not_applicable_controls").notNull().default(0),
+    overallScore: integer("overall_score").notNull().default(0),
+    // Metadata
+    assessor: text("assessor"),
+    reviewedBy: text("reviewed_by"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sec_assess_org").on(table.orgId),
+    index("idx_sec_assess_framework").on(table.orgId, table.framework),
+    index("idx_sec_assess_status").on(table.orgId, table.status),
+  ],
+);
+
+export const assessmentResponses = pgTable(
+  "assessment_responses",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    assessmentId: varchar("assessment_id")
+      .notNull()
+      .references(() => securityAssessments.id, { onDelete: "cascade" }),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    controlId: text("control_id").notNull(),
+    controlTitle: text("control_title").notNull(),
+    controlDescription: text("control_description"),
+    category: text("category"),
+    // Response
+    status: text("status").notNull().default("not_assessed"),
+    notes: text("notes"),
+    evidence: text("evidence"),
+    // Gap info
+    gapDescription: text("gap_description"),
+    recommendedAction: text("recommended_action"),
+    priority: text("priority").default("medium"),
+    // Scoring
+    weight: integer("weight").notNull().default(1),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_assess_resp_assessment").on(table.assessmentId),
+    index("idx_assess_resp_org").on(table.orgId),
+    index("idx_assess_resp_status").on(table.assessmentId, table.status),
+  ],
+);
+
+export const securityAssessmentsRelations = relations(securityAssessments, ({ one, many }) => ({
+  organization: one(organizations, { fields: [securityAssessments.orgId], references: [organizations.id] }),
+  responses: many(assessmentResponses),
+}));
+
+export const assessmentResponsesRelations = relations(assessmentResponses, ({ one }) => ({
+  assessment: one(securityAssessments, {
+    fields: [assessmentResponses.assessmentId],
+    references: [securityAssessments.id],
+  }),
+  organization: one(organizations, { fields: [assessmentResponses.orgId], references: [organizations.id] }),
+}));
+
+export type SecurityAssessment = typeof securityAssessments.$inferSelect;
+export type InsertSecurityAssessment = typeof securityAssessments.$inferInsert;
+export type AssessmentResponse = typeof assessmentResponses.$inferSelect;
+export type InsertAssessmentResponse = typeof assessmentResponses.$inferInsert;
+
+// ==========================================
+// STANDALONE SECURITY PLATFORM — Threat Reports (Employee Portal)
+// ==========================================
+
+export const THREAT_REPORT_CATEGORIES = [
+  "phishing",
+  "social_engineering",
+  "suspicious_device",
+  "policy_violation",
+  "physical_security",
+  "data_leak",
+  "malware",
+  "unauthorized_access",
+  "other",
+] as const;
+
+export const THREAT_REPORT_STATUSES = ["submitted", "reviewing", "investigating", "resolved", "dismissed"] as const;
+
+export const THREAT_REPORT_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+
+export const threatReports = pgTable(
+  "threat_reports",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    // Reporter info
+    reporterUserId: varchar("reporter_user_id"),
+    reporterName: text("reporter_name"),
+    reporterEmail: text("reporter_email"),
+    isAnonymous: boolean("is_anonymous").notNull().default(false),
+    // Report details
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    // What happened
+    dateOccurred: timestamp("date_occurred"),
+    locationDescription: text("location_description"),
+    affectedSystems: text("affected_systems"),
+    suspectInfo: text("suspect_info"),
+    // Evidence
+    attachments: jsonb("attachments").default([]),
+    // Processing
+    status: text("status").notNull().default("submitted"),
+    assignedTo: varchar("assigned_to"),
+    // Link to alert/incident if created
+    linkedAlertId: varchar("linked_alert_id"),
+    linkedIncidentId: varchar("linked_incident_id"),
+    // Resolution
+    resolution: text("resolution"),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: varchar("resolved_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_threat_reports_org").on(table.orgId),
+    index("idx_threat_reports_status").on(table.orgId, table.status),
+    index("idx_threat_reports_category").on(table.orgId, table.category),
+    index("idx_threat_reports_reporter").on(table.reporterUserId),
+  ],
+);
+
+export const threatReportsRelations = relations(threatReports, ({ one }) => ({
+  organization: one(organizations, { fields: [threatReports.orgId], references: [organizations.id] }),
+}));
+
+export type ThreatReport = typeof threatReports.$inferSelect;
+export type InsertThreatReport = typeof threatReports.$inferInsert;
