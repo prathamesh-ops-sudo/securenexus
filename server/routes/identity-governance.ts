@@ -11,6 +11,7 @@ import {
   identityAccessGraph,
   users,
   organizations,
+  organizationMemberships,
 } from "@shared/schema";
 
 const log = logger.child("identity-governance");
@@ -127,10 +128,21 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
         return res.status(400).json({ message: "Campaign must be in draft status to start" });
       }
 
-      // Auto-populate entitlements from org members
-      const orgMembers = await db.select().from(users).limit(500);
+      // Auto-populate entitlements from org members (scoped to this org)
+      const orgMemberRows = await db
+        .select({ user: users })
+        .from(users)
+        .innerJoin(
+          organizationMemberships,
+          and(
+            eq(organizationMemberships.userId, users.id),
+            eq(organizationMemberships.orgId, orgId),
+            eq(organizationMemberships.status, "active"),
+          ),
+        )
+        .limit(500);
 
-      const entitlementValues = orgMembers.map((user) => ({
+      const entitlementValues = orgMemberRows.map(({ user }) => ({
         orgId,
         campaignId: id,
         userId: user.id,
@@ -412,6 +424,14 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
           disabledAt: users.disabledAt,
         })
         .from(users)
+        .innerJoin(
+          organizationMemberships,
+          and(
+            eq(organizationMemberships.userId, users.id),
+            eq(organizationMemberships.orgId, orgId),
+            eq(organizationMemberships.status, "active"),
+          ),
+        )
         .where(or(lt(users.lastLoginAt, cutoffDate), isNull(users.lastLoginAt)))
         .limit(200);
 
@@ -451,8 +471,13 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
       const conditions = [eq(identityRiskProfiles.orgId, orgId)];
       if (riskLevel) conditions.push(eq(identityRiskProfiles.riskLevel, riskLevel));
       if (search) {
+        // Escape LIKE wildcards to prevent pattern manipulation
+        const escapedSearch = search.replace(/%/g, "\\%").replace(/_/g, "\\_");
         conditions.push(
-          or(like(identityRiskProfiles.userName, `%${search}%`), like(identityRiskProfiles.userEmail, `%${search}%`))!,
+          or(
+            like(identityRiskProfiles.userName, `%${escapedSearch}%`),
+            like(identityRiskProfiles.userEmail, `%${escapedSearch}%`),
+          )!,
         );
       }
 
