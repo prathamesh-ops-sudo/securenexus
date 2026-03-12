@@ -28,8 +28,109 @@ import {
   streamDeepInvestigation,
 } from "../ai";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import type { InsertAttackGraphNode, InsertAttackGraphEdge } from "@shared/schema";
 import { invokeModel as gatewayInvoke } from "../ai/model-gateway";
 import { config as appConfig } from "../config";
+
+/**
+ * Persist attack graph data from a deep investigation result to the database.
+ * Extracts nodes and edges from the result's attackGraph field and stores them
+ * in separate normalized tables for querying and visualization.
+ */
+async function persistAttackGraph(result: Record<string, unknown>, incidentId: string, orgId: string): Promise<void> {
+  const attackGraph = result.attackGraph as
+    | {
+        initialAccess?: unknown;
+        nodes?: unknown[];
+        edges?: unknown[];
+        currentPosition?: string;
+        objectivesAchieved?: string[];
+        objectivesInProgress?: string[];
+      }
+    | undefined;
+
+  if (!attackGraph || (!attackGraph.nodes?.length && !attackGraph.edges?.length)) {
+    return; // No attack graph data to persist
+  }
+
+  const nodes = Array.isArray(attackGraph.nodes) ? attackGraph.nodes : [];
+  const edges = Array.isArray(attackGraph.edges) ? attackGraph.edges : [];
+
+  // Compute max depth from nodes
+  let maxDepth = 0;
+  for (const n of nodes) {
+    const d = typeof n === "object" && n && "depth" in n ? Number((n as Record<string, unknown>).depth) || 0 : 0;
+    if (d > maxDepth) maxDepth = d;
+  }
+
+  // Create the parent graph record
+  const graph = await storage.createAttackGraph({
+    orgId,
+    incidentId,
+    initialAccessDescription:
+      typeof attackGraph.initialAccess === "string"
+        ? attackGraph.initialAccess
+        : JSON.stringify(attackGraph.initialAccess ?? null),
+    currentPosition: attackGraph.currentPosition || null,
+    objectivesAchieved: attackGraph.objectivesAchieved || [],
+    objectivesInProgress: attackGraph.objectivesInProgress || [],
+    totalNodes: nodes.length,
+    totalEdges: edges.length,
+    maxDepth,
+    confidence: typeof result.investigationConfidence === "number" ? result.investigationConfidence : 0,
+    metadata: null,
+  });
+
+  // Insert nodes
+  if (nodes.length > 0) {
+    const nodeRecords: InsertAttackGraphNode[] = nodes.map((n, idx) => {
+      const node = (typeof n === "object" && n ? n : {}) as Record<string, unknown>;
+      return {
+        graphId: graph.id,
+        nodeId: String(node.id || node.nodeId || `node-${idx}`),
+        nodeType: String(node.type || node.nodeType || "unknown"),
+        label: String(node.label || node.name || `Node ${idx}`),
+        description: node.description ? String(node.description) : null,
+        mitreTechnique: node.mitreTechnique || node.technique ? String(node.mitreTechnique || node.technique) : null,
+        mitreTactic: node.mitreTactic || node.tactic ? String(node.mitreTactic || node.tactic) : null,
+        confidence: typeof node.confidence === "number" ? node.confidence : null,
+        severity: node.severity ? String(node.severity) : null,
+        evidence: Array.isArray(node.evidence) ? node.evidence.map(String) : [],
+        metadata: node.metadata ? (node.metadata as Record<string, unknown>) : null,
+        positionX: typeof node.x === "number" ? node.x : typeof node.positionX === "number" ? node.positionX : null,
+        positionY: typeof node.y === "number" ? node.y : typeof node.positionY === "number" ? node.positionY : null,
+        depth: typeof node.depth === "number" ? node.depth : idx,
+      };
+    });
+    await storage.createAttackGraphNodes(nodeRecords);
+  }
+
+  // Insert edges
+  if (edges.length > 0) {
+    const edgeRecords: InsertAttackGraphEdge[] = edges.map((e, idx) => {
+      const edge = (typeof e === "object" && e ? e : {}) as Record<string, unknown>;
+      return {
+        graphId: graph.id,
+        sourceNodeId: String(edge.source || edge.from || edge.sourceNodeId || `node-${idx}`),
+        targetNodeId: String(edge.target || edge.to || edge.targetNodeId || `node-${idx + 1}`),
+        relationship: String(edge.relationship || edge.label || edge.type || "connected"),
+        technique: edge.technique ? String(edge.technique) : null,
+        confidence: typeof edge.confidence === "number" ? edge.confidence : null,
+        timestamp: edge.timestamp ? String(edge.timestamp) : null,
+        evidence: Array.isArray(edge.evidence) ? edge.evidence.map(String) : [],
+        metadata: edge.metadata ? (edge.metadata as Record<string, unknown>) : null,
+      };
+    });
+    await storage.createAttackGraphEdges(edgeRecords);
+  }
+
+  logger.child("ai").info("Attack graph persisted", {
+    graphId: graph.id,
+    incidentId,
+    nodes: nodes.length,
+    edges: edges.length,
+  });
+}
 
 export function registerAiRoutes(app: Express): void {
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
@@ -330,8 +431,18 @@ export function registerAiRoutes(app: Express): void {
             res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
           }
         },
-        onComplete: async (_fullText: string, metrics) => {
+        onComplete: async (fullText: string, metrics) => {
           try {
+            // Try to extract and persist attack graph from streamed text
+            try {
+              const parsed = JSON.parse(fullText);
+              if (parsed && parsed.attackGraph) {
+                await persistAttackGraph(parsed, incident.id, orgId);
+              }
+            } catch {
+              // Stream text may not be valid JSON — that's OK
+            }
+
             await storage.createAuditLog({
               userId: (req as any).user?.id,
               userName: (req as any).user?.firstName
@@ -836,6 +947,11 @@ export function registerAiRoutes(app: Express): void {
 
         const result = await conductDeepInvestigation(incident, incidentAlerts, threatIntelCtx, orgId);
 
+        // Persist attack graph if present
+        persistAttackGraph(result as unknown as Record<string, unknown>, incident.id, orgId).catch((err) => {
+          logger.child("ai").warn("Failed to persist attack graph", { error: String(err) });
+        });
+
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName
@@ -961,6 +1077,111 @@ export function registerAiRoutes(app: Express): void {
    * POST /api/ai/predict-attack-paths
    * Predict attacker's next moves and attack paths
    */
+  // ── Attack Graph Persistence API ──
+
+  /**
+   * GET /api/ai/investigation-graphs/:incidentId
+   * Fetch all persisted attack graphs for a specific incident
+   */
+  app.get("/api/ai/investigation-graphs/:incidentId", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+      const graphs = await storage.getAttackGraphsByIncident(p(req.params.incidentId), orgId);
+
+      // Fetch nodes and edges for each graph
+      const result = await Promise.all(
+        graphs.map(async (graph) => {
+          const [nodes, edges] = await Promise.all([
+            storage.getAttackGraphNodes(graph.id),
+            storage.getAttackGraphEdges(graph.id),
+          ]);
+          return { ...graph, nodes, edges };
+        }),
+      );
+
+      res.json(result);
+    } catch (error: any) {
+      logger.child("ai").error("Failed to fetch investigation graphs", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch investigation graphs" });
+    }
+  });
+
+  /**
+   * GET /api/ai/investigation-graphs
+   * Query attack graphs by org and optional time range
+   */
+  app.get("/api/ai/investigation-graphs", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+      const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
+      const days = req.query.days ? parseInt(String(req.query.days), 10) : undefined;
+
+      const graphs = await storage.getAttackGraphsByOrg(orgId, limit, days);
+      res.json(graphs);
+    } catch (error: any) {
+      logger.child("ai").error("Failed to fetch org investigation graphs", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch investigation graphs" });
+    }
+  });
+
+  /**
+   * GET /api/ai/investigation-graphs/detail/:graphId
+   * Fetch a single attack graph with all nodes and edges
+   */
+  app.get("/api/ai/investigation-graphs/detail/:graphId", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+      const graph = await storage.getAttackGraph(p(req.params.graphId));
+      if (!graph || graph.orgId !== orgId) {
+        return res.status(404).json({ message: "Attack graph not found" });
+      }
+
+      const [nodes, edges] = await Promise.all([
+        storage.getAttackGraphNodes(graph.id),
+        storage.getAttackGraphEdges(graph.id),
+      ]);
+
+      res.json({ ...graph, nodes, edges });
+    } catch (error: any) {
+      logger.child("ai").error("Failed to fetch attack graph detail", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch attack graph" });
+    }
+  });
+
+  /**
+   * DELETE /api/ai/investigation-graphs/:graphId
+   * Delete a persisted attack graph (cascades to nodes/edges)
+   */
+  app.delete(
+    "/api/ai/investigation-graphs/:graphId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+        const graph = await storage.getAttackGraph(p(req.params.graphId));
+        if (!graph || graph.orgId !== orgId) {
+          return res.status(404).json({ message: "Attack graph not found" });
+        }
+
+        await storage.deleteAttackGraph(graph.id);
+        res.json({ message: "Attack graph deleted" });
+      } catch (error: any) {
+        logger.child("ai").error("Failed to delete attack graph", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete attack graph" });
+      }
+    },
+  );
+
   app.post(
     "/api/ai/predict-attack-paths",
     isAuthenticated,

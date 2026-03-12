@@ -1519,6 +1519,135 @@ export const playbookRollbackPlans = pgTable(
   ],
 );
 
+// ==========================================
+// 9.0 — Attack Graph Persistence (AI Deep Investigation)
+// ==========================================
+
+export const ATTACK_GRAPH_NODE_TYPES = [
+  "initial_access",
+  "host",
+  "user",
+  "process",
+  "file",
+  "network",
+  "credential",
+  "persistence",
+  "lateral_movement",
+  "exfiltration",
+  "c2",
+  "objective",
+] as const;
+
+export const attackGraphs = pgTable(
+  "attack_graphs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    investigationId: varchar("investigation_id"),
+    initialAccessDescription: text("initial_access_description"),
+    currentPosition: text("current_position"),
+    objectivesAchieved: text("objectives_achieved")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    objectivesInProgress: text("objectives_in_progress")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    totalNodes: integer("total_nodes").default(0),
+    totalEdges: integer("total_edges").default(0),
+    maxDepth: integer("max_depth").default(0),
+    confidence: real("confidence").default(0),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_attack_graphs_org").on(table.orgId),
+    index("idx_attack_graphs_incident").on(table.incidentId),
+    index("idx_attack_graphs_created").on(table.createdAt),
+  ],
+);
+
+export const attackGraphNodes = pgTable(
+  "attack_graph_nodes",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    graphId: varchar("graph_id")
+      .notNull()
+      .references(() => attackGraphs.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    nodeType: text("node_type").notNull(),
+    label: text("label").notNull(),
+    description: text("description"),
+    mitreTechnique: text("mitre_technique"),
+    mitreTactic: text("mitre_tactic"),
+    confidence: real("confidence").default(0),
+    severity: text("severity"),
+    evidence: text("evidence")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    metadata: jsonb("metadata"),
+    positionX: real("position_x"),
+    positionY: real("position_y"),
+    depth: integer("depth").default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_agn_graph").on(table.graphId),
+    index("idx_agn_type").on(table.nodeType),
+    index("idx_agn_mitre").on(table.mitreTechnique),
+  ],
+);
+
+export const attackGraphEdges = pgTable(
+  "attack_graph_edges",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    graphId: varchar("graph_id")
+      .notNull()
+      .references(() => attackGraphs.id, { onDelete: "cascade" }),
+    sourceNodeId: text("source_node_id").notNull(),
+    targetNodeId: text("target_node_id").notNull(),
+    relationship: text("relationship").notNull(),
+    technique: text("technique"),
+    confidence: real("confidence").default(0),
+    timestamp: text("timestamp"),
+    evidence: text("evidence")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_age_graph").on(table.graphId),
+    index("idx_age_source").on(table.sourceNodeId),
+    index("idx_age_target").on(table.targetNodeId),
+  ],
+);
+
+export const attackGraphsRelations = relations(attackGraphs, ({ one, many }) => ({
+  organization: one(organizations, { fields: [attackGraphs.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [attackGraphs.incidentId], references: [incidents.id] }),
+  nodes: many(attackGraphNodes),
+  edges: many(attackGraphEdges),
+}));
+
+export const attackGraphNodesRelations = relations(attackGraphNodes, ({ one }) => ({
+  graph: one(attackGraphs, { fields: [attackGraphNodes.graphId], references: [attackGraphs.id] }),
+}));
+
+export const attackGraphEdgesRelations = relations(attackGraphEdges, ({ one }) => ({
+  graph: one(attackGraphs, { fields: [attackGraphEdges.graphId], references: [attackGraphs.id] }),
+}));
+
 export const WIZARD_STEPS = [
   "create_org",
   "choose_plan",
@@ -1936,6 +2065,19 @@ export const insertPlaybookRollbackPlanSchema = createInsertSchema(playbookRollb
   createdAt: true,
   executedAt: true,
 });
+export const insertAttackGraphSchema = createInsertSchema(attackGraphs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertAttackGraphNodeSchema = createInsertSchema(attackGraphNodes).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertAttackGraphEdgeSchema = createInsertSchema(attackGraphEdges).omit({
+  id: true,
+  createdAt: true,
+});
 
 // Types
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
@@ -2034,6 +2176,12 @@ export type PlaybookSimulation = typeof playbookSimulations.$inferSelect;
 export type InsertPlaybookSimulation = z.infer<typeof insertPlaybookSimulationSchema>;
 export type PlaybookRollbackPlan = typeof playbookRollbackPlans.$inferSelect;
 export type InsertPlaybookRollbackPlan = z.infer<typeof insertPlaybookRollbackPlanSchema>;
+export type AttackGraph = typeof attackGraphs.$inferSelect;
+export type InsertAttackGraph = z.infer<typeof insertAttackGraphSchema>;
+export type AttackGraphNode = typeof attackGraphNodes.$inferSelect;
+export type InsertAttackGraphNode = z.infer<typeof insertAttackGraphNodeSchema>;
+export type AttackGraphEdge = typeof attackGraphEdges.$inferSelect;
+export type InsertAttackGraphEdge = z.infer<typeof insertAttackGraphEdgeSchema>;
 
 export const CLOUD_PROVIDERS = ["aws", "azure", "gcp"] as const;
 export const CSPM_SCAN_STATUSES = ["pending", "running", "completed", "failed"] as const;
