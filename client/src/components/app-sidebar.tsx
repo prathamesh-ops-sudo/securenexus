@@ -274,6 +274,9 @@ const navGroups: NavGroup[] = [
         items: [
           { title: "Sensor Agents", url: "/native-sensors", icon: Cpu },
           { title: "Detection Rules", url: "/detection-rules", icon: Crosshair },
+          { title: "Vuln Scanner", url: "/vuln-scanner", icon: Bug },
+          { title: "UEBA Analytics", url: "/ueba", icon: Activity },
+          { title: "Response Actions", url: "/agent-response", icon: Zap },
         ],
       },
       {

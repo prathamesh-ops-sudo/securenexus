@@ -140,6 +140,9 @@ const SecurityAssessmentsPage = lazy(() => import("@/pages/security-assessments"
 const ThreatReportsPage = lazy(() => import("@/pages/threat-reports"));
 const NativeSensorsPage = lazy(() => import("@/pages/native-sensors"));
 const DetectionRulesPage = lazy(() => import("@/pages/detection-rules"));
+const VulnScannerPage = lazy(() => import("@/pages/vuln-scanner"));
+const UebaPage = lazy(() => import("@/pages/ueba"));
+const AgentResponsePage = lazy(() => import("@/pages/agent-response"));
 
 function PageSkeleton() {
   return (
@@ -359,6 +362,9 @@ function AuthenticatedApp() {
                     <Route path="/threat-reports" component={ThreatReportsPage} />
                     <Route path="/native-sensors" component={NativeSensorsPage} />
                     <Route path="/detection-rules" component={DetectionRulesPage} />
+                    <Route path="/vuln-scanner" component={VulnScannerPage} />
+                    <Route path="/ueba" component={UebaPage} />
+                    <Route path="/agent-response" component={AgentResponsePage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

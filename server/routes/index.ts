@@ -72,6 +72,9 @@ import { registerComplianceGapRoutes } from "./compliance-gap";
 import { registerReportSchedulingRoutes } from "./report-scheduling";
 import { registerStandalonePlatformRoutes } from "./standalone-platform";
 import { registerNativeSensorsRoutes } from "./native-sensors";
+import { registerVulnScannerRoutes } from "./vuln-scanner";
+import { registerUebaRoutes } from "./ueba";
+import { registerAgentResponseActionsRoutes } from "./agent-response-actions";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -148,4 +151,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerReportSchedulingRoutes(app);
   registerStandalonePlatformRoutes(app);
   registerNativeSensorsRoutes(app);
+  registerVulnScannerRoutes(app);
+  registerUebaRoutes(app);
+  registerAgentResponseActionsRoutes(app);
 }

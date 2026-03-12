@@ -5775,3 +5775,218 @@ export const logSourcesRelations = relations(logSources, ({ one }) => ({
 
 export type LogSource = typeof logSources.$inferSelect;
 export type InsertLogSource = typeof logSources.$inferInsert;
+
+// ==========================================
+// NATIVE VULNERABILITY SCANNER
+// No Qualys / Tenable required.
+// Agent reports installed packages → we match against NVD CVE feed.
+// ==========================================
+
+export const VULN_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const VULN_STATUSES = ["open", "acknowledged", "remediated", "false_positive"] as const;
+
+export const packageInventory = pgTable(
+  "package_inventory",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sensorId: varchar("sensor_id").notNull().references(() => nativeSensors.id),
+    hostname: text("hostname").notNull(),
+    name: text("name").notNull(),
+    version: text("version").notNull(),
+    ecosystem: text("ecosystem").notNull(), // apt, rpm, pip, npm, gem, go, cargo, nuget
+    installedAt: timestamp("installed_at"),
+    lastScannedAt: timestamp("last_scanned_at"),
+    vulnCount: integer("vuln_count").default(0),
+    criticalVulnCount: integer("critical_vuln_count").default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pkg_inventory_org").on(table.orgId),
+    index("idx_pkg_inventory_sensor").on(table.sensorId),
+    uniqueIndex("idx_pkg_inventory_unique").on(table.sensorId, table.name, table.version, table.ecosystem),
+  ],
+);
+
+export const vulnFindings = pgTable(
+  "vuln_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sensorId: varchar("sensor_id").notNull().references(() => nativeSensors.id),
+    packageId: varchar("package_id").notNull().references(() => packageInventory.id),
+    cveId: text("cve_id").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    cvssScore: real("cvss_score"),
+    title: text("title"),
+    description: text("description"),
+    publishedAt: timestamp("published_at"),
+    fixedInVersion: text("fixed_in_version"),
+    references: jsonb("references").default([]),
+    status: text("status").notNull().default("open"),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    remediatedAt: timestamp("remediated_at"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vuln_findings_org").on(table.orgId),
+    index("idx_vuln_findings_sensor").on(table.sensorId),
+    index("idx_vuln_findings_cve").on(table.cveId),
+    index("idx_vuln_findings_status").on(table.orgId, table.status),
+    uniqueIndex("idx_vuln_findings_unique").on(table.sensorId, table.packageId, table.cveId),
+  ],
+);
+
+export type PackageInventoryRecord = typeof packageInventory.$inferSelect;
+export type InsertPackageInventoryRecord = typeof packageInventory.$inferInsert;
+export type VulnFinding = typeof vulnFindings.$inferSelect;
+export type InsertVulnFinding = typeof vulnFindings.$inferInsert;
+
+// ==========================================
+// UEBA — User & Entity Behavior Analytics
+// No Exabeam / Darktrace required.
+// Build behavioral baselines per user/host and flag deviations.
+// ==========================================
+
+export const uebaBaselines = pgTable(
+  "ueba_baselines",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    entityType: text("entity_type").notNull(), // user, host, service_account
+    entityId: text("entity_id").notNull(),
+    normalLoginHours: jsonb("normal_login_hours").default([]),
+    normalLoginSources: jsonb("normal_login_sources").default([]),
+    normalProcesses: jsonb("normal_processes").default([]),
+    normalNetworkPeers: jsonb("normal_network_peers").default([]),
+    avgDailyEvents: real("avg_daily_events").default(0),
+    avgDailyAuthFailures: real("avg_daily_auth_failures").default(0),
+    riskScore: real("risk_score").default(0),
+    lastRiskReason: text("last_risk_reason"),
+    baselineWindowDays: integer("baseline_window_days").default(30),
+    lastComputedAt: timestamp("last_computed_at"),
+    eventCount: integer("event_count").default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ueba_baselines_org").on(table.orgId),
+    uniqueIndex("idx_ueba_baselines_entity").on(table.orgId, table.entityType, table.entityId),
+    index("idx_ueba_baselines_risk").on(table.orgId, table.riskScore),
+  ],
+);
+
+export const uebaAnomalies = pgTable(
+  "ueba_anomalies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    baselineId: varchar("baseline_id").references(() => uebaBaselines.id),
+    anomalyType: text("anomaly_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    score: real("score").notNull().default(0),
+    description: text("description"),
+    evidence: jsonb("evidence").default({}),
+    linkedAlertId: varchar("linked_alert_id"),
+    linkedIncidentId: varchar("linked_incident_id"),
+    status: text("status").notNull().default("open"),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: varchar("resolved_by"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ueba_anomalies_org").on(table.orgId),
+    index("idx_ueba_anomalies_entity").on(table.orgId, table.entityId),
+    index("idx_ueba_anomalies_status").on(table.orgId, table.status),
+  ],
+);
+
+export type UebaBaseline = typeof uebaBaselines.$inferSelect;
+export type InsertUebaBaseline = typeof uebaBaselines.$inferInsert;
+export type UebaAnomaly = typeof uebaAnomalies.$inferSelect;
+export type InsertUebaAnomaly = typeof uebaAnomalies.$inferInsert;
+
+// ==========================================
+// AGENT REMOTE RESPONSE ACTIONS
+// No CrowdStrike response module required.
+// Push kill-process / isolate-host / block-IP commands directly to agents.
+// ==========================================
+
+export const AGENT_RESPONSE_ACTION_TYPES = [
+  "kill_process",
+  "isolate_host",
+  "unisolate_host",
+  "block_ip",
+  "unblock_ip",
+  "quarantine_file",
+  "delete_file",
+  "disable_user",
+  "run_script",
+  "collect_forensics",
+  "restart_service",
+] as const;
+
+export const AGENT_RESPONSE_ACTION_STATUSES = [
+  "pending",
+  "dispatched",
+  "acknowledged",
+  "completed",
+  "failed",
+  "cancelled",
+  "timeout",
+] as const;
+
+export const agentResponseActions = pgTable(
+  "agent_response_actions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sensorId: varchar("sensor_id").notNull().references(() => nativeSensors.id),
+    actionType: text("action_type").notNull(),
+    params: jsonb("params").notNull().default({}),
+    triggeredBy: text("triggered_by").notNull().default("manual"),
+    triggeredByUserId: varchar("triggered_by_user_id"),
+    triggeredByAlertId: varchar("triggered_by_alert_id"),
+    triggeredByIncidentId: varchar("triggered_by_incident_id"),
+    status: text("status").notNull().default("pending"),
+    dispatchedAt: timestamp("dispatched_at"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    completedAt: timestamp("completed_at"),
+    resultOutput: text("result_output"),
+    resultCode: integer("result_code"),
+    errorMessage: text("error_message"),
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    rollbackActionId: varchar("rollback_action_id"),
+    timeoutAt: timestamp("timeout_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_resp_org").on(table.orgId),
+    index("idx_agent_resp_sensor").on(table.sensorId),
+    index("idx_agent_resp_status").on(table.orgId, table.status),
+    index("idx_agent_resp_type").on(table.orgId, table.actionType),
+  ],
+);
+
+export type AgentResponseAction = typeof agentResponseActions.$inferSelect;
+export type InsertAgentResponseAction = typeof agentResponseActions.$inferInsert;
