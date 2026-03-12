@@ -383,10 +383,12 @@ async function buildInteractiveHtml(orgId: string, reportType: string): Promise<
   const stats = await storage.getDashboardStats(orgId);
   const analytics = await storage.getDashboardAnalytics(orgId);
 
-  const severityJson = JSON.stringify(analytics.severityDistribution);
-  const trendJson = JSON.stringify(analytics.alertTrend);
-  const sourceJson = JSON.stringify(analytics.sourceDistribution);
-  const tacticsJson = JSON.stringify(analytics.topMitreTactics);
+  // Escape </script> sequences to prevent XSS via injected data
+  const safeJson = (obj: unknown) => JSON.stringify(obj).replace(/<\//g, "<\\/");
+  const severityJson = safeJson(analytics.severityDistribution);
+  const trendJson = safeJson(analytics.alertTrend);
+  const sourceJson = safeJson(analytics.sourceDistribution);
+  const tacticsJson = safeJson(analytics.topMitreTactics);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -595,11 +597,10 @@ export function registerAdvancedReportsRoutes(app: Express): void {
           return res.send(html);
         }
 
-        // PDF format (default)
+        // PDF format (default) — strip logoPath from user input to prevent path traversal
         const config: WhiteLabelConfig = {
           companyName: whiteLabel?.companyName || "Arica Tech Solutions",
           companyTagline: whiteLabel?.companyTagline,
-          logoPath: whiteLabel?.logoPath,
           primaryColor: whiteLabel?.primaryColor,
           confidential: whiteLabel?.confidential ?? true,
           generatedBy: whiteLabel?.generatedBy || user?.email || "System",
@@ -645,10 +646,11 @@ export function registerAdvancedReportsRoutes(app: Express): void {
         const reportData = await buildComplianceReport(orgId, templateId);
 
         const config: WhiteLabelConfig = {
+          ...whiteLabel,
           companyName: whiteLabel?.companyName || "Arica Tech Solutions",
           confidential: true,
           generatedBy: whiteLabel?.generatedBy || user?.email || "System",
-          ...whiteLabel,
+          logoPath: undefined,
         };
 
         const pdf = await generateAdvancedPdf(reportData, config);
@@ -680,10 +682,11 @@ export function registerAdvancedReportsRoutes(app: Express): void {
         const reportData = await buildBoardSummary(orgId, validPeriod);
 
         const config: WhiteLabelConfig = {
+          ...whiteLabel,
           companyName: whiteLabel?.companyName || "Arica Tech Solutions",
           confidential: true,
           generatedBy: whiteLabel?.generatedBy || user?.email || "System",
-          ...whiteLabel,
+          logoPath: undefined,
         };
 
         const pdf = await generateAdvancedPdf(reportData, config);
@@ -765,6 +768,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
         const config: WhiteLabelConfig = {
           ...whiteLabel,
           generatedBy: whiteLabel.generatedBy || user?.email || "System",
+          logoPath: undefined,
         };
 
         const pdf = await generateAdvancedPdf(reportData, config);
@@ -872,10 +876,11 @@ export function registerAdvancedReportsRoutes(app: Express): void {
         };
 
         const config: WhiteLabelConfig = {
+          ...whiteLabel,
           companyName: whiteLabel?.companyName || "Arica Tech Solutions",
           confidential: true,
           generatedBy: whiteLabel?.generatedBy || user?.email || "System",
-          ...whiteLabel,
+          logoPath: undefined,
         };
 
         const pdf = await generateAdvancedPdf(reportData, config);
@@ -968,10 +973,11 @@ export function registerAdvancedReportsRoutes(app: Express): void {
         };
 
         const config: WhiteLabelConfig = {
+          ...whiteLabel,
           companyName: whiteLabel?.companyName || "Arica Tech Solutions",
           confidential: whiteLabel?.confidential ?? false,
           generatedBy: whiteLabel?.generatedBy || user?.email || "System",
-          ...whiteLabel,
+          logoPath: undefined,
         };
 
         const pdf = await generateAdvancedPdf(reportData, config);
