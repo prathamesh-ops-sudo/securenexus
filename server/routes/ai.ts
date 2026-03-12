@@ -25,6 +25,7 @@ import {
   analyzeBehavior,
   predictAttackPaths,
 } from "../ai";
+import { recordFeedbackOutcome } from "../ai/active-learning";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { invokeModel as gatewayInvoke } from "../ai/model-gateway";
 import { config as appConfig } from "../config";
@@ -310,6 +311,57 @@ export function registerAiRoutes(app: Express): void {
         resourceId,
         details: { rating, hasComment: !!comment, correctionReason, correctedSeverity, correctedCategory },
       });
+
+      // Active Learning: process feedback for few-shot injection and FP tracking
+      const orgId = (req as any).user?.orgId;
+      if (orgId) {
+        const isOverridden = !!(correctedSeverity || correctedCategory || correctionReason);
+        const isDismissed = rating <= 2 && !isOverridden;
+        const outcome = isOverridden ? "overridden" : isDismissed ? "dismissed" : "confirmed";
+
+        // Determine alert source/category from the resource being reviewed
+        let alertSource = "unknown";
+        let alertCategory = "unknown";
+        if (resourceType === "alert" && resourceId) {
+          try {
+            const alert = await storage.getAlert(resourceId);
+            if (alert) {
+              alertSource = alert.source || "unknown";
+              alertCategory = alert.category || "unknown";
+            }
+          } catch {
+            // non-fatal
+          }
+        }
+
+        // Build context strings for few-shot example
+        const originalContext =
+          typeof aiOutput === "object" && aiOutput !== null ? JSON.stringify(aiOutput) : String(aiOutput || "");
+        const analystCorrection = [
+          correctedSeverity ? `Severity: ${correctedSeverity}` : "",
+          correctedCategory ? `Category: ${correctedCategory}` : "",
+          comment || "",
+        ]
+          .filter(Boolean)
+          .join("; ");
+
+        recordFeedbackOutcome({
+          orgId,
+          feedbackId: feedback.id,
+          outcome,
+          source: alertSource,
+          category: alertCategory,
+          domain:
+            resourceType === "correlation" ? "correlation" : resourceType === "narrative" ? "narrative" : "triage",
+          originalContext: originalContext || undefined,
+          aiOutput: originalContext || undefined,
+          analystCorrection: analystCorrection || undefined,
+          reason: correctionReason || comment || undefined,
+        }).catch((err) =>
+          logger.child("active-learning").warn("Failed to record feedback outcome", { error: String(err) }),
+        );
+      }
+
       res.status(201).json(feedback);
     } catch (error) {
       res.status(500).json({ message: "Failed to submit feedback" });
