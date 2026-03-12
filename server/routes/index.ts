@@ -78,6 +78,8 @@ import { registerUebaRoutes } from "./ueba";
 import { registerAgentResponseRoutes } from "./agent-response";
 import { registerRagKnowledgeRoutes } from "./rag-knowledge";
 import { registerSupplyChainRoutes } from "./supply-chain";
+import { registerIdentityGovernanceRoutes } from "./identity-governance";
+import { registerPamRoutes } from "./pam";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -160,4 +162,6 @@ export function registerAllDomainRoutes(app: Express): void {
   registerAgentResponseRoutes(app);
   registerRagKnowledgeRoutes(app);
   registerSupplyChainRoutes(app);
+  registerIdentityGovernanceRoutes(app);
+  registerPamRoutes(app);
 }

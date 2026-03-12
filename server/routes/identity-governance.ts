@@ -1,0 +1,888 @@
+import type { Express } from "express";
+import { eq, and, desc, sql, lt, isNull, or, like, count } from "drizzle-orm";
+import { logger, getOrgId } from "./shared";
+import { isAuthenticated } from "../auth";
+import { db } from "../db";
+import {
+  accessReviewCampaigns,
+  accessReviewEntitlements,
+  scimProvisioningLogs,
+  identityRiskProfiles,
+  identityAccessGraph,
+  users,
+  organizations,
+} from "@shared/schema";
+
+const log = logger.child("identity-governance");
+
+export function registerIdentityGovernanceRoutes(app: Express): void {
+  // =========================================================================
+  // ACCESS REVIEW CAMPAIGNS
+  // =========================================================================
+
+  // List campaigns
+  app.get("/api/identity/access-reviews", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const status = req.query.status ? String(req.query.status) : undefined;
+
+      const conditions = [eq(accessReviewCampaigns.orgId, orgId)];
+      if (status) {
+        conditions.push(eq(accessReviewCampaigns.status, status));
+      }
+
+      const campaigns = await db
+        .select()
+        .from(accessReviewCampaigns)
+        .where(and(...conditions))
+        .orderBy(desc(accessReviewCampaigns.createdAt))
+        .limit(100);
+
+      res.json({ campaigns });
+    } catch (error) {
+      log.error("List access review campaigns error", { error: String(error) });
+      res.status(500).json({ message: "Failed to list access review campaigns" });
+    }
+  });
+
+  // Create campaign
+  app.post("/api/identity/access-reviews", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { name, description, cadence, reviewerUserId, reviewerName, dueDate } = req.body;
+
+      if (!name || typeof name !== "string" || name.trim().length < 2) {
+        return res.status(400).json({ message: "Campaign name is required (min 2 chars)" });
+      }
+
+      const validCadences = ["quarterly", "monthly", "annual", "one_time"];
+      if (cadence && !validCadences.includes(cadence)) {
+        return res.status(400).json({ message: `Invalid cadence. Valid: ${validCadences.join(", ")}` });
+      }
+
+      const [campaign] = await db
+        .insert(accessReviewCampaigns)
+        .values({
+          orgId,
+          name: String(name).trim(),
+          description: typeof description === "string" ? description.trim() : null,
+          cadence: cadence || "quarterly",
+          reviewerUserId: typeof reviewerUserId === "string" ? reviewerUserId : null,
+          reviewerName: typeof reviewerName === "string" ? reviewerName : null,
+          dueDate: dueDate ? new Date(dueDate) : null,
+          status: "draft",
+        })
+        .returning();
+
+      res.status(201).json(campaign);
+    } catch (error) {
+      log.error("Create access review campaign error", { error: String(error) });
+      res.status(500).json({ message: "Failed to create access review campaign" });
+    }
+  });
+
+  // Get campaign detail with entitlements
+  app.get("/api/identity/access-reviews/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+
+      const [campaign] = await db
+        .select()
+        .from(accessReviewCampaigns)
+        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
+
+      if (!campaign) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+
+      const entitlements = await db
+        .select()
+        .from(accessReviewEntitlements)
+        .where(and(eq(accessReviewEntitlements.campaignId, id), eq(accessReviewEntitlements.orgId, orgId)))
+        .orderBy(desc(accessReviewEntitlements.createdAt));
+
+      res.json({ campaign, entitlements });
+    } catch (error) {
+      log.error("Get access review campaign error", { error: String(error) });
+      res.status(500).json({ message: "Failed to get access review campaign" });
+    }
+  });
+
+  // Start campaign — auto-populates entitlements from org members
+  app.post("/api/identity/access-reviews/:id/start", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+
+      const [campaign] = await db
+        .select()
+        .from(accessReviewCampaigns)
+        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
+
+      if (!campaign) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+      if (campaign.status !== "draft") {
+        return res.status(400).json({ message: "Campaign must be in draft status to start" });
+      }
+
+      // Auto-populate entitlements from org members
+      const orgMembers = await db.select().from(users).limit(500);
+
+      const entitlementValues = orgMembers.map((user) => ({
+        orgId,
+        campaignId: id,
+        userId: user.id,
+        userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown",
+        userEmail: user.email,
+        entitlementType: "role" as const,
+        entitlementName: user.isSuperAdmin ? "superadmin" : "analyst",
+        entitlementDescription: user.isSuperAdmin ? "Full platform access" : "Standard analyst access",
+        grantedAt: user.createdAt,
+        lastUsedAt: user.lastLoginAt,
+        riskLevel: user.isSuperAdmin ? "high" : "low",
+        status: "pending" as const,
+      }));
+
+      if (entitlementValues.length > 0) {
+        await db.insert(accessReviewEntitlements).values(entitlementValues);
+      }
+
+      const [updated] = await db
+        .update(accessReviewCampaigns)
+        .set({
+          status: "active",
+          startedAt: new Date(),
+          totalEntitlements: entitlementValues.length,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)))
+        .returning();
+
+      res.json({ campaign: updated, entitlementsCreated: entitlementValues.length });
+    } catch (error) {
+      log.error("Start access review campaign error", { error: String(error) });
+      res.status(500).json({ message: "Failed to start campaign" });
+    }
+  });
+
+  // Decide on entitlement (approve/revoke)
+  app.patch("/api/identity/access-reviews/entitlements/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+      const { decision, decisionReason } = req.body;
+
+      if (!decision || !["approve", "revoke"].includes(decision)) {
+        return res.status(400).json({ message: "decision must be 'approve' or 'revoke'" });
+      }
+
+      const [entitlement] = await db
+        .select()
+        .from(accessReviewEntitlements)
+        .where(and(eq(accessReviewEntitlements.id, id), eq(accessReviewEntitlements.orgId, orgId)));
+
+      if (!entitlement) {
+        return res.status(404).json({ message: "Entitlement not found" });
+      }
+
+      const userId = (req as any).user?.id || "system";
+
+      const [updated] = await db
+        .update(accessReviewEntitlements)
+        .set({
+          status: decision === "approve" ? "approved" : "revoked",
+          decision,
+          decisionBy: userId,
+          decisionAt: new Date(),
+          decisionReason: typeof decisionReason === "string" ? decisionReason : null,
+        })
+        .where(and(eq(accessReviewEntitlements.id, id), eq(accessReviewEntitlements.orgId, orgId)))
+        .returning();
+
+      // Update campaign counters
+      const campaignId = entitlement.campaignId;
+      const [stats] = await db
+        .select({
+          reviewed: count(),
+        })
+        .from(accessReviewEntitlements)
+        .where(
+          and(
+            eq(accessReviewEntitlements.campaignId, campaignId),
+            eq(accessReviewEntitlements.orgId, orgId),
+            or(eq(accessReviewEntitlements.status, "approved"), eq(accessReviewEntitlements.status, "revoked")),
+          ),
+        );
+
+      const [approvedStats] = await db
+        .select({ cnt: count() })
+        .from(accessReviewEntitlements)
+        .where(
+          and(
+            eq(accessReviewEntitlements.campaignId, campaignId),
+            eq(accessReviewEntitlements.orgId, orgId),
+            eq(accessReviewEntitlements.status, "approved"),
+          ),
+        );
+
+      const [revokedStats] = await db
+        .select({ cnt: count() })
+        .from(accessReviewEntitlements)
+        .where(
+          and(
+            eq(accessReviewEntitlements.campaignId, campaignId),
+            eq(accessReviewEntitlements.orgId, orgId),
+            eq(accessReviewEntitlements.status, "revoked"),
+          ),
+        );
+
+      await db
+        .update(accessReviewCampaigns)
+        .set({
+          reviewedCount: stats.reviewed,
+          approvedCount: approvedStats.cnt,
+          revokedCount: revokedStats.cnt,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(accessReviewCampaigns.id, campaignId), eq(accessReviewCampaigns.orgId, orgId)));
+
+      res.json(updated);
+    } catch (error) {
+      log.error("Decide on entitlement error", { error: String(error) });
+      res.status(500).json({ message: "Failed to update entitlement" });
+    }
+  });
+
+  // Complete campaign
+  app.post("/api/identity/access-reviews/:id/complete", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+
+      const [campaign] = await db
+        .select()
+        .from(accessReviewCampaigns)
+        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
+
+      if (!campaign) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+      if (campaign.status !== "active") {
+        return res.status(400).json({ message: "Campaign must be active to complete" });
+      }
+
+      const [updated] = await db
+        .update(accessReviewCampaigns)
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      log.error("Complete access review campaign error", { error: String(error) });
+      res.status(500).json({ message: "Failed to complete campaign" });
+    }
+  });
+
+  // =========================================================================
+  // SCIM 2.0 PROVISIONING
+  // =========================================================================
+
+  // SCIM provisioning logs
+  app.get("/api/identity/scim/logs", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const provider = req.query.provider ? String(req.query.provider) : undefined;
+      const operation = req.query.operation ? String(req.query.operation) : undefined;
+
+      const conditions = [eq(scimProvisioningLogs.orgId, orgId)];
+      if (provider) conditions.push(eq(scimProvisioningLogs.provider, provider));
+      if (operation) conditions.push(eq(scimProvisioningLogs.operationType, operation));
+
+      const logs = await db
+        .select()
+        .from(scimProvisioningLogs)
+        .where(and(...conditions))
+        .orderBy(desc(scimProvisioningLogs.createdAt))
+        .limit(200);
+
+      // Stats
+      const [totalResult] = await db
+        .select({ cnt: count() })
+        .from(scimProvisioningLogs)
+        .where(eq(scimProvisioningLogs.orgId, orgId));
+
+      const [successResult] = await db
+        .select({ cnt: count() })
+        .from(scimProvisioningLogs)
+        .where(and(eq(scimProvisioningLogs.orgId, orgId), eq(scimProvisioningLogs.success, true)));
+
+      const [failResult] = await db
+        .select({ cnt: count() })
+        .from(scimProvisioningLogs)
+        .where(and(eq(scimProvisioningLogs.orgId, orgId), eq(scimProvisioningLogs.success, false)));
+
+      res.json({
+        logs,
+        stats: {
+          total: totalResult.cnt,
+          successful: successResult.cnt,
+          failed: failResult.cnt,
+        },
+      });
+    } catch (error) {
+      log.error("Get SCIM logs error", { error: String(error) });
+      res.status(500).json({ message: "Failed to get SCIM provisioning logs" });
+    }
+  });
+
+  // SCIM webhook endpoint (Okta/Azure AD push to this)
+  app.post("/api/identity/scim/provision", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { provider, operationType, externalUserId, externalUserName, externalEmail, groupName, rawPayload } =
+        req.body;
+
+      const validProviders = ["azure_ad", "okta", "google_workspace", "onelogin", "jumpcloud"];
+      if (!provider || !validProviders.includes(provider)) {
+        return res.status(400).json({ message: `Invalid provider. Valid: ${validProviders.join(", ")}` });
+      }
+
+      const validOps = ["create", "update", "delete", "activate", "deactivate", "group_add", "group_remove"];
+      if (!operationType || !validOps.includes(operationType)) {
+        return res.status(400).json({ message: `Invalid operationType. Valid: ${validOps.join(", ")}` });
+      }
+
+      const [logEntry] = await db
+        .insert(scimProvisioningLogs)
+        .values({
+          orgId,
+          provider,
+          operationType,
+          externalUserId: typeof externalUserId === "string" ? externalUserId : null,
+          externalUserName: typeof externalUserName === "string" ? externalUserName : null,
+          externalEmail: typeof externalEmail === "string" ? externalEmail : null,
+          groupName: typeof groupName === "string" ? groupName : null,
+          success: true,
+          rawPayload: rawPayload || null,
+        })
+        .returning();
+
+      res.status(201).json(logEntry);
+    } catch (error) {
+      log.error("SCIM provision error", { error: String(error) });
+      res.status(500).json({ message: "Failed to process SCIM provisioning" });
+    }
+  });
+
+  // =========================================================================
+  // STALE ACCOUNT DETECTION
+  // =========================================================================
+
+  app.get("/api/identity/stale-accounts", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const thresholdDays = parseInt(String(req.query.days || "90"), 10);
+      const safeThreshold = Number.isFinite(thresholdDays) && thresholdDays > 0 ? thresholdDays : 90;
+
+      const profiles = await db
+        .select()
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.isStale, true)))
+        .orderBy(desc(identityRiskProfiles.daysSinceActivity))
+        .limit(200);
+
+      // Also find users with no login in threshold days
+      const cutoffDate = new Date(Date.now() - safeThreshold * 24 * 60 * 60 * 1000);
+      const staleUsers = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          lastLoginAt: users.lastLoginAt,
+          createdAt: users.createdAt,
+          mfaEnabled: users.mfaEnabled,
+          disabledAt: users.disabledAt,
+        })
+        .from(users)
+        .where(or(lt(users.lastLoginAt, cutoffDate), isNull(users.lastLoginAt)))
+        .limit(200);
+
+      const staleWithAge = staleUsers.map((u) => ({
+        ...u,
+        daysSinceActivity: u.lastLoginAt
+          ? Math.floor((Date.now() - new Date(u.lastLoginAt).getTime()) / (1000 * 60 * 60 * 24))
+          : u.createdAt
+            ? Math.floor((Date.now() - new Date(u.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+            : 999,
+        isDisabled: !!u.disabledAt,
+      }));
+
+      res.json({
+        profiles,
+        staleUsers: staleWithAge,
+        thresholdDays: safeThreshold,
+        totalStale: staleWithAge.length,
+      });
+    } catch (error) {
+      log.error("Get stale accounts error", { error: String(error) });
+      res.status(500).json({ message: "Failed to get stale accounts" });
+    }
+  });
+
+  // =========================================================================
+  // IDENTITY RISK PROFILES (Blast Radius + Lateral Movement)
+  // =========================================================================
+
+  // List risk profiles
+  app.get("/api/identity/risk-profiles", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const riskLevel = req.query.riskLevel ? String(req.query.riskLevel) : undefined;
+      const search = req.query.search ? String(req.query.search) : undefined;
+
+      const conditions = [eq(identityRiskProfiles.orgId, orgId)];
+      if (riskLevel) conditions.push(eq(identityRiskProfiles.riskLevel, riskLevel));
+      if (search) {
+        conditions.push(
+          or(like(identityRiskProfiles.userName, `%${search}%`), like(identityRiskProfiles.userEmail, `%${search}%`))!,
+        );
+      }
+
+      const profiles = await db
+        .select()
+        .from(identityRiskProfiles)
+        .where(and(...conditions))
+        .orderBy(desc(identityRiskProfiles.riskScore))
+        .limit(200);
+
+      // Summary stats
+      const [totalResult] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(eq(identityRiskProfiles.orgId, orgId));
+
+      const [criticalResult] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.riskLevel, "critical")));
+
+      const [highResult] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.riskLevel, "high")));
+
+      const [staleResult] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.isStale, true)));
+
+      const [noMfaResult] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.mfaEnabled, false)));
+
+      res.json({
+        profiles,
+        stats: {
+          total: totalResult.cnt,
+          critical: criticalResult.cnt,
+          high: highResult.cnt,
+          stale: staleResult.cnt,
+          noMfa: noMfaResult.cnt,
+        },
+      });
+    } catch (error) {
+      log.error("List identity risk profiles error", { error: String(error) });
+      res.status(500).json({ message: "Failed to list identity risk profiles" });
+    }
+  });
+
+  // Assess identity risk (run assessment for a user)
+  app.post("/api/identity/risk-profiles/assess", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { userId, userName, userEmail } = req.body;
+
+      if (!userId || typeof userId !== "string") {
+        return res.status(400).json({ message: "userId is required" });
+      }
+      if (!userName || typeof userName !== "string") {
+        return res.status(400).json({ message: "userName is required" });
+      }
+
+      // Look up the user's access graph for blast radius calculation
+      const accessPaths = await db
+        .select()
+        .from(identityAccessGraph)
+        .where(
+          and(
+            eq(identityAccessGraph.orgId, orgId),
+            eq(identityAccessGraph.sourceUserId, userId),
+            eq(identityAccessGraph.isActive, true),
+          ),
+        );
+
+      const accessibleSystems = new Set(accessPaths.map((p) => p.targetSystem));
+      const adminPaths = accessPaths.filter((p) => ["admin", "superadmin"].includes(p.permissionLevel));
+      const canReachCritical = adminPaths.length > 0;
+
+      // Calculate blast radius score (0-100)
+      const blastRadiusScore = Math.min(100, accessibleSystems.size * 10 + adminPaths.length * 20);
+
+      // Look up user record for stale detection
+      const [userRecord] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+      const daysSinceActivity = userRecord?.lastLoginAt
+        ? Math.floor((Date.now() - new Date(userRecord.lastLoginAt).getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
+
+      const isStale = daysSinceActivity > 90;
+      const mfaEnabled = userRecord?.mfaEnabled ?? false;
+
+      // Calculate overall risk score
+      let riskScore = 0;
+      if (isStale) riskScore += 25;
+      if (!mfaEnabled) riskScore += 20;
+      if (canReachCritical) riskScore += 30;
+      riskScore += Math.min(25, blastRadiusScore / 4);
+
+      const riskLevel = riskScore >= 80 ? "critical" : riskScore >= 60 ? "high" : riskScore >= 30 ? "medium" : "low";
+
+      // Upsert the profile
+      const existing = await db
+        .select()
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.userId, userId)))
+        .limit(1);
+
+      let profile;
+      if (existing.length > 0) {
+        [profile] = await db
+          .update(identityRiskProfiles)
+          .set({
+            userName: String(userName),
+            userEmail: typeof userEmail === "string" ? userEmail : null,
+            riskLevel,
+            riskScore,
+            isStale,
+            lastActivityAt: userRecord?.lastLoginAt || null,
+            daysSinceActivity,
+            isServiceAccount: false,
+            blastRadiusScore,
+            accessibleSystems: accessibleSystems.size,
+            accessibleSecrets: 0,
+            privilegedRoles: adminPaths.map((p) => p.grantedVia),
+            lateralMovementPaths: accessPaths.length,
+            canReachCritical,
+            pivotPoints: accessPaths
+              .filter((p) => ["admin", "superadmin"].includes(p.permissionLevel))
+              .map((p) => p.targetSystem),
+            mfaEnabled,
+            hasExcessivePermissions: adminPaths.length > 3,
+            failedLoginCount: userRecord?.failedLoginCount || 0,
+            lastAssessedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.userId, userId)))
+          .returning();
+      } else {
+        [profile] = await db
+          .insert(identityRiskProfiles)
+          .values({
+            orgId,
+            userId: String(userId),
+            userName: String(userName),
+            userEmail: typeof userEmail === "string" ? userEmail : null,
+            riskLevel,
+            riskScore,
+            isStale,
+            lastActivityAt: userRecord?.lastLoginAt || null,
+            daysSinceActivity,
+            isServiceAccount: false,
+            blastRadiusScore,
+            accessibleSystems: accessibleSystems.size,
+            accessibleSecrets: 0,
+            privilegedRoles: adminPaths.map((p) => p.grantedVia),
+            lateralMovementPaths: accessPaths.length,
+            canReachCritical,
+            pivotPoints: accessPaths
+              .filter((p) => ["admin", "superadmin"].includes(p.permissionLevel))
+              .map((p) => p.targetSystem),
+            mfaEnabled,
+            hasExcessivePermissions: adminPaths.length > 3,
+            failedLoginCount: userRecord?.failedLoginCount || 0,
+            lastAssessedAt: new Date(),
+          })
+          .returning();
+      }
+
+      res.json(profile);
+    } catch (error) {
+      log.error("Assess identity risk error", { error: String(error) });
+      res.status(500).json({ message: "Failed to assess identity risk" });
+    }
+  });
+
+  // Blast radius for a specific user
+  app.get("/api/identity/blast-radius/:userId", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = String(req.params.userId);
+
+      const accessPaths = await db
+        .select()
+        .from(identityAccessGraph)
+        .where(
+          and(
+            eq(identityAccessGraph.orgId, orgId),
+            eq(identityAccessGraph.sourceUserId, userId),
+            eq(identityAccessGraph.isActive, true),
+          ),
+        );
+
+      const [profile] = await db
+        .select()
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.userId, userId)));
+
+      // Group by system
+      const systemMap = new Map<
+        string,
+        { system: string; resources: string[]; maxPermission: string; riskWeight: number }
+      >();
+      for (const path of accessPaths) {
+        const existing = systemMap.get(path.targetSystem);
+        if (existing) {
+          if (path.targetResource) existing.resources.push(path.targetResource);
+          if (permissionRank(path.permissionLevel) > permissionRank(existing.maxPermission)) {
+            existing.maxPermission = path.permissionLevel;
+          }
+          existing.riskWeight = Math.max(existing.riskWeight, path.riskWeight || 1);
+        } else {
+          systemMap.set(path.targetSystem, {
+            system: path.targetSystem,
+            resources: path.targetResource ? [path.targetResource] : [],
+            maxPermission: path.permissionLevel,
+            riskWeight: path.riskWeight || 1,
+          });
+        }
+      }
+
+      res.json({
+        userId,
+        profile: profile || null,
+        accessPaths,
+        systemBreakdown: Array.from(systemMap.values()),
+        totalSystems: systemMap.size,
+        totalPaths: accessPaths.length,
+        criticalPaths: accessPaths.filter((p) => ["admin", "superadmin"].includes(p.permissionLevel)).length,
+      });
+    } catch (error) {
+      log.error("Get blast radius error", { error: String(error) });
+      res.status(500).json({ message: "Failed to get blast radius" });
+    }
+  });
+
+  // =========================================================================
+  // LATERAL MOVEMENT RISK GRAPH
+  // =========================================================================
+
+  // Get access graph
+  app.get("/api/identity/access-graph", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const system = req.query.system ? String(req.query.system) : undefined;
+      const userId = req.query.userId ? String(req.query.userId) : undefined;
+
+      const conditions = [eq(identityAccessGraph.orgId, orgId), eq(identityAccessGraph.isActive, true)];
+      if (system) conditions.push(eq(identityAccessGraph.targetSystem, system));
+      if (userId) conditions.push(eq(identityAccessGraph.sourceUserId, userId));
+
+      const edges = await db
+        .select()
+        .from(identityAccessGraph)
+        .where(and(...conditions))
+        .orderBy(desc(identityAccessGraph.riskWeight))
+        .limit(500);
+
+      // Extract unique users and systems for graph nodes
+      const userNodes = new Map<string, { id: string; name: string; type: "user" }>();
+      const systemNodes = new Map<string, { id: string; name: string; type: "system" }>();
+
+      for (const edge of edges) {
+        userNodes.set(edge.sourceUserId, { id: edge.sourceUserId, name: edge.sourceUserName, type: "user" });
+        systemNodes.set(edge.targetSystem, { id: edge.targetSystem, name: edge.targetSystem, type: "system" });
+      }
+
+      res.json({
+        nodes: [...Array.from(userNodes.values()), ...Array.from(systemNodes.values())],
+        edges: edges.map((e) => ({
+          id: e.id,
+          source: e.sourceUserId,
+          target: e.targetSystem,
+          permissionLevel: e.permissionLevel,
+          accessType: e.accessType,
+          grantedVia: e.grantedVia,
+          riskWeight: e.riskWeight,
+          lastUsedAt: e.lastUsedAt,
+        })),
+        totalEdges: edges.length,
+        totalUsers: userNodes.size,
+        totalSystems: systemNodes.size,
+      });
+    } catch (error) {
+      log.error("Get access graph error", { error: String(error) });
+      res.status(500).json({ message: "Failed to get access graph" });
+    }
+  });
+
+  // Add access graph edge
+  app.post("/api/identity/access-graph", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const {
+        sourceUserId,
+        sourceUserName,
+        targetSystem,
+        targetResource,
+        accessType,
+        permissionLevel,
+        grantedVia,
+        expiresAt,
+      } = req.body;
+
+      if (!sourceUserId || typeof sourceUserId !== "string") {
+        return res.status(400).json({ message: "sourceUserId is required" });
+      }
+      if (!sourceUserName || typeof sourceUserName !== "string") {
+        return res.status(400).json({ message: "sourceUserName is required" });
+      }
+      if (!targetSystem || typeof targetSystem !== "string") {
+        return res.status(400).json({ message: "targetSystem is required" });
+      }
+
+      const validAccessTypes = ["direct", "inherited", "delegated"];
+      if (!accessType || !validAccessTypes.includes(accessType)) {
+        return res.status(400).json({ message: `accessType must be: ${validAccessTypes.join(", ")}` });
+      }
+
+      const validPermissions = ["read", "write", "admin", "superadmin"];
+      if (!permissionLevel || !validPermissions.includes(permissionLevel)) {
+        return res.status(400).json({ message: `permissionLevel must be: ${validPermissions.join(", ")}` });
+      }
+
+      const riskWeight =
+        permissionLevel === "superadmin" ? 10 : permissionLevel === "admin" ? 7 : permissionLevel === "write" ? 4 : 1;
+
+      const [edge] = await db
+        .insert(identityAccessGraph)
+        .values({
+          orgId,
+          sourceUserId: String(sourceUserId),
+          sourceUserName: String(sourceUserName),
+          targetSystem: String(targetSystem),
+          targetResource: typeof targetResource === "string" ? targetResource : null,
+          accessType,
+          permissionLevel,
+          grantedVia: typeof grantedVia === "string" ? grantedVia : null,
+          isActive: true,
+          riskWeight,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+        })
+        .returning();
+
+      res.status(201).json(edge);
+    } catch (error) {
+      log.error("Add access graph edge error", { error: String(error) });
+      res.status(500).json({ message: "Failed to add access graph edge" });
+    }
+  });
+
+  // =========================================================================
+  // IDENTITY GOVERNANCE SUMMARY
+  // =========================================================================
+
+  app.get("/api/identity/summary", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      const [campaignCount] = await db
+        .select({ cnt: count() })
+        .from(accessReviewCampaigns)
+        .where(eq(accessReviewCampaigns.orgId, orgId));
+
+      const [activeCampaigns] = await db
+        .select({ cnt: count() })
+        .from(accessReviewCampaigns)
+        .where(and(eq(accessReviewCampaigns.orgId, orgId), eq(accessReviewCampaigns.status, "active")));
+
+      const [riskProfileCount] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(eq(identityRiskProfiles.orgId, orgId));
+
+      const [criticalRisk] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.riskLevel, "critical")));
+
+      const [highRisk] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.riskLevel, "high")));
+
+      const [staleCount] = await db
+        .select({ cnt: count() })
+        .from(identityRiskProfiles)
+        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.isStale, true)));
+
+      const [scimTotal] = await db
+        .select({ cnt: count() })
+        .from(scimProvisioningLogs)
+        .where(eq(scimProvisioningLogs.orgId, orgId));
+
+      const [accessEdges] = await db
+        .select({ cnt: count() })
+        .from(identityAccessGraph)
+        .where(and(eq(identityAccessGraph.orgId, orgId), eq(identityAccessGraph.isActive, true)));
+
+      res.json({
+        campaigns: { total: campaignCount.cnt, active: activeCampaigns.cnt },
+        identities: {
+          total: riskProfileCount.cnt,
+          critical: criticalRisk.cnt,
+          high: highRisk.cnt,
+          stale: staleCount.cnt,
+        },
+        scimEvents: scimTotal.cnt,
+        accessGraphEdges: accessEdges.cnt,
+      });
+    } catch (error) {
+      log.error("Get identity governance summary error", { error: String(error) });
+      res.status(500).json({ message: "Failed to get identity governance summary" });
+    }
+  });
+}
+
+function permissionRank(level: string): number {
+  switch (level) {
+    case "superadmin":
+      return 4;
+    case "admin":
+      return 3;
+    case "write":
+      return 2;
+    case "read":
+      return 1;
+    default:
+      return 0;
+  }
+}
