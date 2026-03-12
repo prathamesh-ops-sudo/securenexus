@@ -5844,3 +5844,313 @@ export const logSourcesRelations = relations(logSources, ({ one }) => ({
 
 export type LogSource = typeof logSources.$inferSelect;
 export type InsertLogSource = typeof logSources.$inferInsert;
+
+// =============================================================================
+// VULNERABILITY SCANNER
+// =============================================================================
+
+export const VULN_PKG_MANAGERS = ["apt", "rpm", "pip", "npm", "gem", "cargo", "nuget"] as const;
+export const VULN_FINDING_STATUSES = ["open", "acknowledged", "remediated", "false_positive"] as const;
+export const VULN_SEVERITIES = ["critical", "high", "medium", "low", "none"] as const;
+
+export const vulnPackages = pgTable(
+  "vuln_packages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    packageManager: text("package_manager").notNull(),
+    packageName: text("package_name").notNull(),
+    installedVersion: text("installed_version").notNull(),
+    isVulnerable: boolean("is_vulnerable").notNull().default(false),
+    cveCount: integer("cve_count").notNull().default(0),
+    reportedAt: timestamp("reported_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vuln_packages_org").on(table.orgId),
+    index("idx_vuln_packages_sensor").on(table.sensorId),
+    index("idx_vuln_packages_vuln").on(table.orgId, table.isVulnerable),
+  ],
+);
+
+export const vulnFindings = pgTable(
+  "vuln_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    packageId: varchar("package_id").references(() => vulnPackages.id, { onDelete: "cascade" }),
+    cveId: text("cve_id").notNull(),
+    packageName: text("package_name").notNull(),
+    installedVersion: text("installed_version").notNull(),
+    fixedVersion: text("fixed_version"),
+    severity: text("severity").notNull().default("medium"),
+    cvssScore: real("cvss_score"),
+    description: text("description"),
+    references: jsonb("references"),
+    status: text("status").notNull().default("open"),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    remediatedBy: varchar("remediated_by"),
+    remediatedAt: timestamp("remediated_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vuln_findings_org").on(table.orgId),
+    index("idx_vuln_findings_sensor").on(table.sensorId),
+    index("idx_vuln_findings_cve").on(table.cveId),
+    index("idx_vuln_findings_status").on(table.orgId, table.status),
+    index("idx_vuln_findings_severity").on(table.orgId, table.severity),
+  ],
+);
+
+export const vulnPackagesRelations = relations(vulnPackages, ({ one }) => ({
+  organization: one(organizations, { fields: [vulnPackages.orgId], references: [organizations.id] }),
+  sensor: one(nativeSensors, { fields: [vulnPackages.sensorId], references: [nativeSensors.id] }),
+}));
+
+export const vulnFindingsRelations = relations(vulnFindings, ({ one }) => ({
+  organization: one(organizations, { fields: [vulnFindings.orgId], references: [organizations.id] }),
+  sensor: one(nativeSensors, { fields: [vulnFindings.sensorId], references: [nativeSensors.id] }),
+  package: one(vulnPackages, { fields: [vulnFindings.packageId], references: [vulnPackages.id] }),
+}));
+
+export type VulnPackage = typeof vulnPackages.$inferSelect;
+export type InsertVulnPackage = typeof vulnPackages.$inferInsert;
+export type VulnFinding = typeof vulnFindings.$inferSelect;
+export type InsertVulnFinding = typeof vulnFindings.$inferInsert;
+
+// =============================================================================
+// UEBA BEHAVIORAL ANALYTICS
+// =============================================================================
+
+export const UEBA_ENTITY_TYPES = ["user", "host"] as const;
+export const UEBA_ANOMALY_TYPES = [
+  "off_hours_login",
+  "new_geo_location",
+  "suspicious_process",
+  "traffic_volume_spike",
+  "new_source_ip",
+  "brute_force_attempt",
+  "privilege_escalation",
+  "data_exfiltration",
+] as const;
+export const UEBA_RISK_LEVELS = ["critical", "high", "medium", "low", "none"] as const;
+
+export const uebaBaselines = pgTable(
+  "ueba_baselines",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    entityName: text("entity_name"),
+    normalLoginHoursStart: integer("normal_login_hours_start"),
+    normalLoginHoursEnd: integer("normal_login_hours_end"),
+    knownSourceIps: text("known_source_ips")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    processAllowList: text("process_allow_list")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    avgDailyEventVolume: real("avg_daily_event_volume").default(0),
+    avgDailyDataBytes: real("avg_daily_data_bytes").default(0),
+    baselineWindowDays: integer("baseline_window_days").notNull().default(30),
+    lastUpdated: timestamp("last_updated").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ueba_baselines_org").on(table.orgId),
+    index("idx_ueba_baselines_entity").on(table.orgId, table.entityType, table.entityId),
+  ],
+);
+
+export const uebaAnomalies = pgTable(
+  "ueba_anomalies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    entityName: text("entity_name"),
+    anomalyType: text("anomaly_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    riskScore: integer("risk_score").notNull().default(0),
+    description: text("description"),
+    details: jsonb("details"),
+    sourceIp: text("source_ip"),
+    geoLocation: text("geo_location"),
+    processName: text("process_name"),
+    alertCreated: boolean("alert_created").default(false),
+    alertId: varchar("alert_id"),
+    dismissed: boolean("dismissed").default(false),
+    dismissedBy: varchar("dismissed_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ueba_anomalies_org").on(table.orgId),
+    index("idx_ueba_anomalies_entity").on(table.orgId, table.entityType, table.entityId),
+    index("idx_ueba_anomalies_type").on(table.orgId, table.anomalyType),
+    index("idx_ueba_anomalies_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const uebaEntityScores = pgTable(
+  "ueba_entity_scores",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    entityName: text("entity_name"),
+    riskScore: integer("risk_score").notNull().default(0),
+    riskLevel: text("risk_level").notNull().default("none"),
+    anomalyCount: integer("anomaly_count").notNull().default(0),
+    lastAnomalyAt: timestamp("last_anomaly_at"),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ueba_scores_org").on(table.orgId),
+    index("idx_ueba_scores_risk").on(table.orgId, table.riskScore),
+    index("idx_ueba_scores_entity").on(table.orgId, table.entityType, table.entityId),
+  ],
+);
+
+export const uebaBaselinesRelations = relations(uebaBaselines, ({ one }) => ({
+  organization: one(organizations, { fields: [uebaBaselines.orgId], references: [organizations.id] }),
+}));
+export const uebaAnomaliesRelations = relations(uebaAnomalies, ({ one }) => ({
+  organization: one(organizations, { fields: [uebaAnomalies.orgId], references: [organizations.id] }),
+}));
+export const uebaEntityScoresRelations = relations(uebaEntityScores, ({ one }) => ({
+  organization: one(organizations, { fields: [uebaEntityScores.orgId], references: [organizations.id] }),
+}));
+
+export type UebaBaseline = typeof uebaBaselines.$inferSelect;
+export type InsertUebaBaseline = typeof uebaBaselines.$inferInsert;
+export type UebaAnomaly = typeof uebaAnomalies.$inferSelect;
+export type InsertUebaAnomaly = typeof uebaAnomalies.$inferInsert;
+export type UebaEntityScore = typeof uebaEntityScores.$inferSelect;
+export type InsertUebaEntityScore = typeof uebaEntityScores.$inferInsert;
+
+// =============================================================================
+// AGENT REMOTE RESPONSE ACTIONS
+// =============================================================================
+
+export const AGENT_ACTION_TYPES = [
+  "kill_process",
+  "isolate_host",
+  "block_ip",
+  "quarantine_file",
+  "delete_file",
+  "disable_user",
+  "collect_forensics",
+  "run_script",
+  "block_domain",
+  "enable_logging",
+  "restart_service",
+] as const;
+export const AGENT_ACTION_RISK_LEVELS = ["low", "medium", "high"] as const;
+export const AGENT_ACTION_STATUSES = [
+  "pending_approval",
+  "approved",
+  "dispatched",
+  "executing",
+  "completed",
+  "failed",
+  "rejected",
+  "timed_out",
+  "cancelled",
+] as const;
+
+export const agentResponseActions = pgTable(
+  "agent_response_actions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    actionType: text("action_type").notNull(),
+    riskLevel: text("risk_level").notNull().default("medium"),
+    status: text("status").notNull().default("pending_approval"),
+    // Action-specific parameters
+    targetPid: integer("target_pid"),
+    targetProcessName: text("target_process_name"),
+    targetIp: text("target_ip"),
+    targetFilePath: text("target_file_path"),
+    targetUserName: text("target_user_name"),
+    targetDomain: text("target_domain"),
+    targetServiceName: text("target_service_name"),
+    scriptContent: text("script_content"),
+    scriptType: text("script_type"),
+    parameters: jsonb("parameters"),
+    // Workflow
+    requestedBy: varchar("requested_by"),
+    requestedByName: text("requested_by_name"),
+    approvedBy: varchar("approved_by"),
+    approvedByName: text("approved_by_name"),
+    approvedAt: timestamp("approved_at"),
+    rejectedBy: varchar("rejected_by"),
+    rejectedReason: text("rejected_reason"),
+    rejectedAt: timestamp("rejected_at"),
+    // Execution
+    dispatchedAt: timestamp("dispatched_at"),
+    completedAt: timestamp("completed_at"),
+    resultOutput: text("result_output"),
+    resultError: text("result_error"),
+    timeoutSeconds: integer("timeout_seconds").notNull().default(300),
+    expiresAt: timestamp("expires_at"),
+    // Audit
+    incidentId: varchar("incident_id"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_actions_org").on(table.orgId),
+    index("idx_agent_actions_sensor").on(table.sensorId),
+    index("idx_agent_actions_status").on(table.orgId, table.status),
+    index("idx_agent_actions_type").on(table.orgId, table.actionType),
+    index("idx_agent_actions_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const agentResponseActionsRelations = relations(agentResponseActions, ({ one }) => ({
+  organization: one(organizations, { fields: [agentResponseActions.orgId], references: [organizations.id] }),
+  sensor: one(nativeSensors, { fields: [agentResponseActions.sensorId], references: [nativeSensors.id] }),
+}));
+
+export type AgentResponseAction = typeof agentResponseActions.$inferSelect;
+export type InsertAgentResponseAction = typeof agentResponseActions.$inferInsert;

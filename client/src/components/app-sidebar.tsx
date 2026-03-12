@@ -72,6 +72,10 @@ import {
   ClipboardCheck,
   Flag,
   ShieldAlert,
+  Scan,
+  UserCheck,
+  Zap as ZapIcon,
+  Terminal,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -281,7 +285,13 @@ const navGroups: NavGroup[] = [
         items: [
           { title: "Native Sensors", url: "/native-sensors", icon: Cpu },
           { title: "Detection Rules", url: "/detection-rules", icon: ShieldAlert },
+          { title: "Vuln Scanner", url: "/vuln-scanner", icon: Scan },
+          { title: "Agent Response", url: "/agent-response", icon: Terminal },
         ],
+      },
+      {
+        label: "Behavioral Analytics",
+        items: [{ title: "UEBA Analytics", url: "/ueba", icon: UserCheck }],
       },
       {
         label: "Compliance & Reporting",
