@@ -1066,25 +1066,34 @@ function buildHeuristicInvestigation(incident: any, alerts: any[]): DeepInvestig
 function buildHeuristicThreatHunt(huntContext: string, telemetryData: any): ThreatHuntingResult {
   const dataPoints = Array.isArray(telemetryData) ? telemetryData.length : 0;
   return {
+    huntMissionId: "heuristic_" + Date.now(),
     hypotheses: [
       {
+        id: "heuristic_h1",
         hypothesis: `Statistical analysis of ${dataPoints} telemetry data points for context: ${huntContext}`,
+        rationale: "Heuristic analysis only — AI-enhanced hunting unavailable",
+        priority: "medium",
+        testingMethod: "manual_review",
+        expectedIndicators: [],
         confidence: 0.3,
-        supportingEvidence: ["Heuristic analysis only — AI-enhanced hunting unavailable"],
-        refutingEvidence: [],
       },
     ],
     findings: [],
-    indicators: [],
-    recommendations: [
+    anomalies: [],
+    huntSummary: {
+      hypothesesTested: 1,
+      threatsConfirmed: 0,
+      threatsLikelyButUnconfirmed: 0,
+      anomaliesRequiringInvestigation: 0,
+      cleanFindings: 0,
+    },
+    nextHuntRecommendations: [
       "Manually review telemetry data for anomalies",
       "Cross-reference with known threat intelligence feeds",
       "Consider enabling AI services for deeper analysis",
     ],
-    huntStatus: "incomplete",
-    coverageGaps: ["AI-enhanced pattern recognition unavailable"],
-    dataSource: "heuristic_fallback",
-  } as any;
+    toolingGaps: ["AI-enhanced pattern recognition unavailable"],
+  };
 }
 
 function buildHeuristicBehavioralAnalysis(
@@ -1094,41 +1103,80 @@ function buildHeuristicBehavioralAnalysis(
 ): BehavioralAnalysisResult {
   const activities = Array.isArray(activityData) ? activityData.length : 0;
   return {
-    riskScore: 50,
+    entityId: entityContext?.id || "unknown",
+    entityType: entityContext?.type || "unknown",
+    analysisTimeframe: "last_30_days",
+    behavioralScore: 50,
     riskLevel: "medium",
     anomalies: [],
-    behaviorProfile: {
-      entity: entityContext?.name || entityContext?.id || "unknown",
-      activitiesAnalyzed: activities,
-      baselineDeviation: "unknown — AI analysis unavailable",
+    behavioralBaseline: {
+      typical_login_hours: "unknown — AI analysis unavailable",
+      typical_geo_locations: [],
+      typical_resources: [],
+      typical_data_volume: "unknown",
+      typical_authentication: [],
     },
-    recommendations: [
-      "Review entity activity manually",
-      "Compare against baseline patterns",
-      "Enable AI services for automated behavioral analysis",
+    deviationsFromBaseline: [],
+    riskFactors: [
+      {
+        factor: "AI analysis unavailable — heuristic assessment only",
+        riskWeight: 0.3,
+      },
     ],
-    confidenceScore: 0.3,
-    dataSource: "heuristic_fallback",
-  } as any;
+    recommendation:
+      "Manual review recommended. AI behavioral analysis is unavailable. Review entity activity patterns and compare against known baselines.",
+    confidenceStatement: `Low confidence (heuristic only). Analyzed ${activities} activity records without AI enhancement.`,
+  };
 }
 
 function buildHeuristicAttackPaths(compromiseState: any, crownJewels: string[]): AttackPathPredictionResult {
   return {
-    paths: crownJewels.map((asset, i) => ({
-      id: `path_${i}`,
-      target: asset,
+    currentCompromiseState: {
+      accessLevel: compromiseState?.accessLevel || "unknown",
+      compromisedHosts: compromiseState?.compromisedHosts || [],
+      compromisedAccounts: compromiseState?.compromisedAccounts || [],
+      establishedPersistence: compromiseState?.establishedPersistence || [],
+      c2Channels: compromiseState?.c2Channels || [],
+    },
+    inferredObjectives: [
+      {
+        objective: "Unknown — AI analysis unavailable",
+        confidence: 0,
+        reasoning: "Heuristic fallback cannot infer attacker objectives",
+      },
+    ],
+    predictedAttackPaths: crownJewels.map((asset, i) => ({
+      pathId: `heuristic_path_${i}`,
+      objective: `Reach ${asset}`,
       probability: 0,
       steps: [],
-      mitigations: ["Enable AI services for attack path prediction"],
+      total_probability: 0,
+      estimated_time: "unknown",
+      indicators: [],
     })),
-    highestRiskPath: crownJewels[0] || "unknown",
-    overallRisk: "unknown — AI analysis unavailable",
-    recommendations: [
-      "Manually assess attack paths to high-value assets",
-      "Review network segmentation between compromised hosts and crown jewels",
-      "Enable AI services for automated attack path prediction",
+    defenseRecommendations: [
+      {
+        path: "general",
+        priority: 1,
+        defenses: [
+          {
+            control: "Enable AI services for automated attack path prediction",
+            effectiveness: 0,
+            cost: "unknown",
+          },
+        ],
+      },
     ],
-    confidenceScore: 0.2,
-    dataSource: "heuristic_fallback",
-  } as any;
+    blindSpots: [
+      "AI-enhanced attack path prediction unavailable",
+      "Manual assessment recommended for high-value asset exposure",
+    ],
+    worstCaseScenario: {
+      scenario: "Unable to predict — AI analysis unavailable",
+      probability: 0,
+      impact: "unknown",
+      time_to_scenario: "unknown",
+      prevention: "Manually assess attack paths to high-value assets and review network segmentation",
+    },
+  };
 }
