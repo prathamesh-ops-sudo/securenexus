@@ -61,28 +61,27 @@ export async function executeHunt(
   }
 }
 
+const ALLOWED_TABLES = ["alerts", "ingestion_logs", "sensor_events"] as const;
+
 async function queryTable(compiled: CompiledFilter, orgId: string, limit: number): Promise<Record<string, unknown>[]> {
-  // Build a safe parameterised query with org isolation always enforced
-  const orgParam = compiled.params.length + 1;
-  const limitParam = orgParam + 1;
+  // Validate target table against allowlist to prevent injection
+  if (!ALLOWED_TABLES.includes(compiled.targetTable)) {
+    return [];
+  }
 
-  const rawSql = `
-    SELECT *
-    FROM "${compiled.targetTable}"
-    WHERE org_id = $${orgParam}
-      AND (${compiled.whereClause || "1=1"})
-    ORDER BY created_at DESC
-    LIMIT $${limitParam}
-  `;
-
-  const allParams = [...compiled.params, orgId, limit];
-
-  const result = await db.execute(sql.raw(`SET statement_timeout = '${QUERY_TIMEOUT_MS}ms'`));
+  await db.execute(sql`SET statement_timeout = ${`${QUERY_TIMEOUT_MS}ms`}`);
 
   try {
-    const rows = await db.execute(sql.raw(rawSql));
-    const result2 = rows as unknown as { rows?: Record<string, unknown>[] };
-    return Array.isArray(rows) ? (rows as unknown as Record<string, unknown>[]) : result2.rows || [];
+    // Use Drizzle's sql tagged template with proper parameter binding.
+    // The whereClause from the compiler uses $N placeholders with separate params,
+    // so we build a fully parameterised query using sql.raw for the static WHERE
+    // fragment and sql`` for the dynamic org/limit values.
+    const whereFragment = compiled.whereClause || "1=1";
+    const rows = await db.execute(
+      sql`SELECT * FROM ${sql.raw('"' + compiled.targetTable + '"')} WHERE org_id = ${orgId} AND (${sql.raw(whereFragment)}) ORDER BY created_at DESC LIMIT ${limit}`,
+    );
+    const wrapped = rows as unknown as { rows?: Record<string, unknown>[] };
+    return Array.isArray(rows) ? (rows as unknown as Record<string, unknown>[]) : wrapped.rows || [];
   } catch (error) {
     // If the table doesn't exist yet (e.g. sensor_events), return empty
     const msg = String(error);
@@ -92,7 +91,7 @@ async function queryTable(compiled: CompiledFilter, orgId: string, limit: number
     throw error;
   } finally {
     // Reset statement timeout
-    await db.execute(sql.raw("SET statement_timeout = '0'")).catch(() => {});
+    await db.execute(sql`SET statement_timeout = ${"0"}`).catch(() => {});
   }
 }
 
