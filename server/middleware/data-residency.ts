@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { logger } from "../logger";
 import { storage } from "../storage";
-import { DATA_REGIONS, DATA_REGION_ENDPOINTS, type DataRegion } from "../../shared/schema";
+import { db } from "../db";
+import { eq, and } from "drizzle-orm";
+import { DATA_REGIONS, DATA_REGION_ENDPOINTS, type DataRegion, crossBorderFlowRules } from "../../shared/schema";
 
 const log = logger.child("data-residency");
 
@@ -123,7 +125,10 @@ export function enforceDataResidency(req: Request, res: Response, next: NextFunc
     })
     .catch((err) => {
       log.error("Failed to enforce data residency", { error: String(err), orgId });
-      next();
+      res.status(503).json({
+        message: "Unable to verify data residency compliance. Request denied for safety.",
+        code: "DATA_RESIDENCY_CHECK_FAILED",
+      });
     });
 }
 
@@ -152,7 +157,57 @@ export async function checkCrossBorderFlow(
       return { allowed: false, action: "block" };
     }
 
-    return { allowed: true };
+    // "rule-based" mode: query the crossBorderFlowRules table for matching enabled rules
+    if ((controls as Record<string, unknown>).mode === "rule-based") {
+      const rules = await db
+        .select()
+        .from(crossBorderFlowRules)
+        .where(
+          and(
+            eq(crossBorderFlowRules.orgId, orgId),
+            eq(crossBorderFlowRules.sourceRegion, sourceRegion),
+            eq(crossBorderFlowRules.destinationRegion, destinationRegion),
+            eq(crossBorderFlowRules.enabled, true),
+          ),
+        );
+
+      if (rules.length === 0) {
+        // No matching rules — default deny in rule-based mode for safety
+        return { allowed: false, action: "block" };
+      }
+
+      // Apply most restrictive action: block > require-approval > alert > allow
+      const ACTION_PRIORITY: Record<string, number> = {
+        block: 0,
+        "require-approval": 1,
+        alert: 2,
+        allow: 3,
+      };
+
+      let mostRestrictive = rules[0];
+      for (const rule of rules) {
+        const currentPriority = ACTION_PRIORITY[rule.action] ?? 0;
+        const bestPriority = ACTION_PRIORITY[mostRestrictive.action] ?? 0;
+        if (currentPriority < bestPriority) {
+          mostRestrictive = rule;
+        }
+      }
+
+      if (mostRestrictive.action === "allow") {
+        return { allowed: true, ruleId: mostRestrictive.id, action: "allow" };
+      }
+
+      if (mostRestrictive.action === "alert") {
+        // Alert mode: allow but flag for auditing
+        return { allowed: true, ruleId: mostRestrictive.id, action: "alert" };
+      }
+
+      // block or require-approval → deny
+      return { allowed: false, ruleId: mostRestrictive.id, action: mostRestrictive.action };
+    }
+
+    // Unknown mode — default deny for safety
+    return { allowed: false, action: "block" };
   } catch (err) {
     log.error("Failed to check cross-border flow", { error: String(err), orgId });
     return { allowed: true };
