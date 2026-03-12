@@ -26,16 +26,21 @@ const configSchema = z.object({
 
   ai: z.object({
     backend: aiBackendSchema,
-    modelId: z.string().default("mistral.mistral-large-2402-v1:0"),
+    modelId: z.string().default("anthropic.claude-sonnet-4-20250514-v1:0"),
     sagemakerEndpoint: z.string().optional(),
     maxTokens: z.coerce.number().int().positive().default(4096),
     temperature: z.coerce.number().min(0).max(2).default(0.1),
     topP: z.coerce.number().min(0).max(1).default(0.9),
     triage: z.object({
-      modelId: z.string().default("mistral.mistral-large-2402-v1:0"),
+      modelId: z.string().default("anthropic.claude-sonnet-4-20250514-v1:0"),
       sagemakerEndpoint: z.string().optional(),
       maxTokens: z.coerce.number().int().positive().default(2048),
       temperature: z.coerce.number().min(0).max(2).default(0.05),
+    }),
+    investigation: z.object({
+      modelId: z.string().default("anthropic.claude-opus-4-20250514-v1:0"),
+      maxTokens: z.coerce.number().int().positive().default(8192),
+      temperature: z.coerce.number().min(0).max(2).default(0.15),
     }),
   }),
 
@@ -101,6 +106,11 @@ function loadConfig(): AppConfig {
         sagemakerEndpoint: env.SAGEMAKER_TRIAGE_ENDPOINT || undefined,
         maxTokens: env.AI_TRIAGE_MAX_TOKENS,
         temperature: env.AI_TRIAGE_TEMPERATURE,
+      },
+      investigation: {
+        modelId: env.AI_INVESTIGATION_MODEL_ID,
+        maxTokens: env.AI_INVESTIGATION_MAX_TOKENS,
+        temperature: env.AI_INVESTIGATION_TEMPERATURE,
       },
     },
     oauth: {
@@ -200,6 +210,9 @@ export const config = loadConfig();
  * │ SAGEMAKER_TRIAGE_ENDPOINT│ No**     │ Required when backend=sage.  │
  * │ AI_TRIAGE_MAX_TOKENS     │ No       │ Triage max tokens (def 2048) │
  * │ AI_TRIAGE_TEMPERATURE    │ No       │ Triage temp (default 0.05)   │
+ * │ AI_INVESTIGATION_MODEL_ID│ No       │ Deep investigation model     │
+ * │ AI_INVESTIGATION_MAX_TOK │ No       │ Investigation tokens (8192)  │
+ * │ AI_INVESTIGATION_TEMPERAT│ No       │ Investigation temp (0.15)    │
  * │ GOOGLE_CLIENT_ID         │ No       │ Google OAuth client ID       │
  * │ GOOGLE_CLIENT_SECRET     │ No       │ Google OAuth client secret   │
  * │ GOOGLE_CALLBACK_URL      │ No       │ Google OAuth callback path   │

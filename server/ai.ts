@@ -31,7 +31,7 @@ registerEnhancedPrompts();
 
 const log = logger.child("ai");
 
-type InferenceTier = "triage" | "narrative" | "correlation";
+type InferenceTier = "triage" | "narrative" | "correlation" | "investigation";
 
 interface InferenceMetrics {
   tier: InferenceTier;
@@ -71,12 +71,19 @@ async function invokeWithPrompt(
           maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
           temperature: appConfig.ai.triage.temperature,
         }
-      : {
-          modelId: appConfig.ai.modelId,
-          sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
-          maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
-          temperature: appConfig.ai.temperature,
-        };
+      : tier === "investigation"
+        ? {
+            modelId: appConfig.ai.investigation.modelId,
+            sagemakerEndpoint: undefined,
+            maxTokens: maxTokensOverride || appConfig.ai.investigation.maxTokens,
+            temperature: appConfig.ai.investigation.temperature,
+          }
+        : {
+            modelId: appConfig.ai.modelId,
+            sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+            maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
+            temperature: appConfig.ai.temperature,
+          };
 
   const result: ModelInvokeResult = await gatewayInvoke({
     modelId: modelConfig.modelId,
@@ -149,12 +156,19 @@ export async function invokeWithPromptStream(
           maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
           temperature: appConfig.ai.triage.temperature,
         }
-      : {
-          modelId: appConfig.ai.modelId,
-          sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
-          maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
-          temperature: appConfig.ai.temperature,
-        };
+      : tier === "investigation"
+        ? {
+            modelId: appConfig.ai.investigation.modelId,
+            sagemakerEndpoint: undefined,
+            maxTokens: maxTokensOverride || appConfig.ai.investigation.maxTokens,
+            temperature: appConfig.ai.investigation.temperature,
+          }
+        : {
+            modelId: appConfig.ai.modelId,
+            sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+            maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
+            temperature: appConfig.ai.temperature,
+          };
 
   await gatewayInvokeStream(
     {
@@ -280,7 +294,7 @@ ${alertTelemetry}
 THREAT INTELLIGENCE:
 ${threatIntelBlock}`;
 
-  await invokeWithPromptStream("deep-investigation", userMessage, "narrative", callbacks, orgId, 8192);
+  await invokeWithPromptStream("deep-investigation", userMessage, "investigation", callbacks, orgId, 8192);
 }
 
 export interface CorrelationResult {
@@ -1274,7 +1288,7 @@ THREAT INTELLIGENCE:
 ${threatIntelBlock}`;
 
   try {
-    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "narrative", orgId, 8192);
+    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
     log.warn("AI deep investigation unavailable, returning heuristic fallback", { error: String(error) });
@@ -1369,7 +1383,7 @@ SECURITY CONTROLS:
 ${JSON.stringify(securityControls, null, 2)}`;
 
   try {
-    const { text } = await invokeWithPrompt("attack-path-prediction", userMessage, "narrative", orgId, 6144);
+    const { text } = await invokeWithPrompt("attack-path-prediction", userMessage, "investigation", orgId, 6144);
     return JSON.parse(extractJson(text));
   } catch (error) {
     log.warn("AI attack path prediction unavailable, returning heuristic fallback", { error: String(error) });
@@ -1378,6 +1392,135 @@ ${JSON.stringify(securityControls, null, 2)}`;
 }
 
 // ==========================================
+// ─── Multi-Turn Investigation Chat ──────────────────────────────────────────────
+export interface InvestigationChatResponse {
+  reply: string;
+  suggestedFollowups: string[];
+  referencedTechniques: string[];
+  confidence: number;
+}
+
+export async function conductMultiTurnInvestigation(
+  incidentContext: string,
+  conversationHistory: Array<{ role: string; content: string }>,
+  userMessage: string,
+  orgId: string,
+): Promise<InvestigationChatResponse> {
+  const historyBlock = conversationHistory.map((m) => `[${m.role.toUpperCase()}]: ${m.content}`).join("\n\n");
+
+  const prompt = `You are a senior SOC analyst conducting a deep investigation on a security incident.
+
+INCIDENT CONTEXT:
+${incidentContext}
+
+CONVERSATION HISTORY:
+${historyBlock}
+
+NEW ANALYST QUESTION:
+${userMessage}
+
+Respond as a JSON object with these fields:
+- reply: Your detailed analytical response
+- suggestedFollowups: Array of 2-3 follow-up questions the analyst should consider
+- referencedTechniques: Array of MITRE ATT&CK technique IDs referenced (e.g. ["T1059", "T1078"])
+- confidence: Number 0-1 indicating your confidence in the analysis`;
+
+  try {
+    const { text } = await invokeWithPrompt("deep-investigation", prompt, "investigation", orgId, 8192);
+    return JSON.parse(extractJson(text));
+  } catch (error) {
+    log.warn("Multi-turn investigation unavailable, returning fallback", { error: String(error) });
+    return {
+      reply: `Based on the available evidence, here is a preliminary analysis of your question: "${userMessage}". Further manual investigation is recommended as AI analysis is currently unavailable.`,
+      suggestedFollowups: [
+        "What lateral movement indicators are present?",
+        "Are there any persistence mechanisms established?",
+        "What data exfiltration channels should we check?",
+      ],
+      referencedTechniques: [],
+      confidence: 0.1,
+    };
+  }
+}
+
+// ─── AI-Generated Detection Rules ───────────────────────────────────────────────
+export interface GeneratedDetectionRule {
+  name: string;
+  description: string;
+  sigmaRule: string;
+  conditionTree: Record<string, unknown>;
+  mitreTactic: string;
+  mitreTechnique: string;
+  confidence: number;
+  falsePositiveNotes: string;
+  eventTypes: string[];
+}
+
+export interface DetectionRuleGenerationResult {
+  rules: GeneratedDetectionRule[];
+  analysisNotes: string;
+  coverageGaps: string[];
+}
+
+export async function generateDetectionRules(
+  incidentSummary: string,
+  attackTechniques: string[],
+  indicators: string[],
+  orgId: string,
+): Promise<DetectionRuleGenerationResult> {
+  const userMessage = `Generate Sigma-compatible detection rules based on this attack analysis.
+
+INCIDENT SUMMARY:
+${incidentSummary}
+
+ATTACK TECHNIQUES OBSERVED:
+${attackTechniques.join(", ")}
+
+INDICATORS OF COMPROMISE:
+${indicators.join("\n")}
+
+Generate detection rules as JSON:
+{
+  "rules": [
+    {
+      "name": "Rule name",
+      "description": "What it detects",
+      "sigmaRule": "Full Sigma YAML as a string",
+      "conditionTree": { "field": "value", "operator": "contains" },
+      "mitreTactic": "tactic-name",
+      "mitreTechnique": "T1234",
+      "confidence": 0.85,
+      "falsePositiveNotes": "When this might false-positive",
+      "eventTypes": ["process_creation", "network_connection"]
+    }
+  ],
+  "analysisNotes": "Summary of detection strategy",
+  "coverageGaps": ["Areas not covered by these rules"]
+}`;
+
+  try {
+    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "investigation", orgId, 8192);
+    return JSON.parse(extractJson(text));
+  } catch (error) {
+    log.warn("Detection rule generation unavailable, returning fallback", { error: String(error) });
+    return {
+      rules: attackTechniques.map((tech) => ({
+        name: `Auto-detect ${tech}`,
+        description: `Detection rule for ${tech} technique observed in incident`,
+        sigmaRule: `title: Auto-detect ${tech}\nstatus: experimental\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    EventID: 1\n  condition: selection\nlevel: medium`,
+        conditionTree: { EventID: 1 },
+        mitreTactic: "unknown",
+        mitreTechnique: tech,
+        confidence: 0.3,
+        falsePositiveNotes: "AI-generated rule — requires manual tuning",
+        eventTypes: ["process_creation"],
+      })),
+      analysisNotes: "Fallback rules generated — AI analysis was unavailable",
+      coverageGaps: ["Full behavioral analysis not available", "Lateral movement detection may be incomplete"],
+    };
+  }
+}
+
 // Heuristic Fallback Functions
 // ==========================================
 // These provide meaningful data-driven responses when AI/LLM is unavailable,

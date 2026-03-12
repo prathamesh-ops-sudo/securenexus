@@ -26,6 +26,8 @@ import {
   predictAttackPaths,
   streamNarrative,
   streamDeepInvestigation,
+  conductMultiTurnInvestigation,
+  generateDetectionRules,
 } from "../ai";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import type { InsertAttackGraphNode, InsertAttackGraphEdge } from "@shared/schema";
@@ -1244,6 +1246,251 @@ export function registerAiRoutes(app: Express): void {
       } catch (error: any) {
         logger.child("ai").error("Attack path prediction error", { error: String(error) });
         res.status(500).json({ message: "Attack path prediction failed. Please try again." });
+      }
+    },
+  );
+
+  // ─── Multi-Turn Investigation Chat ──────────────────────────────────────────
+
+  // POST /api/ai/investigation/:incidentId/chat — send a message in investigation thread
+  app.post(
+    "/api/ai/investigation/:incidentId/chat",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const incidentId = String(req.params.incidentId);
+        const orgId = getOrgId(req);
+        const { message, threadId } = req.body;
+
+        if (!message || typeof message !== "string") {
+          return res.status(400).json({ message: "message is required" });
+        }
+
+        // Verify incident belongs to org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        // Generate or use existing thread ID
+        const activeThreadId = String(threadId || `thread_${incidentId}_${Date.now()}`);
+
+        // Get conversation history for this thread
+        const history = await storage.getChatThread(activeThreadId, orgId);
+        const conversationHistory = history.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+        // Build incident context
+        const incidentAlerts = await storage.getAlertsByIncident(incidentId);
+        const categories = Array.from(new Set(incidentAlerts.map((a) => a.category).filter(Boolean)));
+        const incidentContext = `Incident: ${incident.title}\nSeverity: ${incident.severity}\nStatus: ${incident.status}\nSummary: ${incident.summary || "N/A"}\nAlerts: ${incidentAlerts.length} correlated alerts\nCategories: ${categories.join(", ")}`;
+
+        // Store user message
+        await storage.createChatMessage({
+          orgId,
+          incidentId,
+          threadId: activeThreadId,
+          role: "user",
+          content: message,
+        });
+
+        // Get AI response via Claude Opus (investigation tier)
+        const aiResponse = await conductMultiTurnInvestigation(incidentContext, conversationHistory, message, orgId);
+
+        // Store assistant response
+        await storage.createChatMessage({
+          orgId,
+          incidentId,
+          threadId: activeThreadId,
+          role: "assistant",
+          content: aiResponse.reply,
+          metadata: {
+            suggestedFollowups: aiResponse.suggestedFollowups,
+            referencedTechniques: aiResponse.referencedTechniques,
+            confidence: aiResponse.confidence,
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json({
+          threadId: activeThreadId,
+          reply: aiResponse.reply,
+          suggestedFollowups: aiResponse.suggestedFollowups,
+          referencedTechniques: aiResponse.referencedTechniques,
+          confidence: aiResponse.confidence,
+        });
+      } catch (error: any) {
+        logger.child("ai").error("Investigation chat error", { error: String(error) });
+        res.status(500).json({ message: "Investigation chat failed. Please try again." });
+      }
+    },
+  );
+
+  // GET /api/ai/investigation/:incidentId/thread — retrieve conversation history
+  app.get(
+    "/api/ai/investigation/:incidentId/thread",
+    isAuthenticated,
+    resolveOrgContext,
+    async (req: Request, res: Response) => {
+      try {
+        const incidentId = String(req.params.incidentId);
+        const orgId = getOrgId(req);
+
+        // Verify incident belongs to org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const messages = await storage.getChatThreadsByIncident(incidentId, orgId);
+
+        // Group messages by threadId
+        const threads: Record<string, typeof messages> = {};
+        for (const msg of messages) {
+          if (!threads[msg.threadId]) {
+            threads[msg.threadId] = [];
+          }
+          threads[msg.threadId].push(msg);
+        }
+
+        res.json({ incidentId, threads });
+      } catch (error: any) {
+        logger.child("ai").error("Get investigation thread error", { error: String(error) });
+        res.status(500).json({ message: "Failed to retrieve investigation thread." });
+      }
+    },
+  );
+
+  // ─── AI-Generated Detection Rules ──────────────────────────────────────────
+
+  // POST /api/ai/investigation/:incidentId/generate-rules — auto-generate detection rules
+  app.post(
+    "/api/ai/investigation/:incidentId/generate-rules",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const incidentId = String(req.params.incidentId);
+        const orgId = getOrgId(req);
+
+        // Verify incident belongs to org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const incidentAlerts = await storage.getAlertsByIncident(incidentId);
+        const techniques = Array.from(new Set(incidentAlerts.map((a) => a.mitreTechnique).filter(Boolean))) as string[];
+        const indicators = incidentAlerts
+          .flatMap((a) => [a.sourceIp, a.hostname].filter(Boolean))
+          .filter((v, i, arr) => arr.indexOf(v) === i) as string[];
+
+        const incidentSummary = `${incident.title}: ${incident.summary || "No description"} — Severity: ${incident.severity}, Alerts: ${incidentAlerts.length}`;
+
+        // Generate rules via Claude Opus
+        const result = await generateDetectionRules(incidentSummary, techniques, indicators, orgId);
+
+        // Persist generated rules
+        const savedRules = [];
+        for (const rule of result.rules) {
+          const saved = await storage.createAiGeneratedRule({
+            orgId,
+            sourceIncidentId: incidentId,
+            name: rule.name,
+            description: rule.description,
+            ruleContent: rule.conditionTree,
+            sigmaNormalized: rule.sigmaRule,
+            confidence: rule.confidence,
+            mitreTactic: rule.mitreTactic,
+            mitreTechnique: rule.mitreTechnique,
+            generatedBy: "claude-opus",
+          });
+          savedRules.push(saved);
+        }
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_generate_detection_rules",
+          resourceType: "incident",
+          resourceId: String(incidentId),
+          details: {
+            rulesGenerated: savedRules.length,
+            techniques,
+            analysisNotes: result.analysisNotes,
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json({
+          rules: savedRules,
+          analysisNotes: result.analysisNotes,
+          coverageGaps: result.coverageGaps,
+        });
+      } catch (error: any) {
+        logger.child("ai").error("Detection rule generation error", { error: String(error) });
+        res.status(500).json({ message: "Detection rule generation failed. Please try again." });
+      }
+    },
+  );
+
+  // GET /api/ai/generated-rules — get all AI-generated rules for the org
+  app.get("/api/ai/generated-rules", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
+      const rules = await storage.getAiGeneratedRulesByOrg(orgId, limit);
+      res.json(rules);
+    } catch (error: any) {
+      logger.child("ai").error("Get AI-generated rules error", { error: String(error) });
+      res.status(500).json({ message: "Failed to retrieve AI-generated rules." });
+    }
+  });
+
+  // PATCH /api/ai/generated-rules/:ruleId — update status of AI-generated rule (accept/reject)
+  app.patch(
+    "/api/ai/generated-rules/:ruleId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const ruleId = String(req.params.ruleId);
+        const orgId = getOrgId(req);
+
+        const rule = await storage.getAiGeneratedRule(ruleId);
+        if (!rule || rule.orgId !== orgId) {
+          return res.status(404).json({ message: "Rule not found" });
+        }
+
+        const allowedFields = ["status", "reviewedBy", "reviewedAt"] as const;
+        const update: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            update[field] = req.body[field];
+          }
+        }
+
+        if (Object.keys(update).length === 0) {
+          return res.status(400).json({ message: "No valid fields to update" });
+        }
+
+        const updated = await storage.updateAiGeneratedRule(ruleId, update);
+        res.json(updated);
+      } catch (error: any) {
+        logger.child("ai").error("Update AI-generated rule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update rule." });
       }
     },
   );

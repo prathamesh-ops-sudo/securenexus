@@ -7415,3 +7415,76 @@ export type OtAnomaly = typeof otAnomalies.$inferSelect;
 export type InsertOtAnomaly = typeof otAnomalies.$inferInsert;
 export type IndustrialProtocolEvent = typeof industrialProtocolEvents.$inferSelect;
 export type InsertIndustrialProtocolEvent = typeof industrialProtocolEvents.$inferInsert;
+
+// ─── Investigation Chat Messages ───────────────────────────────────────────────
+export const investigationChatMessages = pgTable(
+  "investigation_chat_messages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    threadId: varchar("thread_id").notNull(),
+    role: text("role").notNull(), // "user" | "assistant"
+    content: text("content").notNull(),
+    metadata: jsonb("metadata"), // model used, token counts, latency, etc.
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_chat_messages_thread").on(table.threadId),
+    index("idx_chat_messages_incident").on(table.incidentId),
+    index("idx_chat_messages_org").on(table.orgId),
+  ],
+);
+
+export const investigationChatMessagesRelations = relations(investigationChatMessages, ({ one }) => ({
+  organization: one(organizations, { fields: [investigationChatMessages.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [investigationChatMessages.incidentId], references: [incidents.id] }),
+}));
+
+export type InvestigationChatMessage = typeof investigationChatMessages.$inferSelect;
+export type InsertInvestigationChatMessage = typeof investigationChatMessages.$inferInsert;
+
+// ─── AI-Generated Detection Rules ──────────────────────────────────────────────
+export const aiGeneratedRules = pgTable(
+  "ai_generated_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sourceIncidentId: varchar("source_incident_id").references(() => incidents.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    ruleContent: jsonb("rule_content").notNull(), // Sigma-compatible rule object
+    sigmaNormalized: text("sigma_normalized"), // Sigma YAML string
+    confidence: real("confidence").notNull().default(0.5),
+    status: text("status").notNull().default("draft"), // draft | review | accepted | rejected
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    generatedBy: text("generated_by").notNull().default("claude-opus"), // model that generated it
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewedBy: varchar("reviewed_by"),
+  },
+  (table) => [
+    index("idx_ai_rules_org").on(table.orgId),
+    index("idx_ai_rules_incident").on(table.sourceIncidentId),
+    index("idx_ai_rules_status").on(table.status),
+  ],
+);
+
+export const aiGeneratedRulesRelations = relations(aiGeneratedRules, ({ one }) => ({
+  organization: one(organizations, { fields: [aiGeneratedRules.orgId], references: [organizations.id] }),
+  sourceIncident: one(incidents, { fields: [aiGeneratedRules.sourceIncidentId], references: [incidents.id] }),
+}));
+
+export type AiGeneratedRule = typeof aiGeneratedRules.$inferSelect;
+export type InsertAiGeneratedRule = typeof aiGeneratedRules.$inferInsert;

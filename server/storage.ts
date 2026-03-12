@@ -357,6 +357,12 @@ import {
   type AttackGraphEdge,
   type InsertAttackGraphEdge,
   attackGraphEdges,
+  type InvestigationChatMessage,
+  type InsertInvestigationChatMessage,
+  investigationChatMessages,
+  type AiGeneratedRule,
+  type InsertAiGeneratedRule,
+  aiGeneratedRules,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -1210,6 +1216,18 @@ export interface IStorage {
   createAttackGraphEdges(edges: InsertAttackGraphEdge[]): Promise<AttackGraphEdge[]>;
   getAttackGraphNodes(graphId: string): Promise<AttackGraphNode[]>;
   getAttackGraphEdges(graphId: string): Promise<AttackGraphEdge[]>;
+
+  // Investigation Chat Messages
+  createChatMessage(msg: InsertInvestigationChatMessage): Promise<InvestigationChatMessage>;
+  getChatThread(threadId: string, orgId: string): Promise<InvestigationChatMessage[]>;
+  getChatThreadsByIncident(incidentId: string, orgId: string): Promise<InvestigationChatMessage[]>;
+
+  // AI-Generated Detection Rules
+  createAiGeneratedRule(rule: InsertAiGeneratedRule): Promise<AiGeneratedRule>;
+  getAiGeneratedRulesByOrg(orgId: string, limit?: number): Promise<AiGeneratedRule[]>;
+  getAiGeneratedRulesByIncident(incidentId: string, orgId: string): Promise<AiGeneratedRule[]>;
+  getAiGeneratedRule(id: string): Promise<AiGeneratedRule | undefined>;
+  updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5912,6 +5930,61 @@ export class DatabaseStorage implements IStorage {
 
   async getAttackGraphEdges(graphId: string): Promise<AttackGraphEdge[]> {
     return db.select().from(attackGraphEdges).where(eq(attackGraphEdges.graphId, graphId));
+  }
+
+  // ─── Investigation Chat Messages ───────────────────────────────────────────
+  async createChatMessage(msg: InsertInvestigationChatMessage): Promise<InvestigationChatMessage> {
+    const [created] = await db.insert(investigationChatMessages).values(msg).returning();
+    return created;
+  }
+
+  async getChatThread(threadId: string, orgId: string): Promise<InvestigationChatMessage[]> {
+    return db
+      .select()
+      .from(investigationChatMessages)
+      .where(and(eq(investigationChatMessages.threadId, threadId), eq(investigationChatMessages.orgId, orgId)))
+      .orderBy(asc(investigationChatMessages.createdAt));
+  }
+
+  async getChatThreadsByIncident(incidentId: string, orgId: string): Promise<InvestigationChatMessage[]> {
+    return db
+      .select()
+      .from(investigationChatMessages)
+      .where(and(eq(investigationChatMessages.incidentId, incidentId), eq(investigationChatMessages.orgId, orgId)))
+      .orderBy(asc(investigationChatMessages.createdAt));
+  }
+
+  // ─── AI-Generated Detection Rules ──────────────────────────────────────────
+  async createAiGeneratedRule(rule: InsertAiGeneratedRule): Promise<AiGeneratedRule> {
+    const [created] = await db.insert(aiGeneratedRules).values(rule).returning();
+    return created;
+  }
+
+  async getAiGeneratedRulesByOrg(orgId: string, limit = 50): Promise<AiGeneratedRule[]> {
+    return db
+      .select()
+      .from(aiGeneratedRules)
+      .where(eq(aiGeneratedRules.orgId, orgId))
+      .orderBy(desc(aiGeneratedRules.createdAt))
+      .limit(limit);
+  }
+
+  async getAiGeneratedRulesByIncident(incidentId: string, orgId: string): Promise<AiGeneratedRule[]> {
+    return db
+      .select()
+      .from(aiGeneratedRules)
+      .where(and(eq(aiGeneratedRules.sourceIncidentId, incidentId), eq(aiGeneratedRules.orgId, orgId)))
+      .orderBy(desc(aiGeneratedRules.createdAt));
+  }
+
+  async getAiGeneratedRule(id: string): Promise<AiGeneratedRule | undefined> {
+    const [rule] = await db.select().from(aiGeneratedRules).where(eq(aiGeneratedRules.id, id));
+    return rule;
+  }
+
+  async updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined> {
+    const [updated] = await db.update(aiGeneratedRules).set(data).where(eq(aiGeneratedRules.id, id)).returning();
+    return updated;
   }
 }
 
