@@ -152,6 +152,7 @@ const DataLakePage = lazy(() => import("@/pages/data-lake"));
 const AdvancedReportingPage = lazy(() => import("@/pages/advanced-reporting"));
 const DataResidencyPage = lazy(() => import("@/pages/data-residency"));
 const MobileSecurityPage = lazy(() => import("@/pages/mobile-security"));
+const ApiSecurityPage = lazy(() => import("@/pages/api-security"));
 
 function PageSkeleton() {
   return (
@@ -383,6 +384,7 @@ function AuthenticatedApp() {
                     <Route path="/advanced-reporting" component={AdvancedReportingPage} />
                     <Route path="/data-residency" component={DataResidencyPage} />
                     <Route path="/mobile-security" component={MobileSecurityPage} />
+                    <Route path="/api-security" component={ApiSecurityPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
