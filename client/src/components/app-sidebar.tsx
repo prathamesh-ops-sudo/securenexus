@@ -78,7 +78,7 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrgContext } from "@/hooks/use-org-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+
 import { useState, useEffect } from "react";
 import {
   DropdownMenu,
@@ -569,14 +569,8 @@ export function AppSidebar() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
             </span>
-            <span className="text-[10px] text-emerald-400/80 font-medium">Online</span>
+            <span className="text-[10px] text-emerald-400/80 font-medium">Connected</span>
           </div>
-          <Badge
-            variant="outline"
-            className="text-[8px] px-1.5 py-0 h-3.5 ml-auto border-cyan-500/20 bg-cyan-500/5 text-cyan-400 font-bold tracking-wider"
-          >
-            PRO
-          </Badge>
         </div>
       </SidebarHeader>
 
