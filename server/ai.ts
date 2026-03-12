@@ -174,7 +174,7 @@ export async function invokeWithPromptStream(
     },
     {
       onChunk: callbacks.onChunk,
-      onComplete: (fullText, metrics) => {
+      onComplete: async (fullText, metrics) => {
         recordPromptInvocation(prompt.id, prompt.version, {
           tier,
           modelId: modelConfig.modelId,
@@ -197,7 +197,7 @@ export async function invokeWithPromptStream(
         inferenceLog.push(im);
         if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
 
-        callbacks.onComplete(fullText, metrics);
+        await callbacks.onComplete(fullText, metrics);
       },
       onError: callbacks.onError,
     },
