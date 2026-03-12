@@ -350,6 +350,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Autonomous SOC", url: "/autonomous-soc", icon: Brain }],
       },
       {
+        label: "Developer Security",
+        items: [{ title: "Developer Security", url: "/developer-security", icon: Code2 }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },

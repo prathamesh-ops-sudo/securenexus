@@ -160,6 +160,7 @@ const SecurityChaosEngineeringPage = lazy(() => import("@/pages/security-chaos-e
 const AiDetectionRulesPage = lazy(() => import("@/pages/ai-detection-rules"));
 const MsspPartnerPortalPage = lazy(() => import("@/pages/mssp-partner-portal"));
 const AutonomousSOCPage = lazy(() => import("@/pages/autonomous-soc"));
+const DeveloperSecurityPage = lazy(() => import("@/pages/developer-security"));
 
 function PageSkeleton() {
   return (
@@ -399,6 +400,7 @@ function AuthenticatedApp() {
                     <Route path="/ai-detection-rules" component={AiDetectionRulesPage} />
                     <Route path="/mssp-partner-portal" component={MsspPartnerPortalPage} />
                     <Route path="/autonomous-soc" component={AutonomousSOCPage} />
+                    <Route path="/developer-security" component={DeveloperSecurityPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
