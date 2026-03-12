@@ -19,12 +19,18 @@ interface AzureTokenResponse {
   token_type: string;
 }
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
+const azureTokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+function azureCacheKey(config: AzureConnectorConfig): string {
+  return `${config.tenantId}:${config.clientId}:${config.subscriptionId}`;
+}
 
 /** Acquire an OAuth2 bearer token from Azure AD */
 async function getAzureToken(config: AzureConnectorConfig): Promise<string> {
-  if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
-    return cachedToken.token;
+  const key = azureCacheKey(config);
+  const cached = azureTokenCache.get(key);
+  if (cached && Date.now() < cached.expiresAt - 60_000) {
+    return cached.token;
   }
 
   const tokenUrl = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0/token`;
@@ -47,11 +53,11 @@ async function getAzureToken(config: AzureConnectorConfig): Promise<string> {
   }
 
   const data: AzureTokenResponse = await resp.json();
-  cachedToken = {
+  azureTokenCache.set(key, {
     token: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
-  };
-  return cachedToken.token;
+  });
+  return data.access_token;
 }
 
 async function azureGet(config: AzureConnectorConfig, path: string): Promise<unknown> {
