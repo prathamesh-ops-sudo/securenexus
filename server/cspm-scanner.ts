@@ -166,7 +166,7 @@ export async function runCspmScan(orgId: string, accountId: string): Promise<voi
       high: 0,
       medium: 0,
       low: 0,
-      info: 0,
+      informational: 0,
     };
 
     for (const f of findings) {

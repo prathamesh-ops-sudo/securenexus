@@ -27,12 +27,23 @@ interface ServiceAccountKey {
   token_uri: string;
 }
 
-let gcpCachedToken: { token: string; expiresAt: number } | null = null;
+const gcpTokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+function gcpCacheKey(config: GcpConnectorConfig): string {
+  try {
+    const parsed = JSON.parse(config.serviceAccountKey) as { client_email?: string };
+    return `${config.projectId}:${parsed.client_email || "unknown"}`;
+  } catch {
+    return `${config.projectId}:unknown`;
+  }
+}
 
 /** Create a JWT and exchange it for an access token */
 async function getGcpToken(config: GcpConnectorConfig): Promise<string> {
-  if (gcpCachedToken && Date.now() < gcpCachedToken.expiresAt - 60_000) {
-    return gcpCachedToken.token;
+  const key = gcpCacheKey(config);
+  const cached = gcpTokenCache.get(key);
+  if (cached && Date.now() < cached.expiresAt - 60_000) {
+    return cached.token;
   }
 
   let keyData: ServiceAccountKey;
@@ -86,11 +97,11 @@ async function getGcpToken(config: GcpConnectorConfig): Promise<string> {
   }
 
   const data: GcpTokenResponse = await resp.json();
-  gcpCachedToken = {
+  gcpTokenCache.set(key, {
     token: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
-  };
-  return gcpCachedToken.token;
+  });
+  return data.access_token;
 }
 
 async function gcpGet(config: GcpConnectorConfig, url: string): Promise<unknown> {
@@ -238,7 +249,7 @@ export async function scanGcpFirewalls(config: GcpConnectorConfig): Promise<Clou
         }
 
         for (const port of ports) {
-          if (port === "22" || port.includes("22")) {
+          if (portMatchesTarget(port, 22)) {
             findings.push({
               ruleId: "GCP-FW-003",
               ruleName: "Firewall Rule Allows SSH from Internet",
@@ -251,7 +262,7 @@ export async function scanGcpFirewalls(config: GcpConnectorConfig): Promise<Clou
               complianceFrameworks: ["cis", "nist", "soc2"],
             });
           }
-          if (port === "3389" || port.includes("3389")) {
+          if (portMatchesTarget(port, 3389)) {
             findings.push({
               ruleId: "GCP-FW-004",
               ruleName: "Firewall Rule Allows RDP from Internet",
@@ -464,6 +475,20 @@ export async function runGcpScan(
 }
 
 // Helper functions
+
+/** Check if a port spec (e.g. "22", "20-25") matches a target port number */
+function portMatchesTarget(portSpec: string, target: number): boolean {
+  if (portSpec.includes("-")) {
+    const [startStr, endStr] = portSpec.split("-");
+    const start = parseInt(startStr, 10);
+    const end = parseInt(endStr, 10);
+    if (!isNaN(start) && !isNaN(end)) {
+      return target >= start && target <= end;
+    }
+    return false;
+  }
+  return parseInt(portSpec, 10) === target;
+}
 
 function inferGcpResourceType(resourceName: string): string {
   if (resourceName.includes("/buckets/")) return "gcp:storage:bucket";
