@@ -245,6 +245,9 @@ export const organizations = pgTable("organizations", {
   orgType: text("org_type").notNull().default("standard"),
   parentOrgId: varchar("parent_org_id"),
   dataResidency: text("data_residency").default("us-east-1"),
+  dataRegion: text("data_region").default("US"),
+  sovereignKeyConfig: jsonb("sovereign_key_config"),
+  crossBorderFlowControls: jsonb("cross_border_flow_controls"),
   defaultMemberRole: text("default_member_role").notNull().default("analyst"),
   requireApproval: boolean("require_approval").notNull().default(false),
   deletedAt: timestamp("deleted_at"),
@@ -8083,3 +8086,117 @@ export type ColdStorageInventoryEntry = typeof coldStorageInventory.$inferSelect
 export type InsertColdStorageInventoryEntry = typeof coldStorageInventory.$inferInsert;
 export type DataLakeQuery = typeof dataLakeQueries.$inferSelect;
 export type InsertDataLakeQuery = typeof dataLakeQueries.$inferInsert;
+
+/* ── Data Residency & Sovereignty ────────────────────────────────── */
+
+export const DATA_REGIONS = ["US", "EU", "APAC", "ME"] as const;
+export type DataRegion = (typeof DATA_REGIONS)[number];
+
+export const DATA_REGION_ENDPOINTS: Record<
+  DataRegion,
+  { primary: string; label: string; awsRegion: string; gdprApplicable: boolean }
+> = {
+  US: { primary: "us-east-1", label: "United States", awsRegion: "us-east-1", gdprApplicable: false },
+  EU: { primary: "eu-central-1", label: "European Union (Frankfurt)", awsRegion: "eu-central-1", gdprApplicable: true },
+  APAC: {
+    primary: "ap-southeast-1",
+    label: "Asia Pacific (Singapore)",
+    awsRegion: "ap-southeast-1",
+    gdprApplicable: false,
+  },
+  ME: { primary: "me-south-1", label: "Middle East (Bahrain)", awsRegion: "me-south-1", gdprApplicable: false },
+};
+
+export const SOVEREIGN_KEY_STATUSES = ["active", "rotating", "revoked", "expired"] as const;
+export type SovereignKeyStatus = (typeof SOVEREIGN_KEY_STATUSES)[number];
+
+export const sovereignKeys = pgTable(
+  "sovereign_keys",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    keyAlias: text("key_alias").notNull(),
+    keyProvider: text("key_provider").notNull().default("aws-kms"),
+    keyArn: text("key_arn"),
+    keyFingerprint: text("key_fingerprint"),
+    status: text("status").notNull().default("active"),
+    rotationIntervalDays: integer("rotation_interval_days").default(90),
+    lastRotatedAt: timestamp("last_rotated_at"),
+    nextRotationAt: timestamp("next_rotation_at"),
+    metadata: jsonb("metadata"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_sovereign_keys_org").on(table.orgId), index("idx_sovereign_keys_status").on(table.status)],
+);
+
+export const crossBorderFlowRules = pgTable(
+  "cross_border_flow_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    sourceRegion: text("source_region").notNull(),
+    destinationRegion: text("destination_region").notNull(),
+    action: text("action").notNull().default("block"),
+    dataClassification: text("data_classification").default("all"),
+    requiresApproval: boolean("requires_approval").notNull().default(true),
+    enabled: boolean("enabled").notNull().default(true),
+    justification: text("justification"),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cbf_rules_org").on(table.orgId),
+    index("idx_cbf_rules_regions").on(table.sourceRegion, table.destinationRegion),
+  ],
+);
+
+export const crossBorderFlowAudit = pgTable(
+  "cross_border_flow_audit",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sourceRegion: text("source_region").notNull(),
+    destinationRegion: text("destination_region").notNull(),
+    dataType: text("data_type").notNull(),
+    action: text("action").notNull(),
+    ruleId: varchar("rule_id"),
+    blocked: boolean("blocked").notNull().default(false),
+    userId: varchar("user_id"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    details: jsonb("details"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_cbf_audit_org").on(table.orgId), index("idx_cbf_audit_created").on(table.createdAt)],
+);
+
+export const sovereignKeysRelations = relations(sovereignKeys, ({ one }) => ({
+  organization: one(organizations, { fields: [sovereignKeys.orgId], references: [organizations.id] }),
+}));
+
+export const crossBorderFlowRulesRelations = relations(crossBorderFlowRules, ({ one }) => ({
+  organization: one(organizations, { fields: [crossBorderFlowRules.orgId], references: [organizations.id] }),
+}));
+
+export const crossBorderFlowAuditRelations = relations(crossBorderFlowAudit, ({ one }) => ({
+  organization: one(organizations, { fields: [crossBorderFlowAudit.orgId], references: [organizations.id] }),
+}));
+
+export type SovereignKey = typeof sovereignKeys.$inferSelect;
+export type InsertSovereignKey = typeof sovereignKeys.$inferInsert;
+export type CrossBorderFlowRule = typeof crossBorderFlowRules.$inferSelect;
+export type InsertCrossBorderFlowRule = typeof crossBorderFlowRules.$inferInsert;
+export type CrossBorderFlowAuditEntry = typeof crossBorderFlowAudit.$inferSelect;
+export type InsertCrossBorderFlowAuditEntry = typeof crossBorderFlowAudit.$inferInsert;

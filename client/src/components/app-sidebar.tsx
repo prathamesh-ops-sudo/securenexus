@@ -346,6 +346,10 @@ const navGroups: NavGroup[] = [
           { title: "Reports", url: "/reports", icon: FileText },
         ],
       },
+      {
+        label: "Data Sovereignty",
+        items: [{ title: "Data Residency", url: "/data-residency", icon: Globe }],
+      },
     ],
   },
 ];
