@@ -542,7 +542,7 @@ function generateRecommendedActions(
       description: `Notify SOC team of ${severity} alert`,
       config: {
         channel: "#security-alerts",
-        message: `[Autonomous SOC] ${alert.title} — ${confidence.tier} decision: ${severity} severity`,
+        message: `[Autonomous SOC] ${alert.title} — ${resolvedTier ?? confidence.tier} decision: ${severity} severity`,
       },
       autoExecute: true,
     });

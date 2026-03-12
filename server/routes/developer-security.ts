@@ -727,7 +727,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── SAST Rules ─────────────────────────────────────────────────
 
   /** Get available SAST rules */
-  app.get("/api/developer-security/sast-rules", async (_req, res) => {
+  app.get("/api/developer-security/sast-rules", ...authChain, async (_req, res) => {
     try {
       const rules = getSastRules();
       res.json({
