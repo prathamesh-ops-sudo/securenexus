@@ -521,7 +521,10 @@ export function getGatewayDashboardData(): GatewayDashboardData {
 
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
-  onComplete: (fullText: string, metrics: { inputTokens: number; outputTokens: number; latencyMs: number }) => void;
+  onComplete: (
+    fullText: string,
+    metrics: { inputTokens: number; outputTokens: number; latencyMs: number },
+  ) => void | Promise<void>;
   onError: (error: Error) => void;
 }
 
@@ -536,7 +539,7 @@ export async function invokeModelStream(opts: ModelInvokeOptions, callbacks: Str
     try {
       const result = await invokeModel(opts);
       callbacks.onChunk(result.text);
-      callbacks.onComplete(result.text, {
+      await callbacks.onComplete(result.text, {
         inputTokens: result.inputTokensEstimate,
         outputTokens: result.outputTokensEstimate,
         latencyMs: result.latencyMs,
@@ -625,7 +628,7 @@ export async function invokeModelStream(opts: ModelInvokeOptions, callbacks: Str
       });
     }
 
-    callbacks.onComplete(fullText, { inputTokens, outputTokens, latencyMs });
+    await callbacks.onComplete(fullText, { inputTokens, outputTokens, latencyMs });
   } catch (error: unknown) {
     const classified = classifyModelError(error);
     recordGatewayError(opts.modelId, opts.backend, classified.message, classified.retryable);

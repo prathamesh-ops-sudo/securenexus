@@ -366,18 +366,26 @@ export function registerAiRoutes(app: Express): void {
             logger.child("ai").warn("Post-stream processing error", { error: String(e) });
           }
 
-          if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ type: "done", latencyMs: metrics.latencyMs })}\n\n`);
-            res.write("data: [DONE]\n\n");
-            res.end();
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "done", latencyMs: metrics.latencyMs })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream completion", { error: String(writeErr) });
           }
         },
         onError: (error: Error) => {
           logger.child("ai").error("Streaming narrative error", { error: error.message });
-          if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
-            res.write("data: [DONE]\n\n");
-            res.end();
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream error", { error: String(writeErr) });
           }
         },
       });
@@ -394,7 +402,9 @@ export function registerAiRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const orgId = (req as any).orgId || (req as any).user?.orgId;
       const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
+      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
 
       const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
       if (incidentAlerts.length === 0) {
@@ -458,18 +468,26 @@ export function registerAiRoutes(app: Express): void {
             logger.child("ai").warn("Post-stream processing error", { error: String(e) });
           }
 
-          if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ type: "done", latencyMs: metrics.latencyMs })}\n\n`);
-            res.write("data: [DONE]\n\n");
-            res.end();
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "done", latencyMs: metrics.latencyMs })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream completion", { error: String(writeErr) });
           }
         },
         onError: (error: Error) => {
           logger.child("ai").error("Streaming deep investigation error", { error: error.message });
-          if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
-            res.write("data: [DONE]\n\n");
-            res.end();
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream error", { error: String(writeErr) });
           }
         },
       });
