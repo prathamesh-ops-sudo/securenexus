@@ -365,7 +365,8 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     const droppedEnrichment: typeof result.enrichmentResults = [];
 
     for (const item of scoredEnrichment) {
-      const line = `- ${item.ioc} (${item.iocType}): ${item.verdict.toUpperCase()} (score: ${item.reputationScore.toFixed(2)}) via ${item.provider}`;
+      const tagStr = item.tags.length > 0 ? ` [tags: ${item.tags.join(", ")}]` : "";
+      const line = `- ${item.ioc} (${item.iocType}): ${item.verdict.toUpperCase()} (score: ${item.reputationScore.toFixed(2)}) via ${item.provider}${tagStr}`;
       const lineTokens = estimateTokens(line);
       if (tokensUsed + lineTokens <= tokenBudget * 0.6) {
         // 60% of budget for enrichment
@@ -381,7 +382,8 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     let osintTokens = 0;
 
     for (const item of scoredOsint) {
-      const line = `- ${item.ioc} (${item.iocType}): Matched in ${item.feedName} - threat: ${item.threat} (confidence: ${item.confidence})`;
+      const tagStr = item.tags.length > 0 ? ` [tags: ${item.tags.join(", ")}]` : "";
+      const line = `- ${item.ioc} (${item.iocType}): Matched in ${item.feedName} - threat: ${item.threat} (confidence: ${item.confidence})${tagStr}`;
       const lineTokens = estimateTokens(line);
       if (osintTokens + lineTokens <= tokenBudget * 0.4) {
         // 40% of budget for OSINT
