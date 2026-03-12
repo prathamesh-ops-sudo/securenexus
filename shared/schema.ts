@@ -9326,3 +9326,146 @@ export type QuestionnaireResponse = typeof questionnaireResponses.$inferSelect;
 export type InsertQuestionnaireResponse = typeof questionnaireResponses.$inferInsert;
 export type PostureScoreHistoryEntry = typeof postureScoreHistory.$inferSelect;
 export type InsertPostureScoreHistoryEntry = typeof postureScoreHistory.$inferInsert;
+
+// ─── Security Chaos Engineering ───────────────────────────────────────────────
+
+export const chaosSimulations = pgTable("chaos_simulations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  mitreId: text("mitre_id").notNull(),
+  mitreTactic: text("mitre_tactic").notNull(),
+  mitreTechnique: text("mitre_technique").notNull(),
+  domain: text("domain").notNull().default("endpoint"),
+  platform: text("platform").notNull().default("windows"),
+  severity: text("severity").notNull().default("medium"),
+  payload: text("payload"),
+  expectedOutcome: text("expected_outcome"),
+  status: text("status").notNull().default("pending"),
+  verdict: text("verdict"),
+  durationMs: integer("duration_ms"),
+  output: text("output"),
+  trigger: text("trigger").notNull().default("manual"),
+  executedBy: text("executed_by"),
+  executedAt: timestamp("executed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const controlEffectiveness = pgTable("control_effectiveness", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  controlName: text("control_name").notNull(),
+  controlType: text("control_type").notNull(),
+  totalTests: integer("total_tests").notNull().default(0),
+  passedTests: integer("passed_tests").notNull().default(0),
+  failedTests: integer("failed_tests").notNull().default(0),
+  effectivenessScore: integer("effectiveness_score").notNull().default(0),
+  lastTestedAt: timestamp("last_tested_at"),
+  mitreIds: text("mitre_ids").array(),
+  status: text("status").notNull().default("untested"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const detectionGaps = pgTable("detection_gaps", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  mitreId: text("mitre_id").notNull(),
+  mitreTactic: text("mitre_tactic").notNull(),
+  mitreTechnique: text("mitre_technique").notNull(),
+  coverageStatus: text("coverage_status").notNull().default("no_coverage"),
+  detectionRuleCount: integer("detection_rule_count").notNull().default(0),
+  lastSimulatedAt: timestamp("last_simulated_at"),
+  recommendation: text("recommendation"),
+  priority: text("priority").notNull().default("medium"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const chaosSchedules = pgTable("chaos_schedules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  frequency: text("frequency").notNull().default("weekly"),
+  simulationIds: text("simulation_ids").array(),
+  mitreIds: text("mitre_ids").array(),
+  enabled: boolean("enabled").notNull().default(true),
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  totalRuns: integer("total_runs").notNull().default(0),
+  lastScore: integer("last_score"),
+  previousScore: integer("previous_score"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const purpleTeamExercises = pgTable("purple_team_exercises", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  attackScenario: text("attack_scenario").notNull(),
+  mitreChain: text("mitre_chain").array(),
+  redTeamActions: text("red_team_actions"),
+  blueTeamExpected: text("blue_team_expected"),
+  blueTeamActual: text("blue_team_actual"),
+  status: text("status").notNull().default("planned"),
+  overallVerdict: text("overall_verdict"),
+  detectionTime: integer("detection_time"),
+  responseTime: integer("response_time"),
+  containmentTime: integer("containment_time"),
+  gapsIdentified: text("gaps_identified").array(),
+  improvements: text("improvements").array(),
+  executedAt: timestamp("executed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const chaosSimulationsRelations = relations(chaosSimulations, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [chaosSimulations.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const controlEffectivenessRelations = relations(controlEffectiveness, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [controlEffectiveness.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const detectionGapsRelations = relations(detectionGaps, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [detectionGaps.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const chaosSchedulesRelations = relations(chaosSchedules, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [chaosSchedules.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const purpleTeamExercisesRelations = relations(purpleTeamExercises, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [purpleTeamExercises.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type ChaosSimulation = typeof chaosSimulations.$inferSelect;
+export type InsertChaosSimulation = typeof chaosSimulations.$inferInsert;
+export type ControlEffectiveness = typeof controlEffectiveness.$inferSelect;
+export type InsertControlEffectiveness = typeof controlEffectiveness.$inferInsert;
+export type DetectionGap = typeof detectionGaps.$inferSelect;
+export type InsertDetectionGap = typeof detectionGaps.$inferInsert;
+export type ChaosSchedule = typeof chaosSchedules.$inferSelect;
+export type InsertChaosSchedule = typeof chaosSchedules.$inferInsert;
+export type PurpleTeamExercise = typeof purpleTeamExercises.$inferSelect;
+export type InsertPurpleTeamExercise = typeof purpleTeamExercises.$inferInsert;
