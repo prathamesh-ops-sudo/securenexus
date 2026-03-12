@@ -153,6 +153,7 @@ const AdvancedReportingPage = lazy(() => import("@/pages/advanced-reporting"));
 const DataResidencyPage = lazy(() => import("@/pages/data-residency"));
 const MobileSecurityPage = lazy(() => import("@/pages/mobile-security"));
 const ApiSecurityPage = lazy(() => import("@/pages/api-security"));
+const RansomwareDefensePage = lazy(() => import("@/pages/ransomware-defense"));
 
 function PageSkeleton() {
   return (
@@ -385,6 +386,7 @@ function AuthenticatedApp() {
                     <Route path="/data-residency" component={DataResidencyPage} />
                     <Route path="/mobile-security" component={MobileSecurityPage} />
                     <Route path="/api-security" component={ApiSecurityPage} />
+                    <Route path="/ransomware-defense" component={RansomwareDefensePage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
