@@ -12,6 +12,7 @@ import {
   doublePrecision,
   index,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -7685,3 +7686,143 @@ export const warRoomHandoffsRelations = relations(warRoomHandoffs, ({ one }) => 
 
 export type WarRoomHandoff = typeof warRoomHandoffs.$inferSelect;
 export type InsertWarRoomHandoff = typeof warRoomHandoffs.$inferInsert;
+
+// ─── Threat Hunting Workbench ───────────────────────────────────────────────
+
+export const HUNT_QUERY_TYPES = ["sigma", "yara", "kql", "sql", "custom"] as const;
+export const HUNT_STATUSES = ["draft", "ready", "running", "completed", "failed", "cancelled"] as const;
+
+export const threatHunts = pgTable(
+  "threat_hunts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    queryType: text("query_type").notNull(), // sigma | yara | kql | sql | custom
+    queryText: text("query_text").notNull(),
+    compiledQuery: text("compiled_query"), // compiled version ready for execution
+    status: text("status").notNull().default("draft"),
+    hypothesis: text("hypothesis"), // analyst hypothesis being tested
+    mitreTechniques: jsonb("mitre_techniques").default([]), // array of MITRE ATT&CK technique IDs
+    tags: jsonb("tags").default([]),
+    lastRunAt: timestamp("last_run_at"),
+    lastRunDurationMs: integer("last_run_duration_ms"),
+    lastRunEventCount: integer("last_run_event_count"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_hunts_org").on(table.orgId), index("idx_th_hunts_status").on(table.status)],
+);
+
+export const huntResults = pgTable(
+  "hunt_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => threatHunts.id, { onDelete: "cascade" }),
+    eventCount: integer("event_count").notNull().default(0),
+    eventsJson: jsonb("events_json").default([]), // matched events
+    summary: text("summary"), // AI-generated result summary
+    falsePositiveCount: integer("false_positive_count").default(0),
+    truePositiveCount: integer("true_positive_count").default(0),
+    executionDurationMs: integer("execution_duration_ms"),
+    executedAt: timestamp("executed_at").defaultNow().notNull(),
+    executedBy: text("executed_by"),
+  },
+  (table) => [index("idx_th_results_hunt").on(table.huntId), index("idx_th_results_org").on(table.orgId)],
+);
+
+export const huntLibrary = pgTable(
+  "hunt_library",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => threatHunts.id, { onDelete: "cascade" }),
+    isPublic: boolean("is_public").notNull().default(false),
+    sharedBy: text("shared_by"),
+    category: text("category"), // apt, ransomware, insider_threat, lateral_movement, etc.
+    difficulty: text("difficulty"), // beginner, intermediate, advanced
+    rating: integer("rating").default(0),
+    downloadCount: integer("download_count").default(0),
+    sharedAt: timestamp("shared_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_library_org").on(table.orgId), index("idx_th_library_public").on(table.isPublic)],
+);
+
+export const huntSchedules = pgTable(
+  "hunt_schedules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => threatHunts.id, { onDelete: "cascade" }),
+    cadence: text("cadence").notNull(), // daily, weekly, biweekly, monthly
+    dayOfWeek: integer("day_of_week"), // 0=Sun, 6=Sat (for weekly/biweekly)
+    hourUtc: integer("hour_utc").notNull().default(8), // hour of day UTC
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at"),
+    lastRunAt: timestamp("last_run_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_schedules_org").on(table.orgId), index("idx_th_schedules_hunt").on(table.huntId)],
+);
+
+export const huntPlaybooks = pgTable(
+  "hunt_playbooks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    threatActor: text("threat_actor"), // APT29, FIN7, Lazarus, etc.
+    mitreTechniques: jsonb("mitre_techniques").default([]),
+    steps: jsonb("steps").default([]), // array of { order, title, description, queryType, queryText, expectedOutcome }
+    difficulty: text("difficulty").default("intermediate"),
+    estimatedTimeMin: integer("estimated_time_min"),
+    datasourcesRequired: jsonb("datasources_required").default([]),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_playbooks_org").on(table.orgId)],
+);
+
+export const threatHuntsRelations = relations(threatHunts, ({ one, many }) => ({
+  organization: one(organizations, { fields: [threatHunts.orgId], references: [organizations.id] }),
+  results: many(huntResults),
+  schedules: many(huntSchedules),
+}));
+
+export const huntResultsRelations = relations(huntResults, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntResults.huntId], references: [threatHunts.id] }),
+}));
+
+export const huntLibraryRelations = relations(huntLibrary, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntLibrary.huntId], references: [threatHunts.id] }),
+}));
+
+export const huntSchedulesRelations = relations(huntSchedules, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntSchedules.huntId], references: [threatHunts.id] }),
+}));
+
+export const huntPlaybooksRelations = relations(huntPlaybooks, ({ one }) => ({
+  organization: one(organizations, { fields: [huntPlaybooks.orgId], references: [organizations.id] }),
+}));
+
+export type ThreatHunt = typeof threatHunts.$inferSelect;
+export type InsertThreatHunt = typeof threatHunts.$inferInsert;
+export type HuntResult = typeof huntResults.$inferSelect;
+export type InsertHuntResult = typeof huntResults.$inferInsert;
+export type HuntLibraryEntry = typeof huntLibrary.$inferSelect;
+export type InsertHuntLibraryEntry = typeof huntLibrary.$inferInsert;
+export type HuntSchedule = typeof huntSchedules.$inferSelect;
+export type InsertHuntSchedule = typeof huntSchedules.$inferInsert;
+export type HuntPlaybook = typeof huntPlaybooks.$inferSelect;
+export type InsertHuntPlaybook = typeof huntPlaybooks.$inferInsert;
