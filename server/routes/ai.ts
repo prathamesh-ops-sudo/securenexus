@@ -194,6 +194,12 @@ export function registerAiRoutes(app: Express): void {
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
 
+      // Abort streaming if client disconnects
+      let clientDisconnected = false;
+      req.on("close", () => {
+        clientDisconnected = true;
+      });
+
       // Send initial connection event
       res.write(
         `data: ${JSON.stringify({ type: "connected", message: "Stream connected. Building threat context..." })}\n\n`,
@@ -216,9 +222,8 @@ export function registerAiRoutes(app: Express): void {
 
       await streamNarrative(incident, incidentAlerts, threatIntelCtx, {
         onChunk: (text: string) => {
-          if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
-          }
+          if (clientDisconnected || res.writableEnded) return;
+          res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
         },
         onComplete: async (fullText: string, metrics) => {
           try {
@@ -293,7 +298,9 @@ export function registerAiRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const orgId = (req as any).orgId || (req as any).user?.orgId;
       const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
+      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
 
       const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
       if (incidentAlerts.length === 0) {
@@ -306,6 +313,12 @@ export function registerAiRoutes(app: Express): void {
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
+
+      // Abort streaming if client disconnects
+      let clientDisconnected = false;
+      req.on("close", () => {
+        clientDisconnected = true;
+      });
 
       res.write(
         `data: ${JSON.stringify({ type: "connected", message: "Stream connected. Building forensic context..." })}\n\n`,
@@ -326,9 +339,8 @@ export function registerAiRoutes(app: Express): void {
 
       await streamDeepInvestigation(incident, incidentAlerts, threatIntelCtx, {
         onChunk: (text: string) => {
-          if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
-          }
+          if (clientDisconnected || res.writableEnded) return;
+          res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
         },
         onComplete: async (_fullText: string, metrics) => {
           try {
