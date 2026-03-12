@@ -23,6 +23,7 @@ import {
 } from "./ai/prompt-registry";
 import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/budget";
 import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
+import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./ai/vector-search";
 
 initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 registerEnhancedPrompts();
@@ -204,6 +205,7 @@ export interface ThreatIntelContext {
     tags: string[];
   }>;
   summary: string;
+  historicalContext?: RAGContext;
 }
 
 export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatIntelContext> {
@@ -281,6 +283,30 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
     result.enrichmentResults = result.enrichmentResults.slice(0, 20);
     result.osintMatches = result.osintMatches.slice(0, 20);
 
+    // Build RAG context from alert data
+    try {
+      const representativeAlert = alerts[0] || {};
+      const ragCtx = await buildRAGContext(
+        {
+          title: representativeAlert.title,
+          description: representativeAlert.description,
+          mitreTactic: representativeAlert.mitreTactic,
+          mitreTechnique: representativeAlert.mitreTechnique,
+          sourceIp: representativeAlert.sourceIp,
+          destIp: representativeAlert.destIp,
+          hostname: representativeAlert.hostname,
+          domain: representativeAlert.domain,
+          fileHash: representativeAlert.fileHash,
+          category: representativeAlert.category,
+          severity: representativeAlert.severity,
+        },
+        representativeAlert.orgId,
+      );
+      result.historicalContext = ragCtx;
+    } catch (ragErr) {
+      log.warn("RAG context build failed (non-fatal)", { error: String(ragErr) });
+    }
+
     const maliciousCount = result.enrichmentResults.filter((r) => r.verdict === "malicious").length;
     const suspiciousCount = result.enrichmentResults.filter((r) => r.verdict === "suspicious").length;
     const osintCount = result.osintMatches.length;
@@ -344,6 +370,15 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
   lines.push(
     "Use this threat intelligence to inform your analysis. IOCs with high reputation scores or OSINT matches should increase your confidence that this is a genuine threat, not a false positive. Cross-reference these findings with the alert telemetry.",
   );
+
+  // Append RAG context if available
+  if (ctx.historicalContext) {
+    const ragBlock = formatRAGContextForPrompt(ctx.historicalContext);
+    if (ragBlock) {
+      lines.push("");
+      lines.push(ragBlock);
+    }
+  }
 
   return lines.join("\n");
 }
