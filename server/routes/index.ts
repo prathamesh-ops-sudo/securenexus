@@ -70,6 +70,7 @@ import { registerInvestigationTimelineRoutes } from "./investigation-timeline";
 import { registerEvidenceCustodyRoutes } from "./evidence-custody";
 import { registerComplianceGapRoutes } from "./compliance-gap";
 import { registerReportSchedulingRoutes } from "./report-scheduling";
+import { registerStandalonePlatformRoutes } from "./standalone-platform";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -144,4 +145,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerEvidenceCustodyRoutes(app);
   registerComplianceGapRoutes(app);
   registerReportSchedulingRoutes(app);
+  registerStandalonePlatformRoutes(app);
 }

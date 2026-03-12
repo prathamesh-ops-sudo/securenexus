@@ -69,6 +69,9 @@ import {
   Globe,
   Cpu,
   Calendar,
+  ClipboardCheck,
+  Flag,
+  ShieldAlert,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -257,6 +260,27 @@ const navGroups: NavGroup[] = [
           { title: "Ingestion Status", url: "/ingestion", icon: Activity },
           { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
           { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Standalone Security",
+    icon: Shield,
+    color: "text-teal-400",
+    sections: [
+      {
+        label: "Asset & Risk",
+        items: [
+          { title: "Asset Inventory", url: "/asset-inventory", icon: Server },
+          { title: "Risk Register", url: "/risk-register", icon: ShieldAlert },
+        ],
+      },
+      {
+        label: "Compliance & Reporting",
+        items: [
+          { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
+          { title: "Threat Reports", url: "/threat-reports", icon: Flag },
         ],
       },
     ],

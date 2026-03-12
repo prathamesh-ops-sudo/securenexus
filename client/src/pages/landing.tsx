@@ -45,30 +45,31 @@ import { useAuth } from "@/hooks/use-auth";
 
 const painPoints = [
   {
-    stat: "4,000+",
-    label: "alerts/day",
-    description: "The average SOC drowns in thousands of alerts daily, most of them noise.",
+    stat: "68%",
+    label: "no security tools",
+    description: "Most mid-market companies lack dedicated EDR/XDR, leaving them blind to threats.",
     icon: AlertTriangle,
     color: "text-red-500/80",
   },
   {
-    stat: "45 min",
-    label: "per triage",
-    description: "Analysts spend 45 minutes manually triaging each alert across disconnected tools.",
+    stat: "$50K+",
+    label: "EDR license cost",
+    description: "Enterprise EDR/SIEM licenses cost tens of thousands annually, out of reach for growing companies.",
     icon: Timer,
     color: "text-amber-500/80",
   },
   {
-    stat: "70%",
-    label: "false positives",
-    description: "Most alerts are false positives, burning analyst hours that should go to real threats.",
+    stat: "0%",
+    label: "risk visibility",
+    description:
+      "Without proper tooling, organizations have zero visibility into their risk posture and compliance gaps.",
     icon: Target,
     color: "text-orange-500/80",
   },
   {
     stat: "3.5x",
     label: "tool sprawl",
-    description: "Security teams juggle 3-5 tools per investigation, losing context at every handoff.",
+    description: "Companies that do invest end up juggling 3-5 disconnected tools, losing context at every handoff.",
     icon: Layers,
     color: "text-violet-500/80",
   },
@@ -77,91 +78,91 @@ const painPoints = [
 const howItWorks = [
   {
     step: "01",
-    title: "Connect your tools",
+    title: "Deploy in minutes",
     description:
-      "Plug in your EDR, SIEM, and cloud security tools via read-only API keys. No agents, no infrastructure changes. Under 30 minutes.",
+      "No existing security tools required. SecureNexus works standalone with built-in asset discovery, risk assessment, and threat detection. Optionally connect EDR/SIEM if you have them.",
     icon: Workflow,
   },
   {
     step: "02",
-    title: "AI correlates everything",
+    title: "AI assesses your posture",
     description:
-      "Our engine clusters alerts by attacker behavior, maps to MITRE ATT&CK, and scores each threat. What took your team hours happens in seconds.",
+      "Our engine inventories your assets, scores risks, maps to compliance frameworks (CIS, NIST, ISO 27001, SOC 2), and identifies gaps automatically.",
     icon: Brain,
   },
   {
     step: "03",
     title: "Respond with confidence",
     description:
-      "Get actionable incident narratives, automated playbooks, and one-click response actions. Your analysts focus on decisions, not data wrangling.",
+      "Get actionable risk reports, automated playbooks, compliance-ready assessments, and employee threat reporting. Your team focuses on decisions, not tool sprawl.",
     icon: Zap,
   },
 ];
 
 const features = [
   {
-    icon: Brain,
-    title: "Cut triage time by 90%",
+    icon: Database,
+    title: "Complete Asset Inventory",
     description:
-      "AI clusters alerts by attacker behavior and generates incident narratives automatically. What took 45 minutes now takes under 5.",
+      "Discover, track, and risk-score every asset in your organization. CSV import, lifecycle management, and vulnerability tracking built in.",
     accent: "border-l-cyan-500",
   },
   {
-    icon: Eye,
-    title: "See the full attack story",
+    icon: Shield,
+    title: "Risk Register & Heatmap",
     description:
-      "Map campaigns to MITRE ATT&CK techniques with confidence scores. Stop chasing individual alerts and start tracking adversaries.",
+      "Enterprise risk management with 5x5 likelihood-impact matrix. Track inherent and residual risk, treatment plans, and risk ownership.",
     accent: "border-l-violet-500",
   },
   {
-    icon: TrendingDown,
-    title: "Eliminate 70% of false positives",
+    icon: BarChart3,
+    title: "Security Assessment Engine",
     description:
-      "Behavioral correlation separates real threats from noise. Your team stops wasting hours on alerts that don\u0027t matter.",
+      "Assess against CIS Controls, NIST CSF, ISO 27001, and SOC 2 with built-in questionnaires. Automated scoring and gap identification.",
     accent: "border-l-blue-500",
   },
   {
-    icon: Lock,
-    title: "Deploy without disruption",
+    icon: AlertTriangle,
+    title: "Employee Threat Reporting",
     description:
-      "Read-only API connectors to your existing stack. No rip-and-replace, no new agents, no infrastructure changes. Live in 30 minutes.",
+      "Simple portal for staff to report phishing, social engineering, and suspicious activity. Anonymous submissions supported. Auto-creates alerts.",
     accent: "border-l-emerald-500",
   },
   {
-    icon: BarChart3,
-    title: "Prove compliance in minutes",
+    icon: Brain,
+    title: "AI-Powered SOC Operations",
     description:
-      "Automated evidence collection for SOC 2, ISO 27001, NIST CSF, and GDPR. Generate audit-ready reports instead of building them manually.",
+      "AI correlates alerts, generates incident narratives, maps to MITRE ATT&CK, and provides automated response playbooks.",
     accent: "border-l-purple-500",
   },
   {
-    icon: Lightbulb,
-    title: "Make every analyst a senior",
+    icon: Lock,
+    title: "No Dependencies Required",
     description:
-      "AI-generated investigation guides and response playbooks give junior analysts the decision-making capability of a 10-year veteran.",
+      "Works standalone out of the box. No EDR, SIEM, or third-party tools needed. Optionally integrate with existing tools to enhance visibility.",
     accent: "border-l-indigo-500",
   },
 ];
 
 const metrics = [
-  { value: "90%", label: "Faster triage", icon: Clock },
-  { value: "70%", label: "Fewer false positives", icon: TrendingDown },
-  { value: "35%", label: "Lower MTTR", icon: Activity },
-  { value: "50+", label: "SOC teams onboarded", icon: Users },
+  { value: "30min", label: "Time to deploy", icon: Clock },
+  { value: "100%", label: "Standalone ready", icon: Shield },
+  { value: "4", label: "Compliance frameworks", icon: CheckCircle2 },
+  { value: "0", label: "Dependencies needed", icon: Lock },
 ];
 
 const testimonials = [
   {
     quote:
-      "SecureNexus cut our alert triage time from 45 minutes to under 5. The AI correlation is genuinely useful, not just a buzzword.",
+      "We had zero security tooling before SecureNexus. Now we have a complete risk register, compliance assessments, and asset inventory in one platform.",
     name: "Sarah Chen",
-    role: "SOC Lead",
+    role: "IT Director",
     company: "Series B Fintech",
     rating: 5,
   },
   {
     quote:
-      "We replaced three separate tools with SecureNexus. The attacker-centric view changed how our team thinks about incidents.",
+      "No EDR license needed. SecureNexus gave us enterprise-grade security operations at a fraction of the cost of traditional tools.",
     name: "Marcus Rivera",
     role: "CISO",
     company: "Healthcare SaaS",
@@ -169,7 +170,7 @@ const testimonials = [
   },
   {
     quote:
-      "The MITRE ATT&CK mapping and automated narratives save my analysts 2+ hours per incident. ROI was obvious in week one.",
+      "The compliance assessment engine alone saved us months of manual work preparing for ISO 27001 certification.",
     name: "David Kim",
     role: "Director of Security",
     company: "E-commerce Platform",
@@ -179,24 +180,24 @@ const testimonials = [
 
 const faqs = [
   {
+    q: "Do I need existing security tools like EDR or SIEM?",
+    a: "No. SecureNexus works completely standalone. You get asset inventory, risk management, compliance assessments, threat reporting, and AI-powered SOC operations without any third-party dependencies. If you do have existing tools, you can optionally connect them for enhanced visibility.",
+  },
+  {
     q: "How long does it take to deploy?",
-    a: "Under 30 minutes. Connect your existing EDR/SIEM via read-only API keys, and SecureNexus starts correlating alerts immediately. No agents to install, no infrastructure changes required.",
-  },
-  {
-    q: "Does this replace our SIEM?",
-    a: "No. SecureNexus sits on top of your existing stack (Splunk, Elastic, QRadar, etc.) and adds AI-powered correlation and attacker-centric analysis. It enhances your SIEM, not replaces it.",
-  },
-  {
-    q: "How does the AI correlation work?",
-    a: "Our engine clusters alerts by attacker behavior patterns, not just static rules. It maps to MITRE ATT&CK techniques, assigns confidence scores, and generates incident narratives that mimic how a senior analyst would connect the dots.",
+    a: "Under 30 minutes. Sign up, import your assets (or let the platform discover them), and start assessing your security posture immediately. No agents, no infrastructure changes required.",
   },
   {
     q: "What compliance frameworks do you support?",
-    a: "SOC 2 Type II, ISO 27001, NIST CSF, and GDPR. We provide automated evidence collection, control mapping, and audit-ready reports.",
+    a: "CIS Controls v8, NIST CSF 2.0, ISO 27001, and SOC 2 Type II. Each comes with a full questionnaire, automated scoring, gap identification, and audit-ready reports.",
+  },
+  {
+    q: "How does the risk management work?",
+    a: "Register risks with likelihood and impact scores on a 5x5 matrix. Track inherent and residual risk, assign owners, define treatment plans, and visualize everything on an interactive heatmap.",
   },
   {
     q: "Can I try it before committing?",
-    a: "Yes. Start with a 14-day free trial \u2014 no credit card required. You get full access to all features including AI correlation, integrations, and reporting.",
+    a: "Yes. Start with a 14-day free trial — no credit card required. You get full access to all features including asset inventory, risk register, compliance assessments, and AI-powered operations.",
   },
 ];
 
@@ -590,20 +591,20 @@ export default function LandingPage() {
               <div className="relative z-10">
                 <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs font-medium mb-6 tracking-wide">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                  AI-Powered Security Operations
+                  Standalone Security Platform
                 </div>
                 <h1 className="text-[2.75rem] md:text-[3.25rem] lg:text-[3.75rem] font-extrabold tracking-[-0.03em] mb-6 leading-[1.04] font-display">
-                  Stop Chasing
+                  Enterprise
                   <br />
-                  <span className="text-blue-500">Alerts.</span>
+                  <span className="text-blue-500">Security.</span>
                   <br />
-                  Start Stopping
+                  No EDR
                   <br />
-                  <span className="border-b-[3px] border-blue-500 pb-0.5">Attackers.</span>
+                  <span className="border-b-[3px] border-blue-500 pb-0.5">Required.</span>
                 </h1>
                 <p className="text-base md:text-lg text-slate-400 max-w-lg mb-8 leading-relaxed">
-                  SecureNexus uses AI to correlate thousands of alerts into actionable incidents, cutting triage time by
-                  90% and false positives by 70%.
+                  SecureNexus gives you asset inventory, risk management, compliance assessments, and AI-powered threat
+                  detection — all standalone, no third-party tools needed.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 mb-8">
                   <button
@@ -622,9 +623,9 @@ export default function LandingPage() {
                 </div>
                 <div className="flex items-center gap-8">
                   {[
-                    { val: "10K+", sub: "Alerts/Day" },
-                    { val: "50+", sub: "SOC Teams" },
-                    { val: "500+", sub: "Integrations" },
+                    { val: "4", sub: "Frameworks" },
+                    { val: "100%", sub: "Standalone" },
+                    { val: "30min", sub: "Deploy Time" },
                   ].map((s) => (
                     <div key={s.sub}>
                       <div className="text-[2rem] font-bold tracking-tight font-mono">{s.val}</div>
@@ -740,10 +741,11 @@ export default function LandingPage() {
                 The Problem
               </div>
               <h2 className="text-[1.875rem] md:text-[2.25rem] font-bold tracking-[-0.02em] mb-3">
-                Your SOC Is Drowning in Noise
+                Security Without the Complexity
               </h2>
               <p className="text-slate-400 max-w-xl mx-auto">
-                Security teams spend more time managing tools than stopping threats.
+                Most growing companies lack dedicated security tools. The alternatives are expensive, complex, and
+                fragmented.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -770,10 +772,10 @@ export default function LandingPage() {
                 How It Works
               </div>
               <h2 className="text-[1.75rem] md:text-[2rem] font-semibold tracking-[-0.02em] mb-3">
-                Three Steps to a Quieter SOC
+                Three Steps to Complete Security
               </h2>
               <p className="text-slate-400 max-w-xl mx-auto">
-                Go from alert overload to clear, actionable intelligence in under 30 minutes.
+                Go from zero security tooling to full risk visibility in under 30 minutes.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -810,10 +812,10 @@ export default function LandingPage() {
             <div className="inline-flex items-center px-3.5 py-1.5 rounded-full border border-white/10 bg-white/5 text-slate-400 text-xs font-medium mb-4">
               Integrations
             </div>
-            <h2 className="text-2xl md:text-[1.75rem] font-semibold mb-2 tracking-[-0.01em]">
-              Works with Your Existing Stack
-            </h2>
-            <p className="text-sm text-slate-500">24+ connectors. Read-only. No agents required.</p>
+            <h2 className="text-2xl md:text-[1.75rem] font-semibold mb-2 tracking-[-0.01em]">Optional Integrations</h2>
+            <p className="text-sm text-slate-500">
+              Works standalone. Optionally connect 24+ tools for enhanced visibility.
+            </p>
           </div>
           <div className="relative group/marquee">
             <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
@@ -846,7 +848,7 @@ export default function LandingPage() {
                 Everything You Need to Succeed
               </h2>
               <p className="text-slate-400 max-w-xl mx-auto">
-                Every capability is built to deliver a measurable result for your security team.
+                Everything you need for enterprise security operations, with zero third-party dependencies.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -930,7 +932,7 @@ export default function LandingPage() {
                   price: "\u20B90",
                   period: "/month",
                   description: "Evaluate the platform with limited capacity",
-                  features: ["500 events/month", "2 connectors", "5K AI tokens", "Community support"],
+                  features: ["50 assets", "1 assessment", "5K AI tokens", "Community support"],
                   cta: "Start Free",
                   highlight: false,
                 },
@@ -940,8 +942,8 @@ export default function LandingPage() {
                   period: "/month",
                   description: "For SMBs and growing security teams",
                   features: [
-                    "50K events/month",
-                    "10 connectors",
+                    "500 assets",
+                    "Unlimited assessments",
                     "100K AI tokens",
                     "Email support",
                     "Basic compliance",
@@ -955,8 +957,8 @@ export default function LandingPage() {
                   period: "/month",
                   description: "For mid-market enterprises scaling security ops",
                   features: [
-                    "500K events/month",
-                    "50 connectors",
+                    "5,000 assets",
+                    "All frameworks",
                     "500K AI tokens",
                     "Priority support",
                     "Full compliance suite",
@@ -972,8 +974,8 @@ export default function LandingPage() {
                   period: "/month",
                   description: "For large organizations with advanced needs",
                   features: [
-                    "Unlimited events",
-                    "Unlimited connectors",
+                    "Unlimited assets",
+                    "All frameworks",
                     "2M AI tokens",
                     "24/7 dedicated support",
                     "SSO & RBAC",
@@ -1054,10 +1056,10 @@ export default function LandingPage() {
           <div className="max-w-2xl mx-auto text-center">
             <div className="bg-white/[0.02] border border-white/[0.08] rounded-xl p-10 shadow-[0_8px_40px_rgba(0,0,0,0.3)]">
               <h2 className="text-[1.875rem] md:text-[2.25rem] font-bold tracking-[-0.02em] mb-4">
-                Ready to Transform Your SOC?
+                Ready to Secure Your Organization?
               </h2>
               <p className="text-slate-400 mb-8 max-w-lg mx-auto">
-                Join 50+ security teams that cut triage time by 90% and false positives by 70%. See results in your
+                Get enterprise-grade security operations without the enterprise price tag. Full risk visibility in your
                 first week.
               </p>
               <div className="flex flex-wrap justify-center gap-3 mb-6">
@@ -1094,7 +1096,7 @@ export default function LandingPage() {
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-10">
               <h2 className="text-[1.5rem] font-bold mb-3 tracking-[-0.01em]">Further Reading</h2>
-              <p className="text-slate-500">Dive deeper into the future of security operations.</p>
+              <p className="text-slate-500">Dive deeper into standalone security operations and compliance.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <a
@@ -1104,9 +1106,9 @@ export default function LandingPage() {
                 <div className="w-9 h-9 rounded-lg bg-indigo-500/10 flex items-center justify-center mb-4">
                   <Brain className="h-4 w-4 text-indigo-400" />
                 </div>
-                <h3 className="font-semibold text-base mb-2">Automated SecOps Guide</h3>
+                <h3 className="font-semibold text-base mb-2">Standalone Security Guide</h3>
                 <p className="text-sm text-slate-500 leading-relaxed">
-                  Discover the evolution from SIEM to Agentic SOC and how to eliminate alert fatigue.
+                  Learn how to build enterprise security operations without expensive EDR/SIEM licenses.
                 </p>
               </a>
               <a
@@ -1116,9 +1118,9 @@ export default function LandingPage() {
                 <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4">
                   <Workflow className="h-4 w-4 text-blue-400" />
                 </div>
-                <h3 className="font-semibold text-base mb-2">What is an Agentic SOC?</h3>
+                <h3 className="font-semibold text-base mb-2">Risk Management Best Practices</h3>
                 <p className="text-sm text-slate-500 leading-relaxed">
-                  Learn how AI agents are transforming Tier-1 triage and incident correlation.
+                  Master risk registers, heatmaps, and compliance frameworks for growing organizations.
                 </p>
               </a>
               <a
@@ -1128,9 +1130,9 @@ export default function LandingPage() {
                 <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4">
                   <BarChart3 className="h-4 w-4 text-emerald-400" />
                 </div>
-                <h3 className="font-semibold text-base mb-2">Compare SIEMs</h3>
+                <h3 className="font-semibold text-base mb-2">Compliance Framework Comparison</h3>
                 <p className="text-sm text-slate-500 leading-relaxed">
-                  See how SecureNexus compares against Microsoft Sentinel, Splunk, and IBM QRadar.
+                  Compare CIS Controls, NIST CSF, ISO 27001, and SOC 2 to find the right fit for your organization.
                 </p>
               </a>
             </div>
@@ -1148,7 +1150,7 @@ export default function LandingPage() {
               </div>
               <div>
                 <span className="font-semibold text-sm">SecureNexus</span>
-                <p className="text-[10px] text-slate-500">AI-Powered Security Operations</p>
+                <p className="text-[10px] text-slate-500">Standalone Security Platform</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
