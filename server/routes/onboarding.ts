@@ -573,10 +573,13 @@ export function registerOnboardingRoutes(app: Express): void {
         });
       }
 
-      // Validate mandatory steps are completed before allowing wizard completion
+      // Validate mandatory steps are actually completed (not merely skipped)
       const completedSteps = Array.isArray(progress.completedSteps) ? (progress.completedSteps as string[]) : [];
+      const skippedSteps = Array.isArray(progress.skippedSteps) ? (progress.skippedSteps as string[]) : [];
       const MANDATORY_COMPLETE_STEPS = ["create_org", "choose_plan"] as const;
-      const missingSteps = MANDATORY_COMPLETE_STEPS.filter((s) => !completedSteps.includes(s));
+      const missingSteps = MANDATORY_COMPLETE_STEPS.filter(
+        (s) => !completedSteps.includes(s) || skippedSteps.includes(s),
+      );
       if (missingSteps.length > 0) {
         return sendEnvelope(res, null, {
           status: 400,
