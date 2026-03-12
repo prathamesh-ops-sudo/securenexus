@@ -210,7 +210,7 @@ export function registerPhase2StubRoutes(app: Express): void {
         });
       }
       // Verify job belongs to requesting user's org (IDOR protection)
-      if ((job as any).orgId && (job as any).orgId !== orgId) {
+      if ((job as any).orgId !== orgId) {
         return sendEnvelope(res, null, {
           status: 404,
           errors: [{ code: "NOT_FOUND", message: "Job not found" }],
