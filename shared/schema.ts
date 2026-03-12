@@ -5756,3 +5756,89 @@ export const detectionAlertsRelations = relations(detectionAlerts, ({ one }) => 
 
 export type DetectionAlert = typeof detectionAlerts.$inferSelect;
 export type InsertDetectionAlert = typeof detectionAlerts.$inferInsert;
+
+// ==========================================
+// LOG SOURCE INGESTION
+// ==========================================
+
+export const LOG_SOURCE_TYPES = ["syslog", "windows_event_log", "http_push", "journald", "cloudwatch"] as const;
+
+export const LOG_SOURCE_STATUSES = ["active", "inactive", "error", "configuring"] as const;
+
+export const LOG_SOURCE_FORMATS = ["json", "cef", "leef", "raw", "csv", "key_value"] as const;
+
+export const logSources = pgTable(
+  "log_sources",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id").references(() => nativeSensors.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    sourceType: text("source_type").notNull(),
+    status: text("status").notNull().default("configuring"),
+    // Connection config
+    listenAddress: text("listen_address"),
+    listenPort: integer("listen_port"),
+    protocol: text("protocol"),
+    format: text("format").default("raw"),
+    // Syslog-specific
+    syslogFacility: text("syslog_facility"),
+    syslogSeverity: text("syslog_severity"),
+    // Windows Event Log
+    winEventChannels: text("win_event_channels")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    winEventLevels: text("win_event_levels")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    // CloudWatch
+    cloudwatchRegion: text("cloudwatch_region"),
+    cloudwatchLogGroup: text("cloudwatch_log_group"),
+    cloudwatchFilterPattern: text("cloudwatch_filter_pattern"),
+    // HTTP Push
+    httpEndpoint: text("http_endpoint"),
+    httpAuthToken: text("http_auth_token"),
+    // journald
+    journaldUnits: text("journald_units")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    journaldPriority: text("journald_priority"),
+    // Parsing
+    parserRegex: text("parser_regex"),
+    fieldMappings: jsonb("field_mappings"),
+    // Tags and filtering
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    filterInclude: text("filter_include"),
+    filterExclude: text("filter_exclude"),
+    // Stats
+    eventsReceived: integer("events_received").notNull().default(0),
+    eventsDropped: integer("events_dropped").notNull().default(0),
+    bytesReceived: integer("bytes_received").notNull().default(0),
+    lastEventAt: timestamp("last_event_at"),
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_log_sources_org").on(table.orgId),
+    index("idx_log_sources_sensor").on(table.sensorId),
+    index("idx_log_sources_type").on(table.orgId, table.sourceType),
+    index("idx_log_sources_status").on(table.orgId, table.status),
+  ],
+);
+
+export const logSourcesRelations = relations(logSources, ({ one }) => ({
+  organization: one(organizations, { fields: [logSources.orgId], references: [organizations.id] }),
+  sensor: one(nativeSensors, { fields: [logSources.sensorId], references: [nativeSensors.id] }),
+}));
+
+export type LogSource = typeof logSources.$inferSelect;
+export type InsertLogSource = typeof logSources.$inferInsert;

@@ -72,6 +72,7 @@ import { registerComplianceGapRoutes } from "./compliance-gap";
 import { registerReportSchedulingRoutes } from "./report-scheduling";
 import { registerStandalonePlatformRoutes } from "./standalone-platform";
 import { registerNativeSensorRoutes } from "./native-sensors";
+import { registerLogSourceRoutes } from "./log-sources";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -148,4 +149,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerReportSchedulingRoutes(app);
   registerStandalonePlatformRoutes(app);
   registerNativeSensorRoutes(app);
+  registerLogSourceRoutes(app);
 }
