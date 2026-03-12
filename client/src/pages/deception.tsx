@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchCsrfToken } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,9 +79,18 @@ const DEPLOY_TARGET_LABELS: Record<string, string> = {
 };
 
 async function apiRequest(url: string, options?: RequestInit) {
+  const method = options?.method?.toUpperCase() ?? "GET";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfToken = await fetchCsrfToken();
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  }
   const res = await fetch(url, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers,
     credentials: "include",
   });
   if (!res.ok) {
