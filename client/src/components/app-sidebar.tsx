@@ -77,6 +77,7 @@ import {
   Zap as ZapIcon,
   Terminal,
   Factory,
+  Smartphone,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -314,6 +315,10 @@ const navGroups: NavGroup[] = [
       {
         label: "OT/ICS Security",
         items: [{ title: "OT/ICS Security", url: "/ot-security", icon: Factory }],
+      },
+      {
+        label: "Mobile & Remote",
+        items: [{ title: "Mobile Security", url: "/mobile-security", icon: Smartphone }],
       },
       {
         label: "Compliance & Reporting",
