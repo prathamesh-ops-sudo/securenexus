@@ -134,7 +134,7 @@ export default function AuditLogPage() {
     isError: logsError,
     refetch: refetchLogs,
   } = useQuery<AuditLog[]>({
-    queryKey: ["/api/v1/audit-logs"],
+    queryKey: ["/api/audit-logs"],
   });
 
   const categoryCounts = useMemo(() => {

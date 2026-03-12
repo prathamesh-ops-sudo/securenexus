@@ -257,9 +257,15 @@ export function registerOnboardingRoutes(app: Express): void {
       const completedSteps = Array.isArray(progress.completedSteps) ? [...(progress.completedSteps as string[])] : [];
       if (!completedSteps.includes("choose_plan")) completedSteps.push("choose_plan");
 
+      // Clear choose_plan from skippedSteps since the user actually completed it
+      const skippedSteps = Array.isArray(progress.skippedSteps)
+        ? (progress.skippedSteps as string[]).filter((s) => s !== "choose_plan")
+        : [];
+
       await storage.updateWizardProgress(userId, {
         currentStep: 2,
         completedSteps,
+        skippedSteps,
       });
 
       if (planId !== "free") {
