@@ -561,6 +561,7 @@ export interface IStorage {
   clearHardeningRecommendations(orgId: string): Promise<void>;
 
   getAutoResponsePolicies(orgId?: string): Promise<AutoResponsePolicy[]>;
+  getAutoResponsePolicy(id: string): Promise<AutoResponsePolicy | null>;
   createAutoResponsePolicy(policy: InsertAutoResponsePolicy): Promise<AutoResponsePolicy>;
   updateAutoResponsePolicy(id: string, updates: Partial<AutoResponsePolicy>): Promise<AutoResponsePolicy | null>;
   deleteAutoResponsePolicy(id: string): Promise<boolean>;
@@ -575,6 +576,7 @@ export interface IStorage {
   updateInvestigationStep(id: string, updates: Partial<InvestigationStep>): Promise<InvestigationStep | null>;
 
   getResponseActionRollbacks(orgId?: string): Promise<ResponseActionRollback[]>;
+  getResponseActionRollback(id: string): Promise<ResponseActionRollback | null>;
   createResponseActionRollback(rollback: InsertResponseActionRollback): Promise<ResponseActionRollback>;
   updateResponseActionRollback(
     id: string,
@@ -2438,6 +2440,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(autoResponsePolicies).orderBy(desc(autoResponsePolicies.createdAt));
   }
 
+  async getAutoResponsePolicy(id: string): Promise<AutoResponsePolicy | null> {
+    const [policy] = await db.select().from(autoResponsePolicies).where(eq(autoResponsePolicies.id, id));
+    return policy || null;
+  }
+
   async createAutoResponsePolicy(policy: InsertAutoResponsePolicy): Promise<AutoResponsePolicy> {
     const [created] = await db.insert(autoResponsePolicies).values(policy).returning();
     return created;
@@ -2510,6 +2517,11 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(responseActionRollbacks.createdAt));
     }
     return db.select().from(responseActionRollbacks).orderBy(desc(responseActionRollbacks.createdAt));
+  }
+
+  async getResponseActionRollback(id: string): Promise<ResponseActionRollback | null> {
+    const [rollback] = await db.select().from(responseActionRollbacks).where(eq(responseActionRollbacks.id, id));
+    return rollback || null;
   }
 
   async createResponseActionRollback(rollback: InsertResponseActionRollback): Promise<ResponseActionRollback> {

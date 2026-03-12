@@ -87,7 +87,7 @@ export function registerNativeSensorRoutes(app: Express): void {
   app.get("/api/native-sensors/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const sensorId = req.params.id;
+      const sensorId = String(req.params.id);
 
       const [sensor] = await db
         .select()
@@ -185,7 +185,7 @@ export function registerNativeSensorRoutes(app: Express): void {
   app.post("/api/native-sensors/:id/heartbeat", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const sensorId = req.params.id;
+      const sensorId = String(req.params.id);
 
       const [sensor] = await db
         .select()
@@ -223,7 +223,7 @@ export function registerNativeSensorRoutes(app: Express): void {
   app.post("/api/native-sensors/:id/events", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const sensorId = req.params.id;
+      const sensorId = String(req.params.id);
 
       const [sensor] = await db
         .select()
@@ -323,7 +323,7 @@ export function registerNativeSensorRoutes(app: Express): void {
   app.delete("/api/native-sensors/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const sensorId = req.params.id;
+      const sensorId = String(req.params.id);
 
       const [sensor] = await db
         .select()
@@ -518,7 +518,7 @@ EOF`;
   app.get("/api/detection-rules/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const ruleId = req.params.id;
+      const ruleId = String(req.params.id);
 
       const [rule] = await db
         .select()
@@ -605,7 +605,7 @@ EOF`;
   app.patch("/api/detection-rules/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const ruleId = req.params.id;
+      const ruleId = String(req.params.id);
 
       const [existing] = await db
         .select()
@@ -661,7 +661,7 @@ EOF`;
   app.delete("/api/detection-rules/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const ruleId = req.params.id;
+      const ruleId = String(req.params.id);
 
       const [existing] = await db
         .select()
@@ -731,7 +731,7 @@ EOF`;
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const alertId = req.params.id;
+        const alertId = String(req.params.id);
 
         const [existing] = await db
           .select()

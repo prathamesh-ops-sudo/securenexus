@@ -7,6 +7,7 @@ import { logger } from "../logger";
 import { z } from "zod";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { getOrgId } from "./shared";
 
 const log = logger.child("autonomous-routes");
 
@@ -54,10 +55,9 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const policies = await storage.getAutonomousPolicies(orgId);
+        const policies = await storage.getAutoResponsePolicies(orgId);
 
         return res.json({
           policies: policies || [],
@@ -86,8 +86,7 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const defaultPolicies = [
           {
@@ -181,8 +180,8 @@ export function registerAutonomousRoutes(app: Express): void {
 
         const created = [];
         for (const policy of defaultPolicies) {
-          const policyId = await storage.createAutonomousPolicy(policy);
-          created.push({ ...policy, id: policyId });
+          const created_policy = await storage.createAutoResponsePolicy(policy as any);
+          created.push({ ...policy, id: created_policy.id });
         }
 
         log.info("Seeded default autonomous policies", { orgId, count: created.length });
@@ -211,19 +210,16 @@ export function registerAutonomousRoutes(app: Express): void {
     enforcePlanLimit("response_policies"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const validated = policySchema.parse(req.body);
 
-        const policyId = await storage.createAutonomousPolicy({
+        const policy = await storage.createAutoResponsePolicy({
           orgId,
           ...validated,
-        });
+        } as any);
 
-        const policy = await storage.getAutonomousPolicy(policyId);
-
-        log.info("Created autonomous policy", { orgId, policyId, name: validated.name });
+        log.info("Created autonomous policy", { orgId, policyId: policy.id, name: validated.name });
 
         return res.status(201).json({ policy });
       } catch (error: any) {
@@ -248,11 +244,10 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const policyId = req.params.id;
-        const existing = await storage.getAutonomousPolicy(policyId);
+        const policyId = String(req.params.id);
+        const existing = await storage.getAutoResponsePolicy(policyId);
 
         if (!existing || existing.orgId !== orgId) {
           return res.status(404).json({ error: "Policy not found" });
@@ -260,8 +255,7 @@ export function registerAutonomousRoutes(app: Express): void {
 
         const updates = policySchema.partial().parse(req.body);
 
-        await storage.updateAutonomousPolicy(policyId, updates);
-        const updated = await storage.getAutonomousPolicy(policyId);
+        const updated = await storage.updateAutoResponsePolicy(policyId, updates as any);
 
         log.info("Updated autonomous policy", { orgId, policyId });
 
@@ -288,17 +282,16 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const policyId = req.params.id;
-        const existing = await storage.getAutonomousPolicy(policyId);
+        const policyId = String(req.params.id);
+        const existing = await storage.getAutoResponsePolicy(policyId);
 
         if (!existing || existing.orgId !== orgId) {
           return res.status(404).json({ error: "Policy not found" });
         }
 
-        await storage.deleteAutonomousPolicy(policyId);
+        await storage.deleteAutoResponsePolicy(policyId);
 
         log.info("Deleted autonomous policy", { orgId, policyId });
 
@@ -326,14 +319,11 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const limit = parseInt(req.query.limit as string) || 100;
         const incidentId = req.query.incidentId as string | undefined;
-        const alertId = req.query.alertId as string | undefined;
 
-        const actions = await storage.getResponseActions(orgId, { limit, incidentId, alertId });
+        const actions = await storage.getResponseActions(orgId, incidentId);
 
         return res.json({
           actions: actions || [],
@@ -358,8 +348,7 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const { actionType, config, incidentId, alertId } = req.body;
 
@@ -371,8 +360,8 @@ export function registerAutonomousRoutes(app: Express): void {
           orgId,
           incidentId,
           alertId,
-          userId: req.user?.id,
-          userName: req.user?.name || req.user?.email,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.name || (req as any).user?.email,
           storage,
         });
 
@@ -402,8 +391,7 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const runs = await storage.getInvestigationRuns(orgId);
 
@@ -435,8 +423,7 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const { incidentId } = req.body;
 
@@ -450,22 +437,22 @@ export function registerAutonomousRoutes(app: Express): void {
           return res.status(404).json({ error: "Incident not found" });
         }
 
-        const runId = await storage.createInvestigationRun({
+        const run = await storage.createInvestigationRun({
           orgId,
           incidentId,
           status: "pending",
-          triggeredBy: req.user?.id || "system",
+          triggeredBy: (req as any).user?.id || "system",
         });
 
         // Run investigation asynchronously
-        runInvestigation(runId).catch((error: any) => {
-          log.error("Investigation run failed", { runId, error: error.message });
+        runInvestigation(run.id).catch((error: any) => {
+          log.error("Investigation run failed", { runId: run.id, error: error.message });
         });
 
-        log.info("Started investigation run", { orgId, incidentId, runId });
+        log.info("Started investigation run", { orgId, incidentId, runId: run.id });
 
         return res.status(201).json({
-          runId,
+          runId: run.id,
           message: "Investigation started",
           incidentId,
         });
@@ -488,10 +475,9 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const runId = req.params.id;
+        const runId = String(req.params.id);
         const run = await storage.getInvestigationRun(runId);
 
         if (!run || run.orgId !== orgId) {
@@ -527,10 +513,9 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const rollbacks = await storage.getRollbacks(orgId);
+        const rollbacks = await storage.getResponseActionRollbacks(orgId);
 
         return res.json({
           rollbacks: rollbacks || [],
@@ -555,8 +540,7 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const validated = rollbackSchema.parse(req.body);
 
@@ -566,18 +550,20 @@ export function registerAutonomousRoutes(app: Express): void {
           return res.status(404).json({ error: "Response action not found" });
         }
 
-        const rollbackId = await storage.createRollback({
+        const rollback = await storage.createResponseActionRollback({
           orgId,
-          responseActionId: validated.responseActionId,
-          reason: validated.reason || "Manual rollback request",
+          originalActionId: validated.responseActionId,
+          actionType: action.actionType,
+          target: action.targetValue || "unknown",
+          rollbackAction: { reason: validated.reason || "Manual rollback request" },
           status: "pending",
-          requestedBy: req.user?.id || "unknown",
+          executedBy: (req as any).user?.id || "unknown",
         });
 
-        log.info("Created rollback request", { orgId, rollbackId, actionId: validated.responseActionId });
+        log.info("Created rollback request", { orgId, rollbackId: rollback.id, actionId: validated.responseActionId });
 
         return res.status(201).json({
-          rollbackId,
+          rollbackId: rollback.id,
           message: "Rollback request created",
         });
       } catch (error: any) {
@@ -602,11 +588,10 @@ export function registerAutonomousRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
-        const rollbackId = req.params.id;
-        const rollback = await storage.getRollback(rollbackId);
+        const rollbackId = String(req.params.id);
+        const rollback = await storage.getResponseActionRollback(rollbackId);
 
         if (!rollback || rollback.orgId !== orgId) {
           return res.status(404).json({ error: "Rollback not found" });
@@ -617,16 +602,16 @@ export function registerAutonomousRoutes(app: Express): void {
         }
 
         // Get the original action
-        const action = await storage.getResponseAction(rollback.responseActionId);
+        const action = await storage.getResponseAction(rollback.originalActionId || "");
         if (!action) {
           return res.status(404).json({ error: "Original action not found" });
         }
 
         // Update rollback status
-        await storage.updateRollback(rollbackId, {
+        await storage.updateResponseActionRollback(rollbackId, {
           status: "completed",
           executedAt: new Date(),
-          executedBy: req.user?.id || "unknown",
+          executedBy: (req as any).user?.id || "unknown",
           result: {
             message: `[Simulated] Rolled back ${action.actionType} on ${action.targetValue}`,
             originalAction: {
@@ -635,13 +620,13 @@ export function registerAutonomousRoutes(app: Express): void {
               targetValue: action.targetValue,
             },
           },
-        });
+        } as any);
 
         log.info("Executed rollback", { orgId, rollbackId, actionType: action.actionType });
 
         return res.json({
           message: "Rollback executed successfully",
-          rollback: await storage.getRollback(rollbackId),
+          rollback: await storage.getResponseActionRollback(rollbackId),
         });
       } catch (error: any) {
         log.error("Failed to execute rollback", { error: error.message });
