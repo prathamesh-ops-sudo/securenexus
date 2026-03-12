@@ -463,6 +463,7 @@ EOF`;
       const status = req.query.status as string | undefined;
       const tactic = req.query.tactic as string | undefined;
       const severity = req.query.severity as string | undefined;
+      const type = req.query.type as string | undefined;
       const q = (req.query.q as string) || "";
 
       // Seed built-in rules on first access
@@ -472,6 +473,8 @@ EOF`;
       if (status && status !== "all") conditions.push(eq(detectionRules.status, status));
       if (tactic && tactic !== "all") conditions.push(eq(detectionRules.mitreTactic, tactic));
       if (severity && severity !== "all") conditions.push(eq(detectionRules.severity, severity));
+      if (type === "builtin") conditions.push(eq(detectionRules.isBuiltin, true));
+      if (type === "custom") conditions.push(eq(detectionRules.isBuiltin, false));
       if (q) {
         conditions.push(or(ilike(detectionRules.name, `%${q}%`), ilike(detectionRules.description, `%${q}%`)));
       }

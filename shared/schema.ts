@@ -4,6 +4,7 @@ import {
   text,
   varchar,
   integer,
+  bigint,
   timestamp,
   boolean,
   jsonb,
@@ -5818,9 +5819,9 @@ export const logSources = pgTable(
     filterInclude: text("filter_include"),
     filterExclude: text("filter_exclude"),
     // Stats
-    eventsReceived: integer("events_received").notNull().default(0),
-    eventsDropped: integer("events_dropped").notNull().default(0),
-    bytesReceived: integer("bytes_received").notNull().default(0),
+    eventsReceived: bigint("events_received", { mode: "number" }).notNull().default(0),
+    eventsDropped: bigint("events_dropped", { mode: "number" }).notNull().default(0),
+    bytesReceived: bigint("bytes_received", { mode: "number" }).notNull().default(0),
     lastEventAt: timestamp("last_event_at"),
     lastError: text("last_error"),
     lastErrorAt: timestamp("last_error_at"),
@@ -5832,6 +5833,7 @@ export const logSources = pgTable(
     index("idx_log_sources_sensor").on(table.sensorId),
     index("idx_log_sources_type").on(table.orgId, table.sourceType),
     index("idx_log_sources_status").on(table.orgId, table.status),
+    uniqueIndex("idx_log_sources_http_auth_token").on(table.httpAuthToken),
   ],
 );
 
