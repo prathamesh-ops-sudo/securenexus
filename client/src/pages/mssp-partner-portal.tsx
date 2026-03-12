@@ -1038,7 +1038,7 @@ function BillingTab({ children: childOrgs }: { children: ChildOrg[] }) {
         childOrgId: billForm.childOrgId,
         periodStart: new Date(billForm.periodStart).toISOString(),
         periodEnd: new Date(billForm.periodEnd).toISOString(),
-        baseFee: billForm.baseFee * 100,
+        baseFee: Math.round(billForm.baseFee * 100),
         markupPercent: billForm.markupPercent,
       });
     },
