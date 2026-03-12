@@ -91,12 +91,61 @@ async function dispatchToEmail(
     return { success: false, error: "Missing recipients in email channel config" };
   }
 
-  log.info("Email notification dispatched (simulated)", {
-    channelId: channel.id,
-    recipients: Array.isArray(recipients) ? recipients.length : 1,
-    subject: payload.title,
-  });
-  return { success: true };
+  const toList = Array.isArray(recipients) ? recipients : [recipients];
+
+  const severityColor: Record<string, string> = {
+    info: "#2196F3",
+    warning: "#FF9800",
+    critical: "#F44336",
+  };
+  const color = severityColor[payload.severity] ?? "#2196F3";
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background: ${color}; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+        <h2 style="margin: 0; font-size: 18px;">${escapeHtml(payload.title)}</h2>
+      </div>
+      <div style="padding: 24px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">${escapeHtml(payload.body)}</p>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280; font-size: 13px;">Severity</td>
+            <td style="padding: 8px 0; font-weight: 600; font-size: 13px;">${payload.severity.toUpperCase()}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280; font-size: 13px;">Source</td>
+            <td style="padding: 8px 0; font-size: 13px;">${escapeHtml(payload.source)}</td>
+          </tr>
+        </table>
+      </div>
+      <p style="text-align: center; color: #9ca3af; font-size: 11px; margin-top: 16px;">SecureNexus Security Platform</p>
+    </div>
+  `;
+
+  try {
+    const { sendEmail } = await import("./email-service");
+    const sent = await sendEmail({
+      to: toList,
+      subject: `[${payload.severity.toUpperCase()}] ${payload.title}`,
+      html,
+      text: `${payload.title}\n\nSeverity: ${payload.severity.toUpperCase()}\nSource: ${payload.source}\n\n${payload.body}`,
+    });
+    if (!sent) {
+      return { success: false, error: "SES sendEmail returned false — check email-service logs" };
+    }
+    log.info("Email notification dispatched via SES", {
+      channelId: channel.id,
+      recipients: toList.length,
+      subject: payload.title,
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: `Email dispatch failed: ${(err as Error).message}` };
+  }
+}
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 async function dispatchToPagerDuty(
