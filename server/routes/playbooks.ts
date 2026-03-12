@@ -88,10 +88,15 @@ export function registerPlaybooksRoutes(app: Express): void {
         if (!existing || !orgId || existing.orgId !== orgId) {
           return res.status(404).json({ message: "Playbook not found" });
         }
-        const updated = await storage.updatePlaybook(p(req.params.id), {
-          ...req.body,
-          updatedAt: new Date(),
-        });
+        const allowedFields = ["name", "description", "trigger", "conditions", "actions", "status", "enabled"];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
+        }
+        updates.updatedAt = new Date();
+        const updated = await storage.updatePlaybook(p(req.params.id), updates);
         res.json(updated);
       } catch (error) {
         res.status(500).json({ message: "Failed to update playbook" });

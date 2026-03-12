@@ -92,12 +92,7 @@ function parseTelemetryMetric(telemetry: EndpointTelemetry[], metricType: string
 function AssetDetailView({ assetId, assets }: { assetId: string; assets: EndpointAsset[] }) {
   const asset = assets.find((a) => a.id === assetId);
 
-  const {
-    data: telemetry,
-    isLoading: telemetryLoading,
-    isError: _telemetryError,
-    refetch: _refetchTelemetry,
-  } = useQuery<EndpointTelemetry[]>({
+  const { data: telemetry, isLoading: telemetryLoading } = useQuery<EndpointTelemetry[]>({
     queryKey: ["/api/endpoints", assetId, "telemetry"],
     enabled: !!assetId,
   });

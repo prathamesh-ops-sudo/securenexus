@@ -41,13 +41,6 @@ function scoreStrokeColor(score: number): string {
   return "stroke-red-500";
 }
 
-function _scoreBgColor(score: number): string {
-  if (score >= 80) return "bg-green-500/10 border-green-500/30";
-  if (score >= 60) return "bg-yellow-500/10 border-yellow-500/30";
-  if (score >= 40) return "bg-orange-500/10 border-orange-500/30";
-  return "bg-red-500/10 border-red-500/30";
-}
-
 function scoreLabel(score: number): string {
   if (score >= 80) return "Excellent";
   if (score >= 60) return "Good";

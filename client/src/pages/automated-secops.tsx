@@ -81,7 +81,7 @@ export default function AutomatedSecopsPage() {
   return (
     <ContentLayout
       title="Automated Security Operations"
-      breadcrumbs={[{ label: "Home", href: "/" }, { label: "Blog", href: "#" }, { label: "Automated SecOps" }]}
+      breadcrumbs={[{ label: "Home", href: "/" }, { label: "Blog", href: "/blog" }, { label: "Automated SecOps" }]}
       faqs={faqs}
       jsonLd={[articleSchema]}
     >
