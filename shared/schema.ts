@@ -8899,6 +8899,199 @@ export type InsertTabletopExercise = typeof tabletopExercises.$inferInsert;
 export type BackupVerification = typeof backupVerifications.$inferSelect;
 export type InsertBackupVerification = typeof backupVerifications.$inferInsert;
 
+// ── Community Threat Intelligence Network ─────────────────────────────────────
+
+export const COMMUNITY_IOC_TYPES = [
+  "ip",
+  "domain",
+  "url",
+  "hash_md5",
+  "hash_sha1",
+  "hash_sha256",
+  "email",
+  "file_name",
+  "cidr",
+  "certificate",
+] as const;
+
+export const IOC_SEVERITY_LEVELS = ["critical", "high", "medium", "low", "informational"] as const;
+
+export const SHARING_CONSENT_LEVELS = ["none", "ioc_only", "detection_patterns", "full_telemetry"] as const;
+
+export const INDUSTRY_SECTORS = [
+  "healthcare",
+  "finance",
+  "technology",
+  "manufacturing",
+  "energy",
+  "government",
+  "education",
+  "retail",
+  "telecom",
+  "defense",
+  "legal",
+  "media",
+  "transportation",
+  "other",
+] as const;
+
+export const sharedIocs = pgTable(
+  "shared_iocs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    contributorOrgId: text("contributor_org_id").notNull(),
+    anonymousContributorHash: text("anonymous_contributor_hash").notNull(), // SHA-256 of orgId — hides identity
+    iocType: text("ioc_type").notNull(), // ip, domain, url, hash, etc.
+    iocValue: text("ioc_value").notNull(), // the actual indicator value
+    iocValueHash: text("ioc_value_hash").notNull(), // SHA-256 of normalized value for dedup
+    severity: text("severity").notNull().default("medium"),
+    confidence: integer("confidence").notNull().default(70), // 0-100 confidence score
+    tlpLevel: text("tlp_level").notNull().default("amber"), // white, green, amber, red
+    tags: jsonb("tags").default([]), // e.g. ["ransomware", "c2", "phishing"]
+    threatActorRef: text("threat_actor_ref"), // optional MITRE ATT&CK group reference
+    campaignRef: text("campaign_ref"), // optional campaign correlation ID
+    context: text("context"), // anonymized context description
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    sightingCount: integer("sighting_count").notNull().default(1), // how many orgs reported this
+    reportingOrgs: jsonb("reporting_orgs").default([]), // array of anonymous org hashes
+    industrySectors: jsonb("industry_sectors").default([]), // which sectors saw this IOC
+    expiresAt: timestamp("expires_at"), // TTL for IOC validity
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("shared_iocs_type_idx").on(table.iocType),
+    index("shared_iocs_value_hash_idx").on(table.iocValueHash),
+    index("shared_iocs_severity_idx").on(table.severity),
+    index("shared_iocs_active_idx").on(table.isActive),
+    index("shared_iocs_first_seen_idx").on(table.firstSeenAt),
+  ],
+);
+
+export const communityFeeds = pgTable(
+  "community_feeds",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    feedName: text("feed_name").notNull(),
+    feedType: text("feed_type").notNull().default("industry"), // global, industry, custom
+    industrySector: text("industry_sector"), // null for global feeds
+    description: text("description"),
+    iocCount: integer("ioc_count").notNull().default(0),
+    memberCount: integer("member_count").notNull().default(0),
+    lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
+    isSubscribed: boolean("is_subscribed").notNull().default(false),
+    subscribedAt: timestamp("subscribed_at"),
+    autoIngest: boolean("auto_ingest").notNull().default(false), // auto-add IOCs to org threat intel
+    filterSeverity: text("filter_severity").default("medium"), // minimum severity to ingest
+    filterConfidence: integer("filter_confidence").default(50), // minimum confidence to ingest
+    stats: jsonb("stats").default({}), // { ipsShared, domainsShared, hashesShared, ... }
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("community_feeds_org_idx").on(table.orgId),
+    index("community_feeds_type_idx").on(table.feedType),
+    index("community_feeds_sector_idx").on(table.industrySector),
+  ],
+);
+
+export const sharingConsents = pgTable(
+  "sharing_consents",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull().unique(),
+    consentLevel: text("consent_level").notNull().default("none"), // none, ioc_only, detection_patterns, full_telemetry
+    industrySector: text("industry_sector").notNull().default("other"),
+    companySize: text("company_size").notNull().default("medium"), // small, medium, large, enterprise
+    anonymousOrgHash: text("anonymous_org_hash").notNull(), // SHA-256 of orgId for anonymous contribution
+    shareIocs: boolean("share_iocs").notNull().default(false),
+    shareDetectionPatterns: boolean("share_detection_patterns").notNull().default(false),
+    shareTelemetry: boolean("share_telemetry").notNull().default(false),
+    receiveGlobalFeed: boolean("receive_global_feed").notNull().default(true),
+    receiveIndustryFeed: boolean("receive_industry_feed").notNull().default(true),
+    autoContribute: boolean("auto_contribute").notNull().default(false), // auto-share new IOCs
+    contributedIocCount: integer("contributed_ioc_count").notNull().default(0),
+    receivedIocCount: integer("received_ioc_count").notNull().default(0),
+    lastContributedAt: timestamp("last_contributed_at"),
+    lastReceivedAt: timestamp("last_received_at"),
+    consentGrantedAt: timestamp("consent_granted_at"),
+    consentUpdatedAt: timestamp("consent_updated_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("sharing_consents_org_idx").on(table.orgId),
+    index("sharing_consents_sector_idx").on(table.industrySector),
+  ],
+);
+
+export const communityThreatCampaigns = pgTable(
+  "community_threat_campaigns",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    campaignName: text("campaign_name").notNull(),
+    threatActorName: text("threat_actor_name"),
+    description: text("description"),
+    mitreAttackIds: jsonb("mitre_attack_ids").default([]),
+    targetSectors: jsonb("target_sectors").default([]),
+    iocIds: jsonb("ioc_ids").default([]), // linked shared IOC IDs
+    iocCount: integer("ioc_count").notNull().default(0),
+    affectedOrgCount: integer("affected_org_count").notNull().default(0),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    status: text("status").notNull().default("active"), // active, dormant, resolved
+    severity: text("severity").notNull().default("high"),
+    tlpLevel: text("tlp_level").notNull().default("amber"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("community_campaigns_status_idx").on(table.status),
+    index("community_campaigns_actor_idx").on(table.threatActorName),
+    index("community_campaigns_first_seen_idx").on(table.firstSeenAt),
+  ],
+);
+
+// Relations
+export const sharedIocsRelations = relations(sharedIocs, ({ one }) => ({
+  contributorOrg: one(organizations, {
+    fields: [sharedIocs.contributorOrgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const communityFeedsRelations = relations(communityFeeds, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [communityFeeds.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const sharingConsentsRelations = relations(sharingConsents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [sharingConsents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type SharedIoc = typeof sharedIocs.$inferSelect;
+export type InsertSharedIoc = typeof sharedIocs.$inferInsert;
+export type CommunityFeed = typeof communityFeeds.$inferSelect;
+export type InsertCommunityFeed = typeof communityFeeds.$inferInsert;
+export type SharingConsent = typeof sharingConsents.$inferSelect;
+export type InsertSharingConsent = typeof sharingConsents.$inferInsert;
+export type CommunityThreatCampaign = typeof communityThreatCampaigns.$inferSelect;
+export type InsertCommunityThreatCampaign = typeof communityThreatCampaigns.$inferInsert;
+
 // ── Security Posture Score & Public Trust Center ──────────────────────────────
 
 export const POSTURE_DOMAINS = ["identity", "endpoint", "cloud", "network", "application", "data"] as const;
