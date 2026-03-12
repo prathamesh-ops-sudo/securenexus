@@ -73,6 +73,9 @@ import { registerReportSchedulingRoutes } from "./report-scheduling";
 import { registerStandalonePlatformRoutes } from "./standalone-platform";
 import { registerNativeSensorRoutes } from "./native-sensors";
 import { registerLogSourceRoutes } from "./log-sources";
+import { registerVulnScannerRoutes } from "./vuln-scanner";
+import { registerUebaRoutes } from "./ueba";
+import { registerAgentResponseRoutes } from "./agent-response";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -150,4 +153,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerStandalonePlatformRoutes(app);
   registerNativeSensorRoutes(app);
   registerLogSourceRoutes(app);
+  registerVulnScannerRoutes(app);
+  registerUebaRoutes(app);
+  registerAgentResponseRoutes(app);
 }
