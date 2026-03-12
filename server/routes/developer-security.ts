@@ -687,7 +687,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
       const gitlabTokenHeader = req.headers["x-gitlab-token"] as string | undefined;
       const gitlabWebhookSecret = process.env.GITLAB_WEBHOOK_SECRET;
       if (gitlabWebhookSecret) {
-        if (!gitlabTokenHeader || gitlabTokenHeader !== gitlabWebhookSecret) {
+        if (!gitlabTokenHeader || !timingSafeEqual(Buffer.from(gitlabTokenHeader), Buffer.from(gitlabWebhookSecret))) {
           return res.status(401).json({ message: "Invalid GitLab webhook token" });
         }
       }
