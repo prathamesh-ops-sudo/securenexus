@@ -275,7 +275,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
       await db
         .update(threatHunts)
         .set({
-          status: result.eventCount > 0 ? "completed" : "completed",
+          status: "completed",
           lastRunAt: new Date(),
           lastRunDurationMs: result.executionDurationMs,
           lastRunEventCount: result.eventCount,
