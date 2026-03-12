@@ -234,8 +234,8 @@ export function registerCommunityIntelRoutes(app: Express): void {
               industrySectors: sectors,
               lastSeenAt: new Date(),
               updatedAt: new Date(),
-              // Bump confidence if multiple orgs report the same IOC
-              confidence: Math.min(100, existing.confidence + Math.floor(5 * reporters.length)),
+              // Bump confidence with fixed increment per new sighting (not multiplicative)
+              confidence: Math.min(100, existing.confidence + 5),
             })
             .where(eq(sharedIocs.id, existing.id))
             .returning();
@@ -575,7 +575,13 @@ export function registerCommunityIntelRoutes(app: Express): void {
                 .limit(limit)
                 .offset(offset);
 
-        const [{ value: total }] = await db.select({ value: count() }).from(communityThreatCampaigns);
+        const [{ value: total }] =
+          conditions.length > 0
+            ? await db
+                .select({ value: count() })
+                .from(communityThreatCampaigns)
+                .where(and(...(conditions as any[])))
+            : await db.select({ value: count() }).from(communityThreatCampaigns);
 
         res.json({ campaigns, total });
       } catch (error) {
