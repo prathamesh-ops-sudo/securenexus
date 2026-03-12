@@ -158,6 +158,7 @@ const CommunityIntelPage = lazy(() => import("@/pages/community-intel"));
 const PostureTrustCenterPage = lazy(() => import("@/pages/posture-trust-center"));
 const SecurityChaosEngineeringPage = lazy(() => import("@/pages/security-chaos-engineering"));
 const AiDetectionRulesPage = lazy(() => import("@/pages/ai-detection-rules"));
+const MsspPartnerPortalPage = lazy(() => import("@/pages/mssp-partner-portal"));
 
 function PageSkeleton() {
   return (
@@ -395,6 +396,7 @@ function AuthenticatedApp() {
                     <Route path="/posture-trust-center" component={PostureTrustCenterPage} />
                     <Route path="/chaos-engineering" component={SecurityChaosEngineeringPage} />
                     <Route path="/ai-detection-rules" component={AiDetectionRulesPage} />
+                    <Route path="/mssp-partner-portal" component={MsspPartnerPortalPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

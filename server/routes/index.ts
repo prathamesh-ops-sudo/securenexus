@@ -93,6 +93,7 @@ import { registerCommunityIntelRoutes } from "./community-intel";
 import { registerPostureTrustRoutes } from "./posture-trust";
 import { registerChaosEngineeringRoutes } from "./chaos-engineering";
 import { registerAiDetectionRulesRoutes } from "./ai-detection-rules";
+import { registerMsspPortalRoutes } from "./mssp-portal";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -190,4 +191,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerPostureTrustRoutes(app);
   registerChaosEngineeringRoutes(app);
   registerAiDetectionRulesRoutes(app);
+  registerMsspPortalRoutes(app);
 }
