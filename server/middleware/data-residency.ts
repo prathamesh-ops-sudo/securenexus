@@ -210,7 +210,7 @@ export async function checkCrossBorderFlow(
     return { allowed: false, action: "block" };
   } catch (err) {
     log.error("Failed to check cross-border flow", { error: String(err), orgId });
-    return { allowed: true };
+    return { allowed: false, action: "block" };
   }
 }
 
