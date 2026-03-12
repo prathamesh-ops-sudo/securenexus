@@ -7826,3 +7826,204 @@ export type HuntSchedule = typeof huntSchedules.$inferSelect;
 export type InsertHuntSchedule = typeof huntSchedules.$inferInsert;
 export type HuntPlaybook = typeof huntPlaybooks.$inferSelect;
 export type InsertHuntPlaybook = typeof huntPlaybooks.$inferInsert;
+
+// ============================
+// Security Data Lake
+// ============================
+
+export const DATA_LAKE_COMPLIANCE_FRAMEWORKS = [
+  "gdpr",
+  "sox",
+  "hipaa",
+  "pci_dss",
+  "iso27001",
+  "nist",
+  "custom",
+] as const;
+export const TIERING_JOB_STATUSES = ["pending", "running", "completed", "failed", "cancelled"] as const;
+export const EDISCOVERY_STATUSES = ["requested", "processing", "ready", "downloaded", "expired", "failed"] as const;
+export const RETENTION_DATA_TYPES = [
+  "alerts",
+  "incidents",
+  "audit_logs",
+  "sli_metrics",
+  "jobs",
+  "connector_job_runs",
+  "outbox_events",
+  "ingestion_logs",
+] as const;
+
+export const dataLakeRetentionPolicies = pgTable(
+  "data_lake_retention_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    dataType: text("data_type").notNull(), // alerts, incidents, audit_logs, etc.
+    complianceFramework: text("compliance_framework").notNull().default("custom"), // gdpr, sox, hipaa, etc.
+    hotRetentionDays: integer("hot_retention_days").notNull().default(90),
+    warmRetentionDays: integer("warm_retention_days").notNull().default(365),
+    coldRetentionDays: integer("cold_retention_days").notNull().default(2555), // 7 years
+    purgeAfterDays: integer("purge_after_days"), // null = never purge
+    compressionFormat: text("compression_format").notNull().default("parquet"), // parquet, gzip_json
+    isActive: boolean("is_active").notNull().default(true),
+    priority: integer("priority").notNull().default(0), // higher = higher priority when multiple match
+    filterCriteria: jsonb("filter_criteria").default({}), // optional filters (severity, source, etc.)
+    createdBy: text("created_by"),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_dl_retention_org").on(table.orgId),
+    index("idx_dl_retention_org_type").on(table.orgId, table.dataType),
+    index("idx_dl_retention_framework").on(table.complianceFramework),
+  ],
+);
+
+export const tieringJobs = pgTable(
+  "tiering_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    dataType: text("data_type").notNull(),
+    sourceTier: text("source_tier").notNull(), // hot, warm
+    targetTier: text("target_tier").notNull(), // warm, cold
+    status: text("status").notNull().default("pending"), // pending, running, completed, failed, cancelled
+    recordCount: integer("record_count").default(0),
+    recordsProcessed: integer("records_processed").default(0),
+    compressedSizeBytes: bigint("compressed_size_bytes", { mode: "number" }).default(0),
+    s3KeyPrefix: text("s3_key_prefix"),
+    parquetManifest: jsonb("parquet_manifest").default({}), // { files: [...], schema: {...} }
+    errorMessage: text("error_message"),
+    retentionPolicyId: uuid("retention_policy_id"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_tiering_jobs_org").on(table.orgId),
+    index("idx_tiering_jobs_status").on(table.status),
+    index("idx_tiering_jobs_org_type").on(table.orgId, table.dataType),
+  ],
+);
+
+export const eDiscoveryExports = pgTable(
+  "ediscovery_exports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("requested"), // requested, processing, ready, downloaded, expired, failed
+    legalHoldId: varchar("legal_hold_id"), // reference to legal hold if applicable
+    dataTypes: jsonb("data_types").default([]), // array of data types to include
+    dateRangeStart: timestamp("date_range_start"),
+    dateRangeEnd: timestamp("date_range_end"),
+    filterCriteria: jsonb("filter_criteria").default({}),
+    exportFormat: text("export_format").notNull().default("json"), // json, csv, parquet
+    includeMetadata: boolean("include_metadata").notNull().default(true),
+    includeChainOfCustody: boolean("include_chain_of_custody").notNull().default(true),
+    totalRecords: integer("total_records").default(0),
+    exportSizeBytes: bigint("export_size_bytes", { mode: "number" }).default(0),
+    s3Key: text("s3_key"),
+    checksumSha256: text("checksum_sha256"),
+    downloadCount: integer("download_count").default(0),
+    expiresAt: timestamp("expires_at"),
+    requestedBy: text("requested_by"),
+    requestedByName: text("requested_by_name"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_ediscovery_org").on(table.orgId),
+    index("idx_ediscovery_status").on(table.status),
+    index("idx_ediscovery_hold").on(table.legalHoldId),
+  ],
+);
+
+export const coldStorageInventory = pgTable(
+  "cold_storage_inventory",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    dataType: text("data_type").notNull(),
+    tier: text("tier").notNull().default("cold"), // warm, cold
+    s3Key: text("s3_key").notNull(),
+    format: text("format").notNull().default("parquet"), // parquet, gzip_json
+    recordCount: integer("record_count").notNull().default(0),
+    compressedSizeBytes: bigint("compressed_size_bytes", { mode: "number" }).notNull().default(0),
+    oldestRecord: timestamp("oldest_record"),
+    newestRecord: timestamp("newest_record"),
+    checksumSha256: text("checksum_sha256"),
+    tieringJobId: uuid("tiering_job_id"),
+    retentionPolicyId: uuid("retention_policy_id"),
+    purgeEligibleAt: timestamp("purge_eligible_at"), // when this data can be deleted
+    isRehydrated: boolean("is_rehydrated").notNull().default(false),
+    rehydratedAt: timestamp("rehydrated_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_cold_inv_org").on(table.orgId),
+    index("idx_cold_inv_org_type").on(table.orgId, table.dataType),
+    index("idx_cold_inv_tier").on(table.tier),
+    index("idx_cold_inv_purge").on(table.purgeEligibleAt),
+  ],
+);
+
+export const dataLakeQueries = pgTable(
+  "data_lake_queries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    queryText: text("query_text").notNull(),
+    queryType: text("query_type").notNull().default("federated"), // federated, hot_only, cold_only
+    dataTypes: jsonb("data_types").default([]),
+    dateRangeStart: timestamp("date_range_start"),
+    dateRangeEnd: timestamp("date_range_end"),
+    status: text("status").notNull().default("pending"), // pending, running, completed, failed
+    hotResultCount: integer("hot_result_count").default(0),
+    coldResultCount: integer("cold_result_count").default(0),
+    totalResultCount: integer("total_result_count").default(0),
+    executionTimeMs: integer("execution_time_ms"),
+    resultS3Key: text("result_s3_key"), // for large result sets stored in S3
+    errorMessage: text("error_message"),
+    executedBy: text("executed_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_dl_queries_org").on(table.orgId), index("idx_dl_queries_status").on(table.status)],
+);
+
+export const dataLakeRetentionPoliciesRelations = relations(dataLakeRetentionPolicies, ({ one }) => ({
+  organization: one(organizations, { fields: [dataLakeRetentionPolicies.orgId], references: [organizations.id] }),
+}));
+
+export const tieringJobsRelations = relations(tieringJobs, ({ one }) => ({
+  organization: one(organizations, { fields: [tieringJobs.orgId], references: [organizations.id] }),
+}));
+
+export const eDiscoveryExportsRelations = relations(eDiscoveryExports, ({ one }) => ({
+  organization: one(organizations, { fields: [eDiscoveryExports.orgId], references: [organizations.id] }),
+}));
+
+export const coldStorageInventoryRelations = relations(coldStorageInventory, ({ one }) => ({
+  organization: one(organizations, { fields: [coldStorageInventory.orgId], references: [organizations.id] }),
+}));
+
+export const dataLakeQueriesRelations = relations(dataLakeQueries, ({ one }) => ({
+  organization: one(organizations, { fields: [dataLakeQueries.orgId], references: [organizations.id] }),
+}));
+
+export type DataLakeRetentionPolicy = typeof dataLakeRetentionPolicies.$inferSelect;
+export type InsertDataLakeRetentionPolicy = typeof dataLakeRetentionPolicies.$inferInsert;
+export type TieringJob = typeof tieringJobs.$inferSelect;
+export type InsertTieringJob = typeof tieringJobs.$inferInsert;
+export type EDiscoveryExport = typeof eDiscoveryExports.$inferSelect;
+export type InsertEDiscoveryExport = typeof eDiscoveryExports.$inferInsert;
+export type ColdStorageInventoryEntry = typeof coldStorageInventory.$inferSelect;
+export type InsertColdStorageInventoryEntry = typeof coldStorageInventory.$inferInsert;
+export type DataLakeQuery = typeof dataLakeQueries.$inferSelect;
+export type InsertDataLakeQuery = typeof dataLakeQueries.$inferInsert;

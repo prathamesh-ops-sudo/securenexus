@@ -268,6 +268,10 @@ const navGroups: NavGroup[] = [
           { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
         ],
       },
+      {
+        label: "Storage",
+        items: [{ title: "Data Lake", url: "/data-lake", icon: Database }],
+      },
     ],
   },
   {
