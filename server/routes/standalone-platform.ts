@@ -671,71 +671,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // Get single asset
-  app.get("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [asset] = await db
-        .select()
-        .from(assetInventory)
-        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
-
-      if (!asset) return res.status(404).json({ message: "Asset not found" });
-      res.json(asset);
-    } catch (error) {
-      log.error("Failed to fetch asset", { error: String(error) });
-      res.status(500).json({ message: "Failed to fetch asset" });
-    }
-  });
-
-  // Update asset
-  app.patch("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(assetInventory)
-        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
-
-      if (!existing) return res.status(404).json({ message: "Asset not found" });
-
-      const body = req.body;
-      const [updated] = await db
-        .update(assetInventory)
-        .set({
-          ...body,
-          updatedAt: new Date(),
-        })
-        .where(eq(assetInventory.id, String(req.params.id)))
-        .returning();
-
-      res.json(updated);
-    } catch (error) {
-      log.error("Failed to update asset", { error: String(error) });
-      res.status(500).json({ message: "Failed to update asset" });
-    }
-  });
-
-  // Delete asset
-  app.delete("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(assetInventory)
-        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
-
-      if (!existing) return res.status(404).json({ message: "Asset not found" });
-
-      await db.delete(assetInventory).where(eq(assetInventory.id, String(req.params.id)));
-      res.json({ deleted: true });
-    } catch (error) {
-      log.error("Failed to delete asset", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete asset" });
-    }
-  });
-
-  // Bulk import assets
+  // Bulk import assets (registered BEFORE /:id to avoid route shadowing)
   app.post("/api/assets/bulk-import", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -781,7 +717,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // Asset type distribution
+  // Asset type distribution (registered BEFORE /:id to avoid route shadowing)
   app.get("/api/assets/stats/distribution", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -823,6 +759,91 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     } catch (error) {
       log.error("Failed to fetch asset distribution", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch asset distribution" });
+    }
+  });
+
+  // Get single asset
+  app.get("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const [asset] = await db
+        .select()
+        .from(assetInventory)
+        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
+
+      if (!asset) return res.status(404).json({ message: "Asset not found" });
+      res.json(asset);
+    } catch (error) {
+      log.error("Failed to fetch asset", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch asset" });
+    }
+  });
+
+  // Update asset (explicit field picking to prevent mass assignment)
+  app.patch("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const [existing] = await db
+        .select()
+        .from(assetInventory)
+        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
+
+      if (!existing) return res.status(404).json({ message: "Asset not found" });
+
+      const body = req.body;
+      const [updated] = await db
+        .update(assetInventory)
+        .set({
+          name: body.name,
+          assetType: body.assetType,
+          criticality: body.criticality,
+          lifecycleStatus: body.lifecycleStatus,
+          environment: body.environment,
+          ipAddress: body.ipAddress,
+          macAddress: body.macAddress,
+          hostname: body.hostname,
+          fqdn: body.fqdn,
+          owner: body.owner,
+          department: body.department,
+          location: body.location,
+          operatingSystem: body.operatingSystem,
+          osVersion: body.osVersion,
+          manufacturer: body.manufacturer,
+          model: body.model,
+          serialNumber: body.serialNumber,
+          tags: body.tags,
+          notes: body.notes,
+          riskScore: body.riskScore,
+          vulnerabilityCount: body.vulnerabilityCount,
+          lastSeenAt: body.lastSeenAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(assetInventory.id, String(req.params.id)))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      log.error("Failed to update asset", { error: String(error) });
+      res.status(500).json({ message: "Failed to update asset" });
+    }
+  });
+
+  // Delete asset
+  app.delete("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const [existing] = await db
+        .select()
+        .from(assetInventory)
+        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
+
+      if (!existing) return res.status(404).json({ message: "Asset not found" });
+
+      await db.delete(assetInventory).where(eq(assetInventory.id, String(req.params.id)));
+      res.json({ deleted: true });
+    } catch (error) {
+      log.error("Failed to delete asset", { error: String(error) });
+      res.status(500).json({ message: "Failed to delete asset" });
     }
   });
 
@@ -972,7 +993,25 @@ export function registerStandalonePlatformRoutes(app: Express): void {
       const likelihood = body.likelihood !== undefined ? Math.max(1, Math.min(5, body.likelihood)) : undefined;
       const impact = body.impact !== undefined ? Math.max(1, Math.min(5, body.impact)) : undefined;
 
-      const updateData: Record<string, any> = { ...body, updatedAt: new Date() };
+      // Explicit field picking to prevent mass assignment (forbid orgId, id, createdAt)
+      const updateData: Record<string, any> = {
+        title: body.title,
+        description: body.description,
+        category: body.category,
+        status: body.status,
+        likelihood: likelihood ?? body.likelihood,
+        impact: impact ?? body.impact,
+        riskOwner: body.riskOwner,
+        mitigationPlan: body.mitigationPlan,
+        mitigationStatus: body.mitigationStatus,
+        residualLikelihood: body.residualLikelihood,
+        residualImpact: body.residualImpact,
+        targetDate: body.targetDate,
+        notes: body.notes,
+        tags: body.tags,
+        updatedAt: new Date(),
+      };
+
       if (likelihood !== undefined && impact !== undefined) {
         updateData.inherentRiskScore = likelihood * impact;
       } else if (likelihood !== undefined) {
