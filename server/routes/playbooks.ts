@@ -976,31 +976,91 @@ export function registerPlaybooksRoutes(app: Express): void {
   // 8.3 — Playbook Simulations
   // ==========================================
 
-  app.get("/api/playbooks/:playbookId/simulations", isAuthenticated, validatePathId("playbookId"), async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const simulations = await storage.getPlaybookSimulations(p(req.params.playbookId), orgId);
-      res.json(simulations);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch playbook simulations" });
-    }
-  });
+  app.get(
+    "/api/playbooks/:playbookId/simulations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("playbookId"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const simulations = await storage.getPlaybookSimulations(p(req.params.playbookId), orgId);
+        res.json(simulations);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch playbook simulations" });
+      }
+    },
+  );
 
-  app.get("/api/playbook-simulations/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const simulation = await storage.getPlaybookSimulation(p(req.params.id));
-      if (!simulation) return res.status(404).json({ message: "Simulation not found" });
-      res.json(simulation);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch simulation" });
-    }
-  });
+  app.get(
+    "/api/playbook-simulations/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const simulation = await storage.getPlaybookSimulation(p(req.params.id));
+        if (!simulation || simulation.orgId !== orgId) {
+          return res.status(404).json({ message: "Simulation not found" });
+        }
+        res.json(simulation);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch simulation" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/playbook-simulations/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const simulation = await storage.getPlaybookSimulation(p(req.params.id));
+        if (!simulation || simulation.orgId !== orgId) {
+          return res.status(404).json({ message: "Simulation not found" });
+        }
+        const allowedFields = [
+          "status",
+          "simulatedActions",
+          "impactAnalysis",
+          "predictedOutcome",
+          "riskScore",
+          "warnings",
+          "durationMs",
+          "completedAt",
+        ];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
+        }
+        const updated = await storage.updatePlaybookSimulation(p(req.params.id), updates);
+        if (!updated) return res.status(404).json({ message: "Simulation not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Simulation update error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update simulation" });
+      }
+    },
+  );
 
   app.post(
     "/api/playbooks/:playbookId/simulate",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("playbookId"),
     async (req, res) => {
       try {
@@ -1117,14 +1177,38 @@ export function registerPlaybooksRoutes(app: Express): void {
   app.get(
     "/api/playbooks/:playbookId/rollback-plans",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("playbookId"),
     async (req, res) => {
       try {
-        const orgId = (req as any).user?.orgId;
+        const orgId = getOrgId(req);
         const plans = await storage.getPlaybookRollbackPlans(p(req.params.playbookId), orgId);
         res.json(plans);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch rollback plans" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/playbook-rollback-plans/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const plan = await storage.getPlaybookRollbackPlan(p(req.params.id));
+        if (!plan || plan.orgId !== orgId) {
+          return res.status(404).json({ message: "Rollback plan not found" });
+        }
+        res.json(plan);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch rollback plan" });
       }
     },
   );
@@ -1134,6 +1218,7 @@ export function registerPlaybooksRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("playbookId"),
     async (req, res) => {
       try {
@@ -1145,7 +1230,9 @@ export function registerPlaybooksRoutes(app: Express): void {
           : "Unknown";
 
         const playbook = await storage.getPlaybook(playbookId);
-        if (!playbook) return res.status(404).json({ message: "Playbook not found" });
+        if (!playbook || playbook.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
 
         const parsed = insertPlaybookRollbackPlanSchema.safeParse({
           ...req.body,
@@ -1172,11 +1259,15 @@ export function registerPlaybooksRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("id"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const plan = await storage.getPlaybookRollbackPlan(p(req.params.id));
-        if (!plan) return res.status(404).json({ message: "Rollback plan not found" });
+        if (!plan || plan.orgId !== orgId) {
+          return res.status(404).json({ message: "Rollback plan not found" });
+        }
 
         if (plan.executedAt) {
           return res.status(400).json({ message: "Rollback plan has already been executed" });
@@ -1220,6 +1311,37 @@ export function registerPlaybooksRoutes(app: Express): void {
       } catch (error) {
         logger.child("routes").error("Rollback plan execution error", { error: String(error) });
         res.status(500).json({ message: "Failed to execute rollback plan" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/playbook-rollback-plans/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const plan = await storage.getPlaybookRollbackPlan(p(req.params.id));
+        if (!plan || plan.orgId !== orgId) {
+          return res.status(404).json({ message: "Rollback plan not found" });
+        }
+        const allowedFields = ["rollbackSteps", "status", "autoRollbackEnabled", "triggerConditions", "error"];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
+        }
+        const updated = await storage.updatePlaybookRollbackPlan(p(req.params.id), updates);
+        if (!updated) return res.status(404).json({ message: "Rollback plan not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Rollback plan update error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update rollback plan" });
       }
     },
   );
