@@ -1034,7 +1034,7 @@ export function registerMobileSecurityRoutes(app: Express): void {
         }
 
         // Check risk score
-        if (policy.maxRiskScore && device.riskScore > policy.maxRiskScore) {
+        if (policy.maxRiskScore != null && device.riskScore > policy.maxRiskScore) {
           decision = policy.action;
           matchedPolicy = policy.id;
           violations.push(`Risk score ${device.riskScore} exceeds max ${policy.maxRiskScore}`);

@@ -981,7 +981,7 @@ function MdmTab() {
                     </Badge>
                   ))}
                 </div>
-                <Button variant="outline" size="sm" className="w-full mt-2" disabled={!provider.configured && true}>
+                <Button variant="outline" size="sm" className="w-full mt-2">
                   {provider.configured ? "Sync Now" : "Configure"}
                 </Button>
               </div>
