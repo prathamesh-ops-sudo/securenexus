@@ -170,6 +170,7 @@ const navGroups: NavGroup[] = [
         label: "Case Management",
         items: [
           { title: "War Room", url: "/war-room", icon: Shield },
+          { title: "Threat Hunting", url: "/threat-hunting", icon: Crosshair },
           { title: "Timeline", url: "/investigation-timeline", icon: History },
           { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
           { title: "Evidence Locker", url: "/evidence-custody", icon: Link2 },
