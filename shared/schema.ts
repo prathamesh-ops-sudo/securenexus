@@ -8898,3 +8898,238 @@ export type TabletopExercise = typeof tabletopExercises.$inferSelect;
 export type InsertTabletopExercise = typeof tabletopExercises.$inferInsert;
 export type BackupVerification = typeof backupVerifications.$inferSelect;
 export type InsertBackupVerification = typeof backupVerifications.$inferInsert;
+
+// ── Security Posture Score & Public Trust Center ──────────────────────────────
+
+export const POSTURE_DOMAINS = ["identity", "endpoint", "cloud", "network", "application", "data"] as const;
+
+export const QUESTIONNAIRE_STATUSES = ["draft", "in_progress", "completed", "submitted", "expired"] as const;
+
+export const TRUST_PAGE_STATUSES = ["draft", "published", "archived"] as const;
+
+export const postureSubScores = pgTable(
+  "posture_sub_scores",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    postureScoreId: varchar("posture_score_id"),
+    domain: text("domain").notNull(), // identity, endpoint, cloud, network, application, data
+    score: integer("score").notNull().default(0),
+    weight: integer("weight").notNull().default(16), // percentage weight for domain
+    findings: jsonb("findings").default([]), // array of finding objects
+    recommendations: jsonb("recommendations").default([]),
+    controlsEvaluated: integer("controls_evaluated").default(0),
+    controlsPassed: integer("controls_passed").default(0),
+    controlsFailed: integer("controls_failed").default(0),
+    riskFactors: jsonb("risk_factors").default([]),
+    generatedAt: timestamp("generated_at").defaultNow(),
+  },
+  (table) => [
+    index("posture_sub_scores_org_idx").on(table.orgId),
+    index("posture_sub_scores_domain_idx").on(table.orgId, table.domain),
+  ],
+);
+
+export const peerBenchmarks = pgTable(
+  "peer_benchmarks",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    industrySegment: text("industry_segment").notNull(),
+    companySize: text("company_size").notNull(), // small, medium, large, enterprise
+    overallScore: integer("overall_score").notNull(),
+    identityScore: integer("identity_score").default(0),
+    endpointScore: integer("endpoint_score").default(0),
+    cloudScore: integer("cloud_score").default(0),
+    networkScore: integer("network_score").default(0),
+    applicationScore: integer("application_score").default(0),
+    dataScore: integer("data_score").default(0),
+    percentileRank: integer("percentile_rank").default(50), // "you score higher than X%"
+    peerCount: integer("peer_count").default(0), // how many orgs in peer group
+    topStrengths: jsonb("top_strengths").default([]),
+    topWeaknesses: jsonb("top_weaknesses").default([]),
+    calculatedAt: timestamp("calculated_at").defaultNow(),
+  },
+  (table) => [
+    index("peer_benchmarks_org_idx").on(table.orgId),
+    index("peer_benchmarks_industry_idx").on(table.industrySegment, table.companySize),
+  ],
+);
+
+export const publicTrustPages = pgTable(
+  "public_trust_pages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    slug: text("slug").notNull().unique(), // acme-corp → /trust/acme-corp
+    status: text("status").notNull().default("draft"), // draft, published, archived
+    companyName: text("company_name").notNull(),
+    companyLogo: text("company_logo"),
+    tagline: text("tagline"),
+    overallScore: integer("overall_score").default(0),
+    domainScores: jsonb("domain_scores").default({}), // { identity: 85, endpoint: 90, ... }
+    certifications: jsonb("certifications").default([]), // array of { name, status, date }
+    lastAuditDate: timestamp("last_audit_date"),
+    showSubScores: boolean("show_sub_scores").default(true),
+    showCertifications: boolean("show_certifications").default(true),
+    showLastAudit: boolean("show_last_audit").default(true),
+    showPercentile: boolean("show_percentile").default(false),
+    customSections: jsonb("custom_sections").default([]),
+    contactEmail: text("contact_email"),
+    brandColor: text("brand_color").default("#0ea5e9"),
+    visitCount: integer("visit_count").default(0),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("public_trust_pages_org_idx").on(table.orgId), index("public_trust_pages_slug_idx").on(table.slug)],
+);
+
+export const securityQuestionnaires = pgTable(
+  "security_questionnaires",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    title: text("title").notNull(),
+    framework: text("framework").notNull(), // SOC2, ISO27001, HIPAA, PCI-DSS, etc.
+    status: text("status").notNull().default("draft"),
+    totalQuestions: integer("total_questions").default(0),
+    answeredQuestions: integer("answered_questions").default(0),
+    autoAnsweredQuestions: integer("auto_answered_questions").default(0),
+    manualQuestions: integer("manual_questions").default(0),
+    confidenceScore: integer("confidence_score").default(0), // average confidence of auto-answers
+    requestedBy: text("requested_by"), // who requested the questionnaire
+    requestedByEmail: text("requested_by_email"),
+    assignedTo: text("assigned_to"),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    submittedAt: timestamp("submitted_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("security_questionnaires_org_idx").on(table.orgId),
+    index("security_questionnaires_status_idx").on(table.orgId, table.status),
+  ],
+);
+
+export const questionnaireResponses = pgTable(
+  "questionnaire_responses",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    questionnaireId: varchar("questionnaire_id").notNull(),
+    questionNumber: integer("question_number").notNull(),
+    questionText: text("question_text").notNull(),
+    category: text("category"), // e.g. "Access Control", "Encryption", etc.
+    answerText: text("answer_text"),
+    answerSource: text("answer_source").notNull().default("manual"), // manual, auto, ai_suggested
+    confidencePercent: integer("confidence_percent").default(0),
+    evidenceRefs: jsonb("evidence_refs").default([]), // links to artifacts, policies, etc.
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    status: text("status").notNull().default("pending"), // pending, answered, reviewed, flagged
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("questionnaire_responses_org_idx").on(table.orgId),
+    index("questionnaire_responses_qid_idx").on(table.questionnaireId),
+  ],
+);
+
+export const postureScoreHistory = pgTable(
+  "posture_score_history",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    overallScore: integer("overall_score").notNull(),
+    identityScore: integer("identity_score").default(0),
+    endpointScore: integer("endpoint_score").default(0),
+    cloudScore: integer("cloud_score").default(0),
+    networkScore: integer("network_score").default(0),
+    applicationScore: integer("application_score").default(0),
+    dataScore: integer("data_score").default(0),
+    percentileRank: integer("percentile_rank").default(50),
+    changeFromPrevious: integer("change_from_previous").default(0),
+    period: text("period").notNull(), // "2026-03", "2026-W10", "2026-03-12"
+    periodType: text("period_type").notNull().default("monthly"), // daily, weekly, monthly
+    generatedAt: timestamp("generated_at").defaultNow(),
+  },
+  (table) => [
+    index("posture_score_history_org_idx").on(table.orgId),
+    index("posture_score_history_period_idx").on(table.orgId, table.periodType),
+  ],
+);
+
+// Relations
+export const postureSubScoresRelations = relations(postureSubScores, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [postureSubScores.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const peerBenchmarksRelations = relations(peerBenchmarks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [peerBenchmarks.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const publicTrustPagesRelations = relations(publicTrustPages, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [publicTrustPages.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const securityQuestionnairesRelations = relations(securityQuestionnaires, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityQuestionnaires.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const questionnaireResponsesRelations = relations(questionnaireResponses, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [questionnaireResponses.orgId],
+    references: [organizations.id],
+  }),
+  questionnaire: one(securityQuestionnaires, {
+    fields: [questionnaireResponses.questionnaireId],
+    references: [securityQuestionnaires.id],
+  }),
+}));
+
+export const postureScoreHistoryRelations = relations(postureScoreHistory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [postureScoreHistory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type PostureSubScore = typeof postureSubScores.$inferSelect;
+export type InsertPostureSubScore = typeof postureSubScores.$inferInsert;
+export type PeerBenchmark = typeof peerBenchmarks.$inferSelect;
+export type InsertPeerBenchmark = typeof peerBenchmarks.$inferInsert;
+export type PublicTrustPage = typeof publicTrustPages.$inferSelect;
+export type InsertPublicTrustPage = typeof publicTrustPages.$inferInsert;
+export type SecurityQuestionnaire = typeof securityQuestionnaires.$inferSelect;
+export type InsertSecurityQuestionnaire = typeof securityQuestionnaires.$inferInsert;
+export type QuestionnaireResponse = typeof questionnaireResponses.$inferSelect;
+export type InsertQuestionnaireResponse = typeof questionnaireResponses.$inferInsert;
+export type PostureScoreHistoryEntry = typeof postureScoreHistory.$inferSelect;
+export type InsertPostureScoreHistoryEntry = typeof postureScoreHistory.$inferInsert;
