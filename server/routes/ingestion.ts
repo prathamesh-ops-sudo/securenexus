@@ -108,7 +108,22 @@ export function registerIngestionRoutes(app: Express): void {
     validateBody(bodySchemas.apiKeyCreate),
     async (req, res) => {
       try {
+        const ALLOWED_SCOPES = [
+          "ingest",
+          "ingest:write",
+          "alerts:read",
+          "alerts:write",
+          "incidents:read",
+          "incidents:write",
+        ];
         const { name, scopes } = (req as any).validatedBody;
+        const resolvedScopes: string[] = scopes || ["ingest"];
+        const invalidScopes = resolvedScopes.filter((s: string) => !ALLOWED_SCOPES.includes(s));
+        if (invalidScopes.length > 0) {
+          return res.status(400).json({
+            message: `Invalid scope(s): ${invalidScopes.join(", ")}. Allowed: ${ALLOWED_SCOPES.join(", ")}`,
+          });
+        }
         const orgId = getOrgId(req);
         const { key, prefix, hash } = generateApiKey();
         const apiKey = await storage.createApiKey({
@@ -116,7 +131,7 @@ export function registerIngestionRoutes(app: Express): void {
           keyHash: hash,
           keyPrefix: prefix,
           orgId,
-          scopes: scopes || ["ingest"],
+          scopes: resolvedScopes,
           isActive: true,
           createdBy: (req as any).user?.id || null,
         });

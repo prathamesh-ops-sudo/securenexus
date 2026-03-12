@@ -324,9 +324,10 @@ export function registerLogSourceRoutes(app: Express): void {
         }
 
         const newToken = randomBytes(32).toString("hex");
+        const newEndpoint = `/api/native/log-sources/ingest/${newToken}`;
         const [updated] = await db
           .update(logSources)
-          .set({ httpAuthToken: newToken, updatedAt: new Date() })
+          .set({ httpAuthToken: newToken, httpEndpoint: newEndpoint, updatedAt: new Date() })
           .where(eq(logSources.id, String(req.params.id)))
           .returning();
 

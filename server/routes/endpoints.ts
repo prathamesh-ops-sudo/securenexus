@@ -118,10 +118,13 @@ export function registerEndpointsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const account = await storage.getCspmAccount(p(req.params.accountId));
         if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
-        runCspmScan(orgId, p(req.params.accountId)).catch((err) =>
-          logger.child("routes").error("CSPM scan error", { error: String(err) }),
-        );
-        res.json({ message: "Scan started" });
+        try {
+          await runCspmScan(orgId, p(req.params.accountId));
+          res.json({ message: "Scan completed successfully" });
+        } catch (scanErr) {
+          logger.child("routes").error("CSPM scan error", { error: String(scanErr) });
+          res.status(502).json({ message: "Scan failed", error: String(scanErr) });
+        }
       } catch (error) {
         res.status(500).json({ message: "Failed to start CSPM scan" });
       }
