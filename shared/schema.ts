@@ -5512,3 +5512,247 @@ export const threatReportsRelations = relations(threatReports, ({ one }) => ({
 
 export type ThreatReport = typeof threatReports.$inferSelect;
 export type InsertThreatReport = typeof threatReports.$inferInsert;
+
+// ==========================================
+// NATIVE SENSOR AGENT PROTOCOL
+// ==========================================
+
+export const SENSOR_STATUSES = ["online", "offline", "degraded", "provisioning"] as const;
+export const SENSOR_PLATFORMS = ["linux", "windows", "macos", "docker", "kubernetes"] as const;
+export const SENSOR_EVENT_TYPES = ["process", "network", "file", "auth", "dns", "log"] as const;
+
+export const nativeSensors = pgTable(
+  "native_sensors",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    hostname: text("hostname").notNull(),
+    platform: text("platform").notNull(),
+    osVersion: text("os_version"),
+    agentVersion: text("agent_version"),
+    registrationToken: text("registration_token").notNull(),
+    apiKey: text("api_key"),
+    status: text("status").notNull().default("provisioning"),
+    ipAddress: text("ip_address"),
+    macAddress: text("mac_address"),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    lastHeartbeat: timestamp("last_heartbeat"),
+    cpuUsage: real("cpu_usage"),
+    memoryUsage: real("memory_usage"),
+    diskUsage: real("disk_usage"),
+    eventsIngested: integer("events_ingested").notNull().default(0),
+    alertsGenerated: integer("alerts_generated").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_native_sensors_org").on(table.orgId),
+    index("idx_native_sensors_status").on(table.orgId, table.status),
+    index("idx_native_sensors_hostname").on(table.orgId, table.hostname),
+    uniqueIndex("idx_native_sensors_token").on(table.registrationToken),
+  ],
+);
+
+export const nativeSensorsRelations = relations(nativeSensors, ({ one }) => ({
+  organization: one(organizations, { fields: [nativeSensors.orgId], references: [organizations.id] }),
+}));
+
+export type NativeSensor = typeof nativeSensors.$inferSelect;
+export type InsertNativeSensor = typeof nativeSensors.$inferInsert;
+
+export const sensorEvents = pgTable(
+  "sensor_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id),
+    eventType: text("event_type").notNull(),
+    timestamp: timestamp("timestamp").notNull(),
+    // Process events
+    processName: text("process_name"),
+    processPath: text("process_path"),
+    processArgs: text("process_args"),
+    parentProcess: text("parent_process"),
+    pid: integer("pid"),
+    ppid: integer("ppid"),
+    userName: text("user_name"),
+    // Network events
+    srcIp: text("src_ip"),
+    dstIp: text("dst_ip"),
+    srcPort: integer("src_port"),
+    dstPort: integer("dst_port"),
+    protocol: text("protocol"),
+    bytesIn: integer("bytes_in"),
+    bytesOut: integer("bytes_out"),
+    // File events
+    filePath: text("file_path"),
+    fileAction: text("file_action"),
+    fileHash: text("file_hash"),
+    fileSize: integer("file_size"),
+    // Auth events
+    authAction: text("auth_action"),
+    authResult: text("auth_result"),
+    authMethod: text("auth_method"),
+    // DNS events
+    dnsQuery: text("dns_query"),
+    dnsType: text("dns_type"),
+    dnsResponse: text("dns_response"),
+    // Log events
+    logSource: text("log_source"),
+    logLevel: text("log_level"),
+    logMessage: text("log_message"),
+    // Raw data
+    rawData: jsonb("raw_data"),
+    // Detection linkage
+    detectionMatched: boolean("detection_matched").default(false),
+    detectionRuleId: varchar("detection_rule_id"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sensor_events_org").on(table.orgId),
+    index("idx_sensor_events_sensor").on(table.sensorId),
+    index("idx_sensor_events_type").on(table.orgId, table.eventType),
+    index("idx_sensor_events_ts").on(table.orgId, table.timestamp),
+  ],
+);
+
+export const sensorEventsRelations = relations(sensorEvents, ({ one }) => ({
+  organization: one(organizations, { fields: [sensorEvents.orgId], references: [organizations.id] }),
+  sensor: one(nativeSensors, { fields: [sensorEvents.sensorId], references: [nativeSensors.id] }),
+}));
+
+export type SensorEvent = typeof sensorEvents.$inferSelect;
+export type InsertSensorEvent = typeof sensorEvents.$inferInsert;
+
+// ==========================================
+// NATIVE DETECTION ENGINE
+// ==========================================
+
+export const DETECTION_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const DETECTION_STATUSES = ["enabled", "disabled", "testing"] as const;
+
+export const MITRE_TACTICS = [
+  "initial_access",
+  "execution",
+  "persistence",
+  "privilege_escalation",
+  "defense_evasion",
+  "credential_access",
+  "discovery",
+  "lateral_movement",
+  "collection",
+  "command_and_control",
+  "exfiltration",
+  "impact",
+] as const;
+
+export const detectionRules = pgTable(
+  "detection_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("enabled"),
+    // MITRE ATT&CK mapping
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    mitreSubtechnique: text("mitre_subtechnique"),
+    // Rule logic — Sigma-compatible condition tree
+    eventTypes: text("event_types")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    conditionTree: jsonb("condition_tree").notNull(),
+    // Metadata
+    author: text("author"),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    falsePositiveNotes: text("false_positive_notes"),
+    references: text("references")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    isBuiltin: boolean("is_builtin").default(false),
+    matchCount: integer("match_count").notNull().default(0),
+    lastMatchAt: timestamp("last_match_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_detection_rules_org").on(table.orgId),
+    index("idx_detection_rules_status").on(table.status),
+    index("idx_detection_rules_tactic").on(table.mitreTactic),
+    index("idx_detection_rules_severity").on(table.severity),
+  ],
+);
+
+export const detectionRulesRelations = relations(detectionRules, ({ one }) => ({
+  organization: one(organizations, { fields: [detectionRules.orgId], references: [organizations.id] }),
+}));
+
+export type DetectionRule = typeof detectionRules.$inferSelect;
+export type InsertDetectionRule = typeof detectionRules.$inferInsert;
+
+export const detectionAlerts = pgTable(
+  "detection_alerts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    ruleId: varchar("rule_id")
+      .notNull()
+      .references(() => detectionRules.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id),
+    eventId: varchar("event_id").references(() => sensorEvents.id),
+    severity: text("severity").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    matchedFields: jsonb("matched_fields"),
+    rawEvent: jsonb("raw_event"),
+    // Linkage to platform alerts
+    linkedAlertId: varchar("linked_alert_id"),
+    status: text("status").notNull().default("new"),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_detection_alerts_org").on(table.orgId),
+    index("idx_detection_alerts_rule").on(table.ruleId),
+    index("idx_detection_alerts_sensor").on(table.sensorId),
+    index("idx_detection_alerts_status").on(table.orgId, table.status),
+    index("idx_detection_alerts_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const detectionAlertsRelations = relations(detectionAlerts, ({ one }) => ({
+  organization: one(organizations, { fields: [detectionAlerts.orgId], references: [organizations.id] }),
+  rule: one(detectionRules, { fields: [detectionAlerts.ruleId], references: [detectionRules.id] }),
+  sensor: one(nativeSensors, { fields: [detectionAlerts.sensorId], references: [nativeSensors.id] }),
+  event: one(sensorEvents, { fields: [detectionAlerts.eventId], references: [sensorEvents.id] }),
+}));
+
+export type DetectionAlert = typeof detectionAlerts.$inferSelect;
+export type InsertDetectionAlert = typeof detectionAlerts.$inferInsert;
