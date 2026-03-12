@@ -27,7 +27,6 @@ const LOG_SOURCE_WRITABLE_FIELDS = [
   "cloudwatchRegion",
   "cloudwatchLogGroup",
   "cloudwatchFilterPattern",
-  "httpAuthToken",
   "journaldUnits",
   "journaldPriority",
   "parserRegex",
@@ -300,6 +299,45 @@ export function registerLogSourceRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to toggle log source" });
     }
   });
+
+  // Rotate HTTP auth token (secure server-side generation only)
+  app.post(
+    "/api/native/log-sources/:id/rotate-token",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(logSources)
+          .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
+          .limit(1);
+
+        if (!existing) {
+          return res.status(404).json({ message: "Log source not found" });
+        }
+
+        if (existing.sourceType !== "http_push") {
+          return res.status(400).json({ message: "Token rotation is only available for HTTP push log sources" });
+        }
+
+        const newToken = randomBytes(32).toString("hex");
+        const [updated] = await db
+          .update(logSources)
+          .set({ httpAuthToken: newToken, updatedAt: new Date() })
+          .where(eq(logSources.id, String(req.params.id)))
+          .returning();
+
+        log.info(`HTTP auth token rotated for log source: ${existing.name}`, { orgId });
+        res.json({ source: updated });
+      } catch (error) {
+        log.error("Failed to rotate token", { error: String(error) });
+        res.status(500).json({ message: "Failed to rotate token" });
+      }
+    },
+  );
 
   // Test log source connectivity
   app.post("/api/native/log-sources/:id/test", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
