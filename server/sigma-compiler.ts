@@ -284,6 +284,21 @@ export function compileKqlQuery(kqlText: string): CompiledFilter {
 
 // ─── SQL Pass-through ───────────────────────────────────────────────────────
 
+// Dangerous SQL keywords/patterns that indicate injection attempts
+const SQL_INJECTION_PATTERNS = [
+  /;\s*(DROP|DELETE|TRUNCATE|ALTER|CREATE|INSERT|UPDATE|GRANT|REVOKE)\s/i,
+  /;\s*$/,
+  /--\s/,
+  /\/\*[\s\S]*?\*\//,
+  /\bUNION\s+(ALL\s+)?SELECT\b/i,
+  /\bINTO\s+(OUT|DUMP)FILE\b/i,
+  /\bLOAD_FILE\s*\(/i,
+  /\bEXEC(UTE)?\s*\(/i,
+  /\bxp_\w+/i,
+  /\bpg_\w+\s*\(/i,
+  /\bINFORMATION_SCHEMA\b/i,
+];
+
 export function compileSqlQuery(sqlText: string): CompiledFilter {
   // Extract WHERE clause from raw SQL — only allow SELECT queries
   const normalized = sqlText.trim();
@@ -296,6 +311,18 @@ export function compileSqlQuery(sqlText: string): CompiledFilter {
     };
   }
 
+  // Reject queries containing multiple statements or injection patterns
+  for (const pattern of SQL_INJECTION_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return {
+        whereClause: "1=0",
+        params: [],
+        explanation: "Query rejected: potentially unsafe SQL pattern detected",
+        targetTable: "alerts",
+      };
+    }
+  }
+
   // Determine target table
   let targetTable: CompiledFilter["targetTable"] = "alerts";
   if (/FROM\s+ingestion_logs/i.test(normalized)) targetTable = "ingestion_logs";
@@ -303,6 +330,18 @@ export function compileSqlQuery(sqlText: string): CompiledFilter {
 
   const whereMatch = normalized.match(/WHERE\s+([\s\S]+?)(?:ORDER|GROUP|LIMIT|$)/i);
   const whereClause = whereMatch ? whereMatch[1].trim() : "1=1";
+
+  // Final check: reject WHERE clause if it still contains suspicious patterns
+  for (const pattern of SQL_INJECTION_PATTERNS) {
+    if (pattern.test(whereClause)) {
+      return {
+        whereClause: "1=0",
+        params: [],
+        explanation: "WHERE clause rejected: potentially unsafe SQL pattern detected",
+        targetTable,
+      };
+    }
+  }
 
   return {
     whereClause,
