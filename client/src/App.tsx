@@ -143,6 +143,7 @@ const DetectionRulesPage = lazy(() => import("@/pages/detection-rules"));
 const VulnScannerPage = lazy(() => import("@/pages/vuln-scanner"));
 const UebaPage = lazy(() => import("@/pages/ueba"));
 const AgentResponsePage = lazy(() => import("@/pages/agent-response"));
+const SupplyChainPage = lazy(() => import("@/pages/supply-chain"));
 
 function PageSkeleton() {
   return (
@@ -365,6 +366,7 @@ function AuthenticatedApp() {
                     <Route path="/vuln-scanner" component={VulnScannerPage} />
                     <Route path="/ueba" component={UebaPage} />
                     <Route path="/agent-response" component={AgentResponsePage} />
+                    <Route path="/supply-chain" component={SupplyChainPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
