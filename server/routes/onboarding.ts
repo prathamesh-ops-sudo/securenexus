@@ -436,13 +436,33 @@ export function registerOnboardingRoutes(app: Express): void {
         });
       }
 
-      const skippedSteps = Array.isArray(progress.skippedSteps) ? [...(progress.skippedSteps as string[])] : [];
-      if (!skippedSteps.includes(stepName)) skippedSteps.push(stepName);
-
+      // Guard against multi-step jumps: all prior required steps must be completed or skipped
       const completedSteps = Array.isArray(progress.completedSteps) ? [...(progress.completedSteps as string[])] : [];
+      const existingSkipped = Array.isArray(progress.skippedSteps) ? [...(progress.skippedSteps as string[])] : [];
+      const stepIndex = WIZARD_STEPS.indexOf(stepName as (typeof WIZARD_STEPS)[number]);
+      const MANDATORY_STEPS = ["create_org"] as const;
+      for (let i = 0; i < stepIndex; i++) {
+        const priorStep = WIZARD_STEPS[i];
+        const isMandatory = MANDATORY_STEPS.includes(priorStep as (typeof MANDATORY_STEPS)[number]);
+        if (!completedSteps.includes(priorStep) && !existingSkipped.includes(priorStep)) {
+          if (isMandatory) {
+            return sendEnvelope(res, null, {
+              status: 400,
+              errors: [
+                {
+                  code: "STEP_REQUIRED",
+                  message: `Step "${priorStep}" must be completed before skipping "${stepName}"`,
+                },
+              ],
+            });
+          }
+        }
+      }
+
+      const skippedSteps = [...existingSkipped];
+      if (!skippedSteps.includes(stepName)) skippedSteps.push(stepName);
       if (!completedSteps.includes(stepName)) completedSteps.push(stepName);
 
-      const stepIndex = WIZARD_STEPS.indexOf(stepName as (typeof WIZARD_STEPS)[number]);
       const nextStep = Math.min(stepIndex + 1, WIZARD_STEPS.length - 1);
 
       await storage.updateWizardProgress(userId, {
@@ -550,6 +570,22 @@ export function registerOnboardingRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 400,
           errors: [{ code: "NO_PROGRESS", message: "Start the wizard first" }],
+        });
+      }
+
+      // Validate mandatory steps are completed before allowing wizard completion
+      const completedSteps = Array.isArray(progress.completedSteps) ? (progress.completedSteps as string[]) : [];
+      const MANDATORY_COMPLETE_STEPS = ["create_org", "choose_plan"] as const;
+      const missingSteps = MANDATORY_COMPLETE_STEPS.filter((s) => !completedSteps.includes(s));
+      if (missingSteps.length > 0) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [
+            {
+              code: "STEPS_INCOMPLETE",
+              message: `Complete required steps before finishing: ${missingSteps.join(", ")}`,
+            },
+          ],
         });
       }
 

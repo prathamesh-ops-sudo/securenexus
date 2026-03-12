@@ -1487,6 +1487,106 @@ export function registerComplianceRoutes(app: Express): void {
     },
   );
 
+  // ── Per-org compliance framework management ──────────────────────────────
+  const AVAILABLE_FRAMEWORKS = [
+    { id: "gdpr", name: "GDPR", description: "General Data Protection Regulation (EU)" },
+    { id: "dpdp", name: "DPDP", description: "Digital Personal Data Protection Act (India)" },
+    { id: "hipaa", name: "HIPAA", description: "Health Insurance Portability and Accountability Act (US)" },
+    { id: "sox", name: "SOX", description: "Sarbanes-Oxley Act (US)" },
+    { id: "pci_dss", name: "PCI-DSS", description: "Payment Card Industry Data Security Standard" },
+    { id: "iso_27001", name: "ISO 27001", description: "Information Security Management System" },
+    { id: "nist_csf", name: "NIST CSF", description: "NIST Cybersecurity Framework" },
+    { id: "soc2", name: "SOC 2", description: "Service Organization Control 2" },
+  ] as const;
+
+  const VALID_FRAMEWORK_IDS = AVAILABLE_FRAMEWORKS.map((f) => f.id);
+
+  app.get("/api/compliance/frameworks", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const policy = await storage.getCompliancePolicy(orgId);
+      const enabledFrameworks = Array.isArray(policy?.enabledFrameworks)
+        ? (policy.enabledFrameworks as string[])
+        : ["gdpr"];
+
+      return sendEnvelope(res, {
+        available: AVAILABLE_FRAMEWORKS,
+        enabled: enabledFrameworks,
+      });
+    } catch (error: any) {
+      logger.child("routes").error("Failed to fetch compliance frameworks", { error: String(error) });
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "FRAMEWORKS_FETCH_FAILED", message: "Failed to fetch compliance frameworks" }],
+      });
+    }
+  });
+
+  app.patch(
+    "/api/compliance/frameworks",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const orgId = getOrgId(req);
+        const { enabled } = req.body;
+
+        if (!Array.isArray(enabled)) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_INPUT", message: '"enabled" must be an array of framework IDs' }],
+          });
+        }
+
+        const invalidIds = enabled.filter(
+          (id: unknown) => typeof id !== "string" || !VALID_FRAMEWORK_IDS.includes(id as any),
+        );
+        if (invalidIds.length > 0) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [
+              {
+                code: "INVALID_FRAMEWORK",
+                message: `Invalid framework IDs: ${invalidIds.join(", ")}. Valid: ${VALID_FRAMEWORK_IDS.join(", ")}`,
+              },
+            ],
+          });
+        }
+
+        const uniqueEnabled = Array.from(new Set(enabled as string[]));
+
+        // Upsert the compliance policy with the new enabled frameworks
+        await storage.upsertCompliancePolicy({
+          orgId,
+          enabledFrameworks: uniqueEnabled,
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user.id,
+          userName: user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
+          action: "compliance_frameworks_updated",
+          resourceType: "compliance_policy",
+          details: { enabledFrameworks: uniqueEnabled },
+        });
+
+        return sendEnvelope(res, {
+          enabled: uniqueEnabled,
+          message: `${uniqueEnabled.length} framework(s) enabled`,
+        });
+      } catch (error: any) {
+        logger.child("routes").error("Failed to update compliance frameworks", { error: String(error) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "FRAMEWORKS_UPDATE_FAILED", message: "Failed to update compliance frameworks" }],
+        });
+      }
+    },
+  );
+
   app.get("/api/v1/audit-logs", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
