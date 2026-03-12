@@ -1,6 +1,6 @@
 /**
  * ENHANCED AI PROMPTS FOR BEAST-MODE ANALYSIS
- * 
+ *
  * This module adds advanced AI capabilities to SecureNexus:
  * - Deep investigation analysis
  * - Advanced threat hunting
@@ -42,12 +42,13 @@ ADVANCED FRAMEWORKS:
   // =============================
   // DEEP INVESTIGATION PROMPT
   // =============================
-  
+
   registerPrompt({
     id: "deep-investigation",
     version: 2,
     name: "Deep Investigation Analyst",
-    description: "Advanced multi-stage investigation with hypothesis testing, attack graph construction, and adversary profiling.",
+    description:
+      "Advanced multi-stage investigation with hypothesis testing, attack graph construction, and adversary profiling.",
     tier: "narrative",
     systemPrompt: `${ADVANCED_CYBER_ENGINE}
 
@@ -336,7 +337,8 @@ Respond with this JSON structure:
     id: "behavioral-analysis",
     version: 1,
     name: "Behavioral Analytics Engine",
-    description: "Advanced behavioral analysis to detect insider threats, account compromise, and anomalous activity patterns.",
+    description:
+      "Advanced behavioral analysis to detect insider threats, account compromise, and anomalous activity patterns.",
     tier: "correlation",
     systemPrompt: `${ADVANCED_CYBER_ENGINE}
 
@@ -454,7 +456,8 @@ Respond with this JSON structure:
     id: "attack-path-prediction",
     version: 1,
     name: "Attack Path Predictor",
-    description: "Predict attacker's next moves and possible attack paths using graph analysis and adversary simulation.",
+    description:
+      "Predict attacker's next moves and possible attack paths using graph analysis and adversary simulation.",
     tier: "narrative",
     systemPrompt: `${ADVANCED_CYBER_ENGINE}
 
@@ -629,6 +632,95 @@ Respond with this JSON structure:
     createdAt: now,
     updatedAt: now,
     tags: ["prediction", "attack-graph", "adversary-simulation", "defense-prioritization", "advanced"],
+  });
+
+  // =============================
+  // MULTI-TURN INVESTIGATION CHAT PROMPT
+  // =============================
+
+  registerPrompt({
+    id: "multi-turn-investigation",
+    version: 1,
+    name: "Multi-Turn Investigation Chat",
+    description:
+      "Conversational SOC analyst for persistent investigation threads with follow-up suggestions and MITRE technique references.",
+    tier: "narrative",
+    systemPrompt: `${ADVANCED_CYBER_ENGINE}
+
+MULTI-TURN INVESTIGATION CHAT MISSION:
+You are a senior SOC analyst conducting a deep, interactive investigation of a security incident.
+You are engaged in an ongoing conversation with a human analyst who is asking questions about the incident.
+
+YOUR ROLE:
+1. Answer the analyst's questions with detailed, evidence-based analysis
+2. Reference specific MITRE ATT&CK techniques when relevant
+3. Suggest follow-up investigation questions the analyst should consider
+4. Maintain context from the conversation history
+5. Be precise about confidence levels — distinguish confirmed facts from inferences
+6. Highlight gaps in available evidence and recommend additional data collection
+
+RESPONSE GUIDELINES:
+- Be thorough but focused on the specific question asked
+- Reference specific alert data, IOCs, and timestamps when available
+- Clearly label assumptions vs confirmed findings
+- Suggest concrete next steps for the analyst`,
+    userTemplate: `{{userMessage}}`,
+    outputSchema: {
+      reply: "string — detailed analytical response",
+      suggestedFollowups: "array of 2-3 follow-up questions the analyst should consider",
+      referencedTechniques: 'array of MITRE ATT&CK technique IDs (e.g. ["T1059", "T1078"])',
+      confidence: "number 0-1 indicating confidence in the analysis",
+    },
+    maxTokens: 8192,
+    temperature: 0.15,
+    createdAt: now,
+    updatedAt: now,
+    tags: ["investigation", "chat", "multi-turn", "soc-analyst"],
+  });
+
+  // =============================
+  // DETECTION RULE GENERATION PROMPT
+  // =============================
+
+  registerPrompt({
+    id: "detection-rule-generation",
+    version: 1,
+    name: "AI Detection Rule Generator",
+    description:
+      "Generates Sigma-compatible detection rules from incident attack analysis with MITRE mappings and false-positive notes.",
+    tier: "narrative",
+    systemPrompt: `${ADVANCED_CYBER_ENGINE}
+
+DETECTION RULE GENERATION MISSION:
+You are a detection engineering specialist. Your mission is to generate high-quality, production-ready
+Sigma-compatible detection rules based on attack analysis from a real security incident.
+
+RULE QUALITY REQUIREMENTS:
+1. Each rule must target a specific attacker TTP observed in the incident
+2. Rules must be in valid Sigma YAML format
+3. Each rule must include false-positive documentation
+4. Rules should be mapped to specific MITRE ATT&CK tactics and techniques
+5. Confidence scores should reflect detection accuracy (not incident severity)
+6. Rules should target specific event types (process_creation, network_connection, file_event, etc.)
+
+DETECTION ENGINEERING PRINCIPLES:
+- Prefer behavioral detections over IOC-based detections (higher Pyramid of Pain)
+- Consider false-positive rates — a noisy rule is worse than no rule
+- Include condition trees that can be translated to SIEM query languages
+- Document edge cases and tuning recommendations
+- Cover the full attack chain, not just a single stage`,
+    userTemplate: `{{userMessage}}`,
+    outputSchema: {
+      rules:
+        "array of rule objects with name, description, sigmaRule, conditionTree, mitreTactic, mitreTechnique, confidence, falsePositiveNotes, eventTypes",
+      analysisNotes: "string — summary of detection strategy",
+      coverageGaps: "array of areas not covered by generated rules",
+    },
+    maxTokens: 8192,
+    temperature: 0.1,
+    createdAt: now,
+    updatedAt: now,
+    tags: ["detection-engineering", "sigma", "rule-generation", "mitre-mapping"],
   });
 
   console.log("✅ Enhanced AI prompts registered for beast-mode analysis");
