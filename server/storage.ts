@@ -333,6 +333,15 @@ import {
   type EngineExplainabilityLog,
   type InsertEngineExplainabilityLog,
   engineExplainabilityLogs,
+  type AttackGraph,
+  type InsertAttackGraph,
+  attackGraphs,
+  type AttackGraphNode,
+  type InsertAttackGraphNode,
+  attackGraphNodes,
+  type AttackGraphEdge,
+  type InsertAttackGraphEdge,
+  attackGraphEdges,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -1151,6 +1160,17 @@ export interface IStorage {
   updateEngineDryRun(id: string, data: Partial<EngineDryRun>): Promise<EngineDryRun | undefined>;
   createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog>;
   getEngineExplainabilityLogs(orgId: string, engineName: string, limit?: number): Promise<EngineExplainabilityLog[]>;
+
+  // Attack Graph Persistence
+  createAttackGraph(graph: InsertAttackGraph): Promise<AttackGraph>;
+  getAttackGraphsByIncident(incidentId: string, orgId: string): Promise<AttackGraph[]>;
+  getAttackGraphsByOrg(orgId: string, limit?: number, days?: number): Promise<AttackGraph[]>;
+  getAttackGraph(id: string): Promise<AttackGraph | undefined>;
+  deleteAttackGraph(id: string): Promise<boolean>;
+  createAttackGraphNodes(nodes: InsertAttackGraphNode[]): Promise<AttackGraphNode[]>;
+  createAttackGraphEdges(edges: InsertAttackGraphEdge[]): Promise<AttackGraphEdge[]>;
+  getAttackGraphNodes(graphId: string): Promise<AttackGraphNode[]>;
+  getAttackGraphEdges(graphId: string): Promise<AttackGraphEdge[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5679,6 +5699,67 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(engineExplainabilityLogs.orgId, orgId), eq(engineExplainabilityLogs.engineName, engineName)))
       .orderBy(desc(engineExplainabilityLogs.createdAt))
       .limit(limit);
+  }
+
+  // Attack Graph Persistence
+  async createAttackGraph(graph: InsertAttackGraph): Promise<AttackGraph> {
+    const [created] = await db.insert(attackGraphs).values(graph).returning();
+    return created;
+  }
+
+  async getAttackGraphsByIncident(incidentId: string, orgId: string): Promise<AttackGraph[]> {
+    return db
+      .select()
+      .from(attackGraphs)
+      .where(and(eq(attackGraphs.incidentId, incidentId), eq(attackGraphs.orgId, orgId)))
+      .orderBy(desc(attackGraphs.createdAt));
+  }
+
+  async getAttackGraphsByOrg(orgId: string, limit = 50, days?: number): Promise<AttackGraph[]> {
+    const conditions = [eq(attackGraphs.orgId, orgId)];
+    if (days) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      conditions.push(gte(attackGraphs.createdAt, cutoff));
+    }
+    return db
+      .select()
+      .from(attackGraphs)
+      .where(and(...conditions))
+      .orderBy(desc(attackGraphs.createdAt))
+      .limit(limit);
+  }
+
+  async getAttackGraph(id: string): Promise<AttackGraph | undefined> {
+    const [graph] = await db.select().from(attackGraphs).where(eq(attackGraphs.id, id));
+    return graph;
+  }
+
+  async deleteAttackGraph(id: string): Promise<boolean> {
+    const result = await db.delete(attackGraphs).where(eq(attackGraphs.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async createAttackGraphNodes(nodes: InsertAttackGraphNode[]): Promise<AttackGraphNode[]> {
+    if (nodes.length === 0) return [];
+    return db.insert(attackGraphNodes).values(nodes).returning();
+  }
+
+  async createAttackGraphEdges(edges: InsertAttackGraphEdge[]): Promise<AttackGraphEdge[]> {
+    if (edges.length === 0) return [];
+    return db.insert(attackGraphEdges).values(edges).returning();
+  }
+
+  async getAttackGraphNodes(graphId: string): Promise<AttackGraphNode[]> {
+    return db
+      .select()
+      .from(attackGraphNodes)
+      .where(eq(attackGraphNodes.graphId, graphId))
+      .orderBy(attackGraphNodes.depth);
+  }
+
+  async getAttackGraphEdges(graphId: string): Promise<AttackGraphEdge[]> {
+    return db.select().from(attackGraphEdges).where(eq(attackGraphEdges.graphId, graphId));
   }
 }
 
