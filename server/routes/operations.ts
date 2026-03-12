@@ -122,7 +122,8 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const service = req.query.service as string;
       const metric = req.query.metric as string;
-      const hours = parseInt(req.query.hours as string, 10) || 24;
+      const parsedHours = parseInt(req.query.hours as string, 10);
+      const hours = Number.isFinite(parsedHours) && parsedHours > 0 ? Math.min(parsedHours, 720) : 24;
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
       if (!service || !metric) {
