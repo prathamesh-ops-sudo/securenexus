@@ -100,6 +100,21 @@ import {
   type CspmFinding,
   type InsertCspmFinding,
   cspmFindings,
+  type CspmDriftBaseline,
+  type InsertCspmDriftBaseline,
+  cspmDriftBaselines,
+  type CspmDriftEvent,
+  type InsertCspmDriftEvent,
+  cspmDriftEvents,
+  type CspmDspmFinding,
+  type InsertCspmDspmFinding,
+  cspmDspmFindings,
+  type CspmAttackPath,
+  type InsertCspmAttackPath,
+  cspmAttackPaths,
+  type CspmRemediation,
+  type InsertCspmRemediation,
+  cspmRemediations,
   type EndpointAsset,
   type InsertEndpointAsset,
   endpointAssets,
@@ -603,6 +618,30 @@ export interface IStorage {
   getCspmFindings(orgId: string, scanId?: string, severity?: string): Promise<CspmFinding[]>;
   createCspmFinding(finding: InsertCspmFinding): Promise<CspmFinding>;
   updateCspmFinding(id: string, updates: Partial<CspmFinding>): Promise<CspmFinding | null>;
+
+  // CSPM Drift Detection
+  getCspmDriftBaselines(orgId: string, accountId?: string): Promise<CspmDriftBaseline[]>;
+  createCspmDriftBaseline(baseline: InsertCspmDriftBaseline): Promise<CspmDriftBaseline>;
+  deleteCspmDriftBaselines(orgId: string, accountId: string): Promise<void>;
+  getCspmDriftEvents(orgId: string, accountId?: string, status?: string): Promise<CspmDriftEvent[]>;
+  createCspmDriftEvent(event: InsertCspmDriftEvent): Promise<CspmDriftEvent>;
+  updateCspmDriftEvent(id: string, updates: Partial<CspmDriftEvent>): Promise<CspmDriftEvent | null>;
+
+  // CSPM DSPM
+  getCspmDspmFindings(orgId: string, accountId?: string, sensitivityLevel?: string): Promise<CspmDspmFinding[]>;
+  createCspmDspmFinding(finding: InsertCspmDspmFinding): Promise<CspmDspmFinding>;
+  updateCspmDspmFinding(id: string, updates: Partial<CspmDspmFinding>): Promise<CspmDspmFinding | null>;
+
+  // CSPM Attack Paths
+  getCspmAttackPaths(orgId: string, severity?: string): Promise<CspmAttackPath[]>;
+  createCspmAttackPath(path: InsertCspmAttackPath): Promise<CspmAttackPath>;
+  updateCspmAttackPath(id: string, updates: Partial<CspmAttackPath>): Promise<CspmAttackPath | null>;
+
+  // CSPM Remediations
+  getCspmRemediations(orgId: string, accountId?: string, status?: string): Promise<CspmRemediation[]>;
+  getCspmRemediation(id: string): Promise<CspmRemediation | undefined>;
+  createCspmRemediation(remediation: InsertCspmRemediation): Promise<CspmRemediation>;
+  updateCspmRemediation(id: string, updates: Partial<CspmRemediation>): Promise<CspmRemediation | null>;
 
   getEndpointAssets(orgId: string): Promise<EndpointAsset[]>;
   getEndpointAsset(id: string): Promise<EndpointAsset | undefined>;
@@ -2623,6 +2662,119 @@ export class DatabaseStorage implements IStorage {
 
   async updateCspmFinding(id: string, updates: Partial<CspmFinding>): Promise<CspmFinding | null> {
     const [updated] = await db.update(cspmFindings).set(updates).where(eq(cspmFindings.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM Drift Detection
+  async getCspmDriftBaselines(orgId: string, accountId?: string): Promise<CspmDriftBaseline[]> {
+    const conditions = [eq(cspmDriftBaselines.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmDriftBaselines.accountId, accountId));
+    return db
+      .select()
+      .from(cspmDriftBaselines)
+      .where(and(...conditions))
+      .orderBy(desc(cspmDriftBaselines.snapshotAt));
+  }
+
+  async createCspmDriftBaseline(baseline: InsertCspmDriftBaseline): Promise<CspmDriftBaseline> {
+    const [created] = await db.insert(cspmDriftBaselines).values(baseline).returning();
+    return created;
+  }
+
+  async deleteCspmDriftBaselines(orgId: string, accountId: string): Promise<void> {
+    await db
+      .delete(cspmDriftBaselines)
+      .where(and(eq(cspmDriftBaselines.orgId, orgId), eq(cspmDriftBaselines.accountId, accountId)));
+  }
+
+  async getCspmDriftEvents(orgId: string, accountId?: string, status?: string): Promise<CspmDriftEvent[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmDriftEvents.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmDriftEvents.accountId, accountId));
+    if (status) conditions.push(eq(cspmDriftEvents.status, status));
+    return db
+      .select()
+      .from(cspmDriftEvents)
+      .where(and(...conditions))
+      .orderBy(desc(cspmDriftEvents.detectedAt));
+  }
+
+  async createCspmDriftEvent(event: InsertCspmDriftEvent): Promise<CspmDriftEvent> {
+    const [created] = await db.insert(cspmDriftEvents).values(event).returning();
+    return created;
+  }
+
+  async updateCspmDriftEvent(id: string, updates: Partial<CspmDriftEvent>): Promise<CspmDriftEvent | null> {
+    const [updated] = await db.update(cspmDriftEvents).set(updates).where(eq(cspmDriftEvents.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM DSPM
+  async getCspmDspmFindings(orgId: string, accountId?: string, sensitivityLevel?: string): Promise<CspmDspmFinding[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmDspmFindings.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmDspmFindings.accountId, accountId));
+    if (sensitivityLevel) conditions.push(eq(cspmDspmFindings.sensitivityLevel, sensitivityLevel));
+    return db
+      .select()
+      .from(cspmDspmFindings)
+      .where(and(...conditions))
+      .orderBy(desc(cspmDspmFindings.detectedAt));
+  }
+
+  async createCspmDspmFinding(finding: InsertCspmDspmFinding): Promise<CspmDspmFinding> {
+    const [created] = await db.insert(cspmDspmFindings).values(finding).returning();
+    return created;
+  }
+
+  async updateCspmDspmFinding(id: string, updates: Partial<CspmDspmFinding>): Promise<CspmDspmFinding | null> {
+    const [updated] = await db.update(cspmDspmFindings).set(updates).where(eq(cspmDspmFindings.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM Attack Paths
+  async getCspmAttackPaths(orgId: string, severity?: string): Promise<CspmAttackPath[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmAttackPaths.orgId, orgId)];
+    if (severity) conditions.push(eq(cspmAttackPaths.severity, severity));
+    return db
+      .select()
+      .from(cspmAttackPaths)
+      .where(and(...conditions))
+      .orderBy(desc(cspmAttackPaths.detectedAt));
+  }
+
+  async createCspmAttackPath(path: InsertCspmAttackPath): Promise<CspmAttackPath> {
+    const [created] = await db.insert(cspmAttackPaths).values(path).returning();
+    return created;
+  }
+
+  async updateCspmAttackPath(id: string, updates: Partial<CspmAttackPath>): Promise<CspmAttackPath | null> {
+    const [updated] = await db.update(cspmAttackPaths).set(updates).where(eq(cspmAttackPaths.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM Remediations
+  async getCspmRemediations(orgId: string, accountId?: string, status?: string): Promise<CspmRemediation[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmRemediations.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmRemediations.accountId, accountId));
+    if (status) conditions.push(eq(cspmRemediations.status, status));
+    return db
+      .select()
+      .from(cspmRemediations)
+      .where(and(...conditions))
+      .orderBy(desc(cspmRemediations.executedAt));
+  }
+
+  async getCspmRemediation(id: string): Promise<CspmRemediation | undefined> {
+    const [remediation] = await db.select().from(cspmRemediations).where(eq(cspmRemediations.id, id));
+    return remediation;
+  }
+
+  async createCspmRemediation(remediation: InsertCspmRemediation): Promise<CspmRemediation> {
+    const [created] = await db.insert(cspmRemediations).values(remediation).returning();
+    return created;
+  }
+
+  async updateCspmRemediation(id: string, updates: Partial<CspmRemediation>): Promise<CspmRemediation | null> {
+    const [updated] = await db.update(cspmRemediations).set(updates).where(eq(cspmRemediations.id, id)).returning();
     return updated || null;
   }
 

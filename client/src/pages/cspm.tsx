@@ -27,6 +27,16 @@ import {
   Pencil,
   Loader2,
   FileCheck,
+  GitCompare,
+  Database,
+  Route,
+  Wrench,
+  Eye,
+  Zap,
+  Lock,
+  ShieldAlert,
+  Target,
+  ArrowRight,
 } from "lucide-react";
 import { SiAmazonwebservices, SiGooglecloud } from "react-icons/si";
 
@@ -1264,6 +1274,706 @@ function PolicyChecksTab() {
   );
 }
 
+// ── Drift Detection Tab ──
+function DriftDetectionTab() {
+  const { toast } = useToast();
+
+  const { data: accounts } = useQuery<any[]>({
+    queryKey: ["/api/cspm/accounts"],
+  });
+
+  const {
+    data: driftEvents,
+    isPending,
+    isError,
+    refetch: refetchEvents,
+  } = useQuery<any[]>({
+    queryKey: ["/api/cspm/drift/events"],
+  });
+
+  const { data: baselines } = useQuery<any[]>({
+    queryKey: ["/api/cspm/drift/baselines"],
+  });
+
+  const baselineMutation = useMutation({
+    mutationFn: async (accountId: string) => {
+      await apiRequest("POST", `/api/cspm/drift/baseline/${accountId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/drift/baselines"] });
+      toast({ title: "Baseline created", description: "Drift baseline snapshot saved." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Baseline failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const detectMutation = useMutation({
+    mutationFn: async (accountId: string) => {
+      const res = await apiRequest("POST", `/api/cspm/drift/detect/${accountId}`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/drift/events"] });
+      toast({
+        title: "Drift detection complete",
+        description: `${data.driftEventsDetected || 0} drift events detected.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Detection failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const safeEvents = ensureArray(driftEvents);
+  const safeAccounts = ensureArray(accounts);
+  const safeBaselines = ensureArray(baselines);
+
+  if (isPending) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load drift events</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchEvents()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="section-drift-detection">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <GitCompare className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Drift Detection</h2>
+          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+            {safeEvents.length} events
+          </Badge>
+        </div>
+      </div>
+
+      {/* Account actions */}
+      {safeAccounts.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <p className="text-sm font-medium">Manage Baselines & Run Detection</p>
+            <div className="flex flex-wrap gap-2">
+              {safeAccounts.map((acc: any) => (
+                <div key={acc.id} className="flex items-center gap-1 border rounded-md p-2">
+                  <span className="text-xs font-medium mr-2">{acc.displayName || acc.accountId}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => baselineMutation.mutate(acc.id)}
+                    disabled={baselineMutation.isPending}
+                    className="text-xs h-7"
+                  >
+                    <Target className="h-3 w-3 mr-1" />
+                    Set Baseline
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => detectMutation.mutate(acc.id)}
+                    disabled={detectMutation.isPending}
+                    className="text-xs h-7"
+                  >
+                    <GitCompare className="h-3 w-3 mr-1" />
+                    Detect Drift
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{safeBaselines.length} baseline snapshots stored</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Drift events list */}
+      {safeEvents.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <GitCompare className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No drift events detected</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Set a baseline on a cloud account, then run drift detection to find configuration changes
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {safeEvents.map((event: any, idx: number) => (
+            <Card key={event.id || idx}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(event.severity)}`}
+                      >
+                        {event.severity}
+                      </span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {event.driftType}
+                      </Badge>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${
+                          event.status === "open"
+                            ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                            : event.status === "resolved"
+                              ? "bg-green-500/10 text-green-500 border-green-500/20"
+                              : "bg-muted text-muted-foreground border-muted"
+                        }`}
+                      >
+                        {event.status}
+                      </span>
+                    </div>
+                    <p className="text-sm">{event.description}</p>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                      <span className="font-mono">{event.resourceId}</span>
+                      <span>{event.resourceType}</span>
+                      {event.field && event.field !== "*" && (
+                        <span>
+                          Field: <span className="font-mono">{event.field}</span>
+                        </span>
+                      )}
+                      {event.detectedAt && <span>{formatTimestamp(event.detectedAt)}</span>}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DSPM Tab ──
+function DSPMTab() {
+  const { toast } = useToast();
+
+  const { data: accounts } = useQuery<any[]>({
+    queryKey: ["/api/cspm/accounts"],
+  });
+
+  const {
+    data: dspmFindings,
+    isPending,
+    isError,
+    refetch: refetchDspm,
+  } = useQuery<any[]>({
+    queryKey: ["/api/cspm/dspm/findings"],
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: async (accountId: string) => {
+      const res = await apiRequest("POST", `/api/cspm/dspm/scan/${accountId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/dspm/findings"] });
+      toast({ title: "DSPM scan complete", description: "Sensitive data scan finished." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "DSPM scan failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const safeFindings = ensureArray(dspmFindings);
+  const safeAccounts = ensureArray(accounts);
+
+  const sensitivityCounts = {
+    critical: safeFindings.filter((f: any) => f.sensitivityLevel === "critical").length,
+    high: safeFindings.filter((f: any) => f.sensitivityLevel === "high").length,
+    medium: safeFindings.filter((f: any) => f.sensitivityLevel === "medium").length,
+    low: safeFindings.filter((f: any) => f.sensitivityLevel === "low").length,
+  };
+
+  if (isPending) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load DSPM findings</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchDspm()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="section-dspm">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Data Security Posture (DSPM)</h2>
+          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+            {safeFindings.length} findings
+          </Badge>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {(["critical", "high", "medium", "low"] as const).map((level) => (
+          <Card key={level}>
+            <CardContent className="p-3 text-center">
+              <p className="text-2xl font-bold">{sensitivityCounts[level]}</p>
+              <p
+                className={`text-xs font-medium uppercase ${
+                  level === "critical"
+                    ? "text-red-500"
+                    : level === "high"
+                      ? "text-orange-500"
+                      : level === "medium"
+                        ? "text-yellow-500"
+                        : "text-blue-500"
+                }`}
+              >
+                {level}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Scan trigger */}
+      {safeAccounts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {safeAccounts
+            .filter((a: any) => a.cloudProvider === "aws")
+            .map((acc: any) => (
+              <Button
+                key={acc.id}
+                size="sm"
+                variant="outline"
+                onClick={() => scanMutation.mutate(acc.id)}
+                disabled={scanMutation.isPending}
+              >
+                {scanMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Eye className="h-3 w-3 mr-1" />
+                )}
+                Scan {acc.displayName || acc.accountId}
+              </Button>
+            ))}
+        </div>
+      )}
+
+      {/* Findings list */}
+      {safeFindings.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Database className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No sensitive data findings</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Run a DSPM scan on an AWS account to discover sensitive data in S3 buckets
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {safeFindings.map((finding: any, idx: number) => (
+            <Card key={finding.id || idx}>
+              <CardContent className="p-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(finding.sensitivityLevel)}`}
+                    >
+                      {finding.sensitivityLevel}
+                    </span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {finding.dataClassification}
+                    </Badge>
+                    {finding.isEncrypted ? (
+                      <Badge variant="secondary" className="text-[10px]">
+                        <Lock className="h-3 w-3 mr-1" />
+                        Encrypted
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-[10px]">
+                        <ShieldAlert className="h-3 w-3 mr-1" />
+                        Unencrypted
+                      </Badge>
+                    )}
+                    {finding.isPubliclyAccessible && (
+                      <Badge variant="destructive" className="text-[10px]">
+                        Public
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm font-mono">{finding.resourceId}</p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                    <span>{finding.resourceType}</span>
+                    {finding.objectCount > 0 && <span>{finding.objectCount} objects</span>}
+                    {ensureArray(finding.dataCategories).length > 0 && (
+                      <span>Categories: {ensureArray(finding.dataCategories).join(", ")}</span>
+                    )}
+                    {finding.detectedAt && <span>{formatTimestamp(finding.detectedAt)}</span>}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Attack Paths Tab ──
+function AttackPathsTab() {
+  const {
+    data: attackPaths,
+    isPending,
+    isError,
+    refetch: refetchPaths,
+  } = useQuery<any[]>({
+    queryKey: ["/api/cspm/attack-paths"],
+  });
+
+  const safePaths = ensureArray(attackPaths);
+
+  if (isPending) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load attack paths</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPaths()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="section-attack-paths">
+      <div className="flex items-center gap-2">
+        <Route className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Attack Paths</h2>
+        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+          {safePaths.length}
+        </Badge>
+      </div>
+
+      {safePaths.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Route className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No attack paths detected</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Run a CSPM scan to discover multi-cloud attack paths across your infrastructure
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {safePaths.map((path: any, idx: number) => {
+            const nodes = ensureArray(path.nodes);
+            const edges = ensureArray(path.edges);
+            const mitigations = ensureArray(path.mitigations);
+
+            return (
+              <Card key={path.id || idx}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${severityStyle(path.severity)}`}
+                        >
+                          {path.severity}
+                        </span>
+                        {path.isCrossCloud && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Cross-Cloud
+                          </Badge>
+                        )}
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${
+                            path.status === "active"
+                              ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              : path.status === "mitigated"
+                                ? "bg-green-500/10 text-green-500 border-green-500/20"
+                                : "bg-muted text-muted-foreground border-muted"
+                          }`}
+                        >
+                          {path.status}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium">{path.name}</p>
+                      <p className="text-xs text-muted-foreground">{path.description}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-2xl font-bold">{path.riskScore || 0}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase">Risk Score</p>
+                    </div>
+                  </div>
+
+                  {/* Attack path visualization */}
+                  {nodes.length > 0 && (
+                    <div className="flex items-center gap-1 overflow-x-auto py-2">
+                      {nodes.map((node: any, ni: number) => (
+                        <div key={ni} className="flex items-center gap-1 flex-shrink-0">
+                          <div
+                            className="border rounded-md px-2 py-1 text-[10px] bg-muted/50 max-w-[150px] truncate"
+                            title={node.resourceId}
+                          >
+                            <span className="font-medium">{node.label || node.resourceId}</span>
+                            {node.provider && <span className="ml-1 opacity-60">({node.provider})</span>}
+                          </div>
+                          {ni < nodes.length - 1 && (
+                            <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Mitigations */}
+                  {mitigations.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">Mitigations:</p>
+                      <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
+                        {mitigations.map((m: unknown, mi: number) => (
+                          <li key={mi}>{String(m)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Remediation Tab ──
+function RemediationTab() {
+  const { toast } = useToast();
+
+  const { data: playbooks, isPending: playbooksPending } = useQuery<any[]>({
+    queryKey: ["/api/cspm/remediation/playbooks"],
+  });
+
+  const {
+    data: remediations,
+    isPending,
+    isError,
+    refetch: refetchRemediations,
+  } = useQuery<any[]>({
+    queryKey: ["/api/cspm/remediations"],
+  });
+
+  const safePlaybooks = ensureArray(playbooks);
+  const safeRemediations = ensureArray(remediations);
+
+  if (isPending) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </div>
+        <p className="text-sm font-medium">Failed to load remediations</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchRemediations()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="section-remediation">
+      <div className="flex items-center gap-2">
+        <Wrench className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Auto-Remediation</h2>
+        <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate text-[10px]">
+          {safeRemediations.length} executed
+        </Badge>
+      </div>
+
+      {/* Available playbooks */}
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Available Playbooks</p>
+            <Badge variant="outline" className="text-[10px]">
+              {safePlaybooks.length}
+            </Badge>
+          </div>
+          {playbooksPending ? (
+            <Skeleton className="h-20 w-full" />
+          ) : safePlaybooks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No playbooks available</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {safePlaybooks.map((pb: any, idx: number) => (
+                <div key={pb.id || idx} className="border rounded-md p-3 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium">{pb.name}</span>
+                    <Badge
+                      variant={
+                        pb.riskLevel === "safe" ? "secondary" : pb.riskLevel === "moderate" ? "outline" : "destructive"
+                      }
+                      className="text-[10px]"
+                    >
+                      {pb.riskLevel}
+                    </Badge>
+                    {pb.requiresApproval && (
+                      <Badge variant="outline" className="text-[10px]">
+                        Requires Approval
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{pb.description}</p>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>
+                      Rule: <span className="font-mono">{pb.ruleId}</span>
+                    </span>
+                    <span>Provider: {pb.provider}</span>
+                    <span>{pb.actions?.length || 0} steps</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Remediation history */}
+      {safeRemediations.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Wrench className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No remediations executed yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Execute a remediation playbook on a finding to see results here
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {safeRemediations.map((rem: any, idx: number) => (
+            <Card key={rem.id || idx}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {rem.status === "success" ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      ) : rem.status === "failed" ? (
+                        <XCircle className="h-4 w-4 text-red-500" />
+                      ) : (
+                        <Clock className="h-4 w-4 text-yellow-500" />
+                      )}
+                      <span className="text-sm font-medium">{rem.playbookName}</span>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${
+                          rem.status === "success"
+                            ? "bg-green-500/10 text-green-500 border-green-500/20"
+                            : rem.status === "failed"
+                              ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              : rem.status === "partial"
+                                ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                                : "bg-muted text-muted-foreground border-muted"
+                        }`}
+                      >
+                        {rem.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground font-mono">{rem.resourceId}</p>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                      <span>
+                        Rule: <span className="font-mono">{rem.ruleId}</span>
+                      </span>
+                      <span>
+                        Steps: {rem.actionsExecuted}/{rem.actionsTotal}
+                      </span>
+                      {rem.error && <span className="text-red-500">{rem.error}</span>}
+                      {rem.executedAt && <span>{formatTimestamp(rem.executedAt)}</span>}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CSPMPage() {
   const [activeTab, setActiveTab] = useState("accounts");
 
@@ -1280,14 +1990,14 @@ export default function CSPMPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList data-testid="tabs-cspm">
+        <TabsList data-testid="tabs-cspm" className="flex-wrap h-auto gap-1">
           <TabsTrigger value="accounts" data-testid="tab-cloud-accounts">
             <Cloud className="h-4 w-4 mr-1.5" />
-            Cloud Accounts
+            Accounts
           </TabsTrigger>
           <TabsTrigger value="scans" data-testid="tab-scan-history">
             <RefreshCw className="h-4 w-4 mr-1.5" />
-            Scan History
+            Scans
           </TabsTrigger>
           <TabsTrigger value="findings" data-testid="tab-findings">
             <AlertTriangle className="h-4 w-4 mr-1.5" />
@@ -1295,7 +2005,23 @@ export default function CSPMPage() {
           </TabsTrigger>
           <TabsTrigger value="policy-checks" data-testid="tab-policy-checks">
             <FileCheck className="h-4 w-4 mr-1.5" />
-            Policy Checks
+            Policies
+          </TabsTrigger>
+          <TabsTrigger value="drift" data-testid="tab-drift-detection">
+            <GitCompare className="h-4 w-4 mr-1.5" />
+            Drift
+          </TabsTrigger>
+          <TabsTrigger value="dspm" data-testid="tab-dspm">
+            <Database className="h-4 w-4 mr-1.5" />
+            DSPM
+          </TabsTrigger>
+          <TabsTrigger value="attack-paths" data-testid="tab-attack-paths">
+            <Route className="h-4 w-4 mr-1.5" />
+            Attack Paths
+          </TabsTrigger>
+          <TabsTrigger value="remediation" data-testid="tab-remediation">
+            <Wrench className="h-4 w-4 mr-1.5" />
+            Remediation
           </TabsTrigger>
         </TabsList>
 
@@ -1313,6 +2039,22 @@ export default function CSPMPage() {
 
         <TabsContent value="policy-checks" className="mt-3">
           <PolicyChecksTab />
+        </TabsContent>
+
+        <TabsContent value="drift" className="mt-3">
+          <DriftDetectionTab />
+        </TabsContent>
+
+        <TabsContent value="dspm" className="mt-3">
+          <DSPMTab />
+        </TabsContent>
+
+        <TabsContent value="attack-paths" className="mt-3">
+          <AttackPathsTab />
+        </TabsContent>
+
+        <TabsContent value="remediation" className="mt-3">
+          <RemediationTab />
         </TabsContent>
       </Tabs>
     </div>

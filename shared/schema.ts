@@ -2246,6 +2246,108 @@ export const cspmFindings = pgTable("cspm_findings", {
   detectedAt: timestamp("detected_at").defaultNow(),
 });
 
+// CSPM Drift Baselines — approved configuration snapshots for drift detection
+export const cspmDriftBaselines = pgTable("cspm_drift_baselines", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type").notNull(),
+  region: text("region"),
+  approvedConfig: jsonb("approved_config").default({}),
+  snapshotAt: timestamp("snapshot_at").defaultNow(),
+  createdBy: text("created_by"),
+});
+
+// CSPM Drift Events — detected configuration changes from baseline
+export const cspmDriftEvents = pgTable("cspm_drift_events", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type").notNull(),
+  region: text("region"),
+  driftType: text("drift_type").notNull(), // added, removed, modified
+  field: text("field").notNull(),
+  baselineValue: jsonb("baseline_value"),
+  currentValue: jsonb("current_value"),
+  severity: text("severity").notNull(),
+  description: text("description").notNull(),
+  status: text("status").default("open"), // open, acknowledged, resolved, suppressed
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM DSPM Findings — sensitive data discoveries in cloud storage
+export const cspmDspmFindings = pgTable("cspm_dspm_findings", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type").notNull(),
+  region: text("region"),
+  dataClassification: text("data_classification").notNull(),
+  sensitivityLevel: text("sensitivity_level").notNull(), // critical, high, medium, low
+  dataCategories: text("data_categories")
+    .array()
+    .default(sql`ARRAY[]::text[]`),
+  objectCount: integer("object_count").default(0),
+  sampleObjects: text("sample_objects")
+    .array()
+    .default(sql`ARRAY[]::text[]`),
+  description: text("description").notNull(),
+  remediation: text("remediation"),
+  status: text("status").default("open"),
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM Attack Paths — multi-cloud lateral movement analysis
+export const cspmAttackPaths = pgTable("cspm_attack_paths", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull(),
+  riskScore: integer("risk_score").default(0),
+  nodes: jsonb("nodes").default([]),
+  edges: jsonb("edges").default([]),
+  mitigations: text("mitigations")
+    .array()
+    .default(sql`ARRAY[]::text[]`),
+  isCrossCloud: boolean("is_cross_cloud").default(false),
+  status: text("status").default("active"), // active, mitigated, suppressed
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM Remediation History — auto-remediation execution log
+export const cspmRemediations = pgTable("cspm_remediations", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  findingId: varchar("finding_id"),
+  playbookId: text("playbook_id").notNull(),
+  playbookName: text("playbook_name").notNull(),
+  resourceId: text("resource_id").notNull(),
+  ruleId: text("rule_id").notNull(),
+  status: text("status").notNull(), // success, failed, partial, pending, approved, rejected
+  actionsExecuted: integer("actions_executed").default(0),
+  actionsTotal: integer("actions_total").default(0),
+  error: text("error"),
+  details: jsonb("details").default({}),
+  requestedBy: text("requested_by"),
+  approvedBy: text("approved_by"),
+  executedAt: timestamp("executed_at").defaultNow(),
+});
+
 export const endpointAssets = pgTable("endpoint_assets", {
   id: varchar("id")
     .primaryKey()
@@ -2867,6 +2969,14 @@ export const insertCspmScanSchema = createInsertSchema(cspmScans).omit({
   completedAt: true,
 });
 export const insertCspmFindingSchema = createInsertSchema(cspmFindings).omit({ id: true, detectedAt: true });
+export const insertCspmDriftBaselineSchema = createInsertSchema(cspmDriftBaselines).omit({
+  id: true,
+  snapshotAt: true,
+});
+export const insertCspmDriftEventSchema = createInsertSchema(cspmDriftEvents).omit({ id: true, detectedAt: true });
+export const insertCspmDspmFindingSchema = createInsertSchema(cspmDspmFindings).omit({ id: true, detectedAt: true });
+export const insertCspmAttackPathSchema = createInsertSchema(cspmAttackPaths).omit({ id: true, detectedAt: true });
+export const insertCspmRemediationSchema = createInsertSchema(cspmRemediations).omit({ id: true, executedAt: true });
 export const insertEndpointAssetSchema = createInsertSchema(endpointAssets).omit({
   id: true,
   createdAt: true,
@@ -2888,6 +2998,16 @@ export type CspmScan = typeof cspmScans.$inferSelect;
 export type InsertCspmScan = z.infer<typeof insertCspmScanSchema>;
 export type CspmFinding = typeof cspmFindings.$inferSelect;
 export type InsertCspmFinding = z.infer<typeof insertCspmFindingSchema>;
+export type CspmDriftBaseline = typeof cspmDriftBaselines.$inferSelect;
+export type InsertCspmDriftBaseline = z.infer<typeof insertCspmDriftBaselineSchema>;
+export type CspmDriftEvent = typeof cspmDriftEvents.$inferSelect;
+export type InsertCspmDriftEvent = z.infer<typeof insertCspmDriftEventSchema>;
+export type CspmDspmFinding = typeof cspmDspmFindings.$inferSelect;
+export type InsertCspmDspmFinding = z.infer<typeof insertCspmDspmFindingSchema>;
+export type CspmAttackPath = typeof cspmAttackPaths.$inferSelect;
+export type InsertCspmAttackPath = z.infer<typeof insertCspmAttackPathSchema>;
+export type CspmRemediation = typeof cspmRemediations.$inferSelect;
+export type InsertCspmRemediation = z.infer<typeof insertCspmRemediationSchema>;
 export type EndpointAsset = typeof endpointAssets.$inferSelect;
 export type InsertEndpointAsset = z.infer<typeof insertEndpointAssetSchema>;
 export type EndpointTelemetry = typeof endpointTelemetry.$inferSelect;
