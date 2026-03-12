@@ -333,6 +333,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Community Threat Intel", url: "/community-intel", icon: Network }],
       },
       {
+        label: "Posture & Trust",
+        items: [{ title: "Security Posture Score", url: "/posture-trust-center", icon: ShieldCheck }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
