@@ -1426,7 +1426,7 @@ Respond as a JSON object with these fields:
 - confidence: Number 0-1 indicating your confidence in the analysis`;
 
   try {
-    const { text } = await invokeWithPrompt("deep-investigation", prompt, "investigation", orgId, 8192);
+    const { text } = await invokeWithPrompt("multi-turn-investigation", prompt, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
     log.warn("Multi-turn investigation unavailable, returning fallback", { error: String(error) });
@@ -1499,7 +1499,7 @@ Generate detection rules as JSON:
 }`;
 
   try {
-    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "investigation", orgId, 8192);
+    const { text } = await invokeWithPrompt("detection-rule-generation", userMessage, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
     log.warn("Detection rule generation unavailable, returning fallback", { error: String(error) });

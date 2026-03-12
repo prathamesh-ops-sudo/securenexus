@@ -1475,11 +1475,16 @@ export function registerAiRoutes(app: Express): void {
         }
 
         const allowedFields = ["status", "reviewedBy", "reviewedAt"] as const;
+        const allowedStatuses = new Set(["draft", "review", "accepted", "rejected"]);
         const update: Record<string, unknown> = {};
         for (const field of allowedFields) {
           if (req.body[field] !== undefined) {
             update[field] = req.body[field];
           }
+        }
+
+        if (update.status && !allowedStatuses.has(update.status as string)) {
+          return res.status(400).json({ message: "Invalid status. Must be one of: draft, review, accepted, rejected" });
         }
 
         if (Object.keys(update).length === 0) {
