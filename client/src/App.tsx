@@ -145,6 +145,7 @@ const UebaPage = lazy(() => import("@/pages/ueba"));
 const AgentResponsePage = lazy(() => import("@/pages/agent-response"));
 const SupplyChainPage = lazy(() => import("@/pages/supply-chain"));
 const IdentityGovernancePage = lazy(() => import("@/pages/identity-governance"));
+const DeceptionPage = lazy(() => import("@/pages/deception"));
 
 function PageSkeleton() {
   return (
@@ -369,6 +370,7 @@ function AuthenticatedApp() {
                     <Route path="/agent-response" component={AgentResponsePage} />
                     <Route path="/supply-chain" component={SupplyChainPage} />
                     <Route path="/identity-governance" component={IdentityGovernancePage} />
+                    <Route path="/deception" component={DeceptionPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

@@ -6784,3 +6784,198 @@ export type IdentityRiskProfile = typeof identityRiskProfiles.$inferSelect;
 export type InsertIdentityRiskProfile = typeof identityRiskProfiles.$inferInsert;
 export type IdentityAccessGraphEntry = typeof identityAccessGraph.$inferSelect;
 export type InsertIdentityAccessGraphEntry = typeof identityAccessGraph.$inferInsert;
+
+// =========================================================================
+// DECEPTION TECHNOLOGY
+// =========================================================================
+
+export const CANARY_TOKEN_TYPES = [
+  "aws_key",
+  "database_credential",
+  "api_key",
+  "document",
+  "email_pixel",
+  "dns_token",
+  "url_token",
+  "kubeconfig",
+  "ssh_key",
+  "slack_webhook",
+] as const;
+
+export const HONEYPOT_ASSET_TYPES = [
+  "honey_account",
+  "honeypot_endpoint",
+  "deception_fileshare",
+  "network_decoy",
+  "fake_rdp",
+  "fake_ssh",
+  "fake_admin_panel",
+  "fake_database",
+] as const;
+
+export const DECEPTION_HIT_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+
+export const DEPLOYMENT_TARGETS = [
+  "s3_bucket",
+  "github_repo",
+  "email",
+  "shared_drive",
+  "active_directory",
+  "kubernetes",
+  "ci_cd_pipeline",
+  "internal_wiki",
+] as const;
+
+export const canaryTokens = pgTable(
+  "canary_tokens",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    tokenType: text("token_type").notNull(), // from CANARY_TOKEN_TYPES
+    tokenValue: text("token_value").notNull(), // the fake credential value
+    tokenHash: text("token_hash").notNull(), // SHA-256 hash for fast lookup
+    callbackUrl: text("callback_url").notNull(), // unique URL that triggers on access
+    callbackSecret: text("callback_secret").notNull(), // HMAC secret for validating callbacks
+    deployedTo: text("deployed_to"), // where it's planted
+    deploymentTarget: text("deployment_target"), // from DEPLOYMENT_TARGETS
+    deploymentMetadata: jsonb("deployment_metadata"), // target-specific config
+    isActive: boolean("is_active").notNull().default(true),
+    hitCount: integer("hit_count").notNull().default(0),
+    lastHitAt: timestamp("last_hit_at"),
+    createdBy: varchar("created_by"),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_canary_tokens_org").on(table.orgId),
+    index("idx_canary_tokens_type").on(table.tokenType),
+    index("idx_canary_tokens_hash").on(table.tokenHash),
+    index("idx_canary_tokens_active").on(table.orgId, table.isActive),
+    uniqueIndex("idx_canary_tokens_callback").on(table.callbackUrl),
+  ],
+);
+
+export const honeypotAssets = pgTable(
+  "honeypot_assets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    assetType: text("asset_type").notNull(), // from HONEYPOT_ASSET_TYPES
+    // For honey accounts
+    fakeUsername: text("fake_username"),
+    fakeEmail: text("fake_email"),
+    fakeDomain: text("fake_domain"),
+    // For honeypot endpoints
+    listenAddress: text("listen_address"), // e.g., "10.0.0.50:3389"
+    protocol: text("protocol"), // rdp, ssh, http, smb
+    // For deception fileshares
+    sharePath: text("share_path"), // e.g., "\\\\fileserver\\executive-salaries"
+    decoyFiles: jsonb("decoy_files"), // list of fake file names/sizes
+    // For network decoys
+    decoyHostname: text("decoy_hostname"),
+    decoyIp: text("decoy_ip"),
+    openPorts: jsonb("open_ports"), // list of open ports
+    // General
+    configuration: jsonb("configuration"), // full config blob
+    isActive: boolean("is_active").notNull().default(true),
+    hitCount: integer("hit_count").notNull().default(0),
+    lastHitAt: timestamp("last_hit_at"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_honeypot_assets_org").on(table.orgId),
+    index("idx_honeypot_assets_type").on(table.assetType),
+    index("idx_honeypot_assets_active").on(table.orgId, table.isActive),
+  ],
+);
+
+export const deceptionHits = pgTable(
+  "deception_hits",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    // Link to source
+    canaryTokenId: varchar("canary_token_id").references(() => canaryTokens.id),
+    honeypotAssetId: varchar("honeypot_asset_id").references(() => honeypotAssets.id),
+    // Hit details
+    sourceIp: text("source_ip"),
+    sourceHostname: text("source_hostname"),
+    sourceUserAgent: text("source_user_agent"),
+    sourceGeoCountry: text("source_geo_country"),
+    sourceGeoCity: text("source_geo_city"),
+    sourceAsn: text("source_asn"),
+    // Attribution
+    attributedUserId: text("attributed_user_id"),
+    attributedUsername: text("attributed_username"),
+    attributedService: text("attributed_service"),
+    // Hit classification
+    severity: text("severity").notNull().default("critical"), // from DECEPTION_HIT_SEVERITIES
+    isInternal: boolean("is_internal").default(false),
+    isTorExit: boolean("is_tor_exit").default(false),
+    isKnownBad: boolean("is_known_bad").default(false),
+    // Response
+    alertId: varchar("alert_id").references(() => alerts.id),
+    incidentId: varchar("incident_id").references(() => incidents.id),
+    autoContained: boolean("auto_contained").default(false),
+    containmentAction: text("containment_action"),
+    // Metadata
+    rawRequest: jsonb("raw_request"), // full request data
+    httpMethod: text("http_method"),
+    httpPath: text("http_path"),
+    accessedCredential: text("accessed_credential"), // which fake cred was used
+    hitAt: timestamp("hit_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_deception_hits_org").on(table.orgId),
+    index("idx_deception_hits_token").on(table.canaryTokenId),
+    index("idx_deception_hits_honeypot").on(table.honeypotAssetId),
+    index("idx_deception_hits_severity").on(table.orgId, table.severity),
+    index("idx_deception_hits_time").on(table.orgId, table.hitAt),
+    index("idx_deception_hits_source_ip").on(table.sourceIp),
+  ],
+);
+
+// Relations
+export const canaryTokensRelations = relations(canaryTokens, ({ one, many }) => ({
+  organization: one(organizations, { fields: [canaryTokens.orgId], references: [organizations.id] }),
+  hits: many(deceptionHits),
+}));
+
+export const honeypotAssetsRelations = relations(honeypotAssets, ({ one, many }) => ({
+  organization: one(organizations, { fields: [honeypotAssets.orgId], references: [organizations.id] }),
+  hits: many(deceptionHits),
+}));
+
+export const deceptionHitsRelations = relations(deceptionHits, ({ one }) => ({
+  organization: one(organizations, { fields: [deceptionHits.orgId], references: [organizations.id] }),
+  canaryToken: one(canaryTokens, { fields: [deceptionHits.canaryTokenId], references: [canaryTokens.id] }),
+  honeypotAsset: one(honeypotAssets, { fields: [deceptionHits.honeypotAssetId], references: [honeypotAssets.id] }),
+}));
+
+// Types
+export type CanaryToken = typeof canaryTokens.$inferSelect;
+export type InsertCanaryToken = typeof canaryTokens.$inferInsert;
+export type HoneypotAsset = typeof honeypotAssets.$inferSelect;
+export type InsertHoneypotAsset = typeof honeypotAssets.$inferInsert;
+export type DeceptionHit = typeof deceptionHits.$inferSelect;
+export type InsertDeceptionHit = typeof deceptionHits.$inferInsert;
