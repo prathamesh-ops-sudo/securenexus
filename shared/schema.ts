@@ -7488,3 +7488,200 @@ export const aiGeneratedRulesRelations = relations(aiGeneratedRules, ({ one }) =
 
 export type AiGeneratedRule = typeof aiGeneratedRules.$inferSelect;
 export type InsertAiGeneratedRule = typeof aiGeneratedRules.$inferInsert;
+
+// ─── War Rooms (Persistent) ──────────────────────────────────────────────────
+export const WAR_ROOM_STATUSES = ["active", "standby", "closed"] as const;
+export const WAR_ROOM_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+export const WAR_ROOM_PARTICIPANT_ROLES = ["commander", "responder", "observer"] as const;
+
+export const warRooms = pgTable(
+  "war_rooms",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("active"), // active | standby | closed
+    severity: text("severity").notNull().default("high"), // critical | high | medium | low
+    commander: varchar("commander").notNull(),
+    commanderName: text("commander_name").notNull().default("Commander"),
+    slackChannelId: text("slack_channel_id"),
+    slackChannelName: text("slack_channel_name"),
+    teamsChannelId: text("teams_channel_id"),
+    resolution: text("resolution"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    closedAt: timestamp("closed_at"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_war_rooms_org").on(table.orgId),
+    index("idx_war_rooms_incident").on(table.incidentId),
+    index("idx_war_rooms_status").on(table.status),
+  ],
+);
+
+export const warRoomsRelations = relations(warRooms, ({ one, many }) => ({
+  organization: one(organizations, { fields: [warRooms.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [warRooms.incidentId], references: [incidents.id] }),
+  messages: many(warRoomMessages),
+  actionItems: many(warRoomActionItems),
+  participants: many(warRoomParticipants),
+  handoffs: many(warRoomHandoffs),
+}));
+
+export type WarRoom = typeof warRooms.$inferSelect;
+export type InsertWarRoom = typeof warRooms.$inferInsert;
+
+// ─── War Room Participants ──────────────────────────────────────────────────
+export const warRoomParticipants = pgTable(
+  "war_room_participants",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    userId: varchar("user_id").notNull(),
+    displayName: text("display_name").notNull(),
+    role: text("role").notNull().default("responder"), // commander | responder | observer
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    leftAt: timestamp("left_at"),
+  },
+  (table) => [
+    index("idx_wr_participants_room").on(table.warRoomId),
+    index("idx_wr_participants_user").on(table.userId),
+  ],
+);
+
+export const warRoomParticipantsRelations = relations(warRoomParticipants, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomParticipants.warRoomId], references: [warRooms.id] }),
+}));
+
+export type WarRoomParticipant = typeof warRoomParticipants.$inferSelect;
+export type InsertWarRoomParticipant = typeof warRoomParticipants.$inferInsert;
+
+// ─── War Room Messages (Timeline) ──────────────────────────────────────────
+export const WAR_ROOM_MESSAGE_TYPES = [
+  "message",
+  "action",
+  "status_change",
+  "evidence",
+  "decision",
+  "hypothesis",
+  "handoff",
+  "system",
+] as const;
+
+export const warRoomMessages = pgTable(
+  "war_room_messages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    actor: text("actor").notNull(),
+    actorId: varchar("actor_id"),
+    type: text("type").notNull().default("message"),
+    content: text("content").notNull(),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_wr_messages_room").on(table.warRoomId),
+    index("idx_wr_messages_org").on(table.orgId),
+    index("idx_wr_messages_created").on(table.createdAt),
+  ],
+);
+
+export const warRoomMessagesRelations = relations(warRoomMessages, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomMessages.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomMessages.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomMessage = typeof warRoomMessages.$inferSelect;
+export type InsertWarRoomMessage = typeof warRoomMessages.$inferInsert;
+
+// ─── War Room Action Items ──────────────────────────────────────────────────
+export const warRoomActionItems = pgTable(
+  "war_room_action_items",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    assignee: text("assignee").notNull().default("unassigned"),
+    assigneeId: varchar("assignee_id"),
+    status: text("status").notNull().default("pending"), // pending | in_progress | completed | blocked
+    priority: text("priority").notNull().default("medium"), // critical | high | medium | low
+    dueAt: timestamp("due_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_wr_actions_room").on(table.warRoomId),
+    index("idx_wr_actions_org").on(table.orgId),
+    index("idx_wr_actions_status").on(table.status),
+  ],
+);
+
+export const warRoomActionItemsRelations = relations(warRoomActionItems, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomActionItems.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomActionItems.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomActionItem = typeof warRoomActionItems.$inferSelect;
+export type InsertWarRoomActionItem = typeof warRoomActionItems.$inferInsert;
+
+// ─── War Room Handoffs (Shift Changes) ──────────────────────────────────────
+export const warRoomHandoffs = pgTable(
+  "war_room_handoffs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    fromUserId: varchar("from_user_id").notNull(),
+    fromUserName: text("from_user_name").notNull(),
+    toUserId: varchar("to_user_id").notNull(),
+    toUserName: text("to_user_name").notNull(),
+    summary: text("summary").notNull(), // State transfer document
+    openActions: jsonb("open_actions").default([]), // Snapshot of pending action items
+    keyFindings: jsonb("key_findings").default([]), // Array of key findings so far
+    nextSteps: jsonb("next_steps").default([]), // Array of recommended next steps
+    status: text("status").notNull().default("pending"), // pending | acknowledged
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    acknowledgedAt: timestamp("acknowledged_at"),
+  },
+  (table) => [index("idx_wr_handoffs_room").on(table.warRoomId), index("idx_wr_handoffs_org").on(table.orgId)],
+);
+
+export const warRoomHandoffsRelations = relations(warRoomHandoffs, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomHandoffs.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomHandoffs.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomHandoff = typeof warRoomHandoffs.$inferSelect;
+export type InsertWarRoomHandoff = typeof warRoomHandoffs.$inferInsert;

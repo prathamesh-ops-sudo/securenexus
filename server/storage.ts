@@ -363,6 +363,21 @@ import {
   type AiGeneratedRule,
   type InsertAiGeneratedRule,
   aiGeneratedRules,
+  type WarRoom as WarRoomRow,
+  type InsertWarRoom,
+  warRooms,
+  type WarRoomParticipant,
+  type InsertWarRoomParticipant,
+  warRoomParticipants,
+  type WarRoomMessage,
+  type InsertWarRoomMessage,
+  warRoomMessages,
+  type WarRoomActionItem,
+  type InsertWarRoomActionItem,
+  warRoomActionItems,
+  type WarRoomHandoff,
+  type InsertWarRoomHandoff,
+  warRoomHandoffs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -1228,6 +1243,31 @@ export interface IStorage {
   getAiGeneratedRulesByIncident(incidentId: string, orgId: string): Promise<AiGeneratedRule[]>;
   getAiGeneratedRule(id: string): Promise<AiGeneratedRule | undefined>;
   updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined>;
+
+  // War Rooms (Persistent)
+  createWarRoom(room: InsertWarRoom): Promise<WarRoomRow>;
+  getWarRooms(orgId: string, status?: string): Promise<WarRoomRow[]>;
+  getWarRoom(id: string): Promise<WarRoomRow | undefined>;
+  updateWarRoom(id: string, data: Partial<WarRoomRow>): Promise<WarRoomRow | undefined>;
+  // War Room Participants
+  addWarRoomParticipant(participant: InsertWarRoomParticipant): Promise<WarRoomParticipant>;
+  getWarRoomParticipants(warRoomId: string): Promise<WarRoomParticipant[]>;
+  getWarRoomParticipantByUser(warRoomId: string, userId: string): Promise<WarRoomParticipant | undefined>;
+  removeWarRoomParticipant(warRoomId: string, userId: string): Promise<void>;
+  // War Room Messages (Timeline)
+  createWarRoomMessage(msg: InsertWarRoomMessage): Promise<WarRoomMessage>;
+  getWarRoomMessages(warRoomId: string, limit?: number): Promise<WarRoomMessage[]>;
+  getWarRoomMessagesByType(warRoomId: string, type: string): Promise<WarRoomMessage[]>;
+  // War Room Action Items
+  createWarRoomActionItem(item: InsertWarRoomActionItem): Promise<WarRoomActionItem>;
+  getWarRoomActionItems(warRoomId: string): Promise<WarRoomActionItem[]>;
+  getWarRoomActionItem(id: string): Promise<WarRoomActionItem | undefined>;
+  updateWarRoomActionItem(id: string, data: Partial<WarRoomActionItem>): Promise<WarRoomActionItem | undefined>;
+  // War Room Handoffs
+  createWarRoomHandoff(handoff: InsertWarRoomHandoff): Promise<WarRoomHandoff>;
+  getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]>;
+  getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined>;
+  updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5984,6 +6024,148 @@ export class DatabaseStorage implements IStorage {
 
   async updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined> {
     const [updated] = await db.update(aiGeneratedRules).set(data).where(eq(aiGeneratedRules.id, id)).returning();
+    return updated;
+  }
+
+  // ─── War Rooms (Persistent) ─────────────────────────────────────────────────
+  async createWarRoom(room: InsertWarRoom): Promise<WarRoomRow> {
+    const [created] = await db.insert(warRooms).values(room).returning();
+    return created;
+  }
+
+  async getWarRooms(orgId: string, status?: string): Promise<WarRoomRow[]> {
+    const conditions = [eq(warRooms.orgId, orgId)];
+    if (status) conditions.push(eq(warRooms.status, status));
+    return db
+      .select()
+      .from(warRooms)
+      .where(and(...conditions))
+      .orderBy(desc(warRooms.createdAt));
+  }
+
+  async getWarRoom(id: string): Promise<WarRoomRow | undefined> {
+    const [room] = await db.select().from(warRooms).where(eq(warRooms.id, id));
+    return room;
+  }
+
+  async updateWarRoom(id: string, data: Partial<WarRoomRow>): Promise<WarRoomRow | undefined> {
+    const [updated] = await db
+      .update(warRooms)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(warRooms.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ─── War Room Participants ──────────────────────────────────────────────────
+  async addWarRoomParticipant(participant: InsertWarRoomParticipant): Promise<WarRoomParticipant> {
+    const [created] = await db.insert(warRoomParticipants).values(participant).returning();
+    return created;
+  }
+
+  async getWarRoomParticipants(warRoomId: string): Promise<WarRoomParticipant[]> {
+    return db
+      .select()
+      .from(warRoomParticipants)
+      .where(and(eq(warRoomParticipants.warRoomId, warRoomId), isNull(warRoomParticipants.leftAt)))
+      .orderBy(asc(warRoomParticipants.joinedAt));
+  }
+
+  async getWarRoomParticipantByUser(warRoomId: string, userId: string): Promise<WarRoomParticipant | undefined> {
+    const [p] = await db
+      .select()
+      .from(warRoomParticipants)
+      .where(
+        and(
+          eq(warRoomParticipants.warRoomId, warRoomId),
+          eq(warRoomParticipants.userId, userId),
+          isNull(warRoomParticipants.leftAt),
+        ),
+      );
+    return p;
+  }
+
+  async removeWarRoomParticipant(warRoomId: string, userId: string): Promise<void> {
+    await db
+      .update(warRoomParticipants)
+      .set({ leftAt: new Date() })
+      .where(
+        and(
+          eq(warRoomParticipants.warRoomId, warRoomId),
+          eq(warRoomParticipants.userId, userId),
+          isNull(warRoomParticipants.leftAt),
+        ),
+      );
+  }
+
+  // ─── War Room Messages (Timeline) ──────────────────────────────────────────
+  async createWarRoomMessage(msg: InsertWarRoomMessage): Promise<WarRoomMessage> {
+    const [created] = await db.insert(warRoomMessages).values(msg).returning();
+    return created;
+  }
+
+  async getWarRoomMessages(warRoomId: string, limit = 500): Promise<WarRoomMessage[]> {
+    return db
+      .select()
+      .from(warRoomMessages)
+      .where(eq(warRoomMessages.warRoomId, warRoomId))
+      .orderBy(asc(warRoomMessages.createdAt))
+      .limit(limit);
+  }
+
+  async getWarRoomMessagesByType(warRoomId: string, type: string): Promise<WarRoomMessage[]> {
+    return db
+      .select()
+      .from(warRoomMessages)
+      .where(and(eq(warRoomMessages.warRoomId, warRoomId), eq(warRoomMessages.type, type)))
+      .orderBy(asc(warRoomMessages.createdAt));
+  }
+
+  // ─── War Room Action Items ────────────────────────────────────────────────
+  async createWarRoomActionItem(item: InsertWarRoomActionItem): Promise<WarRoomActionItem> {
+    const [created] = await db.insert(warRoomActionItems).values(item).returning();
+    return created;
+  }
+
+  async getWarRoomActionItems(warRoomId: string): Promise<WarRoomActionItem[]> {
+    return db
+      .select()
+      .from(warRoomActionItems)
+      .where(eq(warRoomActionItems.warRoomId, warRoomId))
+      .orderBy(desc(warRoomActionItems.createdAt));
+  }
+
+  async getWarRoomActionItem(id: string): Promise<WarRoomActionItem | undefined> {
+    const [item] = await db.select().from(warRoomActionItems).where(eq(warRoomActionItems.id, id));
+    return item;
+  }
+
+  async updateWarRoomActionItem(id: string, data: Partial<WarRoomActionItem>): Promise<WarRoomActionItem | undefined> {
+    const [updated] = await db.update(warRoomActionItems).set(data).where(eq(warRoomActionItems.id, id)).returning();
+    return updated;
+  }
+
+  // ─── War Room Handoffs ────────────────────────────────────────────────────
+  async createWarRoomHandoff(handoff: InsertWarRoomHandoff): Promise<WarRoomHandoff> {
+    const [created] = await db.insert(warRoomHandoffs).values(handoff).returning();
+    return created;
+  }
+
+  async getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]> {
+    return db
+      .select()
+      .from(warRoomHandoffs)
+      .where(eq(warRoomHandoffs.warRoomId, warRoomId))
+      .orderBy(desc(warRoomHandoffs.createdAt));
+  }
+
+  async getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined> {
+    const [h] = await db.select().from(warRoomHandoffs).where(eq(warRoomHandoffs.id, id));
+    return h;
+  }
+
+  async updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined> {
+    const [updated] = await db.update(warRoomHandoffs).set(data).where(eq(warRoomHandoffs.id, id)).returning();
     return updated;
   }
 }
