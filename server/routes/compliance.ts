@@ -1587,9 +1587,9 @@ export function registerComplianceRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/v1/audit-logs", isAuthenticated, async (req, res) => {
+  app.get("/api/v1/audit-logs", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId;
+      const orgId = getOrgId(req);
       const offset = Math.max(0, Number(req.query.offset ?? 0) || 0);
       const limit = Math.min(Math.max(1, Number(req.query.limit ?? 50) || 50), 200);
       const action = typeof req.query.action === "string" ? req.query.action : undefined;
