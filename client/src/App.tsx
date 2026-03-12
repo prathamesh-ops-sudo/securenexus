@@ -148,6 +148,7 @@ const IdentityGovernancePage = lazy(() => import("@/pages/identity-governance"))
 const DeceptionPage = lazy(() => import("@/pages/deception"));
 const OtSecurityPage = lazy(() => import("@/pages/ot-security"));
 const ThreatHuntingPage = lazy(() => import("@/pages/threat-hunting"));
+const DataLakePage = lazy(() => import("@/pages/data-lake"));
 
 function PageSkeleton() {
   return (
@@ -375,6 +376,7 @@ function AuthenticatedApp() {
                     <Route path="/deception" component={DeceptionPage} />
                     <Route path="/ot-security" component={OtSecurityPage} />
                     <Route path="/threat-hunting" component={ThreatHuntingPage} />
+                    <Route path="/data-lake" component={DataLakePage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
