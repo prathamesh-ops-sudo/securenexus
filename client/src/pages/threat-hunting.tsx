@@ -205,7 +205,7 @@ function queryTypeLabel(qt: string): string {
 }
 
 function formatDuration(ms: number | null): string {
-  if (!ms) return "-";
+  if (ms === null || ms === undefined) return "-";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
