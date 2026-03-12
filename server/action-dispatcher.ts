@@ -1,4 +1,10 @@
 import type { IStorage } from "./storage";
+import { db } from "./db";
+import { agentResponseActions, nativeSensors } from "../shared/schema";
+import { eq, and, or, ilike } from "drizzle-orm";
+import { logger } from "./routes/shared";
+
+const log = logger.child("action-dispatcher");
 
 export interface ActionContext {
   orgId?: string;
@@ -6,12 +12,13 @@ export interface ActionContext {
   alertId?: string;
   userId?: string;
   userName?: string;
+  sensorId?: string;
   storage: IStorage;
 }
 
 export interface ActionResult {
   actionType: string;
-  status: "completed" | "failed" | "simulated";
+  status: "completed" | "failed" | "simulated" | "pending_approval" | "approved";
   message: string;
   details?: any;
   executedAt: string;
@@ -36,17 +43,12 @@ export async function dispatchAction(actionType: string, config: any, context: A
     case "notify_pagerduty":
       return simulateNotification("pagerduty", config, context, executedAt);
     case "isolate_host":
-      return simulateEdrAction("isolate_host", config, context, executedAt);
     case "block_ip":
-      return simulateEdrAction("block_ip", config, context, executedAt);
     case "block_domain":
-      return simulateEdrAction("block_domain", config, context, executedAt);
     case "quarantine_file":
-      return simulateEdrAction("quarantine_file", config, context, executedAt);
     case "disable_user":
-      return simulateEdrAction("disable_user", config, context, executedAt);
     case "kill_process":
-      return simulateEdrAction("kill_process", config, context, executedAt);
+      return executeAgentResponseAction(actionType, config, context, executedAt);
     case "auto_triage":
       return executeAutoTriage(config, context, executedAt);
     case "assign_analyst":
@@ -129,14 +131,232 @@ async function simulateNotification(
   };
 }
 
-async function simulateEdrAction(
+// High-risk actions require manual approval before dispatch
+const HIGH_RISK_ACTIONS = ["isolate_host", "disable_user"];
+const MEDIUM_RISK_ACTIONS = ["kill_process", "block_ip", "quarantine_file", "block_domain"];
+
+function determineRiskLevel(actionType: string): string {
+  if (HIGH_RISK_ACTIONS.includes(actionType)) return "high";
+  if (MEDIUM_RISK_ACTIONS.includes(actionType)) return "medium";
+  return "low";
+}
+
+function determineInitialStatus(riskLevel: string): string {
+  if (riskLevel === "high" || riskLevel === "medium") return "pending_approval";
+  return "approved";
+}
+
+/**
+ * Resolve a sensor ID from the context. Priority:
+ * 1. Explicit sensorId in context or config
+ * 2. Lookup by hostname or IP in nativeSensors table
+ * Returns null if no sensor can be resolved.
+ */
+async function resolveSensorId(orgId: string, config: any, context: ActionContext): Promise<string | null> {
+  // 1. Explicit sensorId
+  const explicit = context.sensorId || config?.sensorId;
+  if (explicit) {
+    // Verify it belongs to org
+    const [sensor] = await db
+      .select({ id: nativeSensors.id })
+      .from(nativeSensors)
+      .where(and(eq(nativeSensors.id, explicit), eq(nativeSensors.orgId, orgId)))
+      .limit(1);
+    return sensor ? sensor.id : null;
+  }
+
+  // 2. Lookup by hostname or IP
+  const hostname = config?.hostname || config?.target;
+  const ip = config?.ip || config?.targetIp;
+
+  if (!hostname && !ip) return null;
+
+  const conditions: unknown[] = [eq(nativeSensors.orgId, orgId)];
+  if (hostname && ip) {
+    conditions.push(or(ilike(nativeSensors.hostname, hostname), eq(nativeSensors.ipAddress, ip)));
+  } else if (hostname) {
+    conditions.push(ilike(nativeSensors.hostname, hostname));
+  } else if (ip) {
+    conditions.push(eq(nativeSensors.ipAddress, ip));
+  }
+
+  const [sensor] = await db
+    .select({ id: nativeSensors.id })
+    .from(nativeSensors)
+    .where(and(...(conditions as any[])))
+    .limit(1);
+
+  return sensor ? sensor.id : null;
+}
+
+/**
+ * Execute a real response action through the agent_response_actions pipeline.
+ * Creates a DB entry with proper risk assessment and approval workflow.
+ * Falls back to legacy simulation if no sensor can be resolved (no agent deployed).
+ */
+async function executeAgentResponseAction(
   actionType: string,
   config: any,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
   const target = config?.target || config?.hostname || config?.ip || config?.hash || "unknown";
-  const connector = config?.connector || config?.connectorId || "auto";
+  const orgId = context.orgId;
+
+  // If no orgId, we can't use the real pipeline
+  if (!orgId) {
+    log.warn("No orgId in context — falling back to legacy simulation", { actionType, target });
+    return legacySimulateEdrAction(actionType, config, context, executedAt);
+  }
+
+  // Try to resolve sensor
+  let sensorId: string | null = null;
+  try {
+    sensorId = await resolveSensorId(orgId, config, context);
+  } catch (err) {
+    log.warn("Failed to resolve sensor — falling back to legacy simulation", {
+      actionType,
+      target,
+      error: String(err),
+    });
+    return legacySimulateEdrAction(actionType, config, context, executedAt);
+  }
+
+  // If no sensor found, fall back to simulation with a note
+  if (!sensorId) {
+    log.info("No matching sensor found — falling back to legacy simulation", {
+      actionType,
+      target,
+      orgId,
+    });
+    return legacySimulateEdrAction(actionType, config, context, executedAt);
+  }
+
+  // Determine risk level and initial status
+  const riskLevel = determineRiskLevel(actionType);
+  const initialStatus = determineInitialStatus(riskLevel);
+  const timeout = typeof config?.timeoutSeconds === "number" ? Math.min(config.timeoutSeconds, 3600) : 300;
+
+  try {
+    const [action] = await db
+      .insert(agentResponseActions)
+      .values({
+        orgId,
+        sensorId,
+        actionType,
+        riskLevel,
+        status: initialStatus,
+        targetPid: typeof config?.targetPid === "number" ? config.targetPid : null,
+        targetProcessName: config?.targetProcessName || config?.processName || null,
+        targetIp: config?.ip || config?.targetIp || (actionType === "block_ip" ? target : null),
+        targetFilePath: config?.filePath || config?.targetFilePath || config?.hash || null,
+        targetUserName: config?.userName || config?.targetUserName || (actionType === "disable_user" ? target : null),
+        targetDomain: config?.domain || config?.targetDomain || (actionType === "block_domain" ? target : null),
+        targetServiceName: config?.serviceName || config?.targetServiceName || null,
+        parameters: config?.parameters || config?.allowedIps ? { allowedIps: config.allowedIps } : null,
+        requestedBy: context.userId || null,
+        requestedByName: context.userName || "Autonomous Action",
+        reason: config?.reason || `Dispatched by SecureNexus for incident ${context.incidentId || "N/A"}`,
+        incidentId: context.incidentId || null,
+        timeoutSeconds: timeout,
+        expiresAt: new Date(Date.now() + timeout * 1000),
+        // Auto-approve low-risk actions
+        ...(initialStatus === "approved"
+          ? { approvedBy: "system", approvedByName: "Auto-approved (low risk)", approvedAt: new Date() }
+          : {}),
+      })
+      .returning();
+
+    // Also record in legacy response_actions table for backward compatibility
+    if (context.storage) {
+      await context.storage.createResponseAction({
+        orgId,
+        actionType,
+        incidentId: context.incidentId,
+        alertId: context.alertId,
+        targetType: actionType.split("_")[0],
+        targetValue: target,
+        status: initialStatus,
+        requestPayload: { actionType, target, sensorId, riskLevel },
+        responsePayload: { actionId: action.id, needsApproval: initialStatus === "pending_approval" },
+        executedBy: context.userId,
+      });
+    }
+
+    const actionLabels: Record<string, string> = {
+      isolate_host: `Isolate host "${target}" from network`,
+      block_ip: `Block IP address ${target} at firewall`,
+      block_domain: `Block domain ${target} via DNS/proxy`,
+      quarantine_file: `Quarantine file ${target}`,
+      disable_user: `Disable user account "${target}"`,
+      kill_process: `Terminate process "${target}"`,
+    };
+
+    const label = actionLabels[actionType] || actionType;
+
+    if (initialStatus === "pending_approval") {
+      log.info(`Response action queued for approval: ${actionType}`, {
+        actionId: action.id,
+        riskLevel,
+        sensorId,
+        orgId,
+      });
+      return {
+        actionType,
+        status: "pending_approval",
+        message: `${label} — queued for approval (${riskLevel} risk). Action ID: ${action.id}`,
+        details: {
+          actionId: action.id,
+          sensorId,
+          target,
+          riskLevel,
+          needsApproval: true,
+          approveUrl: `/api/native/response/actions/${action.id}/approve`,
+        },
+        executedAt,
+      };
+    }
+
+    log.info(`Response action auto-approved and dispatched: ${actionType}`, {
+      actionId: action.id,
+      riskLevel,
+      sensorId,
+      orgId,
+    });
+    return {
+      actionType,
+      status: "approved",
+      message: `${label} — approved and dispatched to sensor. Action ID: ${action.id}`,
+      details: {
+        actionId: action.id,
+        sensorId,
+        target,
+        riskLevel,
+        needsApproval: false,
+      },
+      executedAt,
+    };
+  } catch (err) {
+    log.error("Failed to create agent response action — falling back to legacy simulation", {
+      actionType,
+      target,
+      error: String(err),
+    });
+    return legacySimulateEdrAction(actionType, config, context, executedAt);
+  }
+}
+
+/**
+ * Legacy simulation fallback — used when no native sensor is deployed
+ * or when the agent response pipeline is unavailable.
+ */
+function legacySimulateEdrAction(
+  actionType: string,
+  config: any,
+  context: ActionContext,
+  executedAt: string,
+): ActionResult {
+  const target = config?.target || config?.hostname || config?.ip || config?.hash || "unknown";
   const actionLabels: Record<string, string> = {
     isolate_host: `Isolated host "${target}" from network`,
     block_ip: `Blocked IP address ${target} at firewall/EDR`,
@@ -146,27 +366,11 @@ async function simulateEdrAction(
     kill_process: `Terminated process "${target}" on affected hosts`,
   };
 
-  if (context.storage) {
-    await context.storage.createResponseAction({
-      orgId: context.orgId,
-      actionType,
-      connectorId: typeof connector === "string" && connector !== "auto" ? connector : undefined,
-      incidentId: context.incidentId,
-      alertId: context.alertId,
-      targetType: actionType.split("_")[0],
-      targetValue: target,
-      status: "simulated",
-      requestPayload: { actionType, target, connector },
-      responsePayload: { success: true, simulated: true },
-      executedBy: context.userId,
-    });
-  }
-
   return {
     actionType,
     status: "simulated",
-    message: `[Simulated] ${actionLabels[actionType] || actionType}: ${target}`,
-    details: { actionType, target, connector, simulated: true },
+    message: `[Simulated — no sensor deployed] ${actionLabels[actionType] || actionType}: ${target}`,
+    details: { actionType, target, simulated: true, reason: "No native sensor agent found for target" },
     executedAt,
   };
 }
