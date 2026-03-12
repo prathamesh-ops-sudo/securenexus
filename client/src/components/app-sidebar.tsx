@@ -294,6 +294,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "UEBA Analytics", url: "/ueba", icon: UserCheck }],
       },
       {
+        label: "Supply Chain",
+        items: [{ title: "Supply Chain Security", url: "/supply-chain", icon: GitBranch }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },

@@ -77,6 +77,7 @@ import { registerVulnScannerRoutes } from "./vuln-scanner";
 import { registerUebaRoutes } from "./ueba";
 import { registerAgentResponseRoutes } from "./agent-response";
 import { registerRagKnowledgeRoutes } from "./rag-knowledge";
+import { registerSupplyChainRoutes } from "./supply-chain";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -158,4 +159,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerUebaRoutes(app);
   registerAgentResponseRoutes(app);
   registerRagKnowledgeRoutes(app);
+  registerSupplyChainRoutes(app);
 }

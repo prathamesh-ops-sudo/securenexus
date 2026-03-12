@@ -6303,3 +6303,189 @@ export const agentResponseActionsRelations = relations(agentResponseActions, ({ 
 
 export type AgentResponseAction = typeof agentResponseActions.$inferSelect;
 export type InsertAgentResponseAction = typeof agentResponseActions.$inferInsert;
+
+// =============================================================================
+// SUPPLY CHAIN SECURITY
+// =============================================================================
+
+export const SBOM_FORMATS = ["cyclonedx", "spdx"] as const;
+export const SBOM_STATUSES = ["processing", "completed", "failed"] as const;
+export const SC_FINDING_TYPES = [
+  "vulnerable_dependency",
+  "typosquatting",
+  "maintainer_risk",
+  "outdated_dependency",
+  "license_risk",
+  "iac_misconfiguration",
+  "container_vulnerability",
+  "provenance_failure",
+] as const;
+export const SC_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const SC_FINDING_STATUSES = ["open", "acknowledged", "remediated", "false_positive"] as const;
+export const SC_PKG_ECOSYSTEMS = [
+  "npm",
+  "pypi",
+  "rubygems",
+  "nuget",
+  "cargo",
+  "go",
+  "maven",
+  "docker",
+  "terraform",
+  "helm",
+  "kubernetes",
+] as const;
+
+export const sbomArtifacts = pgTable(
+  "sbom_artifacts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    version: text("version"),
+    format: text("format").notNull(), // cyclonedx | spdx
+    source: text("source"), // CI/CD pipeline name, manual upload, etc.
+    componentCount: integer("component_count").notNull().default(0),
+    vulnerabilityCount: integer("vulnerability_count").notNull().default(0),
+    licenseCount: integer("license_count").notNull().default(0),
+    status: text("status").notNull().default("processing"),
+    rawData: jsonb("raw_data"), // original SBOM JSON
+    metadata: jsonb("metadata"), // tool, timestamp, serial number
+    uploadedBy: varchar("uploaded_by"),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sbom_artifacts_org").on(table.orgId),
+    index("idx_sbom_artifacts_org_created").on(table.orgId, table.createdAt),
+    index("idx_sbom_artifacts_status").on(table.orgId, table.status),
+  ],
+);
+
+export const dependencyGraph = pgTable(
+  "dependency_graph",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sbomId: varchar("sbom_id")
+      .notNull()
+      .references(() => sbomArtifacts.id, { onDelete: "cascade" }),
+    packageName: text("package_name").notNull(),
+    packageVersion: text("package_version"),
+    ecosystem: text("ecosystem").notNull(), // npm, pypi, rubygems, nuget, etc.
+    isDirect: boolean("is_direct").notNull().default(true),
+    parentPackageId: varchar("parent_package_id"), // self-ref for transitive deps
+    license: text("license"),
+    publisher: text("publisher"),
+    publisherEmail: text("publisher_email"),
+    repositoryUrl: text("repository_url"),
+    latestVersion: text("latest_version"),
+    isOutdated: boolean("is_outdated").default(false),
+    isVulnerable: boolean("is_vulnerable").default(false),
+    cveCount: integer("cve_count").notNull().default(0),
+    // Maintainer reputation scoring
+    maintainerScore: real("maintainer_score"), // 0-100
+    maintainerNewPublisher: boolean("maintainer_new_publisher").default(false),
+    maintainerRecentTransfer: boolean("maintainer_recent_transfer").default(false),
+    maintainerLowDownloads: boolean("maintainer_low_downloads").default(false),
+    // Provenance
+    provenanceVerified: boolean("provenance_verified"),
+    provenanceSignature: text("provenance_signature"),
+    // Typosquatting
+    typosquatCandidate: boolean("typosquat_candidate").default(false),
+    typosquatSimilarTo: text("typosquat_similar_to"),
+    typosquatDistance: integer("typosquat_distance"),
+    depth: integer("depth").notNull().default(0), // 0 = direct, 1+ = transitive
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_dep_graph_org").on(table.orgId),
+    index("idx_dep_graph_sbom").on(table.sbomId),
+    index("idx_dep_graph_pkg").on(table.orgId, table.packageName),
+    index("idx_dep_graph_ecosystem").on(table.orgId, table.ecosystem),
+    index("idx_dep_graph_vulnerable").on(table.orgId, table.isVulnerable),
+    index("idx_dep_graph_typosquat").on(table.orgId, table.typosquatCandidate),
+  ],
+);
+
+export const supplyChainFindings = pgTable(
+  "supply_chain_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sbomId: varchar("sbom_id").references(() => sbomArtifacts.id, { onDelete: "cascade" }),
+    dependencyId: varchar("dependency_id").references(() => dependencyGraph.id, { onDelete: "cascade" }),
+    findingType: text("finding_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    title: text("title").notNull(),
+    description: text("description"),
+    packageName: text("package_name"),
+    packageVersion: text("package_version"),
+    ecosystem: text("ecosystem"),
+    cveId: text("cve_id"),
+    cvssScore: real("cvss_score"),
+    fixedVersion: text("fixed_version"),
+    // IaC-specific fields
+    iacResourceType: text("iac_resource_type"),
+    iacFilePath: text("iac_file_path"),
+    iacRule: text("iac_rule"),
+    // Container-specific fields
+    containerImage: text("container_image"),
+    containerLayer: text("container_layer"),
+    // Metadata
+    details: jsonb("details"),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    remediatedBy: varchar("remediated_by"),
+    remediatedAt: timestamp("remediated_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sc_findings_org").on(table.orgId),
+    index("idx_sc_findings_sbom").on(table.sbomId),
+    index("idx_sc_findings_type").on(table.orgId, table.findingType),
+    index("idx_sc_findings_severity").on(table.orgId, table.severity),
+    index("idx_sc_findings_status").on(table.orgId, table.status),
+    index("idx_sc_findings_cve").on(table.cveId),
+    index("idx_sc_findings_pkg").on(table.orgId, table.packageName),
+  ],
+);
+
+export const sbomArtifactsRelations = relations(sbomArtifacts, ({ one, many }) => ({
+  organization: one(organizations, { fields: [sbomArtifacts.orgId], references: [organizations.id] }),
+  dependencies: many(dependencyGraph),
+  findings: many(supplyChainFindings),
+}));
+
+export const dependencyGraphRelations = relations(dependencyGraph, ({ one }) => ({
+  organization: one(organizations, { fields: [dependencyGraph.orgId], references: [organizations.id] }),
+  sbom: one(sbomArtifacts, { fields: [dependencyGraph.sbomId], references: [sbomArtifacts.id] }),
+}));
+
+export const supplyChainFindingsRelations = relations(supplyChainFindings, ({ one }) => ({
+  organization: one(organizations, { fields: [supplyChainFindings.orgId], references: [organizations.id] }),
+  sbom: one(sbomArtifacts, { fields: [supplyChainFindings.sbomId], references: [sbomArtifacts.id] }),
+  dependency: one(dependencyGraph, { fields: [supplyChainFindings.dependencyId], references: [dependencyGraph.id] }),
+}));
+
+export type SbomArtifact = typeof sbomArtifacts.$inferSelect;
+export type InsertSbomArtifact = typeof sbomArtifacts.$inferInsert;
+export type DependencyGraphEntry = typeof dependencyGraph.$inferSelect;
+export type InsertDependencyGraphEntry = typeof dependencyGraph.$inferInsert;
+export type SupplyChainFinding = typeof supplyChainFindings.$inferSelect;
+export type InsertSupplyChainFinding = typeof supplyChainFindings.$inferInsert;
