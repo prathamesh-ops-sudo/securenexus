@@ -277,6 +277,13 @@ const navGroups: NavGroup[] = [
         ],
       },
       {
+        label: "Agent & Detection",
+        items: [
+          { title: "Native Sensors", url: "/native-sensors", icon: Cpu },
+          { title: "Detection Rules", url: "/detection-rules", icon: ShieldAlert },
+        ],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
