@@ -4,6 +4,7 @@ import { generatePdfReport, CONFIDENTIAL_REPORT_TYPES } from "./report-pdf";
 import { uploadFile } from "./s3";
 import { logger } from "./logger";
 import { calculateNextRunTimeInTimezone, safeTimezone, formatInTimezone } from "./timezone-utils";
+import { sendEmail, isEmailEnabled } from "./email-service";
 
 const SCHEDULER_INTERVAL_MS = 60 * 60 * 1000;
 let schedulerTimer: NodeJS.Timeout | null = null;
@@ -100,11 +101,33 @@ async function executeScheduledReport(schedule: any) {
             .warn(`Webhook delivery failed for schedule ${schedule.id}`, { url: target.url, error: err.message });
         }
       } else if (target.type === "email" && target.address) {
-        logger
-          .child("report-scheduler")
-          .info(`Email delivery simulated for schedule ${schedule.id} to ${target.address}`);
         const tz = safeTimezone(schedule.timezone);
-        logger.child("report-scheduler").info(`Subject: ${template.name} - ${formatInTimezone(new Date(), tz)}`);
+        const subject = `${template.name} — ${formatInTimezone(new Date(), tz)}`;
+        if (isEmailEnabled()) {
+          try {
+            const isConfidentialReport = CONFIDENTIAL_REPORT_TYPES.includes(template.reportType);
+            await sendEmail({
+              to: target.address,
+              subject,
+              html:
+                `<p>Your scheduled report <strong>${template.name}</strong> is ready.</p>` +
+                (isConfidentialReport ? `<p style="color:red;"><strong>CONFIDENTIAL</strong></p>` : "") +
+                `<p>Report type: ${template.reportType}<br/>Generated: ${formatInTimezone(new Date(), tz)}</p>` +
+                (outputLocation ? `<p>Download: ${outputLocation}</p>` : ""),
+              text: `Your scheduled report "${template.name}" is ready.\nReport type: ${template.reportType}\nGenerated: ${formatInTimezone(new Date(), tz)}${outputLocation ? `\nDownload: ${outputLocation}` : ""}`,
+            });
+            logger.child("report-scheduler").info(`Email delivered for schedule ${schedule.id} to ${target.address}`);
+          } catch (emailErr: any) {
+            logger.child("report-scheduler").warn(`Email delivery failed for schedule ${schedule.id}`, {
+              to: target.address,
+              error: emailErr.message,
+            });
+          }
+        } else {
+          logger
+            .child("report-scheduler")
+            .info(`Email delivery skipped (non-production) for schedule ${schedule.id} to ${target.address}`);
+        }
       }
     }
 

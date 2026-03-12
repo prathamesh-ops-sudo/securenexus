@@ -92,7 +92,13 @@ export function registerBillingRoutes(app: Express): void {
         if (!isStripeEnabled()) {
           return sendEnvelope(res, null, {
             status: 503,
-            errors: [{ code: "STRIPE_DISABLED", message: "Stripe integration is not configured" }],
+            errors: [
+              {
+                code: "STRIPE_DISABLED",
+                message:
+                  "Billing is not yet configured for this deployment. Contact your administrator to set up Stripe integration.",
+              },
+            ],
           });
         }
         const orgId = getOrgId(req);
@@ -141,7 +147,13 @@ export function registerBillingRoutes(app: Express): void {
         if (!isStripeEnabled()) {
           return sendEnvelope(res, null, {
             status: 503,
-            errors: [{ code: "STRIPE_DISABLED", message: "Stripe integration is not configured" }],
+            errors: [
+              {
+                code: "STRIPE_DISABLED",
+                message:
+                  "Billing is not yet configured for this deployment. Contact your administrator to set up Stripe integration.",
+              },
+            ],
           });
         }
         const orgId = getOrgId(req);
@@ -183,7 +195,13 @@ export function registerBillingRoutes(app: Express): void {
         if (!isStripeEnabled()) {
           return sendEnvelope(res, null, {
             status: 503,
-            errors: [{ code: "STRIPE_DISABLED", message: "Stripe integration is not configured" }],
+            errors: [
+              {
+                code: "STRIPE_DISABLED",
+                message:
+                  "Billing is not yet configured for this deployment. Contact your administrator to set up Stripe integration.",
+              },
+            ],
           });
         }
         const orgId = getOrgId(req);
@@ -225,7 +243,13 @@ export function registerBillingRoutes(app: Express): void {
         if (!isStripeEnabled()) {
           return sendEnvelope(res, null, {
             status: 503,
-            errors: [{ code: "STRIPE_DISABLED", message: "Stripe integration is not configured" }],
+            errors: [
+              {
+                code: "STRIPE_DISABLED",
+                message:
+                  "Billing is not yet configured for this deployment. Contact your administrator to set up Stripe integration.",
+              },
+            ],
           });
         }
         const orgId = getOrgId(req);
@@ -261,7 +285,13 @@ export function registerBillingRoutes(app: Express): void {
         if (!isStripeEnabled()) {
           return sendEnvelope(res, null, {
             status: 503,
-            errors: [{ code: "STRIPE_DISABLED", message: "Stripe integration is not configured" }],
+            errors: [
+              {
+                code: "STRIPE_DISABLED",
+                message:
+                  "Billing is not yet configured for this deployment. Contact your administrator to set up Stripe integration.",
+              },
+            ],
           });
         }
         const orgId = getOrgId(req);

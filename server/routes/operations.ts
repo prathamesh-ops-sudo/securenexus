@@ -27,7 +27,8 @@ export function registerOperationsRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const status = req.query.status as string;
       const type = req.query.type as string;
-      const limit = parseInt(req.query.limit as string, 10) || 50;
+      const parsedLimit = parseInt(req.query.limit as string, 10);
+      const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
       const jobs = await storage.getJobs(orgId, status, type, limit);
       res.json(jobs);
     } catch (error) {

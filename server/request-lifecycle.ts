@@ -113,13 +113,17 @@ export interface LivenessStatus {
   memoryMB: number;
 }
 
+const MAX_MEMORY_MB = 1536; // 1.5 GB RSS threshold
+
 export function checkLiveness(): LivenessStatus {
   const mem = process.memoryUsage();
+  const memoryMB = Math.round(mem.rss / 1024 / 1024);
+  const alive = serverReady && memoryMB < MAX_MEMORY_MB;
   return {
-    alive: true,
+    alive,
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()),
     pid: process.pid,
-    memoryMB: Math.round(mem.rss / 1024 / 1024),
+    memoryMB,
   };
 }

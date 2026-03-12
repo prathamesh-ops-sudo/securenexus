@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
+import { replyRateLimit } from "../api-response";
 import {
   getCorrelationCluster,
   getCorrelationClusters,
@@ -248,12 +250,22 @@ export function registerEntitiesRoutes(app: Express): void {
   );
 
   // Phase 2: Graph-Based Correlation Engine
+  const graphScanLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => (req as any).user?.id || req.ip || "unknown",
+    handler: (_req, res) => replyRateLimit(res, "Graph scan rate limit exceeded. Max 5 per minute."),
+  });
+
   app.post(
     "/api/correlation/graph-scan",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
     requireMinRole("analyst"),
+    graphScanLimiter,
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
