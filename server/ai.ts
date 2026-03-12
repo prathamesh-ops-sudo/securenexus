@@ -79,14 +79,16 @@ async function invokeWithPrompt(
         };
 
   // Inject few-shot examples from active learning if available
+  // Use the inference tier (triage/correlation/narrative) as the domain key,
+  // not the promptId — few-shot examples are stored by domain
   let augmentedSystemPrompt = prompt.systemPrompt;
   try {
-    const fewShotBlock = await buildFewShotAugmentedPrompt(promptId, orgId);
+    const fewShotBlock = await buildFewShotAugmentedPrompt(tier, orgId);
     if (fewShotBlock) {
       augmentedSystemPrompt = `${prompt.systemPrompt}\n\n${fewShotBlock}`;
     }
   } catch (err) {
-    log.warn("Failed to build few-shot augmented prompt", { promptId, error: String(err) });
+    log.warn("Failed to build few-shot augmented prompt", { promptId, tier, error: String(err) });
   }
 
   const result: ModelInvokeResult = await gatewayInvoke({
