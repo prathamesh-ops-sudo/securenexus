@@ -187,6 +187,65 @@ export interface TriageResult {
   threatIntelSources?: string[];
 }
 
+// ─── Relevance Scoring ────────────────────────────────────────────────────────
+
+interface ScoredEnrichmentResult {
+  ioc: string;
+  iocType: string;
+  provider: string;
+  verdict: string;
+  reputationScore: number;
+  tags: string[];
+  /** Relevance score: malicious=3, suspicious=2, clean/unknown=1 */
+  relevanceScore: number;
+}
+
+interface ScoredOsintMatch {
+  ioc: string;
+  iocType: string;
+  feedName: string;
+  threat: string;
+  confidence: number;
+  tags: string[];
+  /** Relevance score based on confidence + threat type */
+  relevanceScore: number;
+}
+
+function scoreEnrichmentResult(r: { verdict: string; reputationScore: number; tags: string[] }): number {
+  let score = 1;
+  if (r.verdict === "malicious") score = 3;
+  else if (r.verdict === "suspicious") score = 2;
+  // Boost for high reputation scores (scale 0-1)
+  score += r.reputationScore >= 0.8 ? 1 : r.reputationScore >= 0.5 ? 0.5 : 0;
+  // Boost for actionable tags
+  const boostTags = ["c2", "botnet", "ransomware", "apt", "exploit", "phishing", "malware"];
+  if (r.tags.some((t) => boostTags.includes(t.toLowerCase()))) score += 0.5;
+  return score;
+}
+
+function scoreOsintMatch(m: { confidence: number; threat: string }): number {
+  let score = 1;
+  // Confidence-based scoring
+  if (m.confidence >= 90) score = 3;
+  else if (m.confidence >= 70) score = 2.5;
+  else if (m.confidence >= 50) score = 2;
+  // Boost for high-severity threat types
+  const highThreat = ["apt", "ransomware", "c2", "exploit", "zero-day"];
+  if (highThreat.some((t) => m.threat.toLowerCase().includes(t))) score += 0.5;
+  return score;
+}
+
+/**
+ * Rough token estimation: ~4 chars per token for English text.
+ * Each enrichment line is roughly 80-150 chars = ~20-40 tokens.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/** Default token budget for threat intel context (30% of a 4096-token window). */
+const DEFAULT_TI_TOKEN_BUDGET = 1228;
+
 export interface ThreatIntelContext {
   enrichmentResults: Array<{
     ioc: string;
@@ -206,6 +265,8 @@ export interface ThreatIntelContext {
   }>;
   summary: string;
   historicalContext?: RAGContext;
+  /** Items that were summarized rather than included in full (low-relevance). */
+  droppedSummary?: string;
 }
 
 export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatIntelContext> {
@@ -280,8 +341,97 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
       log.warn("Failed to check OSINT feeds for threat intel context", { error: String(err) });
     }
 
-    result.enrichmentResults = result.enrichmentResults.slice(0, 20);
-    result.osintMatches = result.osintMatches.slice(0, 20);
+    // ── Ranked context packing ──────────────────────────────────────────────
+    // Score each item by relevance, sort descending, pack highest-score first
+    // up to token budget, then summarize the rest instead of dropping them.
+
+    const scoredEnrichment: ScoredEnrichmentResult[] = result.enrichmentResults.map((r) => ({
+      ...r,
+      relevanceScore: scoreEnrichmentResult(r),
+    }));
+    scoredEnrichment.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    const scoredOsint: ScoredOsintMatch[] = result.osintMatches.map((m) => ({
+      ...m,
+      relevanceScore: scoreOsintMatch(m),
+    }));
+    scoredOsint.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    // Pack into token budget — high-score items first
+    const tokenBudget = DEFAULT_TI_TOKEN_BUDGET;
+    let tokensUsed = 0;
+
+    const packedEnrichment: typeof result.enrichmentResults = [];
+    const droppedEnrichment: typeof result.enrichmentResults = [];
+
+    for (const item of scoredEnrichment) {
+      const line = `- ${item.ioc} (${item.iocType}): ${item.verdict.toUpperCase()} (score: ${item.reputationScore.toFixed(2)}) via ${item.provider}`;
+      const lineTokens = estimateTokens(line);
+      if (tokensUsed + lineTokens <= tokenBudget * 0.6) {
+        // 60% of budget for enrichment
+        packedEnrichment.push(item);
+        tokensUsed += lineTokens;
+      } else {
+        droppedEnrichment.push(item);
+      }
+    }
+
+    const packedOsint: typeof result.osintMatches = [];
+    const droppedOsint: typeof result.osintMatches = [];
+    let osintTokens = 0;
+
+    for (const item of scoredOsint) {
+      const line = `- ${item.ioc} (${item.iocType}): Matched in ${item.feedName} - threat: ${item.threat} (confidence: ${item.confidence})`;
+      const lineTokens = estimateTokens(line);
+      if (osintTokens + lineTokens <= tokenBudget * 0.4) {
+        // 40% of budget for OSINT
+        packedOsint.push(item);
+        osintTokens += lineTokens;
+      } else {
+        droppedOsint.push(item);
+      }
+    }
+
+    result.enrichmentResults = packedEnrichment;
+    result.osintMatches = packedOsint;
+
+    // Summarize dropped items instead of discarding them entirely
+    if (droppedEnrichment.length > 0 || droppedOsint.length > 0) {
+      const summaryParts: string[] = [];
+
+      if (droppedEnrichment.length > 0) {
+        const verdictCounts: Record<string, number> = {};
+        const uniqueIocs = new Set<string>();
+        for (const d of droppedEnrichment) {
+          verdictCounts[d.verdict] = (verdictCounts[d.verdict] || 0) + 1;
+          uniqueIocs.add(d.ioc);
+        }
+        const verdictStr = Object.entries(verdictCounts)
+          .map(([v, c]) => `${c} ${v}`)
+          .join(", ");
+        summaryParts.push(
+          `${droppedEnrichment.length} additional enrichment results (${uniqueIocs.size} unique IOCs: ${verdictStr}) were deprioritized due to lower relevance scores`,
+        );
+      }
+
+      if (droppedOsint.length > 0) {
+        const feeds = new Set(droppedOsint.map((d) => d.feedName));
+        const avgConf = droppedOsint.reduce((sum, d) => sum + d.confidence, 0) / droppedOsint.length;
+        summaryParts.push(
+          `${droppedOsint.length} additional OSINT matches from ${feeds.size} feed(s) (avg confidence: ${avgConf.toFixed(0)}%) were deprioritized`,
+        );
+      }
+
+      result.droppedSummary = summaryParts.join(". ") + ".";
+      log.info("Ranked context packing applied", {
+        enrichmentPacked: packedEnrichment.length,
+        enrichmentDropped: droppedEnrichment.length,
+        osintPacked: packedOsint.length,
+        osintDropped: droppedOsint.length,
+        tokensUsed: tokensUsed + osintTokens,
+        tokenBudget,
+      });
+    }
 
     // Build RAG context from alert data
     try {
@@ -367,8 +517,16 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
     lines.push("");
   }
 
+  // Include summary of deprioritized (low-relevance) items so the LLM knows they exist
+  if (ctx.droppedSummary) {
+    lines.push(
+      `ADDITIONAL LOW-PRIORITY CONTEXT (summarized): ${ctx.droppedSummary} These items had lower relevance scores but may still be worth noting for completeness.`,
+    );
+    lines.push("");
+  }
+
   lines.push(
-    "Use this threat intelligence to inform your analysis. IOCs with high reputation scores or OSINT matches should increase your confidence that this is a genuine threat, not a false positive. Cross-reference these findings with the alert telemetry.",
+    "Use this threat intelligence to inform your analysis. IOCs with high reputation scores or OSINT matches should increase your confidence that this is a genuine threat, not a false positive. Cross-reference these findings with the alert telemetry. Items above are ranked by relevance — malicious verdicts and high-confidence OSINT matches appear first.",
   );
 
   // Append RAG context if available
