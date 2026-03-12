@@ -254,6 +254,8 @@ export function registerUebaRoutes(app: Express): void {
 
         // Analyze user behavior
         for (const [userName, userEvts] of Array.from(userEvents.entries())) {
+          let userAnomaliesCreated = 0;
+
           // Check for off-hours logins (2am-5am)
           const offHoursEvents = userEvts.filter((e: (typeof events)[number]) => {
             if (!e.timestamp) return false;
@@ -276,6 +278,7 @@ export function registerUebaRoutes(app: Express): void {
                 hours: offHoursEvents.map((e: (typeof events)[number]) => e.timestamp),
               },
             });
+            userAnomaliesCreated++;
             anomaliesCreated++;
           }
 
@@ -304,6 +307,7 @@ export function registerUebaRoutes(app: Express): void {
                 })),
               },
             });
+            userAnomaliesCreated++;
             anomaliesCreated++;
           }
 
@@ -334,7 +338,7 @@ export function registerUebaRoutes(app: Express): void {
                 .set({
                   riskScore: newScore,
                   riskLevel: riskLevel(newScore),
-                  anomalyCount: existing.anomalyCount + anomaliesCreated,
+                  anomalyCount: existing.anomalyCount + userAnomaliesCreated,
                   lastAnomalyAt: new Date(),
                   updatedAt: new Date(),
                 })
@@ -347,7 +351,7 @@ export function registerUebaRoutes(app: Express): void {
                 entityName: userName,
                 riskScore: totalScore,
                 riskLevel: riskLevel(totalScore),
-                anomalyCount: anomaliesCreated,
+                anomalyCount: userAnomaliesCreated,
                 lastAnomalyAt: new Date(),
               });
             }
