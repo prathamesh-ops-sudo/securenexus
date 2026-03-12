@@ -6,10 +6,14 @@
  */
 
 import type { Express } from "express";
+import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "../db";
 import { storage } from "../storage";
+import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId } from "../rbac";
 import { sastFindings, secretsExposed, ciGates, codeReviewFindings, securityDebtItems } from "@shared/schema";
 import { eq, and, desc, sql, count, ilike } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { logger } from "../logger";
 import { runSastScan, evaluateCiGate, getSastRules, inferLanguage } from "../sast-engine";
 import type { CiGatePolicy } from "../sast-engine";
@@ -37,46 +41,30 @@ const log = logger.child("developer-security-routes");
 export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── SAST Findings ──────────────────────────────────────────────
 
+  const authChain = [isAuthenticated, resolveOrgContext, requireOrgId];
+
   /** List SAST findings with filters */
-  app.get("/api/developer-security/sast-findings", async (req, res) => {
+  app.get("/api/developer-security/sast-findings", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const { repository, severity, category, status, limit: limitStr } = req.query;
       const limitVal = Math.min(Number(limitStr) || 100, 500);
 
-      let query = db
+      const conditions: SQL[] = [eq(sastFindings.orgId, orgId)];
+      if (repository && typeof repository === "string") conditions.push(eq(sastFindings.repository, repository));
+      if (severity && typeof severity === "string") conditions.push(eq(sastFindings.severity, severity));
+      if (category && typeof category === "string") conditions.push(eq(sastFindings.category, category));
+      if (status && typeof status === "string") conditions.push(eq(sastFindings.status, status));
+
+      const results = await db
         .select()
         .from(sastFindings)
-        .where(eq(sastFindings.orgId, orgId))
+        .where(and(...conditions))
         .orderBy(desc(sastFindings.createdAt))
         .limit(limitVal);
 
-      if (repository && typeof repository === "string") {
-        query = db
-          .select()
-          .from(sastFindings)
-          .where(and(eq(sastFindings.orgId, orgId), eq(sastFindings.repository, repository)))
-          .orderBy(desc(sastFindings.createdAt))
-          .limit(limitVal);
-      }
-
-      const results = await query;
-
-      // Apply in-memory filters for severity/category/status
-      let filtered = results;
-      if (severity && typeof severity === "string") {
-        filtered = filtered.filter((f) => f.severity === severity);
-      }
-      if (category && typeof category === "string") {
-        filtered = filtered.filter((f) => f.category === category);
-      }
-      if (status && typeof status === "string") {
-        filtered = filtered.filter((f) => f.status === status);
-      }
-
-      res.json({ data: filtered, total: filtered.length });
+      res.json({ data: results, total: results.length });
     } catch (err) {
       log.error("Failed to list SAST findings", { error: String(err) });
       res.status(500).json({ message: "Internal server error" });
@@ -84,15 +72,14 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Get a single SAST finding */
-  app.get("/api/developer-security/sast-findings/:id", async (req, res) => {
+  app.get("/api/developer-security/sast-findings/:id", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const [finding] = await db
         .select()
         .from(sastFindings)
-        .where(and(eq(sastFindings.id, req.params.id), eq(sastFindings.orgId, orgId)))
+        .where(and(eq(sastFindings.id, String(req.params.id)), eq(sastFindings.orgId, orgId)))
         .limit(1);
 
       if (!finding) return res.status(404).json({ message: "Finding not found" });
@@ -104,15 +91,14 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Update a SAST finding (mark false positive, assign, etc.) */
-  app.patch("/api/developer-security/sast-findings/:id", async (req, res) => {
+  app.patch("/api/developer-security/sast-findings/:id", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const [existing] = await db
         .select()
         .from(sastFindings)
-        .where(and(eq(sastFindings.id, req.params.id), eq(sastFindings.orgId, orgId)))
+        .where(and(eq(sastFindings.id, String(req.params.id)), eq(sastFindings.orgId, orgId)))
         .limit(1);
 
       if (!existing) return res.status(404).json({ message: "Finding not found" });
@@ -128,7 +114,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
       const [updated] = await db
         .update(sastFindings)
         .set(updates)
-        .where(eq(sastFindings.id, req.params.id))
+        .where(eq(sastFindings.id, String(req.params.id)))
         .returning();
 
       res.json({ data: updated });
@@ -141,33 +127,26 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Secrets Scanning ───────────────────────────────────────────
 
   /** List exposed secrets */
-  app.get("/api/developer-security/secrets", async (req, res) => {
+  app.get("/api/developer-security/secrets", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const { repository, status, secretType, limit: limitStr } = req.query;
       const limitVal = Math.min(Number(limitStr) || 100, 500);
 
+      const conditions: SQL[] = [eq(secretsExposed.orgId, orgId)];
+      if (repository && typeof repository === "string") conditions.push(eq(secretsExposed.repository, repository));
+      if (status && typeof status === "string") conditions.push(eq(secretsExposed.status, status));
+      if (secretType && typeof secretType === "string") conditions.push(eq(secretsExposed.secretType, secretType));
+
       const results = await db
         .select()
         .from(secretsExposed)
-        .where(eq(secretsExposed.orgId, orgId))
+        .where(and(...conditions))
         .orderBy(desc(secretsExposed.createdAt))
         .limit(limitVal);
 
-      let filtered = results;
-      if (repository && typeof repository === "string") {
-        filtered = filtered.filter((s) => s.repository === repository);
-      }
-      if (status && typeof status === "string") {
-        filtered = filtered.filter((s) => s.status === status);
-      }
-      if (secretType && typeof secretType === "string") {
-        filtered = filtered.filter((s) => s.secretType === secretType);
-      }
-
-      res.json({ data: filtered, total: filtered.length });
+      res.json({ data: results, total: results.length });
     } catch (err) {
       log.error("Failed to list secrets", { error: String(err) });
       res.status(500).json({ message: "Internal server error" });
@@ -175,15 +154,14 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Mark a secret as rotated */
-  app.post("/api/developer-security/secrets/:id/rotate", async (req, res) => {
+  app.post("/api/developer-security/secrets/:id/rotate", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const [existing] = await db
         .select()
         .from(secretsExposed)
-        .where(and(eq(secretsExposed.id, req.params.id), eq(secretsExposed.orgId, orgId)))
+        .where(and(eq(secretsExposed.id, String(req.params.id)), eq(secretsExposed.orgId, orgId)))
         .limit(1);
 
       if (!existing) return res.status(404).json({ message: "Secret not found" });
@@ -197,7 +175,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
           status: "rotated",
           updatedAt: new Date(),
         })
-        .where(eq(secretsExposed.id, req.params.id))
+        .where(eq(secretsExposed.id, String(req.params.id)))
         .returning();
 
       res.json({ data: updated });
@@ -208,15 +186,14 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Mark secret as false positive */
-  app.post("/api/developer-security/secrets/:id/false-positive", async (req, res) => {
+  app.post("/api/developer-security/secrets/:id/false-positive", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const [existing] = await db
         .select()
         .from(secretsExposed)
-        .where(and(eq(secretsExposed.id, req.params.id), eq(secretsExposed.orgId, orgId)))
+        .where(and(eq(secretsExposed.id, String(req.params.id)), eq(secretsExposed.orgId, orgId)))
         .limit(1);
 
       if (!existing) return res.status(404).json({ message: "Secret not found" });
@@ -229,7 +206,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
           status: "dismissed",
           updatedAt: new Date(),
         })
-        .where(eq(secretsExposed.id, req.params.id))
+        .where(eq(secretsExposed.id, String(req.params.id)))
         .returning();
 
       res.json({ data: updated });
@@ -242,30 +219,25 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── CI Gates ───────────────────────────────────────────────────
 
   /** List CI gate results */
-  app.get("/api/developer-security/ci-gates", async (req, res) => {
+  app.get("/api/developer-security/ci-gates", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const { repository, status, limit: limitStr } = req.query;
       const limitVal = Math.min(Number(limitStr) || 50, 200);
 
+      const conditions: SQL[] = [eq(ciGates.orgId, orgId)];
+      if (repository && typeof repository === "string") conditions.push(eq(ciGates.repository, repository));
+      if (status && typeof status === "string") conditions.push(eq(ciGates.status, status));
+
       const results = await db
         .select()
         .from(ciGates)
-        .where(eq(ciGates.orgId, orgId))
+        .where(and(...conditions))
         .orderBy(desc(ciGates.createdAt))
         .limit(limitVal);
 
-      let filtered = results;
-      if (repository && typeof repository === "string") {
-        filtered = filtered.filter((g) => g.repository === repository);
-      }
-      if (status && typeof status === "string") {
-        filtered = filtered.filter((g) => g.status === status);
-      }
-
-      res.json({ data: filtered, total: filtered.length });
+      res.json({ data: results, total: results.length });
     } catch (err) {
       log.error("Failed to list CI gates", { error: String(err) });
       res.status(500).json({ message: "Internal server error" });
@@ -275,30 +247,26 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Code Review Findings ───────────────────────────────────────
 
   /** List code review findings */
-  app.get("/api/developer-security/code-reviews", async (req, res) => {
+  app.get("/api/developer-security/code-reviews", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const { repository, pullRequestId, limit: limitStr } = req.query;
       const limitVal = Math.min(Number(limitStr) || 100, 500);
 
+      const conditions: SQL[] = [eq(codeReviewFindings.orgId, orgId)];
+      if (repository && typeof repository === "string") conditions.push(eq(codeReviewFindings.repository, repository));
+      if (pullRequestId && typeof pullRequestId === "string")
+        conditions.push(eq(codeReviewFindings.pullRequestId, pullRequestId));
+
       const results = await db
         .select()
         .from(codeReviewFindings)
-        .where(eq(codeReviewFindings.orgId, orgId))
+        .where(and(...conditions))
         .orderBy(desc(codeReviewFindings.createdAt))
         .limit(limitVal);
 
-      let filtered = results;
-      if (repository && typeof repository === "string") {
-        filtered = filtered.filter((r) => r.repository === repository);
-      }
-      if (pullRequestId && typeof pullRequestId === "string") {
-        filtered = filtered.filter((r) => r.pullRequestId === pullRequestId);
-      }
-
-      res.json({ data: filtered, total: filtered.length });
+      res.json({ data: results, total: results.length });
     } catch (err) {
       log.error("Failed to list code reviews", { error: String(err) });
       res.status(500).json({ message: "Internal server error" });
@@ -308,30 +276,25 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Security Debt ──────────────────────────────────────────────
 
   /** List security debt items */
-  app.get("/api/developer-security/security-debt", async (req, res) => {
+  app.get("/api/developer-security/security-debt", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const { repository, status, limit: limitStr } = req.query;
       const limitVal = Math.min(Number(limitStr) || 100, 500);
 
+      const conditions: SQL[] = [eq(securityDebtItems.orgId, orgId)];
+      if (repository && typeof repository === "string") conditions.push(eq(securityDebtItems.repository, repository));
+      if (status && typeof status === "string") conditions.push(eq(securityDebtItems.status, status));
+
       const results = await db
         .select()
         .from(securityDebtItems)
-        .where(eq(securityDebtItems.orgId, orgId))
+        .where(and(...conditions))
         .orderBy(desc(securityDebtItems.priority))
         .limit(limitVal);
 
-      let filtered = results;
-      if (repository && typeof repository === "string") {
-        filtered = filtered.filter((d) => d.repository === repository);
-      }
-      if (status && typeof status === "string") {
-        filtered = filtered.filter((d) => d.status === status);
-      }
-
-      res.json({ data: filtered, total: filtered.length });
+      res.json({ data: results, total: results.length });
     } catch (err) {
       log.error("Failed to list security debt", { error: String(err) });
       res.status(500).json({ message: "Internal server error" });
@@ -339,15 +302,14 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Update security debt item */
-  app.patch("/api/developer-security/security-debt/:id", async (req, res) => {
+  app.patch("/api/developer-security/security-debt/:id", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const [existing] = await db
         .select()
         .from(securityDebtItems)
-        .where(and(eq(securityDebtItems.id, req.params.id), eq(securityDebtItems.orgId, orgId)))
+        .where(and(eq(securityDebtItems.id, String(req.params.id)), eq(securityDebtItems.orgId, orgId)))
         .limit(1);
 
       if (!existing) return res.status(404).json({ message: "Debt item not found" });
@@ -363,7 +325,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
       const [updated] = await db
         .update(securityDebtItems)
         .set(updates)
-        .where(eq(securityDebtItems.id, req.params.id))
+        .where(eq(securityDebtItems.id, String(req.params.id)))
         .returning();
 
       res.json({ data: updated });
@@ -376,10 +338,9 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Dashboard Stats ────────────────────────────────────────────
 
   /** Get developer security dashboard stats */
-  app.get("/api/developer-security/stats", async (req, res) => {
+  app.get("/api/developer-security/stats", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       // SAST findings by severity
       const allSast = await db
@@ -478,10 +439,9 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Scan Triggers ──────────────────────────────────────────────
 
   /** Trigger a manual SAST scan on a repository */
-  app.post("/api/developer-security/scan", async (req, res) => {
+  app.post("/api/developer-security/scan", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       const { repository, branch, commitSha, files } = req.body;
       if (!repository) return res.status(400).json({ message: "repository is required" });
@@ -671,6 +631,25 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   /** Handle GitHub webhook events */
   app.post("/api/developer-security/webhooks/github", async (req, res) => {
     try {
+      // Verify GitHub webhook signature (X-Hub-Signature-256)
+      const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
+      const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+      if (webhookSecret) {
+        if (!signatureHeader) {
+          return res.status(401).json({ message: "Missing webhook signature" });
+        }
+        const rawBody = (req as any).rawBody;
+        if (!rawBody) {
+          return res.status(400).json({ message: "Missing raw body for signature verification" });
+        }
+        const expectedSig = "sha256=" + createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+        const sigBuffer = Buffer.from(signatureHeader);
+        const expectedBuffer = Buffer.from(expectedSig);
+        if (sigBuffer.length !== expectedBuffer.length || !timingSafeEqual(sigBuffer, expectedBuffer)) {
+          return res.status(401).json({ message: "Invalid webhook signature" });
+        }
+      }
+
       const payload = req.body as GitHubWebhookPayload;
       const event = req.headers["x-github-event"] as string;
 
@@ -704,6 +683,15 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   /** Handle GitLab webhook events */
   app.post("/api/developer-security/webhooks/gitlab", async (req, res) => {
     try {
+      // Verify GitLab webhook token (X-Gitlab-Token)
+      const gitlabTokenHeader = req.headers["x-gitlab-token"] as string | undefined;
+      const gitlabWebhookSecret = process.env.GITLAB_WEBHOOK_SECRET;
+      if (gitlabWebhookSecret) {
+        if (!gitlabTokenHeader || gitlabTokenHeader !== gitlabWebhookSecret) {
+          return res.status(401).json({ message: "Invalid GitLab webhook token" });
+        }
+      }
+
       const payload = req.body as GitLabWebhookPayload;
 
       log.info("GitLab webhook received", { kind: payload.object_kind });
@@ -758,10 +746,9 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Configuration ──────────────────────────────────────────────
 
   /** Get developer security configuration */
-  app.get("/api/developer-security/config", async (req, res) => {
+  app.get("/api/developer-security/config", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
-      if (!orgId) return res.status(401).json({ message: "Unauthorized" });
 
       res.json({
         data: {
