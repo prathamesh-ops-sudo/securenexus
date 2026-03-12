@@ -346,6 +346,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "AI Detection Rules", url: "/ai-detection-rules", icon: Wand2 }],
       },
       {
+        label: "Autonomous SOC",
+        items: [{ title: "Autonomous SOC", url: "/autonomous-soc", icon: Brain }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },
