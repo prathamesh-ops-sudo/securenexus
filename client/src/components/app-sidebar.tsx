@@ -341,6 +341,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Security Chaos Engineering", url: "/chaos-engineering", icon: ZapIcon }],
       },
       {
+        label: "AI Rule Generation",
+        items: [{ title: "AI Detection Rules", url: "/ai-detection-rules", icon: Wand2 }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
