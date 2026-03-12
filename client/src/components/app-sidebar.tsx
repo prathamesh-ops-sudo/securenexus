@@ -78,6 +78,7 @@ import {
   Terminal,
   Factory,
   Smartphone,
+  Palette,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -343,6 +344,13 @@ const navGroups: NavGroup[] = [
       {
         label: "AI Rule Generation",
         items: [{ title: "AI Detection Rules", url: "/ai-detection-rules", icon: Wand2 }],
+      },
+      {
+        label: "MSSP Partner",
+        items: [
+          { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },
+          { title: "Partner Portal", url: "/mssp-partner-portal", icon: Palette },
+        ],
       },
       {
         label: "Compliance & Reporting",

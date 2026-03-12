@@ -9651,3 +9651,245 @@ export type RuleMarketplaceEntry = typeof ruleMarketplace.$inferSelect;
 export type InsertRuleMarketplaceEntry = typeof ruleMarketplace.$inferInsert;
 export type RuleLifecycleEvent = typeof ruleLifecycleEvents.$inferSelect;
 export type InsertRuleLifecycleEvent = typeof ruleLifecycleEvents.$inferInsert;
+
+// ── MSSP White-Label + Partner Portal ──────────────────────────────
+
+export const SLA_PRIORITY_LEVELS = ["critical", "high", "medium", "low"] as const;
+export const SLA_STATUSES = ["active", "paused", "breached", "resolved"] as const;
+export const MSSP_BILLING_STATUSES = ["draft", "sent", "paid", "overdue", "cancelled"] as const;
+
+export const msspWhiteLabelConfigs = pgTable(
+  "mssp_white_label_configs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customLogoUrl: text("custom_logo_url"),
+    customFaviconUrl: text("custom_favicon_url"),
+    primaryColor: text("primary_color").default("#0ea5e9"),
+    secondaryColor: text("secondary_color").default("#6366f1"),
+    accentColor: text("accent_color").default("#10b981"),
+    customDomain: text("custom_domain"),
+    customAppName: text("custom_app_name"),
+    customSupportEmail: text("custom_support_email"),
+    customSupportUrl: text("custom_support_url"),
+    loginPageHtml: text("login_page_html"),
+    emailHeaderHtml: text("email_header_html"),
+    emailFooterHtml: text("email_footer_html"),
+    reportHeaderHtml: text("report_header_html"),
+    reportFooterHtml: text("report_footer_html"),
+    hidePoweredBy: boolean("hide_powered_by").notNull().default(false),
+    customCss: text("custom_css"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_mssp_wl_org").on(table.orgId)],
+);
+
+export const msspClientSlas = pgTable(
+  "mssp_client_slas",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    priority: text("priority").notNull().default("medium"),
+    responseTimeMinutes: integer("response_time_minutes").notNull().default(60),
+    resolutionTimeMinutes: integer("resolution_time_minutes").notNull().default(480),
+    escalationContactEmail: text("escalation_contact_email"),
+    escalationContactPhone: text("escalation_contact_phone"),
+    autoEscalateOnBreach: boolean("auto_escalate_on_breach").notNull().default(true),
+    businessHoursOnly: boolean("business_hours_only").notNull().default(false),
+    businessHoursStart: text("business_hours_start").default("09:00"),
+    businessHoursEnd: text("business_hours_end").default("17:00"),
+    businessTimezone: text("business_timezone").default("UTC"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_sla_parent").on(table.parentOrgId),
+    index("idx_mssp_sla_child").on(table.childOrgId),
+    index("idx_mssp_sla_parent_child").on(table.parentOrgId, table.childOrgId),
+  ],
+);
+
+export const msspSlaBreaches = pgTable(
+  "mssp_sla_breaches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    slaId: varchar("sla_id")
+      .notNull()
+      .references(() => msspClientSlas.id, { onDelete: "cascade" }),
+    parentOrgId: varchar("parent_org_id").notNull(),
+    childOrgId: varchar("child_org_id").notNull(),
+    incidentId: varchar("incident_id"),
+    alertId: varchar("alert_id"),
+    breachType: text("breach_type").notNull().default("response"),
+    targetMinutes: integer("target_minutes").notNull(),
+    actualMinutes: integer("actual_minutes").notNull(),
+    status: text("status").notNull().default("breached"),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"),
+    notes: text("notes"),
+    notifiedAt: timestamp("notified_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_sla_breach_sla").on(table.slaId),
+    index("idx_mssp_sla_breach_parent").on(table.parentOrgId),
+    index("idx_mssp_sla_breach_child").on(table.childOrgId),
+    index("idx_mssp_sla_breach_status").on(table.status),
+  ],
+);
+
+export const msspBillingRecords = pgTable(
+  "mssp_billing_records",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    periodStart: timestamp("period_start").notNull(),
+    periodEnd: timestamp("period_end").notNull(),
+    baseFee: integer("base_fee").notNull().default(0),
+    markupPercent: real("markup_percent").notNull().default(0),
+    alertsIngested: integer("alerts_ingested").notNull().default(0),
+    alertsCost: integer("alerts_cost").notNull().default(0),
+    aiAnalyses: integer("ai_analyses").notNull().default(0),
+    aiCost: integer("ai_cost").notNull().default(0),
+    storageGb: real("storage_gb").notNull().default(0),
+    storageCost: integer("storage_cost").notNull().default(0),
+    userCount: integer("user_count").notNull().default(0),
+    userCost: integer("user_cost").notNull().default(0),
+    subtotal: integer("subtotal").notNull().default(0),
+    markupAmount: integer("markup_amount").notNull().default(0),
+    totalAmount: integer("total_amount").notNull().default(0),
+    currency: text("currency").notNull().default("USD"),
+    status: text("status").notNull().default("draft"),
+    invoiceUrl: text("invoice_url"),
+    paidAt: timestamp("paid_at"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_billing_parent").on(table.parentOrgId),
+    index("idx_mssp_billing_child").on(table.childOrgId),
+    index("idx_mssp_billing_period").on(table.parentOrgId, table.periodStart),
+    index("idx_mssp_billing_status").on(table.status),
+  ],
+);
+
+export const msspClientOnboarding = pgTable(
+  "mssp_client_onboarding",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"),
+    steps: jsonb("steps")
+      .notNull()
+      .default(
+        sql`'[{"key":"org_created","label":"Organization Created","done":true},{"key":"admin_invited","label":"Admin User Invited","done":false},{"key":"connectors_configured","label":"Connectors Configured","done":false},{"key":"sla_defined","label":"SLA Defined","done":false},{"key":"branding_applied","label":"Branding Applied","done":false},{"key":"go_live","label":"Go Live","done":false}]'::jsonb`,
+      ),
+    assignedTo: text("assigned_to"),
+    targetGoLiveDate: timestamp("target_go_live_date"),
+    actualGoLiveDate: timestamp("actual_go_live_date"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_onboarding_parent").on(table.parentOrgId),
+    index("idx_mssp_onboarding_child").on(table.childOrgId),
+    index("idx_mssp_onboarding_status").on(table.status),
+  ],
+);
+
+export const msspWhiteLabelConfigsRelations = relations(msspWhiteLabelConfigs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [msspWhiteLabelConfigs.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const msspClientSlasRelations = relations(msspClientSlas, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspClientSlas.parentOrgId],
+    references: [organizations.id],
+    relationName: "slaParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspClientSlas.childOrgId],
+    references: [organizations.id],
+    relationName: "slaChild",
+  }),
+}));
+
+export const msspSlaBreachesRelations = relations(msspSlaBreaches, ({ one }) => ({
+  sla: one(msspClientSlas, {
+    fields: [msspSlaBreaches.slaId],
+    references: [msspClientSlas.id],
+  }),
+}));
+
+export const msspBillingRecordsRelations = relations(msspBillingRecords, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspBillingRecords.parentOrgId],
+    references: [organizations.id],
+    relationName: "billingParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspBillingRecords.childOrgId],
+    references: [organizations.id],
+    relationName: "billingChild",
+  }),
+}));
+
+export const msspClientOnboardingRelations = relations(msspClientOnboarding, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspClientOnboarding.parentOrgId],
+    references: [organizations.id],
+    relationName: "onboardingParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspClientOnboarding.childOrgId],
+    references: [organizations.id],
+    relationName: "onboardingChild",
+  }),
+}));
+
+export type MsspWhiteLabelConfig = typeof msspWhiteLabelConfigs.$inferSelect;
+export type InsertMsspWhiteLabelConfig = typeof msspWhiteLabelConfigs.$inferInsert;
+export type MsspClientSla = typeof msspClientSlas.$inferSelect;
+export type InsertMsspClientSla = typeof msspClientSlas.$inferInsert;
+export type MsspSlaBreach = typeof msspSlaBreaches.$inferSelect;
+export type InsertMsspSlaBreach = typeof msspSlaBreaches.$inferInsert;
+export type MsspBillingRecord = typeof msspBillingRecords.$inferSelect;
+export type InsertMsspBillingRecord = typeof msspBillingRecords.$inferInsert;
+export type MsspClientOnboardingRecord = typeof msspClientOnboarding.$inferSelect;
+export type InsertMsspClientOnboardingRecord = typeof msspClientOnboarding.$inferInsert;
