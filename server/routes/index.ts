@@ -88,6 +88,7 @@ import { registerAdvancedReportsRoutes } from "./advanced-reports";
 import { registerDataResidencyRoutes } from "./data-residency";
 import { registerMobileSecurityRoutes } from "./mobile-security";
 import { registerApiSecurityRoutes } from "./api-security";
+import { registerRansomwareDefenseRoutes } from "./ransomware-defense";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -180,4 +181,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerDataResidencyRoutes(app);
   registerMobileSecurityRoutes(app);
   registerApiSecurityRoutes(app);
+  registerRansomwareDefenseRoutes(app);
 }

@@ -8593,3 +8593,308 @@ export type ApiFinding = typeof apiFindings.$inferSelect;
 export type InsertApiFinding = typeof apiFindings.$inferInsert;
 export type ApiTrafficBaseline = typeof apiTrafficBaselines.$inferSelect;
 export type InsertApiTrafficBaseline = typeof apiTrafficBaselines.$inferInsert;
+
+// =============================================================================
+// RANSOMWARE DEFENSE SUITE
+// =============================================================================
+
+export const KILL_SWITCH_STATUSES = [
+  "initiated",
+  "in_progress",
+  "completed",
+  "partial_failure",
+  "failed",
+  "rolled_back",
+] as const;
+
+export const CANARY_FILE_STATUSES = ["active", "triggered", "disabled", "deleted"] as const;
+
+export const RANSOMWARE_GROUP_THREAT_LEVELS = ["critical", "high", "medium", "low"] as const;
+
+export const BACKUP_VERIFICATION_STATUSES = ["pending", "in_progress", "passed", "failed", "partial"] as const;
+
+export const TABLETOP_EXERCISE_STATUSES = ["draft", "scheduled", "in_progress", "completed", "cancelled"] as const;
+
+export const RECOVERY_RUNBOOK_STATUSES = ["draft", "generated", "reviewed", "approved", "executed"] as const;
+
+// Kill switch events — one-click isolate all endpoints
+export const ransomwareKillSwitchEvents = pgTable(
+  "ransomware_kill_switch_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    status: text("status").notNull().default("initiated"),
+    triggeredBy: varchar("triggered_by").notNull(),
+    triggeredByName: text("triggered_by_name"),
+    reason: text("reason"),
+    totalSensors: integer("total_sensors").notNull().default(0),
+    isolatedCount: integer("isolated_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    actionIds: jsonb("action_ids"), // array of response action IDs created
+    failedSensors: jsonb("failed_sensors"), // array of {sensorId, error}
+    rollbackAt: timestamp("rollback_at"),
+    rollbackBy: varchar("rollback_by"),
+    completedAt: timestamp("completed_at"),
+    incidentId: varchar("incident_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_kill_switch_org").on(table.orgId),
+    index("idx_kill_switch_status").on(table.orgId, table.status),
+    index("idx_kill_switch_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+// Canary files — fake important files that alert if encrypted
+export const ransomwareCanaryFiles = pgTable(
+  "ransomware_canary_files",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    fileName: text("file_name").notNull(),
+    filePath: text("file_path").notNull(),
+    fileType: text("file_type").notNull(), // docx, xlsx, pdf, pptx, sql, key
+    fileHash: text("file_hash").notNull(), // SHA-256 of the canary file content
+    deployedToHost: text("deployed_to_host"),
+    deployedToSensorId: varchar("deployed_to_sensor_id"),
+    status: text("status").notNull().default("active"),
+    lastCheckedAt: timestamp("last_checked_at"),
+    lastCheckedHash: text("last_checked_hash"),
+    triggeredAt: timestamp("triggered_at"),
+    triggerType: text("trigger_type"), // encrypted, deleted, modified, renamed
+    alertSent: boolean("alert_sent").notNull().default(false),
+    createdBy: varchar("created_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_canary_files_org").on(table.orgId),
+    index("idx_canary_files_status").on(table.orgId, table.status),
+    index("idx_canary_files_host").on(table.orgId, table.deployedToHost),
+  ],
+);
+
+// Ransomware group intelligence profiles
+export const ransomwareGroups = pgTable(
+  "ransomware_groups",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    aliases: jsonb("aliases"), // array of known aliases
+    threatLevel: text("threat_level").notNull().default("high"),
+    isActive: boolean("is_active").notNull().default(true),
+    firstSeen: text("first_seen"),
+    lastActive: text("last_active"),
+    description: text("description"),
+    ttps: jsonb("ttps"), // MITRE ATT&CK TTPs
+    targetIndustries: jsonb("target_industries"), // array of industries
+    targetRegions: jsonb("target_regions"), // array of regions
+    ransomwareVariants: jsonb("ransomware_variants"), // array of {name, type}
+    knownPaymentAddresses: jsonb("known_payment_addresses"), // array of {currency, address}
+    avgRansomDemandUsd: integer("avg_ransom_demand_usd"),
+    decryptorAvailable: boolean("decryptor_available").notNull().default(false),
+    decryptorSource: text("decryptor_source"), // e.g. "No More Ransom", "Emsisoft"
+    negotiationNotes: text("negotiation_notes"),
+    iocIndicators: jsonb("ioc_indicators"), // array of {type, value}
+    referenceUrls: jsonb("reference_urls"), // array of reference URLs
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ransomware_groups_org").on(table.orgId),
+    index("idx_ransomware_groups_threat").on(table.orgId, table.threatLevel),
+    index("idx_ransomware_groups_active").on(table.orgId, table.isActive),
+  ],
+);
+
+// Recovery runbooks — AI-generated step-by-step recovery plans
+export const recoveryRunbooks = pgTable(
+  "recovery_runbooks",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    incidentId: varchar("incident_id"),
+    status: text("status").notNull().default("draft"),
+    scenario: text("scenario").notNull(), // description of what was hit
+    affectedSystems: jsonb("affected_systems"), // array of system names
+    affectedDataTypes: jsonb("affected_data_types"), // array of data classifications
+    ransomwareVariant: text("ransomware_variant"),
+    estimatedDowntimeHours: integer("estimated_downtime_hours"),
+    estimatedRecoveryCostUsd: integer("estimated_recovery_cost_usd"),
+    steps: jsonb("steps"), // array of {order, title, description, responsible, estimatedMinutes, status}
+    priorityActions: jsonb("priority_actions"), // array of immediate actions
+    communicationPlan: jsonb("communication_plan"), // stakeholder notifications
+    legalRequirements: jsonb("legal_requirements"), // regulatory obligations
+    generatedBy: text("generated_by").default("ai"), // "ai" or "manual"
+    reviewedBy: varchar("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_recovery_runbooks_org").on(table.orgId),
+    index("idx_recovery_runbooks_status").on(table.orgId, table.status),
+    index("idx_recovery_runbooks_incident").on(table.incidentId),
+  ],
+);
+
+// Tabletop exercise simulator
+export const tabletopExercises = pgTable(
+  "tabletop_exercises",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("draft"),
+    scenarioType: text("scenario_type").notNull(), // ransomware, data_breach, insider_threat, supply_chain
+    difficulty: text("difficulty").notNull().default("intermediate"), // beginner, intermediate, advanced
+    ransomwareGroup: text("ransomware_group"), // simulated group
+    scenario: jsonb("scenario"), // {background, initialCompromise, escalation, impact, objectives}
+    injects: jsonb("injects"), // array of {order, time, description, expectedResponse, hint}
+    participants: jsonb("participants"), // array of {userId, role, name}
+    findings: jsonb("findings"), // array of {category, description, severity, recommendation}
+    score: integer("score"), // 0-100
+    scheduledAt: timestamp("scheduled_at"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    durationMinutes: integer("duration_minutes"),
+    facilitatedBy: varchar("facilitated_by"),
+    afterActionReport: text("after_action_report"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_tabletop_org").on(table.orgId),
+    index("idx_tabletop_status").on(table.orgId, table.status),
+    index("idx_tabletop_type").on(table.orgId, table.scenarioType),
+    index("idx_tabletop_scheduled").on(table.orgId, table.scheduledAt),
+  ],
+);
+
+// Backup integrity verification
+export const backupVerifications = pgTable(
+  "backup_verifications",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    backupName: text("backup_name").notNull(),
+    backupType: text("backup_type").notNull(), // full, incremental, differential, snapshot
+    backupLocation: text("backup_location").notNull(), // s3://..., nfs://..., etc
+    status: text("status").notNull().default("pending"),
+    integrityCheckResult: text("integrity_check_result"), // passed, failed, corrupted, partial
+    restoreTestResult: text("restore_test_result"), // passed, failed, not_tested
+    backupSizeBytes: integer("backup_size_bytes"),
+    backupCreatedAt: timestamp("backup_created_at"),
+    retentionDays: integer("retention_days"),
+    encryptionStatus: text("encryption_status"), // encrypted, unencrypted, unknown
+    encryptionAlgorithm: text("encryption_algorithm"),
+    lastVerifiedAt: timestamp("last_verified_at"),
+    nextScheduledVerification: timestamp("next_scheduled_verification"),
+    verificationDurationSeconds: integer("verification_duration_seconds"),
+    issues: jsonb("issues"), // array of {type, description, severity}
+    coveredSystems: jsonb("covered_systems"), // array of system names
+    rpoHours: integer("rpo_hours"), // recovery point objective
+    rtoHours: integer("rto_hours"), // recovery time objective
+    verifiedBy: varchar("verified_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_backup_verify_org").on(table.orgId),
+    index("idx_backup_verify_status").on(table.orgId, table.status),
+    index("idx_backup_verify_type").on(table.orgId, table.backupType),
+  ],
+);
+
+// Relations
+export const ransomwareKillSwitchEventsRelations = relations(ransomwareKillSwitchEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ransomwareKillSwitchEvents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ransomwareCanaryFilesRelations = relations(ransomwareCanaryFiles, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ransomwareCanaryFiles.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ransomwareGroupsRelations = relations(ransomwareGroups, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ransomwareGroups.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const recoveryRunbooksRelations = relations(recoveryRunbooks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [recoveryRunbooks.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const tabletopExercisesRelations = relations(tabletopExercises, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [tabletopExercises.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const backupVerificationsRelations = relations(backupVerifications, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [backupVerifications.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type RansomwareKillSwitchEvent = typeof ransomwareKillSwitchEvents.$inferSelect;
+export type InsertRansomwareKillSwitchEvent = typeof ransomwareKillSwitchEvents.$inferInsert;
+export type RansomwareCanaryFile = typeof ransomwareCanaryFiles.$inferSelect;
+export type InsertRansomwareCanaryFile = typeof ransomwareCanaryFiles.$inferInsert;
+export type RansomwareGroup = typeof ransomwareGroups.$inferSelect;
+export type InsertRansomwareGroup = typeof ransomwareGroups.$inferInsert;
+export type RecoveryRunbook = typeof recoveryRunbooks.$inferSelect;
+export type InsertRecoveryRunbook = typeof recoveryRunbooks.$inferInsert;
+export type TabletopExercise = typeof tabletopExercises.$inferSelect;
+export type InsertTabletopExercise = typeof tabletopExercises.$inferInsert;
+export type BackupVerification = typeof backupVerifications.$inferSelect;
+export type InsertBackupVerification = typeof backupVerifications.$inferInsert;
