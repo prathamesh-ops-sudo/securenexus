@@ -53,7 +53,11 @@ async function apiFetch(url: string, options?: RequestInit) {
     ...(csrfToken ? { "x-csrf-token": decodeURIComponent(csrfToken) } : {}),
   };
 
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...((options?.headers as Record<string, string>) || {}), ...headers },
+    credentials: "include",
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
     throw new Error(body.message || res.statusText);

@@ -229,22 +229,22 @@ export function registerCommunityIntelRoutes(app: Express): void {
           const [updated] = await db
             .update(sharedIocs)
             .set({
-              sightingCount: existing.sightingCount + 1,
+              sightingCount: sql`${sharedIocs.sightingCount} + 1`,
               reportingOrgs: reporters,
               industrySectors: sectors,
               lastSeenAt: new Date(),
               updatedAt: new Date(),
-              // Bump confidence with fixed increment per new sighting (not multiplicative)
-              confidence: Math.min(100, existing.confidence + 5),
+              // Bump confidence with fixed increment per new sighting (atomic SQL)
+              confidence: sql`LEAST(100, ${sharedIocs.confidence} + 5)`,
             })
             .where(eq(sharedIocs.id, existing.id))
             .returning();
 
-          // Update consent stats
+          // Update consent stats (atomic increment)
           await db
             .update(sharingConsents)
             .set({
-              contributedIocCount: consent.contributedIocCount + 1,
+              contributedIocCount: sql`${sharingConsents.contributedIocCount} + 1`,
               lastContributedAt: new Date(),
             })
             .where(eq(sharingConsents.orgId, orgId));
@@ -280,11 +280,11 @@ export function registerCommunityIntelRoutes(app: Express): void {
           })
           .returning();
 
-        // Update consent stats
+        // Update consent stats (atomic increment)
         await db
           .update(sharingConsents)
           .set({
-            contributedIocCount: consent.contributedIocCount + 1,
+            contributedIocCount: sql`${sharingConsents.contributedIocCount} + 1`,
             lastContributedAt: new Date(),
           })
           .where(eq(sharingConsents.orgId, orgId));
@@ -759,22 +759,47 @@ export function registerCommunityIntelRoutes(app: Express): void {
           );
 
           if (correlation) {
-            const [campaign] = await db
-              .insert(communityThreatCampaigns)
-              .values({
-                campaignName: correlation.campaignName,
-                threatActorName: correlation.threatActorName,
-                description: `Auto-correlated campaign from ${correlation.iocCount} IOCs shared by ${correlation.affectedOrgCount} organizations. Primary threat actor: ${actorRef}.`,
-                iocIds: iocs.map((i: (typeof recentIocs)[number]) => i.id),
-                iocCount: correlation.iocCount,
-                affectedOrgCount: correlation.affectedOrgCount,
-                severity: correlation.severity,
-                targetSectors: correlation.targetSectors,
-                firstSeenAt: iocs[iocs.length - 1].firstSeenAt,
-                lastSeenAt: iocs[0].lastSeenAt,
-              })
-              .returning();
-            newCampaigns.push(campaign);
+            // Check if campaign for this actor already exists (dedup)
+            const [existingCampaign] = await db
+              .select()
+              .from(communityThreatCampaigns)
+              .where(eq(communityThreatCampaigns.threatActorName, correlation.threatActorName || actorRef))
+              .limit(1);
+
+            if (existingCampaign) {
+              // Update existing campaign instead of creating duplicate
+              const [updatedCampaign] = await db
+                .update(communityThreatCampaigns)
+                .set({
+                  iocIds: iocs.map((i: (typeof recentIocs)[number]) => i.id),
+                  iocCount: correlation.iocCount,
+                  affectedOrgCount: correlation.affectedOrgCount,
+                  severity: correlation.severity,
+                  targetSectors: correlation.targetSectors,
+                  lastSeenAt: iocs[0].lastSeenAt,
+                  updatedAt: new Date(),
+                })
+                .where(eq(communityThreatCampaigns.id, existingCampaign.id))
+                .returning();
+              newCampaigns.push(updatedCampaign);
+            } else {
+              const [campaign] = await db
+                .insert(communityThreatCampaigns)
+                .values({
+                  campaignName: correlation.campaignName,
+                  threatActorName: correlation.threatActorName,
+                  description: `Auto-correlated campaign from ${correlation.iocCount} IOCs shared by ${correlation.affectedOrgCount} organizations. Primary threat actor: ${actorRef}.`,
+                  iocIds: iocs.map((i: (typeof recentIocs)[number]) => i.id),
+                  iocCount: correlation.iocCount,
+                  affectedOrgCount: correlation.affectedOrgCount,
+                  severity: correlation.severity,
+                  targetSectors: correlation.targetSectors,
+                  firstSeenAt: iocs[iocs.length - 1].firstSeenAt,
+                  lastSeenAt: iocs[0].lastSeenAt,
+                })
+                .returning();
+              newCampaigns.push(campaign);
+            }
           }
         }
 
