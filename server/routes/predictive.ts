@@ -33,13 +33,12 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         // Get recent alerts to inform predictions
         const recentAlerts = await storage.getAlerts(orgId);
         const last30Days = recentAlerts.filter((a) => {
-          const createdAt = new Date(a.createdAt);
+          const createdAt = a.createdAt ? new Date(a.createdAt) : new Date(0);
           const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
           return createdAt >= thirtyDaysAgo;
         });
@@ -221,19 +220,18 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const recentAlerts = await storage.getAlerts(orgId);
         const now = new Date();
         const last7Days = recentAlerts.filter((a) => {
-          const createdAt = new Date(a.createdAt);
+          const createdAt = a.createdAt ? new Date(a.createdAt) : new Date(0);
           const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
           return createdAt >= sevenDaysAgo;
         });
 
         const last30Days = recentAlerts.filter((a) => {
-          const createdAt = new Date(a.createdAt);
+          const createdAt = a.createdAt ? new Date(a.createdAt) : new Date(0);
           const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
           return createdAt >= thirtyDaysAgo;
         });
@@ -301,7 +299,7 @@ export function registerPredictiveRoutes(app: Express): void {
 
         // After-hours activity anomaly
         const afterHoursAlerts = last7Days.filter((a) => {
-          const hour = new Date(a.createdAt).getHours();
+          const hour = (a.createdAt ? new Date(a.createdAt) : new Date(0)).getHours();
           return hour < 6 || hour > 20; // Outside 6am-8pm
         });
 
@@ -312,7 +310,7 @@ export function registerPredictiveRoutes(app: Express): void {
             metricName: "after_hours_activity",
             baseline: Math.round(
               (last30Days.filter((a) => {
-                const hour = new Date(a.createdAt).getHours();
+                const hour = (a.createdAt ? new Date(a.createdAt) : new Date(0)).getHours();
                 return hour < 6 || hour > 20;
               }).length /
                 30) *
@@ -388,8 +386,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const alerts = await storage.getAlerts(orgId);
 
@@ -413,7 +410,10 @@ export function registerPredictiveRoutes(app: Express): void {
           if (alert.severity === "critical") assetMap[asset].criticalCount++;
           if (alert.severity === "high") assetMap[asset].highCount++;
           if (alert.category) assetMap[asset].categories.add(alert.category);
-          if (new Date(alert.createdAt) > new Date(assetMap[asset].lastAlertDate)) {
+          if (
+            (alert.createdAt ? new Date(alert.createdAt) : new Date(0)) >
+            (assetMap[asset].lastAlertDate ? new Date(assetMap[asset].lastAlertDate) : new Date(0))
+          ) {
             assetMap[asset].lastAlertDate = alert.createdAt;
           }
         }
@@ -506,8 +506,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const alerts = await storage.getAlerts(orgId);
         const incidents = await storage.getIncidents(orgId);
@@ -689,8 +688,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         // Query persisted forecast quality snapshots from DB
         const snapshots = await storage.getForecastQualitySnapshots(orgId);
@@ -746,8 +744,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         log.info("Recomputing predictive models", { orgId });
 
@@ -757,7 +754,7 @@ export function registerPredictiveRoutes(app: Express): void {
         // Persist quality snapshots during recompute (side-effect belongs here, not on GET)
         const recentAlerts = await storage.getAlerts(orgId);
         const last30Days = recentAlerts.filter((a) => {
-          const createdAt = new Date(a.createdAt);
+          const createdAt = a.createdAt ? new Date(a.createdAt) : new Date(0);
           const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
           return createdAt >= thirtyDaysAgo;
         });
@@ -769,18 +766,14 @@ export function registerPredictiveRoutes(app: Express): void {
           }
         }
 
-        const forecastModules = [
-          "phishing",
-          "malware",
-          "ransomware",
-          "insider_threat",
-          "network_intrusion",
-          "data_exfiltration",
-        ];
+        const forecastModules = ["phishing", "malware", "ransomware", "credential_theft", "ddos", "data_exfiltration"];
         const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
         const existingSnapshots = await storage.getForecastQualitySnapshots(orgId);
         const snapshotsByKey = new Map(
-          existingSnapshots.map((s) => [`${s.module}_${new Date(s.measuredAt).toISOString().slice(0, 10)}`, s]),
+          existingSnapshots.map((s) => [
+            `${s.module}_${(s.measuredAt ? new Date(s.measuredAt) : new Date()).toISOString().slice(0, 10)}`,
+            s,
+          ]),
         );
 
         let snapshotsCreated = 0;
@@ -830,8 +823,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const { id } = req.params;
         const { status } = req.body;
@@ -866,8 +858,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         // Return empty array for now - user can create subscriptions
         return res.json([]);
@@ -890,8 +881,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const { name, metricPrefix, minimumSeverity, minDelta, channel } = req.body;
 
@@ -929,8 +919,7 @@ export function registerPredictiveRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const orgId = req.user?.orgId;
-        if (!orgId) return res.status(403).json({ error: "No organization context" });
+        const orgId = getOrgId(req);
 
         const { id } = req.params;
 

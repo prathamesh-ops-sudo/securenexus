@@ -5,7 +5,7 @@ import { logger } from "../logger";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { users } from "@shared/models/auth";
-import { authenticator } from "otplib";
+import { generateSecret, generateURI, verifySync } from "otplib";
 import QRCode from "qrcode";
 import { encryptSsoSecret, decryptSsoSecret } from "../sso-crypto";
 
@@ -36,13 +36,13 @@ export function registerMfaRoutes(app: Express): void {
       if (!dbUser) return res.status(404).json({ message: "User not found" });
       if (dbUser.mfaEnabled) return res.status(400).json({ message: "MFA is already enabled" });
 
-      const secret = authenticator.generateSecret();
+      const secret = generateSecret();
       const encryptedSecret = encryptSsoSecret(secret);
       await db.update(users).set({ mfaSecret: encryptedSecret }).where(eq(users.id, user.id));
 
       const issuer = "SecureNexus";
       const accountName = dbUser.email || user.id;
-      const otpauthUrl = authenticator.keyuri(accountName, issuer, secret);
+      const otpauthUrl = generateURI({ issuer, label: accountName, secret });
       const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
 
       res.json({ secret, otpauthUrl, qrCodeDataUrl });
@@ -66,11 +66,8 @@ export function registerMfaRoutes(app: Express): void {
       if (!dbUser.mfaSecret) return res.status(400).json({ message: "MFA not set up. Call /api/mfa/setup first." });
 
       const decryptedSecret = decryptSsoSecret(dbUser.mfaSecret);
-      const isValid = authenticator.verify({
-        token,
-        secret: decryptedSecret,
-      });
-      if (!isValid) return res.status(400).json({ message: "Invalid verification code" });
+      const result1 = verifySync({ token, secret: decryptedSecret });
+      if (!result1.valid) return res.status(400).json({ message: "Invalid verification code" });
 
       await db.update(users).set({ mfaEnabled: true, mfaVerifiedAt: new Date() }).where(eq(users.id, user.id));
 
@@ -98,11 +95,8 @@ export function registerMfaRoutes(app: Express): void {
       }
 
       const decryptedSecret = decryptSsoSecret(dbUser.mfaSecret);
-      const isValid = authenticator.verify({
-        token,
-        secret: decryptedSecret,
-      });
-      if (!isValid) return res.status(400).json({ message: "Invalid verification code" });
+      const result2 = verifySync({ token, secret: decryptedSecret });
+      if (!result2.valid) return res.status(400).json({ message: "Invalid verification code" });
 
       await db
         .update(users)
@@ -132,11 +126,8 @@ export function registerMfaRoutes(app: Express): void {
       }
 
       const decryptedSecret = decryptSsoSecret(dbUser.mfaSecret);
-      const isValid = authenticator.verify({
-        token,
-        secret: decryptedSecret,
-      });
-      if (!isValid) return res.status(401).json({ message: "Invalid MFA code" });
+      const result3 = verifySync({ token, secret: decryptedSecret });
+      if (!result3.valid) return res.status(401).json({ message: "Invalid MFA code" });
 
       res.json({ success: true });
     } catch (error) {
