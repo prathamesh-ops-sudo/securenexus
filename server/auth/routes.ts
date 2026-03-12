@@ -107,6 +107,45 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
     const memberships = await storage.getUserMemberships(user.id);
     if (memberships.length > 0) return true;
 
+    // 1. Check pending invitations — join the invited org instead of creating a new one
+    if (user.email) {
+      const pendingInvitations = await storage.getPendingInvitationsByEmail(user.email.toLowerCase()).catch(() => []);
+      const now = new Date();
+      const validInvitation = pendingInvitations.find((inv) => new Date(inv.expiresAt) > now);
+      if (validInvitation) {
+        await storage.createOrgMembership({
+          orgId: validInvitation.orgId,
+          userId: user.id,
+          role: validInvitation.role,
+          status: "active",
+          joinedAt: new Date(),
+        });
+        await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
+        storage
+          .createAuditLog({
+            userId: user.id,
+            userName: user.email,
+            action: "invitation_auto_accepted",
+            resourceType: "membership",
+            resourceId: user.id,
+            details: {
+              orgId: validInvitation.orgId,
+              role: validInvitation.role,
+              invitationId: validInvitation.id,
+            },
+          })
+          .catch(() => {});
+        logger.child("auth").info("User auto-joined org via pending invitation", {
+          userId: user.id,
+          email: user.email,
+          orgId: validInvitation.orgId,
+          role: validInvitation.role,
+        });
+        return true;
+      }
+    }
+
+    // 2. Check domain auto-join
     if (user.email) {
       const emailDomain = user.email.split("@")[1]?.toLowerCase();
       if (emailDomain) {
@@ -152,35 +191,14 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
       }
     }
 
-    const newOrg = await storage.createOrganization({
-      name: `${user.email ? user.email.split("@")[0] : "User"}'s Organization`,
-      slug: `org-${Date.now()}`,
-      contactEmail: user.email || undefined,
-    });
-    await storage.createOrgMembership({
-      orgId: newOrg.id,
-      userId: user.id,
-      role: "owner",
-      status: "active",
-      joinedAt: new Date(),
-    });
-    storage
-      .createAuditLog({
-        userId: user.id,
-        userName: user.email || "unknown",
-        action: "new_org_created_on_signup",
-        resourceType: "organization",
-        resourceId: String(newOrg.id),
-        details: { orgName: newOrg.name, orgSlug: newOrg.slug },
-      })
-      .catch(() => {});
-    logger.child("auth").info("New user created own organization (no domain match)", {
+    // 3. No invitation, no domain match — user must go through onboarding wizard.
+    //    Do NOT auto-create a new org. The frontend /ensure-org endpoint returns
+    //    { needsOnboarding: true } and the onboarding wizard handles org creation.
+    logger.child("auth").info("User has no org membership and no invitation — needs onboarding", {
       userId: user.id,
       email: user.email,
-      orgId: newOrg.id,
-      orgSlug: newOrg.slug,
     });
-    return true;
+    return false;
   } catch (err) {
     logger.child("auth").error("Failed to ensure org membership — user may lack org context", {
       userId: user.id,
