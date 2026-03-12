@@ -85,9 +85,15 @@ async function apiRequest(url: string, options?: RequestInit) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `Request failed: ${res.status}`);
+    const msg = body?.errors?.[0]?.message || body.message || `Request failed: ${res.status}`;
+    throw new Error(msg);
   }
-  return res.json();
+  const json = await res.json();
+  // Unwrap envelope middleware { data, meta, errors } shape
+  if (json && typeof json === "object" && "data" in json && "meta" in json) {
+    return json.data;
+  }
+  return json;
 }
 
 export default function DeceptionPage() {
