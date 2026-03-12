@@ -80,6 +80,7 @@ import { registerRagKnowledgeRoutes } from "./rag-knowledge";
 import { registerSupplyChainRoutes } from "./supply-chain";
 import { registerIdentityGovernanceRoutes } from "./identity-governance";
 import { registerPamRoutes } from "./pam";
+import { registerDeceptionRoutes } from "./deception";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -164,4 +165,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerSupplyChainRoutes(app);
   registerIdentityGovernanceRoutes(app);
   registerPamRoutes(app);
+  registerDeceptionRoutes(app);
 }

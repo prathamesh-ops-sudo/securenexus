@@ -302,6 +302,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Identity Governance", url: "/identity-governance", icon: Shield }],
       },
       {
+        label: "Deception",
+        items: [{ title: "Deception Technology", url: "/deception", icon: Crosshair }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
