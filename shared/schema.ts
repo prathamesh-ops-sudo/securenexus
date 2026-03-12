@@ -9687,7 +9687,7 @@ export const msspWhiteLabelConfigs = pgTable(
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
-  (table) => [index("idx_mssp_wl_org").on(table.orgId)],
+  (table) => [uniqueIndex("idx_mssp_wl_org").on(table.orgId)],
 );
 
 export const msspClientSlas = pgTable(
