@@ -7,11 +7,12 @@ import { config as appConfig } from "./config";
 import { logger } from "./logger";
 import {
   invokeModel as gatewayInvoke,
+  invokeModelStream as gatewayInvokeStream,
   getCircuitBreakerStatus,
   getModelCacheStats,
   clearModelCache,
 } from "./ai/model-gateway";
-import type { ModelInvokeResult } from "./ai/model-gateway";
+import type { ModelInvokeResult, StreamCallbacks } from "./ai/model-gateway";
 import {
   getPrompt,
   recordPromptInvocation,
@@ -116,6 +117,170 @@ async function invokeWithPrompt(
   if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
 
   return { text: result.text, metrics };
+}
+
+/**
+ * Stream an AI invocation via SSE. Sends text chunks as they arrive from the model.
+ * The onChunk callback receives each text delta; onComplete fires when done.
+ */
+export async function invokeWithPromptStream(
+  promptId: string,
+  userMessage: string,
+  tier: InferenceTier,
+  callbacks: StreamCallbacks,
+  orgId?: string,
+  maxTokensOverride?: number,
+): Promise<void> {
+  const prompt = await getPrompt(promptId);
+  if (!prompt) {
+    callbacks.onError(new Error(`Prompt "${promptId}" not found in registry`));
+    return;
+  }
+
+  if (prompt.deprecated) {
+    log.warn("Using deprecated prompt (streaming)", { promptId, version: prompt.version });
+  }
+
+  const modelConfig =
+    tier === "triage"
+      ? {
+          modelId: appConfig.ai.triage.modelId,
+          sagemakerEndpoint: appConfig.ai.triage.sagemakerEndpoint,
+          maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
+          temperature: appConfig.ai.triage.temperature,
+        }
+      : {
+          modelId: appConfig.ai.modelId,
+          sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+          maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
+          temperature: appConfig.ai.temperature,
+        };
+
+  await gatewayInvokeStream(
+    {
+      modelId: modelConfig.modelId,
+      backend: appConfig.ai.backend,
+      systemPrompt: prompt.systemPrompt,
+      userMessage,
+      maxTokens: modelConfig.maxTokens,
+      temperature: modelConfig.temperature,
+      topP: appConfig.ai.topP,
+      sagemakerEndpoint: modelConfig.sagemakerEndpoint,
+      orgId,
+      promptId: prompt.id,
+      promptVersion: prompt.version,
+      tier,
+      skipCache: true, // streaming should always skip cache
+    },
+    {
+      onChunk: callbacks.onChunk,
+      onComplete: (fullText, metrics) => {
+        recordPromptInvocation(prompt.id, prompt.version, {
+          tier,
+          modelId: modelConfig.modelId,
+          latencyMs: metrics.latencyMs,
+          cached: false,
+          orgId,
+        }).catch((err) => log.warn("Failed to record streaming prompt invocation", { error: String(err) }));
+
+        const im: InferenceMetrics = {
+          tier,
+          model: modelConfig.modelId,
+          inputTokensEstimate: metrics.inputTokens,
+          outputTokensEstimate: metrics.outputTokens,
+          latencyMs: metrics.latencyMs,
+          costEstimateUsd: 0,
+          cached: false,
+          promptId: prompt.id,
+          promptVersion: prompt.version,
+        };
+        inferenceLog.push(im);
+        if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
+
+        callbacks.onComplete(fullText, metrics);
+      },
+      onError: callbacks.onError,
+    },
+  );
+}
+
+/**
+ * Stream a narrative generation via SSE. Builds the user message and streams
+ * the AI response chunk-by-chunk.
+ */
+export async function streamNarrative(
+  incident: any,
+  alerts: any[],
+  threatIntelCtx: ThreatIntelContext,
+  callbacks: StreamCallbacks,
+  orgId?: string,
+): Promise<void> {
+  const userMessage = buildNarrativeUserMessage(incident, alerts);
+  const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
+  const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
+  await invokeWithPromptStream("narrative", finalUserMessage, "narrative", callbacks, orgId, 6144);
+}
+
+/**
+ * Stream a deep investigation via SSE.
+ */
+export async function streamDeepInvestigation(
+  incident: any,
+  alerts: any[],
+  threatIntelCtx: ThreatIntelContext | undefined,
+  callbacks: StreamCallbacks,
+  orgId?: string,
+): Promise<void> {
+  const incidentCtx = JSON.stringify(
+    {
+      title: incident.title,
+      summary: incident.summary,
+      severity: incident.severity,
+      status: incident.status,
+      mitreTactics: incident.mitreTactics,
+      mitreTechniques: incident.mitreTechniques,
+      affectedAssets: incident.affectedAssets,
+      createdAt: incident.createdAt,
+    },
+    null,
+    2,
+  );
+
+  const alertTelemetry = JSON.stringify(
+    alerts.map((a) => ({
+      id: a.id,
+      title: a.title,
+      source: a.source,
+      category: a.category,
+      severity: a.severity,
+      description: a.description,
+      sourceIp: a.sourceIp,
+      destIp: a.destIp,
+      hostname: a.hostname,
+      mitreTactic: a.mitreTactic,
+      mitreTechnique: a.mitreTechnique,
+      detectedAt: a.detectedAt,
+    })),
+    null,
+    2,
+  );
+
+  const threatIntelBlock = threatIntelCtx
+    ? formatThreatIntelForPrompt(threatIntelCtx)
+    : "No threat intelligence available for this incident.";
+
+  const userMessage = `Conduct a deep forensic investigation of this incident.
+
+INCIDENT CONTEXT:
+${incidentCtx}
+
+ALERT TELEMETRY (${alerts.length} alerts):
+${alertTelemetry}
+
+THREAT INTELLIGENCE:
+${threatIntelBlock}`;
+
+  await invokeWithPromptStream("deep-investigation", userMessage, "narrative", callbacks, orgId, 8192);
 }
 
 export interface CorrelationResult {

@@ -55,7 +55,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -128,6 +128,96 @@ export default function IncidentDetailPage() {
   const [correctionReason, setCorrectionReason] = useState("");
   const [correctionComment, setCorrectionComment] = useState("");
   const { toast } = useToast();
+
+  // Streaming state
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
+  const streamEndRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Clean up EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  const startNarrativeStream = useCallback(() => {
+    if (!params.id || isStreaming) return;
+
+    setIsStreaming(true);
+    setStreamingText("");
+    setStreamStatus("Connecting...");
+    setNarrativeResult(null);
+
+    const es = new EventSource(`/api/ai/narrative/${params.id}/stream`, { withCredentials: true });
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      if (event.data === "[DONE]") {
+        es.close();
+        eventSourceRef.current = null;
+        setIsStreaming(false);
+        setStreamStatus(null);
+        // Refresh the incident data to get the stored narrative
+        queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id] });
+        toast({
+          title: "AI Narrative Generated",
+          description: "Attack narrative streamed and saved successfully",
+        });
+        return;
+      }
+
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+          case "connected":
+          case "status":
+            setStreamStatus(data.message);
+            break;
+          case "chunk":
+            setStreamingText((prev) => prev + data.text);
+            setStreamStatus(null);
+            // Auto-scroll to bottom of streaming content
+            if (streamEndRef.current) {
+              streamEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+            break;
+          case "done":
+            // handled by [DONE] sentinel
+            break;
+          case "error":
+            es.close();
+            eventSourceRef.current = null;
+            setIsStreaming(false);
+            setStreamStatus(null);
+            toast({
+              title: "AI Narrative Failed",
+              description: data.message || "Streaming failed",
+              variant: "destructive",
+            });
+            break;
+        }
+      } catch {
+        // Non-JSON message, ignore
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      eventSourceRef.current = null;
+      setIsStreaming(false);
+      setStreamStatus(null);
+      toast({
+        title: "AI Stream Disconnected",
+        description: "Connection lost. Please try again.",
+        variant: "destructive",
+      });
+    };
+  }, [params.id, isStreaming, toast]);
 
   function renderNarrativeWithCitations(text: string, alertList?: Alert[]) {
     const parts = text.split(/(\[Alert [^\]]+\])/g);
@@ -277,6 +367,11 @@ export default function IncidentDetailPage() {
       toast({ title: "AI Narrative Failed", description: error.message, variant: "destructive" });
     },
   });
+
+  // Use streaming by default for narrative generation
+  const handleGenerateNarrative = useCallback(() => {
+    startNarrativeStream();
+  }, [startNarrativeStream]);
 
   const currentAssignee = assigneeValue ?? incident?.assignedTo ?? "";
 
@@ -820,16 +915,16 @@ export default function IncidentDetailPage() {
             )}
           </div>
           <Button
-            onClick={() => generateNarrative.mutate()}
-            disabled={generateNarrative.isPending}
+            onClick={handleGenerateNarrative}
+            disabled={isStreaming || generateNarrative.isPending}
             data-testid="button-generate-narrative"
           >
-            {generateNarrative.isPending ? (
+            {isStreaming || generateNarrative.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Brain className="h-4 w-4 mr-2" />
             )}
-            {generateNarrative.isPending ? "Generating..." : "AI Narrative"}
+            {isStreaming ? "Streaming..." : generateNarrative.isPending ? "Generating..." : "AI Narrative"}
           </Button>
         </div>
 
@@ -1086,6 +1181,45 @@ export default function IncidentDetailPage() {
                       </Badge>
                     </div>
                   )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Streaming AI Output */}
+          {(isStreaming || streamingText) && !narrativeResult && (
+            <Card className="border-primary/30 animate-in fade-in-0">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  AI Analysis
+                  {isStreaming && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-normal text-primary/70">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                      </span>
+                      Streaming
+                    </span>
+                  )}
+                </CardTitle>
+                {streamStatus && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {streamStatus}
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="text-sm leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[500px] overflow-y-auto"
+                  data-testid="streaming-ai-output"
+                >
+                  {streamingText}
+                  {isStreaming && (
+                    <span className="inline-block w-2 h-4 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />
+                  )}
+                  <div ref={streamEndRef} />
+                </div>
               </CardContent>
             </Card>
           )}
