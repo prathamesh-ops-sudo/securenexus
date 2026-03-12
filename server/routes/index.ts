@@ -91,6 +91,7 @@ import { registerApiSecurityRoutes } from "./api-security";
 import { registerRansomwareDefenseRoutes } from "./ransomware-defense";
 import { registerCommunityIntelRoutes } from "./community-intel";
 import { registerPostureTrustRoutes } from "./posture-trust";
+import { registerChaosEngineeringRoutes } from "./chaos-engineering";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -186,4 +187,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerRansomwareDefenseRoutes(app);
   registerCommunityIntelRoutes(app);
   registerPostureTrustRoutes(app);
+  registerChaosEngineeringRoutes(app);
 }
