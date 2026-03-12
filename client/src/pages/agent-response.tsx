@@ -195,6 +195,12 @@ export default function AgentResponsePage() {
     },
   });
 
+  // Separate query for pending tab — not affected by All tab's filters
+  const { data: pendingData } = useQuery<ActionsResponse>({
+    queryKey: ["/api/native/response/actions", "pending_approval_tab"],
+    queryFn: () => apiFetch("/api/native/response/actions?status=pending_approval"),
+  });
+
   const { data: actionTypesData } = useQuery<{ actionTypes: ActionTypeRef[] }>({
     queryKey: ["/api/native/response/action-types"],
     queryFn: () => apiFetch("/api/native/response/action-types"),
@@ -280,7 +286,7 @@ export default function AgentResponsePage() {
   });
 
   const stats = actionsData?.stats;
-  const pendingActions = actionsData?.actions?.filter((a) => a.status === "pending_approval") || [];
+  const pendingActions = pendingData?.actions || [];
 
   function handleSubmitAction() {
     const body: Record<string, unknown> = {

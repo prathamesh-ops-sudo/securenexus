@@ -5877,6 +5877,7 @@ export const vulnPackages = pgTable(
     index("idx_vuln_packages_org").on(table.orgId),
     index("idx_vuln_packages_sensor").on(table.sensorId),
     index("idx_vuln_packages_vuln").on(table.orgId, table.isVulnerable),
+    uniqueIndex("idx_vuln_packages_unique").on(table.orgId, table.sensorId, table.packageManager, table.packageName),
   ],
 );
 

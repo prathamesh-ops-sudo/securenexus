@@ -200,7 +200,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         const cveMatches = matchCves(pkg.packageName, pkg.installedVersion, pkg.packageManager);
         const isVulnerable = cveMatches.length > 0;
 
-        // Upsert the package
+        // Upsert the package (update on conflict with unique index)
         const [inserted] = await db
           .insert(vulnPackages)
           .values({
@@ -213,6 +213,16 @@ export function registerVulnScannerRoutes(app: Express): void {
             cveCount: cveMatches.length,
             reportedAt: new Date(),
             updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [vulnPackages.orgId, vulnPackages.sensorId, vulnPackages.packageManager, vulnPackages.packageName],
+            set: {
+              installedVersion: pkg.installedVersion,
+              isVulnerable,
+              cveCount: cveMatches.length,
+              reportedAt: new Date(),
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
