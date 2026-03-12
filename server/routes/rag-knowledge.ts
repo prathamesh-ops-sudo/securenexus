@@ -198,8 +198,9 @@ export function registerRagKnowledgeRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const deleted = await deleteKnowledgeEntry(id);
+        const deleted = await deleteKnowledgeEntry(id, orgId);
         if (!deleted) {
           return res.status(404).json({ message: "Knowledge entry not found" });
         }

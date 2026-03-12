@@ -22,6 +22,7 @@ import { getEntitiesForIncident } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { upsertIncidentEmbedding } from "../ai/vector-search";
 
 function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string } | null {
   const now = new Date();
@@ -179,6 +180,29 @@ export function registerIncidentsRoutes(app: Express): void {
           priority: incident.priority,
         });
         cacheInvalidate("dashboard:");
+
+        // Auto-index incident for RAG vector search (fire-and-forget)
+        if (incident.orgId) {
+          upsertIncidentEmbedding({
+            orgId: incident.orgId,
+            incidentId: incident.id,
+            title: incident.title,
+            summary: incident.summary || "",
+            severity: incident.severity || "medium",
+            mitreTactics: incident.mitreTactics
+              ? Array.isArray(incident.mitreTactics)
+                ? incident.mitreTactics
+                : [incident.mitreTactics]
+              : [],
+            mitreTechniques: incident.mitreTechniques
+              ? Array.isArray(incident.mitreTechniques)
+                ? incident.mitreTechniques
+                : [incident.mitreTechniques]
+              : [],
+            iocs: Array.isArray(incident.iocs) ? (incident.iocs as string[]) : [],
+          }).catch((err) => logger.child("rag").warn("Failed to index incident for RAG", { error: String(err) }));
+        }
+
         res.status(201).json(incident);
       } catch (error) {
         logger.child("routes").error("Error creating incident", { error: String(error) });
@@ -293,6 +317,29 @@ export function registerIncidentsRoutes(app: Express): void {
           severity: incident.severity,
         });
         cacheInvalidate("dashboard:");
+
+        // Auto-index updated incident for RAG vector search (fire-and-forget)
+        if (incident.orgId) {
+          upsertIncidentEmbedding({
+            orgId: incident.orgId,
+            incidentId: incident.id,
+            title: incident.title,
+            summary: incident.summary || "",
+            severity: incident.severity || "medium",
+            mitreTactics: incident.mitreTactics
+              ? Array.isArray(incident.mitreTactics)
+                ? incident.mitreTactics
+                : [incident.mitreTactics]
+              : [],
+            mitreTechniques: incident.mitreTechniques
+              ? Array.isArray(incident.mitreTechniques)
+                ? incident.mitreTechniques
+                : [incident.mitreTechniques]
+              : [],
+            iocs: Array.isArray(incident.iocs) ? (incident.iocs as string[]) : [],
+          }).catch((err) => logger.child("rag").warn("Failed to re-index incident for RAG", { error: String(err) }));
+        }
+
         res.json(incident);
       } catch (error) {
         res.status(500).json({ message: "Failed to update incident" });

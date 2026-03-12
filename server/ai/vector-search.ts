@@ -370,7 +370,15 @@ export async function upsertIncidentEmbedding(incident: {
   );
 }
 
-export async function deleteKnowledgeEntry(id: string): Promise<boolean> {
+export async function deleteKnowledgeEntry(id: string, orgId?: string): Promise<boolean> {
+  // Org-scoped delete: only delete entries belonging to this org (or global entries with no org)
+  if (orgId) {
+    const result = await pool.query(
+      "DELETE FROM rag_knowledge_base WHERE id = $1 AND (org_id = $2::uuid OR org_id IS NULL)",
+      [id, orgId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
   const result = await pool.query("DELETE FROM rag_knowledge_base WHERE id = $1", [id]);
   return (result.rowCount ?? 0) > 0;
 }
