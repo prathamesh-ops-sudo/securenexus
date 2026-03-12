@@ -118,7 +118,7 @@ async function executeScheduledReport(schedule: any) {
             });
             logger.child("report-scheduler").info(`Email delivered for schedule ${schedule.id} to ${target.address}`);
           } catch (emailErr: any) {
-            logger.child("report-scheduler").warn(`Email delivery failed for schedule ${schedule.id}`, {
+            logger.child("report-scheduler").error(`Email delivery failed for schedule ${schedule.id}`, {
               to: target.address,
               error: emailErr.message,
             });
@@ -126,7 +126,10 @@ async function executeScheduledReport(schedule: any) {
         } else {
           logger
             .child("report-scheduler")
-            .info(`Email delivery skipped (non-production) for schedule ${schedule.id} to ${target.address}`);
+            .warn(
+              `Email delivery unavailable for schedule ${schedule.id} to ${target.address} — email service not configured. ` +
+                `Set NODE_ENV=production or NODE_ENV=staging with SES configured to enable email delivery.`,
+            );
         }
       }
     }
