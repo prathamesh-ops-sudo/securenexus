@@ -77,7 +77,26 @@ export function registerStunningDashboardRoutes(app: Express): void {
       securityScore += Math.min(incidentsResolvedToday * 2, 10);
       securityScore = Math.max(0, Math.min(100, securityScore));
 
-      const dailyStreak = 7;
+      // Calculate actual streak from audit logs (login events)
+      // For now, derive from whether user has alerts in consecutive recent days
+      let dailyStreak = 0;
+      const msPerDay = 24 * 60 * 60 * 1000;
+      for (let d = 0; d < 365; d++) {
+        const dayStart = new Date(today.getTime() - d * msPerDay);
+        const dayEnd = new Date(dayStart.getTime() + msPerDay);
+        const hasActivity =
+          alerts.some(
+            (a) => a.createdAt !== null && new Date(a.createdAt) >= dayStart && new Date(a.createdAt) < dayEnd,
+          ) ||
+          incidents.some(
+            (i) => i.updatedAt !== null && new Date(i.updatedAt) >= dayStart && new Date(i.updatedAt) < dayEnd,
+          );
+        if (hasActivity) {
+          dailyStreak++;
+        } else {
+          break;
+        }
+      }
 
       const dailyInsight = generateDailyInsight(securityScore, criticalAlerts, openIncidents);
 
@@ -88,8 +107,10 @@ export function registerStunningDashboardRoutes(app: Express): void {
         streak: dailyStreak,
       });
 
-      const teamRank = Math.floor(Math.random() * 5) + 1;
-      const teamSize = 10;
+      // Team rank is not meaningful without multi-user activity tracking
+      // Return null to signal the frontend to hide the gamification widget
+      const teamRank = null;
+      const teamSize = null;
 
       log.info("Fetched stunning dashboard stats", { orgId, securityScore });
 
@@ -162,7 +183,11 @@ function generateDailyInsight(
     });
   }
 
-  return insights[Math.floor(Math.random() * insights.length)];
+  // Return the most relevant insight (highest priority) instead of random
+  // Priority: warning > neutral > positive
+  const priorityOrder: Record<string, number> = { warning: 0, neutral: 1, positive: 2 };
+  insights.sort((a, b) => (priorityOrder[a.type] ?? 99) - (priorityOrder[b.type] ?? 99));
+  return insights[0];
 }
 
 function calculateAchievements(stats: {

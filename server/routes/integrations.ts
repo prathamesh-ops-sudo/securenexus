@@ -143,14 +143,30 @@ export function registerIntegrationsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const config = await storage.getIntegrationConfig(p(req.params.id));
         if (!config || config.orgId !== orgId) return res.status(404).json({ message: "Integration not found" });
+        // Honest response: we validate config shape but cannot verify actual connectivity
+        // without real integration credentials and network access
+        const configObj = config.config as Record<string, unknown> | null;
+        const hasRequiredFields = configObj && Object.keys(configObj).length > 0;
+        if (!hasRequiredFields) {
+          await storage.updateIntegrationConfig(p(req.params.id), {
+            lastTestedAt: new Date(),
+            lastTestStatus: "failed",
+          } as any);
+          return res.json({
+            success: false,
+            message: `Configuration is empty. Please provide ${config.type} connection details before testing.`,
+            testedAt: new Date().toISOString(),
+          });
+        }
         await storage.updateIntegrationConfig(p(req.params.id), {
           lastTestedAt: new Date(),
-          lastTestStatus: "success",
-          status: "active",
+          lastTestStatus: "config_valid",
         } as any);
         res.json({
           success: true,
-          message: `${config.type} integration test successful (simulated)`,
+          message: `${config.type} configuration validated. Note: Full connectivity test requires a live ${config.type} instance.`,
+          validated: true,
+          connectivityVerified: false,
           testedAt: new Date().toISOString(),
         });
       } catch (error) {
@@ -259,9 +275,22 @@ export function registerIntegrationsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const channel = await storage.getNotificationChannel(p(req.params.id));
         if (!channel || channel.orgId !== orgId) return res.status(404).json({ message: "Channel not found" });
+        // Honest response: we validate config shape but cannot send real notifications
+        // without actual delivery infrastructure (SMTP, Slack webhook, etc.)
+        const channelConfig = channel.config as Record<string, unknown> | null;
+        const hasConfig = channelConfig && Object.keys(channelConfig).length > 0;
+        if (!hasConfig) {
+          return res.json({
+            success: false,
+            message: `No configuration found for ${channel.type} channel "${channel.name}". Please configure delivery settings first.`,
+            sentAt: new Date().toISOString(),
+          });
+        }
         res.json({
           success: true,
-          message: `Test notification sent to ${channel.type} channel "${channel.name}" (simulated)`,
+          message: `${channel.type} channel "${channel.name}" configuration validated. Delivery requires a live ${channel.type} endpoint.`,
+          validated: true,
+          deliveryVerified: false,
           sentAt: new Date().toISOString(),
         });
       } catch (error) {

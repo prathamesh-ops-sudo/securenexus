@@ -58,142 +58,93 @@ export function registerPredictiveRoutes(app: Express): void {
 
         const totalAlerts = last30Days.length || 1;
 
-        // Generate deterministic forecasts based on historical alert patterns
-        const forecasts = [
+        // Generate forecasts purely from observed alert data — no fabricated probabilities
+        const forecastDefs = [
           {
             id: "forecast_phishing",
             attackType: "phishing",
-            probability: Math.min(0.95, (categoryCount["phishing"] || 0) / totalAlerts + 0.3),
-            confidence: Math.min(0.95, 0.5 + totalAlerts / 200),
-            timeframe: "next_7_days",
-            reasoning:
-              "Historical pattern shows consistent phishing attempts. Employee training completion rate at 65%.",
-            indicators: [
-              "Increased email spoofing attempts detected",
-              "Recent credential harvesting campaigns targeting similar organizations",
-              "Social engineering activity spike in industry",
-            ],
-            recommendedActions: [
-              "Increase email security scanning thresholds",
-              "Deploy additional user awareness campaigns",
-              "Enable MFA for all accounts",
-              "Review email gateway rules",
-            ],
+            category: "phishing",
             impactScore: 7.5,
-            likelihoodTrend: "increasing",
-            createdAt: new Date().toISOString(),
+            timeframe: "next_7_days",
           },
           {
             id: "forecast_malware",
             attackType: "malware",
-            probability: Math.min(0.88, (categoryCount["malware"] || 0) / totalAlerts + 0.25),
-            confidence: Math.min(0.9, 0.5 + totalAlerts / 250),
-            timeframe: "next_7_days",
-            reasoning: "Drive-by download attempts detected. Unpatched systems present vulnerabilities.",
-            indicators: [
-              "Web filtering detected suspicious download attempts",
-              "Several endpoints missing critical patches",
-              "Malicious domain activity in threat intel feeds",
-            ],
-            recommendedActions: [
-              "Accelerate patch deployment schedule",
-              "Isolate vulnerable endpoints",
-              "Update antivirus signatures",
-              "Restrict executable downloads",
-            ],
+            category: "malware",
             impactScore: 8.2,
-            likelihoodTrend: "stable",
-            createdAt: new Date().toISOString(),
+            timeframe: "next_7_days",
           },
           {
             id: "forecast_ransomware",
             attackType: "ransomware",
-            probability: Math.min(0.65, (categoryCount["ransomware"] || 0) / totalAlerts + 0.15),
-            confidence: Math.min(0.85, 0.45 + totalAlerts / 300),
-            timeframe: "next_14_days",
-            reasoning: "Ransomware trends in industry. Backup systems require hardening.",
-            indicators: [
-              "Ransomware campaigns targeting similar verticals",
-              "Backup infrastructure has incomplete coverage",
-              "RDP exposure detected on external perimeter",
-            ],
-            recommendedActions: [
-              "Verify backup integrity and test restore procedures",
-              "Disable RDP on external interfaces",
-              "Implement network segmentation",
-              "Deploy ransomware-specific detection rules",
-            ],
+            category: "ransomware",
             impactScore: 9.5,
-            likelihoodTrend: "increasing",
-            createdAt: new Date().toISOString(),
+            timeframe: "next_14_days",
           },
           {
             id: "forecast_credential_theft",
             attackType: "credential_theft",
-            probability: Math.min(0.72, (categoryCount["credential_access"] || 0) / totalAlerts + 0.2),
-            confidence: Math.min(0.88, 0.48 + totalAlerts / 220),
-            timeframe: "next_7_days",
-            reasoning: "Password spray attempts observed. Legacy authentication protocols in use.",
-            indicators: [
-              "Multiple failed login attempts from distributed IPs",
-              "NTLM authentication still enabled",
-              "Privileged accounts without MFA",
-            ],
-            recommendedActions: [
-              "Force password resets for accounts with weak credentials",
-              "Disable legacy auth protocols",
-              "Implement conditional access policies",
-              "Enable advanced threat protection",
-            ],
+            category: "credential_access",
             impactScore: 8.8,
-            likelihoodTrend: "increasing",
-            createdAt: new Date().toISOString(),
+            timeframe: "next_7_days",
           },
-          {
-            id: "forecast_ddos",
-            attackType: "ddos",
-            probability: Math.min(0.5, 0.35 + (categoryCount["ddos"] || 0) / totalAlerts),
-            confidence: Math.min(0.78, 0.4 + totalAlerts / 350),
-            timeframe: "next_30_days",
-            reasoning: "Low baseline but increased DDoS-for-hire activity in underground markets.",
-            indicators: [
-              "Botnet activity increased in region",
-              "Public-facing services without DDoS protection",
-              "Recent geopolitical tensions",
-            ],
-            recommendedActions: [
-              "Enable DDoS protection service",
-              "Review rate limiting policies",
-              "Prepare incident response runbook",
-              "Increase CDN caching",
-            ],
-            impactScore: 7.0,
-            likelihoodTrend: "stable",
-            createdAt: new Date().toISOString(),
-          },
+          { id: "forecast_ddos", attackType: "ddos", category: "ddos", impactScore: 7.0, timeframe: "next_30_days" },
           {
             id: "forecast_data_exfiltration",
             attackType: "data_exfiltration",
-            probability: Math.min(0.58, (categoryCount["data_exfiltration"] || 0) / totalAlerts + 0.18),
-            confidence: Math.min(0.85, 0.44 + totalAlerts / 280),
-            timeframe: "next_14_days",
-            reasoning: "Insider threat risk elevated. DLP coverage gaps identified.",
-            indicators: [
-              "Unusual data access patterns detected",
-              "Cloud storage uploads to personal accounts",
-              "Employee resignation rate increased",
-            ],
-            recommendedActions: [
-              "Enable DLP on all endpoints",
-              "Review access controls for sensitive data",
-              "Implement behavioral analytics",
-              "Audit privileged user activity",
-            ],
+            category: "data_exfiltration",
             impactScore: 9.0,
-            likelihoodTrend: "stable",
-            createdAt: new Date().toISOString(),
+            timeframe: "next_14_days",
           },
         ];
+
+        const forecasts = forecastDefs.map((def) => {
+          const count = categoryCount[def.category] || 0;
+          const ratio = count / totalAlerts;
+          // Probability = purely observed frequency (no inflated base)
+          const probability = Math.min(0.99, ratio);
+          // Confidence scales with sample size — low data = low confidence
+          const confidence = Math.min(0.95, totalAlerts / 100);
+          // Trend: compare last 7 days vs prior 23 days
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          const recentCount = last30Days.filter(
+            (a) => a.category === def.category && (a.createdAt ? new Date(a.createdAt) : new Date(0)) >= sevenDaysAgo,
+          ).length;
+          const olderCount = count - recentCount;
+          const recentRate = recentCount / 7;
+          const olderRate = olderCount / 23;
+          const likelihoodTrend =
+            recentRate > olderRate * 1.3 ? "increasing" : recentRate < olderRate * 0.7 ? "decreasing" : "stable";
+
+          return {
+            id: def.id,
+            attackType: def.attackType,
+            probability,
+            confidence,
+            timeframe: def.timeframe,
+            reasoning:
+              count > 0
+                ? `${count} ${def.category} alerts observed in last 30 days (${(ratio * 100).toFixed(1)}% of total). Trend: ${likelihoodTrend}.`
+                : `No ${def.category} alerts observed in last 30 days. Probability based on zero observations.`,
+            indicators:
+              count > 0
+                ? [
+                    `${count} alerts categorized as ${def.category} in last 30 days`,
+                    `${recentCount} in last 7 days (${likelihoodTrend} trend)`,
+                  ]
+                : [`No ${def.category} activity observed in monitoring window`],
+            recommendedActions: [
+              `Review ${def.category} detection rules`,
+              `Verify coverage for ${def.attackType} attack vectors`,
+            ],
+            impactScore: def.impactScore,
+            likelihoodTrend,
+            observedCount: count,
+            dataSource: "historical_alert_patterns",
+            methodology: "statistical_frequency_analysis",
+            createdAt: new Date().toISOString(),
+          };
+        });
 
         // Sort by probability descending
         forecasts.sort((a, b) => b.probability - a.probability);
