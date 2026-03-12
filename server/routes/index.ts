@@ -81,6 +81,7 @@ import { registerSupplyChainRoutes } from "./supply-chain";
 import { registerIdentityGovernanceRoutes } from "./identity-governance";
 import { registerPamRoutes } from "./pam";
 import { registerDeceptionRoutes } from "./deception";
+import { registerOtSecurityRoutes } from "./ot-security";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -166,4 +167,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerIdentityGovernanceRoutes(app);
   registerPamRoutes(app);
   registerDeceptionRoutes(app);
+  registerOtSecurityRoutes(app);
 }

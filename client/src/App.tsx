@@ -146,6 +146,7 @@ const AgentResponsePage = lazy(() => import("@/pages/agent-response"));
 const SupplyChainPage = lazy(() => import("@/pages/supply-chain"));
 const IdentityGovernancePage = lazy(() => import("@/pages/identity-governance"));
 const DeceptionPage = lazy(() => import("@/pages/deception"));
+const OtSecurityPage = lazy(() => import("@/pages/ot-security"));
 
 function PageSkeleton() {
   return (
@@ -371,6 +372,7 @@ function AuthenticatedApp() {
                     <Route path="/supply-chain" component={SupplyChainPage} />
                     <Route path="/identity-governance" component={IdentityGovernancePage} />
                     <Route path="/deception" component={DeceptionPage} />
+                    <Route path="/ot-security" component={OtSecurityPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

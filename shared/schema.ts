@@ -6979,3 +6979,319 @@ export type HoneypotAsset = typeof honeypotAssets.$inferSelect;
 export type InsertHoneypotAsset = typeof honeypotAssets.$inferInsert;
 export type DeceptionHit = typeof deceptionHits.$inferSelect;
 export type InsertDeceptionHit = typeof deceptionHits.$inferInsert;
+
+// =========================================================================
+// OT/ICS SECURITY
+// =========================================================================
+
+export const OT_ASSET_TYPES = [
+  "plc",
+  "hmi",
+  "scada_server",
+  "rtu",
+  "dcs",
+  "engineering_workstation",
+  "historian",
+  "safety_system",
+  "network_switch",
+  "firewall",
+  "gateway",
+  "sensor",
+  "actuator",
+  "drive",
+  "robot",
+  "meter",
+  "relay",
+  "other",
+] as const;
+
+export const OT_PROTOCOLS = [
+  "modbus_tcp",
+  "modbus_rtu",
+  "dnp3",
+  "opc_ua",
+  "opc_da",
+  "ethernet_ip",
+  "profinet",
+  "bacnet",
+  "iec_61850",
+  "iec_104",
+  "s7comm",
+  "fins",
+  "hart",
+  "mqtt",
+  "coap",
+  "unknown",
+] as const;
+
+export const PURDUE_LEVELS = [
+  "level_0", // Physical process
+  "level_1", // Basic control (PLCs, RTUs)
+  "level_2", // Area supervisory (HMIs, SCADA)
+  "level_3", // Site operations (historians, MES)
+  "level_3_5", // DMZ (firewalls, jump hosts)
+  "level_4", // Enterprise IT (ERP, email)
+  "level_5", // Enterprise network / Internet
+] as const;
+
+export const OT_ANOMALY_TYPES = [
+  "unauthorized_access",
+  "firmware_change",
+  "configuration_change",
+  "ladder_logic_modification",
+  "setpoint_change",
+  "network_scan",
+  "new_device",
+  "protocol_violation",
+  "it_ot_boundary_crossing",
+  "safety_system_bypass",
+  "hmi_anomaly",
+  "denial_of_service",
+  "replay_attack",
+  "man_in_the_middle",
+  "plc_stop_command",
+  "plc_mode_change",
+  "unexpected_write",
+  "process_value_anomaly",
+  "communication_loss",
+  "unknown",
+] as const;
+
+export const OT_ANOMALY_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+
+export const otAssets = pgTable(
+  "ot_assets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    assetType: text("asset_type").notNull(), // from OT_ASSET_TYPES
+    // Network identity
+    ipAddress: text("ip_address"),
+    macAddress: text("mac_address"),
+    hostname: text("hostname"),
+    // Purdue Model placement
+    purdueLevel: text("purdue_level"), // from PURDUE_LEVELS
+    zone: text("zone"), // logical zone name
+    // Device details
+    vendor: text("vendor"),
+    model: text("model"),
+    firmwareVersion: text("firmware_version"),
+    serialNumber: text("serial_number"),
+    hardwareRevision: text("hardware_revision"),
+    // Protocol support
+    protocols: jsonb("protocols"), // array of OT_PROTOCOLS
+    // Location
+    facility: text("facility"),
+    area: text("area"),
+    line: text("line"),
+    // State
+    status: text("status").notNull().default("online"), // online, offline, maintenance, unknown
+    lastSeen: timestamp("last_seen"),
+    firstSeen: timestamp("first_seen"),
+    isManaged: boolean("is_managed").notNull().default(false),
+    isCritical: boolean("is_critical").notNull().default(false),
+    // Safety
+    isSafetySystem: boolean("is_safety_system").notNull().default(false),
+    silRating: text("sil_rating"), // SIL 1-4
+    // Vulnerability tracking
+    cveCount: integer("cve_count").notNull().default(0),
+    highestCvss: real("highest_cvss"),
+    lastVulnScan: timestamp("last_vuln_scan"),
+    // Metadata
+    tags: jsonb("tags"),
+    metadata: jsonb("metadata"),
+    discoveredBy: text("discovered_by"), // passive, manual, sensor
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ot_assets_org").on(table.orgId),
+    index("idx_ot_assets_type").on(table.orgId, table.assetType),
+    index("idx_ot_assets_purdue").on(table.orgId, table.purdueLevel),
+    index("idx_ot_assets_ip").on(table.orgId, table.ipAddress),
+    index("idx_ot_assets_vendor").on(table.orgId, table.vendor),
+    index("idx_ot_assets_status").on(table.orgId, table.status),
+    index("idx_ot_assets_critical").on(table.orgId, table.isCritical),
+  ],
+);
+
+export const otConnections = pgTable(
+  "ot_connections",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sourceAssetId: varchar("source_asset_id").references(() => otAssets.id),
+    destAssetId: varchar("dest_asset_id").references(() => otAssets.id),
+    // Connection details
+    sourceIp: text("source_ip"),
+    destIp: text("dest_ip"),
+    sourcePort: integer("source_port"),
+    destPort: integer("dest_port"),
+    protocol: text("protocol"), // from OT_PROTOCOLS
+    // Purdue levels
+    sourcePurdueLevel: text("source_purdue_level"),
+    destPurdueLevel: text("dest_purdue_level"),
+    // Classification
+    crossesBoundary: boolean("crosses_boundary").notNull().default(false), // IT/OT boundary crossing
+    isAllowed: boolean("is_allowed").default(true),
+    ruleId: text("rule_id"), // firewall rule or policy reference
+    // Traffic stats
+    packetCount: bigint("packet_count", { mode: "number" }).default(0),
+    byteCount: bigint("byte_count", { mode: "number" }).default(0),
+    lastActivity: timestamp("last_activity"),
+    firstSeen: timestamp("first_seen").defaultNow(),
+    // Metadata
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ot_connections_org").on(table.orgId),
+    index("idx_ot_connections_source").on(table.sourceAssetId),
+    index("idx_ot_connections_dest").on(table.destAssetId),
+    index("idx_ot_connections_boundary").on(table.orgId, table.crossesBoundary),
+    index("idx_ot_connections_protocol").on(table.orgId, table.protocol),
+  ],
+);
+
+export const otAnomalies = pgTable(
+  "ot_anomalies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    assetId: varchar("asset_id").references(() => otAssets.id),
+    connectionId: varchar("connection_id").references(() => otConnections.id),
+    // Anomaly classification
+    anomalyType: text("anomaly_type").notNull(), // from OT_ANOMALY_TYPES
+    severity: text("severity").notNull().default("high"), // from OT_ANOMALY_SEVERITIES
+    title: text("title").notNull(),
+    description: text("description"),
+    // ICS context
+    protocol: text("protocol"), // protocol involved
+    functionCode: integer("function_code"), // Modbus function code, DNP3 function, etc.
+    registerAddress: integer("register_address"), // Modbus register, DNP3 point
+    previousValue: text("previous_value"), // before the anomaly
+    newValue: text("new_value"), // after the anomaly
+    // Source attribution
+    sourceIp: text("source_ip"),
+    destIp: text("dest_ip"),
+    sourcePort: integer("source_port"),
+    destPort: integer("dest_port"),
+    // Threat intel
+    icsCertAdvisory: text("ics_cert_advisory"), // related ICS-CERT advisory ID
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"), // ICS ATT&CK technique
+    // Response
+    alertId: varchar("alert_id").references(() => alerts.id),
+    status: text("status").notNull().default("new"), // new, investigating, resolved, false_positive
+    resolvedBy: varchar("resolved_by"),
+    resolvedAt: timestamp("resolved_at"),
+    // Metadata
+    rawPacket: jsonb("raw_packet"), // captured packet data
+    metadata: jsonb("metadata"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ot_anomalies_org").on(table.orgId),
+    index("idx_ot_anomalies_asset").on(table.assetId),
+    index("idx_ot_anomalies_type").on(table.orgId, table.anomalyType),
+    index("idx_ot_anomalies_severity").on(table.orgId, table.severity),
+    index("idx_ot_anomalies_status").on(table.orgId, table.status),
+    index("idx_ot_anomalies_time").on(table.orgId, table.detectedAt),
+  ],
+);
+
+export const industrialProtocolEvents = pgTable(
+  "industrial_protocol_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    assetId: varchar("asset_id").references(() => otAssets.id),
+    // Protocol details
+    protocol: text("protocol").notNull(), // from OT_PROTOCOLS
+    functionCode: integer("function_code"),
+    functionName: text("function_name"), // human-readable function name
+    // Request/response
+    sourceIp: text("source_ip"),
+    destIp: text("dest_ip"),
+    sourcePort: integer("source_port"),
+    destPort: integer("dest_port"),
+    // Payload
+    registerAddress: integer("register_address"),
+    registerCount: integer("register_count"),
+    writeValue: text("write_value"),
+    readValue: text("read_value"),
+    unitId: integer("unit_id"), // Modbus unit ID / DNP3 address
+    // Classification
+    isWrite: boolean("is_write").notNull().default(false),
+    isAnomalous: boolean("is_anomalous").notNull().default(false),
+    anomalyId: varchar("anomaly_id").references(() => otAnomalies.id),
+    // Metadata
+    rawData: jsonb("raw_data"),
+    capturedAt: timestamp("captured_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ipe_org").on(table.orgId),
+    index("idx_ipe_asset").on(table.assetId),
+    index("idx_ipe_protocol").on(table.orgId, table.protocol),
+    index("idx_ipe_write").on(table.orgId, table.isWrite),
+    index("idx_ipe_anomalous").on(table.orgId, table.isAnomalous),
+    index("idx_ipe_time").on(table.orgId, table.capturedAt),
+  ],
+);
+
+// OT/ICS Relations
+export const otAssetsRelations = relations(otAssets, ({ one, many }) => ({
+  organization: one(organizations, { fields: [otAssets.orgId], references: [organizations.id] }),
+  sourceConnections: many(otConnections),
+  anomalies: many(otAnomalies),
+  protocolEvents: many(industrialProtocolEvents),
+}));
+
+export const otConnectionsRelations = relations(otConnections, ({ one }) => ({
+  organization: one(organizations, { fields: [otConnections.orgId], references: [organizations.id] }),
+  sourceAsset: one(otAssets, { fields: [otConnections.sourceAssetId], references: [otAssets.id] }),
+  destAsset: one(otAssets, { fields: [otConnections.destAssetId], references: [otAssets.id] }),
+}));
+
+export const otAnomaliesRelations = relations(otAnomalies, ({ one }) => ({
+  organization: one(organizations, { fields: [otAnomalies.orgId], references: [organizations.id] }),
+  asset: one(otAssets, { fields: [otAnomalies.assetId], references: [otAssets.id] }),
+  connection: one(otConnections, { fields: [otAnomalies.connectionId], references: [otConnections.id] }),
+  alert: one(alerts, { fields: [otAnomalies.alertId], references: [alerts.id] }),
+}));
+
+export const industrialProtocolEventsRelations = relations(industrialProtocolEvents, ({ one }) => ({
+  organization: one(organizations, { fields: [industrialProtocolEvents.orgId], references: [organizations.id] }),
+  asset: one(otAssets, { fields: [industrialProtocolEvents.assetId], references: [otAssets.id] }),
+  anomaly: one(otAnomalies, { fields: [industrialProtocolEvents.anomalyId], references: [otAnomalies.id] }),
+}));
+
+// OT/ICS Types
+export type OtAsset = typeof otAssets.$inferSelect;
+export type InsertOtAsset = typeof otAssets.$inferInsert;
+export type OtConnection = typeof otConnections.$inferSelect;
+export type InsertOtConnection = typeof otConnections.$inferInsert;
+export type OtAnomaly = typeof otAnomalies.$inferSelect;
+export type InsertOtAnomaly = typeof otAnomalies.$inferInsert;
+export type IndustrialProtocolEvent = typeof industrialProtocolEvents.$inferSelect;
+export type InsertIndustrialProtocolEvent = typeof industrialProtocolEvents.$inferInsert;

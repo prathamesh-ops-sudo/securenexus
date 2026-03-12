@@ -76,6 +76,7 @@ import {
   UserCheck,
   Zap as ZapIcon,
   Terminal,
+  Factory,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -304,6 +305,10 @@ const navGroups: NavGroup[] = [
       {
         label: "Deception",
         items: [{ title: "Deception Technology", url: "/deception", icon: Crosshair }],
+      },
+      {
+        label: "OT/ICS Security",
+        items: [{ title: "OT/ICS Security", url: "/ot-security", icon: Factory }],
       },
       {
         label: "Compliance & Reporting",
