@@ -653,7 +653,7 @@ export function registerDataLakeRoutes(app: Express): void {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Export not found" }]);
         }
 
-        if (exportRecord.status !== "ready") {
+        if (exportRecord.status !== "ready" && exportRecord.status !== "downloaded") {
           return replyError(res, 400, [{ code: "NOT_READY", message: `Export status is ${exportRecord.status}` }]);
         }
 
@@ -677,7 +677,7 @@ export function registerDataLakeRoutes(app: Express): void {
         await db
           .update(eDiscoveryExports)
           .set({
-            downloadCount: (exportRecord.downloadCount || 0) + 1,
+            downloadCount: sql`COALESCE(${eDiscoveryExports.downloadCount}, 0) + 1`,
             status: "downloaded",
           })
           .where(and(eq(eDiscoveryExports.id, exportId), eq(eDiscoveryExports.orgId, orgId)));
