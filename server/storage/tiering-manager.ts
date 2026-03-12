@@ -136,6 +136,9 @@ export async function executeTieringJob(
   };
 
   try {
+    // Compute purge date once before the loop — retentionPolicyId is constant per job
+    const purgeEligibleAt = await computePurgeDate(cutoffDate, retentionPolicyId);
+
     let offset = 0;
     let hasMore = true;
     let batchIndex = 0;
@@ -184,7 +187,7 @@ export async function executeTieringJob(
         checksumSha256: checksum,
         tieringJobId: job.id,
         retentionPolicyId: retentionPolicyId || null,
-        purgeEligibleAt: await computePurgeDate(cutoffDate, retentionPolicyId),
+        purgeEligibleAt,
       });
 
       result.recordCount += records.length;
