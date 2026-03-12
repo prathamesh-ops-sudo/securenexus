@@ -253,7 +253,7 @@ async function executeAgentResponseAction(
         targetUserName: config?.userName || config?.targetUserName || (actionType === "disable_user" ? target : null),
         targetDomain: config?.domain || config?.targetDomain || (actionType === "block_domain" ? target : null),
         targetServiceName: config?.serviceName || config?.targetServiceName || null,
-        parameters: config?.parameters || config?.allowedIps ? { allowedIps: config.allowedIps } : null,
+        parameters: config?.parameters || (config?.allowedIps ? { allowedIps: config.allowedIps } : null),
         requestedBy: context.userId || null,
         requestedByName: context.userName || "Autonomous Action",
         reason: config?.reason || `Dispatched by SecureNexus for incident ${context.incidentId || "N/A"}`,
