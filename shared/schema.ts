@@ -8433,3 +8433,163 @@ export type ZtnaPolicy = typeof ztnaPolicies.$inferSelect;
 export type InsertZtnaPolicy = typeof ztnaPolicies.$inferInsert;
 export type RemoteWorkerSession = typeof remoteWorkerSessions.$inferSelect;
 export type InsertRemoteWorkerSession = typeof remoteWorkerSessions.$inferInsert;
+
+// ════════════════════════════════════════════════════════════════════════════
+// API SECURITY
+// ════════════════════════════════════════════════════════════════════════════
+
+export const API_SECURITY_FINDING_TYPES = [
+  "schema_violation",
+  "bola",
+  "bfla",
+  "credential_stuffing",
+  "scraping",
+  "sensitive_data_exposure",
+  "injection",
+  "rate_abuse",
+  "shadow_api",
+  "deprecated_api",
+  "auth_bypass",
+  "mass_assignment",
+  "ssrf",
+  "broken_auth",
+] as const;
+
+export const API_SECURITY_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const API_SECURITY_FINDING_STATUSES = ["open", "acknowledged", "mitigated", "false_positive"] as const;
+export const API_AUTH_TYPES = ["none", "api_key", "bearer", "oauth2", "basic", "mtls", "custom"] as const;
+
+export const apiInventory = pgTable(
+  "api_inventory",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    host: text("host").notNull(),
+    version: text("version"),
+    specSource: text("spec_source"),
+    isShadow: boolean("is_shadow").notNull().default(false),
+    isDeprecated: boolean("is_deprecated").notNull().default(false),
+    authType: text("auth_type").notNull().default("none"),
+    riskScore: integer("risk_score").notNull().default(0),
+    requestCount24h: integer("request_count_24h").notNull().default(0),
+    errorRate24h: real("error_rate_24h").notNull().default(0),
+    avgLatencyMs: real("avg_latency_ms").notNull().default(0),
+    lastSeenAt: timestamp("last_seen_at"),
+    firstSeenAt: timestamp("first_seen_at").defaultNow(),
+    openApiSpec: jsonb("openapi_spec"),
+    tags: jsonb("tags"),
+    sensitiveDataTypes: jsonb("sensitive_data_types"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_inventory_org").on(table.orgId),
+    index("idx_api_inventory_host").on(table.orgId, table.host),
+    index("idx_api_inventory_shadow").on(table.orgId, table.isShadow),
+    index("idx_api_inventory_risk").on(table.orgId, table.riskScore),
+    uniqueIndex("idx_api_inventory_unique").on(table.orgId, table.method, table.path, table.host),
+  ],
+);
+
+export const apiFindings = pgTable(
+  "api_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    apiId: varchar("api_id").references(() => apiInventory.id, { onDelete: "cascade" }),
+    findingType: text("finding_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    title: text("title").notNull(),
+    description: text("description"),
+    endpoint: text("endpoint"),
+    method: text("method"),
+    evidence: jsonb("evidence"),
+    remediation: text("remediation"),
+    cweId: text("cwe_id"),
+    owaspCategory: text("owasp_category"),
+    requestSample: text("request_sample"),
+    responseSample: text("response_sample"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    mitigatedBy: varchar("mitigated_by"),
+    mitigatedAt: timestamp("mitigated_at"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_findings_org").on(table.orgId),
+    index("idx_api_findings_api").on(table.apiId),
+    index("idx_api_findings_type").on(table.orgId, table.findingType),
+    index("idx_api_findings_severity").on(table.orgId, table.severity),
+    index("idx_api_findings_status").on(table.orgId, table.status),
+  ],
+);
+
+export const apiTrafficBaselines = pgTable(
+  "api_traffic_baselines",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    apiId: varchar("api_id")
+      .notNull()
+      .references(() => apiInventory.id, { onDelete: "cascade" }),
+    windowStart: timestamp("window_start").notNull(),
+    windowEnd: timestamp("window_end").notNull(),
+    requestCount: integer("request_count").notNull().default(0),
+    uniqueCallers: integer("unique_callers").notNull().default(0),
+    errorCount: integer("error_count").notNull().default(0),
+    avgLatencyMs: real("avg_latency_ms").notNull().default(0),
+    p95LatencyMs: real("p95_latency_ms").notNull().default(0),
+    p99LatencyMs: real("p99_latency_ms").notNull().default(0),
+    statusCodeDistribution: jsonb("status_code_distribution"),
+    topCallerIps: jsonb("top_caller_ips"),
+    anomalyScore: real("anomaly_score").notNull().default(0),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_baselines_org").on(table.orgId),
+    index("idx_api_baselines_api").on(table.apiId),
+    index("idx_api_baselines_window").on(table.apiId, table.windowStart),
+    index("idx_api_baselines_anomaly").on(table.orgId, table.anomalyScore),
+  ],
+);
+
+export const apiInventoryRelations = relations(apiInventory, ({ one }) => ({
+  organization: one(organizations, { fields: [apiInventory.orgId], references: [organizations.id] }),
+}));
+
+export const apiFindingsRelations = relations(apiFindings, ({ one }) => ({
+  organization: one(organizations, { fields: [apiFindings.orgId], references: [organizations.id] }),
+  api: one(apiInventory, { fields: [apiFindings.apiId], references: [apiInventory.id] }),
+}));
+
+export const apiTrafficBaselinesRelations = relations(apiTrafficBaselines, ({ one }) => ({
+  organization: one(organizations, { fields: [apiTrafficBaselines.orgId], references: [organizations.id] }),
+  api: one(apiInventory, { fields: [apiTrafficBaselines.apiId], references: [apiInventory.id] }),
+}));
+
+export type ApiInventoryEntry = typeof apiInventory.$inferSelect;
+export type InsertApiInventoryEntry = typeof apiInventory.$inferInsert;
+export type ApiFinding = typeof apiFindings.$inferSelect;
+export type InsertApiFinding = typeof apiFindings.$inferInsert;
+export type ApiTrafficBaseline = typeof apiTrafficBaselines.$inferSelect;
+export type InsertApiTrafficBaseline = typeof apiTrafficBaselines.$inferInsert;

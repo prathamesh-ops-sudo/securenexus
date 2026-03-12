@@ -321,6 +321,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Mobile Security", url: "/mobile-security", icon: Smartphone }],
       },
       {
+        label: "API Security",
+        items: [{ title: "API Security", url: "/api-security", icon: Globe }],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
