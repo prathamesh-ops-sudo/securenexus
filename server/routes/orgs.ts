@@ -65,8 +65,8 @@ export function registerOrgsRoutes(app: Express): void {
       if (userEmail) {
         const pendingInvitations = await storage.getPendingInvitationsByEmail(userEmail.toLowerCase()).catch(() => []);
         const now = new Date();
-        const validInvitation = pendingInvitations.find((inv) => !inv.acceptedAt && new Date(inv.expiresAt) > now);
-        if (validInvitation) {
+        const validInvitations = pendingInvitations.filter((inv) => !inv.acceptedAt && new Date(inv.expiresAt) > now);
+        for (const validInvitation of validInvitations) {
           const org = await storage.getOrganization(validInvitation.orgId);
           if (org && !org.deletedAt) {
             const membership = await storage.createOrgMembership({
