@@ -161,6 +161,7 @@ const AiDetectionRulesPage = lazy(() => import("@/pages/ai-detection-rules"));
 const MsspPartnerPortalPage = lazy(() => import("@/pages/mssp-partner-portal"));
 const AutonomousSOCPage = lazy(() => import("@/pages/autonomous-soc"));
 const DeveloperSecurityPage = lazy(() => import("@/pages/developer-security"));
+const TprmPage = lazy(() => import("@/pages/tprm"));
 
 function PageSkeleton() {
   return (
@@ -401,6 +402,7 @@ function AuthenticatedApp() {
                     <Route path="/mssp-partner-portal" component={MsspPartnerPortalPage} />
                     <Route path="/autonomous-soc" component={AutonomousSOCPage} />
                     <Route path="/developer-security" component={DeveloperSecurityPage} />
+                    <Route path="/tprm" component={TprmPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

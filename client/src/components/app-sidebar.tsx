@@ -354,6 +354,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Developer Security", url: "/developer-security", icon: Code2 }],
       },
       {
+        label: "Third-Party Risk",
+        items: [{ title: "TPRM", url: "/tprm", icon: Building2 }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },

@@ -10310,3 +10310,296 @@ export type CodeReviewFinding = typeof codeReviewFindings.$inferSelect;
 export type InsertCodeReviewFinding = typeof codeReviewFindings.$inferInsert;
 export type SecurityDebtItem = typeof securityDebtItems.$inferSelect;
 export type InsertSecurityDebtItem = typeof securityDebtItems.$inferInsert;
+
+// ── Third-Party Risk Management (TPRM) ───────────────────────────
+
+export const VENDOR_RISK_TIERS = ["critical", "high", "medium", "low", "minimal"] as const;
+export const VENDOR_STATUSES = ["active", "under_review", "probation", "offboarded", "pending_onboard"] as const;
+export const VENDOR_CATEGORIES = [
+  "saas",
+  "infrastructure",
+  "payment_processing",
+  "cloud_hosting",
+  "identity_provider",
+  "analytics",
+  "communications",
+  "development_tools",
+  "security",
+  "data_processing",
+  "consulting",
+  "staffing",
+  "hardware",
+  "other",
+] as const;
+export const VENDOR_ASSESSMENT_STATUSES = [
+  "draft",
+  "sent",
+  "in_progress",
+  "completed",
+  "overdue",
+  "cancelled",
+] as const;
+export const QUESTIONNAIRE_TYPES = ["caiq", "sig_lite", "sig_full", "custom", "iso27001", "soc2", "nist"] as const;
+
+export const vendors = pgTable(
+  "vendors",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    domain: text("domain"),
+    website: text("website"),
+    category: text("category").notNull().default("other"),
+    description: text("description"),
+    status: text("status").notNull().default("active"),
+    riskTier: text("risk_tier").notNull().default("medium"),
+    overallRiskScore: integer("overall_risk_score"),
+    securityScore: integer("security_score"),
+    complianceCertifications: text("compliance_certifications").array(),
+    dataAccessLevel: text("data_access_level"),
+    dataTypes: text("data_types").array(),
+    contractStartDate: timestamp("contract_start_date"),
+    contractEndDate: timestamp("contract_end_date"),
+    contractValue: integer("contract_value"),
+    primaryContact: text("primary_contact"),
+    primaryContactEmail: text("primary_contact_email"),
+    securityContact: text("security_contact"),
+    securityContactEmail: text("security_contact_email"),
+    fourthPartyVendors: jsonb("fourth_party_vendors"),
+    reviewCadence: text("review_cadence").notNull().default("annually"),
+    lastReviewDate: timestamp("last_review_date"),
+    nextReviewDate: timestamp("next_review_date"),
+    onboardedBy: text("onboarded_by"),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendors_org").on(table.orgId),
+    index("idx_vendors_status").on(table.orgId, table.status),
+    index("idx_vendors_risk_tier").on(table.orgId, table.riskTier),
+    index("idx_vendors_category").on(table.orgId, table.category),
+    index("idx_vendors_domain").on(table.orgId, table.domain),
+    index("idx_vendors_next_review").on(table.orgId, table.nextReviewDate),
+  ],
+);
+
+export const vendorAssessments = pgTable(
+  "vendor_assessments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    questionnaireType: text("questionnaire_type").notNull().default("custom"),
+    title: text("title").notNull(),
+    status: text("status").notNull().default("draft"),
+    sentAt: timestamp("sent_at"),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    respondentName: text("respondent_name"),
+    respondentEmail: text("respondent_email"),
+    totalQuestions: integer("total_questions").notNull().default(0),
+    answeredQuestions: integer("answered_questions").notNull().default(0),
+    score: integer("score"),
+    maxScore: integer("max_score"),
+    riskRating: text("risk_rating"),
+    findings: jsonb("findings"),
+    responses: jsonb("responses"),
+    attachments: text("attachments").array(),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNotes: text("review_notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_assessments_org").on(table.orgId),
+    index("idx_vendor_assessments_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_assessments_status").on(table.orgId, table.status),
+    index("idx_vendor_assessments_due").on(table.orgId, table.dueDate),
+  ],
+);
+
+export const vendorRisks = pgTable(
+  "vendor_risks",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    source: text("source").notNull().default("manual"),
+    evidence: text("evidence"),
+    remediation: text("remediation"),
+    mitigatedAt: timestamp("mitigated_at"),
+    mitigatedBy: text("mitigated_by"),
+    acceptedAt: timestamp("accepted_at"),
+    acceptedBy: text("accepted_by"),
+    acceptanceReason: text("acceptance_reason"),
+    dueDate: timestamp("due_date"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_risks_org").on(table.orgId),
+    index("idx_vendor_risks_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_risks_severity").on(table.orgId, table.severity),
+    index("idx_vendor_risks_status").on(table.orgId, table.status),
+  ],
+);
+
+export const vendorMonitoring = pgTable(
+  "vendor_monitoring",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    checkType: text("check_type").notNull(),
+    status: text("status").notNull().default("ok"),
+    details: text("details"),
+    previousValue: text("previous_value"),
+    currentValue: text("current_value"),
+    severity: text("severity").notNull().default("info"),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+    acknowledgedBy: text("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    metadata: jsonb("metadata"),
+    checkedAt: timestamp("checked_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_monitoring_org").on(table.orgId),
+    index("idx_vendor_monitoring_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_monitoring_type").on(table.orgId, table.checkType),
+    index("idx_vendor_monitoring_status").on(table.orgId, table.status),
+  ],
+);
+
+export const vendorBreachAlerts = pgTable(
+  "vendor_breach_alerts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    source: text("source").notNull(),
+    sourceUrl: text("source_url"),
+    breachDate: timestamp("breach_date"),
+    impactAssessment: text("impact_assessment"),
+    affectedDataTypes: text("affected_data_types").array(),
+    severity: text("severity").notNull().default("high"),
+    status: text("status").notNull().default("new"),
+    acknowledgedBy: text("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    responseActions: jsonb("response_actions"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_breach_alerts_org").on(table.orgId),
+    index("idx_vendor_breach_alerts_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_breach_alerts_status").on(table.orgId, table.status),
+  ],
+);
+
+export const vendorsRelations = relations(vendors, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [vendors.orgId],
+    references: [organizations.id],
+  }),
+  assessments: many(vendorAssessments),
+  risks: many(vendorRisks),
+  monitoring: many(vendorMonitoring),
+  breachAlerts: many(vendorBreachAlerts),
+}));
+
+export const vendorAssessmentsRelations = relations(vendorAssessments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorAssessments.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorAssessments.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const vendorRisksRelations = relations(vendorRisks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorRisks.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorRisks.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const vendorMonitoringRelations = relations(vendorMonitoring, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorMonitoring.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorMonitoring.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const vendorBreachAlertsRelations = relations(vendorBreachAlerts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorBreachAlerts.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorBreachAlerts.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export type Vendor = typeof vendors.$inferSelect;
+export type InsertVendor = typeof vendors.$inferInsert;
+export type VendorAssessment = typeof vendorAssessments.$inferSelect;
+export type InsertVendorAssessment = typeof vendorAssessments.$inferInsert;
+export type VendorRisk = typeof vendorRisks.$inferSelect;
+export type InsertVendorRisk = typeof vendorRisks.$inferInsert;
+export type VendorMonitoringEntry = typeof vendorMonitoring.$inferSelect;
+export type InsertVendorMonitoringEntry = typeof vendorMonitoring.$inferInsert;
+export type VendorBreachAlert = typeof vendorBreachAlerts.$inferSelect;
+export type InsertVendorBreachAlert = typeof vendorBreachAlerts.$inferInsert;
