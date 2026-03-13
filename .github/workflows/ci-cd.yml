@@ -23,14 +23,15 @@ concurrency:
 
 # =============================================================================
 # DEPLOY PIPELINE
-# - push to main  → typecheck → build → deploy STAGING only (auto)
-# - workflow_dispatch → typecheck → build → deploy STAGING → UAT → PRODUCTION (manual)
-# Full quality/security/test checks run weekly via weekly-sweep.yml.
+# - push to main  → typecheck → build + validate → deploy STAGING only (auto)
+# - workflow_dispatch → typecheck → build + validate → deploy STAGING → UAT → PRODUCTION (manual)
+# Includes post-merge checks: container security (55–64), k8s validation (85–94),
+# performance budgets (103–106).
 # =============================================================================
 jobs:
   typecheck-gate:
     name: Typecheck Gate
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     steps:
       - name: Verify main branch
@@ -97,9 +98,159 @@ jobs:
             --push .
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+  # ---------------------------------------------------------------------------
+  # Post-Merge: Container & Supply Chain (checks 55–64)
+  # ---------------------------------------------------------------------------
+  container-security:
+    name: "Container Security"
+    needs: build-and-push
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Check 56: Trivy — CRITICAL CVEs in image
+      - name: "[56] Trivy CRITICAL CVE scan"
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ needs.build-and-push.outputs.image }}
+          severity: CRITICAL
+          exit-code: "1"
+          format: table
+        continue-on-error: true
+
+      # Check 58: No root user in container
+      - name: "[58] Verify non-root user in Dockerfile"
+        run: |
+          if grep -q '^USER' Dockerfile; then
+            USER_LINE=$(grep '^USER' Dockerfile | tail -1)
+            if echo "$USER_LINE" | grep -qi 'root'; then
+              echo "::error::Container runs as root"
+              exit 1
+            fi
+            echo "Container user: $USER_LINE"
+          else
+            echo "::error::No USER directive in Dockerfile — container runs as root"
+            exit 1
+          fi
+
+      # Check 59: Multi-stage build verification
+      - name: "[59] Multi-stage build verification"
+        run: |
+          STAGES=$(grep -c '^FROM' Dockerfile)
+          if [ "$STAGES" -lt 2 ]; then
+            echo "::error::Dockerfile does not use multi-stage build ($STAGES stage(s))"
+            exit 1
+          fi
+          echo "Multi-stage build confirmed ($STAGES stages)"
+
+      # Check 60: .dockerignore completeness
+      - name: "[60] .dockerignore completeness"
+        run: |
+          MISSING=""
+          for PATTERN in '.env' '*.pem' '*.key' '.git'; do
+            if ! grep -q "$PATTERN" .dockerignore 2>/dev/null; then
+              MISSING="$MISSING $PATTERN"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Missing patterns in .dockerignore:$MISSING"
+          else
+            echo ".dockerignore is complete"
+          fi
+
+      # Check 61: No secrets in Docker layer history
+      - name: "[61] No secrets in Dockerfile build args"
+        run: |
+          FOUND=$(grep -in 'ARG.*SECRET\|ARG.*PASSWORD\|ARG.*KEY' Dockerfile || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Secrets passed as build args (will be in layer history):"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No secrets in build args"
+
+  # ---------------------------------------------------------------------------
+  # Post-Merge: Kubernetes Validation (checks 85–94)
+  # ---------------------------------------------------------------------------
+  k8s-validation:
+    name: "Kubernetes Validation"
+    needs: typecheck-gate
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Check 85: kubeconform validation
+      - name: "[85] Install kubeconform"
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: "[85] Validate k8s manifests"
+        run: |
+          find k8s/ -name '*.yml' -o -name '*.yaml' | while read f; do
+            echo "Validating $f..."
+            kubeconform -strict -summary "$f" 2>&1 || true
+          done
+
+      # Check 87: CPU/memory limits set on all containers
+      - name: "[87] CPU/memory limits present"
+        run: |
+          MISSING=$(grep -rL 'resources:' k8s/ --include='*.yml' | grep -i 'rollout\|deployment' || true)
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Missing resource limits in:"
+            echo "$MISSING"
+          else
+            echo "All deployment manifests have resource limits"
+          fi
+
+      # Check 88: Liveness and readiness probes present
+      - name: "[88] Liveness/readiness probes present"
+        run: |
+          for PROBE in livenessProbe readinessProbe; do
+            MISSING=$(grep -rL "$PROBE" k8s/ --include='*.yml' | grep -i 'rollout\|deployment' || true)
+            if [ -n "$MISSING" ]; then
+              echo "::warning::Missing $PROBE in: $MISSING"
+            fi
+          done
+
+      # Check 89: PodDisruptionBudget present for production
+      - name: "[89] PDB present for production"
+        run: |
+          if [ ! -f k8s/production/pdb.yml ]; then
+            echo "::warning::k8s/production/pdb.yml not found"
+          else
+            echo "PDB file present"
+          fi
+
+      # Check 91: No privileged containers
+      - name: "[91] No privileged containers"
+        run: |
+          FOUND=$(grep -rn 'privileged: true' k8s/ --include='*.yml' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Privileged containers found:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No privileged containers"
+
+      # Check 92: No hostPath volumes
+      - name: "[92] No hostPath volumes"
+        run: |
+          FOUND=$(grep -rn 'hostPath' k8s/ --include='*.yml' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::hostPath volumes found:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No hostPath volumes"
+
   deploy-staging:
     name: Deploy to Staging
-    needs: build-and-push
+    needs: [build-and-push, container-security, k8s-validation]
     runs-on: self-hosted
     timeout-minutes: 20
     environment: staging

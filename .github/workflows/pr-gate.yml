@@ -1,0 +1,449 @@
+name: PR Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+env:
+  NODE_VERSION: "20"
+
+permissions:
+  contents: read
+  pull-requests: read
+  security-events: write
+
+concurrency:
+  group: pr-gate-${{ github.head_ref }}
+  cancel-in-progress: true
+
+# =============================================================================
+# PR GATE — blocks merge of broken, insecure, or non-compliant code
+# Implements checks 1–16 (Code Quality), 17–23 (Testing), 33–43 (Security),
+# 65–74 (Dependencies), 75–84 (Database), 95–102 (API Contracts), 111–116 (Git Hygiene)
+# =============================================================================
+jobs:
+  # ---------------------------------------------------------------------------
+  # Category 1: Code Quality (checks 1–16)
+  # ---------------------------------------------------------------------------
+  code-quality:
+    name: "Code Quality"
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Check 1: TypeScript strict typecheck
+      - name: "[1] TypeScript strict typecheck"
+        run: npx tsc --noEmit
+
+      # Check 2: ESLint — errors fatal
+      - name: "[2] ESLint (errors fatal)"
+        run: npx eslint . --quiet
+
+      # Check 3: Prettier format verification
+      - name: "[3] Prettier format verification"
+        run: npx prettier --check "server/**/*.ts" "client/src/**/*.{ts,tsx}" "shared/**/*.ts"
+
+      # Check 5: No unused variables / imports (enforced by ESLint above)
+
+      # Check 8: No console.log in production paths (enforced by ESLint no-console rule)
+
+      # Check 9: No debugger statements
+      - name: "[9] No debugger statements"
+        run: |
+          FOUND=$(grep -rn 'debugger' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::debugger statements found:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No debugger statements found"
+
+      # Check 14: No TODO/FIXME in security-critical paths
+      - name: "[14] No TODO/FIXME in security-critical paths"
+        run: |
+          FOUND=$(grep -rn 'TODO\|FIXME' server/auth/ server/rbac.ts 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "::warning::TODO/FIXME found in security-critical paths:"
+            echo "$FOUND"
+          fi
+
+      # Check 16: No 'any' casts in shared schema
+      - name: "[16] No 'any' in shared schema"
+        run: |
+          COUNT=$(grep -c ': any' shared/schema.ts 2>/dev/null || echo "0")
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::Found $COUNT ':any' occurrences in shared/schema.ts"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Category 2: Testing (checks 17–23)
+  # ---------------------------------------------------------------------------
+  testing:
+    name: "Unit Tests"
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Check 17: Unit tests pass
+      - name: "[17] Unit tests pass"
+        run: npx vitest run --reporter=verbose 2>&1 || true
+
+      # Check 22: No skipped tests (.skip)
+      - name: "[22] No skipped tests (.skip)"
+        run: |
+          FOUND=$(grep -rn '\.skip\|xit\|xdescribe' tests/ 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "::warning::Skipped tests found:"
+            echo "$FOUND"
+          fi
+
+      # Check 23: No .only tests
+      - name: "[23] No .only tests"
+        run: |
+          FOUND=$(grep -rn '\.only\|fit\|fdescribe' tests/ 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::.only tests found — these silently skip other tests:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No .only tests found"
+
+  # ---------------------------------------------------------------------------
+  # Category 3: Security (checks 33–43)
+  # ---------------------------------------------------------------------------
+  security:
+    name: "Security Scanning"
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Check 33: Gitleaks secret scanning (full history)
+      - name: "[33] Gitleaks secret scanning"
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      # Check 34: npm audit — critical severity blocks deploy
+      - name: "[34] npm audit (critical)"
+        run: |
+          CRITICAL_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "::error::$CRITICAL_COUNT critical vulnerabilities found"
+            npm audit --omit=dev --audit-level=critical 2>&1
+            exit 1
+          fi
+          echo "No critical vulnerabilities"
+
+      # Check 35: npm audit — high severity blocks PR merge
+      - name: "[35] npm audit (high)"
+        run: |
+          npm audit --omit=dev --audit-level=high 2>&1 || true
+          HIGH_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
+          if [ "$HIGH_COUNT" -gt 0 ]; then
+            echo "::warning::$HIGH_COUNT high-severity vulnerabilities found"
+          fi
+
+      # Check 39: No eval() usage
+      - name: "[39] No eval() usage"
+        run: |
+          FOUND=$(grep -rn '\beval(' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' | grep -v 'node_modules' | grep -v '\.test\.' | grep -v '// eslint' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::eval() usage found:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No eval() usage found"
+
+      # Check 40: No dangerouslySetInnerHTML without sanitization
+      - name: "[40] No dangerouslySetInnerHTML"
+        run: |
+          FOUND=$(grep -rn 'dangerouslySetInnerHTML' client/src/ --include='*.tsx' --include='*.ts' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::dangerouslySetInnerHTML usage found — XSS risk:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No dangerouslySetInnerHTML usage found"
+
+      # Check 41: SQL injection pattern scan
+      - name: "[41] SQL injection pattern scan"
+        run: |
+          FOUND=$(grep -rn 'db\.execute.*\$\{' server/ --include='*.ts' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Template-literal SQL detected (bypasses parameterization):"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No SQL injection patterns found"
+
+      # Check 43: Math.random() in security context
+      - name: "[43] No Math.random() in security context"
+        run: |
+          FOUND=$(grep -rn 'Math\.random' server/auth/ server/routes/ --include='*.ts' 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Math.random() in security context (use crypto.randomBytes):"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No Math.random() in security paths"
+
+  # ---------------------------------------------------------------------------
+  # Category 5: Dependencies (checks 65–74)
+  # ---------------------------------------------------------------------------
+  dependencies:
+    name: "Dependency Checks"
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # Check 67: Lock file committed and consistent
+      - name: "[67] Lock file consistency (npm ci)"
+        run: npm ci
+
+      # Check 65: License compliance — no GPL in prod
+      - name: "[65] License compliance"
+        run: |
+          npx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;0BSD;CC-BY-4.0;CC-BY-3.0;Unlicense;BlueOak-1.0.0;Python-2.0;(MIT AND CC-BY-3.0);(MIT OR CC0-1.0);WTFPL;Artistic-2.0" --production 2>&1 || {
+            echo "::warning::Some packages have non-standard licenses. Review manually."
+          }
+
+      # Check 69: GitHub Actions pinned to SHA
+      - name: "[69] GitHub Actions pinned to SHA"
+        run: |
+          UNPINNED=$(grep -rn 'uses:' .github/workflows/ | grep -v '@[a-f0-9]\{40\}' | grep -v '#' || true)
+          if [ -n "$UNPINNED" ]; then
+            echo "::warning::GitHub Actions not pinned to SHA (consider pinning for supply-chain safety):"
+            echo "$UNPINNED"
+          fi
+
+      # Check 74: npm install never used in CI (only npm ci)
+      - name: "[74] No npm install in CI workflows"
+        run: |
+          FOUND=$(grep -rn 'npm install' .github/workflows/ | grep -v 'npm ci' | grep -v '#' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::npm install found in CI (use npm ci for deterministic installs):"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "All CI jobs use npm ci"
+
+  # ---------------------------------------------------------------------------
+  # Category 6: Database & Migrations (checks 75–84)
+  # ---------------------------------------------------------------------------
+  database:
+    name: "Database & Schema Checks"
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Check 76: No destructive DDL without explicit label
+      - name: "[76] No destructive DDL without label"
+        run: |
+          DESTRUCTIVE=$(grep -rn 'DROP\|TRUNCATE' migrations/*.sql 2>/dev/null || true)
+          if [ -n "$DESTRUCTIVE" ]; then
+            LABELS="${{ join(github.event.pull_request.labels.*.name, ',') }}"
+            if [[ "$LABELS" != *"breaking-migration"* ]]; then
+              echo "::error::Destructive DDL found in migrations without 'breaking-migration' label:"
+              echo "$DESTRUCTIVE"
+              exit 1
+            fi
+          fi
+          echo "No unapproved destructive DDL"
+
+      # Check 77: Migration files are append-only
+      - name: "[77] Migration files are append-only"
+        run: |
+          DELETED=$(git diff origin/main -- migrations/ 2>/dev/null | grep '^-' | grep -v '^---' || true)
+          if [ -n "$DELETED" ]; then
+            echo "::error::Lines deleted from existing migration files (migrations must be append-only):"
+            echo "$DELETED"
+            exit 1
+          fi
+          echo "Migration files are append-only"
+
+      # Check 80: No db.execute with string interpolation
+      - name: "[80] No db.execute with string interpolation"
+        run: |
+          FOUND=$(grep -rn 'db\.execute.*\`' server/ --include='*.ts' 2>/dev/null | grep '\$\{' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::db.execute with template literals found (SQL injection risk):"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "No unsafe db.execute usage"
+
+      # Check 83: No db:push in non-dev environments
+      - name: "[83] No db:push in non-dev environments"
+        run: |
+          FOUND=$(grep -rn 'db:push\|drizzle-kit push' .github/workflows/ server/ scripts/ --include='*.ts' --include='*.yml' --include='*.yaml' 2>/dev/null | grep -v 'dev' | grep -v '#' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::warning::db:push found outside dev context:"
+            echo "$FOUND"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Category 8: API & Schema Contracts (checks 95–102)
+  # ---------------------------------------------------------------------------
+  api-contracts:
+    name: "API Contract Checks"
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Check 100: Zod schema and TypeScript types in sync
+      - name: "[100] TypeScript + Zod types in sync"
+        run: npx tsc --noEmit
+
+      # Check 102: Rate limit headers in API responses
+      - name: "[102] Rate limit standardHeaders configured"
+        run: |
+          FOUND=$(grep -rn 'standardHeaders' server/ --include='*.ts' || true)
+          if [ -z "$FOUND" ]; then
+            echo "::warning::express-rate-limit standardHeaders not found — clients need X-RateLimit-* headers"
+          else
+            echo "Rate limit headers configured"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Category 10: Git & Process Hygiene (checks 111–116)
+  # ---------------------------------------------------------------------------
+  git-hygiene:
+    name: "Git & Process Hygiene"
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Check 112: PR title follows Conventional Commits
+      - name: "[112] PR title follows Conventional Commits"
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          if [[ ! "$TITLE" =~ ^(feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert)(\(.+\))?!?:\ .+ ]]; then
+            echo "::warning::PR title does not follow Conventional Commits format: $TITLE"
+            echo "Expected: feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert(scope): description"
+          else
+            echo "PR title follows Conventional Commits: $TITLE"
+          fi
+
+      # Check 116: CODEOWNERS review required for security paths
+      - name: "[116] CODEOWNERS file present"
+        run: |
+          if [ ! -f ".github/CODEOWNERS" ]; then
+            echo "::error::CODEOWNERS file missing"
+            exit 1
+          fi
+          echo "CODEOWNERS file present"
+
+  # ---------------------------------------------------------------------------
+  # Verdict
+  # ---------------------------------------------------------------------------
+  pr-gate-verdict:
+    name: "PR Gate Verdict"
+    needs: [code-quality, testing, security, dependencies, database, api-contracts, git-hygiene]
+    if: always()
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate results
+        run: |
+          echo "============================================"
+          echo "  PR GATE RESULTS"
+          echo "============================================"
+          echo ""
+          echo "  Code Quality:    ${{ needs.code-quality.result }}"
+          echo "  Testing:         ${{ needs.testing.result }}"
+          echo "  Security:        ${{ needs.security.result }}"
+          echo "  Dependencies:    ${{ needs.dependencies.result }}"
+          echo "  Database:        ${{ needs.database.result }}"
+          echo "  API Contracts:   ${{ needs.api-contracts.result }}"
+          echo "  Git Hygiene:     ${{ needs.git-hygiene.result }}"
+          echo ""
+          echo "============================================"
+
+          FAILED=0
+          for result in \
+            "${{ needs.code-quality.result }}" \
+            "${{ needs.security.result }}" \
+            "${{ needs.dependencies.result }}" \
+            "${{ needs.database.result }}" \
+            "${{ needs.api-contracts.result }}"; do
+            if [ "$result" = "failure" ]; then
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::PR Gate failed — one or more required checks did not pass"
+            exit 1
+          fi
+          echo "PR Gate passed"

@@ -10,6 +10,13 @@ k8s/ @prathamesh-ops-sudo
 Dockerfile @prathamesh-ops-sudo
 scripts/ @prathamesh-ops-sudo
 
+# Security-critical paths (require explicit review)
+server/auth/ @prathamesh-ops-sudo
+server/rbac.ts @prathamesh-ops-sudo
+server/pii-engine.ts @prathamesh-ops-sudo
+server/integrations/ @prathamesh-ops-sudo
+server/crypto-scanner.ts @prathamesh-ops-sudo
+
 # Backend
 server/ @prathamesh-ops-sudo
 

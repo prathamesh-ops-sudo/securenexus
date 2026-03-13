@@ -840,8 +840,22 @@ export function registerEmailSecurityRoutes(app: Express): void {
 
         const result = await retroactiveIocScan(orgId, iocs, Number(lookbackDays) || 90);
 
-        // Create findings for matches
+        // Create findings for matches (deduplicate — skip if finding already exists)
         for (const match of result.matches) {
+          const existing = await db
+            .select({ id: emailFindings.id })
+            .from(emailFindings)
+            .where(
+              and(
+                eq(emailFindings.orgId, orgId),
+                eq(emailFindings.emailMessageId, match.emailMessageId),
+                eq(emailFindings.findingType, "retroactive_ioc_match"),
+                sql`${emailFindings.indicators}->>'ioc' = ${match.matchedIoc}`,
+              ),
+            )
+            .limit(1);
+          if (existing.length > 0) continue;
+
           await db.insert(emailFindings).values({
             orgId,
             emailMessageId: match.emailMessageId,
