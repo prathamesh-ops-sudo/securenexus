@@ -96,15 +96,32 @@ export async function recordPhishingEvent(
       break;
   }
 
+  // Check if this event was already recorded (prevent duplicate counter inflation)
+  const [existingResult] = await db
+    .select()
+    .from(phishingResults)
+    .where(and(eq(phishingResults.id, resultId), eq(phishingResults.orgId, orgId)));
+
+  if (!existingResult) return;
+
+  const timestampField =
+    eventType === "opened"
+      ? "emailOpenedAt"
+      : eventType === "clicked"
+        ? "linkClickedAt"
+        : eventType === "submitted"
+          ? "credentialSubmittedAt"
+          : "reportedAt";
+
+  const alreadyRecorded = existingResult[timestampField] != null;
+
   await db
     .update(phishingResults)
     .set(updates)
     .where(and(eq(phishingResults.id, resultId), eq(phishingResults.orgId, orgId)));
 
-  // Update campaign aggregate counters
-  const [result] = await db.select().from(phishingResults).where(eq(phishingResults.id, resultId));
-
-  if (result) {
+  // Only increment campaign counter if this is the first time this event type was recorded
+  if (!alreadyRecorded) {
     const counterField =
       eventType === "opened"
         ? "emailsOpened"
@@ -120,11 +137,11 @@ export async function recordPhishingEvent(
         [counterField]: sql`${phishingCampaigns[counterField]} + 1`,
         updatedAt: now,
       })
-      .where(eq(phishingCampaigns.id, result.campaignId));
+      .where(eq(phishingCampaigns.id, existingResult.campaignId));
 
     // If clicked or submitted, check auto-enroll setting
     if (eventType === "clicked" || eventType === "submitted") {
-      await maybeAutoEnrollTraining(orgId, result.recipientEmail, result.recipientName);
+      await maybeAutoEnrollTraining(orgId, existingResult.recipientEmail, existingResult.recipientName);
     }
   }
 }

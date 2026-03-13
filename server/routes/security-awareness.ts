@@ -91,7 +91,8 @@ export function registerSecurityAwarenessRoutes(app: Express): void {
           conditions.push(eq(phishingCampaigns.status, status));
         }
         if (search && typeof search === "string") {
-          conditions.push(ilike(phishingCampaigns.name, `%${search}%`));
+          const escaped = search.replace(/[%_\\]/g, "\\$&");
+          conditions.push(ilike(phishingCampaigns.name, `%${escaped}%`));
         }
 
         const [items, [{ value: total }]] = await Promise.all([
@@ -750,6 +751,7 @@ export function registerSecurityAwarenessRoutes(app: Express): void {
           [{ value: pendingAssignments }],
           topRiskyEmployees,
           recentCampaigns,
+          [{ value: avgClickRateRaw }],
         ] = await Promise.all([
           db.select({ value: count() }).from(phishingCampaigns).where(eq(phishingCampaigns.orgId, orgId)),
           db
@@ -779,13 +781,14 @@ export function registerSecurityAwarenessRoutes(app: Express): void {
             .where(eq(phishingCampaigns.orgId, orgId))
             .orderBy(desc(phishingCampaigns.createdAt))
             .limit(5),
+          db
+            .select({ value: sql<number>`COALESCE(AVG(${employeeRiskScores.phishingClickRate}), 0)` })
+            .from(employeeRiskScores)
+            .where(eq(employeeRiskScores.orgId, orgId)),
         ]);
 
-        // Calculate org-wide average click rate
-        const avgClickRate =
-          topRiskyEmployees.length > 0
-            ? topRiskyEmployees.reduce((sum, e) => sum + e.phishingClickRate, 0) / topRiskyEmployees.length
-            : 0;
+        // Org-wide average click rate from all employees (not just top 10)
+        const avgClickRate = Number(avgClickRateRaw) || 0;
 
         res.json({
           totalCampaigns,
