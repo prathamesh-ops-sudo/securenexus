@@ -25,6 +25,7 @@ import {
 import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/budget";
 import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
 import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./ai/vector-search";
+import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./ai/active-learning";
 
 initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 registerEnhancedPrompts();
@@ -85,10 +86,23 @@ async function invokeWithPrompt(
             temperature: appConfig.ai.temperature,
           };
 
+  // Inject few-shot examples from active learning if available
+  // Use the inference tier (triage/correlation/narrative) as the domain key,
+  // not the promptId — few-shot examples are stored by domain
+  let augmentedSystemPrompt = prompt.systemPrompt;
+  try {
+    const fewShotBlock = await buildFewShotAugmentedPrompt(tier, orgId);
+    if (fewShotBlock) {
+      augmentedSystemPrompt = `${prompt.systemPrompt}\n\n${fewShotBlock}`;
+    }
+  } catch (err) {
+    log.warn("Failed to build few-shot augmented prompt", { promptId, tier, error: String(err) });
+  }
+
   const result: ModelInvokeResult = await gatewayInvoke({
     modelId: modelConfig.modelId,
     backend: appConfig.ai.backend,
-    systemPrompt: prompt.systemPrompt,
+    systemPrompt: augmentedSystemPrompt,
     userMessage,
     maxTokens: modelConfig.maxTokens,
     temperature: modelConfig.temperature,
@@ -170,11 +184,22 @@ export async function invokeWithPromptStream(
             temperature: appConfig.ai.temperature,
           };
 
+  // Inject few-shot examples from active learning (same as non-streaming path)
+  let augmentedSystemPrompt = prompt.systemPrompt;
+  try {
+    const fewShotBlock = await buildFewShotAugmentedPrompt(tier, orgId);
+    if (fewShotBlock) {
+      augmentedSystemPrompt = `${prompt.systemPrompt}\n\n${fewShotBlock}`;
+    }
+  } catch (err) {
+    log.warn("Failed to build few-shot augmented prompt (streaming)", { promptId, tier, error: String(err) });
+  }
+
   await gatewayInvokeStream(
     {
       modelId: modelConfig.modelId,
       backend: appConfig.ai.backend,
-      systemPrompt: prompt.systemPrompt,
+      systemPrompt: augmentedSystemPrompt,
       userMessage,
       maxTokens: modelConfig.maxTokens,
       temperature: modelConfig.temperature,
@@ -444,6 +469,7 @@ export interface ThreatIntelContext {
   }>;
   summary: string;
   historicalContext?: RAGContext;
+  suppressedSources?: string[];
   /** Items that were summarized rather than included in full (low-relevance). */
   droppedSummary?: string;
 }
@@ -463,6 +489,27 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
       if (alert.domain) iocSet.set(alert.domain, "domain");
       if (alert.url) iocSet.set(alert.url, "url");
       if (alert.fileHash) iocSet.set(alert.fileHash, "file_hash");
+    }
+
+    // Check suppressed sources BEFORE early return so alerts without IOCs still get suppression info
+    try {
+      const orgId = alerts[0]?.orgId;
+      if (orgId) {
+        const suppressedKeys = await getSuppressedSourcesForContext(orgId);
+        if (suppressedKeys.size > 0) {
+          const suppressedList: string[] = [];
+          suppressedKeys.forEach((key) => {
+            suppressedList.push(key.replace("::", "/"));
+          });
+          result.suppressedSources = suppressedList;
+          log.info("Active learning: suppressed low-signal sources from AI context", {
+            orgId,
+            suppressedCount: suppressedList.length,
+          });
+        }
+      }
+    } catch (err) {
+      log.warn("Failed to check suppressed sources", { error: String(err) });
     }
 
     if (iocSet.size === 0) return result;
@@ -660,7 +707,12 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
 }
 
 export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
-  if (ctx.enrichmentResults.length === 0 && ctx.osintMatches.length === 0) {
+  const hasEnrichment = ctx.enrichmentResults.length > 0;
+  const hasOsint = ctx.osintMatches.length > 0;
+  const hasSuppressed = ctx.suppressedSources && ctx.suppressedSources.length > 0;
+  const hasHistorical = !!ctx.historicalContext;
+  const hasDropped = !!ctx.droppedSummary;
+  if (!hasEnrichment && !hasOsint && !hasSuppressed && !hasHistorical && !hasDropped) {
     return "";
   }
 
@@ -695,6 +747,14 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
 
   if (ctx.summary) {
     lines.push(`INTELLIGENCE SUMMARY: ${ctx.summary}`);
+    lines.push("");
+  }
+
+  // Note suppressed sources if any
+  if (ctx.suppressedSources && ctx.suppressedSources.length > 0) {
+    lines.push(
+      `NOTE: The following alert source/category combinations have been auto-suppressed due to persistently high false positive rates (>70%): ${ctx.suppressedSources.join(", ")}. Treat alerts from these sources with extra skepticism and weight other evidence more heavily.`,
+    );
     lines.push("");
   }
 

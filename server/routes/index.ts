@@ -77,6 +77,7 @@ import { registerVulnScannerRoutes } from "./vuln-scanner";
 import { registerUebaRoutes } from "./ueba";
 import { registerAgentResponseRoutes } from "./agent-response";
 import { registerRagKnowledgeRoutes } from "./rag-knowledge";
+import { registerActiveLearningRoutes } from "./active-learning";
 import { registerSupplyChainRoutes } from "./supply-chain";
 import { registerIdentityGovernanceRoutes } from "./identity-governance";
 import { registerPamRoutes } from "./pam";
@@ -183,6 +184,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerUebaRoutes(app);
   registerAgentResponseRoutes(app);
   registerRagKnowledgeRoutes(app);
+  registerActiveLearningRoutes(app);
   registerSupplyChainRoutes(app);
   registerIdentityGovernanceRoutes(app);
   registerPamRoutes(app);
