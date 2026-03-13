@@ -105,6 +105,7 @@ import { registerQuantumReadinessRoutes } from "./quantum-readiness";
 import { registerPrivacyEngineeringRoutes } from "./privacy-engineering";
 import { registerSecurityMetricsRoutes } from "./security-metrics";
 import { registerDnsSecurityRoutes } from "./dns-security";
+import { registerEmailSecurityRoutes } from "./email-security";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -214,4 +215,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerPrivacyEngineeringRoutes(app);
   registerSecurityMetricsRoutes(app);
   registerDnsSecurityRoutes(app);
+  registerEmailSecurityRoutes(app);
 }

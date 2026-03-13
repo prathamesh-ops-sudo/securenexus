@@ -386,6 +386,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "DNS Security", url: "/dns-security", icon: Radar }],
       },
       {
+        label: "Email Security",
+        items: [{ title: "Email Security", url: "/email-security", icon: Mail }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },

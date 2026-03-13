@@ -12206,3 +12206,237 @@ export type SinkholedDomain = typeof sinkholedDomains.$inferSelect;
 export type InsertSinkholedDomain = typeof sinkholedDomains.$inferInsert;
 export type PassiveDnsRecord = typeof passiveDnsRecords.$inferSelect;
 export type InsertPassiveDnsRecord = typeof passiveDnsRecords.$inferInsert;
+
+// ─── Email Security ──────────────────────────────────────────────────────────
+
+export const EMAIL_FINDING_TYPES = [
+  "spf_fail",
+  "dkim_fail",
+  "dmarc_fail",
+  "bec_attempt",
+  "lookalike_domain",
+  "executive_impersonation",
+  "thread_injection",
+  "malicious_attachment",
+  "malicious_url",
+  "phishing",
+  "spam",
+  "retroactive_ioc_match",
+  "suspicious_header",
+  "url_rewrite_block",
+] as const;
+
+export const EMAIL_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;
+
+export const EMAIL_FINDING_STATUSES = ["open", "investigating", "resolved", "false_positive"] as const;
+
+export const EMAIL_POLICY_ACTIONS = ["quarantine", "block", "tag", "allow", "redirect"] as const;
+
+export const emailMessages = pgTable(
+  "email_messages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    messageId: text("message_id"),
+    internetMessageId: text("internet_message_id"),
+    subject: text("subject"),
+    senderAddress: text("sender_address").notNull(),
+    senderDisplayName: text("sender_display_name"),
+    recipientAddresses: jsonb("recipient_addresses"),
+    ccAddresses: jsonb("cc_addresses"),
+    replyTo: text("reply_to"),
+    returnPath: text("return_path"),
+    receivedAt: timestamp("received_at").defaultNow(),
+    direction: text("direction").default("inbound"),
+    hasAttachments: boolean("has_attachments").default(false),
+    attachmentCount: integer("attachment_count").default(0),
+    attachmentNames: jsonb("attachment_names"),
+    urlCount: integer("url_count").default(0),
+    extractedUrls: jsonb("extracted_urls"),
+    spfResult: text("spf_result"),
+    dkimResult: text("dkim_result"),
+    dmarcResult: text("dmarc_result"),
+    authenticationResults: text("authentication_results"),
+    senderReputation: doublePrecision("sender_reputation"),
+    threadId: text("thread_id"),
+    inReplyTo: text("in_reply_to"),
+    references: jsonb("email_references"),
+    headers: jsonb("headers"),
+    bodyPreview: text("body_preview"),
+    isSuspicious: boolean("is_suspicious").default(false),
+    source: text("source").default("manual"),
+    rawData: jsonb("raw_data"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_email_messages_org").on(table.orgId),
+    index("idx_email_messages_org_sender").on(table.orgId, table.senderAddress),
+    index("idx_email_messages_org_received").on(table.orgId, table.receivedAt),
+    index("idx_email_messages_org_thread").on(table.orgId, table.threadId),
+    index("idx_email_messages_org_suspicious").on(table.orgId, table.isSuspicious),
+  ],
+);
+
+export const emailFindings = pgTable(
+  "email_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    emailMessageId: varchar("email_message_id"),
+    findingType: text("finding_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    confidence: doublePrecision("confidence"),
+    title: text("title").notNull(),
+    description: text("description"),
+    senderAddress: text("sender_address"),
+    recipientAddress: text("recipient_address"),
+    domain: text("domain"),
+    indicators: jsonb("indicators"),
+    mitreTechnique: text("mitre_technique"),
+    status: text("status").notNull().default("open"),
+    analystNotes: text("analyst_notes"),
+    actionTaken: text("action_taken"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_email_findings_org").on(table.orgId),
+    index("idx_email_findings_org_type").on(table.orgId, table.findingType),
+    index("idx_email_findings_org_severity").on(table.orgId, table.severity),
+    index("idx_email_findings_org_status").on(table.orgId, table.status),
+    index("idx_email_findings_org_sender").on(table.orgId, table.senderAddress),
+  ],
+);
+
+export const emailPolicies = pgTable(
+  "email_policies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    policyType: text("policy_type").notNull(),
+    action: text("action").notNull().default("quarantine"),
+    conditions: jsonb("conditions"),
+    enabled: boolean("enabled").notNull().default(true),
+    priority: integer("priority").notNull().default(0),
+    matchCount: integer("match_count").notNull().default(0),
+    lastMatchAt: timestamp("last_match_at"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_email_policies_org").on(table.orgId),
+    index("idx_email_policies_org_type").on(table.orgId, table.policyType),
+  ],
+);
+
+export const emailUrlRewrites = pgTable(
+  "email_url_rewrites",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    originalUrl: text("original_url").notNull(),
+    rewrittenUrl: text("rewritten_url"),
+    emailMessageId: varchar("email_message_id"),
+    clickCount: integer("click_count").notNull().default(0),
+    lastClickAt: timestamp("last_click_at"),
+    scanResult: text("scan_result"),
+    isMalicious: boolean("is_malicious").default(false),
+    scanDetails: jsonb("scan_details"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_email_url_rewrites_org").on(table.orgId),
+    index("idx_email_url_rewrites_org_url").on(table.orgId, table.originalUrl),
+  ],
+);
+
+export const emailQuarantineItems = pgTable(
+  "email_quarantine_items",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    emailMessageId: varchar("email_message_id"),
+    reason: text("reason").notNull(),
+    findingId: varchar("finding_id"),
+    policyId: varchar("policy_id"),
+    status: text("status").notNull().default("quarantined"),
+    releasedBy: varchar("released_by"),
+    releasedAt: timestamp("released_at"),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_email_quarantine_org").on(table.orgId),
+    index("idx_email_quarantine_org_status").on(table.orgId, table.status),
+  ],
+);
+
+export const emailMessagesRelations = relations(emailMessages, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailMessages.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const emailFindingsRelations = relations(emailFindings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailFindings.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const emailPoliciesRelations = relations(emailPolicies, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailPolicies.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const emailUrlRewritesRelations = relations(emailUrlRewrites, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailUrlRewrites.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const emailQuarantineItemsRelations = relations(emailQuarantineItems, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailQuarantineItems.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type EmailMessage = typeof emailMessages.$inferSelect;
+export type InsertEmailMessage = typeof emailMessages.$inferInsert;
+export type EmailFinding = typeof emailFindings.$inferSelect;
+export type InsertEmailFinding = typeof emailFindings.$inferInsert;
+export type EmailPolicy = typeof emailPolicies.$inferSelect;
+export type InsertEmailPolicy = typeof emailPolicies.$inferInsert;
+export type EmailUrlRewrite = typeof emailUrlRewrites.$inferSelect;
+export type InsertEmailUrlRewrite = typeof emailUrlRewrites.$inferInsert;
+export type EmailQuarantineItem = typeof emailQuarantineItems.$inferSelect;
+export type InsertEmailQuarantineItem = typeof emailQuarantineItems.$inferInsert;

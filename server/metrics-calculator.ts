@@ -118,7 +118,7 @@ export async function computeMttrMttd(orgId: string, periodStart: Date, periodEn
     .orderBy(desc(securityKpiSnapshots.createdAt))
     .limit(1);
 
-  const prevMttr = prevSnapshot[0]?.value || avgMttr;
+  const prevMttr = prevSnapshot[0]?.value ?? avgMttr;
   const mttrTrend = prevMttr > 0 ? Math.round(((avgMttr - prevMttr) / prevMttr) * 100) : 0;
   const mttdTrend = 0; // no previous MTTD baseline yet
 
