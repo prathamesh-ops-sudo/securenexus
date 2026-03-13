@@ -100,6 +100,7 @@ import { registerTprmRoutes } from "./tprm";
 import { registerDarkWebRoutes } from "./dark-web";
 import { registerPhysicalSecurityRoutes } from "./physical-security";
 import { registerSecurityAwarenessRoutes } from "./security-awareness";
+import { registerQuantumReadinessRoutes } from "./quantum-readiness";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -204,4 +205,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerDarkWebRoutes(app);
   registerPhysicalSecurityRoutes(app);
   registerSecurityAwarenessRoutes(app);
+  registerQuantumReadinessRoutes(app);
 }

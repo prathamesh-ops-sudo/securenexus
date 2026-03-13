@@ -11217,3 +11217,214 @@ export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
 export type InsertTrainingAssignment = typeof trainingAssignments.$inferInsert;
 export type SecurityAwarenessConfig = typeof securityAwarenessConfig.$inferSelect;
 export type InsertSecurityAwarenessConfig = typeof securityAwarenessConfig.$inferInsert;
+
+// ============================================================================
+// Quantum Readiness Assessment
+// ============================================================================
+
+export const CRYPTO_ALGORITHM_TYPES = [
+  "RSA-1024",
+  "RSA-2048",
+  "RSA-3072",
+  "RSA-4096",
+  "ECDSA-P256",
+  "ECDSA-P384",
+  "ECDSA-P521",
+  "ECDH-P256",
+  "ECDH-P384",
+  "Ed25519",
+  "DH-2048",
+  "DH-4096",
+  "DSA-1024",
+  "DSA-2048",
+  "AES-128",
+  "AES-256",
+  "3DES",
+  "SHA-1",
+  "SHA-256",
+  "SHA-384",
+  "SHA-512",
+  "MD5",
+  "HMAC-SHA256",
+  "ChaCha20-Poly1305",
+  "CRYSTALS-Kyber",
+  "CRYSTALS-Dilithium",
+  "FALCON",
+  "SPHINCS+",
+  "BIKE",
+  "HQC",
+  "unknown",
+] as const;
+
+export const QUANTUM_RISK_LEVELS = ["critical", "high", "medium", "low", "safe"] as const;
+
+export const CRYPTO_ASSET_SOURCES = [
+  "tls_certificate",
+  "ssh_key",
+  "api_key",
+  "vpn_tunnel",
+  "code_signing",
+  "database_encryption",
+  "file_encryption",
+  "email_signing",
+  "jwt_signing",
+  "ipsec",
+  "disk_encryption",
+  "key_exchange",
+  "password_hashing",
+  "configuration",
+  "library",
+  "manual_entry",
+] as const;
+
+export const PQC_MIGRATION_STATUSES = [
+  "not_started",
+  "assessed",
+  "planned",
+  "in_progress",
+  "migrated",
+  "verified",
+  "deferred",
+] as const;
+
+export const NIST_PQC_STANDARDS = [
+  "FIPS-203", // ML-KEM (CRYSTALS-Kyber)
+  "FIPS-204", // ML-DSA (CRYSTALS-Dilithium)
+  "FIPS-205", // SLH-DSA (SPHINCS+)
+  "FIPS-206", // FN-DSA (FALCON) — draft
+] as const;
+
+export const cryptoInventory = pgTable("crypto_inventory", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  assetName: text("asset_name").notNull(),
+  algorithm: text("algorithm").notNull(), // CRYPTO_ALGORITHM_TYPES
+  keyLength: integer("key_length"),
+  source: text("source").notNull(), // CRYPTO_ASSET_SOURCES
+  hostname: text("hostname"),
+  port: integer("port"),
+  serviceName: text("service_name"),
+  filePath: text("file_path"),
+  expiresAt: timestamp("expires_at"),
+  isQuantumVulnerable: boolean("is_quantum_vulnerable").default(false).notNull(),
+  quantumRiskLevel: text("quantum_risk_level").default("medium").notNull(), // QUANTUM_RISK_LEVELS
+  isHardcoded: boolean("is_hardcoded").default(false).notNull(),
+  canBeUpgraded: boolean("can_be_upgraded").default(true).notNull(),
+  pqcReplacement: text("pqc_replacement"), // recommended PQC algorithm
+  migrationStatus: text("migration_status").default("not_started").notNull(), // PQC_MIGRATION_STATUSES
+  migrationPriority: integer("migration_priority").default(50).notNull(), // 1-100
+  migrationNotes: text("migration_notes"),
+  lastScannedAt: timestamp("last_scanned_at"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const quantumRiskScores = pgTable("quantum_risk_scores", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  overallScore: integer("overall_score").default(0).notNull(), // 0-100 (100 = fully quantum-safe)
+  cryptoAgility: integer("crypto_agility").default(0).notNull(), // 0-100
+  algorithmDiversity: integer("algorithm_diversity").default(0).notNull(), // 0-100
+  pqcReadiness: integer("pqc_readiness").default(0).notNull(), // 0-100
+  complianceScore: integer("compliance_score").default(0).notNull(), // 0-100
+  totalAssets: integer("total_assets").default(0).notNull(),
+  vulnerableAssets: integer("vulnerable_assets").default(0).notNull(),
+  migratedAssets: integer("migrated_assets").default(0).notNull(),
+  criticalRiskCount: integer("critical_risk_count").default(0).notNull(),
+  highRiskCount: integer("high_risk_count").default(0).notNull(),
+  mediumRiskCount: integer("medium_risk_count").default(0).notNull(),
+  lowRiskCount: integer("low_risk_count").default(0).notNull(),
+  estimatedMigrationMonths: integer("estimated_migration_months"),
+  estimatedMigrationCost: integer("estimated_migration_cost"), // in cents
+  nistComplianceStatus: jsonb("nist_compliance_status")
+    .$type<Record<string, { status: string; progress: number; notes: string }>>()
+    .default({}),
+  scoredAt: timestamp("scored_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const quantumMigrationTasks = pgTable("quantum_migration_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  cryptoInventoryId: uuid("crypto_inventory_id").references(() => cryptoInventory.id, { onDelete: "set null" }),
+  currentAlgorithm: text("current_algorithm").notNull(),
+  targetAlgorithm: text("target_algorithm").notNull(),
+  priority: text("priority").default("medium").notNull(), // critical, high, medium, low
+  status: text("status").default("not_started").notNull(), // PQC_MIGRATION_STATUSES
+  effortEstimateDays: integer("effort_estimate_days"),
+  assignedTo: text("assigned_to"),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  blockers: text("blockers"),
+  nistStandard: text("nist_standard"), // NIST_PQC_STANDARDS
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const quantumScanHistory = pgTable("quantum_scan_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  scanType: text("scan_type").notNull(), // "full", "tls", "ssh", "code", "config"
+  status: text("status").default("running").notNull(), // "running", "completed", "failed"
+  assetsDiscovered: integer("assets_discovered").default(0).notNull(),
+  vulnerableFound: integer("vulnerable_found").default(0).notNull(),
+  scanDurationMs: integer("scan_duration_ms"),
+  scanTargets: jsonb("scan_targets").$type<string[]>().default([]),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+// Relations
+export const cryptoInventoryRelations = relations(cryptoInventory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [cryptoInventory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const quantumRiskScoresRelations = relations(quantumRiskScores, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [quantumRiskScores.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const quantumMigrationTasksRelations = relations(quantumMigrationTasks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [quantumMigrationTasks.orgId],
+    references: [organizations.id],
+  }),
+  cryptoAsset: one(cryptoInventory, {
+    fields: [quantumMigrationTasks.cryptoInventoryId],
+    references: [cryptoInventory.id],
+  }),
+}));
+
+export const quantumScanHistoryRelations = relations(quantumScanHistory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [quantumScanHistory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type CryptoInventoryItem = typeof cryptoInventory.$inferSelect;
+export type InsertCryptoInventoryItem = typeof cryptoInventory.$inferInsert;
+export type QuantumRiskScore = typeof quantumRiskScores.$inferSelect;
+export type InsertQuantumRiskScore = typeof quantumRiskScores.$inferInsert;
+export type QuantumMigrationTask = typeof quantumMigrationTasks.$inferSelect;
+export type InsertQuantumMigrationTask = typeof quantumMigrationTasks.$inferInsert;
+export type QuantumScanHistoryEntry = typeof quantumScanHistory.$inferSelect;
+export type InsertQuantumScanHistoryEntry = typeof quantumScanHistory.$inferInsert;

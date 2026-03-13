@@ -165,6 +165,7 @@ const TprmPage = lazy(() => import("@/pages/tprm"));
 const DarkWebMonitoringPage = lazy(() => import("@/pages/dark-web-monitoring"));
 const PhysicalSecurityPage = lazy(() => import("@/pages/physical-security"));
 const SecurityAwarenessPage = lazy(() => import("@/pages/security-awareness"));
+const QuantumReadinessPage = lazy(() => import("@/pages/quantum-readiness"));
 
 function PageSkeleton() {
   return (
@@ -409,6 +410,7 @@ function AuthenticatedApp() {
                     <Route path="/dark-web-monitoring" component={DarkWebMonitoringPage} />
                     <Route path="/physical-security" component={PhysicalSecurityPage} />
                     <Route path="/security-awareness" component={SecurityAwarenessPage} />
+                    <Route path="/quantum-readiness" component={QuantumReadinessPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

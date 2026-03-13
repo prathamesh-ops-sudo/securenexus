@@ -81,6 +81,7 @@ import {
   Palette,
   DoorOpen,
   GraduationCap,
+  Atom,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -370,6 +371,10 @@ const navGroups: NavGroup[] = [
       {
         label: "Security Awareness",
         items: [{ title: "Phishing & Awareness", url: "/security-awareness", icon: GraduationCap }],
+      },
+      {
+        label: "Quantum Readiness",
+        items: [{ title: "Quantum Readiness", url: "/quantum-readiness", icon: Atom }],
       },
       {
         label: "MSSP Partner",
