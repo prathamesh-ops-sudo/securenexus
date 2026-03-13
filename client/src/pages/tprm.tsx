@@ -339,7 +339,10 @@ export default function TprmPage() {
         title: "Monitoring sweep complete",
         description: `Checked ${data.vendorsChecked} vendors, ${data.totalAlerts} alerts found`,
       });
-      qc.invalidateQueries({ queryKey: ["/api/tprm"] });
+      qc.invalidateQueries({ queryKey: ["/api/tprm/vendors"] });
+      qc.invalidateQueries({ queryKey: ["/api/tprm/summary"] });
+      qc.invalidateQueries({ queryKey: ["/api/tprm/monitoring/status"] });
+      qc.invalidateQueries({ queryKey: ["/api/tprm/breach-alerts"] });
     },
     onError: (err: Error) => {
       toast({ title: "Monitoring failed", description: err.message, variant: "destructive" });
