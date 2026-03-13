@@ -8,6 +8,20 @@
       "when": 1772169985276,
       "tag": "0000_mean_wonder_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773388299732,
+      "tag": "0001_huge_human_fly",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773417953175,
+      "tag": "0002_careful_changeling",
+      "breakpoints": true
     }
   ]
 }

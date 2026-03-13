@@ -97,6 +97,7 @@ import { registerMsspPortalRoutes } from "./mssp-portal";
 import { registerAutonomousSocRoutes } from "./autonomous-soc";
 import { registerDeveloperSecurityRoutes } from "./developer-security";
 import { registerTprmRoutes } from "./tprm";
+import { registerDarkWebRoutes } from "./dark-web";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -198,4 +199,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerAutonomousSocRoutes(app);
   registerDeveloperSecurityRoutes(app);
   registerTprmRoutes(app);
+  registerDarkWebRoutes(app);
 }

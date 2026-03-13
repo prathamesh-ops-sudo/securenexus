@@ -10603,3 +10603,177 @@ export type VendorMonitoringEntry = typeof vendorMonitoring.$inferSelect;
 export type InsertVendorMonitoringEntry = typeof vendorMonitoring.$inferInsert;
 export type VendorBreachAlert = typeof vendorBreachAlerts.$inferSelect;
 export type InsertVendorBreachAlert = typeof vendorBreachAlerts.$inferInsert;
+
+// =============================================================================
+// DARK WEB MONITORING
+// =============================================================================
+
+export const DARK_WEB_EXPOSURE_TYPES = [
+  "credential_leak",
+  "data_breach",
+  "brand_mention",
+  "executive_exposure",
+  "source_code_leak",
+  "pii_exposure",
+  "credit_card_exposure",
+  "threat_actor_mention",
+  "domain_mention",
+  "paste_site",
+] as const;
+
+export const DARK_WEB_SEVERITY_LEVELS = ["critical", "high", "medium", "low", "info"] as const;
+
+export const DARK_WEB_EXPOSURE_STATUSES = [
+  "new",
+  "investigating",
+  "confirmed",
+  "mitigated",
+  "false_positive",
+  "ignored",
+] as const;
+
+export const BREACH_MONITOR_TARGET_TYPES = [
+  "email",
+  "domain",
+  "executive_email",
+  "brand_keyword",
+  "source_code_keyword",
+  "credit_card_bin",
+  "api_key_pattern",
+  "ip_range",
+] as const;
+
+export const DARK_WEB_SOURCE_TYPES = [
+  "hibp",
+  "dehashed",
+  "paste_site",
+  "dark_web_forum",
+  "telegram_channel",
+  "marketplace",
+  "ransomware_blog",
+  "github_search",
+  "pastebin",
+  "manual",
+] as const;
+
+export const breachMonitoringTargets = pgTable("breach_monitoring_targets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  targetType: text("target_type").notNull(), // BREACH_MONITOR_TARGET_TYPES
+  targetValue: text("target_value").notNull(),
+  label: text("label"), // friendly name
+  isActive: boolean("is_active").default(true).notNull(),
+  lastCheckedAt: timestamp("last_checked_at"),
+  exposureCount: integer("exposure_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const darkWebExposures = pgTable("dark_web_exposures", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  targetId: uuid("target_id").references(() => breachMonitoringTargets.id, { onDelete: "set null" }),
+  exposureType: text("exposure_type").notNull(), // DARK_WEB_EXPOSURE_TYPES
+  severity: text("severity").default("medium").notNull(), // DARK_WEB_SEVERITY_LEVELS
+  status: text("status").default("new").notNull(), // DARK_WEB_EXPOSURE_STATUSES
+  title: text("title").notNull(),
+  description: text("description"),
+  sourceType: text("source_type").notNull(), // DARK_WEB_SOURCE_TYPES
+  sourceName: text("source_name"), // e.g., "LinkedIn 2021 breach", "pastebin.com"
+  sourceUrl: text("source_url"), // redacted/sanitized link if available
+  breachDate: timestamp("breach_date"), // when the breach occurred
+  discoveredAt: timestamp("discovered_at").defaultNow().notNull(), // when we found it
+  affectedData: jsonb("affected_data").$type<string[]>().default([]), // e.g., ["email","password","phone"]
+  affectedCount: integer("affected_count"), // number of records exposed
+  rawData: jsonb("raw_data").$type<Record<string, unknown>>(), // raw API response (redacted)
+  matchedValue: text("matched_value"), // what we searched for that matched
+  confidenceScore: integer("confidence_score").default(70), // 0-100
+  mitigationNotes: text("mitigation_notes"),
+  assignedTo: uuid("assigned_to"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: uuid("resolved_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const darkWebMonitoringConfig = pgTable("dark_web_monitoring_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  scanFrequencyHours: integer("scan_frequency_hours").default(24).notNull(),
+  autoCreateAlerts: boolean("auto_create_alerts").default(true).notNull(),
+  alertSeverityThreshold: text("alert_severity_threshold").default("medium").notNull(),
+  notifyOnNewExposure: boolean("notify_on_new_exposure").default(true).notNull(),
+  hibpApiKey: text("hibp_api_key"), // encrypted
+  dehashedApiKey: text("dehashed_api_key"), // encrypted
+  lastFullScanAt: timestamp("last_full_scan_at"),
+  totalExposuresFound: integer("total_exposures_found").default(0).notNull(),
+  totalExposuresResolved: integer("total_exposures_resolved").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const darkWebScanHistory = pgTable("dark_web_scan_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  scanType: text("scan_type").notNull(), // "full", "incremental", "manual"
+  status: text("status").default("running").notNull(), // "running", "completed", "failed"
+  targetsScanned: integer("targets_scanned").default(0).notNull(),
+  newExposuresFound: integer("new_exposures_found").default(0).notNull(),
+  sourcesChecked: jsonb("sources_checked").$type<string[]>().default([]),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  durationMs: integer("duration_ms"),
+});
+
+// Relations
+export const breachMonitoringTargetsRelations = relations(breachMonitoringTargets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [breachMonitoringTargets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const darkWebExposuresRelations = relations(darkWebExposures, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [darkWebExposures.orgId],
+    references: [organizations.id],
+  }),
+  target: one(breachMonitoringTargets, {
+    fields: [darkWebExposures.targetId],
+    references: [breachMonitoringTargets.id],
+  }),
+}));
+
+export const darkWebMonitoringConfigRelations = relations(darkWebMonitoringConfig, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [darkWebMonitoringConfig.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const darkWebScanHistoryRelations = relations(darkWebScanHistory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [darkWebScanHistory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type BreachMonitoringTarget = typeof breachMonitoringTargets.$inferSelect;
+export type InsertBreachMonitoringTarget = typeof breachMonitoringTargets.$inferInsert;
+export type DarkWebExposure = typeof darkWebExposures.$inferSelect;
+export type InsertDarkWebExposure = typeof darkWebExposures.$inferInsert;
+export type DarkWebMonitoringConfig = typeof darkWebMonitoringConfig.$inferSelect;
+export type InsertDarkWebMonitoringConfig = typeof darkWebMonitoringConfig.$inferInsert;
+export type DarkWebScanHistoryEntry = typeof darkWebScanHistory.$inferSelect;
+export type InsertDarkWebScanHistoryEntry = typeof darkWebScanHistory.$inferInsert;
