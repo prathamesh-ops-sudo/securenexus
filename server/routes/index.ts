@@ -96,6 +96,7 @@ import { registerAiDetectionRulesRoutes } from "./ai-detection-rules";
 import { registerMsspPortalRoutes } from "./mssp-portal";
 import { registerAutonomousSocRoutes } from "./autonomous-soc";
 import { registerDeveloperSecurityRoutes } from "./developer-security";
+import { registerTprmRoutes } from "./tprm";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -196,4 +197,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerMsspPortalRoutes(app);
   registerAutonomousSocRoutes(app);
   registerDeveloperSecurityRoutes(app);
+  registerTprmRoutes(app);
 }
