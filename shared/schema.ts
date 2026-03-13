@@ -10710,8 +10710,8 @@ export const darkWebMonitoringConfig = pgTable("dark_web_monitoring_config", {
   autoCreateAlerts: boolean("auto_create_alerts").default(true).notNull(),
   alertSeverityThreshold: text("alert_severity_threshold").default("medium").notNull(),
   notifyOnNewExposure: boolean("notify_on_new_exposure").default(true).notNull(),
-  hibpApiKey: text("hibp_api_key"), // encrypted
-  dehashedApiKey: text("dehashed_api_key"), // encrypted
+  hibpApiKey: text("hibp_api_key"), // AES-256-GCM encrypted via sso-crypto
+  dehashedApiKey: text("dehashed_api_key"), // AES-256-GCM encrypted via sso-crypto
   lastFullScanAt: timestamp("last_full_scan_at"),
   totalExposuresFound: integer("total_exposures_found").default(0).notNull(),
   totalExposuresResolved: integer("total_exposures_resolved").default(0).notNull(),

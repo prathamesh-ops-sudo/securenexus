@@ -15,8 +15,34 @@ import {
   BREACH_MONITOR_TARGET_TYPES,
 } from "../../shared/schema";
 import { runDarkWebScan } from "../dark-web-monitor";
+import { encryptSsoSecret, decryptSsoSecret } from "../sso-crypto";
 
 const log = logger.child("dark-web");
+
+/** Encrypt an API key before storing in DB. Returns null if input is null/empty. */
+function encryptApiKey(key: string | null | undefined): string | null {
+  if (!key) return null;
+  try {
+    return encryptSsoSecret(key);
+  } catch (err) {
+    log.error("Failed to encrypt API key", { error: String(err) });
+    throw new Error("Failed to encrypt API key");
+  }
+}
+
+/** Decrypt an API key read from DB. Returns null if input is null/empty. */
+function decryptApiKey(ciphertext: string | null | undefined): string | null {
+  if (!ciphertext) return null;
+  try {
+    return decryptSsoSecret(ciphertext);
+  } catch (err) {
+    log.warn("Failed to decrypt API key — may be stored in plaintext from before encryption was added", {
+      error: String(err),
+    });
+    // Fallback: return as-is if it looks like a plaintext key (migration path)
+    return ciphertext;
+  }
+}
 
 const ALLOWED_EXPOSURE_UPDATE_FIELDS = ["status", "severity", "mitigationNotes", "assignedTo"];
 const ALLOWED_TARGET_FIELDS = ["targetType", "targetValue", "label", "isActive"];
@@ -119,6 +145,14 @@ export function registerDarkWebRoutes(app: Express): void {
           .where(eq(darkWebMonitoringConfig.orgId, orgId))
           .limit(1);
 
+        // Encrypt API keys before storing
+        if (updates.hibpApiKey) {
+          updates.hibpApiKey = encryptApiKey(updates.hibpApiKey as string);
+        }
+        if (updates.dehashedApiKey) {
+          updates.dehashedApiKey = encryptApiKey(updates.dehashedApiKey as string);
+        }
+
         if (existing) {
           updates.updatedAt = new Date();
           const [updated] = await db
@@ -144,8 +178,8 @@ export function registerDarkWebRoutes(app: Express): void {
             autoCreateAlerts: (updates.autoCreateAlerts as boolean) ?? true,
             alertSeverityThreshold: (updates.alertSeverityThreshold as string) ?? "medium",
             notifyOnNewExposure: (updates.notifyOnNewExposure as boolean) ?? true,
-            hibpApiKey: (updates.hibpApiKey as string) ?? null,
-            dehashedApiKey: (updates.dehashedApiKey as string) ?? null,
+            hibpApiKey: (updates.hibpApiKey as string | null) ?? null,
+            dehashedApiKey: (updates.dehashedApiKey as string | null) ?? null,
           })
           .returning();
 
