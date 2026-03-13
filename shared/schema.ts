@@ -11428,3 +11428,449 @@ export type QuantumMigrationTask = typeof quantumMigrationTasks.$inferSelect;
 export type InsertQuantumMigrationTask = typeof quantumMigrationTasks.$inferInsert;
 export type QuantumScanHistoryEntry = typeof quantumScanHistory.$inferSelect;
 export type InsertQuantumScanHistoryEntry = typeof quantumScanHistory.$inferInsert;
+
+// ============================================================================
+// Privacy Engineering (DSPM++)
+// ============================================================================
+
+export const DATA_CLASSIFICATION_LEVELS = ["public", "internal", "confidential", "restricted", "top_secret"] as const;
+
+export const PII_CATEGORIES = [
+  "name",
+  "email",
+  "phone",
+  "address",
+  "ssn",
+  "national_id",
+  "passport",
+  "date_of_birth",
+  "financial_account",
+  "credit_card",
+  "ip_address",
+  "biometric",
+  "health_record",
+  "genetic_data",
+  "location",
+  "device_id",
+  "cookie_id",
+  "username",
+  "password_hash",
+  "other_pii",
+] as const;
+
+export const DATA_ASSET_TYPES = [
+  "database_table",
+  "database_column",
+  "s3_bucket",
+  "file_share",
+  "api_endpoint",
+  "log_stream",
+  "email_system",
+  "saas_app",
+  "data_warehouse",
+  "cache",
+  "message_queue",
+  "backup",
+] as const;
+
+export const DATA_FLOW_STATUSES = ["active", "inactive", "deprecated", "under_review"] as const;
+
+export const PIA_STATUSES = ["draft", "in_review", "approved", "rejected", "needs_revision", "expired"] as const;
+
+export const PIA_RISK_LEVELS = ["negligible", "low", "medium", "high", "very_high"] as const;
+
+export const CONSENT_PURPOSES = [
+  "marketing",
+  "analytics",
+  "personalization",
+  "third_party_sharing",
+  "profiling",
+  "automated_decision",
+  "research",
+  "service_delivery",
+  "legal_obligation",
+] as const;
+
+export const PRIVACY_SCAN_STATUSES = ["queued", "running", "completed", "failed"] as const;
+
+export const DSAR_TYPES = [
+  "access",
+  "deletion",
+  "rectification",
+  "portability",
+  "restriction",
+  "objection",
+  "withdraw_consent",
+] as const;
+
+export const DSAR_FULFILLMENT_STATUSES = [
+  "pending",
+  "in_progress",
+  "awaiting_verification",
+  "fulfilled",
+  "partially_fulfilled",
+  "denied",
+  "expired",
+] as const;
+
+export const JURISDICTIONS = [
+  "EU",
+  "US",
+  "US-CA",
+  "US-VA",
+  "US-CO",
+  "US-CT",
+  "UK",
+  "BR",
+  "CA",
+  "IN",
+  "SG",
+  "AU",
+  "ZA",
+  "JP",
+  "KR",
+  "CN",
+  "OTHER",
+] as const;
+
+// Data Assets — discovered or manually registered data stores containing personal data
+export const dataAssets = pgTable(
+  "data_assets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    assetType: text("asset_type").notNull(), // DATA_ASSET_TYPES
+    connectionString: text("connection_string"), // encrypted reference
+    hostname: text("hostname"),
+    database: text("database"),
+    schema: text("schema"),
+    tableName: text("table_name"),
+    bucketName: text("bucket_name"),
+    filePath: text("file_path"),
+    classification: text("classification").default("internal").notNull(), // DATA_CLASSIFICATION_LEVELS
+    piiCategories: jsonb("pii_categories").$type<string[]>().default([]),
+    recordCount: integer("record_count"),
+    dataSubjectCount: integer("data_subject_count"),
+    jurisdiction: text("jurisdiction").default("OTHER").notNull(), // JURISDICTIONS
+    retentionDays: integer("retention_days"),
+    isEncrypted: boolean("is_encrypted").default(false).notNull(),
+    encryptionMethod: text("encryption_method"),
+    dataOwner: text("data_owner"),
+    dataProcessor: text("data_processor"),
+    legalBasis: text("legal_basis"),
+    lastScannedAt: timestamp("last_scanned_at"),
+    scanFindings: jsonb("scan_findings").$type<Record<string, unknown>>().default({}),
+    minimizationRecommendations: jsonb("minimization_recommendations").$type<string[]>().default([]),
+    riskScore: integer("risk_score").default(0).notNull(), // 0-100
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_data_assets_org").on(table.orgId),
+    index("idx_data_assets_type").on(table.assetType),
+    index("idx_data_assets_classification").on(table.classification),
+    index("idx_data_assets_jurisdiction").on(table.jurisdiction),
+  ],
+);
+
+// Data Flows — mapping where PII originates, travels, and who processes it
+export const dataFlows = pgTable(
+  "data_flows",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    sourceAssetId: uuid("source_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    sourceName: text("source_name").notNull(),
+    sourceJurisdiction: text("source_jurisdiction").default("OTHER").notNull(),
+    destinationAssetId: uuid("destination_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    destinationName: text("destination_name").notNull(),
+    destinationJurisdiction: text("destination_jurisdiction").default("OTHER").notNull(),
+    dataCategories: jsonb("data_categories").$type<string[]>().default([]),
+    piiCategories: jsonb("pii_categories").$type<string[]>().default([]),
+    purpose: text("purpose"),
+    legalBasis: text("legal_basis"),
+    processorName: text("processor_name"),
+    isCrossBorder: boolean("is_cross_border").default(false).notNull(),
+    crossBorderMechanism: text("cross_border_mechanism"), // SCCs, BCRs, Adequacy decision
+    transferRiskLevel: text("transfer_risk_level"), // PIA_RISK_LEVELS
+    status: text("status").default("active").notNull(), // DATA_FLOW_STATUSES
+    volumePerDay: integer("volume_per_day"), // approximate records/day
+    frequency: text("frequency"), // real_time, hourly, daily, weekly, monthly
+    encryptionInTransit: boolean("encryption_in_transit").default(false).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_data_flows_org").on(table.orgId),
+    index("idx_data_flows_source").on(table.sourceAssetId),
+    index("idx_data_flows_dest").on(table.destinationAssetId),
+    index("idx_data_flows_cross_border").on(table.isCrossBorder),
+  ],
+);
+
+// Privacy Impact Assessments — guided assessments for new products/features
+export const privacyImpactAssessments = pgTable(
+  "privacy_impact_assessments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    projectName: text("project_name"),
+    assessorName: text("assessor_name"),
+    assessorEmail: text("assessor_email"),
+    status: text("status").default("draft").notNull(), // PIA_STATUSES
+    overallRisk: text("overall_risk").default("medium").notNull(), // PIA_RISK_LEVELS
+    dataCollected: jsonb("data_collected").$type<string[]>().default([]), // PII_CATEGORIES
+    dataSubjectTypes: jsonb("data_subject_types").$type<string[]>().default([]),
+    processingPurposes: jsonb("processing_purposes").$type<string[]>().default([]),
+    legalBasis: text("legal_basis"),
+    retentionPeriod: text("retention_period"),
+    thirdPartyRecipients: jsonb("third_party_recipients").$type<string[]>().default([]),
+    crossBorderTransfers: boolean("cross_border_transfers").default(false).notNull(),
+    crossBorderDestinations: jsonb("cross_border_destinations").$type<string[]>().default([]),
+    securityMeasures: jsonb("security_measures").$type<string[]>().default([]),
+    privacyRisks: jsonb("privacy_risks")
+      .$type<Array<{ risk: string; likelihood: string; impact: string; mitigation: string }>>()
+      .default([]),
+    mitigationPlan: text("mitigation_plan"),
+    dpoApproval: boolean("dpo_approval").default(false).notNull(),
+    dpoComments: text("dpo_comments"),
+    reviewDate: timestamp("review_date"),
+    expiresAt: timestamp("expires_at"),
+    completedAt: timestamp("completed_at"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_pia_org").on(table.orgId),
+    index("idx_pia_status").on(table.status),
+    index("idx_pia_risk").on(table.overallRisk),
+  ],
+);
+
+// Privacy Scans — automated PII/PHI/PCI discovery scan history
+export const privacyScans = pgTable(
+  "privacy_scans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    scanType: text("scan_type").notNull(), // "full", "pii", "phi", "pci", "classification"
+    targetAssetId: uuid("target_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    targetDescription: text("target_description"),
+    status: text("status").default("queued").notNull(), // PRIVACY_SCAN_STATUSES
+    findingsCount: integer("findings_count").default(0).notNull(),
+    piiFieldsFound: integer("pii_fields_found").default(0).notNull(),
+    phiFieldsFound: integer("phi_fields_found").default(0).notNull(),
+    pciFieldsFound: integer("pci_fields_found").default(0).notNull(),
+    classificationResults: jsonb("classification_results")
+      .$type<
+        Array<{
+          field: string;
+          detectedType: string;
+          confidence: number;
+          sampleCount: number;
+          classification: string;
+        }>
+      >()
+      .default([]),
+    minimizationFindings: jsonb("minimization_findings")
+      .$type<Array<{ field: string; reason: string; recommendation: string }>>()
+      .default([]),
+    scanDurationMs: integer("scan_duration_ms"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_privacy_scans_org").on(table.orgId), index("idx_privacy_scans_status").on(table.status)],
+);
+
+// Consent Records — consent management integration records
+export const consentRecords = pgTable(
+  "consent_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    dataSubjectId: text("data_subject_id").notNull(), // external identifier
+    dataSubjectEmail: text("data_subject_email"),
+    purpose: text("purpose").notNull(), // CONSENT_PURPOSES
+    granted: boolean("granted").default(false).notNull(),
+    source: text("source").default("manual").notNull(), // "onetrust", "cookiebot", "manual", "api"
+    externalConsentId: text("external_consent_id"),
+    legalBasis: text("legal_basis"),
+    jurisdiction: text("jurisdiction"),
+    consentVersion: text("consent_version"),
+    grantedAt: timestamp("granted_at"),
+    withdrawnAt: timestamp("withdrawn_at"),
+    expiresAt: timestamp("expires_at"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_consent_org").on(table.orgId),
+    index("idx_consent_subject").on(table.dataSubjectId),
+    index("idx_consent_purpose").on(table.purpose),
+  ],
+);
+
+// Cross-Border Transfer Alerts — alert when PII moves across jurisdictional boundaries
+export const crossBorderTransferAlerts = pgTable(
+  "cross_border_transfer_alerts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    dataFlowId: uuid("data_flow_id").references(() => dataFlows.id, { onDelete: "set null" }),
+    sourceJurisdiction: text("source_jurisdiction").notNull(),
+    destinationJurisdiction: text("destination_jurisdiction").notNull(),
+    dataCategories: jsonb("data_categories").$type<string[]>().default([]),
+    riskLevel: text("risk_level").default("medium").notNull(), // PIA_RISK_LEVELS
+    alertReason: text("alert_reason").notNull(),
+    legalMechanism: text("legal_mechanism"), // what legal basis covers this transfer
+    requiresAction: boolean("requires_action").default(true).notNull(),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"),
+    resolutionNotes: text("resolution_notes"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_cbt_alerts_org").on(table.orgId),
+    index("idx_cbt_alerts_flow").on(table.dataFlowId),
+    index("idx_cbt_alerts_risk").on(table.riskLevel),
+  ],
+);
+
+// DSAR Fulfillment Tasks — automated DSAR fulfillment across connected systems
+export const dsarFulfillmentTasks = pgTable(
+  "dsar_fulfillment_tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    dsarRequestId: varchar("dsar_request_id").references(() => dsarRequests.id, { onDelete: "cascade" }),
+    targetSystem: text("target_system").notNull(), // name of the system to process
+    targetAssetId: uuid("target_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    taskType: text("task_type").notNull(), // "locate", "extract", "delete", "anonymize", "export"
+    status: text("status").default("pending").notNull(), // "pending", "in_progress", "completed", "failed", "skipped"
+    recordsAffected: integer("records_affected").default(0).notNull(),
+    errorMessage: text("error_message"),
+    executionLog: jsonb("execution_log").$type<string[]>().default([]),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_dsar_tasks_org").on(table.orgId),
+    index("idx_dsar_tasks_request").on(table.dsarRequestId),
+    index("idx_dsar_tasks_status").on(table.status),
+  ],
+);
+
+// Relations
+export const dataAssetsRelations = relations(dataAssets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dataAssets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const dataFlowsRelations = relations(dataFlows, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dataFlows.orgId],
+    references: [organizations.id],
+  }),
+  sourceAsset: one(dataAssets, {
+    fields: [dataFlows.sourceAssetId],
+    references: [dataAssets.id],
+    relationName: "sourceFlows",
+  }),
+  destinationAsset: one(dataAssets, {
+    fields: [dataFlows.destinationAssetId],
+    references: [dataAssets.id],
+    relationName: "destFlows",
+  }),
+}));
+
+export const privacyImpactAssessmentsRelations = relations(privacyImpactAssessments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [privacyImpactAssessments.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const privacyScansRelations = relations(privacyScans, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [privacyScans.orgId],
+    references: [organizations.id],
+  }),
+  targetAsset: one(dataAssets, {
+    fields: [privacyScans.targetAssetId],
+    references: [dataAssets.id],
+  }),
+}));
+
+export const consentRecordsRelations = relations(consentRecords, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [consentRecords.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const crossBorderTransferAlertsRelations = relations(crossBorderTransferAlerts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [crossBorderTransferAlerts.orgId],
+    references: [organizations.id],
+  }),
+  dataFlow: one(dataFlows, {
+    fields: [crossBorderTransferAlerts.dataFlowId],
+    references: [dataFlows.id],
+  }),
+}));
+
+export const dsarFulfillmentTasksRelations = relations(dsarFulfillmentTasks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dsarFulfillmentTasks.orgId],
+    references: [organizations.id],
+  }),
+  targetAsset: one(dataAssets, {
+    fields: [dsarFulfillmentTasks.targetAssetId],
+    references: [dataAssets.id],
+  }),
+}));
+
+// Types
+export type DataAsset = typeof dataAssets.$inferSelect;
+export type InsertDataAsset = typeof dataAssets.$inferInsert;
+export type DataFlow = typeof dataFlows.$inferSelect;
+export type InsertDataFlow = typeof dataFlows.$inferInsert;
+export type PrivacyImpactAssessment = typeof privacyImpactAssessments.$inferSelect;
+export type InsertPrivacyImpactAssessment = typeof privacyImpactAssessments.$inferInsert;
+export type PrivacyScan = typeof privacyScans.$inferSelect;
+export type InsertPrivacyScan = typeof privacyScans.$inferInsert;
+export type ConsentRecord = typeof consentRecords.$inferSelect;
+export type InsertConsentRecord = typeof consentRecords.$inferInsert;
+export type CrossBorderTransferAlert = typeof crossBorderTransferAlerts.$inferSelect;
+export type InsertCrossBorderTransferAlert = typeof crossBorderTransferAlerts.$inferInsert;
+export type DsarFulfillmentTask = typeof dsarFulfillmentTasks.$inferSelect;
+export type InsertDsarFulfillmentTask = typeof dsarFulfillmentTasks.$inferInsert;

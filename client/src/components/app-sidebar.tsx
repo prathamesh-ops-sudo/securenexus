@@ -377,6 +377,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Quantum Readiness", url: "/quantum-readiness", icon: Atom }],
       },
       {
+        label: "Privacy Engineering",
+        items: [{ title: "Privacy Engineering", url: "/privacy-engineering", icon: Fingerprint }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },
