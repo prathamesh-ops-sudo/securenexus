@@ -43,6 +43,10 @@ export function registerWebhooksRoutes(app: Express): void {
           return res.status(400).json({ message: `Invalid webhook URL: ${urlCheck.reason}` });
         }
       }
+      const orgId = getOrgId(req);
+      const existing = await storage.getOutboundWebhook(p(req.params.id));
+      if (!existing) return res.status(404).json({ message: "Webhook not found" });
+      if (orgId && existing.orgId !== orgId) return res.status(404).json({ message: "Webhook not found" });
       const webhook = await storage.updateOutboundWebhook(p(req.params.id), req.body);
       if (!webhook) return res.status(404).json({ message: "Webhook not found" });
       res.json(webhook);
@@ -53,6 +57,10 @@ export function registerWebhooksRoutes(app: Express): void {
 
   app.delete("/api/outbound-webhooks/:id", isAuthenticated, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const existing = await storage.getOutboundWebhook(p(req.params.id));
+      if (!existing) return res.status(404).json({ message: "Webhook not found" });
+      if (orgId && existing.orgId !== orgId) return res.status(404).json({ message: "Webhook not found" });
       const deleted = await storage.deleteOutboundWebhook(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Webhook not found" });
       res.json({ message: "Webhook deleted" });

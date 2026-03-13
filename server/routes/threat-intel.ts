@@ -23,9 +23,8 @@ export function registerThreatIntelRoutes(app: Express): void {
   // Threat Intel Configuration (Org-level API keys)
   app.get("/api/threat-intel-configs", isAuthenticated, async (req, res) => {
     try {
-      const user = (req as any).user;
-      const orgId = user?.orgId;
-      if (!orgId) return res.json([]);
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
       const configs = await storage.getThreatIntelConfigs(orgId);
       const masked = configs.map((c) => ({
         ...c,
@@ -39,9 +38,8 @@ export function registerThreatIntelRoutes(app: Express): void {
 
   app.post("/api/threat-intel-configs", isAuthenticated, async (req, res) => {
     try {
-      const user = (req as any).user;
-      const orgId = user?.orgId;
-      if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
       const { provider, apiKey, enabled } = req.body;
       if (!provider) return res.status(400).json({ message: "provider is required" });
       const validProviders = ["abuseipdb", "virustotal", "otx"];
@@ -66,9 +64,8 @@ export function registerThreatIntelRoutes(app: Express): void {
 
   app.delete("/api/threat-intel-configs/:provider", isAuthenticated, async (req, res) => {
     try {
-      const user = (req as any).user;
-      const orgId = user?.orgId;
-      if (!orgId) return res.status(400).json({ message: "No organization associated with user" });
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
       await storage.deleteThreatIntelConfig(orgId, p(req.params.provider));
       res.json({ success: true });
     } catch (error) {

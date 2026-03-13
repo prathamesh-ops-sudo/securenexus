@@ -17,7 +17,8 @@ export function registerComplianceRoutes(app: Express): void {
   // Audit logs
   app.get("/api/audit-logs", isAuthenticated, async (req, res) => {
     try {
-      const logs = await storage.getAuditLogs();
+      const orgId = getOrgId(req);
+      const logs = await storage.getAuditLogs(orgId);
       res.json(logs);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch audit logs" });

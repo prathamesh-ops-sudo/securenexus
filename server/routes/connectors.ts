@@ -29,7 +29,8 @@ export function registerConnectorsRoutes(app: Express): void {
   app.get("/api/connectors", isAuthenticated, async (req, res) => {
     try {
       const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
-      const allConnectors = await storage.getConnectors();
+      const orgId = (req as any).user?.orgId;
+      const allConnectors = await storage.getConnectors(orgId);
       const sanitized = allConnectors.map((c) => ({ ...c, config: sanitizeConfig(c.config) }));
       res.json(sanitized.slice(offset, offset + limit));
     } catch (error) {
@@ -52,6 +53,8 @@ export function registerConnectorsRoutes(app: Express): void {
     try {
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector) return res.status(404).json({ message: "Connector not found" });
+      const orgId = (req as any).user?.orgId;
+      if (orgId && connector.orgId !== orgId) return res.status(404).json({ message: "Connector not found" });
       const safeConfig = sanitizeConfig(connector.config);
       res.json({ ...connector, config: safeConfig });
     } catch (error) {
@@ -108,12 +111,15 @@ export function registerConnectorsRoutes(app: Express): void {
   app.patch(
     "/api/connectors/:id",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
     validatePathId("id"),
     validateBody(bodySchemas.connectorUpdate),
     async (req, res) => {
       try {
+        const orgId = (req as any).orgId;
         const connector = await storage.getConnector(p(req.params.id));
-        if (!connector) return res.status(404).json({ message: "Connector not found" });
+        if (!connector || connector.orgId !== orgId) return res.status(404).json({ message: "Connector not found" });
         const { name, config, status, pollingIntervalMin } = (req as any).validatedBody;
         const updateData: any = {};
         if (name) updateData.name = name;
@@ -138,26 +144,34 @@ export function registerConnectorsRoutes(app: Express): void {
     },
   );
 
-  app.delete("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const connector = await storage.getConnector(p(req.params.id));
-      if (!connector) return res.status(404).json({ message: "Connector not found" });
-      await storage.deleteConnector(p(req.params.id));
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "connector_deleted",
-        resourceType: "connector",
-        resourceId: p(req.params.id),
-        details: { type: connector.type, name: connector.name },
-      });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete connector" });
-    }
-  });
+  app.delete(
+    "/api/connectors/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector || connector.orgId !== orgId) return res.status(404).json({ message: "Connector not found" });
+        await storage.deleteConnector(p(req.params.id));
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "connector_deleted",
+          resourceType: "connector",
+          resourceId: p(req.params.id),
+          details: { type: connector.type, name: connector.name },
+        });
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete connector" });
+      }
+    },
+  );
 
   app.post("/api/connectors/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {

@@ -440,7 +440,7 @@ export interface IStorage {
   getAiFeedback(resourceType?: string, resourceId?: string): Promise<AiFeedback[]>;
   countAiFeedbackByOrg(orgId: string): Promise<number>;
 
-  getPlaybooks(): Promise<Playbook[]>;
+  getPlaybooks(orgId?: string): Promise<Playbook[]>;
   getPlaybook(id: string): Promise<Playbook | undefined>;
   createPlaybook(playbook: InsertPlaybook): Promise<Playbook>;
   updatePlaybook(id: string, data: Partial<Playbook>): Promise<Playbook | undefined>;
@@ -1730,7 +1730,10 @@ export class DatabaseStorage implements IStorage {
     return Number(result?.count ?? 0);
   }
 
-  async getPlaybooks(): Promise<Playbook[]> {
+  async getPlaybooks(orgId?: string): Promise<Playbook[]> {
+    if (orgId) {
+      return db.select().from(playbooks).where(eq(playbooks.orgId, orgId)).orderBy(desc(playbooks.updatedAt));
+    }
     return db.select().from(playbooks).orderBy(desc(playbooks.updatedAt));
   }
 

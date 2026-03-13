@@ -11,7 +11,8 @@ export function registerIntegrationsRoutes(app: Express): void {
   // ============================
   app.get("/api/integrations", isAuthenticated, async (req, res) => {
     try {
-      const configs = await storage.getIntegrationConfigs();
+      const orgId = (req as any).user?.orgId;
+      const configs = await storage.getIntegrationConfigs(orgId);
       const sanitized = configs.map((c) => ({
         ...c,
         config: sanitizeConfig(c.config as any),
@@ -26,6 +27,8 @@ export function registerIntegrationsRoutes(app: Express): void {
     try {
       const config = await storage.getIntegrationConfig(p(req.params.id));
       if (!config) return res.status(404).json({ message: "Integration not found" });
+      const orgId = (req as any).user?.orgId;
+      if (orgId && config.orgId !== orgId) return res.status(404).json({ message: "Not found" });
       const safeConfig = { ...config, config: sanitizeConfig(config.config as any) };
       res.json(safeConfig);
     } catch (error) {
@@ -65,6 +68,8 @@ export function registerIntegrationsRoutes(app: Express): void {
     try {
       const existing = await storage.getIntegrationConfig(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Integration not found" });
+      const orgId = (req as any).user?.orgId;
+      if (orgId && existing.orgId !== orgId) return res.status(404).json({ message: "Not found" });
       const { name, config, status } = req.body;
       const updateData: any = {};
       if (name) updateData.name = name;
@@ -90,6 +95,8 @@ export function registerIntegrationsRoutes(app: Express): void {
     try {
       const existing = await storage.getIntegrationConfig(p(req.params.id));
       if (!existing) return res.status(404).json({ message: "Integration not found" });
+      const orgId = (req as any).user?.orgId;
+      if (orgId && existing.orgId !== orgId) return res.status(404).json({ message: "Not found" });
       await storage.deleteIntegrationConfig(p(req.params.id));
       await storage.createAuditLog({
         userId: (req as any).user?.id,

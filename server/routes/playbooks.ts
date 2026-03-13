@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, resolveOrgContext } from "../rbac";
+import { requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
@@ -15,9 +15,10 @@ import {
 
 export function registerPlaybooksRoutes(app: Express): void {
   // Playbooks (Phase 13 - SOAR-Lite)
-  app.get("/api/playbooks", isAuthenticated, async (_req, res) => {
+  app.get("/api/playbooks", isAuthenticated, async (req, res) => {
     try {
-      res.json(await storage.getPlaybooks());
+      const orgId = getOrgId(req);
+      res.json(await storage.getPlaybooks(orgId));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch playbooks" });
     }
@@ -27,6 +28,8 @@ export function registerPlaybooksRoutes(app: Express): void {
     try {
       const pb = await storage.getPlaybook(p(req.params.id));
       if (!pb) return res.status(404).json({ message: "Playbook not found" });
+      const orgId = getOrgId(req);
+      if (orgId && pb.orgId !== orgId) return res.status(404).json({ message: "Playbook not found" });
       res.json(pb);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch playbook" });
@@ -71,38 +74,63 @@ export function registerPlaybooksRoutes(app: Express): void {
     },
   );
 
-  app.patch("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const existing = await storage.getPlaybook(p(req.params.id));
-      if (!existing) return res.status(404).json({ message: "Playbook not found" });
-      const updated = await storage.updatePlaybook(p(req.params.id), {
-        ...req.body,
-        updatedAt: new Date(),
-      });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update playbook" });
-    }
-  });
+  app.patch(
+    "/api/playbooks/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const existing = await storage.getPlaybook(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Playbook not found" });
+        const { name, description, trigger, conditions, actions, status } = req.body;
+        const updateData: Record<string, any> = { updatedAt: new Date() };
+        if (name !== undefined) updateData.name = name;
+        if (description !== undefined) updateData.description = description;
+        if (trigger !== undefined) updateData.trigger = trigger;
+        if (conditions !== undefined) updateData.conditions = conditions;
+        if (actions !== undefined) updateData.actions = actions;
+        if (status !== undefined) updateData.status = status;
+        const updated = await storage.updatePlaybook(p(req.params.id), updateData);
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update playbook" });
+      }
+    },
+  );
 
-  app.delete("/api/playbooks/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const deleted = await storage.deletePlaybook(p(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "Playbook not found" });
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "playbook_deleted",
-        resourceType: "playbook",
-        resourceId: p(req.params.id),
-      });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete playbook" });
-    }
-  });
+  app.delete(
+    "/api/playbooks/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "admin"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const existing = await storage.getPlaybook(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Playbook not found" });
+        const deleted = await storage.deletePlaybook(p(req.params.id));
+        if (!deleted) return res.status(404).json({ message: "Playbook not found" });
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "playbook_deleted",
+          resourceType: "playbook",
+          resourceId: p(req.params.id),
+        });
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete playbook" });
+      }
+    },
+  );
 
   app.post("/api/playbooks/:id/execute", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {

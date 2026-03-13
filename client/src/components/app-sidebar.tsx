@@ -295,7 +295,7 @@ function useRecentPages(currentPath: string) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { currentOrg, currentOrgId, memberships, switchOrg } = useOrgContext();
+  const { currentOrg, currentOrgId, currentRole, memberships, switchOrg } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
 
@@ -435,12 +435,14 @@ export function AppSidebar() {
             </span>
             <span className="text-[10px] text-emerald-400/80 font-medium">Online</span>
           </div>
-          <Badge
-            variant="outline"
-            className="text-[8px] px-1.5 py-0 h-3.5 ml-auto border-cyan-500/20 bg-cyan-500/5 text-cyan-400 font-bold tracking-wider"
-          >
-            PRO
-          </Badge>
+          {currentOrg?.orgType && (
+            <Badge
+              variant="outline"
+              className="text-[8px] px-1.5 py-0 h-3.5 ml-auto border-cyan-500/20 bg-cyan-500/5 text-cyan-400 font-bold tracking-wider"
+            >
+              {currentOrg.orgType.toUpperCase()}
+            </Badge>
+          )}
         </div>
       </SidebarHeader>
 
@@ -584,7 +586,9 @@ export function AppSidebar() {
             <p className="text-[11px] font-semibold truncate leading-tight">
               {user?.firstName || "User"} {user?.lastName || ""}
             </p>
-            <p className="text-[9px] text-sidebar-foreground/35 truncate leading-tight">Security Analyst</p>
+            <p className="text-[9px] text-sidebar-foreground/35 truncate leading-tight">
+              {currentRole ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1).replace(/_/g, " ") : "Analyst"}
+            </p>
           </div>
         </div>
         <SidebarMenu>

@@ -7,7 +7,8 @@ export function registerReportsRoutes(app: Express): void {
   // Export Routes (Phase 10)
   app.get("/api/export/alerts", isAuthenticated, async (req, res) => {
     try {
-      const allAlerts = await storage.getAlerts();
+      const orgId = getOrgId(req);
+      const allAlerts = await storage.getAlerts(orgId);
       const csvHeader = formatCSVRow([
         "ID",
         "Title",
@@ -55,7 +56,8 @@ export function registerReportsRoutes(app: Express): void {
 
   app.get("/api/export/incidents", isAuthenticated, async (req, res) => {
     try {
-      const allIncidents = await storage.getIncidents();
+      const orgId = getOrgId(req);
+      const allIncidents = await storage.getIncidents(orgId);
       const csvHeader = formatCSVRow([
         "ID",
         "Title",

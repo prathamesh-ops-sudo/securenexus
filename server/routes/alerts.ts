@@ -14,13 +14,14 @@ export function registerAlertsRoutes(app: Express): void {
   // Alerts
   app.get("/api/alerts", isAuthenticated, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const { search } = req.query;
       const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
       if (search && typeof search === "string") {
-        const results = await storage.searchAlerts(search);
+        const results = await storage.searchAlerts(search, orgId);
         return res.json(results.slice(offset, offset + limit));
       }
-      const allAlerts = await storage.getAlerts();
+      const allAlerts = await storage.getAlerts(orgId);
       const sorted = sortOrder === "asc" ? [...allAlerts].reverse() : allAlerts;
       res.json(sorted.slice(offset, offset + limit));
     } catch (error) {
@@ -77,6 +78,8 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const alert = await storage.getAlert(p(req.params.id));
       if (!alert) return res.status(404).json({ message: "Alert not found" });
+      const orgId = getOrgId(req);
+      if (orgId && alert.orgId !== orgId) return res.status(404).json({ message: "Alert not found" });
       res.json(alert);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch alert" });
@@ -189,7 +192,7 @@ export function registerAlertsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const { alertIds, status, suppressed, assignedTo } = req.body || {};
-        const orgId = (req as any).user?.orgId;
+        const orgId = (req as any).orgId;
         if (!Array.isArray(alertIds) || alertIds.length === 0) {
           return res.status(400).json({ message: "alertIds array is required" });
         }
@@ -198,7 +201,7 @@ export function registerAlertsRoutes(app: Express): void {
         for (const id of alertIds) {
           const alertId = p(String(id));
           const existing = await storage.getAlert(alertId);
-          if (!existing || (orgId && existing.orgId && existing.orgId !== orgId)) continue;
+          if (!existing || !orgId || existing.orgId !== orgId) continue;
           const patch: Record<string, any> = {};
           if (typeof status === "string" && status.length > 0) patch.status = status;
           if (typeof suppressed === "boolean") {

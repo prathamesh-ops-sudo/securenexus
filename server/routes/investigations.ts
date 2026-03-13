@@ -277,7 +277,7 @@ export function registerInvestigationsRoutes(app: Express): void {
       const orgId = (req as any).user?.orgId;
       const run = await storage.getInvestigationRun(req.params.id as string);
       if (!run) return res.status(404).json({ message: "Investigation not found" });
-      if (orgId && run.orgId !== orgId) return res.status(404).json({ message: "Investigation not found" });
+      if (!orgId || run.orgId !== orgId) return res.status(404).json({ message: "Investigation not found" });
       const steps = await storage.getInvestigationSteps(run.id);
       res.json({ ...run, steps });
     } catch (error) {
@@ -368,7 +368,7 @@ export function registerInvestigationsRoutes(app: Express): void {
       const user = (req as any).user;
       const template = await storage.getRunbookTemplate(p(req.params.id));
       if (!template) return res.status(404).json({ message: "Runbook template not found" });
-      if (template.orgId && user?.orgId && template.orgId !== user.orgId)
+      if (!user?.orgId || (template.orgId && template.orgId !== user.orgId))
         return res.status(403).json({ message: "Access denied" });
       const steps = await storage.getRunbookSteps(template.id);
       res.json({ ...template, steps });
