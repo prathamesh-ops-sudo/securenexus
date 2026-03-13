@@ -184,11 +184,22 @@ export async function invokeWithPromptStream(
             temperature: appConfig.ai.temperature,
           };
 
+  // Inject few-shot examples from active learning (same as non-streaming path)
+  let augmentedSystemPrompt = prompt.systemPrompt;
+  try {
+    const fewShotBlock = await buildFewShotAugmentedPrompt(tier, orgId);
+    if (fewShotBlock) {
+      augmentedSystemPrompt = `${prompt.systemPrompt}\n\n${fewShotBlock}`;
+    }
+  } catch (err) {
+    log.warn("Failed to build few-shot augmented prompt (streaming)", { promptId, tier, error: String(err) });
+  }
+
   await gatewayInvokeStream(
     {
       modelId: modelConfig.modelId,
       backend: appConfig.ai.backend,
-      systemPrompt: prompt.systemPrompt,
+      systemPrompt: augmentedSystemPrompt,
       userMessage,
       maxTokens: modelConfig.maxTokens,
       temperature: modelConfig.temperature,
