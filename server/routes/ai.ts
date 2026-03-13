@@ -24,11 +24,116 @@ import {
   conductThreatHunt,
   analyzeBehavior,
   predictAttackPaths,
+  streamNarrative,
+  streamDeepInvestigation,
+  conductMultiTurnInvestigation,
+  generateDetectionRules,
 } from "../ai";
 import { recordFeedbackOutcome } from "../ai/active-learning";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import type { InsertAttackGraphNode, InsertAttackGraphEdge } from "@shared/schema";
 import { invokeModel as gatewayInvoke } from "../ai/model-gateway";
 import { config as appConfig } from "../config";
+
+/**
+ * Persist attack graph data from a deep investigation result to the database.
+ * Extracts nodes and edges from the result's attackGraph field and stores them
+ * in separate normalized tables for querying and visualization.
+ */
+async function persistAttackGraph(result: Record<string, unknown>, incidentId: string, orgId: string): Promise<void> {
+  const attackGraph = result.attackGraph as
+    | {
+        initialAccess?: unknown;
+        nodes?: unknown[];
+        edges?: unknown[];
+        currentPosition?: string;
+        objectivesAchieved?: string[];
+        objectivesInProgress?: string[];
+      }
+    | undefined;
+
+  if (!attackGraph || (!attackGraph.nodes?.length && !attackGraph.edges?.length)) {
+    return; // No attack graph data to persist
+  }
+
+  const nodes = Array.isArray(attackGraph.nodes) ? attackGraph.nodes : [];
+  const edges = Array.isArray(attackGraph.edges) ? attackGraph.edges : [];
+
+  // Compute max depth from nodes
+  let maxDepth = 0;
+  for (const n of nodes) {
+    const d = typeof n === "object" && n && "depth" in n ? Number((n as Record<string, unknown>).depth) || 0 : 0;
+    if (d > maxDepth) maxDepth = d;
+  }
+
+  // Create the parent graph record
+  const graph = await storage.createAttackGraph({
+    orgId,
+    incidentId,
+    initialAccessDescription:
+      typeof attackGraph.initialAccess === "string"
+        ? attackGraph.initialAccess
+        : JSON.stringify(attackGraph.initialAccess ?? null),
+    currentPosition: attackGraph.currentPosition || null,
+    objectivesAchieved: attackGraph.objectivesAchieved || [],
+    objectivesInProgress: attackGraph.objectivesInProgress || [],
+    totalNodes: nodes.length,
+    totalEdges: edges.length,
+    maxDepth,
+    confidence: typeof result.investigationConfidence === "number" ? result.investigationConfidence : 0,
+    metadata: null,
+  });
+
+  // Insert nodes
+  if (nodes.length > 0) {
+    const nodeRecords: InsertAttackGraphNode[] = nodes.map((n, idx) => {
+      const node = (typeof n === "object" && n ? n : {}) as Record<string, unknown>;
+      return {
+        graphId: graph.id,
+        nodeId: String(node.id || node.nodeId || `node-${idx}`),
+        nodeType: String(node.type || node.nodeType || "unknown"),
+        label: String(node.label || node.name || `Node ${idx}`),
+        description: node.description ? String(node.description) : null,
+        mitreTechnique: node.mitreTechnique || node.technique ? String(node.mitreTechnique || node.technique) : null,
+        mitreTactic: node.mitreTactic || node.tactic ? String(node.mitreTactic || node.tactic) : null,
+        confidence: typeof node.confidence === "number" ? node.confidence : null,
+        severity: node.severity ? String(node.severity) : null,
+        evidence: Array.isArray(node.evidence) ? node.evidence.map(String) : [],
+        metadata: node.metadata ? (node.metadata as Record<string, unknown>) : null,
+        positionX: typeof node.x === "number" ? node.x : typeof node.positionX === "number" ? node.positionX : null,
+        positionY: typeof node.y === "number" ? node.y : typeof node.positionY === "number" ? node.positionY : null,
+        depth: typeof node.depth === "number" ? node.depth : idx,
+      };
+    });
+    await storage.createAttackGraphNodes(nodeRecords);
+  }
+
+  // Insert edges
+  if (edges.length > 0) {
+    const edgeRecords: InsertAttackGraphEdge[] = edges.map((e, idx) => {
+      const edge = (typeof e === "object" && e ? e : {}) as Record<string, unknown>;
+      return {
+        graphId: graph.id,
+        sourceNodeId: String(edge.source || edge.from || edge.sourceNodeId || `node-${idx}`),
+        targetNodeId: String(edge.target || edge.to || edge.targetNodeId || `node-${idx + 1}`),
+        relationship: String(edge.relationship || edge.label || edge.type || "connected"),
+        technique: edge.technique ? String(edge.technique) : null,
+        confidence: typeof edge.confidence === "number" ? edge.confidence : null,
+        timestamp: edge.timestamp ? String(edge.timestamp) : null,
+        evidence: Array.isArray(edge.evidence) ? edge.evidence.map(String) : [],
+        metadata: edge.metadata ? (edge.metadata as Record<string, unknown>) : null,
+      };
+    });
+    await storage.createAttackGraphEdges(edgeRecords);
+  }
+
+  logger.child("ai").info("Attack graph persisted", {
+    graphId: graph.id,
+    incidentId,
+    nodes: nodes.length,
+    edges: edges.length,
+  });
+}
 
 export function registerAiRoutes(app: Express): void {
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
@@ -168,6 +273,227 @@ export function registerAiRoutes(app: Express): void {
         logger.child("ai").error("AI narrative error", { error: String(error) });
         res.status(500).json({ message: "AI narrative generation failed. Please try again." });
       }
+    },
+  );
+
+  // ── SSE Streaming: Narrative ──
+  app.get(
+    "/api/ai/narrative/:incidentId/stream",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      const incident = await storage.getIncident(p(req.params.incidentId));
+      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
+      const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
+
+      // Set SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      // Send initial connection event
+      res.write(
+        `data: ${JSON.stringify({ type: "connected", message: "Stream connected. Building threat context..." })}\n\n`,
+      );
+
+      let threatIntelCtx;
+      try {
+        threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
+        res.write(
+          `data: ${JSON.stringify({ type: "status", message: "Threat context built. Starting AI analysis..." })}\n\n`,
+        );
+      } catch (err) {
+        res.write(
+          `data: ${JSON.stringify({ type: "error", message: "Failed to build threat intelligence context" })}\n\n`,
+        );
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+
+      await streamNarrative(incident, incidentAlerts, threatIntelCtx, {
+        onChunk: (text: string) => {
+          if (!res.writableEnded) {
+            res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
+          }
+        },
+        onComplete: async (fullText: string, metrics) => {
+          try {
+            // Parse the completed response and store in DB (same as non-streaming)
+            const parsed = (() => {
+              try {
+                const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+                return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+              } catch {
+                return null;
+              }
+            })();
+
+            if (parsed) {
+              const storedIocs = Array.isArray(parsed.iocs)
+                ? parsed.iocs.map((ioc: any) =>
+                    typeof ioc === "string" ? ioc : `${ioc.value} (${ioc.type}: ${ioc.context})`,
+                  )
+                : [];
+              const { diamondModel: _dm, ...storedAttackerProfile } = parsed.attackerProfile || ({} as any);
+              await storage.updateIncident(p(req.params.incidentId), {
+                aiNarrative: parsed.narrative || fullText,
+                aiSummary: parsed.summary,
+                mitigationSteps: parsed.mitigationSteps as any,
+                iocs: storedIocs as any,
+                attackerProfile: storedAttackerProfile as any,
+                referencedAlertIds: Array.isArray(parsed.citedAlertIds) ? parsed.citedAlertIds : [],
+              });
+            }
+
+            await storage.createAuditLog({
+              userId: (req as any).user?.id,
+              userName: (req as any).user?.firstName
+                ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+                : "Analyst",
+              action: "ai_narrative_generated",
+              resourceType: "incident",
+              resourceId: p(req.params.incidentId),
+              details: { streamed: true, latencyMs: metrics.latencyMs, riskScore: parsed?.riskScore },
+            });
+
+            storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+          } catch (e) {
+            logger.child("ai").warn("Post-stream processing error", { error: String(e) });
+          }
+
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "done", latencyMs: metrics.latencyMs })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream completion", { error: String(writeErr) });
+          }
+        },
+        onError: (error: Error) => {
+          logger.child("ai").error("Streaming narrative error", { error: error.message });
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream error", { error: String(writeErr) });
+          }
+        },
+      });
+    },
+  );
+
+  // ── SSE Streaming: Deep Investigation ──
+  app.get(
+    "/api/ai/deep-investigation/:incidentId/stream",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      const incident = await storage.getIncident(p(req.params.incidentId));
+      if (!incident || (orgId && incident.orgId && incident.orgId !== orgId)) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
+
+      const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
+      if (incidentAlerts.length === 0) {
+        return res.status(400).json({ message: "No alerts associated with this incident" });
+      }
+
+      // Set SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      res.write(
+        `data: ${JSON.stringify({ type: "connected", message: "Stream connected. Building forensic context..." })}\n\n`,
+      );
+
+      let threatIntelCtx;
+      try {
+        threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
+        res.write(
+          `data: ${JSON.stringify({ type: "status", message: "Context enriched. Starting deep investigation..." })}\n\n`,
+        );
+      } catch (err) {
+        // Continue without threat intel
+        res.write(
+          `data: ${JSON.stringify({ type: "status", message: "Proceeding without threat intelligence enrichment..." })}\n\n`,
+        );
+      }
+
+      await streamDeepInvestigation(incident, incidentAlerts, threatIntelCtx, {
+        onChunk: (text: string) => {
+          if (!res.writableEnded) {
+            res.write(`data: ${JSON.stringify({ type: "chunk", text })}\n\n`);
+          }
+        },
+        onComplete: async (fullText: string, metrics) => {
+          try {
+            // Try to extract and persist attack graph from streamed text
+            try {
+              const parsed = JSON.parse(fullText);
+              if (parsed && parsed.attackGraph) {
+                await persistAttackGraph(parsed, incident.id, orgId);
+              }
+            } catch {
+              // Stream text may not be valid JSON — that's OK
+            }
+
+            await storage.createAuditLog({
+              userId: (req as any).user?.id,
+              userName: (req as any).user?.firstName
+                ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+                : "Analyst",
+              action: "ai_deep_investigation",
+              resourceType: "incident",
+              resourceId: incident.id,
+              details: { alertCount: incidentAlerts.length, streamed: true, latencyMs: metrics.latencyMs },
+            });
+            storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+          } catch (e) {
+            logger.child("ai").warn("Post-stream processing error", { error: String(e) });
+          }
+
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "done", latencyMs: metrics.latencyMs })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream completion", { error: String(writeErr) });
+          }
+        },
+        onError: (error: Error) => {
+          logger.child("ai").error("Streaming deep investigation error", { error: error.message });
+          try {
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+              res.write("data: [DONE]\n\n");
+              res.end();
+            }
+          } catch (writeErr) {
+            logger.child("ai").warn("Failed to write stream error", { error: String(writeErr) });
+          }
+        },
+      });
     },
   );
 
@@ -693,6 +1019,11 @@ export function registerAiRoutes(app: Express): void {
 
         const result = await conductDeepInvestigation(incident, incidentAlerts, threatIntelCtx, orgId);
 
+        // Persist attack graph if present
+        persistAttackGraph(result as unknown as Record<string, unknown>, incident.id, orgId).catch((err) => {
+          logger.child("ai").warn("Failed to persist attack graph", { error: String(err) });
+        });
+
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName
@@ -818,6 +1149,111 @@ export function registerAiRoutes(app: Express): void {
    * POST /api/ai/predict-attack-paths
    * Predict attacker's next moves and attack paths
    */
+  // ── Attack Graph Persistence API ──
+
+  /**
+   * GET /api/ai/investigation-graphs/:incidentId
+   * Fetch all persisted attack graphs for a specific incident
+   */
+  app.get("/api/ai/investigation-graphs/:incidentId", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+      const graphs = await storage.getAttackGraphsByIncident(p(req.params.incidentId), orgId);
+
+      // Fetch nodes and edges for each graph
+      const result = await Promise.all(
+        graphs.map(async (graph) => {
+          const [nodes, edges] = await Promise.all([
+            storage.getAttackGraphNodes(graph.id),
+            storage.getAttackGraphEdges(graph.id),
+          ]);
+          return { ...graph, nodes, edges };
+        }),
+      );
+
+      res.json(result);
+    } catch (error: any) {
+      logger.child("ai").error("Failed to fetch investigation graphs", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch investigation graphs" });
+    }
+  });
+
+  /**
+   * GET /api/ai/investigation-graphs
+   * Query attack graphs by org and optional time range
+   */
+  app.get("/api/ai/investigation-graphs", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+      const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
+      const days = req.query.days ? parseInt(String(req.query.days), 10) : undefined;
+
+      const graphs = await storage.getAttackGraphsByOrg(orgId, limit, days);
+      res.json(graphs);
+    } catch (error: any) {
+      logger.child("ai").error("Failed to fetch org investigation graphs", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch investigation graphs" });
+    }
+  });
+
+  /**
+   * GET /api/ai/investigation-graphs/detail/:graphId
+   * Fetch a single attack graph with all nodes and edges
+   */
+  app.get("/api/ai/investigation-graphs/detail/:graphId", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+      const graph = await storage.getAttackGraph(p(req.params.graphId));
+      if (!graph || graph.orgId !== orgId) {
+        return res.status(404).json({ message: "Attack graph not found" });
+      }
+
+      const [nodes, edges] = await Promise.all([
+        storage.getAttackGraphNodes(graph.id),
+        storage.getAttackGraphEdges(graph.id),
+      ]);
+
+      res.json({ ...graph, nodes, edges });
+    } catch (error: any) {
+      logger.child("ai").error("Failed to fetch attack graph detail", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch attack graph" });
+    }
+  });
+
+  /**
+   * DELETE /api/ai/investigation-graphs/:graphId
+   * Delete a persisted attack graph (cascades to nodes/edges)
+   */
+  app.delete(
+    "/api/ai/investigation-graphs/:graphId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        if (!orgId) return res.status(403).json({ message: "Organization context required" });
+
+        const graph = await storage.getAttackGraph(p(req.params.graphId));
+        if (!graph || graph.orgId !== orgId) {
+          return res.status(404).json({ message: "Attack graph not found" });
+        }
+
+        await storage.deleteAttackGraph(graph.id);
+        res.json({ message: "Attack graph deleted" });
+      } catch (error: any) {
+        logger.child("ai").error("Failed to delete attack graph", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete attack graph" });
+      }
+    },
+  );
+
   app.post(
     "/api/ai/predict-attack-paths",
     isAuthenticated,
@@ -862,6 +1298,256 @@ export function registerAiRoutes(app: Express): void {
       } catch (error: any) {
         logger.child("ai").error("Attack path prediction error", { error: String(error) });
         res.status(500).json({ message: "Attack path prediction failed. Please try again." });
+      }
+    },
+  );
+
+  // ─── Multi-Turn Investigation Chat ──────────────────────────────────────────
+
+  // POST /api/ai/investigation/:incidentId/chat — send a message in investigation thread
+  app.post(
+    "/api/ai/investigation/:incidentId/chat",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const incidentId = String(req.params.incidentId);
+        const orgId = getOrgId(req);
+        const { message, threadId } = req.body;
+
+        if (!message || typeof message !== "string") {
+          return res.status(400).json({ message: "message is required" });
+        }
+
+        // Verify incident belongs to org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        // Generate or use existing thread ID
+        const activeThreadId = String(threadId || `thread_${incidentId}_${Date.now()}`);
+
+        // Get conversation history for this thread
+        const history = await storage.getChatThread(activeThreadId, orgId);
+        const conversationHistory = history.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+        // Build incident context
+        const incidentAlerts = await storage.getAlertsByIncident(incidentId);
+        const categories = Array.from(new Set(incidentAlerts.map((a) => a.category).filter(Boolean)));
+        const incidentContext = `Incident: ${incident.title}\nSeverity: ${incident.severity}\nStatus: ${incident.status}\nSummary: ${incident.summary || "N/A"}\nAlerts: ${incidentAlerts.length} correlated alerts\nCategories: ${categories.join(", ")}`;
+
+        // Store user message
+        await storage.createChatMessage({
+          orgId,
+          incidentId,
+          threadId: activeThreadId,
+          role: "user",
+          content: message,
+        });
+
+        // Get AI response via Claude Opus (investigation tier)
+        const aiResponse = await conductMultiTurnInvestigation(incidentContext, conversationHistory, message, orgId);
+
+        // Store assistant response
+        await storage.createChatMessage({
+          orgId,
+          incidentId,
+          threadId: activeThreadId,
+          role: "assistant",
+          content: aiResponse.reply,
+          metadata: {
+            suggestedFollowups: aiResponse.suggestedFollowups,
+            referencedTechniques: aiResponse.referencedTechniques,
+            confidence: aiResponse.confidence,
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json({
+          threadId: activeThreadId,
+          reply: aiResponse.reply,
+          suggestedFollowups: aiResponse.suggestedFollowups,
+          referencedTechniques: aiResponse.referencedTechniques,
+          confidence: aiResponse.confidence,
+        });
+      } catch (error: any) {
+        logger.child("ai").error("Investigation chat error", { error: String(error) });
+        res.status(500).json({ message: "Investigation chat failed. Please try again." });
+      }
+    },
+  );
+
+  // GET /api/ai/investigation/:incidentId/thread — retrieve conversation history
+  app.get(
+    "/api/ai/investigation/:incidentId/thread",
+    isAuthenticated,
+    resolveOrgContext,
+    async (req: Request, res: Response) => {
+      try {
+        const incidentId = String(req.params.incidentId);
+        const orgId = getOrgId(req);
+
+        // Verify incident belongs to org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const messages = await storage.getChatThreadsByIncident(incidentId, orgId);
+
+        // Group messages by threadId
+        const threads: Record<string, typeof messages> = {};
+        for (const msg of messages) {
+          if (!threads[msg.threadId]) {
+            threads[msg.threadId] = [];
+          }
+          threads[msg.threadId].push(msg);
+        }
+
+        res.json({ incidentId, threads });
+      } catch (error: any) {
+        logger.child("ai").error("Get investigation thread error", { error: String(error) });
+        res.status(500).json({ message: "Failed to retrieve investigation thread." });
+      }
+    },
+  );
+
+  // ─── AI-Generated Detection Rules ──────────────────────────────────────────
+
+  // POST /api/ai/investigation/:incidentId/generate-rules — auto-generate detection rules
+  app.post(
+    "/api/ai/investigation/:incidentId/generate-rules",
+    isAuthenticated,
+    resolveOrgContext,
+    enforcePlanLimit("ai_analyses"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const incidentId = String(req.params.incidentId);
+        const orgId = getOrgId(req);
+
+        // Verify incident belongs to org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const incidentAlerts = await storage.getAlertsByIncident(incidentId);
+        const techniques = Array.from(new Set(incidentAlerts.map((a) => a.mitreTechnique).filter(Boolean))) as string[];
+        const indicators = incidentAlerts
+          .flatMap((a) => [a.sourceIp, a.hostname].filter(Boolean))
+          .filter((v, i, arr) => arr.indexOf(v) === i) as string[];
+
+        const incidentSummary = `${incident.title}: ${incident.summary || "No description"} — Severity: ${incident.severity}, Alerts: ${incidentAlerts.length}`;
+
+        // Generate rules via Claude Opus
+        const result = await generateDetectionRules(incidentSummary, techniques, indicators, orgId);
+
+        // Persist generated rules
+        const savedRules = [];
+        for (const rule of result.rules) {
+          const saved = await storage.createAiGeneratedRule({
+            orgId,
+            sourceIncidentId: incidentId,
+            name: rule.name,
+            description: rule.description,
+            ruleContent: rule.conditionTree,
+            sigmaNormalized: rule.sigmaRule,
+            confidence: rule.confidence,
+            mitreTactic: rule.mitreTactic,
+            mitreTechnique: rule.mitreTechnique,
+            generatedBy: "claude-opus",
+          });
+          savedRules.push(saved);
+        }
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_generate_detection_rules",
+          resourceType: "incident",
+          resourceId: String(incidentId),
+          details: {
+            rulesGenerated: savedRules.length,
+            techniques,
+            analysisNotes: result.analysisNotes,
+          },
+        });
+
+        storage.incrementUsage(orgId, "ai_analyses").catch(() => {});
+
+        res.json({
+          rules: savedRules,
+          analysisNotes: result.analysisNotes,
+          coverageGaps: result.coverageGaps,
+        });
+      } catch (error: any) {
+        logger.child("ai").error("Detection rule generation error", { error: String(error) });
+        res.status(500).json({ message: "Detection rule generation failed. Please try again." });
+      }
+    },
+  );
+
+  // GET /api/ai/generated-rules — get all AI-generated rules for the org
+  app.get("/api/ai/generated-rules", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
+      const rules = await storage.getAiGeneratedRulesByOrg(orgId, limit);
+      res.json(rules);
+    } catch (error: any) {
+      logger.child("ai").error("Get AI-generated rules error", { error: String(error) });
+      res.status(500).json({ message: "Failed to retrieve AI-generated rules." });
+    }
+  });
+
+  // PATCH /api/ai/generated-rules/:ruleId — update status of AI-generated rule (accept/reject)
+  app.patch(
+    "/api/ai/generated-rules/:ruleId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const ruleId = String(req.params.ruleId);
+        const orgId = getOrgId(req);
+
+        const rule = await storage.getAiGeneratedRule(ruleId);
+        if (!rule || rule.orgId !== orgId) {
+          return res.status(404).json({ message: "Rule not found" });
+        }
+
+        const allowedFields = ["status", "reviewedBy", "reviewedAt"] as const;
+        const allowedStatuses = new Set(["draft", "review", "accepted", "rejected"]);
+        const update: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            update[field] = req.body[field];
+          }
+        }
+
+        if (update.status && !allowedStatuses.has(update.status as string)) {
+          return res.status(400).json({ message: "Invalid status. Must be one of: draft, review, accepted, rejected" });
+        }
+
+        if (Object.keys(update).length === 0) {
+          return res.status(400).json({ message: "No valid fields to update" });
+        }
+
+        const updated = await storage.updateAiGeneratedRule(ruleId, update);
+        res.json(updated);
+      } catch (error: any) {
+        logger.child("ai").error("Update AI-generated rule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update rule." });
       }
     },
   );

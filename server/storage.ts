@@ -100,6 +100,21 @@ import {
   type CspmFinding,
   type InsertCspmFinding,
   cspmFindings,
+  type CspmDriftBaseline,
+  type InsertCspmDriftBaseline,
+  cspmDriftBaselines,
+  type CspmDriftEvent,
+  type InsertCspmDriftEvent,
+  cspmDriftEvents,
+  type CspmDspmFinding,
+  type InsertCspmDspmFinding,
+  cspmDspmFindings,
+  type CspmAttackPath,
+  type InsertCspmAttackPath,
+  cspmAttackPaths,
+  type CspmRemediation,
+  type InsertCspmRemediation,
+  cspmRemediations,
   type EndpointAsset,
   type InsertEndpointAsset,
   endpointAssets,
@@ -333,6 +348,36 @@ import {
   type EngineExplainabilityLog,
   type InsertEngineExplainabilityLog,
   engineExplainabilityLogs,
+  type AttackGraph,
+  type InsertAttackGraph,
+  attackGraphs,
+  type AttackGraphNode,
+  type InsertAttackGraphNode,
+  attackGraphNodes,
+  type AttackGraphEdge,
+  type InsertAttackGraphEdge,
+  attackGraphEdges,
+  type InvestigationChatMessage,
+  type InsertInvestigationChatMessage,
+  investigationChatMessages,
+  type AiGeneratedRule,
+  type InsertAiGeneratedRule,
+  aiGeneratedRules,
+  type WarRoom as WarRoomRow,
+  type InsertWarRoom,
+  warRooms,
+  type WarRoomParticipant,
+  type InsertWarRoomParticipant,
+  warRoomParticipants,
+  type WarRoomMessage,
+  type InsertWarRoomMessage,
+  warRoomMessages,
+  type WarRoomActionItem,
+  type InsertWarRoomActionItem,
+  warRoomActionItems,
+  type WarRoomHandoff,
+  type InsertWarRoomHandoff,
+  warRoomHandoffs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
@@ -594,6 +639,30 @@ export interface IStorage {
   getCspmFindings(orgId: string, scanId?: string, severity?: string): Promise<CspmFinding[]>;
   createCspmFinding(finding: InsertCspmFinding): Promise<CspmFinding>;
   updateCspmFinding(id: string, updates: Partial<CspmFinding>): Promise<CspmFinding | null>;
+
+  // CSPM Drift Detection
+  getCspmDriftBaselines(orgId: string, accountId?: string): Promise<CspmDriftBaseline[]>;
+  createCspmDriftBaseline(baseline: InsertCspmDriftBaseline): Promise<CspmDriftBaseline>;
+  deleteCspmDriftBaselines(orgId: string, accountId: string): Promise<void>;
+  getCspmDriftEvents(orgId: string, accountId?: string, status?: string): Promise<CspmDriftEvent[]>;
+  createCspmDriftEvent(event: InsertCspmDriftEvent): Promise<CspmDriftEvent>;
+  updateCspmDriftEvent(id: string, updates: Partial<CspmDriftEvent>): Promise<CspmDriftEvent | null>;
+
+  // CSPM DSPM
+  getCspmDspmFindings(orgId: string, accountId?: string, sensitivityLevel?: string): Promise<CspmDspmFinding[]>;
+  createCspmDspmFinding(finding: InsertCspmDspmFinding): Promise<CspmDspmFinding>;
+  updateCspmDspmFinding(id: string, updates: Partial<CspmDspmFinding>): Promise<CspmDspmFinding | null>;
+
+  // CSPM Attack Paths
+  getCspmAttackPaths(orgId: string, severity?: string): Promise<CspmAttackPath[]>;
+  createCspmAttackPath(path: InsertCspmAttackPath): Promise<CspmAttackPath>;
+  updateCspmAttackPath(id: string, updates: Partial<CspmAttackPath>): Promise<CspmAttackPath | null>;
+
+  // CSPM Remediations
+  getCspmRemediations(orgId: string, accountId?: string, status?: string): Promise<CspmRemediation[]>;
+  getCspmRemediation(id: string): Promise<CspmRemediation | undefined>;
+  createCspmRemediation(remediation: InsertCspmRemediation): Promise<CspmRemediation>;
+  updateCspmRemediation(id: string, updates: Partial<CspmRemediation>): Promise<CspmRemediation | null>;
 
   getEndpointAssets(orgId: string): Promise<EndpointAsset[]>;
   getEndpointAsset(id: string): Promise<EndpointAsset | undefined>;
@@ -1151,6 +1220,54 @@ export interface IStorage {
   updateEngineDryRun(id: string, data: Partial<EngineDryRun>): Promise<EngineDryRun | undefined>;
   createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog>;
   getEngineExplainabilityLogs(orgId: string, engineName: string, limit?: number): Promise<EngineExplainabilityLog[]>;
+
+  // Attack Graph Persistence
+  createAttackGraph(graph: InsertAttackGraph): Promise<AttackGraph>;
+  getAttackGraphsByIncident(incidentId: string, orgId: string): Promise<AttackGraph[]>;
+  getAttackGraphsByOrg(orgId: string, limit?: number, days?: number): Promise<AttackGraph[]>;
+  getAttackGraph(id: string): Promise<AttackGraph | undefined>;
+  deleteAttackGraph(id: string): Promise<boolean>;
+  createAttackGraphNodes(nodes: InsertAttackGraphNode[]): Promise<AttackGraphNode[]>;
+  createAttackGraphEdges(edges: InsertAttackGraphEdge[]): Promise<AttackGraphEdge[]>;
+  getAttackGraphNodes(graphId: string): Promise<AttackGraphNode[]>;
+  getAttackGraphEdges(graphId: string): Promise<AttackGraphEdge[]>;
+
+  // Investigation Chat Messages
+  createChatMessage(msg: InsertInvestigationChatMessage): Promise<InvestigationChatMessage>;
+  getChatThread(threadId: string, orgId: string): Promise<InvestigationChatMessage[]>;
+  getChatThreadsByIncident(incidentId: string, orgId: string): Promise<InvestigationChatMessage[]>;
+
+  // AI-Generated Detection Rules
+  createAiGeneratedRule(rule: InsertAiGeneratedRule): Promise<AiGeneratedRule>;
+  getAiGeneratedRulesByOrg(orgId: string, limit?: number): Promise<AiGeneratedRule[]>;
+  getAiGeneratedRulesByIncident(incidentId: string, orgId: string): Promise<AiGeneratedRule[]>;
+  getAiGeneratedRule(id: string): Promise<AiGeneratedRule | undefined>;
+  updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined>;
+
+  // War Rooms (Persistent)
+  createWarRoom(room: InsertWarRoom): Promise<WarRoomRow>;
+  getWarRooms(orgId: string, status?: string): Promise<WarRoomRow[]>;
+  getWarRoom(id: string): Promise<WarRoomRow | undefined>;
+  updateWarRoom(id: string, data: Partial<WarRoomRow>): Promise<WarRoomRow | undefined>;
+  // War Room Participants
+  addWarRoomParticipant(participant: InsertWarRoomParticipant): Promise<WarRoomParticipant>;
+  getWarRoomParticipants(warRoomId: string): Promise<WarRoomParticipant[]>;
+  getWarRoomParticipantByUser(warRoomId: string, userId: string): Promise<WarRoomParticipant | undefined>;
+  removeWarRoomParticipant(warRoomId: string, userId: string): Promise<void>;
+  // War Room Messages (Timeline)
+  createWarRoomMessage(msg: InsertWarRoomMessage): Promise<WarRoomMessage>;
+  getWarRoomMessages(warRoomId: string, limit?: number): Promise<WarRoomMessage[]>;
+  getWarRoomMessagesByType(warRoomId: string, type: string): Promise<WarRoomMessage[]>;
+  // War Room Action Items
+  createWarRoomActionItem(item: InsertWarRoomActionItem): Promise<WarRoomActionItem>;
+  getWarRoomActionItems(warRoomId: string): Promise<WarRoomActionItem[]>;
+  getWarRoomActionItem(id: string): Promise<WarRoomActionItem | undefined>;
+  updateWarRoomActionItem(id: string, data: Partial<WarRoomActionItem>): Promise<WarRoomActionItem | undefined>;
+  // War Room Handoffs
+  createWarRoomHandoff(handoff: InsertWarRoomHandoff): Promise<WarRoomHandoff>;
+  getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]>;
+  getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined>;
+  updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2603,6 +2720,119 @@ export class DatabaseStorage implements IStorage {
 
   async updateCspmFinding(id: string, updates: Partial<CspmFinding>): Promise<CspmFinding | null> {
     const [updated] = await db.update(cspmFindings).set(updates).where(eq(cspmFindings.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM Drift Detection
+  async getCspmDriftBaselines(orgId: string, accountId?: string): Promise<CspmDriftBaseline[]> {
+    const conditions = [eq(cspmDriftBaselines.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmDriftBaselines.accountId, accountId));
+    return db
+      .select()
+      .from(cspmDriftBaselines)
+      .where(and(...conditions))
+      .orderBy(desc(cspmDriftBaselines.snapshotAt));
+  }
+
+  async createCspmDriftBaseline(baseline: InsertCspmDriftBaseline): Promise<CspmDriftBaseline> {
+    const [created] = await db.insert(cspmDriftBaselines).values(baseline).returning();
+    return created;
+  }
+
+  async deleteCspmDriftBaselines(orgId: string, accountId: string): Promise<void> {
+    await db
+      .delete(cspmDriftBaselines)
+      .where(and(eq(cspmDriftBaselines.orgId, orgId), eq(cspmDriftBaselines.accountId, accountId)));
+  }
+
+  async getCspmDriftEvents(orgId: string, accountId?: string, status?: string): Promise<CspmDriftEvent[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmDriftEvents.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmDriftEvents.accountId, accountId));
+    if (status) conditions.push(eq(cspmDriftEvents.status, status));
+    return db
+      .select()
+      .from(cspmDriftEvents)
+      .where(and(...conditions))
+      .orderBy(desc(cspmDriftEvents.detectedAt));
+  }
+
+  async createCspmDriftEvent(event: InsertCspmDriftEvent): Promise<CspmDriftEvent> {
+    const [created] = await db.insert(cspmDriftEvents).values(event).returning();
+    return created;
+  }
+
+  async updateCspmDriftEvent(id: string, updates: Partial<CspmDriftEvent>): Promise<CspmDriftEvent | null> {
+    const [updated] = await db.update(cspmDriftEvents).set(updates).where(eq(cspmDriftEvents.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM DSPM
+  async getCspmDspmFindings(orgId: string, accountId?: string, sensitivityLevel?: string): Promise<CspmDspmFinding[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmDspmFindings.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmDspmFindings.accountId, accountId));
+    if (sensitivityLevel) conditions.push(eq(cspmDspmFindings.sensitivityLevel, sensitivityLevel));
+    return db
+      .select()
+      .from(cspmDspmFindings)
+      .where(and(...conditions))
+      .orderBy(desc(cspmDspmFindings.detectedAt));
+  }
+
+  async createCspmDspmFinding(finding: InsertCspmDspmFinding): Promise<CspmDspmFinding> {
+    const [created] = await db.insert(cspmDspmFindings).values(finding).returning();
+    return created;
+  }
+
+  async updateCspmDspmFinding(id: string, updates: Partial<CspmDspmFinding>): Promise<CspmDspmFinding | null> {
+    const [updated] = await db.update(cspmDspmFindings).set(updates).where(eq(cspmDspmFindings.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM Attack Paths
+  async getCspmAttackPaths(orgId: string, severity?: string): Promise<CspmAttackPath[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmAttackPaths.orgId, orgId)];
+    if (severity) conditions.push(eq(cspmAttackPaths.severity, severity));
+    return db
+      .select()
+      .from(cspmAttackPaths)
+      .where(and(...conditions))
+      .orderBy(desc(cspmAttackPaths.detectedAt));
+  }
+
+  async createCspmAttackPath(path: InsertCspmAttackPath): Promise<CspmAttackPath> {
+    const [created] = await db.insert(cspmAttackPaths).values(path).returning();
+    return created;
+  }
+
+  async updateCspmAttackPath(id: string, updates: Partial<CspmAttackPath>): Promise<CspmAttackPath | null> {
+    const [updated] = await db.update(cspmAttackPaths).set(updates).where(eq(cspmAttackPaths.id, id)).returning();
+    return updated || null;
+  }
+
+  // CSPM Remediations
+  async getCspmRemediations(orgId: string, accountId?: string, status?: string): Promise<CspmRemediation[]> {
+    const conditions: ReturnType<typeof eq>[] = [eq(cspmRemediations.orgId, orgId)];
+    if (accountId) conditions.push(eq(cspmRemediations.accountId, accountId));
+    if (status) conditions.push(eq(cspmRemediations.status, status));
+    return db
+      .select()
+      .from(cspmRemediations)
+      .where(and(...conditions))
+      .orderBy(desc(cspmRemediations.executedAt));
+  }
+
+  async getCspmRemediation(id: string): Promise<CspmRemediation | undefined> {
+    const [remediation] = await db.select().from(cspmRemediations).where(eq(cspmRemediations.id, id));
+    return remediation;
+  }
+
+  async createCspmRemediation(remediation: InsertCspmRemediation): Promise<CspmRemediation> {
+    const [created] = await db.insert(cspmRemediations).values(remediation).returning();
+    return created;
+  }
+
+  async updateCspmRemediation(id: string, updates: Partial<CspmRemediation>): Promise<CspmRemediation | null> {
+    const [updated] = await db.update(cspmRemediations).set(updates).where(eq(cspmRemediations.id, id)).returning();
     return updated || null;
   }
 
@@ -5679,6 +5909,264 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(engineExplainabilityLogs.orgId, orgId), eq(engineExplainabilityLogs.engineName, engineName)))
       .orderBy(desc(engineExplainabilityLogs.createdAt))
       .limit(limit);
+  }
+
+  // Attack Graph Persistence
+  async createAttackGraph(graph: InsertAttackGraph): Promise<AttackGraph> {
+    const [created] = await db.insert(attackGraphs).values(graph).returning();
+    return created;
+  }
+
+  async getAttackGraphsByIncident(incidentId: string, orgId: string): Promise<AttackGraph[]> {
+    return db
+      .select()
+      .from(attackGraphs)
+      .where(and(eq(attackGraphs.incidentId, incidentId), eq(attackGraphs.orgId, orgId)))
+      .orderBy(desc(attackGraphs.createdAt));
+  }
+
+  async getAttackGraphsByOrg(orgId: string, limit = 50, days?: number): Promise<AttackGraph[]> {
+    const conditions = [eq(attackGraphs.orgId, orgId)];
+    if (days) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      conditions.push(gte(attackGraphs.createdAt, cutoff));
+    }
+    return db
+      .select()
+      .from(attackGraphs)
+      .where(and(...conditions))
+      .orderBy(desc(attackGraphs.createdAt))
+      .limit(limit);
+  }
+
+  async getAttackGraph(id: string): Promise<AttackGraph | undefined> {
+    const [graph] = await db.select().from(attackGraphs).where(eq(attackGraphs.id, id));
+    return graph;
+  }
+
+  async deleteAttackGraph(id: string): Promise<boolean> {
+    const result = await db.delete(attackGraphs).where(eq(attackGraphs.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async createAttackGraphNodes(nodes: InsertAttackGraphNode[]): Promise<AttackGraphNode[]> {
+    if (nodes.length === 0) return [];
+    return db.insert(attackGraphNodes).values(nodes).returning();
+  }
+
+  async createAttackGraphEdges(edges: InsertAttackGraphEdge[]): Promise<AttackGraphEdge[]> {
+    if (edges.length === 0) return [];
+    return db.insert(attackGraphEdges).values(edges).returning();
+  }
+
+  async getAttackGraphNodes(graphId: string): Promise<AttackGraphNode[]> {
+    return db
+      .select()
+      .from(attackGraphNodes)
+      .where(eq(attackGraphNodes.graphId, graphId))
+      .orderBy(attackGraphNodes.depth);
+  }
+
+  async getAttackGraphEdges(graphId: string): Promise<AttackGraphEdge[]> {
+    return db.select().from(attackGraphEdges).where(eq(attackGraphEdges.graphId, graphId));
+  }
+
+  // ─── Investigation Chat Messages ───────────────────────────────────────────
+  async createChatMessage(msg: InsertInvestigationChatMessage): Promise<InvestigationChatMessage> {
+    const [created] = await db.insert(investigationChatMessages).values(msg).returning();
+    return created;
+  }
+
+  async getChatThread(threadId: string, orgId: string): Promise<InvestigationChatMessage[]> {
+    return db
+      .select()
+      .from(investigationChatMessages)
+      .where(and(eq(investigationChatMessages.threadId, threadId), eq(investigationChatMessages.orgId, orgId)))
+      .orderBy(asc(investigationChatMessages.createdAt));
+  }
+
+  async getChatThreadsByIncident(incidentId: string, orgId: string): Promise<InvestigationChatMessage[]> {
+    return db
+      .select()
+      .from(investigationChatMessages)
+      .where(and(eq(investigationChatMessages.incidentId, incidentId), eq(investigationChatMessages.orgId, orgId)))
+      .orderBy(asc(investigationChatMessages.createdAt));
+  }
+
+  // ─── AI-Generated Detection Rules ──────────────────────────────────────────
+  async createAiGeneratedRule(rule: InsertAiGeneratedRule): Promise<AiGeneratedRule> {
+    const [created] = await db.insert(aiGeneratedRules).values(rule).returning();
+    return created;
+  }
+
+  async getAiGeneratedRulesByOrg(orgId: string, limit = 50): Promise<AiGeneratedRule[]> {
+    return db
+      .select()
+      .from(aiGeneratedRules)
+      .where(eq(aiGeneratedRules.orgId, orgId))
+      .orderBy(desc(aiGeneratedRules.createdAt))
+      .limit(limit);
+  }
+
+  async getAiGeneratedRulesByIncident(incidentId: string, orgId: string): Promise<AiGeneratedRule[]> {
+    return db
+      .select()
+      .from(aiGeneratedRules)
+      .where(and(eq(aiGeneratedRules.sourceIncidentId, incidentId), eq(aiGeneratedRules.orgId, orgId)))
+      .orderBy(desc(aiGeneratedRules.createdAt));
+  }
+
+  async getAiGeneratedRule(id: string): Promise<AiGeneratedRule | undefined> {
+    const [rule] = await db.select().from(aiGeneratedRules).where(eq(aiGeneratedRules.id, id));
+    return rule;
+  }
+
+  async updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined> {
+    const [updated] = await db.update(aiGeneratedRules).set(data).where(eq(aiGeneratedRules.id, id)).returning();
+    return updated;
+  }
+
+  // ─── War Rooms (Persistent) ─────────────────────────────────────────────────
+  async createWarRoom(room: InsertWarRoom): Promise<WarRoomRow> {
+    const [created] = await db.insert(warRooms).values(room).returning();
+    return created;
+  }
+
+  async getWarRooms(orgId: string, status?: string): Promise<WarRoomRow[]> {
+    const conditions = [eq(warRooms.orgId, orgId)];
+    if (status) conditions.push(eq(warRooms.status, status));
+    return db
+      .select()
+      .from(warRooms)
+      .where(and(...conditions))
+      .orderBy(desc(warRooms.createdAt));
+  }
+
+  async getWarRoom(id: string): Promise<WarRoomRow | undefined> {
+    const [room] = await db.select().from(warRooms).where(eq(warRooms.id, id));
+    return room;
+  }
+
+  async updateWarRoom(id: string, data: Partial<WarRoomRow>): Promise<WarRoomRow | undefined> {
+    const [updated] = await db
+      .update(warRooms)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(warRooms.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ─── War Room Participants ──────────────────────────────────────────────────
+  async addWarRoomParticipant(participant: InsertWarRoomParticipant): Promise<WarRoomParticipant> {
+    const [created] = await db.insert(warRoomParticipants).values(participant).returning();
+    return created;
+  }
+
+  async getWarRoomParticipants(warRoomId: string): Promise<WarRoomParticipant[]> {
+    return db
+      .select()
+      .from(warRoomParticipants)
+      .where(and(eq(warRoomParticipants.warRoomId, warRoomId), isNull(warRoomParticipants.leftAt)))
+      .orderBy(asc(warRoomParticipants.joinedAt));
+  }
+
+  async getWarRoomParticipantByUser(warRoomId: string, userId: string): Promise<WarRoomParticipant | undefined> {
+    const [p] = await db
+      .select()
+      .from(warRoomParticipants)
+      .where(
+        and(
+          eq(warRoomParticipants.warRoomId, warRoomId),
+          eq(warRoomParticipants.userId, userId),
+          isNull(warRoomParticipants.leftAt),
+        ),
+      );
+    return p;
+  }
+
+  async removeWarRoomParticipant(warRoomId: string, userId: string): Promise<void> {
+    await db
+      .update(warRoomParticipants)
+      .set({ leftAt: new Date() })
+      .where(
+        and(
+          eq(warRoomParticipants.warRoomId, warRoomId),
+          eq(warRoomParticipants.userId, userId),
+          isNull(warRoomParticipants.leftAt),
+        ),
+      );
+  }
+
+  // ─── War Room Messages (Timeline) ──────────────────────────────────────────
+  async createWarRoomMessage(msg: InsertWarRoomMessage): Promise<WarRoomMessage> {
+    const [created] = await db.insert(warRoomMessages).values(msg).returning();
+    return created;
+  }
+
+  async getWarRoomMessages(warRoomId: string, limit = 500): Promise<WarRoomMessage[]> {
+    return db
+      .select()
+      .from(warRoomMessages)
+      .where(eq(warRoomMessages.warRoomId, warRoomId))
+      .orderBy(asc(warRoomMessages.createdAt))
+      .limit(limit);
+  }
+
+  async getWarRoomMessagesByType(warRoomId: string, type: string): Promise<WarRoomMessage[]> {
+    return db
+      .select()
+      .from(warRoomMessages)
+      .where(and(eq(warRoomMessages.warRoomId, warRoomId), eq(warRoomMessages.type, type)))
+      .orderBy(asc(warRoomMessages.createdAt));
+  }
+
+  // ─── War Room Action Items ────────────────────────────────────────────────
+  async createWarRoomActionItem(item: InsertWarRoomActionItem): Promise<WarRoomActionItem> {
+    const [created] = await db.insert(warRoomActionItems).values(item).returning();
+    return created;
+  }
+
+  async getWarRoomActionItems(warRoomId: string): Promise<WarRoomActionItem[]> {
+    return db
+      .select()
+      .from(warRoomActionItems)
+      .where(eq(warRoomActionItems.warRoomId, warRoomId))
+      .orderBy(desc(warRoomActionItems.createdAt));
+  }
+
+  async getWarRoomActionItem(id: string): Promise<WarRoomActionItem | undefined> {
+    const [item] = await db.select().from(warRoomActionItems).where(eq(warRoomActionItems.id, id));
+    return item;
+  }
+
+  async updateWarRoomActionItem(id: string, data: Partial<WarRoomActionItem>): Promise<WarRoomActionItem | undefined> {
+    const [updated] = await db.update(warRoomActionItems).set(data).where(eq(warRoomActionItems.id, id)).returning();
+    return updated;
+  }
+
+  // ─── War Room Handoffs ────────────────────────────────────────────────────
+  async createWarRoomHandoff(handoff: InsertWarRoomHandoff): Promise<WarRoomHandoff> {
+    const [created] = await db.insert(warRoomHandoffs).values(handoff).returning();
+    return created;
+  }
+
+  async getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]> {
+    return db
+      .select()
+      .from(warRoomHandoffs)
+      .where(eq(warRoomHandoffs.warRoomId, warRoomId))
+      .orderBy(desc(warRoomHandoffs.createdAt));
+  }
+
+  async getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined> {
+    const [h] = await db.select().from(warRoomHandoffs).where(eq(warRoomHandoffs.id, id));
+    return h;
+  }
+
+  async updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined> {
+    const [updated] = await db.update(warRoomHandoffs).set(data).where(eq(warRoomHandoffs.id, id)).returning();
+    return updated;
   }
 }
 

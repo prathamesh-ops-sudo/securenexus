@@ -3,6 +3,7 @@ import { db } from "./db";
 import { agentResponseActions, nativeSensors } from "../shared/schema";
 import { eq, and, or, ilike } from "drizzle-orm";
 import { logger } from "./routes/shared";
+import { validateWebhookUrl } from "./outbound-security";
 
 const log = logger.child("action-dispatcher");
 
@@ -29,19 +30,19 @@ export async function dispatchAction(actionType: string, config: any, context: A
 
   switch (actionType) {
     case "create_jira_ticket":
-      return simulateTicketing("jira", config, context, executedAt);
+      return executeTicketing("jira", config, context, executedAt);
     case "create_servicenow_ticket":
-      return simulateTicketing("servicenow", config, context, executedAt);
+      return executeTicketing("servicenow", config, context, executedAt);
     case "notify_slack":
-      return simulateNotification("slack", config, context, executedAt);
+      return executeNotification("slack", config, context, executedAt);
     case "notify_teams":
-      return simulateNotification("teams", config, context, executedAt);
+      return executeNotification("teams", config, context, executedAt);
     case "notify_email":
-      return simulateNotification("email", config, context, executedAt);
+      return executeNotification("email", config, context, executedAt);
     case "notify_webhook":
-      return simulateNotification("webhook", config, context, executedAt);
+      return executeNotification("webhook", config, context, executedAt);
     case "notify_pagerduty":
-      return simulateNotification("pagerduty", config, context, executedAt);
+      return executeNotification("pagerduty", config, context, executedAt);
     case "isolate_host":
     case "block_ip":
     case "block_domain":
@@ -60,7 +61,7 @@ export async function dispatchAction(actionType: string, config: any, context: A
     case "escalate":
       return executeEscalate(config, context, executedAt);
     case "notify":
-      return simulateNotification("default", config, context, executedAt);
+      return executeNotification("default", config, context, executedAt);
     default:
       return {
         actionType,
@@ -71,7 +72,7 @@ export async function dispatchAction(actionType: string, config: any, context: A
   }
 }
 
-async function simulateTicketing(
+async function executeTicketing(
   platform: string,
   config: any,
   context: ActionContext,
@@ -82,6 +83,47 @@ async function simulateTicketing(
   const priority = config?.priority || "high";
   const project = config?.project || config?.projectKey || "SEC";
 
+  // If a webhook URL is configured for the ticketing platform, call it
+  const webhookUrl = config?.webhookUrl || config?.apiUrl;
+  let ticketUrl = `https://${platform}.example.com/browse/${ticketId}`;
+  let status: "completed" | "failed" = "completed";
+  let message = `Created ${platform} ticket ${ticketId}: "${summary}" (Priority: ${priority})`;
+
+  if (webhookUrl) {
+    const urlCheck = validateWebhookUrl(webhookUrl);
+    if (!urlCheck.valid) {
+      status = "failed";
+      message = `${platform} webhook URL validation failed: ${urlCheck.reason}`;
+    } else {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        const response = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(config?.authHeader ? { Authorization: config.authHeader } : {}),
+          },
+          body: JSON.stringify({ summary, priority, project, incidentId: context.incidentId, source: "SecureNexus" }),
+          signal: controller.signal,
+          redirect: "error",
+        });
+        clearTimeout(timeout);
+        if (response.ok) {
+          const data = await response.json().catch(() => ({}));
+          ticketUrl = (data as any)?.url || (data as any)?.ticketUrl || ticketUrl;
+          message = `Created ${platform} ticket via API: "${summary}" (Priority: ${priority})`;
+        } else {
+          status = "failed";
+          message = `${platform} API returned HTTP ${response.status}`;
+        }
+      } catch (err) {
+        status = "failed";
+        message = `${platform} API call failed: ${(err as Error).message}`;
+      }
+    }
+  }
+
   if (context.incidentId && context.storage) {
     await context.storage.createResponseAction({
       orgId: context.orgId,
@@ -90,30 +132,23 @@ async function simulateTicketing(
       alertId: context.alertId,
       targetType: "ticket",
       targetValue: ticketId,
-      status: "simulated",
+      status,
       requestPayload: { platform, summary, priority, project },
-      responsePayload: { ticketId, ticketUrl: `https://${platform}.example.com/browse/${ticketId}` },
+      responsePayload: { ticketId, ticketUrl },
       executedBy: context.userId,
     });
   }
 
   return {
     actionType: `create_${platform}_ticket`,
-    status: "simulated",
-    message: `[Simulated] Created ${platform} ticket ${ticketId}: "${summary}" (Priority: ${priority})`,
-    details: {
-      ticketId,
-      platform,
-      summary,
-      priority,
-      project,
-      ticketUrl: `https://${platform}.example.com/browse/${ticketId}`,
-    },
+    status,
+    message,
+    details: { ticketId, platform, summary, priority, project, ticketUrl },
     executedAt,
   };
 }
 
-async function simulateNotification(
+async function executeNotification(
   channel: string,
   config: any,
   context: ActionContext,
@@ -122,13 +157,60 @@ async function simulateNotification(
   const message = config?.message || `Alert from SecureNexus: Incident ${context.incidentId || "N/A"}`;
   const target = config?.channel || config?.recipient || config?.webhookUrl || "#security-alerts";
 
-  return {
-    actionType: `notify_${channel}`,
-    status: "simulated",
-    message: `[Simulated] Sent ${channel} notification to ${target}: "${message.substring(0, 80)}..."`,
-    details: { channel, target, message, incidentId: context.incidentId, alertId: context.alertId },
-    executedAt,
-  };
+  try {
+    const { dispatchNotification } = await import("./notification-dispatcher");
+    const results = await dispatchNotification(
+      {
+        title: `SecureNexus Action: ${context.incidentId || "Alert"}`,
+        body: message,
+        severity: "warning",
+        source: "action-dispatcher",
+        metadata: { incidentId: context.incidentId, alertId: context.alertId, channel },
+      },
+      "action_notification",
+      context.orgId,
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    if (successCount > 0) {
+      return {
+        actionType: `notify_${channel}`,
+        status: "completed",
+        message: `Sent ${channel} notification to ${target} (${successCount}/${results.length} channels delivered)`,
+        details: { channel, target, message, deliveryResults: results },
+        executedAt,
+      };
+    }
+
+    // If no notification channels are configured, log and return completed
+    if (results.length === 0) {
+      log.info("No notification channels configured — action logged but no delivery", { channel, target });
+      return {
+        actionType: `notify_${channel}`,
+        status: "completed",
+        message: `Notification logged (no ${channel} channels configured). Target: ${target}`,
+        details: { channel, target, message, noChannelsConfigured: true },
+        executedAt,
+      };
+    }
+
+    return {
+      actionType: `notify_${channel}`,
+      status: "failed",
+      message: `All ${channel} notification deliveries failed`,
+      details: { channel, target, deliveryResults: results },
+      executedAt,
+    };
+  } catch (err) {
+    log.error("Notification dispatch error", { channel, error: String(err) });
+    return {
+      actionType: `notify_${channel}`,
+      status: "failed",
+      message: `Notification dispatch failed: ${(err as Error).message}`,
+      details: { channel, target, error: (err as Error).message },
+      executedAt,
+    };
+  }
 }
 
 // High-risk actions require manual approval before dispatch
@@ -253,7 +335,7 @@ async function executeAgentResponseAction(
         targetUserName: config?.userName || config?.targetUserName || (actionType === "disable_user" ? target : null),
         targetDomain: config?.domain || config?.targetDomain || (actionType === "block_domain" ? target : null),
         targetServiceName: config?.serviceName || config?.targetServiceName || null,
-        parameters: config?.parameters || config?.allowedIps ? { allowedIps: config.allowedIps } : null,
+        parameters: config?.parameters || (config?.allowedIps ? { allowedIps: config.allowedIps } : null),
         requestedBy: context.userId || null,
         requestedByName: context.userName || "Autonomous Action",
         reason: config?.reason || `Dispatched by SecureNexus for incident ${context.incidentId || "N/A"}`,

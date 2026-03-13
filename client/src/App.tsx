@@ -143,6 +143,30 @@ const DetectionRulesPage = lazy(() => import("@/pages/detection-rules"));
 const VulnScannerPage = lazy(() => import("@/pages/vuln-scanner"));
 const UebaPage = lazy(() => import("@/pages/ueba"));
 const AgentResponsePage = lazy(() => import("@/pages/agent-response"));
+const SupplyChainPage = lazy(() => import("@/pages/supply-chain"));
+const IdentityGovernancePage = lazy(() => import("@/pages/identity-governance"));
+const DeceptionPage = lazy(() => import("@/pages/deception"));
+const OtSecurityPage = lazy(() => import("@/pages/ot-security"));
+const ThreatHuntingPage = lazy(() => import("@/pages/threat-hunting"));
+const DataLakePage = lazy(() => import("@/pages/data-lake"));
+const AdvancedReportingPage = lazy(() => import("@/pages/advanced-reporting"));
+const DataResidencyPage = lazy(() => import("@/pages/data-residency"));
+const MobileSecurityPage = lazy(() => import("@/pages/mobile-security"));
+const ApiSecurityPage = lazy(() => import("@/pages/api-security"));
+const RansomwareDefensePage = lazy(() => import("@/pages/ransomware-defense"));
+const CommunityIntelPage = lazy(() => import("@/pages/community-intel"));
+const PostureTrustCenterPage = lazy(() => import("@/pages/posture-trust-center"));
+const SecurityChaosEngineeringPage = lazy(() => import("@/pages/security-chaos-engineering"));
+const AiDetectionRulesPage = lazy(() => import("@/pages/ai-detection-rules"));
+const MsspPartnerPortalPage = lazy(() => import("@/pages/mssp-partner-portal"));
+const AutonomousSOCPage = lazy(() => import("@/pages/autonomous-soc"));
+const DeveloperSecurityPage = lazy(() => import("@/pages/developer-security"));
+const TprmPage = lazy(() => import("@/pages/tprm"));
+const DarkWebMonitoringPage = lazy(() => import("@/pages/dark-web-monitoring"));
+const PhysicalSecurityPage = lazy(() => import("@/pages/physical-security"));
+const SecurityAwarenessPage = lazy(() => import("@/pages/security-awareness"));
+const QuantumReadinessPage = lazy(() => import("@/pages/quantum-readiness"));
+const PrivacyEngineeringPage = lazy(() => import("@/pages/privacy-engineering"));
 
 function PageSkeleton() {
   return (
@@ -365,6 +389,30 @@ function AuthenticatedApp() {
                     <Route path="/vuln-scanner" component={VulnScannerPage} />
                     <Route path="/ueba" component={UebaPage} />
                     <Route path="/agent-response" component={AgentResponsePage} />
+                    <Route path="/supply-chain" component={SupplyChainPage} />
+                    <Route path="/identity-governance" component={IdentityGovernancePage} />
+                    <Route path="/deception" component={DeceptionPage} />
+                    <Route path="/ot-security" component={OtSecurityPage} />
+                    <Route path="/threat-hunting" component={ThreatHuntingPage} />
+                    <Route path="/data-lake" component={DataLakePage} />
+                    <Route path="/advanced-reporting" component={AdvancedReportingPage} />
+                    <Route path="/data-residency" component={DataResidencyPage} />
+                    <Route path="/mobile-security" component={MobileSecurityPage} />
+                    <Route path="/api-security" component={ApiSecurityPage} />
+                    <Route path="/ransomware-defense" component={RansomwareDefensePage} />
+                    <Route path="/community-intel" component={CommunityIntelPage} />
+                    <Route path="/posture-trust-center" component={PostureTrustCenterPage} />
+                    <Route path="/chaos-engineering" component={SecurityChaosEngineeringPage} />
+                    <Route path="/ai-detection-rules" component={AiDetectionRulesPage} />
+                    <Route path="/mssp-partner-portal" component={MsspPartnerPortalPage} />
+                    <Route path="/autonomous-soc" component={AutonomousSOCPage} />
+                    <Route path="/developer-security" component={DeveloperSecurityPage} />
+                    <Route path="/tprm" component={TprmPage} />
+                    <Route path="/dark-web-monitoring" component={DarkWebMonitoringPage} />
+                    <Route path="/physical-security" component={PhysicalSecurityPage} />
+                    <Route path="/security-awareness" component={SecurityAwarenessPage} />
+                    <Route path="/quantum-readiness" component={QuantumReadinessPage} />
+                    <Route path="/privacy-engineering" component={PrivacyEngineeringPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

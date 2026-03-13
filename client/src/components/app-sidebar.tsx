@@ -76,6 +76,12 @@ import {
   UserCheck,
   Zap as ZapIcon,
   Terminal,
+  Factory,
+  Smartphone,
+  Palette,
+  DoorOpen,
+  GraduationCap,
+  Atom,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -169,6 +175,7 @@ const navGroups: NavGroup[] = [
         label: "Case Management",
         items: [
           { title: "War Room", url: "/war-room", icon: Shield },
+          { title: "Threat Hunting", url: "/threat-hunting", icon: Crosshair },
           { title: "Timeline", url: "/investigation-timeline", icon: History },
           { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
           { title: "Evidence Locker", url: "/evidence-custody", icon: Link2 },
@@ -266,6 +273,10 @@ const navGroups: NavGroup[] = [
           { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
         ],
       },
+      {
+        label: "Storage",
+        items: [{ title: "Data Lake", url: "/data-lake", icon: Database }],
+      },
     ],
   },
   {
@@ -294,10 +305,94 @@ const navGroups: NavGroup[] = [
         items: [{ title: "UEBA Analytics", url: "/ueba", icon: UserCheck }],
       },
       {
+        label: "Supply Chain",
+        items: [{ title: "Supply Chain Security", url: "/supply-chain", icon: GitBranch }],
+      },
+      {
+        label: "Identity & PAM",
+        items: [{ title: "Identity Governance", url: "/identity-governance", icon: Shield }],
+      },
+      {
+        label: "Deception",
+        items: [{ title: "Deception Technology", url: "/deception", icon: Crosshair }],
+      },
+      {
+        label: "OT/ICS Security",
+        items: [{ title: "OT/ICS Security", url: "/ot-security", icon: Factory }],
+      },
+      {
+        label: "Mobile & Remote",
+        items: [{ title: "Mobile Security", url: "/mobile-security", icon: Smartphone }],
+      },
+      {
+        label: "API Security",
+        items: [{ title: "API Security", url: "/api-security", icon: Globe }],
+      },
+      {
+        label: "Ransomware Defense",
+        items: [{ title: "Ransomware Defense", url: "/ransomware-defense", icon: ShieldAlert }],
+      },
+      {
+        label: "Community Intel",
+        items: [{ title: "Community Threat Intel", url: "/community-intel", icon: Network }],
+      },
+      {
+        label: "Posture & Trust",
+        items: [{ title: "Security Posture Score", url: "/posture-trust-center", icon: ShieldCheck }],
+      },
+      {
+        label: "Chaos Engineering",
+        items: [{ title: "Security Chaos Engineering", url: "/chaos-engineering", icon: ZapIcon }],
+      },
+      {
+        label: "AI Rule Generation",
+        items: [{ title: "AI Detection Rules", url: "/ai-detection-rules", icon: Wand2 }],
+      },
+      {
+        label: "Autonomous SOC",
+        items: [{ title: "Autonomous SOC", url: "/autonomous-soc", icon: Brain }],
+      },
+      {
+        label: "Developer Security",
+        items: [{ title: "Developer Security", url: "/developer-security", icon: Code2 }],
+      },
+      {
+        label: "Third-Party Risk",
+        items: [{ title: "TPRM", url: "/tprm", icon: Building2 }],
+      },
+      {
+        label: "Dark Web Monitoring",
+        items: [{ title: "Dark Web Monitoring", url: "/dark-web-monitoring", icon: EyeOff }],
+      },
+      {
+        label: "Physical Security",
+        items: [{ title: "Physical Security", url: "/physical-security", icon: DoorOpen }],
+      },
+      {
+        label: "Security Awareness",
+        items: [{ title: "Phishing & Awareness", url: "/security-awareness", icon: GraduationCap }],
+      },
+      {
+        label: "Quantum Readiness",
+        items: [{ title: "Quantum Readiness", url: "/quantum-readiness", icon: Atom }],
+      },
+      {
+        label: "Privacy Engineering",
+        items: [{ title: "Privacy Engineering", url: "/privacy-engineering", icon: Fingerprint }],
+      },
+      {
+        label: "MSSP Partner",
+        items: [
+          { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },
+          { title: "Partner Portal", url: "/mssp-partner-portal", icon: Palette },
+        ],
+      },
+      {
         label: "Compliance & Reporting",
         items: [
           { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
           { title: "Threat Reports", url: "/threat-reports", icon: Flag },
+          { title: "Advanced Reports", url: "/advanced-reporting", icon: BarChart3 },
         ],
       },
     ],
@@ -322,6 +417,10 @@ const navGroups: NavGroup[] = [
           { title: "Policy Packs", url: "/policy-packs", icon: Shield },
           { title: "Reports", url: "/reports", icon: FileText },
         ],
+      },
+      {
+        label: "Data Sovereignty",
+        items: [{ title: "Data Residency", url: "/data-residency", icon: Globe }],
       },
     ],
   },

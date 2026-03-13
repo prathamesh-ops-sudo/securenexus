@@ -107,6 +107,45 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
     const memberships = await storage.getUserMemberships(user.id);
     if (memberships.length > 0) return true;
 
+    // 1. Check pending invitations — join the invited org instead of creating a new one
+    if (user.email) {
+      const pendingInvitations = await storage.getPendingInvitationsByEmail(user.email.toLowerCase()).catch(() => []);
+      const now = new Date();
+      const validInvitation = pendingInvitations.find((inv) => new Date(inv.expiresAt) > now);
+      if (validInvitation) {
+        await storage.createOrgMembership({
+          orgId: validInvitation.orgId,
+          userId: user.id,
+          role: validInvitation.role,
+          status: "active",
+          joinedAt: new Date(),
+        });
+        await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
+        storage
+          .createAuditLog({
+            userId: user.id,
+            userName: user.email,
+            action: "invitation_auto_accepted",
+            resourceType: "membership",
+            resourceId: user.id,
+            details: {
+              orgId: validInvitation.orgId,
+              role: validInvitation.role,
+              invitationId: validInvitation.id,
+            },
+          })
+          .catch(() => {});
+        logger.child("auth").info("User auto-joined org via pending invitation", {
+          userId: user.id,
+          email: user.email,
+          orgId: validInvitation.orgId,
+          role: validInvitation.role,
+        });
+        return true;
+      }
+    }
+
+    // 2. Check domain auto-join
     if (user.email) {
       const emailDomain = user.email.split("@")[1]?.toLowerCase();
       if (emailDomain) {
@@ -152,35 +191,14 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
       }
     }
 
-    const newOrg = await storage.createOrganization({
-      name: `${user.email ? user.email.split("@")[0] : "User"}'s Organization`,
-      slug: `org-${Date.now()}`,
-      contactEmail: user.email || undefined,
-    });
-    await storage.createOrgMembership({
-      orgId: newOrg.id,
-      userId: user.id,
-      role: "owner",
-      status: "active",
-      joinedAt: new Date(),
-    });
-    storage
-      .createAuditLog({
-        userId: user.id,
-        userName: user.email || "unknown",
-        action: "new_org_created_on_signup",
-        resourceType: "organization",
-        resourceId: String(newOrg.id),
-        details: { orgName: newOrg.name, orgSlug: newOrg.slug },
-      })
-      .catch(() => {});
-    logger.child("auth").info("New user created own organization (no domain match)", {
+    // 3. No invitation, no domain match — user must go through onboarding wizard.
+    //    Do NOT auto-create a new org. The frontend /ensure-org endpoint returns
+    //    { needsOnboarding: true } and the onboarding wizard handles org creation.
+    logger.child("auth").info("User has no org membership and no invitation — needs onboarding", {
       userId: user.id,
       email: user.email,
-      orgId: newOrg.id,
-      orgSlug: newOrg.slug,
     });
-    return true;
+    return false;
   } catch (err) {
     logger.child("auth").error("Failed to ensure org membership — user may lack org context", {
       userId: user.id,
@@ -405,46 +423,55 @@ export function registerAuthRoutes(app: Express): void {
       passport.authenticate("google", { failureRedirect: "/?error=google_auth_failed" })(req, res, next);
     },
     async (req: any, res) => {
-      if (req.user) {
-        if (req.user.email && isConsumerEmailDomain(req.user.email)) {
-          const invited = await hasActiveInvitation(req.user.email);
-          const memberships = await storage.getUserMemberships(req.user.id);
-          if (!invited && memberships.length === 0) {
-            logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
-              email: req.user.email,
-              provider: "google",
-            });
+      try {
+        if (req.user) {
+          if (req.user.email && isConsumerEmailDomain(req.user.email)) {
+            const invited = await hasActiveInvitation(req.user.email);
+            const memberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+            if (!invited && memberships.length === 0) {
+              logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
+                email: req.user.email,
+                provider: "google",
+              });
+              req.logout(() => {
+                req.session.destroy(() => {
+                  return res.redirect("/?error=consumer_email_blocked");
+                });
+              });
+              return;
+            }
+          }
+          await ensureOrgMembership(req.user);
+
+          const oauthMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+          const oauthOrgId = oauthMemberships.length > 0 ? oauthMemberships[0].orgId : null;
+          const oauthIp = (() => {
+            const fwd = req.headers["x-forwarded-for"];
+            if (typeof fwd === "string") return fwd.split(",")[0].trim();
+            return req.socket.remoteAddress || "unknown";
+          })();
+          const oauthPolicy = await checkLoginPolicy(req.user, oauthOrgId, oauthIp);
+          if (!oauthPolicy.allowed) {
             req.logout(() => {
               req.session.destroy(() => {
-                return res.redirect("/?error=consumer_email_blocked");
+                return res.redirect("/?error=ip_not_allowed");
               });
             });
             return;
           }
+          if (oauthOrgId) {
+            await enforceMaxConcurrentSessions(req.user.id, oauthOrgId);
+          }
         }
-        await ensureOrgMembership(req.user);
-
-        const oauthMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
-        const oauthOrgId = oauthMemberships.length > 0 ? oauthMemberships[0].orgId : null;
-        const oauthIp = (() => {
-          const fwd = req.headers["x-forwarded-for"];
-          if (typeof fwd === "string") return fwd.split(",")[0].trim();
-          return req.socket.remoteAddress || "unknown";
-        })();
-        const oauthPolicy = await checkLoginPolicy(req.user, oauthOrgId, oauthIp);
-        if (!oauthPolicy.allowed) {
-          req.logout(() => {
-            req.session.destroy(() => {
-              return res.redirect("/?error=ip_not_allowed");
-            });
-          });
-          return;
-        }
-        if (oauthOrgId) {
-          await enforceMaxConcurrentSessions(req.user.id, oauthOrgId);
-        }
+        res.redirect("/");
+      } catch (err) {
+        logger.child("auth").error("Google OAuth callback error", {
+          error: String(err),
+          userId: req.user?.id,
+          email: req.user?.email,
+        });
+        res.redirect("/?error=google_auth_failed");
       }
-      res.redirect("/");
     },
   );
 
@@ -461,46 +488,55 @@ export function registerAuthRoutes(app: Express): void {
       passport.authenticate("github", { failureRedirect: "/?error=github_auth_failed" })(req, res, next);
     },
     async (req: any, res) => {
-      if (req.user) {
-        if (req.user.email && isConsumerEmailDomain(req.user.email)) {
-          const invited = await hasActiveInvitation(req.user.email);
-          const memberships = await storage.getUserMemberships(req.user.id);
-          if (!invited && memberships.length === 0) {
-            logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
-              email: req.user.email,
-              provider: "github",
-            });
+      try {
+        if (req.user) {
+          if (req.user.email && isConsumerEmailDomain(req.user.email)) {
+            const invited = await hasActiveInvitation(req.user.email);
+            const memberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+            if (!invited && memberships.length === 0) {
+              logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
+                email: req.user.email,
+                provider: "github",
+              });
+              req.logout(() => {
+                req.session.destroy(() => {
+                  return res.redirect("/?error=consumer_email_blocked");
+                });
+              });
+              return;
+            }
+          }
+          await ensureOrgMembership(req.user);
+
+          const ghMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+          const ghOrgId = ghMemberships.length > 0 ? ghMemberships[0].orgId : null;
+          const ghIp = (() => {
+            const fwd = req.headers["x-forwarded-for"];
+            if (typeof fwd === "string") return fwd.split(",")[0].trim();
+            return req.socket.remoteAddress || "unknown";
+          })();
+          const ghPolicy = await checkLoginPolicy(req.user, ghOrgId, ghIp);
+          if (!ghPolicy.allowed) {
             req.logout(() => {
               req.session.destroy(() => {
-                return res.redirect("/?error=consumer_email_blocked");
+                return res.redirect("/?error=ip_not_allowed");
               });
             });
             return;
           }
+          if (ghOrgId) {
+            await enforceMaxConcurrentSessions(req.user.id, ghOrgId);
+          }
         }
-        await ensureOrgMembership(req.user);
-
-        const ghMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
-        const ghOrgId = ghMemberships.length > 0 ? ghMemberships[0].orgId : null;
-        const ghIp = (() => {
-          const fwd = req.headers["x-forwarded-for"];
-          if (typeof fwd === "string") return fwd.split(",")[0].trim();
-          return req.socket.remoteAddress || "unknown";
-        })();
-        const ghPolicy = await checkLoginPolicy(req.user, ghOrgId, ghIp);
-        if (!ghPolicy.allowed) {
-          req.logout(() => {
-            req.session.destroy(() => {
-              return res.redirect("/?error=ip_not_allowed");
-            });
-          });
-          return;
-        }
-        if (ghOrgId) {
-          await enforceMaxConcurrentSessions(req.user.id, ghOrgId);
-        }
+        res.redirect("/");
+      } catch (err) {
+        logger.child("auth").error("GitHub OAuth callback error", {
+          error: String(err),
+          userId: req.user?.id,
+          email: req.user?.email,
+        });
+        res.redirect("/?error=github_auth_failed");
       }
-      res.redirect("/");
     },
   );
 

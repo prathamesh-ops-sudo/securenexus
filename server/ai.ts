@@ -7,11 +7,12 @@ import { config as appConfig } from "./config";
 import { logger } from "./logger";
 import {
   invokeModel as gatewayInvoke,
+  invokeModelStream as gatewayInvokeStream,
   getCircuitBreakerStatus,
   getModelCacheStats,
   clearModelCache,
 } from "./ai/model-gateway";
-import type { ModelInvokeResult } from "./ai/model-gateway";
+import type { ModelInvokeResult, StreamCallbacks } from "./ai/model-gateway";
 import {
   getPrompt,
   recordPromptInvocation,
@@ -31,7 +32,7 @@ registerEnhancedPrompts();
 
 const log = logger.child("ai");
 
-type InferenceTier = "triage" | "narrative" | "correlation";
+type InferenceTier = "triage" | "narrative" | "correlation" | "investigation";
 
 interface InferenceMetrics {
   tier: InferenceTier;
@@ -71,12 +72,19 @@ async function invokeWithPrompt(
           maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
           temperature: appConfig.ai.triage.temperature,
         }
-      : {
-          modelId: appConfig.ai.modelId,
-          sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
-          maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
-          temperature: appConfig.ai.temperature,
-        };
+      : tier === "investigation"
+        ? {
+            modelId: appConfig.ai.investigation.modelId,
+            sagemakerEndpoint: undefined,
+            maxTokens: maxTokensOverride || appConfig.ai.investigation.maxTokens,
+            temperature: appConfig.ai.investigation.temperature,
+          }
+        : {
+            modelId: appConfig.ai.modelId,
+            sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+            maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
+            temperature: appConfig.ai.temperature,
+          };
 
   // Inject few-shot examples from active learning if available
   // Use the inference tier (triage/correlation/narrative) as the domain key,
@@ -130,6 +138,177 @@ async function invokeWithPrompt(
   if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
 
   return { text: result.text, metrics };
+}
+
+/**
+ * Stream an AI invocation via SSE. Sends text chunks as they arrive from the model.
+ * The onChunk callback receives each text delta; onComplete fires when done.
+ */
+export async function invokeWithPromptStream(
+  promptId: string,
+  userMessage: string,
+  tier: InferenceTier,
+  callbacks: StreamCallbacks,
+  orgId?: string,
+  maxTokensOverride?: number,
+): Promise<void> {
+  const prompt = await getPrompt(promptId);
+  if (!prompt) {
+    callbacks.onError(new Error(`Prompt "${promptId}" not found in registry`));
+    return;
+  }
+
+  if (prompt.deprecated) {
+    log.warn("Using deprecated prompt (streaming)", { promptId, version: prompt.version });
+  }
+
+  const modelConfig =
+    tier === "triage"
+      ? {
+          modelId: appConfig.ai.triage.modelId,
+          sagemakerEndpoint: appConfig.ai.triage.sagemakerEndpoint,
+          maxTokens: maxTokensOverride || appConfig.ai.triage.maxTokens,
+          temperature: appConfig.ai.triage.temperature,
+        }
+      : tier === "investigation"
+        ? {
+            modelId: appConfig.ai.investigation.modelId,
+            sagemakerEndpoint: undefined,
+            maxTokens: maxTokensOverride || appConfig.ai.investigation.maxTokens,
+            temperature: appConfig.ai.investigation.temperature,
+          }
+        : {
+            modelId: appConfig.ai.modelId,
+            sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+            maxTokens: maxTokensOverride || appConfig.ai.maxTokens,
+            temperature: appConfig.ai.temperature,
+          };
+
+  await gatewayInvokeStream(
+    {
+      modelId: modelConfig.modelId,
+      backend: appConfig.ai.backend,
+      systemPrompt: prompt.systemPrompt,
+      userMessage,
+      maxTokens: modelConfig.maxTokens,
+      temperature: modelConfig.temperature,
+      topP: appConfig.ai.topP,
+      sagemakerEndpoint: modelConfig.sagemakerEndpoint,
+      orgId,
+      promptId: prompt.id,
+      promptVersion: prompt.version,
+      tier,
+      skipCache: true, // streaming should always skip cache
+    },
+    {
+      onChunk: callbacks.onChunk,
+      onComplete: async (fullText, metrics) => {
+        recordPromptInvocation(prompt.id, prompt.version, {
+          tier,
+          modelId: modelConfig.modelId,
+          latencyMs: metrics.latencyMs,
+          cached: false,
+          orgId,
+        }).catch((err) => log.warn("Failed to record streaming prompt invocation", { error: String(err) }));
+
+        const im: InferenceMetrics = {
+          tier,
+          model: modelConfig.modelId,
+          inputTokensEstimate: metrics.inputTokens,
+          outputTokensEstimate: metrics.outputTokens,
+          latencyMs: metrics.latencyMs,
+          costEstimateUsd: 0,
+          cached: false,
+          promptId: prompt.id,
+          promptVersion: prompt.version,
+        };
+        inferenceLog.push(im);
+        if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
+
+        await callbacks.onComplete(fullText, metrics);
+      },
+      onError: callbacks.onError,
+    },
+  );
+}
+
+/**
+ * Stream a narrative generation via SSE. Builds the user message and streams
+ * the AI response chunk-by-chunk.
+ */
+export async function streamNarrative(
+  incident: any,
+  alerts: any[],
+  threatIntelCtx: ThreatIntelContext,
+  callbacks: StreamCallbacks,
+  orgId?: string,
+): Promise<void> {
+  const userMessage = buildNarrativeUserMessage(incident, alerts);
+  const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
+  const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
+  await invokeWithPromptStream("narrative", finalUserMessage, "narrative", callbacks, orgId, 6144);
+}
+
+/**
+ * Stream a deep investigation via SSE.
+ */
+export async function streamDeepInvestigation(
+  incident: any,
+  alerts: any[],
+  threatIntelCtx: ThreatIntelContext | undefined,
+  callbacks: StreamCallbacks,
+  orgId?: string,
+): Promise<void> {
+  const incidentCtx = JSON.stringify(
+    {
+      title: incident.title,
+      summary: incident.summary,
+      severity: incident.severity,
+      status: incident.status,
+      mitreTactics: incident.mitreTactics,
+      mitreTechniques: incident.mitreTechniques,
+      affectedAssets: incident.affectedAssets,
+      createdAt: incident.createdAt,
+    },
+    null,
+    2,
+  );
+
+  const alertTelemetry = JSON.stringify(
+    alerts.map((a) => ({
+      id: a.id,
+      title: a.title,
+      source: a.source,
+      category: a.category,
+      severity: a.severity,
+      description: a.description,
+      sourceIp: a.sourceIp,
+      destIp: a.destIp,
+      hostname: a.hostname,
+      mitreTactic: a.mitreTactic,
+      mitreTechnique: a.mitreTechnique,
+      detectedAt: a.detectedAt,
+    })),
+    null,
+    2,
+  );
+
+  const threatIntelBlock = threatIntelCtx
+    ? formatThreatIntelForPrompt(threatIntelCtx)
+    : "No threat intelligence available for this incident.";
+
+  const userMessage = `Conduct a deep forensic investigation of this incident.
+
+INCIDENT CONTEXT:
+${incidentCtx}
+
+ALERT TELEMETRY (${alerts.length} alerts):
+${alertTelemetry}
+
+THREAT INTELLIGENCE:
+${threatIntelBlock}`;
+
+  await invokeWithPromptStream("deep-investigation", userMessage, "investigation", callbacks, orgId, 8192);
 }
 
 export interface CorrelationResult {
@@ -1158,7 +1337,7 @@ THREAT INTELLIGENCE:
 ${threatIntelBlock}`;
 
   try {
-    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "narrative", orgId, 8192);
+    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
     log.warn("AI deep investigation unavailable, returning heuristic fallback", { error: String(error) });
@@ -1253,7 +1432,7 @@ SECURITY CONTROLS:
 ${JSON.stringify(securityControls, null, 2)}`;
 
   try {
-    const { text } = await invokeWithPrompt("attack-path-prediction", userMessage, "narrative", orgId, 6144);
+    const { text } = await invokeWithPrompt("attack-path-prediction", userMessage, "investigation", orgId, 6144);
     return JSON.parse(extractJson(text));
   } catch (error) {
     log.warn("AI attack path prediction unavailable, returning heuristic fallback", { error: String(error) });
@@ -1262,6 +1441,135 @@ ${JSON.stringify(securityControls, null, 2)}`;
 }
 
 // ==========================================
+// ─── Multi-Turn Investigation Chat ──────────────────────────────────────────────
+export interface InvestigationChatResponse {
+  reply: string;
+  suggestedFollowups: string[];
+  referencedTechniques: string[];
+  confidence: number;
+}
+
+export async function conductMultiTurnInvestigation(
+  incidentContext: string,
+  conversationHistory: Array<{ role: string; content: string }>,
+  userMessage: string,
+  orgId: string,
+): Promise<InvestigationChatResponse> {
+  const historyBlock = conversationHistory.map((m) => `[${m.role.toUpperCase()}]: ${m.content}`).join("\n\n");
+
+  const prompt = `You are a senior SOC analyst conducting a deep investigation on a security incident.
+
+INCIDENT CONTEXT:
+${incidentContext}
+
+CONVERSATION HISTORY:
+${historyBlock}
+
+NEW ANALYST QUESTION:
+${userMessage}
+
+Respond as a JSON object with these fields:
+- reply: Your detailed analytical response
+- suggestedFollowups: Array of 2-3 follow-up questions the analyst should consider
+- referencedTechniques: Array of MITRE ATT&CK technique IDs referenced (e.g. ["T1059", "T1078"])
+- confidence: Number 0-1 indicating your confidence in the analysis`;
+
+  try {
+    const { text } = await invokeWithPrompt("multi-turn-investigation", prompt, "investigation", orgId, 8192);
+    return JSON.parse(extractJson(text));
+  } catch (error) {
+    log.warn("Multi-turn investigation unavailable, returning fallback", { error: String(error) });
+    return {
+      reply: `Based on the available evidence, here is a preliminary analysis of your question: "${userMessage}". Further manual investigation is recommended as AI analysis is currently unavailable.`,
+      suggestedFollowups: [
+        "What lateral movement indicators are present?",
+        "Are there any persistence mechanisms established?",
+        "What data exfiltration channels should we check?",
+      ],
+      referencedTechniques: [],
+      confidence: 0.1,
+    };
+  }
+}
+
+// ─── AI-Generated Detection Rules ───────────────────────────────────────────────
+export interface GeneratedDetectionRule {
+  name: string;
+  description: string;
+  sigmaRule: string;
+  conditionTree: Record<string, unknown>;
+  mitreTactic: string;
+  mitreTechnique: string;
+  confidence: number;
+  falsePositiveNotes: string;
+  eventTypes: string[];
+}
+
+export interface DetectionRuleGenerationResult {
+  rules: GeneratedDetectionRule[];
+  analysisNotes: string;
+  coverageGaps: string[];
+}
+
+export async function generateDetectionRules(
+  incidentSummary: string,
+  attackTechniques: string[],
+  indicators: string[],
+  orgId: string,
+): Promise<DetectionRuleGenerationResult> {
+  const userMessage = `Generate Sigma-compatible detection rules based on this attack analysis.
+
+INCIDENT SUMMARY:
+${incidentSummary}
+
+ATTACK TECHNIQUES OBSERVED:
+${attackTechniques.join(", ")}
+
+INDICATORS OF COMPROMISE:
+${indicators.join("\n")}
+
+Generate detection rules as JSON:
+{
+  "rules": [
+    {
+      "name": "Rule name",
+      "description": "What it detects",
+      "sigmaRule": "Full Sigma YAML as a string",
+      "conditionTree": { "field": "value", "operator": "contains" },
+      "mitreTactic": "tactic-name",
+      "mitreTechnique": "T1234",
+      "confidence": 0.85,
+      "falsePositiveNotes": "When this might false-positive",
+      "eventTypes": ["process_creation", "network_connection"]
+    }
+  ],
+  "analysisNotes": "Summary of detection strategy",
+  "coverageGaps": ["Areas not covered by these rules"]
+}`;
+
+  try {
+    const { text } = await invokeWithPrompt("detection-rule-generation", userMessage, "investigation", orgId, 8192);
+    return JSON.parse(extractJson(text));
+  } catch (error) {
+    log.warn("Detection rule generation unavailable, returning fallback", { error: String(error) });
+    return {
+      rules: attackTechniques.map((tech) => ({
+        name: `Auto-detect ${tech}`,
+        description: `Detection rule for ${tech} technique observed in incident`,
+        sigmaRule: `title: Auto-detect ${tech}\nstatus: experimental\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    EventID: 1\n  condition: selection\nlevel: medium`,
+        conditionTree: { EventID: 1 },
+        mitreTactic: "unknown",
+        mitreTechnique: tech,
+        confidence: 0.3,
+        falsePositiveNotes: "AI-generated rule — requires manual tuning",
+        eventTypes: ["process_creation"],
+      })),
+      analysisNotes: "Fallback rules generated — AI analysis was unavailable",
+      coverageGaps: ["Full behavioral analysis not available", "Lateral movement detection may be incomplete"],
+    };
+  }
+}
+
 // Heuristic Fallback Functions
 // ==========================================
 // These provide meaningful data-driven responses when AI/LLM is unavailable,

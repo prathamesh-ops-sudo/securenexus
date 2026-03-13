@@ -61,27 +61,22 @@ export function registerOrgsRoutes(app: Express): void {
         }
       }
 
-      // Check for pending invitations by email
+      // Check for pending invitations by email (direct query, no N+1)
       if (userEmail) {
-        const orgs = await storage.getOrganizations();
-        for (const org of orgs) {
-          if (org.deletedAt) continue;
-          const invitations = await storage.getOrgInvitations(org.id);
-          const pending = invitations.find(
-            (inv) =>
-              inv.email.toLowerCase() === userEmail.toLowerCase() &&
-              !inv.acceptedAt &&
-              new Date(inv.expiresAt) > new Date(),
-          );
-          if (pending) {
+        const pendingInvitations = await storage.getPendingInvitationsByEmail(userEmail.toLowerCase()).catch(() => []);
+        const now = new Date();
+        const validInvitations = pendingInvitations.filter((inv) => !inv.acceptedAt && new Date(inv.expiresAt) > now);
+        for (const validInvitation of validInvitations) {
+          const org = await storage.getOrganization(validInvitation.orgId);
+          if (org && !org.deletedAt) {
             const membership = await storage.createOrgMembership({
-              orgId: org.id,
+              orgId: validInvitation.orgId,
               userId,
-              role: pending.role,
+              role: validInvitation.role,
               status: "active",
               joinedAt: new Date(),
             });
-            await storage.updateOrgInvitation(pending.id, { acceptedAt: new Date() });
+            await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
             invalidateDeserializeCache(userId);
             return res.json({ membership, organization: org });
           }

@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { insertCspmAccountSchema, insertEndpointAssetSchema } from "@shared/schema";
-import { runCspmScan } from "../cspm-scanner";
+import { runCspmScan, runDspmScan, createDriftBaseline, runDriftDetection, remediationEngine } from "../cspm-scanner";
 import { calculateEndpointRisk, generateTelemetry, seedEndpointAssets } from "../endpoint-telemetry";
 import { calculatePostureScore } from "../posture-engine";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
@@ -167,6 +167,255 @@ export function registerEndpointsRoutes(app: Express): void {
         res.json(finding);
       } catch (error) {
         res.status(500).json({ message: "Failed to update CSPM finding" });
+      }
+    },
+  );
+
+  // ── CSPM Drift Detection Routes ──
+  app.post(
+    "/api/cspm/drift/baseline/:accountId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const account = await storage.getCspmAccount(p(req.params.accountId));
+        if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+        const count = await createDriftBaseline(orgId, p(req.params.accountId));
+        res.json({ message: "Baseline created", baselineCount: count });
+      } catch (error) {
+        logger.child("routes").error("Drift baseline error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create drift baseline" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/cspm/drift/baselines",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const accountId = req.query.accountId as string | undefined;
+        const baselines = await storage.getCspmDriftBaselines(orgId, accountId);
+        res.json(baselines);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch drift baselines" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/cspm/drift/detect/:accountId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const account = await storage.getCspmAccount(p(req.params.accountId));
+        if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+        const driftCount = await runDriftDetection(orgId, p(req.params.accountId));
+        res.json({ message: "Drift detection complete", driftEventsDetected: driftCount });
+      } catch (error) {
+        logger.child("routes").error("Drift detection error", { error: String(error) });
+        res.status(500).json({ message: String(error) });
+      }
+    },
+  );
+
+  app.get(
+    "/api/cspm/drift/events",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const accountId = req.query.accountId as string | undefined;
+        const status = req.query.status as string | undefined;
+        const events = await storage.getCspmDriftEvents(orgId, accountId, status);
+        res.json(events);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch drift events" });
+      }
+    },
+  );
+
+  // ── CSPM DSPM Routes ──
+  app.post(
+    "/api/cspm/dspm/scan/:accountId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const account = await storage.getCspmAccount(p(req.params.accountId));
+        if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+        const result = await runDspmScan(orgId, p(req.params.accountId));
+        res.json({ message: "DSPM scan complete", ...result });
+      } catch (error) {
+        logger.child("routes").error("DSPM scan error", { error: String(error) });
+        res.status(500).json({ message: "DSPM scan failed", error: String(error) });
+      }
+    },
+  );
+
+  app.get(
+    "/api/cspm/dspm/findings",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const accountId = req.query.accountId as string | undefined;
+        const sensitivityLevel = req.query.sensitivityLevel as string | undefined;
+        const findings = await storage.getCspmDspmFindings(orgId, accountId, sensitivityLevel);
+        res.json(findings);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch DSPM findings" });
+      }
+    },
+  );
+
+  // ── CSPM Attack Path Routes ──
+  app.get(
+    "/api/cspm/attack-paths",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const severity = req.query.severity as string | undefined;
+        const paths = await storage.getCspmAttackPaths(orgId, severity);
+        res.json(paths);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch attack paths" });
+      }
+    },
+  );
+
+  // ── CSPM Remediation Routes ──
+  app.get(
+    "/api/cspm/remediation/playbooks",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (_req, res) => {
+      try {
+        const playbooks = remediationEngine.getAllPlaybooks();
+        res.json(playbooks);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch playbooks" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/cspm/remediation/playbooks/:ruleId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const ruleId = Array.isArray(req.params.ruleId) ? req.params.ruleId[0] : req.params.ruleId;
+        const playbooks = remediationEngine.getPlaybooks(ruleId);
+        res.json(playbooks);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch playbooks for rule" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/cspm/remediation/execute",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { accountId, findingId, playbookId, resourceId } = req.body as {
+          accountId: string;
+          findingId?: string;
+          playbookId: string;
+          resourceId: string;
+        };
+
+        if (!accountId || !playbookId || !resourceId) {
+          return res.status(400).json({ message: "accountId, playbookId, and resourceId are required" });
+        }
+
+        const account = await storage.getCspmAccount(accountId);
+        if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
+
+        const config = (account.config || {}) as Record<string, unknown>;
+        const regions = account.regions && account.regions.length > 0 ? account.regions : ["us-east-1"];
+
+        const awsConfig = {
+          accessKeyId: (config.accessKeyId as string) || process.env.AWS_ACCESS_KEY_ID || "",
+          secretAccessKey: (config.secretAccessKey as string) || process.env.AWS_SECRET_ACCESS_KEY || "",
+          regions: regions as string[],
+        };
+
+        const result = await remediationEngine.executePlaybook(playbookId, resourceId, awsConfig);
+
+        // Store remediation record
+        const playbookInfo = remediationEngine.getAllPlaybooks().find((pb) => pb.id === playbookId);
+        await storage.createCspmRemediation({
+          orgId,
+          accountId,
+          findingId: findingId || null,
+          playbookId,
+          playbookName: playbookInfo?.name || playbookId,
+          resourceId,
+          ruleId: result.ruleId,
+          status: result.status,
+          actionsExecuted: result.actionsExecuted,
+          actionsTotal: result.actionsTotal,
+          error: result.error || null,
+          details: result.details,
+        });
+
+        res.json(result);
+      } catch (error) {
+        logger.child("routes").error("Remediation execution error", { error: String(error) });
+        res.status(500).json({ message: "Remediation failed", error: String(error) });
+      }
+    },
+  );
+
+  app.get(
+    "/api/cspm/remediations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const accountId = req.query.accountId as string | undefined;
+        const status = req.query.status as string | undefined;
+        const remediations = await storage.getCspmRemediations(orgId, accountId, status);
+        res.json(remediations);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch remediations" });
       }
     },
   );

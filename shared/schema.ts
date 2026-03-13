@@ -12,6 +12,7 @@ import {
   doublePrecision,
   index,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -244,6 +245,9 @@ export const organizations = pgTable("organizations", {
   orgType: text("org_type").notNull().default("standard"),
   parentOrgId: varchar("parent_org_id"),
   dataResidency: text("data_residency").default("us-east-1"),
+  dataRegion: text("data_region").default("US"),
+  sovereignKeyConfig: jsonb("sovereign_key_config"),
+  crossBorderFlowControls: jsonb("cross_border_flow_controls"),
   defaultMemberRole: text("default_member_role").notNull().default("analyst"),
   requireApproval: boolean("require_approval").notNull().default(false),
   deletedAt: timestamp("deleted_at"),
@@ -859,7 +863,31 @@ export const campaigns = pgTable(
   ],
 );
 
-export const COMPLIANCE_FRAMEWORKS = ["gdpr", "dpdp", "hipaa", "sox", "pci_dss", "iso27001", "nist"] as const;
+export const COMPLIANCE_FRAMEWORKS = [
+  "gdpr",
+  "dpdp",
+  "hipaa",
+  "sox",
+  "pci_dss",
+  "iso27001",
+  "nist",
+  "soc2",
+  "nis2",
+  "dora",
+  "cbest",
+  "mas_trm",
+  "ifsca",
+  "pdpa",
+  "popia",
+  "lgpd",
+  "pipeda",
+  "asd_essential8",
+  "ccpa",
+  "cmmc",
+  "nerc_cip",
+  "swift_csp",
+  "iec_62443",
+] as const;
 export const DSAR_STATUSES = ["pending", "in_progress", "fulfilled", "rejected", "expired"] as const;
 
 export const compliancePolicies = pgTable(
@@ -1519,6 +1547,135 @@ export const playbookRollbackPlans = pgTable(
   ],
 );
 
+// ==========================================
+// 9.0 — Attack Graph Persistence (AI Deep Investigation)
+// ==========================================
+
+export const ATTACK_GRAPH_NODE_TYPES = [
+  "initial_access",
+  "host",
+  "user",
+  "process",
+  "file",
+  "network",
+  "credential",
+  "persistence",
+  "lateral_movement",
+  "exfiltration",
+  "c2",
+  "objective",
+] as const;
+
+export const attackGraphs = pgTable(
+  "attack_graphs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    investigationId: varchar("investigation_id"),
+    initialAccessDescription: text("initial_access_description"),
+    currentPosition: text("current_position"),
+    objectivesAchieved: text("objectives_achieved")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    objectivesInProgress: text("objectives_in_progress")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    totalNodes: integer("total_nodes").default(0),
+    totalEdges: integer("total_edges").default(0),
+    maxDepth: integer("max_depth").default(0),
+    confidence: real("confidence").default(0),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_attack_graphs_org").on(table.orgId),
+    index("idx_attack_graphs_incident").on(table.incidentId),
+    index("idx_attack_graphs_created").on(table.createdAt),
+  ],
+);
+
+export const attackGraphNodes = pgTable(
+  "attack_graph_nodes",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    graphId: varchar("graph_id")
+      .notNull()
+      .references(() => attackGraphs.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    nodeType: text("node_type").notNull(),
+    label: text("label").notNull(),
+    description: text("description"),
+    mitreTechnique: text("mitre_technique"),
+    mitreTactic: text("mitre_tactic"),
+    confidence: real("confidence").default(0),
+    severity: text("severity"),
+    evidence: text("evidence")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    metadata: jsonb("metadata"),
+    positionX: real("position_x"),
+    positionY: real("position_y"),
+    depth: integer("depth").default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_agn_graph").on(table.graphId),
+    index("idx_agn_type").on(table.nodeType),
+    index("idx_agn_mitre").on(table.mitreTechnique),
+  ],
+);
+
+export const attackGraphEdges = pgTable(
+  "attack_graph_edges",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    graphId: varchar("graph_id")
+      .notNull()
+      .references(() => attackGraphs.id, { onDelete: "cascade" }),
+    sourceNodeId: text("source_node_id").notNull(),
+    targetNodeId: text("target_node_id").notNull(),
+    relationship: text("relationship").notNull(),
+    technique: text("technique"),
+    confidence: real("confidence").default(0),
+    timestamp: text("timestamp"),
+    evidence: text("evidence")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_age_graph").on(table.graphId),
+    index("idx_age_source").on(table.sourceNodeId),
+    index("idx_age_target").on(table.targetNodeId),
+  ],
+);
+
+export const attackGraphsRelations = relations(attackGraphs, ({ one, many }) => ({
+  organization: one(organizations, { fields: [attackGraphs.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [attackGraphs.incidentId], references: [incidents.id] }),
+  nodes: many(attackGraphNodes),
+  edges: many(attackGraphEdges),
+}));
+
+export const attackGraphNodesRelations = relations(attackGraphNodes, ({ one }) => ({
+  graph: one(attackGraphs, { fields: [attackGraphNodes.graphId], references: [attackGraphs.id] }),
+}));
+
+export const attackGraphEdgesRelations = relations(attackGraphEdges, ({ one }) => ({
+  graph: one(attackGraphs, { fields: [attackGraphEdges.graphId], references: [attackGraphs.id] }),
+}));
+
 export const WIZARD_STEPS = [
   "create_org",
   "choose_plan",
@@ -1936,6 +2093,19 @@ export const insertPlaybookRollbackPlanSchema = createInsertSchema(playbookRollb
   createdAt: true,
   executedAt: true,
 });
+export const insertAttackGraphSchema = createInsertSchema(attackGraphs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertAttackGraphNodeSchema = createInsertSchema(attackGraphNodes).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertAttackGraphEdgeSchema = createInsertSchema(attackGraphEdges).omit({
+  id: true,
+  createdAt: true,
+});
 
 // Types
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
@@ -2034,12 +2204,34 @@ export type PlaybookSimulation = typeof playbookSimulations.$inferSelect;
 export type InsertPlaybookSimulation = z.infer<typeof insertPlaybookSimulationSchema>;
 export type PlaybookRollbackPlan = typeof playbookRollbackPlans.$inferSelect;
 export type InsertPlaybookRollbackPlan = z.infer<typeof insertPlaybookRollbackPlanSchema>;
+export type AttackGraph = typeof attackGraphs.$inferSelect;
+export type InsertAttackGraph = z.infer<typeof insertAttackGraphSchema>;
+export type AttackGraphNode = typeof attackGraphNodes.$inferSelect;
+export type InsertAttackGraphNode = z.infer<typeof insertAttackGraphNodeSchema>;
+export type AttackGraphEdge = typeof attackGraphEdges.$inferSelect;
+export type InsertAttackGraphEdge = z.infer<typeof insertAttackGraphEdgeSchema>;
 
 export const CLOUD_PROVIDERS = ["aws", "azure", "gcp"] as const;
 export const CSPM_SCAN_STATUSES = ["pending", "running", "completed", "failed"] as const;
 export const CSPM_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
 export const CSPM_FINDING_STATUSES = ["open", "resolved", "suppressed", "accepted_risk"] as const;
-export const CSPM_COMPLIANCE_FRAMEWORKS = ["cis", "nist", "pci_dss", "hipaa", "soc2", "gdpr", "iso27001"] as const;
+export const CSPM_COMPLIANCE_FRAMEWORKS = [
+  "cis",
+  "nist",
+  "pci_dss",
+  "hipaa",
+  "soc2",
+  "gdpr",
+  "iso27001",
+  "nis2",
+  "dora",
+  "ccpa",
+  "cmmc",
+  "nerc_cip",
+  "swift_csp",
+  "iec_62443",
+  "asd_essential8",
+] as const;
 export const ENDPOINT_OS_TYPES = ["windows", "linux", "macos"] as const;
 export const ENDPOINT_STATUSES = ["online", "offline", "degraded", "isolated"] as const;
 export const AI_BACKENDS = ["bedrock", "sagemaker", "on_prem", "azure_openai"] as const;
@@ -2096,6 +2288,108 @@ export const cspmFindings = pgTable("cspm_findings", {
     .default(sql`ARRAY[]::text[]`),
   status: text("status").default("open"),
   detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM Drift Baselines — approved configuration snapshots for drift detection
+export const cspmDriftBaselines = pgTable("cspm_drift_baselines", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type").notNull(),
+  region: text("region"),
+  approvedConfig: jsonb("approved_config").default({}),
+  snapshotAt: timestamp("snapshot_at").defaultNow(),
+  createdBy: text("created_by"),
+});
+
+// CSPM Drift Events — detected configuration changes from baseline
+export const cspmDriftEvents = pgTable("cspm_drift_events", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type").notNull(),
+  region: text("region"),
+  driftType: text("drift_type").notNull(), // added, removed, modified
+  field: text("field").notNull(),
+  baselineValue: jsonb("baseline_value"),
+  currentValue: jsonb("current_value"),
+  severity: text("severity").notNull(),
+  description: text("description").notNull(),
+  status: text("status").default("open"), // open, acknowledged, resolved, suppressed
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM DSPM Findings — sensitive data discoveries in cloud storage
+export const cspmDspmFindings = pgTable("cspm_dspm_findings", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  resourceId: text("resource_id").notNull(),
+  resourceType: text("resource_type").notNull(),
+  region: text("region"),
+  dataClassification: text("data_classification").notNull(),
+  sensitivityLevel: text("sensitivity_level").notNull(), // critical, high, medium, low
+  dataCategories: text("data_categories")
+    .array()
+    .default(sql`ARRAY[]::text[]`),
+  objectCount: integer("object_count").default(0),
+  sampleObjects: text("sample_objects")
+    .array()
+    .default(sql`ARRAY[]::text[]`),
+  description: text("description").notNull(),
+  remediation: text("remediation"),
+  status: text("status").default("open"),
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM Attack Paths — multi-cloud lateral movement analysis
+export const cspmAttackPaths = pgTable("cspm_attack_paths", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull(),
+  riskScore: integer("risk_score").default(0),
+  nodes: jsonb("nodes").default([]),
+  edges: jsonb("edges").default([]),
+  mitigations: text("mitigations")
+    .array()
+    .default(sql`ARRAY[]::text[]`),
+  isCrossCloud: boolean("is_cross_cloud").default(false),
+  status: text("status").default("active"), // active, mitigated, suppressed
+  detectedAt: timestamp("detected_at").defaultNow(),
+});
+
+// CSPM Remediation History — auto-remediation execution log
+export const cspmRemediations = pgTable("cspm_remediations", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  orgId: text("org_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  findingId: varchar("finding_id"),
+  playbookId: text("playbook_id").notNull(),
+  playbookName: text("playbook_name").notNull(),
+  resourceId: text("resource_id").notNull(),
+  ruleId: text("rule_id").notNull(),
+  status: text("status").notNull(), // success, failed, partial, pending, approved, rejected
+  actionsExecuted: integer("actions_executed").default(0),
+  actionsTotal: integer("actions_total").default(0),
+  error: text("error"),
+  details: jsonb("details").default({}),
+  requestedBy: text("requested_by"),
+  approvedBy: text("approved_by"),
+  executedAt: timestamp("executed_at").defaultNow(),
 });
 
 export const endpointAssets = pgTable("endpoint_assets", {
@@ -2719,6 +3013,14 @@ export const insertCspmScanSchema = createInsertSchema(cspmScans).omit({
   completedAt: true,
 });
 export const insertCspmFindingSchema = createInsertSchema(cspmFindings).omit({ id: true, detectedAt: true });
+export const insertCspmDriftBaselineSchema = createInsertSchema(cspmDriftBaselines).omit({
+  id: true,
+  snapshotAt: true,
+});
+export const insertCspmDriftEventSchema = createInsertSchema(cspmDriftEvents).omit({ id: true, detectedAt: true });
+export const insertCspmDspmFindingSchema = createInsertSchema(cspmDspmFindings).omit({ id: true, detectedAt: true });
+export const insertCspmAttackPathSchema = createInsertSchema(cspmAttackPaths).omit({ id: true, detectedAt: true });
+export const insertCspmRemediationSchema = createInsertSchema(cspmRemediations).omit({ id: true, executedAt: true });
 export const insertEndpointAssetSchema = createInsertSchema(endpointAssets).omit({
   id: true,
   createdAt: true,
@@ -2740,6 +3042,16 @@ export type CspmScan = typeof cspmScans.$inferSelect;
 export type InsertCspmScan = z.infer<typeof insertCspmScanSchema>;
 export type CspmFinding = typeof cspmFindings.$inferSelect;
 export type InsertCspmFinding = z.infer<typeof insertCspmFindingSchema>;
+export type CspmDriftBaseline = typeof cspmDriftBaselines.$inferSelect;
+export type InsertCspmDriftBaseline = z.infer<typeof insertCspmDriftBaselineSchema>;
+export type CspmDriftEvent = typeof cspmDriftEvents.$inferSelect;
+export type InsertCspmDriftEvent = z.infer<typeof insertCspmDriftEventSchema>;
+export type CspmDspmFinding = typeof cspmDspmFindings.$inferSelect;
+export type InsertCspmDspmFinding = z.infer<typeof insertCspmDspmFindingSchema>;
+export type CspmAttackPath = typeof cspmAttackPaths.$inferSelect;
+export type InsertCspmAttackPath = z.infer<typeof insertCspmAttackPathSchema>;
+export type CspmRemediation = typeof cspmRemediations.$inferSelect;
+export type InsertCspmRemediation = z.infer<typeof insertCspmRemediationSchema>;
 export type EndpointAsset = typeof endpointAssets.$inferSelect;
 export type InsertEndpointAsset = z.infer<typeof insertEndpointAssetSchema>;
 export type EndpointTelemetry = typeof endpointTelemetry.$inferSelect;
@@ -6155,3 +6467,5410 @@ export const agentResponseActionsRelations = relations(agentResponseActions, ({ 
 
 export type AgentResponseAction = typeof agentResponseActions.$inferSelect;
 export type InsertAgentResponseAction = typeof agentResponseActions.$inferInsert;
+
+// =============================================================================
+// SUPPLY CHAIN SECURITY
+// =============================================================================
+
+export const SBOM_FORMATS = ["cyclonedx", "spdx"] as const;
+export const SBOM_STATUSES = ["processing", "completed", "failed"] as const;
+export const SC_FINDING_TYPES = [
+  "vulnerable_dependency",
+  "typosquatting",
+  "maintainer_risk",
+  "outdated_dependency",
+  "license_risk",
+  "iac_misconfiguration",
+  "container_vulnerability",
+  "provenance_failure",
+] as const;
+export const SC_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const SC_FINDING_STATUSES = ["open", "acknowledged", "remediated", "false_positive"] as const;
+export const SC_PKG_ECOSYSTEMS = [
+  "npm",
+  "pypi",
+  "rubygems",
+  "nuget",
+  "cargo",
+  "go",
+  "maven",
+  "docker",
+  "terraform",
+  "helm",
+  "kubernetes",
+] as const;
+
+export const sbomArtifacts = pgTable(
+  "sbom_artifacts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    version: text("version"),
+    format: text("format").notNull(), // cyclonedx | spdx
+    source: text("source"), // CI/CD pipeline name, manual upload, etc.
+    componentCount: integer("component_count").notNull().default(0),
+    vulnerabilityCount: integer("vulnerability_count").notNull().default(0),
+    licenseCount: integer("license_count").notNull().default(0),
+    status: text("status").notNull().default("processing"),
+    rawData: jsonb("raw_data"), // original SBOM JSON
+    metadata: jsonb("metadata"), // tool, timestamp, serial number
+    uploadedBy: varchar("uploaded_by"),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sbom_artifacts_org").on(table.orgId),
+    index("idx_sbom_artifacts_org_created").on(table.orgId, table.createdAt),
+    index("idx_sbom_artifacts_status").on(table.orgId, table.status),
+  ],
+);
+
+export const dependencyGraph = pgTable(
+  "dependency_graph",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sbomId: varchar("sbom_id")
+      .notNull()
+      .references(() => sbomArtifacts.id, { onDelete: "cascade" }),
+    packageName: text("package_name").notNull(),
+    packageVersion: text("package_version"),
+    ecosystem: text("ecosystem").notNull(), // npm, pypi, rubygems, nuget, etc.
+    isDirect: boolean("is_direct").notNull().default(true),
+    parentPackageId: varchar("parent_package_id"), // self-ref for transitive deps
+    license: text("license"),
+    publisher: text("publisher"),
+    publisherEmail: text("publisher_email"),
+    repositoryUrl: text("repository_url"),
+    latestVersion: text("latest_version"),
+    isOutdated: boolean("is_outdated").default(false),
+    isVulnerable: boolean("is_vulnerable").default(false),
+    cveCount: integer("cve_count").notNull().default(0),
+    // Maintainer reputation scoring
+    maintainerScore: real("maintainer_score"), // 0-100
+    maintainerNewPublisher: boolean("maintainer_new_publisher").default(false),
+    maintainerRecentTransfer: boolean("maintainer_recent_transfer").default(false),
+    maintainerLowDownloads: boolean("maintainer_low_downloads").default(false),
+    // Provenance
+    provenanceVerified: boolean("provenance_verified"),
+    provenanceSignature: text("provenance_signature"),
+    // Typosquatting
+    typosquatCandidate: boolean("typosquat_candidate").default(false),
+    typosquatSimilarTo: text("typosquat_similar_to"),
+    typosquatDistance: integer("typosquat_distance"),
+    depth: integer("depth").notNull().default(0), // 0 = direct, 1+ = transitive
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_dep_graph_org").on(table.orgId),
+    index("idx_dep_graph_sbom").on(table.sbomId),
+    index("idx_dep_graph_pkg").on(table.orgId, table.packageName),
+    index("idx_dep_graph_ecosystem").on(table.orgId, table.ecosystem),
+    index("idx_dep_graph_vulnerable").on(table.orgId, table.isVulnerable),
+    index("idx_dep_graph_typosquat").on(table.orgId, table.typosquatCandidate),
+  ],
+);
+
+export const supplyChainFindings = pgTable(
+  "supply_chain_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sbomId: varchar("sbom_id").references(() => sbomArtifacts.id, { onDelete: "cascade" }),
+    dependencyId: varchar("dependency_id").references(() => dependencyGraph.id, { onDelete: "cascade" }),
+    findingType: text("finding_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    title: text("title").notNull(),
+    description: text("description"),
+    packageName: text("package_name"),
+    packageVersion: text("package_version"),
+    ecosystem: text("ecosystem"),
+    cveId: text("cve_id"),
+    cvssScore: real("cvss_score"),
+    fixedVersion: text("fixed_version"),
+    // IaC-specific fields
+    iacResourceType: text("iac_resource_type"),
+    iacFilePath: text("iac_file_path"),
+    iacRule: text("iac_rule"),
+    // Container-specific fields
+    containerImage: text("container_image"),
+    containerLayer: text("container_layer"),
+    // Metadata
+    details: jsonb("details"),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    remediatedBy: varchar("remediated_by"),
+    remediatedAt: timestamp("remediated_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sc_findings_org").on(table.orgId),
+    index("idx_sc_findings_sbom").on(table.sbomId),
+    index("idx_sc_findings_type").on(table.orgId, table.findingType),
+    index("idx_sc_findings_severity").on(table.orgId, table.severity),
+    index("idx_sc_findings_status").on(table.orgId, table.status),
+    index("idx_sc_findings_cve").on(table.cveId),
+    index("idx_sc_findings_pkg").on(table.orgId, table.packageName),
+  ],
+);
+
+export const sbomArtifactsRelations = relations(sbomArtifacts, ({ one, many }) => ({
+  organization: one(organizations, { fields: [sbomArtifacts.orgId], references: [organizations.id] }),
+  dependencies: many(dependencyGraph),
+  findings: many(supplyChainFindings),
+}));
+
+export const dependencyGraphRelations = relations(dependencyGraph, ({ one }) => ({
+  organization: one(organizations, { fields: [dependencyGraph.orgId], references: [organizations.id] }),
+  sbom: one(sbomArtifacts, { fields: [dependencyGraph.sbomId], references: [sbomArtifacts.id] }),
+}));
+
+export const supplyChainFindingsRelations = relations(supplyChainFindings, ({ one }) => ({
+  organization: one(organizations, { fields: [supplyChainFindings.orgId], references: [organizations.id] }),
+  sbom: one(sbomArtifacts, { fields: [supplyChainFindings.sbomId], references: [sbomArtifacts.id] }),
+  dependency: one(dependencyGraph, { fields: [supplyChainFindings.dependencyId], references: [dependencyGraph.id] }),
+}));
+
+export type SbomArtifact = typeof sbomArtifacts.$inferSelect;
+export type InsertSbomArtifact = typeof sbomArtifacts.$inferInsert;
+export type DependencyGraphEntry = typeof dependencyGraph.$inferSelect;
+export type InsertDependencyGraphEntry = typeof dependencyGraph.$inferInsert;
+export type SupplyChainFinding = typeof supplyChainFindings.$inferSelect;
+export type InsertSupplyChainFinding = typeof supplyChainFindings.$inferInsert;
+
+// =============================================================================
+// IDENTITY GOVERNANCE & PAM
+// =============================================================================
+
+export const ACCESS_REVIEW_STATUSES = ["pending", "approved", "revoked", "expired", "cancelled"] as const;
+export const ACCESS_REVIEW_CAMPAIGN_STATUSES = ["draft", "active", "completed", "cancelled"] as const;
+export const PAM_SESSION_STATUSES = [
+  "requested",
+  "approved",
+  "active",
+  "completed",
+  "denied",
+  "expired",
+  "terminated",
+] as const;
+export const SCIM_OPERATION_TYPES = [
+  "create",
+  "update",
+  "delete",
+  "activate",
+  "deactivate",
+  "group_add",
+  "group_remove",
+] as const;
+export const SCIM_PROVIDER_TYPES = ["azure_ad", "okta", "google_workspace", "onelogin", "jumpcloud"] as const;
+export const IDENTITY_RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
+
+export const accessReviewCampaigns = pgTable(
+  "access_review_campaigns",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    cadence: text("cadence").notNull().default("quarterly"), // quarterly, monthly, annual
+    status: text("status").notNull().default("draft"),
+    reviewerUserId: varchar("reviewer_user_id"),
+    reviewerName: text("reviewer_name"),
+    totalEntitlements: integer("total_entitlements").notNull().default(0),
+    reviewedCount: integer("reviewed_count").notNull().default(0),
+    approvedCount: integer("approved_count").notNull().default(0),
+    revokedCount: integer("revoked_count").notNull().default(0),
+    dueDate: timestamp("due_date"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_arc_org").on(table.orgId), index("idx_arc_status").on(table.orgId, table.status)],
+);
+
+export const accessReviewEntitlements = pgTable(
+  "access_review_entitlements",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    campaignId: varchar("campaign_id")
+      .notNull()
+      .references(() => accessReviewCampaigns.id, { onDelete: "cascade" }),
+    userId: varchar("user_id").notNull(),
+    userName: text("user_name").notNull(),
+    userEmail: text("user_email"),
+    entitlementType: text("entitlement_type").notNull(), // role, permission, group, resource
+    entitlementName: text("entitlement_name").notNull(),
+    entitlementDescription: text("entitlement_description"),
+    grantedAt: timestamp("granted_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    riskLevel: text("risk_level").default("low"),
+    status: text("status").notNull().default("pending"),
+    decision: text("decision"), // approve, revoke
+    decisionBy: varchar("decision_by"),
+    decisionAt: timestamp("decision_at"),
+    decisionReason: text("decision_reason"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_are_org").on(table.orgId),
+    index("idx_are_campaign").on(table.campaignId),
+    index("idx_are_user").on(table.userId),
+    index("idx_are_status").on(table.orgId, table.status),
+  ],
+);
+
+export const pamSessions = pgTable(
+  "pam_sessions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    requesterId: varchar("requester_id").notNull(),
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email"),
+    targetSystem: text("target_system").notNull(),
+    targetHost: text("target_host"),
+    targetAccount: text("target_account").notNull(), // e.g. root, admin, db_admin
+    accessLevel: text("access_level").notNull(), // read, write, admin, superadmin
+    justification: text("justification").notNull(),
+    incidentId: varchar("incident_id"),
+    status: text("status").notNull().default("requested"),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    deniedBy: varchar("denied_by"),
+    deniedReason: text("denied_reason"),
+    activatedAt: timestamp("activated_at"),
+    expiresAt: timestamp("expires_at"),
+    terminatedAt: timestamp("terminated_at"),
+    terminatedBy: varchar("terminated_by"),
+    terminationReason: text("termination_reason"),
+    sessionToken: text("session_token"),
+    // Session recording
+    recordingEnabled: boolean("recording_enabled").notNull().default(true),
+    recordingSize: integer("recording_size"), // bytes
+    commandCount: integer("command_count").default(0),
+    keystrokeCount: integer("keystroke_count").default(0),
+    // Risk assessment
+    riskScore: integer("risk_score"), // 0-100
+    riskFactors: jsonb("risk_factors"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_pam_org").on(table.orgId),
+    index("idx_pam_requester").on(table.orgId, table.requesterId),
+    index("idx_pam_status").on(table.orgId, table.status),
+    index("idx_pam_target").on(table.orgId, table.targetSystem),
+    index("idx_pam_expires").on(table.expiresAt),
+  ],
+);
+
+export const scimProvisioningLogs = pgTable(
+  "scim_provisioning_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    provider: text("provider").notNull(), // azure_ad, okta, google_workspace
+    operationType: text("operation_type").notNull(),
+    externalUserId: text("external_user_id"),
+    externalUserName: text("external_user_name"),
+    externalEmail: text("external_email"),
+    internalUserId: varchar("internal_user_id"),
+    groupName: text("group_name"),
+    success: boolean("success").notNull().default(true),
+    errorMessage: text("error_message"),
+    rawPayload: jsonb("raw_payload"),
+    processedAt: timestamp("processed_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_scim_org").on(table.orgId),
+    index("idx_scim_provider").on(table.orgId, table.provider),
+    index("idx_scim_operation").on(table.orgId, table.operationType),
+    index("idx_scim_ext_user").on(table.externalUserId),
+  ],
+);
+
+export const identityRiskProfiles = pgTable(
+  "identity_risk_profiles",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    userId: varchar("user_id").notNull(),
+    userName: text("user_name").notNull(),
+    userEmail: text("user_email"),
+    riskLevel: text("risk_level").notNull().default("low"),
+    riskScore: integer("risk_score").notNull().default(0), // 0-100
+    // Stale account detection
+    isStale: boolean("is_stale").default(false),
+    lastActivityAt: timestamp("last_activity_at"),
+    daysSinceActivity: integer("days_since_activity"),
+    isServiceAccount: boolean("is_service_account").default(false),
+    lastCredentialRotation: timestamp("last_credential_rotation"),
+    credentialAge: integer("credential_age_days"),
+    // Blast radius
+    blastRadiusScore: integer("blast_radius_score").default(0), // 0-100
+    accessibleSystems: integer("accessible_systems").default(0),
+    accessibleSecrets: integer("accessible_secrets").default(0),
+    privilegedRoles: jsonb("privileged_roles"), // array of role names
+    // Lateral movement
+    lateralMovementPaths: integer("lateral_movement_paths").default(0),
+    canReachCritical: boolean("can_reach_critical").default(false),
+    pivotPoints: jsonb("pivot_points"), // systems this identity can pivot through
+    // Risk factors
+    mfaEnabled: boolean("mfa_enabled").default(false),
+    hasExcessivePermissions: boolean("has_excessive_permissions").default(false),
+    unusedPermissions: jsonb("unused_permissions"),
+    anomalousLoginCount: integer("anomalous_login_count").default(0),
+    failedLoginCount: integer("failed_login_count").default(0),
+    // Metadata
+    lastAssessedAt: timestamp("last_assessed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_irp_org").on(table.orgId),
+    index("idx_irp_user").on(table.orgId, table.userId),
+    index("idx_irp_risk").on(table.orgId, table.riskLevel),
+    index("idx_irp_stale").on(table.orgId, table.isStale),
+    index("idx_irp_blast").on(table.orgId, table.blastRadiusScore),
+  ],
+);
+
+export const identityAccessGraph = pgTable(
+  "identity_access_graph",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sourceUserId: varchar("source_user_id").notNull(),
+    sourceUserName: text("source_user_name").notNull(),
+    targetSystem: text("target_system").notNull(),
+    targetResource: text("target_resource"),
+    accessType: text("access_type").notNull(), // direct, inherited, delegated
+    permissionLevel: text("permission_level").notNull(), // read, write, admin, superadmin
+    grantedVia: text("granted_via"), // role name, group name, direct assignment
+    isActive: boolean("is_active").notNull().default(true),
+    lastUsedAt: timestamp("last_used_at"),
+    expiresAt: timestamp("expires_at"),
+    riskWeight: integer("risk_weight").default(1), // higher = riskier path
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_iag_org").on(table.orgId),
+    index("idx_iag_source").on(table.orgId, table.sourceUserId),
+    index("idx_iag_target").on(table.orgId, table.targetSystem),
+    index("idx_iag_active").on(table.orgId, table.isActive),
+  ],
+);
+
+// Relations
+export const accessReviewCampaignsRelations = relations(accessReviewCampaigns, ({ one, many }) => ({
+  organization: one(organizations, { fields: [accessReviewCampaigns.orgId], references: [organizations.id] }),
+  entitlements: many(accessReviewEntitlements),
+}));
+
+export const accessReviewEntitlementsRelations = relations(accessReviewEntitlements, ({ one }) => ({
+  organization: one(organizations, { fields: [accessReviewEntitlements.orgId], references: [organizations.id] }),
+  campaign: one(accessReviewCampaigns, {
+    fields: [accessReviewEntitlements.campaignId],
+    references: [accessReviewCampaigns.id],
+  }),
+}));
+
+export const pamSessionsRelations = relations(pamSessions, ({ one }) => ({
+  organization: one(organizations, { fields: [pamSessions.orgId], references: [organizations.id] }),
+}));
+
+export const scimProvisioningLogsRelations = relations(scimProvisioningLogs, ({ one }) => ({
+  organization: one(organizations, { fields: [scimProvisioningLogs.orgId], references: [organizations.id] }),
+}));
+
+export const identityRiskProfilesRelations = relations(identityRiskProfiles, ({ one }) => ({
+  organization: one(organizations, { fields: [identityRiskProfiles.orgId], references: [organizations.id] }),
+}));
+
+export const identityAccessGraphRelations = relations(identityAccessGraph, ({ one }) => ({
+  organization: one(organizations, { fields: [identityAccessGraph.orgId], references: [organizations.id] }),
+}));
+
+// Types
+export type AccessReviewCampaign = typeof accessReviewCampaigns.$inferSelect;
+export type InsertAccessReviewCampaign = typeof accessReviewCampaigns.$inferInsert;
+export type AccessReviewEntitlement = typeof accessReviewEntitlements.$inferSelect;
+export type InsertAccessReviewEntitlement = typeof accessReviewEntitlements.$inferInsert;
+export type PamSession = typeof pamSessions.$inferSelect;
+export type InsertPamSession = typeof pamSessions.$inferInsert;
+export type ScimProvisioningLog = typeof scimProvisioningLogs.$inferSelect;
+export type InsertScimProvisioningLog = typeof scimProvisioningLogs.$inferInsert;
+export type IdentityRiskProfile = typeof identityRiskProfiles.$inferSelect;
+export type InsertIdentityRiskProfile = typeof identityRiskProfiles.$inferInsert;
+export type IdentityAccessGraphEntry = typeof identityAccessGraph.$inferSelect;
+export type InsertIdentityAccessGraphEntry = typeof identityAccessGraph.$inferInsert;
+
+// =========================================================================
+// DECEPTION TECHNOLOGY
+// =========================================================================
+
+export const CANARY_TOKEN_TYPES = [
+  "aws_key",
+  "database_credential",
+  "api_key",
+  "document",
+  "email_pixel",
+  "dns_token",
+  "url_token",
+  "kubeconfig",
+  "ssh_key",
+  "slack_webhook",
+] as const;
+
+export const HONEYPOT_ASSET_TYPES = [
+  "honey_account",
+  "honeypot_endpoint",
+  "deception_fileshare",
+  "network_decoy",
+  "fake_rdp",
+  "fake_ssh",
+  "fake_admin_panel",
+  "fake_database",
+] as const;
+
+export const DECEPTION_HIT_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+
+export const DEPLOYMENT_TARGETS = [
+  "s3_bucket",
+  "github_repo",
+  "email",
+  "shared_drive",
+  "active_directory",
+  "kubernetes",
+  "ci_cd_pipeline",
+  "internal_wiki",
+] as const;
+
+export const canaryTokens = pgTable(
+  "canary_tokens",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    tokenType: text("token_type").notNull(), // from CANARY_TOKEN_TYPES
+    tokenValue: text("token_value").notNull(), // the fake credential value
+    tokenHash: text("token_hash").notNull(), // SHA-256 hash for fast lookup
+    callbackUrl: text("callback_url").notNull(), // unique URL that triggers on access
+    callbackSecret: text("callback_secret").notNull(), // HMAC secret for validating callbacks
+    deployedTo: text("deployed_to"), // where it's planted
+    deploymentTarget: text("deployment_target"), // from DEPLOYMENT_TARGETS
+    deploymentMetadata: jsonb("deployment_metadata"), // target-specific config
+    isActive: boolean("is_active").notNull().default(true),
+    hitCount: integer("hit_count").notNull().default(0),
+    lastHitAt: timestamp("last_hit_at"),
+    createdBy: varchar("created_by"),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_canary_tokens_org").on(table.orgId),
+    index("idx_canary_tokens_type").on(table.tokenType),
+    index("idx_canary_tokens_hash").on(table.tokenHash),
+    index("idx_canary_tokens_active").on(table.orgId, table.isActive),
+    uniqueIndex("idx_canary_tokens_callback").on(table.callbackUrl),
+  ],
+);
+
+export const honeypotAssets = pgTable(
+  "honeypot_assets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    assetType: text("asset_type").notNull(), // from HONEYPOT_ASSET_TYPES
+    // For honey accounts
+    fakeUsername: text("fake_username"),
+    fakeEmail: text("fake_email"),
+    fakeDomain: text("fake_domain"),
+    // For honeypot endpoints
+    listenAddress: text("listen_address"), // e.g., "10.0.0.50:3389"
+    protocol: text("protocol"), // rdp, ssh, http, smb
+    // For deception fileshares
+    sharePath: text("share_path"), // e.g., "\\\\fileserver\\executive-salaries"
+    decoyFiles: jsonb("decoy_files"), // list of fake file names/sizes
+    // For network decoys
+    decoyHostname: text("decoy_hostname"),
+    decoyIp: text("decoy_ip"),
+    openPorts: jsonb("open_ports"), // list of open ports
+    // General
+    configuration: jsonb("configuration"), // full config blob
+    isActive: boolean("is_active").notNull().default(true),
+    hitCount: integer("hit_count").notNull().default(0),
+    lastHitAt: timestamp("last_hit_at"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_honeypot_assets_org").on(table.orgId),
+    index("idx_honeypot_assets_type").on(table.assetType),
+    index("idx_honeypot_assets_active").on(table.orgId, table.isActive),
+  ],
+);
+
+export const deceptionHits = pgTable(
+  "deception_hits",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    // Link to source
+    canaryTokenId: varchar("canary_token_id").references(() => canaryTokens.id),
+    honeypotAssetId: varchar("honeypot_asset_id").references(() => honeypotAssets.id),
+    // Hit details
+    sourceIp: text("source_ip"),
+    sourceHostname: text("source_hostname"),
+    sourceUserAgent: text("source_user_agent"),
+    sourceGeoCountry: text("source_geo_country"),
+    sourceGeoCity: text("source_geo_city"),
+    sourceAsn: text("source_asn"),
+    // Attribution
+    attributedUserId: text("attributed_user_id"),
+    attributedUsername: text("attributed_username"),
+    attributedService: text("attributed_service"),
+    // Hit classification
+    severity: text("severity").notNull().default("critical"), // from DECEPTION_HIT_SEVERITIES
+    isInternal: boolean("is_internal").default(false),
+    isTorExit: boolean("is_tor_exit").default(false),
+    isKnownBad: boolean("is_known_bad").default(false),
+    // Response
+    alertId: varchar("alert_id").references(() => alerts.id),
+    incidentId: varchar("incident_id").references(() => incidents.id),
+    autoContained: boolean("auto_contained").default(false),
+    containmentAction: text("containment_action"),
+    // Metadata
+    rawRequest: jsonb("raw_request"), // full request data
+    httpMethod: text("http_method"),
+    httpPath: text("http_path"),
+    accessedCredential: text("accessed_credential"), // which fake cred was used
+    hitAt: timestamp("hit_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_deception_hits_org").on(table.orgId),
+    index("idx_deception_hits_token").on(table.canaryTokenId),
+    index("idx_deception_hits_honeypot").on(table.honeypotAssetId),
+    index("idx_deception_hits_severity").on(table.orgId, table.severity),
+    index("idx_deception_hits_time").on(table.orgId, table.hitAt),
+    index("idx_deception_hits_source_ip").on(table.sourceIp),
+  ],
+);
+
+// Relations
+export const canaryTokensRelations = relations(canaryTokens, ({ one, many }) => ({
+  organization: one(organizations, { fields: [canaryTokens.orgId], references: [organizations.id] }),
+  hits: many(deceptionHits),
+}));
+
+export const honeypotAssetsRelations = relations(honeypotAssets, ({ one, many }) => ({
+  organization: one(organizations, { fields: [honeypotAssets.orgId], references: [organizations.id] }),
+  hits: many(deceptionHits),
+}));
+
+export const deceptionHitsRelations = relations(deceptionHits, ({ one }) => ({
+  organization: one(organizations, { fields: [deceptionHits.orgId], references: [organizations.id] }),
+  canaryToken: one(canaryTokens, { fields: [deceptionHits.canaryTokenId], references: [canaryTokens.id] }),
+  honeypotAsset: one(honeypotAssets, { fields: [deceptionHits.honeypotAssetId], references: [honeypotAssets.id] }),
+}));
+
+// Types
+export type CanaryToken = typeof canaryTokens.$inferSelect;
+export type InsertCanaryToken = typeof canaryTokens.$inferInsert;
+export type HoneypotAsset = typeof honeypotAssets.$inferSelect;
+export type InsertHoneypotAsset = typeof honeypotAssets.$inferInsert;
+export type DeceptionHit = typeof deceptionHits.$inferSelect;
+export type InsertDeceptionHit = typeof deceptionHits.$inferInsert;
+
+// =========================================================================
+// OT/ICS SECURITY
+// =========================================================================
+
+export const OT_ASSET_TYPES = [
+  "plc",
+  "hmi",
+  "scada_server",
+  "rtu",
+  "dcs",
+  "engineering_workstation",
+  "historian",
+  "safety_system",
+  "network_switch",
+  "firewall",
+  "gateway",
+  "sensor",
+  "actuator",
+  "drive",
+  "robot",
+  "meter",
+  "relay",
+  "other",
+] as const;
+
+export const OT_PROTOCOLS = [
+  "modbus_tcp",
+  "modbus_rtu",
+  "dnp3",
+  "opc_ua",
+  "opc_da",
+  "ethernet_ip",
+  "profinet",
+  "bacnet",
+  "iec_61850",
+  "iec_104",
+  "s7comm",
+  "fins",
+  "hart",
+  "mqtt",
+  "coap",
+  "unknown",
+] as const;
+
+export const PURDUE_LEVELS = [
+  "level_0", // Physical process
+  "level_1", // Basic control (PLCs, RTUs)
+  "level_2", // Area supervisory (HMIs, SCADA)
+  "level_3", // Site operations (historians, MES)
+  "level_3_5", // DMZ (firewalls, jump hosts)
+  "level_4", // Enterprise IT (ERP, email)
+  "level_5", // Enterprise network / Internet
+] as const;
+
+export const OT_ANOMALY_TYPES = [
+  "unauthorized_access",
+  "firmware_change",
+  "configuration_change",
+  "ladder_logic_modification",
+  "setpoint_change",
+  "network_scan",
+  "new_device",
+  "protocol_violation",
+  "it_ot_boundary_crossing",
+  "safety_system_bypass",
+  "hmi_anomaly",
+  "denial_of_service",
+  "replay_attack",
+  "man_in_the_middle",
+  "plc_stop_command",
+  "plc_mode_change",
+  "unexpected_write",
+  "process_value_anomaly",
+  "communication_loss",
+  "unknown",
+] as const;
+
+export const OT_ANOMALY_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+
+export const otAssets = pgTable(
+  "ot_assets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    assetType: text("asset_type").notNull(), // from OT_ASSET_TYPES
+    // Network identity
+    ipAddress: text("ip_address"),
+    macAddress: text("mac_address"),
+    hostname: text("hostname"),
+    // Purdue Model placement
+    purdueLevel: text("purdue_level"), // from PURDUE_LEVELS
+    zone: text("zone"), // logical zone name
+    // Device details
+    vendor: text("vendor"),
+    model: text("model"),
+    firmwareVersion: text("firmware_version"),
+    serialNumber: text("serial_number"),
+    hardwareRevision: text("hardware_revision"),
+    // Protocol support
+    protocols: jsonb("protocols"), // array of OT_PROTOCOLS
+    // Location
+    facility: text("facility"),
+    area: text("area"),
+    line: text("line"),
+    // State
+    status: text("status").notNull().default("online"), // online, offline, maintenance, unknown
+    lastSeen: timestamp("last_seen"),
+    firstSeen: timestamp("first_seen"),
+    isManaged: boolean("is_managed").notNull().default(false),
+    isCritical: boolean("is_critical").notNull().default(false),
+    // Safety
+    isSafetySystem: boolean("is_safety_system").notNull().default(false),
+    silRating: text("sil_rating"), // SIL 1-4
+    // Vulnerability tracking
+    cveCount: integer("cve_count").notNull().default(0),
+    highestCvss: real("highest_cvss"),
+    lastVulnScan: timestamp("last_vuln_scan"),
+    // Metadata
+    tags: jsonb("tags"),
+    metadata: jsonb("metadata"),
+    discoveredBy: text("discovered_by"), // passive, manual, sensor
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ot_assets_org").on(table.orgId),
+    index("idx_ot_assets_type").on(table.orgId, table.assetType),
+    index("idx_ot_assets_purdue").on(table.orgId, table.purdueLevel),
+    index("idx_ot_assets_ip").on(table.orgId, table.ipAddress),
+    index("idx_ot_assets_vendor").on(table.orgId, table.vendor),
+    index("idx_ot_assets_status").on(table.orgId, table.status),
+    index("idx_ot_assets_critical").on(table.orgId, table.isCritical),
+  ],
+);
+
+export const otConnections = pgTable(
+  "ot_connections",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sourceAssetId: varchar("source_asset_id").references(() => otAssets.id),
+    destAssetId: varchar("dest_asset_id").references(() => otAssets.id),
+    // Connection details
+    sourceIp: text("source_ip"),
+    destIp: text("dest_ip"),
+    sourcePort: integer("source_port"),
+    destPort: integer("dest_port"),
+    protocol: text("protocol"), // from OT_PROTOCOLS
+    // Purdue levels
+    sourcePurdueLevel: text("source_purdue_level"),
+    destPurdueLevel: text("dest_purdue_level"),
+    // Classification
+    crossesBoundary: boolean("crosses_boundary").notNull().default(false), // IT/OT boundary crossing
+    isAllowed: boolean("is_allowed").default(true),
+    ruleId: text("rule_id"), // firewall rule or policy reference
+    // Traffic stats
+    packetCount: bigint("packet_count", { mode: "number" }).default(0),
+    byteCount: bigint("byte_count", { mode: "number" }).default(0),
+    lastActivity: timestamp("last_activity"),
+    firstSeen: timestamp("first_seen").defaultNow(),
+    // Metadata
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ot_connections_org").on(table.orgId),
+    index("idx_ot_connections_source").on(table.sourceAssetId),
+    index("idx_ot_connections_dest").on(table.destAssetId),
+    index("idx_ot_connections_boundary").on(table.orgId, table.crossesBoundary),
+    index("idx_ot_connections_protocol").on(table.orgId, table.protocol),
+  ],
+);
+
+export const otAnomalies = pgTable(
+  "ot_anomalies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    assetId: varchar("asset_id").references(() => otAssets.id),
+    connectionId: varchar("connection_id").references(() => otConnections.id),
+    // Anomaly classification
+    anomalyType: text("anomaly_type").notNull(), // from OT_ANOMALY_TYPES
+    severity: text("severity").notNull().default("high"), // from OT_ANOMALY_SEVERITIES
+    title: text("title").notNull(),
+    description: text("description"),
+    // ICS context
+    protocol: text("protocol"), // protocol involved
+    functionCode: integer("function_code"), // Modbus function code, DNP3 function, etc.
+    registerAddress: integer("register_address"), // Modbus register, DNP3 point
+    previousValue: text("previous_value"), // before the anomaly
+    newValue: text("new_value"), // after the anomaly
+    // Source attribution
+    sourceIp: text("source_ip"),
+    destIp: text("dest_ip"),
+    sourcePort: integer("source_port"),
+    destPort: integer("dest_port"),
+    // Threat intel
+    icsCertAdvisory: text("ics_cert_advisory"), // related ICS-CERT advisory ID
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"), // ICS ATT&CK technique
+    // Response
+    alertId: varchar("alert_id").references(() => alerts.id),
+    status: text("status").notNull().default("new"), // new, investigating, resolved, false_positive
+    resolvedBy: varchar("resolved_by"),
+    resolvedAt: timestamp("resolved_at"),
+    // Metadata
+    rawPacket: jsonb("raw_packet"), // captured packet data
+    metadata: jsonb("metadata"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ot_anomalies_org").on(table.orgId),
+    index("idx_ot_anomalies_asset").on(table.assetId),
+    index("idx_ot_anomalies_type").on(table.orgId, table.anomalyType),
+    index("idx_ot_anomalies_severity").on(table.orgId, table.severity),
+    index("idx_ot_anomalies_status").on(table.orgId, table.status),
+    index("idx_ot_anomalies_time").on(table.orgId, table.detectedAt),
+  ],
+);
+
+export const industrialProtocolEvents = pgTable(
+  "industrial_protocol_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    assetId: varchar("asset_id").references(() => otAssets.id),
+    // Protocol details
+    protocol: text("protocol").notNull(), // from OT_PROTOCOLS
+    functionCode: integer("function_code"),
+    functionName: text("function_name"), // human-readable function name
+    // Request/response
+    sourceIp: text("source_ip"),
+    destIp: text("dest_ip"),
+    sourcePort: integer("source_port"),
+    destPort: integer("dest_port"),
+    // Payload
+    registerAddress: integer("register_address"),
+    registerCount: integer("register_count"),
+    writeValue: text("write_value"),
+    readValue: text("read_value"),
+    unitId: integer("unit_id"), // Modbus unit ID / DNP3 address
+    // Classification
+    isWrite: boolean("is_write").notNull().default(false),
+    isAnomalous: boolean("is_anomalous").notNull().default(false),
+    anomalyId: varchar("anomaly_id").references(() => otAnomalies.id),
+    // Metadata
+    rawData: jsonb("raw_data"),
+    capturedAt: timestamp("captured_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ipe_org").on(table.orgId),
+    index("idx_ipe_asset").on(table.assetId),
+    index("idx_ipe_protocol").on(table.orgId, table.protocol),
+    index("idx_ipe_write").on(table.orgId, table.isWrite),
+    index("idx_ipe_anomalous").on(table.orgId, table.isAnomalous),
+    index("idx_ipe_time").on(table.orgId, table.capturedAt),
+  ],
+);
+
+// OT/ICS Relations
+export const otAssetsRelations = relations(otAssets, ({ one, many }) => ({
+  organization: one(organizations, { fields: [otAssets.orgId], references: [organizations.id] }),
+  sourceConnections: many(otConnections),
+  anomalies: many(otAnomalies),
+  protocolEvents: many(industrialProtocolEvents),
+}));
+
+export const otConnectionsRelations = relations(otConnections, ({ one }) => ({
+  organization: one(organizations, { fields: [otConnections.orgId], references: [organizations.id] }),
+  sourceAsset: one(otAssets, { fields: [otConnections.sourceAssetId], references: [otAssets.id] }),
+  destAsset: one(otAssets, { fields: [otConnections.destAssetId], references: [otAssets.id] }),
+}));
+
+export const otAnomaliesRelations = relations(otAnomalies, ({ one }) => ({
+  organization: one(organizations, { fields: [otAnomalies.orgId], references: [organizations.id] }),
+  asset: one(otAssets, { fields: [otAnomalies.assetId], references: [otAssets.id] }),
+  connection: one(otConnections, { fields: [otAnomalies.connectionId], references: [otConnections.id] }),
+  alert: one(alerts, { fields: [otAnomalies.alertId], references: [alerts.id] }),
+}));
+
+export const industrialProtocolEventsRelations = relations(industrialProtocolEvents, ({ one }) => ({
+  organization: one(organizations, { fields: [industrialProtocolEvents.orgId], references: [organizations.id] }),
+  asset: one(otAssets, { fields: [industrialProtocolEvents.assetId], references: [otAssets.id] }),
+  anomaly: one(otAnomalies, { fields: [industrialProtocolEvents.anomalyId], references: [otAnomalies.id] }),
+}));
+
+// OT/ICS Types
+export type OtAsset = typeof otAssets.$inferSelect;
+export type InsertOtAsset = typeof otAssets.$inferInsert;
+export type OtConnection = typeof otConnections.$inferSelect;
+export type InsertOtConnection = typeof otConnections.$inferInsert;
+export type OtAnomaly = typeof otAnomalies.$inferSelect;
+export type InsertOtAnomaly = typeof otAnomalies.$inferInsert;
+export type IndustrialProtocolEvent = typeof industrialProtocolEvents.$inferSelect;
+export type InsertIndustrialProtocolEvent = typeof industrialProtocolEvents.$inferInsert;
+
+// ─── Investigation Chat Messages ───────────────────────────────────────────────
+export const investigationChatMessages = pgTable(
+  "investigation_chat_messages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    threadId: varchar("thread_id").notNull(),
+    role: text("role").notNull(), // "user" | "assistant"
+    content: text("content").notNull(),
+    metadata: jsonb("metadata"), // model used, token counts, latency, etc.
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_chat_messages_thread").on(table.threadId),
+    index("idx_chat_messages_incident").on(table.incidentId),
+    index("idx_chat_messages_org").on(table.orgId),
+  ],
+);
+
+export const investigationChatMessagesRelations = relations(investigationChatMessages, ({ one }) => ({
+  organization: one(organizations, { fields: [investigationChatMessages.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [investigationChatMessages.incidentId], references: [incidents.id] }),
+}));
+
+export type InvestigationChatMessage = typeof investigationChatMessages.$inferSelect;
+export type InsertInvestigationChatMessage = typeof investigationChatMessages.$inferInsert;
+
+// ─── AI-Generated Detection Rules ──────────────────────────────────────────────
+export const aiGeneratedRules = pgTable(
+  "ai_generated_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sourceIncidentId: varchar("source_incident_id").references(() => incidents.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    ruleContent: jsonb("rule_content").notNull(), // Sigma-compatible rule object
+    sigmaNormalized: text("sigma_normalized"), // Sigma YAML string
+    confidence: real("confidence").notNull().default(0.5),
+    status: text("status").notNull().default("draft"), // draft | review | accepted | rejected
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    generatedBy: text("generated_by").notNull().default("claude-opus"), // model that generated it
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewedBy: varchar("reviewed_by"),
+  },
+  (table) => [
+    index("idx_ai_rules_org").on(table.orgId),
+    index("idx_ai_rules_incident").on(table.sourceIncidentId),
+    index("idx_ai_rules_status").on(table.status),
+  ],
+);
+
+export const aiGeneratedRulesRelations = relations(aiGeneratedRules, ({ one }) => ({
+  organization: one(organizations, { fields: [aiGeneratedRules.orgId], references: [organizations.id] }),
+  sourceIncident: one(incidents, { fields: [aiGeneratedRules.sourceIncidentId], references: [incidents.id] }),
+}));
+
+export type AiGeneratedRule = typeof aiGeneratedRules.$inferSelect;
+export type InsertAiGeneratedRule = typeof aiGeneratedRules.$inferInsert;
+
+// ─── War Rooms (Persistent) ──────────────────────────────────────────────────
+export const WAR_ROOM_STATUSES = ["active", "standby", "closed"] as const;
+export const WAR_ROOM_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+export const WAR_ROOM_PARTICIPANT_ROLES = ["commander", "responder", "observer"] as const;
+
+export const warRooms = pgTable(
+  "war_rooms",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    incidentId: varchar("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("active"), // active | standby | closed
+    severity: text("severity").notNull().default("high"), // critical | high | medium | low
+    commander: varchar("commander").notNull(),
+    commanderName: text("commander_name").notNull().default("Commander"),
+    slackChannelId: text("slack_channel_id"),
+    slackChannelName: text("slack_channel_name"),
+    teamsChannelId: text("teams_channel_id"),
+    resolution: text("resolution"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    closedAt: timestamp("closed_at"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_war_rooms_org").on(table.orgId),
+    index("idx_war_rooms_incident").on(table.incidentId),
+    index("idx_war_rooms_status").on(table.status),
+  ],
+);
+
+export const warRoomsRelations = relations(warRooms, ({ one, many }) => ({
+  organization: one(organizations, { fields: [warRooms.orgId], references: [organizations.id] }),
+  incident: one(incidents, { fields: [warRooms.incidentId], references: [incidents.id] }),
+  messages: many(warRoomMessages),
+  actionItems: many(warRoomActionItems),
+  participants: many(warRoomParticipants),
+  handoffs: many(warRoomHandoffs),
+}));
+
+export type WarRoom = typeof warRooms.$inferSelect;
+export type InsertWarRoom = typeof warRooms.$inferInsert;
+
+// ─── War Room Participants ──────────────────────────────────────────────────
+export const warRoomParticipants = pgTable(
+  "war_room_participants",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    userId: varchar("user_id").notNull(),
+    displayName: text("display_name").notNull(),
+    role: text("role").notNull().default("responder"), // commander | responder | observer
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    leftAt: timestamp("left_at"),
+  },
+  (table) => [
+    index("idx_wr_participants_room").on(table.warRoomId),
+    index("idx_wr_participants_user").on(table.userId),
+  ],
+);
+
+export const warRoomParticipantsRelations = relations(warRoomParticipants, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomParticipants.warRoomId], references: [warRooms.id] }),
+}));
+
+export type WarRoomParticipant = typeof warRoomParticipants.$inferSelect;
+export type InsertWarRoomParticipant = typeof warRoomParticipants.$inferInsert;
+
+// ─── War Room Messages (Timeline) ──────────────────────────────────────────
+export const WAR_ROOM_MESSAGE_TYPES = [
+  "message",
+  "action",
+  "status_change",
+  "evidence",
+  "decision",
+  "hypothesis",
+  "handoff",
+  "system",
+] as const;
+
+export const warRoomMessages = pgTable(
+  "war_room_messages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    actor: text("actor").notNull(),
+    actorId: varchar("actor_id"),
+    type: text("type").notNull().default("message"),
+    content: text("content").notNull(),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_wr_messages_room").on(table.warRoomId),
+    index("idx_wr_messages_org").on(table.orgId),
+    index("idx_wr_messages_created").on(table.createdAt),
+  ],
+);
+
+export const warRoomMessagesRelations = relations(warRoomMessages, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomMessages.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomMessages.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomMessage = typeof warRoomMessages.$inferSelect;
+export type InsertWarRoomMessage = typeof warRoomMessages.$inferInsert;
+
+// ─── War Room Action Items ──────────────────────────────────────────────────
+export const warRoomActionItems = pgTable(
+  "war_room_action_items",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    assignee: text("assignee").notNull().default("unassigned"),
+    assigneeId: varchar("assignee_id"),
+    status: text("status").notNull().default("pending"), // pending | in_progress | completed | blocked
+    priority: text("priority").notNull().default("medium"), // critical | high | medium | low
+    dueAt: timestamp("due_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_wr_actions_room").on(table.warRoomId),
+    index("idx_wr_actions_org").on(table.orgId),
+    index("idx_wr_actions_status").on(table.status),
+  ],
+);
+
+export const warRoomActionItemsRelations = relations(warRoomActionItems, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomActionItems.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomActionItems.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomActionItem = typeof warRoomActionItems.$inferSelect;
+export type InsertWarRoomActionItem = typeof warRoomActionItems.$inferInsert;
+
+// ─── War Room Handoffs (Shift Changes) ──────────────────────────────────────
+export const warRoomHandoffs = pgTable(
+  "war_room_handoffs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    fromUserId: varchar("from_user_id").notNull(),
+    fromUserName: text("from_user_name").notNull(),
+    toUserId: varchar("to_user_id").notNull(),
+    toUserName: text("to_user_name").notNull(),
+    summary: text("summary").notNull(), // State transfer document
+    openActions: jsonb("open_actions").default([]), // Snapshot of pending action items
+    keyFindings: jsonb("key_findings").default([]), // Array of key findings so far
+    nextSteps: jsonb("next_steps").default([]), // Array of recommended next steps
+    status: text("status").notNull().default("pending"), // pending | acknowledged
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    acknowledgedAt: timestamp("acknowledged_at"),
+  },
+  (table) => [index("idx_wr_handoffs_room").on(table.warRoomId), index("idx_wr_handoffs_org").on(table.orgId)],
+);
+
+export const warRoomHandoffsRelations = relations(warRoomHandoffs, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomHandoffs.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomHandoffs.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomHandoff = typeof warRoomHandoffs.$inferSelect;
+export type InsertWarRoomHandoff = typeof warRoomHandoffs.$inferInsert;
+
+// ─── Threat Hunting Workbench ───────────────────────────────────────────────
+
+export const HUNT_QUERY_TYPES = ["sigma", "yara", "kql", "sql", "custom"] as const;
+export const HUNT_STATUSES = ["draft", "ready", "running", "completed", "failed", "cancelled"] as const;
+
+export const threatHunts = pgTable(
+  "threat_hunts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    queryType: text("query_type").notNull(), // sigma | yara | kql | sql | custom
+    queryText: text("query_text").notNull(),
+    compiledQuery: text("compiled_query"), // compiled version ready for execution
+    status: text("status").notNull().default("draft"),
+    hypothesis: text("hypothesis"), // analyst hypothesis being tested
+    mitreTechniques: jsonb("mitre_techniques").default([]), // array of MITRE ATT&CK technique IDs
+    tags: jsonb("tags").default([]),
+    lastRunAt: timestamp("last_run_at"),
+    lastRunDurationMs: integer("last_run_duration_ms"),
+    lastRunEventCount: integer("last_run_event_count"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_hunts_org").on(table.orgId), index("idx_th_hunts_status").on(table.status)],
+);
+
+export const huntResults = pgTable(
+  "hunt_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => threatHunts.id, { onDelete: "cascade" }),
+    eventCount: integer("event_count").notNull().default(0),
+    eventsJson: jsonb("events_json").default([]), // matched events
+    summary: text("summary"), // AI-generated result summary
+    falsePositiveCount: integer("false_positive_count").default(0),
+    truePositiveCount: integer("true_positive_count").default(0),
+    executionDurationMs: integer("execution_duration_ms"),
+    executedAt: timestamp("executed_at").defaultNow().notNull(),
+    executedBy: text("executed_by"),
+  },
+  (table) => [index("idx_th_results_hunt").on(table.huntId), index("idx_th_results_org").on(table.orgId)],
+);
+
+export const huntLibrary = pgTable(
+  "hunt_library",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => threatHunts.id, { onDelete: "cascade" }),
+    isPublic: boolean("is_public").notNull().default(false),
+    sharedBy: text("shared_by"),
+    category: text("category"), // apt, ransomware, insider_threat, lateral_movement, etc.
+    difficulty: text("difficulty"), // beginner, intermediate, advanced
+    rating: integer("rating").default(0),
+    downloadCount: integer("download_count").default(0),
+    sharedAt: timestamp("shared_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_library_org").on(table.orgId), index("idx_th_library_public").on(table.isPublic)],
+);
+
+export const huntSchedules = pgTable(
+  "hunt_schedules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => threatHunts.id, { onDelete: "cascade" }),
+    cadence: text("cadence").notNull(), // daily, weekly, biweekly, monthly
+    dayOfWeek: integer("day_of_week"), // 0=Sun, 6=Sat (for weekly/biweekly)
+    hourUtc: integer("hour_utc").notNull().default(8), // hour of day UTC
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at"),
+    lastRunAt: timestamp("last_run_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_schedules_org").on(table.orgId), index("idx_th_schedules_hunt").on(table.huntId)],
+);
+
+export const huntPlaybooks = pgTable(
+  "hunt_playbooks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    threatActor: text("threat_actor"), // APT29, FIN7, Lazarus, etc.
+    mitreTechniques: jsonb("mitre_techniques").default([]),
+    steps: jsonb("steps").default([]), // array of { order, title, description, queryType, queryText, expectedOutcome }
+    difficulty: text("difficulty").default("intermediate"),
+    estimatedTimeMin: integer("estimated_time_min"),
+    datasourcesRequired: jsonb("datasources_required").default([]),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_playbooks_org").on(table.orgId)],
+);
+
+export const threatHuntsRelations = relations(threatHunts, ({ one, many }) => ({
+  organization: one(organizations, { fields: [threatHunts.orgId], references: [organizations.id] }),
+  results: many(huntResults),
+  schedules: many(huntSchedules),
+}));
+
+export const huntResultsRelations = relations(huntResults, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntResults.huntId], references: [threatHunts.id] }),
+}));
+
+export const huntLibraryRelations = relations(huntLibrary, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntLibrary.huntId], references: [threatHunts.id] }),
+}));
+
+export const huntSchedulesRelations = relations(huntSchedules, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntSchedules.huntId], references: [threatHunts.id] }),
+}));
+
+export const huntPlaybooksRelations = relations(huntPlaybooks, ({ one }) => ({
+  organization: one(organizations, { fields: [huntPlaybooks.orgId], references: [organizations.id] }),
+}));
+
+export type ThreatHunt = typeof threatHunts.$inferSelect;
+export type InsertThreatHunt = typeof threatHunts.$inferInsert;
+export type HuntResult = typeof huntResults.$inferSelect;
+export type InsertHuntResult = typeof huntResults.$inferInsert;
+export type HuntLibraryEntry = typeof huntLibrary.$inferSelect;
+export type InsertHuntLibraryEntry = typeof huntLibrary.$inferInsert;
+export type HuntSchedule = typeof huntSchedules.$inferSelect;
+export type InsertHuntSchedule = typeof huntSchedules.$inferInsert;
+export type HuntPlaybook = typeof huntPlaybooks.$inferSelect;
+export type InsertHuntPlaybook = typeof huntPlaybooks.$inferInsert;
+
+// ============================
+// Security Data Lake
+// ============================
+
+export const DATA_LAKE_COMPLIANCE_FRAMEWORKS = [
+  "gdpr",
+  "sox",
+  "hipaa",
+  "pci_dss",
+  "iso27001",
+  "nist",
+  "soc2",
+  "nis2",
+  "dora",
+  "cbest",
+  "mas_trm",
+  "ifsca",
+  "pdpa",
+  "popia",
+  "lgpd",
+  "pipeda",
+  "asd_essential8",
+  "ccpa",
+  "cmmc",
+  "nerc_cip",
+  "swift_csp",
+  "iec_62443",
+  "custom",
+] as const;
+export const TIERING_JOB_STATUSES = ["pending", "running", "completed", "failed", "cancelled"] as const;
+export const EDISCOVERY_STATUSES = ["requested", "processing", "ready", "downloaded", "expired", "failed"] as const;
+export const RETENTION_DATA_TYPES = [
+  "alerts",
+  "incidents",
+  "audit_logs",
+  "sli_metrics",
+  "jobs",
+  "connector_job_runs",
+  "outbox_events",
+  "ingestion_logs",
+] as const;
+
+export const dataLakeRetentionPolicies = pgTable(
+  "data_lake_retention_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    dataType: text("data_type").notNull(), // alerts, incidents, audit_logs, etc.
+    complianceFramework: text("compliance_framework").notNull().default("custom"), // gdpr, sox, hipaa, etc.
+    hotRetentionDays: integer("hot_retention_days").notNull().default(90),
+    warmRetentionDays: integer("warm_retention_days").notNull().default(365),
+    coldRetentionDays: integer("cold_retention_days").notNull().default(2555), // 7 years
+    purgeAfterDays: integer("purge_after_days"), // null = never purge
+    compressionFormat: text("compression_format").notNull().default("parquet"), // parquet, gzip_json
+    isActive: boolean("is_active").notNull().default(true),
+    priority: integer("priority").notNull().default(0), // higher = higher priority when multiple match
+    filterCriteria: jsonb("filter_criteria").default({}), // optional filters (severity, source, etc.)
+    createdBy: text("created_by"),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_dl_retention_org").on(table.orgId),
+    index("idx_dl_retention_org_type").on(table.orgId, table.dataType),
+    index("idx_dl_retention_framework").on(table.complianceFramework),
+  ],
+);
+
+export const tieringJobs = pgTable(
+  "tiering_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    dataType: text("data_type").notNull(),
+    sourceTier: text("source_tier").notNull(), // hot, warm
+    targetTier: text("target_tier").notNull(), // warm, cold
+    status: text("status").notNull().default("pending"), // pending, running, completed, failed, cancelled
+    recordCount: integer("record_count").default(0),
+    recordsProcessed: integer("records_processed").default(0),
+    compressedSizeBytes: bigint("compressed_size_bytes", { mode: "number" }).default(0),
+    s3KeyPrefix: text("s3_key_prefix"),
+    parquetManifest: jsonb("parquet_manifest").default({}), // { files: [...], schema: {...} }
+    errorMessage: text("error_message"),
+    retentionPolicyId: uuid("retention_policy_id"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_tiering_jobs_org").on(table.orgId),
+    index("idx_tiering_jobs_status").on(table.status),
+    index("idx_tiering_jobs_org_type").on(table.orgId, table.dataType),
+  ],
+);
+
+export const eDiscoveryExports = pgTable(
+  "ediscovery_exports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("requested"), // requested, processing, ready, downloaded, expired, failed
+    legalHoldId: varchar("legal_hold_id"), // reference to legal hold if applicable
+    dataTypes: jsonb("data_types").default([]), // array of data types to include
+    dateRangeStart: timestamp("date_range_start"),
+    dateRangeEnd: timestamp("date_range_end"),
+    filterCriteria: jsonb("filter_criteria").default({}),
+    exportFormat: text("export_format").notNull().default("json"), // json, csv, parquet
+    includeMetadata: boolean("include_metadata").notNull().default(true),
+    includeChainOfCustody: boolean("include_chain_of_custody").notNull().default(true),
+    totalRecords: integer("total_records").default(0),
+    exportSizeBytes: bigint("export_size_bytes", { mode: "number" }).default(0),
+    s3Key: text("s3_key"),
+    checksumSha256: text("checksum_sha256"),
+    downloadCount: integer("download_count").default(0),
+    expiresAt: timestamp("expires_at"),
+    requestedBy: text("requested_by"),
+    requestedByName: text("requested_by_name"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_ediscovery_org").on(table.orgId),
+    index("idx_ediscovery_status").on(table.status),
+    index("idx_ediscovery_hold").on(table.legalHoldId),
+  ],
+);
+
+export const coldStorageInventory = pgTable(
+  "cold_storage_inventory",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    dataType: text("data_type").notNull(),
+    tier: text("tier").notNull().default("cold"), // warm, cold
+    s3Key: text("s3_key").notNull(),
+    format: text("format").notNull().default("parquet"), // parquet, gzip_json
+    recordCount: integer("record_count").notNull().default(0),
+    compressedSizeBytes: bigint("compressed_size_bytes", { mode: "number" }).notNull().default(0),
+    oldestRecord: timestamp("oldest_record"),
+    newestRecord: timestamp("newest_record"),
+    checksumSha256: text("checksum_sha256"),
+    tieringJobId: uuid("tiering_job_id"),
+    retentionPolicyId: uuid("retention_policy_id"),
+    purgeEligibleAt: timestamp("purge_eligible_at"), // when this data can be deleted
+    isRehydrated: boolean("is_rehydrated").notNull().default(false),
+    rehydratedAt: timestamp("rehydrated_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_cold_inv_org").on(table.orgId),
+    index("idx_cold_inv_org_type").on(table.orgId, table.dataType),
+    index("idx_cold_inv_tier").on(table.tier),
+    index("idx_cold_inv_purge").on(table.purgeEligibleAt),
+  ],
+);
+
+export const dataLakeQueries = pgTable(
+  "data_lake_queries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    queryText: text("query_text").notNull(),
+    queryType: text("query_type").notNull().default("federated"), // federated, hot_only, cold_only
+    dataTypes: jsonb("data_types").default([]),
+    dateRangeStart: timestamp("date_range_start"),
+    dateRangeEnd: timestamp("date_range_end"),
+    status: text("status").notNull().default("pending"), // pending, running, completed, failed
+    hotResultCount: integer("hot_result_count").default(0),
+    coldResultCount: integer("cold_result_count").default(0),
+    totalResultCount: integer("total_result_count").default(0),
+    executionTimeMs: integer("execution_time_ms"),
+    resultS3Key: text("result_s3_key"), // for large result sets stored in S3
+    errorMessage: text("error_message"),
+    executedBy: text("executed_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_dl_queries_org").on(table.orgId), index("idx_dl_queries_status").on(table.status)],
+);
+
+export const dataLakeRetentionPoliciesRelations = relations(dataLakeRetentionPolicies, ({ one }) => ({
+  organization: one(organizations, { fields: [dataLakeRetentionPolicies.orgId], references: [organizations.id] }),
+}));
+
+export const tieringJobsRelations = relations(tieringJobs, ({ one }) => ({
+  organization: one(organizations, { fields: [tieringJobs.orgId], references: [organizations.id] }),
+}));
+
+export const eDiscoveryExportsRelations = relations(eDiscoveryExports, ({ one }) => ({
+  organization: one(organizations, { fields: [eDiscoveryExports.orgId], references: [organizations.id] }),
+}));
+
+export const coldStorageInventoryRelations = relations(coldStorageInventory, ({ one }) => ({
+  organization: one(organizations, { fields: [coldStorageInventory.orgId], references: [organizations.id] }),
+}));
+
+export const dataLakeQueriesRelations = relations(dataLakeQueries, ({ one }) => ({
+  organization: one(organizations, { fields: [dataLakeQueries.orgId], references: [organizations.id] }),
+}));
+
+export type DataLakeRetentionPolicy = typeof dataLakeRetentionPolicies.$inferSelect;
+export type InsertDataLakeRetentionPolicy = typeof dataLakeRetentionPolicies.$inferInsert;
+export type TieringJob = typeof tieringJobs.$inferSelect;
+export type InsertTieringJob = typeof tieringJobs.$inferInsert;
+export type EDiscoveryExport = typeof eDiscoveryExports.$inferSelect;
+export type InsertEDiscoveryExport = typeof eDiscoveryExports.$inferInsert;
+export type ColdStorageInventoryEntry = typeof coldStorageInventory.$inferSelect;
+export type InsertColdStorageInventoryEntry = typeof coldStorageInventory.$inferInsert;
+export type DataLakeQuery = typeof dataLakeQueries.$inferSelect;
+export type InsertDataLakeQuery = typeof dataLakeQueries.$inferInsert;
+
+/* ── Data Residency & Sovereignty ────────────────────────────────── */
+
+export const DATA_REGIONS = ["US", "EU", "APAC", "ME"] as const;
+export type DataRegion = (typeof DATA_REGIONS)[number];
+
+export const DATA_REGION_ENDPOINTS: Record<
+  DataRegion,
+  { primary: string; label: string; awsRegion: string; gdprApplicable: boolean }
+> = {
+  US: { primary: "us-east-1", label: "United States", awsRegion: "us-east-1", gdprApplicable: false },
+  EU: { primary: "eu-central-1", label: "European Union (Frankfurt)", awsRegion: "eu-central-1", gdprApplicable: true },
+  APAC: {
+    primary: "ap-southeast-1",
+    label: "Asia Pacific (Singapore)",
+    awsRegion: "ap-southeast-1",
+    gdprApplicable: false,
+  },
+  ME: { primary: "me-south-1", label: "Middle East (Bahrain)", awsRegion: "me-south-1", gdprApplicable: false },
+};
+
+export const SOVEREIGN_KEY_STATUSES = ["active", "rotating", "revoked", "expired"] as const;
+export type SovereignKeyStatus = (typeof SOVEREIGN_KEY_STATUSES)[number];
+
+export const sovereignKeys = pgTable(
+  "sovereign_keys",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    keyAlias: text("key_alias").notNull(),
+    keyProvider: text("key_provider").notNull().default("aws-kms"),
+    keyArn: text("key_arn"),
+    keyFingerprint: text("key_fingerprint"),
+    status: text("status").notNull().default("active"),
+    rotationIntervalDays: integer("rotation_interval_days").default(90),
+    lastRotatedAt: timestamp("last_rotated_at"),
+    nextRotationAt: timestamp("next_rotation_at"),
+    metadata: jsonb("metadata"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_sovereign_keys_org").on(table.orgId), index("idx_sovereign_keys_status").on(table.status)],
+);
+
+export const crossBorderFlowRules = pgTable(
+  "cross_border_flow_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    sourceRegion: text("source_region").notNull(),
+    destinationRegion: text("destination_region").notNull(),
+    action: text("action").notNull().default("block"),
+    dataClassification: text("data_classification").default("all"),
+    requiresApproval: boolean("requires_approval").notNull().default(true),
+    enabled: boolean("enabled").notNull().default(true),
+    justification: text("justification"),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cbf_rules_org").on(table.orgId),
+    index("idx_cbf_rules_regions").on(table.sourceRegion, table.destinationRegion),
+  ],
+);
+
+export const crossBorderFlowAudit = pgTable(
+  "cross_border_flow_audit",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sourceRegion: text("source_region").notNull(),
+    destinationRegion: text("destination_region").notNull(),
+    dataType: text("data_type").notNull(),
+    action: text("action").notNull(),
+    ruleId: varchar("rule_id"),
+    blocked: boolean("blocked").notNull().default(false),
+    userId: varchar("user_id"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    details: jsonb("details"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_cbf_audit_org").on(table.orgId), index("idx_cbf_audit_created").on(table.createdAt)],
+);
+
+export const sovereignKeysRelations = relations(sovereignKeys, ({ one }) => ({
+  organization: one(organizations, { fields: [sovereignKeys.orgId], references: [organizations.id] }),
+}));
+
+export const crossBorderFlowRulesRelations = relations(crossBorderFlowRules, ({ one }) => ({
+  organization: one(organizations, { fields: [crossBorderFlowRules.orgId], references: [organizations.id] }),
+}));
+
+export const crossBorderFlowAuditRelations = relations(crossBorderFlowAudit, ({ one }) => ({
+  organization: one(organizations, { fields: [crossBorderFlowAudit.orgId], references: [organizations.id] }),
+}));
+
+export type SovereignKey = typeof sovereignKeys.$inferSelect;
+export type InsertSovereignKey = typeof sovereignKeys.$inferInsert;
+export type CrossBorderFlowRule = typeof crossBorderFlowRules.$inferSelect;
+export type InsertCrossBorderFlowRule = typeof crossBorderFlowRules.$inferInsert;
+export type CrossBorderFlowAuditEntry = typeof crossBorderFlowAudit.$inferSelect;
+export type InsertCrossBorderFlowAuditEntry = typeof crossBorderFlowAudit.$inferInsert;
+
+/* ========================================================================
+ * MOBILE & REMOTE WORKER SECURITY
+ * ======================================================================== */
+
+export const MOBILE_PLATFORMS = ["android", "ios", "windows", "macos", "linux", "chromeos"] as const;
+export type MobilePlatform = (typeof MOBILE_PLATFORMS)[number];
+
+export const DEVICE_COMPLIANCE_STATUSES = ["compliant", "non-compliant", "pending", "unknown"] as const;
+export type DeviceComplianceStatus = (typeof DEVICE_COMPLIANCE_STATUSES)[number];
+
+export const MDM_PROVIDERS = ["jamf", "intune", "workspace-one", "manual"] as const;
+export type MdmProvider = (typeof MDM_PROVIDERS)[number];
+
+export const ZTNA_ACTIONS = ["allow", "deny", "step-up-mfa", "quarantine", "monitor"] as const;
+export type ZtnaAction = (typeof ZTNA_ACTIONS)[number];
+
+export const DEVICE_RISK_LEVELS = ["low", "medium", "high", "critical"] as const;
+export type DeviceRiskLevel = (typeof DEVICE_RISK_LEVELS)[number];
+
+export const MOBILE_THREAT_TYPES = [
+  "sideloaded-app",
+  "rooted-jailbroken",
+  "outdated-os",
+  "missing-encryption",
+  "malicious-app",
+  "network-attack",
+  "phishing",
+  "data-leakage",
+  "suspicious-permissions",
+  "unknown-wifi",
+  "vpn-bypass",
+  "certificate-anomaly",
+] as const;
+export type MobileThreatType = (typeof MOBILE_THREAT_TYPES)[number];
+
+export const mobileDevices = pgTable(
+  "mobile_devices",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    userId: varchar("user_id", { length: 36 }),
+    deviceName: text("device_name").notNull(),
+    platform: text("platform").notNull(),
+    osVersion: text("os_version"),
+    model: text("model"),
+    manufacturer: text("manufacturer"),
+    serialNumber: text("serial_number"),
+    imei: text("imei"),
+    macAddress: text("mac_address"),
+    mdmProvider: text("mdm_provider"),
+    mdmDeviceId: text("mdm_device_id"),
+    mdmEnrolledAt: timestamp("mdm_enrolled_at"),
+    lastCheckIn: timestamp("last_check_in"),
+    complianceStatus: text("compliance_status").notNull().default("unknown"),
+    riskLevel: text("risk_level").notNull().default("low"),
+    riskScore: integer("risk_score").notNull().default(0),
+    isEncrypted: boolean("is_encrypted").default(false),
+    isRooted: boolean("is_rooted").default(false),
+    isJailbroken: boolean("is_jailbroken").default(false),
+    hasMdm: boolean("has_mdm").default(false),
+    hasScreenLock: boolean("has_screen_lock").default(false),
+    hasFirewall: boolean("has_firewall").default(false),
+    isVpnActive: boolean("is_vpn_active").default(false),
+    vpnProvider: text("vpn_provider"),
+    lastKnownIp: text("last_known_ip"),
+    lastKnownLocation: text("last_known_location"),
+    lastKnownCountry: text("last_known_country"),
+    installedApps: jsonb("installed_apps"),
+    sideloadedApps: jsonb("sideloaded_apps"),
+    certificates: jsonb("certificates"),
+    tags: jsonb("tags"),
+    metadata: jsonb("metadata"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mobile_devices_org").on(table.orgId),
+    index("idx_mobile_devices_user").on(table.userId),
+    index("idx_mobile_devices_compliance").on(table.complianceStatus),
+    index("idx_mobile_devices_risk").on(table.riskLevel),
+  ],
+);
+
+export const devicePostureChecks = pgTable(
+  "device_posture_checks",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    deviceId: varchar("device_id", { length: 36 }).notNull(),
+    checkType: text("check_type").notNull(),
+    checkName: text("check_name").notNull(),
+    passed: boolean("passed").notNull(),
+    details: text("details"),
+    severity: text("severity").notNull().default("medium"),
+    remediationHint: text("remediation_hint"),
+    checkedAt: timestamp("checked_at").defaultNow(),
+  },
+  (table) => [index("idx_posture_checks_org").on(table.orgId), index("idx_posture_checks_device").on(table.deviceId)],
+);
+
+export const mobileThreats = pgTable(
+  "mobile_threats",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    deviceId: varchar("device_id", { length: 36 }).notNull(),
+    threatType: text("threat_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description"),
+    appName: text("app_name"),
+    appPackage: text("app_package"),
+    networkSsid: text("network_ssid"),
+    sourceIp: text("source_ip"),
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    status: text("status").notNull().default("new"),
+    resolvedBy: varchar("resolved_by", { length: 36 }),
+    resolvedAt: timestamp("resolved_at"),
+    alertId: varchar("alert_id", { length: 36 }),
+    metadata: jsonb("metadata"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mobile_threats_org").on(table.orgId),
+    index("idx_mobile_threats_device").on(table.deviceId),
+    index("idx_mobile_threats_status").on(table.status),
+  ],
+);
+
+export const ztnaPolicies = pgTable(
+  "ztna_policies",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    enabled: boolean("enabled").notNull().default(true),
+    priority: integer("priority").notNull().default(100),
+    conditions: jsonb("conditions").notNull(),
+    action: text("action").notNull().default("deny"),
+    requireMfa: boolean("require_mfa").default(false),
+    allowedPlatforms: jsonb("allowed_platforms"),
+    minOsVersion: jsonb("min_os_version"),
+    requireEncryption: boolean("require_encryption").default(false),
+    requireMdm: boolean("require_mdm").default(false),
+    requireScreenLock: boolean("require_screen_lock").default(false),
+    blockRooted: boolean("block_rooted").default(true),
+    maxRiskScore: integer("max_risk_score").default(70),
+    allowedCountries: jsonb("allowed_countries"),
+    blockedCountries: jsonb("blocked_countries"),
+    timeRestrictions: jsonb("time_restrictions"),
+    createdBy: varchar("created_by", { length: 36 }),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ztna_policies_org").on(table.orgId)],
+);
+
+export const remoteWorkerSessions = pgTable(
+  "remote_worker_sessions",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    userId: varchar("user_id", { length: 36 }).notNull(),
+    deviceId: varchar("device_id", { length: 36 }),
+    sessionStart: timestamp("session_start").defaultNow(),
+    sessionEnd: timestamp("session_end"),
+    ipAddress: text("ip_address"),
+    country: text("country"),
+    city: text("city"),
+    vpnConnected: boolean("vpn_connected").default(false),
+    vpnProvider: text("vpn_provider"),
+    isOffHours: boolean("is_off_hours").default(false),
+    isNewLocation: boolean("is_new_location").default(false),
+    riskScore: integer("risk_score").notNull().default(0),
+    riskFactors: jsonb("risk_factors"),
+    ztnaDecision: text("ztna_decision"),
+    policyId: varchar("policy_id", { length: 36 }),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [
+    index("idx_remote_sessions_org").on(table.orgId),
+    index("idx_remote_sessions_user").on(table.userId),
+    index("idx_remote_sessions_device").on(table.deviceId),
+  ],
+);
+
+export const mobileDevicesRelations = relations(mobileDevices, ({ one }) => ({
+  organization: one(organizations, { fields: [mobileDevices.orgId], references: [organizations.id] }),
+}));
+
+export const devicePostureChecksRelations = relations(devicePostureChecks, ({ one }) => ({
+  organization: one(organizations, { fields: [devicePostureChecks.orgId], references: [organizations.id] }),
+  device: one(mobileDevices, { fields: [devicePostureChecks.deviceId], references: [mobileDevices.id] }),
+}));
+
+export const mobileThreatsRelations = relations(mobileThreats, ({ one }) => ({
+  organization: one(organizations, { fields: [mobileThreats.orgId], references: [organizations.id] }),
+  device: one(mobileDevices, { fields: [mobileThreats.deviceId], references: [mobileDevices.id] }),
+}));
+
+export const ztnaPoliciesRelations = relations(ztnaPolicies, ({ one }) => ({
+  organization: one(organizations, { fields: [ztnaPolicies.orgId], references: [organizations.id] }),
+}));
+
+export const remoteWorkerSessionsRelations = relations(remoteWorkerSessions, ({ one }) => ({
+  organization: one(organizations, { fields: [remoteWorkerSessions.orgId], references: [organizations.id] }),
+  device: one(mobileDevices, { fields: [remoteWorkerSessions.deviceId], references: [mobileDevices.id] }),
+}));
+
+export type MobileDevice = typeof mobileDevices.$inferSelect;
+export type InsertMobileDevice = typeof mobileDevices.$inferInsert;
+export type DevicePostureCheck = typeof devicePostureChecks.$inferSelect;
+export type InsertDevicePostureCheck = typeof devicePostureChecks.$inferInsert;
+export type MobileThreat = typeof mobileThreats.$inferSelect;
+export type InsertMobileThreat = typeof mobileThreats.$inferInsert;
+export type ZtnaPolicy = typeof ztnaPolicies.$inferSelect;
+export type InsertZtnaPolicy = typeof ztnaPolicies.$inferInsert;
+export type RemoteWorkerSession = typeof remoteWorkerSessions.$inferSelect;
+export type InsertRemoteWorkerSession = typeof remoteWorkerSessions.$inferInsert;
+
+// ════════════════════════════════════════════════════════════════════════════
+// API SECURITY
+// ════════════════════════════════════════════════════════════════════════════
+
+export const API_SECURITY_FINDING_TYPES = [
+  "schema_violation",
+  "bola",
+  "bfla",
+  "credential_stuffing",
+  "scraping",
+  "sensitive_data_exposure",
+  "injection",
+  "rate_abuse",
+  "shadow_api",
+  "deprecated_api",
+  "auth_bypass",
+  "mass_assignment",
+  "ssrf",
+  "broken_auth",
+] as const;
+
+export const API_SECURITY_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "informational"] as const;
+export const API_SECURITY_FINDING_STATUSES = ["open", "acknowledged", "mitigated", "false_positive"] as const;
+export const API_AUTH_TYPES = ["none", "api_key", "bearer", "oauth2", "basic", "mtls", "custom"] as const;
+
+export const apiInventory = pgTable(
+  "api_inventory",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    host: text("host").notNull(),
+    version: text("version"),
+    specSource: text("spec_source"),
+    isShadow: boolean("is_shadow").notNull().default(false),
+    isDeprecated: boolean("is_deprecated").notNull().default(false),
+    authType: text("auth_type").notNull().default("none"),
+    riskScore: integer("risk_score").notNull().default(0),
+    requestCount24h: integer("request_count_24h").notNull().default(0),
+    errorRate24h: real("error_rate_24h").notNull().default(0),
+    avgLatencyMs: real("avg_latency_ms").notNull().default(0),
+    lastSeenAt: timestamp("last_seen_at"),
+    firstSeenAt: timestamp("first_seen_at").defaultNow(),
+    openApiSpec: jsonb("openapi_spec"),
+    tags: jsonb("tags"),
+    sensitiveDataTypes: jsonb("sensitive_data_types"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_inventory_org").on(table.orgId),
+    index("idx_api_inventory_host").on(table.orgId, table.host),
+    index("idx_api_inventory_shadow").on(table.orgId, table.isShadow),
+    index("idx_api_inventory_risk").on(table.orgId, table.riskScore),
+    uniqueIndex("idx_api_inventory_unique").on(table.orgId, table.method, table.path, table.host),
+  ],
+);
+
+export const apiFindings = pgTable(
+  "api_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    apiId: varchar("api_id").references(() => apiInventory.id, { onDelete: "cascade" }),
+    findingType: text("finding_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    title: text("title").notNull(),
+    description: text("description"),
+    endpoint: text("endpoint"),
+    method: text("method"),
+    evidence: jsonb("evidence"),
+    remediation: text("remediation"),
+    cweId: text("cwe_id"),
+    owaspCategory: text("owasp_category"),
+    requestSample: text("request_sample"),
+    responseSample: text("response_sample"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    acknowledgedBy: varchar("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    mitigatedBy: varchar("mitigated_by"),
+    mitigatedAt: timestamp("mitigated_at"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_findings_org").on(table.orgId),
+    index("idx_api_findings_api").on(table.apiId),
+    index("idx_api_findings_type").on(table.orgId, table.findingType),
+    index("idx_api_findings_severity").on(table.orgId, table.severity),
+    index("idx_api_findings_status").on(table.orgId, table.status),
+  ],
+);
+
+export const apiTrafficBaselines = pgTable(
+  "api_traffic_baselines",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    apiId: varchar("api_id")
+      .notNull()
+      .references(() => apiInventory.id, { onDelete: "cascade" }),
+    windowStart: timestamp("window_start").notNull(),
+    windowEnd: timestamp("window_end").notNull(),
+    requestCount: integer("request_count").notNull().default(0),
+    uniqueCallers: integer("unique_callers").notNull().default(0),
+    errorCount: integer("error_count").notNull().default(0),
+    avgLatencyMs: real("avg_latency_ms").notNull().default(0),
+    p95LatencyMs: real("p95_latency_ms").notNull().default(0),
+    p99LatencyMs: real("p99_latency_ms").notNull().default(0),
+    statusCodeDistribution: jsonb("status_code_distribution"),
+    topCallerIps: jsonb("top_caller_ips"),
+    anomalyScore: real("anomaly_score").notNull().default(0),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_baselines_org").on(table.orgId),
+    index("idx_api_baselines_api").on(table.apiId),
+    index("idx_api_baselines_window").on(table.apiId, table.windowStart),
+    index("idx_api_baselines_anomaly").on(table.orgId, table.anomalyScore),
+  ],
+);
+
+export const apiInventoryRelations = relations(apiInventory, ({ one }) => ({
+  organization: one(organizations, { fields: [apiInventory.orgId], references: [organizations.id] }),
+}));
+
+export const apiFindingsRelations = relations(apiFindings, ({ one }) => ({
+  organization: one(organizations, { fields: [apiFindings.orgId], references: [organizations.id] }),
+  api: one(apiInventory, { fields: [apiFindings.apiId], references: [apiInventory.id] }),
+}));
+
+export const apiTrafficBaselinesRelations = relations(apiTrafficBaselines, ({ one }) => ({
+  organization: one(organizations, { fields: [apiTrafficBaselines.orgId], references: [organizations.id] }),
+  api: one(apiInventory, { fields: [apiTrafficBaselines.apiId], references: [apiInventory.id] }),
+}));
+
+export type ApiInventoryEntry = typeof apiInventory.$inferSelect;
+export type InsertApiInventoryEntry = typeof apiInventory.$inferInsert;
+export type ApiFinding = typeof apiFindings.$inferSelect;
+export type InsertApiFinding = typeof apiFindings.$inferInsert;
+export type ApiTrafficBaseline = typeof apiTrafficBaselines.$inferSelect;
+export type InsertApiTrafficBaseline = typeof apiTrafficBaselines.$inferInsert;
+
+// =============================================================================
+// RANSOMWARE DEFENSE SUITE
+// =============================================================================
+
+export const KILL_SWITCH_STATUSES = [
+  "initiated",
+  "in_progress",
+  "completed",
+  "partial_failure",
+  "failed",
+  "rolled_back",
+] as const;
+
+export const CANARY_FILE_STATUSES = ["active", "triggered", "disabled", "deleted"] as const;
+
+export const RANSOMWARE_GROUP_THREAT_LEVELS = ["critical", "high", "medium", "low"] as const;
+
+export const BACKUP_VERIFICATION_STATUSES = ["pending", "in_progress", "passed", "failed", "partial"] as const;
+
+export const TABLETOP_EXERCISE_STATUSES = ["draft", "scheduled", "in_progress", "completed", "cancelled"] as const;
+
+export const RECOVERY_RUNBOOK_STATUSES = ["draft", "generated", "reviewed", "approved", "executed"] as const;
+
+// Kill switch events — one-click isolate all endpoints
+export const ransomwareKillSwitchEvents = pgTable(
+  "ransomware_kill_switch_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    status: text("status").notNull().default("initiated"),
+    triggeredBy: varchar("triggered_by").notNull(),
+    triggeredByName: text("triggered_by_name"),
+    reason: text("reason"),
+    totalSensors: integer("total_sensors").notNull().default(0),
+    isolatedCount: integer("isolated_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    actionIds: jsonb("action_ids"), // array of response action IDs created
+    failedSensors: jsonb("failed_sensors"), // array of {sensorId, error}
+    rollbackAt: timestamp("rollback_at"),
+    rollbackBy: varchar("rollback_by"),
+    completedAt: timestamp("completed_at"),
+    incidentId: varchar("incident_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_kill_switch_org").on(table.orgId),
+    index("idx_kill_switch_status").on(table.orgId, table.status),
+    index("idx_kill_switch_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+// Canary files — fake important files that alert if encrypted
+export const ransomwareCanaryFiles = pgTable(
+  "ransomware_canary_files",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    fileName: text("file_name").notNull(),
+    filePath: text("file_path").notNull(),
+    fileType: text("file_type").notNull(), // docx, xlsx, pdf, pptx, sql, key
+    fileHash: text("file_hash").notNull(), // SHA-256 of the canary file content
+    deployedToHost: text("deployed_to_host"),
+    deployedToSensorId: varchar("deployed_to_sensor_id"),
+    status: text("status").notNull().default("active"),
+    lastCheckedAt: timestamp("last_checked_at"),
+    lastCheckedHash: text("last_checked_hash"),
+    triggeredAt: timestamp("triggered_at"),
+    triggerType: text("trigger_type"), // encrypted, deleted, modified, renamed
+    alertSent: boolean("alert_sent").notNull().default(false),
+    createdBy: varchar("created_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_canary_files_org").on(table.orgId),
+    index("idx_canary_files_status").on(table.orgId, table.status),
+    index("idx_canary_files_host").on(table.orgId, table.deployedToHost),
+  ],
+);
+
+// Ransomware group intelligence profiles
+export const ransomwareGroups = pgTable(
+  "ransomware_groups",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    aliases: jsonb("aliases"), // array of known aliases
+    threatLevel: text("threat_level").notNull().default("high"),
+    isActive: boolean("is_active").notNull().default(true),
+    firstSeen: text("first_seen"),
+    lastActive: text("last_active"),
+    description: text("description"),
+    ttps: jsonb("ttps"), // MITRE ATT&CK TTPs
+    targetIndustries: jsonb("target_industries"), // array of industries
+    targetRegions: jsonb("target_regions"), // array of regions
+    ransomwareVariants: jsonb("ransomware_variants"), // array of {name, type}
+    knownPaymentAddresses: jsonb("known_payment_addresses"), // array of {currency, address}
+    avgRansomDemandUsd: integer("avg_ransom_demand_usd"),
+    decryptorAvailable: boolean("decryptor_available").notNull().default(false),
+    decryptorSource: text("decryptor_source"), // e.g. "No More Ransom", "Emsisoft"
+    negotiationNotes: text("negotiation_notes"),
+    iocIndicators: jsonb("ioc_indicators"), // array of {type, value}
+    referenceUrls: jsonb("reference_urls"), // array of reference URLs
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ransomware_groups_org").on(table.orgId),
+    index("idx_ransomware_groups_threat").on(table.orgId, table.threatLevel),
+    index("idx_ransomware_groups_active").on(table.orgId, table.isActive),
+  ],
+);
+
+// Recovery runbooks — AI-generated step-by-step recovery plans
+export const recoveryRunbooks = pgTable(
+  "recovery_runbooks",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    incidentId: varchar("incident_id"),
+    status: text("status").notNull().default("draft"),
+    scenario: text("scenario").notNull(), // description of what was hit
+    affectedSystems: jsonb("affected_systems"), // array of system names
+    affectedDataTypes: jsonb("affected_data_types"), // array of data classifications
+    ransomwareVariant: text("ransomware_variant"),
+    estimatedDowntimeHours: integer("estimated_downtime_hours"),
+    estimatedRecoveryCostUsd: integer("estimated_recovery_cost_usd"),
+    steps: jsonb("steps"), // array of {order, title, description, responsible, estimatedMinutes, status}
+    priorityActions: jsonb("priority_actions"), // array of immediate actions
+    communicationPlan: jsonb("communication_plan"), // stakeholder notifications
+    legalRequirements: jsonb("legal_requirements"), // regulatory obligations
+    generatedBy: text("generated_by").default("ai"), // "ai" or "manual"
+    reviewedBy: varchar("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    approvedBy: varchar("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_recovery_runbooks_org").on(table.orgId),
+    index("idx_recovery_runbooks_status").on(table.orgId, table.status),
+    index("idx_recovery_runbooks_incident").on(table.incidentId),
+  ],
+);
+
+// Tabletop exercise simulator
+export const tabletopExercises = pgTable(
+  "tabletop_exercises",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("draft"),
+    scenarioType: text("scenario_type").notNull(), // ransomware, data_breach, insider_threat, supply_chain
+    difficulty: text("difficulty").notNull().default("intermediate"), // beginner, intermediate, advanced
+    ransomwareGroup: text("ransomware_group"), // simulated group
+    scenario: jsonb("scenario"), // {background, initialCompromise, escalation, impact, objectives}
+    injects: jsonb("injects"), // array of {order, time, description, expectedResponse, hint}
+    participants: jsonb("participants"), // array of {userId, role, name}
+    findings: jsonb("findings"), // array of {category, description, severity, recommendation}
+    score: integer("score"), // 0-100
+    scheduledAt: timestamp("scheduled_at"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    durationMinutes: integer("duration_minutes"),
+    facilitatedBy: varchar("facilitated_by"),
+    afterActionReport: text("after_action_report"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_tabletop_org").on(table.orgId),
+    index("idx_tabletop_status").on(table.orgId, table.status),
+    index("idx_tabletop_type").on(table.orgId, table.scenarioType),
+    index("idx_tabletop_scheduled").on(table.orgId, table.scheduledAt),
+  ],
+);
+
+// Backup integrity verification
+export const backupVerifications = pgTable(
+  "backup_verifications",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    backupName: text("backup_name").notNull(),
+    backupType: text("backup_type").notNull(), // full, incremental, differential, snapshot
+    backupLocation: text("backup_location").notNull(), // s3://..., nfs://..., etc
+    status: text("status").notNull().default("pending"),
+    integrityCheckResult: text("integrity_check_result"), // passed, failed, corrupted, partial
+    restoreTestResult: text("restore_test_result"), // passed, failed, not_tested
+    backupSizeBytes: integer("backup_size_bytes"),
+    backupCreatedAt: timestamp("backup_created_at"),
+    retentionDays: integer("retention_days"),
+    encryptionStatus: text("encryption_status"), // encrypted, unencrypted, unknown
+    encryptionAlgorithm: text("encryption_algorithm"),
+    lastVerifiedAt: timestamp("last_verified_at"),
+    nextScheduledVerification: timestamp("next_scheduled_verification"),
+    verificationDurationSeconds: integer("verification_duration_seconds"),
+    issues: jsonb("issues"), // array of {type, description, severity}
+    coveredSystems: jsonb("covered_systems"), // array of system names
+    rpoHours: integer("rpo_hours"), // recovery point objective
+    rtoHours: integer("rto_hours"), // recovery time objective
+    verifiedBy: varchar("verified_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_backup_verify_org").on(table.orgId),
+    index("idx_backup_verify_status").on(table.orgId, table.status),
+    index("idx_backup_verify_type").on(table.orgId, table.backupType),
+  ],
+);
+
+// Relations
+export const ransomwareKillSwitchEventsRelations = relations(ransomwareKillSwitchEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ransomwareKillSwitchEvents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ransomwareCanaryFilesRelations = relations(ransomwareCanaryFiles, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ransomwareCanaryFiles.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ransomwareGroupsRelations = relations(ransomwareGroups, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ransomwareGroups.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const recoveryRunbooksRelations = relations(recoveryRunbooks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [recoveryRunbooks.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const tabletopExercisesRelations = relations(tabletopExercises, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [tabletopExercises.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const backupVerificationsRelations = relations(backupVerifications, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [backupVerifications.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type RansomwareKillSwitchEvent = typeof ransomwareKillSwitchEvents.$inferSelect;
+export type InsertRansomwareKillSwitchEvent = typeof ransomwareKillSwitchEvents.$inferInsert;
+export type RansomwareCanaryFile = typeof ransomwareCanaryFiles.$inferSelect;
+export type InsertRansomwareCanaryFile = typeof ransomwareCanaryFiles.$inferInsert;
+export type RansomwareGroup = typeof ransomwareGroups.$inferSelect;
+export type InsertRansomwareGroup = typeof ransomwareGroups.$inferInsert;
+export type RecoveryRunbook = typeof recoveryRunbooks.$inferSelect;
+export type InsertRecoveryRunbook = typeof recoveryRunbooks.$inferInsert;
+export type TabletopExercise = typeof tabletopExercises.$inferSelect;
+export type InsertTabletopExercise = typeof tabletopExercises.$inferInsert;
+export type BackupVerification = typeof backupVerifications.$inferSelect;
+export type InsertBackupVerification = typeof backupVerifications.$inferInsert;
+
+// ── Community Threat Intelligence Network ─────────────────────────────────────
+
+export const COMMUNITY_IOC_TYPES = [
+  "ip",
+  "domain",
+  "url",
+  "hash_md5",
+  "hash_sha1",
+  "hash_sha256",
+  "email",
+  "file_name",
+  "cidr",
+  "certificate",
+] as const;
+
+export const IOC_SEVERITY_LEVELS = ["critical", "high", "medium", "low", "informational"] as const;
+
+export const SHARING_CONSENT_LEVELS = ["none", "ioc_only", "detection_patterns", "full_telemetry"] as const;
+
+export const INDUSTRY_SECTORS = [
+  "healthcare",
+  "finance",
+  "technology",
+  "manufacturing",
+  "energy",
+  "government",
+  "education",
+  "retail",
+  "telecom",
+  "defense",
+  "legal",
+  "media",
+  "transportation",
+  "other",
+] as const;
+
+export const sharedIocs = pgTable(
+  "shared_iocs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    contributorOrgId: text("contributor_org_id").notNull(),
+    anonymousContributorHash: text("anonymous_contributor_hash").notNull(), // SHA-256 of orgId — hides identity
+    iocType: text("ioc_type").notNull(), // ip, domain, url, hash, etc.
+    iocValue: text("ioc_value").notNull(), // the actual indicator value
+    iocValueHash: text("ioc_value_hash").notNull(), // SHA-256 of normalized value for dedup
+    severity: text("severity").notNull().default("medium"),
+    confidence: integer("confidence").notNull().default(70), // 0-100 confidence score
+    tlpLevel: text("tlp_level").notNull().default("amber"), // white, green, amber, red
+    tags: jsonb("tags").default([]), // e.g. ["ransomware", "c2", "phishing"]
+    threatActorRef: text("threat_actor_ref"), // optional MITRE ATT&CK group reference
+    campaignRef: text("campaign_ref"), // optional campaign correlation ID
+    context: text("context"), // anonymized context description
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    sightingCount: integer("sighting_count").notNull().default(1), // how many orgs reported this
+    reportingOrgs: jsonb("reporting_orgs").default([]), // array of anonymous org hashes
+    industrySectors: jsonb("industry_sectors").default([]), // which sectors saw this IOC
+    expiresAt: timestamp("expires_at"), // TTL for IOC validity
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("shared_iocs_type_idx").on(table.iocType),
+    index("shared_iocs_value_hash_idx").on(table.iocValueHash),
+    index("shared_iocs_severity_idx").on(table.severity),
+    index("shared_iocs_active_idx").on(table.isActive),
+    index("shared_iocs_first_seen_idx").on(table.firstSeenAt),
+  ],
+);
+
+export const communityFeeds = pgTable(
+  "community_feeds",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    feedName: text("feed_name").notNull(),
+    feedType: text("feed_type").notNull().default("industry"), // global, industry, custom
+    industrySector: text("industry_sector"), // null for global feeds
+    description: text("description"),
+    iocCount: integer("ioc_count").notNull().default(0),
+    memberCount: integer("member_count").notNull().default(0),
+    lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
+    isSubscribed: boolean("is_subscribed").notNull().default(false),
+    subscribedAt: timestamp("subscribed_at"),
+    autoIngest: boolean("auto_ingest").notNull().default(false), // auto-add IOCs to org threat intel
+    filterSeverity: text("filter_severity").default("medium"), // minimum severity to ingest
+    filterConfidence: integer("filter_confidence").default(50), // minimum confidence to ingest
+    stats: jsonb("stats").default({}), // { ipsShared, domainsShared, hashesShared, ... }
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("community_feeds_org_idx").on(table.orgId),
+    index("community_feeds_type_idx").on(table.feedType),
+    index("community_feeds_sector_idx").on(table.industrySector),
+  ],
+);
+
+export const sharingConsents = pgTable(
+  "sharing_consents",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull().unique(),
+    consentLevel: text("consent_level").notNull().default("none"), // none, ioc_only, detection_patterns, full_telemetry
+    industrySector: text("industry_sector").notNull().default("other"),
+    companySize: text("company_size").notNull().default("medium"), // small, medium, large, enterprise
+    anonymousOrgHash: text("anonymous_org_hash").notNull(), // SHA-256 of orgId for anonymous contribution
+    shareIocs: boolean("share_iocs").notNull().default(false),
+    shareDetectionPatterns: boolean("share_detection_patterns").notNull().default(false),
+    shareTelemetry: boolean("share_telemetry").notNull().default(false),
+    receiveGlobalFeed: boolean("receive_global_feed").notNull().default(true),
+    receiveIndustryFeed: boolean("receive_industry_feed").notNull().default(true),
+    autoContribute: boolean("auto_contribute").notNull().default(false), // auto-share new IOCs
+    contributedIocCount: integer("contributed_ioc_count").notNull().default(0),
+    receivedIocCount: integer("received_ioc_count").notNull().default(0),
+    lastContributedAt: timestamp("last_contributed_at"),
+    lastReceivedAt: timestamp("last_received_at"),
+    consentGrantedAt: timestamp("consent_granted_at"),
+    consentUpdatedAt: timestamp("consent_updated_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("sharing_consents_org_idx").on(table.orgId),
+    index("sharing_consents_sector_idx").on(table.industrySector),
+  ],
+);
+
+export const communityThreatCampaigns = pgTable(
+  "community_threat_campaigns",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    campaignName: text("campaign_name").notNull(),
+    threatActorName: text("threat_actor_name"),
+    description: text("description"),
+    mitreAttackIds: jsonb("mitre_attack_ids").default([]),
+    targetSectors: jsonb("target_sectors").default([]),
+    iocIds: jsonb("ioc_ids").default([]), // linked shared IOC IDs
+    iocCount: integer("ioc_count").notNull().default(0),
+    affectedOrgCount: integer("affected_org_count").notNull().default(0),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    status: text("status").notNull().default("active"), // active, dormant, resolved
+    severity: text("severity").notNull().default("high"),
+    tlpLevel: text("tlp_level").notNull().default("amber"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("community_campaigns_status_idx").on(table.status),
+    index("community_campaigns_actor_idx").on(table.threatActorName),
+    index("community_campaigns_first_seen_idx").on(table.firstSeenAt),
+  ],
+);
+
+// Relations
+export const sharedIocsRelations = relations(sharedIocs, ({ one }) => ({
+  contributorOrg: one(organizations, {
+    fields: [sharedIocs.contributorOrgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const communityFeedsRelations = relations(communityFeeds, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [communityFeeds.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const sharingConsentsRelations = relations(sharingConsents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [sharingConsents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type SharedIoc = typeof sharedIocs.$inferSelect;
+export type InsertSharedIoc = typeof sharedIocs.$inferInsert;
+export type CommunityFeed = typeof communityFeeds.$inferSelect;
+export type InsertCommunityFeed = typeof communityFeeds.$inferInsert;
+export type SharingConsent = typeof sharingConsents.$inferSelect;
+export type InsertSharingConsent = typeof sharingConsents.$inferInsert;
+export type CommunityThreatCampaign = typeof communityThreatCampaigns.$inferSelect;
+export type InsertCommunityThreatCampaign = typeof communityThreatCampaigns.$inferInsert;
+
+// ── Security Posture Score & Public Trust Center ──────────────────────────────
+
+export const POSTURE_DOMAINS = ["identity", "endpoint", "cloud", "network", "application", "data"] as const;
+
+export const QUESTIONNAIRE_STATUSES = ["draft", "in_progress", "completed", "submitted", "expired"] as const;
+
+export const TRUST_PAGE_STATUSES = ["draft", "published", "archived"] as const;
+
+export const postureSubScores = pgTable(
+  "posture_sub_scores",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    postureScoreId: varchar("posture_score_id"),
+    domain: text("domain").notNull(), // identity, endpoint, cloud, network, application, data
+    score: integer("score").notNull().default(0),
+    weight: integer("weight").notNull().default(16), // percentage weight for domain
+    findings: jsonb("findings").default([]), // array of finding objects
+    recommendations: jsonb("recommendations").default([]),
+    controlsEvaluated: integer("controls_evaluated").default(0),
+    controlsPassed: integer("controls_passed").default(0),
+    controlsFailed: integer("controls_failed").default(0),
+    riskFactors: jsonb("risk_factors").default([]),
+    generatedAt: timestamp("generated_at").defaultNow(),
+  },
+  (table) => [
+    index("posture_sub_scores_org_idx").on(table.orgId),
+    index("posture_sub_scores_domain_idx").on(table.orgId, table.domain),
+  ],
+);
+
+export const peerBenchmarks = pgTable(
+  "peer_benchmarks",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    industrySegment: text("industry_segment").notNull(),
+    companySize: text("company_size").notNull(), // small, medium, large, enterprise
+    overallScore: integer("overall_score").notNull(),
+    identityScore: integer("identity_score").default(0),
+    endpointScore: integer("endpoint_score").default(0),
+    cloudScore: integer("cloud_score").default(0),
+    networkScore: integer("network_score").default(0),
+    applicationScore: integer("application_score").default(0),
+    dataScore: integer("data_score").default(0),
+    percentileRank: integer("percentile_rank").default(50), // "you score higher than X%"
+    peerCount: integer("peer_count").default(0), // how many orgs in peer group
+    topStrengths: jsonb("top_strengths").default([]),
+    topWeaknesses: jsonb("top_weaknesses").default([]),
+    calculatedAt: timestamp("calculated_at").defaultNow(),
+  },
+  (table) => [
+    index("peer_benchmarks_org_idx").on(table.orgId),
+    index("peer_benchmarks_industry_idx").on(table.industrySegment, table.companySize),
+  ],
+);
+
+export const publicTrustPages = pgTable(
+  "public_trust_pages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    slug: text("slug").notNull().unique(), // acme-corp → /trust/acme-corp
+    status: text("status").notNull().default("draft"), // draft, published, archived
+    companyName: text("company_name").notNull(),
+    companyLogo: text("company_logo"),
+    tagline: text("tagline"),
+    overallScore: integer("overall_score").default(0),
+    domainScores: jsonb("domain_scores").default({}), // { identity: 85, endpoint: 90, ... }
+    certifications: jsonb("certifications").default([]), // array of { name, status, date }
+    lastAuditDate: timestamp("last_audit_date"),
+    showSubScores: boolean("show_sub_scores").default(true),
+    showCertifications: boolean("show_certifications").default(true),
+    showLastAudit: boolean("show_last_audit").default(true),
+    showPercentile: boolean("show_percentile").default(false),
+    customSections: jsonb("custom_sections").default([]),
+    contactEmail: text("contact_email"),
+    brandColor: text("brand_color").default("#0ea5e9"),
+    visitCount: integer("visit_count").default(0),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("public_trust_pages_org_idx").on(table.orgId), index("public_trust_pages_slug_idx").on(table.slug)],
+);
+
+export const securityQuestionnaires = pgTable(
+  "security_questionnaires",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    title: text("title").notNull(),
+    framework: text("framework").notNull(), // SOC2, ISO27001, HIPAA, PCI-DSS, etc.
+    status: text("status").notNull().default("draft"),
+    totalQuestions: integer("total_questions").default(0),
+    answeredQuestions: integer("answered_questions").default(0),
+    autoAnsweredQuestions: integer("auto_answered_questions").default(0),
+    manualQuestions: integer("manual_questions").default(0),
+    confidenceScore: integer("confidence_score").default(0), // average confidence of auto-answers
+    requestedBy: text("requested_by"), // who requested the questionnaire
+    requestedByEmail: text("requested_by_email"),
+    assignedTo: text("assigned_to"),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    submittedAt: timestamp("submitted_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("security_questionnaires_org_idx").on(table.orgId),
+    index("security_questionnaires_status_idx").on(table.orgId, table.status),
+  ],
+);
+
+export const questionnaireResponses = pgTable(
+  "questionnaire_responses",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    questionnaireId: varchar("questionnaire_id").notNull(),
+    questionNumber: integer("question_number").notNull(),
+    questionText: text("question_text").notNull(),
+    category: text("category"), // e.g. "Access Control", "Encryption", etc.
+    answerText: text("answer_text"),
+    answerSource: text("answer_source").notNull().default("manual"), // manual, auto, ai_suggested
+    confidencePercent: integer("confidence_percent").default(0),
+    evidenceRefs: jsonb("evidence_refs").default([]), // links to artifacts, policies, etc.
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    status: text("status").notNull().default("pending"), // pending, answered, reviewed, flagged
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("questionnaire_responses_org_idx").on(table.orgId),
+    index("questionnaire_responses_qid_idx").on(table.questionnaireId),
+  ],
+);
+
+export const postureScoreHistory = pgTable(
+  "posture_score_history",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: text("org_id").notNull(),
+    overallScore: integer("overall_score").notNull(),
+    identityScore: integer("identity_score").default(0),
+    endpointScore: integer("endpoint_score").default(0),
+    cloudScore: integer("cloud_score").default(0),
+    networkScore: integer("network_score").default(0),
+    applicationScore: integer("application_score").default(0),
+    dataScore: integer("data_score").default(0),
+    percentileRank: integer("percentile_rank").default(50),
+    changeFromPrevious: integer("change_from_previous").default(0),
+    period: text("period").notNull(), // "2026-03", "2026-W10", "2026-03-12"
+    periodType: text("period_type").notNull().default("monthly"), // daily, weekly, monthly
+    generatedAt: timestamp("generated_at").defaultNow(),
+  },
+  (table) => [
+    index("posture_score_history_org_idx").on(table.orgId),
+    index("posture_score_history_period_idx").on(table.orgId, table.periodType),
+  ],
+);
+
+// Relations
+export const postureSubScoresRelations = relations(postureSubScores, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [postureSubScores.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const peerBenchmarksRelations = relations(peerBenchmarks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [peerBenchmarks.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const publicTrustPagesRelations = relations(publicTrustPages, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [publicTrustPages.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const securityQuestionnairesRelations = relations(securityQuestionnaires, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityQuestionnaires.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const questionnaireResponsesRelations = relations(questionnaireResponses, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [questionnaireResponses.orgId],
+    references: [organizations.id],
+  }),
+  questionnaire: one(securityQuestionnaires, {
+    fields: [questionnaireResponses.questionnaireId],
+    references: [securityQuestionnaires.id],
+  }),
+}));
+
+export const postureScoreHistoryRelations = relations(postureScoreHistory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [postureScoreHistory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type PostureSubScore = typeof postureSubScores.$inferSelect;
+export type InsertPostureSubScore = typeof postureSubScores.$inferInsert;
+export type PeerBenchmark = typeof peerBenchmarks.$inferSelect;
+export type InsertPeerBenchmark = typeof peerBenchmarks.$inferInsert;
+export type PublicTrustPage = typeof publicTrustPages.$inferSelect;
+export type InsertPublicTrustPage = typeof publicTrustPages.$inferInsert;
+export type SecurityQuestionnaire = typeof securityQuestionnaires.$inferSelect;
+export type InsertSecurityQuestionnaire = typeof securityQuestionnaires.$inferInsert;
+export type QuestionnaireResponse = typeof questionnaireResponses.$inferSelect;
+export type InsertQuestionnaireResponse = typeof questionnaireResponses.$inferInsert;
+export type PostureScoreHistoryEntry = typeof postureScoreHistory.$inferSelect;
+export type InsertPostureScoreHistoryEntry = typeof postureScoreHistory.$inferInsert;
+
+// ─── Security Chaos Engineering ───────────────────────────────────────────────
+
+export const chaosSimulations = pgTable("chaos_simulations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  mitreId: text("mitre_id").notNull(),
+  mitreTactic: text("mitre_tactic").notNull(),
+  mitreTechnique: text("mitre_technique").notNull(),
+  domain: text("domain").notNull().default("endpoint"),
+  platform: text("platform").notNull().default("windows"),
+  severity: text("severity").notNull().default("medium"),
+  payload: text("payload"),
+  expectedOutcome: text("expected_outcome"),
+  status: text("status").notNull().default("pending"),
+  verdict: text("verdict"),
+  durationMs: integer("duration_ms"),
+  output: text("output"),
+  trigger: text("trigger").notNull().default("manual"),
+  executedBy: text("executed_by"),
+  executedAt: timestamp("executed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const controlEffectiveness = pgTable("control_effectiveness", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  controlName: text("control_name").notNull(),
+  controlType: text("control_type").notNull(),
+  totalTests: integer("total_tests").notNull().default(0),
+  passedTests: integer("passed_tests").notNull().default(0),
+  failedTests: integer("failed_tests").notNull().default(0),
+  effectivenessScore: integer("effectiveness_score").notNull().default(0),
+  lastTestedAt: timestamp("last_tested_at"),
+  mitreIds: text("mitre_ids").array(),
+  status: text("status").notNull().default("untested"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const detectionGaps = pgTable("detection_gaps", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  mitreId: text("mitre_id").notNull(),
+  mitreTactic: text("mitre_tactic").notNull(),
+  mitreTechnique: text("mitre_technique").notNull(),
+  coverageStatus: text("coverage_status").notNull().default("no_coverage"),
+  detectionRuleCount: integer("detection_rule_count").notNull().default(0),
+  lastSimulatedAt: timestamp("last_simulated_at"),
+  recommendation: text("recommendation"),
+  priority: text("priority").notNull().default("medium"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const chaosSchedules = pgTable("chaos_schedules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  frequency: text("frequency").notNull().default("weekly"),
+  simulationIds: text("simulation_ids").array(),
+  mitreIds: text("mitre_ids").array(),
+  enabled: boolean("enabled").notNull().default(true),
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  totalRuns: integer("total_runs").notNull().default(0),
+  lastScore: integer("last_score"),
+  previousScore: integer("previous_score"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const purpleTeamExercises = pgTable("purple_team_exercises", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  attackScenario: text("attack_scenario").notNull(),
+  mitreChain: text("mitre_chain").array(),
+  redTeamActions: text("red_team_actions"),
+  blueTeamExpected: text("blue_team_expected"),
+  blueTeamActual: text("blue_team_actual"),
+  status: text("status").notNull().default("planned"),
+  overallVerdict: text("overall_verdict"),
+  detectionTime: integer("detection_time"),
+  responseTime: integer("response_time"),
+  containmentTime: integer("containment_time"),
+  gapsIdentified: text("gaps_identified").array(),
+  improvements: text("improvements").array(),
+  executedAt: timestamp("executed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const chaosSimulationsRelations = relations(chaosSimulations, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [chaosSimulations.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const controlEffectivenessRelations = relations(controlEffectiveness, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [controlEffectiveness.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const detectionGapsRelations = relations(detectionGaps, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [detectionGaps.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const chaosSchedulesRelations = relations(chaosSchedules, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [chaosSchedules.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const purpleTeamExercisesRelations = relations(purpleTeamExercises, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [purpleTeamExercises.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type ChaosSimulation = typeof chaosSimulations.$inferSelect;
+export type InsertChaosSimulation = typeof chaosSimulations.$inferInsert;
+export type ControlEffectiveness = typeof controlEffectiveness.$inferSelect;
+export type InsertControlEffectiveness = typeof controlEffectiveness.$inferInsert;
+export type DetectionGap = typeof detectionGaps.$inferSelect;
+export type InsertDetectionGap = typeof detectionGaps.$inferInsert;
+export type ChaosSchedule = typeof chaosSchedules.$inferSelect;
+export type InsertChaosSchedule = typeof chaosSchedules.$inferInsert;
+export type PurpleTeamExercise = typeof purpleTeamExercises.$inferSelect;
+export type InsertPurpleTeamExercise = typeof purpleTeamExercises.$inferInsert;
+
+// ─── AI-Native Detection Rule Generation ──────────────────────────────────────
+
+export const RULE_GENERATION_SOURCES = ["incident", "threat_intel", "manual", "log_analysis"] as const;
+
+export const RULE_GENERATION_STATUSES = ["pending", "generating", "completed", "failed"] as const;
+
+export const RULE_FORMATS = ["sigma", "yara", "custom"] as const;
+
+export const AB_TEST_STATUSES = ["pending", "running", "completed", "cancelled"] as const;
+
+export const MARKETPLACE_STATUSES = ["draft", "published", "deprecated", "removed"] as const;
+
+export const LIFECYCLE_ACTIONS = [
+  "created",
+  "enabled",
+  "disabled",
+  "shadow_mode",
+  "promoted",
+  "deprecated",
+  "archived",
+] as const;
+
+export const ruleGenerationJobs = pgTable(
+  "rule_generation_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    source: text("source").notNull().default("manual"),
+    sourceId: text("source_id"),
+    sourceContext: text("source_context"),
+    ruleFormat: text("rule_format").notNull().default("sigma"),
+    status: text("status").notNull().default("pending"),
+    generatedRuleId: varchar("generated_rule_id"),
+    generatedSigmaYaml: text("generated_sigma_yaml"),
+    generatedYaraRule: text("generated_yara_rule"),
+    generatedConditionTree: jsonb("generated_condition_tree"),
+    generatedName: text("generated_name"),
+    generatedDescription: text("generated_description"),
+    generatedSeverity: text("generated_severity"),
+    generatedMitreTactic: text("generated_mitre_tactic"),
+    generatedMitreTechnique: text("generated_mitre_technique"),
+    generatedTags: text("generated_tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    qualityScore: integer("quality_score"),
+    estimatedFpRate: real("estimated_fp_rate"),
+    qualityBreakdown: jsonb("quality_breakdown"),
+    modelId: text("model_id"),
+    promptVersion: integer("prompt_version"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costUsd: real("cost_usd"),
+    latencyMs: integer("latency_ms"),
+    errorMessage: text("error_message"),
+    requestedBy: text("requested_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_rule_gen_jobs_org").on(table.orgId), index("idx_rule_gen_jobs_status").on(table.status)],
+);
+
+export const ruleAbTests = pgTable(
+  "rule_ab_tests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    ruleId: varchar("rule_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    shadowModeEnabled: boolean("shadow_mode_enabled").notNull().default(true),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    durationDays: integer("duration_days").notNull().default(7),
+    shadowMatches: integer("shadow_matches").notNull().default(0),
+    falsePositives: integer("false_positives").notNull().default(0),
+    truePositives: integer("true_positives").notNull().default(0),
+    matchSamples: jsonb("match_samples").default(sql`'[]'::jsonb`),
+    verdict: text("verdict"),
+    verdictReason: text("verdict_reason"),
+    promotedAt: timestamp("promoted_at"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_rule_ab_tests_org").on(table.orgId),
+    index("idx_rule_ab_tests_rule").on(table.ruleId),
+    index("idx_rule_ab_tests_status").on(table.status),
+  ],
+);
+
+export const ruleMarketplace = pgTable(
+  "rule_marketplace",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    ruleId: varchar("rule_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    category: text("category").notNull().default("general"),
+    ruleFormat: text("rule_format").notNull().default("sigma"),
+    sigmaYaml: text("sigma_yaml"),
+    yaraRule: text("yara_rule"),
+    conditionTree: jsonb("condition_tree"),
+    mitreTactic: text("mitre_tactic"),
+    mitreTechnique: text("mitre_technique"),
+    severity: text("severity").notNull().default("medium"),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    status: text("status").notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    downloads: integer("downloads").notNull().default(0),
+    rating: real("rating"),
+    ratingCount: integer("rating_count").notNull().default(0),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_rule_marketplace_status").on(table.status),
+    index("idx_rule_marketplace_category").on(table.category),
+  ],
+);
+
+export const ruleLifecycleEvents = pgTable(
+  "rule_lifecycle_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    ruleId: varchar("rule_id").notNull(),
+    action: text("action").notNull(),
+    previousStatus: text("previous_status"),
+    newStatus: text("new_status"),
+    reason: text("reason"),
+    matchCountAtAction: integer("match_count_at_action").notNull().default(0),
+    performedBy: text("performed_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_rule_lifecycle_org").on(table.orgId), index("idx_rule_lifecycle_rule").on(table.ruleId)],
+);
+
+export const ruleGenerationJobsRelations = relations(ruleGenerationJobs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleGenerationJobs.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ruleAbTestsRelations = relations(ruleAbTests, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleAbTests.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ruleMarketplaceRelations = relations(ruleMarketplace, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleMarketplace.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ruleLifecycleEventsRelations = relations(ruleLifecycleEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ruleLifecycleEvents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type RuleGenerationJob = typeof ruleGenerationJobs.$inferSelect;
+export type InsertRuleGenerationJob = typeof ruleGenerationJobs.$inferInsert;
+export type RuleAbTest = typeof ruleAbTests.$inferSelect;
+export type InsertRuleAbTest = typeof ruleAbTests.$inferInsert;
+export type RuleMarketplaceEntry = typeof ruleMarketplace.$inferSelect;
+export type InsertRuleMarketplaceEntry = typeof ruleMarketplace.$inferInsert;
+export type RuleLifecycleEvent = typeof ruleLifecycleEvents.$inferSelect;
+export type InsertRuleLifecycleEvent = typeof ruleLifecycleEvents.$inferInsert;
+
+// ── MSSP White-Label + Partner Portal ──────────────────────────────
+
+export const SLA_PRIORITY_LEVELS = ["critical", "high", "medium", "low"] as const;
+export const SLA_STATUSES = ["active", "paused", "breached", "resolved"] as const;
+export const MSSP_BILLING_STATUSES = ["draft", "sent", "paid", "overdue", "cancelled"] as const;
+
+export const msspWhiteLabelConfigs = pgTable(
+  "mssp_white_label_configs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customLogoUrl: text("custom_logo_url"),
+    customFaviconUrl: text("custom_favicon_url"),
+    primaryColor: text("primary_color").default("#0ea5e9"),
+    secondaryColor: text("secondary_color").default("#6366f1"),
+    accentColor: text("accent_color").default("#10b981"),
+    customDomain: text("custom_domain"),
+    customAppName: text("custom_app_name"),
+    customSupportEmail: text("custom_support_email"),
+    customSupportUrl: text("custom_support_url"),
+    loginPageHtml: text("login_page_html"),
+    emailHeaderHtml: text("email_header_html"),
+    emailFooterHtml: text("email_footer_html"),
+    reportHeaderHtml: text("report_header_html"),
+    reportFooterHtml: text("report_footer_html"),
+    hidePoweredBy: boolean("hide_powered_by").notNull().default(false),
+    customCss: text("custom_css"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_mssp_wl_org").on(table.orgId)],
+);
+
+export const msspClientSlas = pgTable(
+  "mssp_client_slas",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    priority: text("priority").notNull().default("medium"),
+    responseTimeMinutes: integer("response_time_minutes").notNull().default(60),
+    resolutionTimeMinutes: integer("resolution_time_minutes").notNull().default(480),
+    escalationContactEmail: text("escalation_contact_email"),
+    escalationContactPhone: text("escalation_contact_phone"),
+    autoEscalateOnBreach: boolean("auto_escalate_on_breach").notNull().default(true),
+    businessHoursOnly: boolean("business_hours_only").notNull().default(false),
+    businessHoursStart: text("business_hours_start").default("09:00"),
+    businessHoursEnd: text("business_hours_end").default("17:00"),
+    businessTimezone: text("business_timezone").default("UTC"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_sla_parent").on(table.parentOrgId),
+    index("idx_mssp_sla_child").on(table.childOrgId),
+    index("idx_mssp_sla_parent_child").on(table.parentOrgId, table.childOrgId),
+  ],
+);
+
+export const msspSlaBreaches = pgTable(
+  "mssp_sla_breaches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    slaId: varchar("sla_id")
+      .notNull()
+      .references(() => msspClientSlas.id, { onDelete: "cascade" }),
+    parentOrgId: varchar("parent_org_id").notNull(),
+    childOrgId: varchar("child_org_id").notNull(),
+    incidentId: varchar("incident_id"),
+    alertId: varchar("alert_id"),
+    breachType: text("breach_type").notNull().default("response"),
+    targetMinutes: integer("target_minutes").notNull(),
+    actualMinutes: integer("actual_minutes").notNull(),
+    status: text("status").notNull().default("breached"),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"),
+    notes: text("notes"),
+    notifiedAt: timestamp("notified_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_sla_breach_sla").on(table.slaId),
+    index("idx_mssp_sla_breach_parent").on(table.parentOrgId),
+    index("idx_mssp_sla_breach_child").on(table.childOrgId),
+    index("idx_mssp_sla_breach_status").on(table.status),
+  ],
+);
+
+export const msspBillingRecords = pgTable(
+  "mssp_billing_records",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    periodStart: timestamp("period_start").notNull(),
+    periodEnd: timestamp("period_end").notNull(),
+    baseFee: integer("base_fee").notNull().default(0),
+    markupPercent: real("markup_percent").notNull().default(0),
+    alertsIngested: integer("alerts_ingested").notNull().default(0),
+    alertsCost: integer("alerts_cost").notNull().default(0),
+    aiAnalyses: integer("ai_analyses").notNull().default(0),
+    aiCost: integer("ai_cost").notNull().default(0),
+    storageGb: real("storage_gb").notNull().default(0),
+    storageCost: integer("storage_cost").notNull().default(0),
+    userCount: integer("user_count").notNull().default(0),
+    userCost: integer("user_cost").notNull().default(0),
+    subtotal: integer("subtotal").notNull().default(0),
+    markupAmount: integer("markup_amount").notNull().default(0),
+    totalAmount: integer("total_amount").notNull().default(0),
+    currency: text("currency").notNull().default("USD"),
+    status: text("status").notNull().default("draft"),
+    invoiceUrl: text("invoice_url"),
+    paidAt: timestamp("paid_at"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_billing_parent").on(table.parentOrgId),
+    index("idx_mssp_billing_child").on(table.childOrgId),
+    index("idx_mssp_billing_period").on(table.parentOrgId, table.periodStart),
+    index("idx_mssp_billing_status").on(table.status),
+  ],
+);
+
+export const msspClientOnboarding = pgTable(
+  "mssp_client_onboarding",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    parentOrgId: varchar("parent_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    childOrgId: varchar("child_org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"),
+    steps: jsonb("steps")
+      .notNull()
+      .default(
+        sql`'[{"key":"org_created","label":"Organization Created","done":true},{"key":"admin_invited","label":"Admin User Invited","done":false},{"key":"connectors_configured","label":"Connectors Configured","done":false},{"key":"sla_defined","label":"SLA Defined","done":false},{"key":"branding_applied","label":"Branding Applied","done":false},{"key":"go_live","label":"Go Live","done":false}]'::jsonb`,
+      ),
+    assignedTo: text("assigned_to"),
+    targetGoLiveDate: timestamp("target_go_live_date"),
+    actualGoLiveDate: timestamp("actual_go_live_date"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mssp_onboarding_parent").on(table.parentOrgId),
+    index("idx_mssp_onboarding_child").on(table.childOrgId),
+    index("idx_mssp_onboarding_status").on(table.status),
+  ],
+);
+
+export const msspWhiteLabelConfigsRelations = relations(msspWhiteLabelConfigs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [msspWhiteLabelConfigs.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const msspClientSlasRelations = relations(msspClientSlas, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspClientSlas.parentOrgId],
+    references: [organizations.id],
+    relationName: "slaParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspClientSlas.childOrgId],
+    references: [organizations.id],
+    relationName: "slaChild",
+  }),
+}));
+
+export const msspSlaBreachesRelations = relations(msspSlaBreaches, ({ one }) => ({
+  sla: one(msspClientSlas, {
+    fields: [msspSlaBreaches.slaId],
+    references: [msspClientSlas.id],
+  }),
+}));
+
+export const msspBillingRecordsRelations = relations(msspBillingRecords, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspBillingRecords.parentOrgId],
+    references: [organizations.id],
+    relationName: "billingParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspBillingRecords.childOrgId],
+    references: [organizations.id],
+    relationName: "billingChild",
+  }),
+}));
+
+export const msspClientOnboardingRelations = relations(msspClientOnboarding, ({ one }) => ({
+  parentOrg: one(organizations, {
+    fields: [msspClientOnboarding.parentOrgId],
+    references: [organizations.id],
+    relationName: "onboardingParent",
+  }),
+  childOrg: one(organizations, {
+    fields: [msspClientOnboarding.childOrgId],
+    references: [organizations.id],
+    relationName: "onboardingChild",
+  }),
+}));
+
+export type MsspWhiteLabelConfig = typeof msspWhiteLabelConfigs.$inferSelect;
+export type InsertMsspWhiteLabelConfig = typeof msspWhiteLabelConfigs.$inferInsert;
+export type MsspClientSla = typeof msspClientSlas.$inferSelect;
+export type InsertMsspClientSla = typeof msspClientSlas.$inferInsert;
+export type MsspSlaBreach = typeof msspSlaBreaches.$inferSelect;
+export type InsertMsspSlaBreach = typeof msspSlaBreaches.$inferInsert;
+export type MsspBillingRecord = typeof msspBillingRecords.$inferSelect;
+export type InsertMsspBillingRecord = typeof msspBillingRecords.$inferInsert;
+export type MsspClientOnboardingRecord = typeof msspClientOnboarding.$inferSelect;
+export type InsertMsspClientOnboardingRecord = typeof msspClientOnboarding.$inferInsert;
+
+// ── Autonomous SOC — AI Analyst Tiers ─────────────────────────────
+
+export const AI_ANALYST_TIERS = ["tier1_autonomous", "tier2_semi_autonomous", "tier3_assisted"] as const;
+export const AI_DECISION_OUTCOMES = [
+  "true_positive",
+  "false_positive",
+  "escalate_tier2",
+  "escalate_tier3",
+  "escalate_human",
+  "needs_investigation",
+  "auto_resolved",
+  "auto_contained",
+] as const;
+export const AUTONOMY_LOG_ACTIONS = [
+  "alert_triaged",
+  "alert_enriched",
+  "correlation_run",
+  "hypothesis_tested",
+  "action_executed",
+  "action_blocked",
+  "escalated",
+  "case_closed",
+  "case_reopened",
+  "confidence_updated",
+  "human_override",
+] as const;
+
+export const aiAnalystDecisions = pgTable(
+  "ai_analyst_decisions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    alertId: varchar("alert_id").references(() => alerts.id, { onDelete: "set null" }),
+    incidentId: varchar("incident_id").references(() => incidents.id, { onDelete: "set null" }),
+    tier: text("tier").notNull().default("tier1_autonomous"),
+    outcome: text("outcome").notNull(),
+    confidenceScore: real("confidence_score").notNull(),
+    confidenceFactors: jsonb("confidence_factors"),
+    enrichmentData: jsonb("enrichment_data"),
+    correlationResults: jsonb("correlation_results"),
+    hypotheses: jsonb("hypotheses"),
+    reasoning: text("reasoning"),
+    executiveSummary: text("executive_summary"),
+    recommendedActions: jsonb("recommended_actions"),
+    executedActions: jsonb("executed_actions"),
+    mitreTactics: text("mitre_tactics").array(),
+    mitreTechniques: text("mitre_techniques").array(),
+    relatedAlertIds: text("related_alert_ids").array(),
+    timeToDecisionMs: integer("time_to_decision_ms"),
+    humanOverride: boolean("human_override").notNull().default(false),
+    humanOverrideBy: text("human_override_by"),
+    humanOverrideReason: text("human_override_reason"),
+    humanOverrideAt: timestamp("human_override_at"),
+    status: text("status").notNull().default("pending"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_decisions_org").on(table.orgId),
+    index("idx_ai_decisions_alert").on(table.alertId),
+    index("idx_ai_decisions_incident").on(table.incidentId),
+    index("idx_ai_decisions_tier").on(table.orgId, table.tier),
+    index("idx_ai_decisions_outcome").on(table.orgId, table.outcome),
+    index("idx_ai_decisions_status").on(table.orgId, table.status),
+    index("idx_ai_decisions_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const autonomyLog = pgTable(
+  "autonomy_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    decisionId: varchar("decision_id").references(() => aiAnalystDecisions.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    tier: text("tier").notNull(),
+    alertId: varchar("alert_id"),
+    incidentId: varchar("incident_id"),
+    details: jsonb("details"),
+    confidenceBefore: real("confidence_before"),
+    confidenceAfter: real("confidence_after"),
+    durationMs: integer("duration_ms"),
+    success: boolean("success").notNull().default(true),
+    error: text("error"),
+    triggeredBy: text("triggered_by").notNull().default("ai_analyst"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_autonomy_log_org").on(table.orgId),
+    index("idx_autonomy_log_decision").on(table.decisionId),
+    index("idx_autonomy_log_action").on(table.orgId, table.action),
+    index("idx_autonomy_log_tier").on(table.orgId, table.tier),
+    index("idx_autonomy_log_created").on(table.orgId, table.createdAt),
+  ],
+);
+
+export const aiAnalystDecisionsRelations = relations(aiAnalystDecisions, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [aiAnalystDecisions.orgId],
+    references: [organizations.id],
+  }),
+  alert: one(alerts, {
+    fields: [aiAnalystDecisions.alertId],
+    references: [alerts.id],
+  }),
+  incident: one(incidents, {
+    fields: [aiAnalystDecisions.incidentId],
+    references: [incidents.id],
+  }),
+}));
+
+export const autonomyLogRelations = relations(autonomyLog, ({ one }) => ({
+  decision: one(aiAnalystDecisions, {
+    fields: [autonomyLog.decisionId],
+    references: [aiAnalystDecisions.id],
+  }),
+}));
+
+export type AiAnalystDecision = typeof aiAnalystDecisions.$inferSelect;
+export type InsertAiAnalystDecision = typeof aiAnalystDecisions.$inferInsert;
+export type AutonomyLogEntry = typeof autonomyLog.$inferSelect;
+export type InsertAutonomyLogEntry = typeof autonomyLog.$inferInsert;
+
+// ── Developer Security (Shift-Left Platform) ──────────────────────
+
+export const SAST_SEVERITY = ["critical", "high", "medium", "low", "info"] as const;
+export const SAST_CATEGORIES = [
+  "sql_injection",
+  "xss",
+  "path_traversal",
+  "command_injection",
+  "insecure_deserialization",
+  "hardcoded_secret",
+  "weak_crypto",
+  "ssrf",
+  "open_redirect",
+  "xxe",
+  "idor",
+  "missing_auth",
+  "race_condition",
+  "prototype_pollution",
+  "regex_dos",
+] as const;
+export const SECRET_TYPES = [
+  "aws_access_key",
+  "aws_secret_key",
+  "github_token",
+  "gitlab_token",
+  "api_key",
+  "jwt_secret",
+  "private_key",
+  "database_url",
+  "oauth_secret",
+  "slack_token",
+  "stripe_key",
+  "sendgrid_key",
+  "twilio_key",
+  "generic_password",
+  "generic_secret",
+] as const;
+export const CI_GATE_STATUSES = ["passed", "failed", "warning", "skipped"] as const;
+
+export const sastFindings = pgTable(
+  "sast_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    branch: text("branch").notNull().default("main"),
+    commitSha: text("commit_sha"),
+    pullRequestId: text("pull_request_id"),
+    filePath: text("file_path").notNull(),
+    startLine: integer("start_line").notNull(),
+    endLine: integer("end_line"),
+    codeSnippet: text("code_snippet"),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    remediation: text("remediation"),
+    cweId: text("cwe_id"),
+    owaspCategory: text("owasp_category"),
+    confidence: real("confidence").notNull().default(0.8),
+    status: text("status").notNull().default("open"),
+    assignee: text("assignee"),
+    falsePositive: boolean("false_positive").notNull().default(false),
+    falsePositiveBy: text("false_positive_by"),
+    falsePositiveReason: text("false_positive_reason"),
+    fixedInCommit: text("fixed_in_commit"),
+    fixedAt: timestamp("fixed_at"),
+    firstSeenAt: timestamp("first_seen_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow(),
+    scanId: varchar("scan_id"),
+    ruleId: text("rule_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sast_findings_org").on(table.orgId),
+    index("idx_sast_findings_repo").on(table.orgId, table.repository),
+    index("idx_sast_findings_severity").on(table.orgId, table.severity),
+    index("idx_sast_findings_category").on(table.orgId, table.category),
+    index("idx_sast_findings_status").on(table.orgId, table.status),
+    index("idx_sast_findings_pr").on(table.orgId, table.pullRequestId),
+    index("idx_sast_findings_commit").on(table.orgId, table.commitSha),
+  ],
+);
+
+export const secretsExposed = pgTable(
+  "secrets_exposed",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    branch: text("branch").notNull().default("main"),
+    commitSha: text("commit_sha").notNull(),
+    commitAuthor: text("commit_author"),
+    commitDate: timestamp("commit_date"),
+    filePath: text("file_path").notNull(),
+    line: integer("line").notNull(),
+    secretType: text("secret_type").notNull(),
+    secretHash: text("secret_hash").notNull(),
+    maskedValue: text("masked_value"),
+    severity: text("severity").notNull().default("critical"),
+    status: text("status").notNull().default("active"),
+    rotated: boolean("rotated").notNull().default(false),
+    rotatedAt: timestamp("rotated_at"),
+    rotatedBy: text("rotated_by"),
+    falsePositive: boolean("false_positive").notNull().default(false),
+    falsePositiveBy: text("false_positive_by"),
+    pullRequestId: text("pull_request_id"),
+    prCommentPosted: boolean("pr_comment_posted").notNull().default(false),
+    scanId: varchar("scan_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_secrets_exposed_org").on(table.orgId),
+    index("idx_secrets_exposed_repo").on(table.orgId, table.repository),
+    index("idx_secrets_exposed_type").on(table.orgId, table.secretType),
+    index("idx_secrets_exposed_status").on(table.orgId, table.status),
+    index("idx_secrets_exposed_commit").on(table.orgId, table.commitSha),
+  ],
+);
+
+export const ciGates = pgTable(
+  "ci_gates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    branch: text("branch").notNull(),
+    commitSha: text("commit_sha").notNull(),
+    pullRequestId: text("pull_request_id"),
+    pipelineProvider: text("pipeline_provider").notNull().default("github_actions"),
+    pipelineRunId: text("pipeline_run_id"),
+    status: text("status").notNull().default("passed"),
+    criticalFindings: integer("critical_findings").notNull().default(0),
+    highFindings: integer("high_findings").notNull().default(0),
+    mediumFindings: integer("medium_findings").notNull().default(0),
+    lowFindings: integer("low_findings").notNull().default(0),
+    secretsFound: integer("secrets_found").notNull().default(0),
+    policyViolations: integer("policy_violations").notNull().default(0),
+    gatePolicy: jsonb("gate_policy"),
+    failureReasons: text("failure_reasons").array(),
+    scanDurationMs: integer("scan_duration_ms"),
+    reportUrl: text("report_url"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ci_gates_org").on(table.orgId),
+    index("idx_ci_gates_repo").on(table.orgId, table.repository),
+    index("idx_ci_gates_status").on(table.orgId, table.status),
+    index("idx_ci_gates_commit").on(table.orgId, table.commitSha),
+    index("idx_ci_gates_pr").on(table.orgId, table.pullRequestId),
+  ],
+);
+
+export const codeReviewFindings = pgTable(
+  "code_review_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    pullRequestId: text("pull_request_id").notNull(),
+    commitSha: text("commit_sha").notNull(),
+    filePath: text("file_path").notNull(),
+    line: integer("line").notNull(),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    suggestion: text("suggestion"),
+    commentPosted: boolean("comment_posted").notNull().default(false),
+    commentId: text("comment_id"),
+    accepted: boolean("accepted"),
+    acceptedBy: text("accepted_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_code_review_org").on(table.orgId),
+    index("idx_code_review_repo").on(table.orgId, table.repository),
+    index("idx_code_review_pr").on(table.orgId, table.pullRequestId),
+  ],
+);
+
+export const securityDebtItems = pgTable(
+  "security_debt_items",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    filePath: text("file_path"),
+    findingCount: integer("finding_count").notNull().default(1),
+    exploitability: text("exploitability").notNull().default("medium"),
+    effortToFix: text("effort_to_fix").notNull().default("medium"),
+    priority: integer("priority").notNull().default(50),
+    status: text("status").notNull().default("open"),
+    assignee: text("assignee"),
+    dueDate: timestamp("due_date"),
+    relatedFindingIds: text("related_finding_ids").array(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_security_debt_org").on(table.orgId),
+    index("idx_security_debt_repo").on(table.orgId, table.repository),
+    index("idx_security_debt_priority").on(table.orgId, table.priority),
+    index("idx_security_debt_status").on(table.orgId, table.status),
+  ],
+);
+
+export const sastFindingsRelations = relations(sastFindings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [sastFindings.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const secretsExposedRelations = relations(secretsExposed, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [secretsExposed.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ciGatesRelations = relations(ciGates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ciGates.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const codeReviewFindingsRelations = relations(codeReviewFindings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [codeReviewFindings.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const securityDebtItemsRelations = relations(securityDebtItems, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityDebtItems.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type SastFinding = typeof sastFindings.$inferSelect;
+export type InsertSastFinding = typeof sastFindings.$inferInsert;
+export type SecretExposed = typeof secretsExposed.$inferSelect;
+export type InsertSecretExposed = typeof secretsExposed.$inferInsert;
+export type CiGate = typeof ciGates.$inferSelect;
+export type InsertCiGate = typeof ciGates.$inferInsert;
+export type CodeReviewFinding = typeof codeReviewFindings.$inferSelect;
+export type InsertCodeReviewFinding = typeof codeReviewFindings.$inferInsert;
+export type SecurityDebtItem = typeof securityDebtItems.$inferSelect;
+export type InsertSecurityDebtItem = typeof securityDebtItems.$inferInsert;
+
+// ── Third-Party Risk Management (TPRM) ───────────────────────────
+
+export const VENDOR_RISK_TIERS = ["critical", "high", "medium", "low", "minimal"] as const;
+export const VENDOR_STATUSES = ["active", "under_review", "probation", "offboarded", "pending_onboard"] as const;
+export const VENDOR_CATEGORIES = [
+  "saas",
+  "infrastructure",
+  "payment_processing",
+  "cloud_hosting",
+  "identity_provider",
+  "analytics",
+  "communications",
+  "development_tools",
+  "security",
+  "data_processing",
+  "consulting",
+  "staffing",
+  "hardware",
+  "other",
+] as const;
+export const VENDOR_ASSESSMENT_STATUSES = [
+  "draft",
+  "sent",
+  "in_progress",
+  "completed",
+  "overdue",
+  "cancelled",
+] as const;
+export const QUESTIONNAIRE_TYPES = ["caiq", "sig_lite", "sig_full", "custom", "iso27001", "soc2", "nist"] as const;
+
+export const vendors = pgTable(
+  "vendors",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    domain: text("domain"),
+    website: text("website"),
+    category: text("category").notNull().default("other"),
+    description: text("description"),
+    status: text("status").notNull().default("active"),
+    riskTier: text("risk_tier").notNull().default("medium"),
+    overallRiskScore: integer("overall_risk_score"),
+    securityScore: integer("security_score"),
+    complianceCertifications: text("compliance_certifications").array(),
+    dataAccessLevel: text("data_access_level"),
+    dataTypes: text("data_types").array(),
+    contractStartDate: timestamp("contract_start_date"),
+    contractEndDate: timestamp("contract_end_date"),
+    contractValue: integer("contract_value"),
+    primaryContact: text("primary_contact"),
+    primaryContactEmail: text("primary_contact_email"),
+    securityContact: text("security_contact"),
+    securityContactEmail: text("security_contact_email"),
+    fourthPartyVendors: jsonb("fourth_party_vendors"),
+    reviewCadence: text("review_cadence").notNull().default("annually"),
+    lastReviewDate: timestamp("last_review_date"),
+    nextReviewDate: timestamp("next_review_date"),
+    onboardedBy: text("onboarded_by"),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendors_org").on(table.orgId),
+    index("idx_vendors_status").on(table.orgId, table.status),
+    index("idx_vendors_risk_tier").on(table.orgId, table.riskTier),
+    index("idx_vendors_category").on(table.orgId, table.category),
+    index("idx_vendors_domain").on(table.orgId, table.domain),
+    index("idx_vendors_next_review").on(table.orgId, table.nextReviewDate),
+  ],
+);
+
+export const vendorAssessments = pgTable(
+  "vendor_assessments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    questionnaireType: text("questionnaire_type").notNull().default("custom"),
+    title: text("title").notNull(),
+    status: text("status").notNull().default("draft"),
+    sentAt: timestamp("sent_at"),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    respondentName: text("respondent_name"),
+    respondentEmail: text("respondent_email"),
+    totalQuestions: integer("total_questions").notNull().default(0),
+    answeredQuestions: integer("answered_questions").notNull().default(0),
+    score: integer("score"),
+    maxScore: integer("max_score"),
+    riskRating: text("risk_rating"),
+    findings: jsonb("findings"),
+    responses: jsonb("responses"),
+    attachments: text("attachments").array(),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNotes: text("review_notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_assessments_org").on(table.orgId),
+    index("idx_vendor_assessments_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_assessments_status").on(table.orgId, table.status),
+    index("idx_vendor_assessments_due").on(table.orgId, table.dueDate),
+  ],
+);
+
+export const vendorRisks = pgTable(
+  "vendor_risks",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"),
+    source: text("source").notNull().default("manual"),
+    evidence: text("evidence"),
+    remediation: text("remediation"),
+    mitigatedAt: timestamp("mitigated_at"),
+    mitigatedBy: text("mitigated_by"),
+    acceptedAt: timestamp("accepted_at"),
+    acceptedBy: text("accepted_by"),
+    acceptanceReason: text("acceptance_reason"),
+    dueDate: timestamp("due_date"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_risks_org").on(table.orgId),
+    index("idx_vendor_risks_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_risks_severity").on(table.orgId, table.severity),
+    index("idx_vendor_risks_status").on(table.orgId, table.status),
+  ],
+);
+
+export const vendorMonitoring = pgTable(
+  "vendor_monitoring",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    checkType: text("check_type").notNull(),
+    status: text("status").notNull().default("ok"),
+    details: text("details"),
+    previousValue: text("previous_value"),
+    currentValue: text("current_value"),
+    severity: text("severity").notNull().default("info"),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+    acknowledgedBy: text("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    metadata: jsonb("metadata"),
+    checkedAt: timestamp("checked_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_monitoring_org").on(table.orgId),
+    index("idx_vendor_monitoring_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_monitoring_type").on(table.orgId, table.checkType),
+    index("idx_vendor_monitoring_status").on(table.orgId, table.status),
+  ],
+);
+
+export const vendorBreachAlerts = pgTable(
+  "vendor_breach_alerts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    vendorId: varchar("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    source: text("source").notNull(),
+    sourceUrl: text("source_url"),
+    breachDate: timestamp("breach_date"),
+    impactAssessment: text("impact_assessment"),
+    affectedDataTypes: text("affected_data_types").array(),
+    severity: text("severity").notNull().default("high"),
+    status: text("status").notNull().default("new"),
+    acknowledgedBy: text("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    responseActions: jsonb("response_actions"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vendor_breach_alerts_org").on(table.orgId),
+    index("idx_vendor_breach_alerts_vendor").on(table.orgId, table.vendorId),
+    index("idx_vendor_breach_alerts_status").on(table.orgId, table.status),
+  ],
+);
+
+export const vendorsRelations = relations(vendors, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [vendors.orgId],
+    references: [organizations.id],
+  }),
+  assessments: many(vendorAssessments),
+  risks: many(vendorRisks),
+  monitoring: many(vendorMonitoring),
+  breachAlerts: many(vendorBreachAlerts),
+}));
+
+export const vendorAssessmentsRelations = relations(vendorAssessments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorAssessments.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorAssessments.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const vendorRisksRelations = relations(vendorRisks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorRisks.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorRisks.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const vendorMonitoringRelations = relations(vendorMonitoring, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorMonitoring.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorMonitoring.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const vendorBreachAlertsRelations = relations(vendorBreachAlerts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorBreachAlerts.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorBreachAlerts.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export type Vendor = typeof vendors.$inferSelect;
+export type InsertVendor = typeof vendors.$inferInsert;
+export type VendorAssessment = typeof vendorAssessments.$inferSelect;
+export type InsertVendorAssessment = typeof vendorAssessments.$inferInsert;
+export type VendorRisk = typeof vendorRisks.$inferSelect;
+export type InsertVendorRisk = typeof vendorRisks.$inferInsert;
+export type VendorMonitoringEntry = typeof vendorMonitoring.$inferSelect;
+export type InsertVendorMonitoringEntry = typeof vendorMonitoring.$inferInsert;
+export type VendorBreachAlert = typeof vendorBreachAlerts.$inferSelect;
+export type InsertVendorBreachAlert = typeof vendorBreachAlerts.$inferInsert;
+
+// =============================================================================
+// DARK WEB MONITORING
+// =============================================================================
+
+export const DARK_WEB_EXPOSURE_TYPES = [
+  "credential_leak",
+  "data_breach",
+  "brand_mention",
+  "executive_exposure",
+  "source_code_leak",
+  "pii_exposure",
+  "credit_card_exposure",
+  "threat_actor_mention",
+  "domain_mention",
+  "paste_site",
+] as const;
+
+export const DARK_WEB_SEVERITY_LEVELS = ["critical", "high", "medium", "low", "info"] as const;
+
+export const DARK_WEB_EXPOSURE_STATUSES = [
+  "new",
+  "investigating",
+  "confirmed",
+  "mitigated",
+  "false_positive",
+  "ignored",
+] as const;
+
+export const BREACH_MONITOR_TARGET_TYPES = [
+  "email",
+  "domain",
+  "executive_email",
+  "brand_keyword",
+  "source_code_keyword",
+  "credit_card_bin",
+  "api_key_pattern",
+  "ip_range",
+] as const;
+
+export const DARK_WEB_SOURCE_TYPES = [
+  "hibp",
+  "dehashed",
+  "paste_site",
+  "dark_web_forum",
+  "telegram_channel",
+  "marketplace",
+  "ransomware_blog",
+  "github_search",
+  "pastebin",
+  "manual",
+] as const;
+
+export const breachMonitoringTargets = pgTable("breach_monitoring_targets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  targetType: text("target_type").notNull(), // BREACH_MONITOR_TARGET_TYPES
+  targetValue: text("target_value").notNull(),
+  label: text("label"), // friendly name
+  isActive: boolean("is_active").default(true).notNull(),
+  lastCheckedAt: timestamp("last_checked_at"),
+  exposureCount: integer("exposure_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const darkWebExposures = pgTable("dark_web_exposures", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  targetId: uuid("target_id").references(() => breachMonitoringTargets.id, { onDelete: "set null" }),
+  exposureType: text("exposure_type").notNull(), // DARK_WEB_EXPOSURE_TYPES
+  severity: text("severity").default("medium").notNull(), // DARK_WEB_SEVERITY_LEVELS
+  status: text("status").default("new").notNull(), // DARK_WEB_EXPOSURE_STATUSES
+  title: text("title").notNull(),
+  description: text("description"),
+  sourceType: text("source_type").notNull(), // DARK_WEB_SOURCE_TYPES
+  sourceName: text("source_name"), // e.g., "LinkedIn 2021 breach", "pastebin.com"
+  sourceUrl: text("source_url"), // redacted/sanitized link if available
+  breachDate: timestamp("breach_date"), // when the breach occurred
+  discoveredAt: timestamp("discovered_at").defaultNow().notNull(), // when we found it
+  affectedData: jsonb("affected_data").$type<string[]>().default([]), // e.g., ["email","password","phone"]
+  affectedCount: integer("affected_count"), // number of records exposed
+  rawData: jsonb("raw_data").$type<Record<string, unknown>>(), // raw API response (redacted)
+  matchedValue: text("matched_value"), // what we searched for that matched
+  confidenceScore: integer("confidence_score").default(70), // 0-100
+  mitigationNotes: text("mitigation_notes"),
+  assignedTo: uuid("assigned_to"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: uuid("resolved_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const darkWebMonitoringConfig = pgTable("dark_web_monitoring_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  scanFrequencyHours: integer("scan_frequency_hours").default(24).notNull(),
+  autoCreateAlerts: boolean("auto_create_alerts").default(true).notNull(),
+  alertSeverityThreshold: text("alert_severity_threshold").default("medium").notNull(),
+  notifyOnNewExposure: boolean("notify_on_new_exposure").default(true).notNull(),
+  hibpApiKey: text("hibp_api_key"), // AES-256-GCM encrypted via sso-crypto
+  dehashedApiKey: text("dehashed_api_key"), // AES-256-GCM encrypted via sso-crypto
+  lastFullScanAt: timestamp("last_full_scan_at"),
+  totalExposuresFound: integer("total_exposures_found").default(0).notNull(),
+  totalExposuresResolved: integer("total_exposures_resolved").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const darkWebScanHistory = pgTable("dark_web_scan_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  scanType: text("scan_type").notNull(), // "full", "incremental", "manual"
+  status: text("status").default("running").notNull(), // "running", "completed", "failed"
+  targetsScanned: integer("targets_scanned").default(0).notNull(),
+  newExposuresFound: integer("new_exposures_found").default(0).notNull(),
+  sourcesChecked: jsonb("sources_checked").$type<string[]>().default([]),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  durationMs: integer("duration_ms"),
+});
+
+// Relations
+export const breachMonitoringTargetsRelations = relations(breachMonitoringTargets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [breachMonitoringTargets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const darkWebExposuresRelations = relations(darkWebExposures, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [darkWebExposures.orgId],
+    references: [organizations.id],
+  }),
+  target: one(breachMonitoringTargets, {
+    fields: [darkWebExposures.targetId],
+    references: [breachMonitoringTargets.id],
+  }),
+}));
+
+export const darkWebMonitoringConfigRelations = relations(darkWebMonitoringConfig, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [darkWebMonitoringConfig.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const darkWebScanHistoryRelations = relations(darkWebScanHistory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [darkWebScanHistory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type BreachMonitoringTarget = typeof breachMonitoringTargets.$inferSelect;
+export type InsertBreachMonitoringTarget = typeof breachMonitoringTargets.$inferInsert;
+export type DarkWebExposure = typeof darkWebExposures.$inferSelect;
+export type InsertDarkWebExposure = typeof darkWebExposures.$inferInsert;
+export type DarkWebMonitoringConfig = typeof darkWebMonitoringConfig.$inferSelect;
+export type InsertDarkWebMonitoringConfig = typeof darkWebMonitoringConfig.$inferInsert;
+export type DarkWebScanHistoryEntry = typeof darkWebScanHistory.$inferSelect;
+export type InsertDarkWebScanHistoryEntry = typeof darkWebScanHistory.$inferInsert;
+
+// ============================================================================
+// Physical Security Convergence
+// ============================================================================
+
+export const BADGE_EVENT_TYPES = [
+  "access_granted",
+  "access_denied",
+  "door_forced",
+  "door_held",
+  "tailgate_detected",
+  "antipassback_violation",
+  "duress_alarm",
+  "card_unknown",
+] as const;
+
+export const PHYSICAL_ASSET_TYPES = [
+  "access_point",
+  "camera",
+  "server_room",
+  "data_center",
+  "office",
+  "parking_gate",
+  "elevator",
+  "turnstile",
+  "cabinet",
+  "safe",
+] as const;
+
+export const PHYSICAL_INCIDENT_STATUSES = ["open", "investigating", "resolved", "escalated"] as const;
+
+export const VISITOR_STATUSES = ["pre_registered", "checked_in", "checked_out", "denied", "escorted"] as const;
+
+export const physicalAssets = pgTable("physical_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  assetType: text("asset_type").notNull(), // PHYSICAL_ASSET_TYPES
+  location: text("location").notNull(),
+  building: text("building"),
+  floor: text("floor"),
+  zone: text("zone"),
+  controllerType: text("controller_type"), // "lenel", "genetec", "honeywell", "generic"
+  controllerId: text("controller_id"),
+  ipAddress: text("ip_address"),
+  isOnline: boolean("is_online").default(true).notNull(),
+  lastHeartbeat: timestamp("last_heartbeat"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const badgeEvents = pgTable("badge_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  assetId: uuid("asset_id").references(() => physicalAssets.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull(), // BADGE_EVENT_TYPES
+  badgeNumber: text("badge_number"),
+  employeeName: text("employee_name"),
+  employeeEmail: text("employee_email"),
+  employeeDepartment: text("employee_department"),
+  location: text("location").notNull(),
+  doorName: text("door_name"),
+  direction: text("direction"), // "entry", "exit"
+  isAnomaly: boolean("is_anomaly").default(false).notNull(),
+  anomalyReason: text("anomaly_reason"),
+  correlatedAlertId: uuid("correlated_alert_id"),
+  rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>().default({}),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const physicalIncidents = pgTable("physical_incidents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  incidentType: text("incident_type").notNull(), // "tailgate", "forced_entry", "after_hours", "unauthorized_access", "suspicious_activity", "equipment_tamper"
+  severity: text("severity").default("medium").notNull(),
+  status: text("status").default("open").notNull(), // PHYSICAL_INCIDENT_STATUSES
+  location: text("location"),
+  badgeEventIds: jsonb("badge_event_ids").$type<string[]>().default([]),
+  correlatedDigitalIncidentId: uuid("correlated_digital_incident_id"),
+  correlatedAlertIds: jsonb("correlated_alert_ids").$type<string[]>().default([]),
+  assignedTo: text("assigned_to"),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNotes: text("resolution_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const visitors = pgTable("visitors", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  email: text("email"),
+  company: text("company"),
+  hostEmployeeName: text("host_employee_name"),
+  hostEmployeeEmail: text("host_employee_email"),
+  purpose: text("purpose"),
+  status: text("status").default("pre_registered").notNull(), // VISITOR_STATUSES
+  badgeNumber: text("badge_number"),
+  scheduledAt: timestamp("scheduled_at"),
+  checkedInAt: timestamp("checked_in_at"),
+  checkedOutAt: timestamp("checked_out_at"),
+  areasAuthorized: jsonb("areas_authorized").$type<string[]>().default([]),
+  correlatedEvents: jsonb("correlated_events").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const physicalSecurityConfig = pgTable("physical_security_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  controllerIntegrations: jsonb("controller_integrations")
+    .$type<Array<{ type: string; name: string; apiEndpoint: string; isActive: boolean }>>()
+    .default([]),
+  afterHoursStart: text("after_hours_start").default("20:00"),
+  afterHoursEnd: text("after_hours_end").default("06:00"),
+  tailgateDetectionEnabled: boolean("tailgate_detection_enabled").default(true).notNull(),
+  anomalyCorrelationEnabled: boolean("anomaly_correlation_enabled").default(true).notNull(),
+  autoCreateDigitalIncidents: boolean("auto_create_digital_incidents").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Relations
+export const physicalAssetsRelations = relations(physicalAssets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [physicalAssets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const badgeEventsRelations = relations(badgeEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [badgeEvents.orgId],
+    references: [organizations.id],
+  }),
+  asset: one(physicalAssets, {
+    fields: [badgeEvents.assetId],
+    references: [physicalAssets.id],
+  }),
+}));
+
+export const physicalIncidentsRelations = relations(physicalIncidents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [physicalIncidents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const visitorsRelations = relations(visitors, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [visitors.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const physicalSecurityConfigRelations = relations(physicalSecurityConfig, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [physicalSecurityConfig.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type PhysicalAsset = typeof physicalAssets.$inferSelect;
+export type InsertPhysicalAsset = typeof physicalAssets.$inferInsert;
+export type BadgeEvent = typeof badgeEvents.$inferSelect;
+export type InsertBadgeEvent = typeof badgeEvents.$inferInsert;
+export type PhysicalIncident = typeof physicalIncidents.$inferSelect;
+export type InsertPhysicalIncident = typeof physicalIncidents.$inferInsert;
+export type Visitor = typeof visitors.$inferSelect;
+export type InsertVisitor = typeof visitors.$inferInsert;
+export type PhysicalSecurityConfig = typeof physicalSecurityConfig.$inferSelect;
+export type InsertPhysicalSecurityConfig = typeof physicalSecurityConfig.$inferInsert;
+
+// ============================================================================
+// Phishing Simulation & Security Awareness
+// ============================================================================
+
+export const PHISHING_CAMPAIGN_STATUSES = ["draft", "scheduled", "running", "completed", "paused"] as const;
+
+export const PHISHING_TEMPLATE_CATEGORIES = [
+  "credential_harvest",
+  "malware_download",
+  "data_entry",
+  "reply_to",
+  "smishing",
+  "vishing",
+  "spear_phishing",
+  "whaling",
+] as const;
+
+export const TRAINING_MODULE_TYPES = [
+  "video",
+  "quiz",
+  "interactive",
+  "document",
+  "simulation",
+  "micro_learning",
+] as const;
+
+export const phishingCampaigns = pgTable("phishing_campaigns", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").default("draft").notNull(), // PHISHING_CAMPAIGN_STATUSES
+  templateId: uuid("template_id"),
+  templateCategory: text("template_category"), // PHISHING_TEMPLATE_CATEGORIES
+  senderName: text("sender_name"),
+  senderEmail: text("sender_email"),
+  subject: text("subject"),
+  emailBody: text("email_body"),
+  landingPageHtml: text("landing_page_html"),
+  targetDepartments: jsonb("target_departments").$type<string[]>().default([]),
+  targetEmails: jsonb("target_emails").$type<string[]>().default([]),
+  totalRecipients: integer("total_recipients").default(0).notNull(),
+  emailsSent: integer("emails_sent").default(0).notNull(),
+  emailsOpened: integer("emails_opened").default(0).notNull(),
+  linksClicked: integer("links_clicked").default(0).notNull(),
+  credentialsSubmitted: integer("credentials_submitted").default(0).notNull(),
+  reported: integer("reported").default(0).notNull(),
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const phishingTemplates = pgTable("phishing_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").notNull(), // PHISHING_TEMPLATE_CATEGORIES
+  difficulty: text("difficulty").default("medium").notNull(), // "easy", "medium", "hard", "expert"
+  industry: text("industry"), // optional industry-specific
+  subject: text("subject").notNull(),
+  senderName: text("sender_name").notNull(),
+  senderEmail: text("sender_email").notNull(),
+  emailBody: text("email_body").notNull(),
+  landingPageHtml: text("landing_page_html"),
+  isBuiltIn: boolean("is_built_in").default(false).notNull(),
+  usageCount: integer("usage_count").default(0).notNull(),
+  successRate: real("success_rate"), // % of recipients who fell for it
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const phishingResults = pgTable("phishing_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  campaignId: uuid("campaign_id")
+    .notNull()
+    .references(() => phishingCampaigns.id, { onDelete: "cascade" }),
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name"),
+  department: text("department"),
+  emailSentAt: timestamp("email_sent_at"),
+  emailOpenedAt: timestamp("email_opened_at"),
+  linkClickedAt: timestamp("link_clicked_at"),
+  credentialSubmittedAt: timestamp("credential_submitted_at"),
+  reportedAt: timestamp("reported_at"),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const employeeRiskScores = pgTable("employee_risk_scores", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  name: text("name"),
+  department: text("department"),
+  riskScore: real("risk_score").default(50).notNull(), // 0-100
+  phishingClickRate: real("phishing_click_rate").default(0).notNull(), // %
+  reportRate: real("report_rate").default(0).notNull(), // %
+  trainingCompletionRate: real("training_completion_rate").default(0).notNull(), // %
+  campaignsReceived: integer("campaigns_received").default(0).notNull(),
+  campaignsClicked: integer("campaigns_clicked").default(0).notNull(),
+  campaignsReported: integer("campaigns_reported").default(0).notNull(),
+  trainingsCompleted: integer("trainings_completed").default(0).notNull(),
+  trainingsAssigned: integer("trainings_assigned").default(0).notNull(),
+  lastPhishingTestAt: timestamp("last_phishing_test_at"),
+  lastTrainingCompletedAt: timestamp("last_training_completed_at"),
+  riskTrend: text("risk_trend").default("stable").notNull(), // "improving", "stable", "worsening"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const trainingModules = pgTable("training_modules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  moduleType: text("module_type").notNull(), // TRAINING_MODULE_TYPES
+  category: text("category").notNull(), // "phishing_awareness", "password_security", "social_engineering", "data_handling", "insider_threat", "physical_security"
+  difficulty: text("difficulty").default("beginner").notNull(),
+  durationMinutes: integer("duration_minutes").default(15).notNull(),
+  contentUrl: text("content_url"),
+  passingScore: integer("passing_score").default(80),
+  isBuiltIn: boolean("is_built_in").default(false).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  completionCount: integer("completion_count").default(0).notNull(),
+  averageScore: real("average_score"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const trainingAssignments = pgTable("training_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  moduleId: uuid("module_id")
+    .notNull()
+    .references(() => trainingModules.id, { onDelete: "cascade" }),
+  employeeEmail: text("employee_email").notNull(),
+  employeeName: text("employee_name"),
+  assignedReason: text("assigned_reason"), // "phishing_click", "onboarding", "periodic", "manual"
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  dueAt: timestamp("due_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  score: integer("score"),
+  passed: boolean("passed"),
+  attempts: integer("attempts").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const securityAwarenessConfig = pgTable("security_awareness_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  autoEnrollOnClick: boolean("auto_enroll_on_click").default(true).notNull(),
+  defaultTrainingModuleId: uuid("default_training_module_id"),
+  phishingFrequencyDays: integer("phishing_frequency_days").default(30).notNull(),
+  vishingEnabled: boolean("vishing_enabled").default(false).notNull(),
+  smishingEnabled: boolean("smishing_enabled").default(false).notNull(),
+  riskScoreThreshold: integer("risk_score_threshold").default(75).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Relations
+export const phishingCampaignsRelations = relations(phishingCampaigns, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [phishingCampaigns.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const phishingTemplatesRelations = relations(phishingTemplates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [phishingTemplates.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const phishingResultsRelations = relations(phishingResults, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [phishingResults.orgId],
+    references: [organizations.id],
+  }),
+  campaign: one(phishingCampaigns, {
+    fields: [phishingResults.campaignId],
+    references: [phishingCampaigns.id],
+  }),
+}));
+
+export const employeeRiskScoresRelations = relations(employeeRiskScores, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [employeeRiskScores.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const trainingModulesRelations = relations(trainingModules, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [trainingModules.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const trainingAssignmentsRelations = relations(trainingAssignments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [trainingAssignments.orgId],
+    references: [organizations.id],
+  }),
+  module: one(trainingModules, {
+    fields: [trainingAssignments.moduleId],
+    references: [trainingModules.id],
+  }),
+}));
+
+export const securityAwarenessConfigRelations = relations(securityAwarenessConfig, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityAwarenessConfig.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type PhishingCampaign = typeof phishingCampaigns.$inferSelect;
+export type InsertPhishingCampaign = typeof phishingCampaigns.$inferInsert;
+export type PhishingTemplate = typeof phishingTemplates.$inferSelect;
+export type InsertPhishingTemplate = typeof phishingTemplates.$inferInsert;
+export type PhishingResult = typeof phishingResults.$inferSelect;
+export type InsertPhishingResult = typeof phishingResults.$inferInsert;
+export type EmployeeRiskScore = typeof employeeRiskScores.$inferSelect;
+export type InsertEmployeeRiskScore = typeof employeeRiskScores.$inferInsert;
+export type TrainingModule = typeof trainingModules.$inferSelect;
+export type InsertTrainingModule = typeof trainingModules.$inferInsert;
+export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
+export type InsertTrainingAssignment = typeof trainingAssignments.$inferInsert;
+export type SecurityAwarenessConfig = typeof securityAwarenessConfig.$inferSelect;
+export type InsertSecurityAwarenessConfig = typeof securityAwarenessConfig.$inferInsert;
+
+// ============================================================================
+// Quantum Readiness Assessment
+// ============================================================================
+
+export const CRYPTO_ALGORITHM_TYPES = [
+  "RSA-1024",
+  "RSA-2048",
+  "RSA-3072",
+  "RSA-4096",
+  "ECDSA-P256",
+  "ECDSA-P384",
+  "ECDSA-P521",
+  "ECDH-P256",
+  "ECDH-P384",
+  "Ed25519",
+  "DH-2048",
+  "DH-4096",
+  "DSA-1024",
+  "DSA-2048",
+  "AES-128",
+  "AES-256",
+  "3DES",
+  "SHA-1",
+  "SHA-256",
+  "SHA-384",
+  "SHA-512",
+  "MD5",
+  "HMAC-SHA256",
+  "ChaCha20-Poly1305",
+  "CRYSTALS-Kyber",
+  "CRYSTALS-Dilithium",
+  "FALCON",
+  "SPHINCS+",
+  "BIKE",
+  "HQC",
+  "unknown",
+] as const;
+
+export const QUANTUM_RISK_LEVELS = ["critical", "high", "medium", "low", "safe"] as const;
+
+export const CRYPTO_ASSET_SOURCES = [
+  "tls_certificate",
+  "ssh_key",
+  "api_key",
+  "vpn_tunnel",
+  "code_signing",
+  "database_encryption",
+  "file_encryption",
+  "email_signing",
+  "jwt_signing",
+  "ipsec",
+  "disk_encryption",
+  "key_exchange",
+  "password_hashing",
+  "configuration",
+  "library",
+  "manual_entry",
+] as const;
+
+export const PQC_MIGRATION_STATUSES = [
+  "not_started",
+  "assessed",
+  "planned",
+  "in_progress",
+  "migrated",
+  "verified",
+  "deferred",
+] as const;
+
+export const NIST_PQC_STANDARDS = [
+  "FIPS-203", // ML-KEM (CRYSTALS-Kyber)
+  "FIPS-204", // ML-DSA (CRYSTALS-Dilithium)
+  "FIPS-205", // SLH-DSA (SPHINCS+)
+  "FIPS-206", // FN-DSA (FALCON) — draft
+] as const;
+
+export const cryptoInventory = pgTable("crypto_inventory", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  assetName: text("asset_name").notNull(),
+  algorithm: text("algorithm").notNull(), // CRYPTO_ALGORITHM_TYPES
+  keyLength: integer("key_length"),
+  source: text("source").notNull(), // CRYPTO_ASSET_SOURCES
+  hostname: text("hostname"),
+  port: integer("port"),
+  serviceName: text("service_name"),
+  filePath: text("file_path"),
+  expiresAt: timestamp("expires_at"),
+  isQuantumVulnerable: boolean("is_quantum_vulnerable").default(false).notNull(),
+  quantumRiskLevel: text("quantum_risk_level").default("medium").notNull(), // QUANTUM_RISK_LEVELS
+  isHardcoded: boolean("is_hardcoded").default(false).notNull(),
+  canBeUpgraded: boolean("can_be_upgraded").default(true).notNull(),
+  pqcReplacement: text("pqc_replacement"), // recommended PQC algorithm
+  migrationStatus: text("migration_status").default("not_started").notNull(), // PQC_MIGRATION_STATUSES
+  migrationPriority: integer("migration_priority").default(50).notNull(), // 1-100
+  migrationNotes: text("migration_notes"),
+  lastScannedAt: timestamp("last_scanned_at"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const quantumRiskScores = pgTable("quantum_risk_scores", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  overallScore: integer("overall_score").default(0).notNull(), // 0-100 (100 = fully quantum-safe)
+  cryptoAgility: integer("crypto_agility").default(0).notNull(), // 0-100
+  algorithmDiversity: integer("algorithm_diversity").default(0).notNull(), // 0-100
+  pqcReadiness: integer("pqc_readiness").default(0).notNull(), // 0-100
+  complianceScore: integer("compliance_score").default(0).notNull(), // 0-100
+  totalAssets: integer("total_assets").default(0).notNull(),
+  vulnerableAssets: integer("vulnerable_assets").default(0).notNull(),
+  migratedAssets: integer("migrated_assets").default(0).notNull(),
+  criticalRiskCount: integer("critical_risk_count").default(0).notNull(),
+  highRiskCount: integer("high_risk_count").default(0).notNull(),
+  mediumRiskCount: integer("medium_risk_count").default(0).notNull(),
+  lowRiskCount: integer("low_risk_count").default(0).notNull(),
+  estimatedMigrationMonths: integer("estimated_migration_months"),
+  estimatedMigrationCost: integer("estimated_migration_cost"), // in cents
+  nistComplianceStatus: jsonb("nist_compliance_status")
+    .$type<Record<string, { status: string; progress: number; notes: string }>>()
+    .default({}),
+  scoredAt: timestamp("scored_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const quantumMigrationTasks = pgTable("quantum_migration_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  cryptoInventoryId: uuid("crypto_inventory_id").references(() => cryptoInventory.id, { onDelete: "set null" }),
+  currentAlgorithm: text("current_algorithm").notNull(),
+  targetAlgorithm: text("target_algorithm").notNull(),
+  priority: text("priority").default("medium").notNull(), // critical, high, medium, low
+  status: text("status").default("not_started").notNull(), // PQC_MIGRATION_STATUSES
+  effortEstimateDays: integer("effort_estimate_days"),
+  assignedTo: text("assigned_to"),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  blockers: text("blockers"),
+  nistStandard: text("nist_standard"), // NIST_PQC_STANDARDS
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const quantumScanHistory = pgTable("quantum_scan_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  scanType: text("scan_type").notNull(), // "full", "tls", "ssh", "code", "config"
+  status: text("status").default("running").notNull(), // "running", "completed", "failed"
+  assetsDiscovered: integer("assets_discovered").default(0).notNull(),
+  vulnerableFound: integer("vulnerable_found").default(0).notNull(),
+  scanDurationMs: integer("scan_duration_ms"),
+  scanTargets: jsonb("scan_targets").$type<string[]>().default([]),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+// Relations
+export const cryptoInventoryRelations = relations(cryptoInventory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [cryptoInventory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const quantumRiskScoresRelations = relations(quantumRiskScores, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [quantumRiskScores.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const quantumMigrationTasksRelations = relations(quantumMigrationTasks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [quantumMigrationTasks.orgId],
+    references: [organizations.id],
+  }),
+  cryptoAsset: one(cryptoInventory, {
+    fields: [quantumMigrationTasks.cryptoInventoryId],
+    references: [cryptoInventory.id],
+  }),
+}));
+
+export const quantumScanHistoryRelations = relations(quantumScanHistory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [quantumScanHistory.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type CryptoInventoryItem = typeof cryptoInventory.$inferSelect;
+export type InsertCryptoInventoryItem = typeof cryptoInventory.$inferInsert;
+export type QuantumRiskScore = typeof quantumRiskScores.$inferSelect;
+export type InsertQuantumRiskScore = typeof quantumRiskScores.$inferInsert;
+export type QuantumMigrationTask = typeof quantumMigrationTasks.$inferSelect;
+export type InsertQuantumMigrationTask = typeof quantumMigrationTasks.$inferInsert;
+export type QuantumScanHistoryEntry = typeof quantumScanHistory.$inferSelect;
+export type InsertQuantumScanHistoryEntry = typeof quantumScanHistory.$inferInsert;
+
+// ============================================================================
+// Privacy Engineering (DSPM++)
+// ============================================================================
+
+export const DATA_CLASSIFICATION_LEVELS = ["public", "internal", "confidential", "restricted", "top_secret"] as const;
+
+export const PII_CATEGORIES = [
+  "name",
+  "email",
+  "phone",
+  "address",
+  "ssn",
+  "national_id",
+  "passport",
+  "date_of_birth",
+  "financial_account",
+  "credit_card",
+  "ip_address",
+  "biometric",
+  "health_record",
+  "genetic_data",
+  "location",
+  "device_id",
+  "cookie_id",
+  "username",
+  "password_hash",
+  "other_pii",
+] as const;
+
+export const DATA_ASSET_TYPES = [
+  "database_table",
+  "database_column",
+  "s3_bucket",
+  "file_share",
+  "api_endpoint",
+  "log_stream",
+  "email_system",
+  "saas_app",
+  "data_warehouse",
+  "cache",
+  "message_queue",
+  "backup",
+] as const;
+
+export const DATA_FLOW_STATUSES = ["active", "inactive", "deprecated", "under_review"] as const;
+
+export const PIA_STATUSES = ["draft", "in_review", "approved", "rejected", "needs_revision", "expired"] as const;
+
+export const PIA_RISK_LEVELS = ["negligible", "low", "medium", "high", "very_high"] as const;
+
+export const CONSENT_PURPOSES = [
+  "marketing",
+  "analytics",
+  "personalization",
+  "third_party_sharing",
+  "profiling",
+  "automated_decision",
+  "research",
+  "service_delivery",
+  "legal_obligation",
+] as const;
+
+export const PRIVACY_SCAN_STATUSES = ["queued", "running", "completed", "failed"] as const;
+
+export const DSAR_TYPES = [
+  "access",
+  "deletion",
+  "rectification",
+  "portability",
+  "restriction",
+  "objection",
+  "withdraw_consent",
+] as const;
+
+export const DSAR_FULFILLMENT_STATUSES = [
+  "pending",
+  "in_progress",
+  "awaiting_verification",
+  "fulfilled",
+  "partially_fulfilled",
+  "denied",
+  "expired",
+] as const;
+
+export const JURISDICTIONS = [
+  "EU",
+  "US",
+  "US-CA",
+  "US-VA",
+  "US-CO",
+  "US-CT",
+  "UK",
+  "BR",
+  "CA",
+  "IN",
+  "SG",
+  "AU",
+  "ZA",
+  "JP",
+  "KR",
+  "CN",
+  "OTHER",
+] as const;
+
+// Data Assets — discovered or manually registered data stores containing personal data
+export const dataAssets = pgTable(
+  "data_assets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    assetType: text("asset_type").notNull(), // DATA_ASSET_TYPES
+    connectionString: text("connection_string"), // encrypted reference
+    hostname: text("hostname"),
+    database: text("database"),
+    schema: text("schema"),
+    tableName: text("table_name"),
+    bucketName: text("bucket_name"),
+    filePath: text("file_path"),
+    classification: text("classification").default("internal").notNull(), // DATA_CLASSIFICATION_LEVELS
+    piiCategories: jsonb("pii_categories").$type<string[]>().default([]),
+    recordCount: integer("record_count"),
+    dataSubjectCount: integer("data_subject_count"),
+    jurisdiction: text("jurisdiction").default("OTHER").notNull(), // JURISDICTIONS
+    retentionDays: integer("retention_days"),
+    isEncrypted: boolean("is_encrypted").default(false).notNull(),
+    encryptionMethod: text("encryption_method"),
+    dataOwner: text("data_owner"),
+    dataProcessor: text("data_processor"),
+    legalBasis: text("legal_basis"),
+    lastScannedAt: timestamp("last_scanned_at"),
+    scanFindings: jsonb("scan_findings").$type<Record<string, unknown>>().default({}),
+    minimizationRecommendations: jsonb("minimization_recommendations").$type<string[]>().default([]),
+    riskScore: integer("risk_score").default(0).notNull(), // 0-100
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_data_assets_org").on(table.orgId),
+    index("idx_data_assets_type").on(table.assetType),
+    index("idx_data_assets_classification").on(table.classification),
+    index("idx_data_assets_jurisdiction").on(table.jurisdiction),
+  ],
+);
+
+// Data Flows — mapping where PII originates, travels, and who processes it
+export const dataFlows = pgTable(
+  "data_flows",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    sourceAssetId: uuid("source_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    sourceName: text("source_name").notNull(),
+    sourceJurisdiction: text("source_jurisdiction").default("OTHER").notNull(),
+    destinationAssetId: uuid("destination_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    destinationName: text("destination_name").notNull(),
+    destinationJurisdiction: text("destination_jurisdiction").default("OTHER").notNull(),
+    dataCategories: jsonb("data_categories").$type<string[]>().default([]),
+    piiCategories: jsonb("pii_categories").$type<string[]>().default([]),
+    purpose: text("purpose"),
+    legalBasis: text("legal_basis"),
+    processorName: text("processor_name"),
+    isCrossBorder: boolean("is_cross_border").default(false).notNull(),
+    crossBorderMechanism: text("cross_border_mechanism"), // SCCs, BCRs, Adequacy decision
+    transferRiskLevel: text("transfer_risk_level"), // PIA_RISK_LEVELS
+    status: text("status").default("active").notNull(), // DATA_FLOW_STATUSES
+    volumePerDay: integer("volume_per_day"), // approximate records/day
+    frequency: text("frequency"), // real_time, hourly, daily, weekly, monthly
+    encryptionInTransit: boolean("encryption_in_transit").default(false).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_data_flows_org").on(table.orgId),
+    index("idx_data_flows_source").on(table.sourceAssetId),
+    index("idx_data_flows_dest").on(table.destinationAssetId),
+    index("idx_data_flows_cross_border").on(table.isCrossBorder),
+  ],
+);
+
+// Privacy Impact Assessments — guided assessments for new products/features
+export const privacyImpactAssessments = pgTable(
+  "privacy_impact_assessments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    projectName: text("project_name"),
+    assessorName: text("assessor_name"),
+    assessorEmail: text("assessor_email"),
+    status: text("status").default("draft").notNull(), // PIA_STATUSES
+    overallRisk: text("overall_risk").default("medium").notNull(), // PIA_RISK_LEVELS
+    dataCollected: jsonb("data_collected").$type<string[]>().default([]), // PII_CATEGORIES
+    dataSubjectTypes: jsonb("data_subject_types").$type<string[]>().default([]),
+    processingPurposes: jsonb("processing_purposes").$type<string[]>().default([]),
+    legalBasis: text("legal_basis"),
+    retentionPeriod: text("retention_period"),
+    thirdPartyRecipients: jsonb("third_party_recipients").$type<string[]>().default([]),
+    crossBorderTransfers: boolean("cross_border_transfers").default(false).notNull(),
+    crossBorderDestinations: jsonb("cross_border_destinations").$type<string[]>().default([]),
+    securityMeasures: jsonb("security_measures").$type<string[]>().default([]),
+    privacyRisks: jsonb("privacy_risks")
+      .$type<Array<{ risk: string; likelihood: string; impact: string; mitigation: string }>>()
+      .default([]),
+    mitigationPlan: text("mitigation_plan"),
+    dpoApproval: boolean("dpo_approval").default(false).notNull(),
+    dpoComments: text("dpo_comments"),
+    reviewDate: timestamp("review_date"),
+    expiresAt: timestamp("expires_at"),
+    completedAt: timestamp("completed_at"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_pia_org").on(table.orgId),
+    index("idx_pia_status").on(table.status),
+    index("idx_pia_risk").on(table.overallRisk),
+  ],
+);
+
+// Privacy Scans — automated PII/PHI/PCI discovery scan history
+export const privacyScans = pgTable(
+  "privacy_scans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    scanType: text("scan_type").notNull(), // "full", "pii", "phi", "pci", "classification"
+    targetAssetId: uuid("target_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    targetDescription: text("target_description"),
+    status: text("status").default("queued").notNull(), // PRIVACY_SCAN_STATUSES
+    findingsCount: integer("findings_count").default(0).notNull(),
+    piiFieldsFound: integer("pii_fields_found").default(0).notNull(),
+    phiFieldsFound: integer("phi_fields_found").default(0).notNull(),
+    pciFieldsFound: integer("pci_fields_found").default(0).notNull(),
+    classificationResults: jsonb("classification_results")
+      .$type<
+        Array<{
+          field: string;
+          detectedType: string;
+          confidence: number;
+          sampleCount: number;
+          classification: string;
+        }>
+      >()
+      .default([]),
+    minimizationFindings: jsonb("minimization_findings")
+      .$type<Array<{ field: string; reason: string; recommendation: string }>>()
+      .default([]),
+    scanDurationMs: integer("scan_duration_ms"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_privacy_scans_org").on(table.orgId), index("idx_privacy_scans_status").on(table.status)],
+);
+
+// Consent Records — consent management integration records
+export const consentRecords = pgTable(
+  "consent_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    dataSubjectId: text("data_subject_id").notNull(), // external identifier
+    dataSubjectEmail: text("data_subject_email"),
+    purpose: text("purpose").notNull(), // CONSENT_PURPOSES
+    granted: boolean("granted").default(false).notNull(),
+    source: text("source").default("manual").notNull(), // "onetrust", "cookiebot", "manual", "api"
+    externalConsentId: text("external_consent_id"),
+    legalBasis: text("legal_basis"),
+    jurisdiction: text("jurisdiction"),
+    consentVersion: text("consent_version"),
+    grantedAt: timestamp("granted_at"),
+    withdrawnAt: timestamp("withdrawn_at"),
+    expiresAt: timestamp("expires_at"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_consent_org").on(table.orgId),
+    index("idx_consent_subject").on(table.dataSubjectId),
+    index("idx_consent_purpose").on(table.purpose),
+  ],
+);
+
+// Cross-Border Transfer Alerts — alert when PII moves across jurisdictional boundaries
+export const crossBorderTransferAlerts = pgTable(
+  "cross_border_transfer_alerts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    dataFlowId: uuid("data_flow_id").references(() => dataFlows.id, { onDelete: "set null" }),
+    sourceJurisdiction: text("source_jurisdiction").notNull(),
+    destinationJurisdiction: text("destination_jurisdiction").notNull(),
+    dataCategories: jsonb("data_categories").$type<string[]>().default([]),
+    riskLevel: text("risk_level").default("medium").notNull(), // PIA_RISK_LEVELS
+    alertReason: text("alert_reason").notNull(),
+    legalMechanism: text("legal_mechanism"), // what legal basis covers this transfer
+    requiresAction: boolean("requires_action").default(true).notNull(),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"),
+    resolutionNotes: text("resolution_notes"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_cbt_alerts_org").on(table.orgId),
+    index("idx_cbt_alerts_flow").on(table.dataFlowId),
+    index("idx_cbt_alerts_risk").on(table.riskLevel),
+  ],
+);
+
+// DSAR Fulfillment Tasks — automated DSAR fulfillment across connected systems
+export const dsarFulfillmentTasks = pgTable(
+  "dsar_fulfillment_tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    dsarRequestId: varchar("dsar_request_id").references(() => dsarRequests.id, { onDelete: "cascade" }),
+    targetSystem: text("target_system").notNull(), // name of the system to process
+    targetAssetId: uuid("target_asset_id").references(() => dataAssets.id, { onDelete: "set null" }),
+    taskType: text("task_type").notNull(), // "locate", "extract", "delete", "anonymize", "export"
+    status: text("status").default("pending").notNull(), // "pending", "in_progress", "completed", "failed", "skipped"
+    recordsAffected: integer("records_affected").default(0).notNull(),
+    errorMessage: text("error_message"),
+    executionLog: jsonb("execution_log").$type<string[]>().default([]),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_dsar_tasks_org").on(table.orgId),
+    index("idx_dsar_tasks_request").on(table.dsarRequestId),
+    index("idx_dsar_tasks_status").on(table.status),
+  ],
+);
+
+// Relations
+export const dataAssetsRelations = relations(dataAssets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dataAssets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const dataFlowsRelations = relations(dataFlows, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dataFlows.orgId],
+    references: [organizations.id],
+  }),
+  sourceAsset: one(dataAssets, {
+    fields: [dataFlows.sourceAssetId],
+    references: [dataAssets.id],
+    relationName: "sourceFlows",
+  }),
+  destinationAsset: one(dataAssets, {
+    fields: [dataFlows.destinationAssetId],
+    references: [dataAssets.id],
+    relationName: "destFlows",
+  }),
+}));
+
+export const privacyImpactAssessmentsRelations = relations(privacyImpactAssessments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [privacyImpactAssessments.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const privacyScansRelations = relations(privacyScans, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [privacyScans.orgId],
+    references: [organizations.id],
+  }),
+  targetAsset: one(dataAssets, {
+    fields: [privacyScans.targetAssetId],
+    references: [dataAssets.id],
+  }),
+}));
+
+export const consentRecordsRelations = relations(consentRecords, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [consentRecords.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const crossBorderTransferAlertsRelations = relations(crossBorderTransferAlerts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [crossBorderTransferAlerts.orgId],
+    references: [organizations.id],
+  }),
+  dataFlow: one(dataFlows, {
+    fields: [crossBorderTransferAlerts.dataFlowId],
+    references: [dataFlows.id],
+  }),
+}));
+
+export const dsarFulfillmentTasksRelations = relations(dsarFulfillmentTasks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dsarFulfillmentTasks.orgId],
+    references: [organizations.id],
+  }),
+  targetAsset: one(dataAssets, {
+    fields: [dsarFulfillmentTasks.targetAssetId],
+    references: [dataAssets.id],
+  }),
+}));
+
+// Types
+export type DataAsset = typeof dataAssets.$inferSelect;
+export type InsertDataAsset = typeof dataAssets.$inferInsert;
+export type DataFlow = typeof dataFlows.$inferSelect;
+export type InsertDataFlow = typeof dataFlows.$inferInsert;
+export type PrivacyImpactAssessment = typeof privacyImpactAssessments.$inferSelect;
+export type InsertPrivacyImpactAssessment = typeof privacyImpactAssessments.$inferInsert;
+export type PrivacyScan = typeof privacyScans.$inferSelect;
+export type InsertPrivacyScan = typeof privacyScans.$inferInsert;
+export type ConsentRecord = typeof consentRecords.$inferSelect;
+export type InsertConsentRecord = typeof consentRecords.$inferInsert;
+export type CrossBorderTransferAlert = typeof crossBorderTransferAlerts.$inferSelect;
+export type InsertCrossBorderTransferAlert = typeof crossBorderTransferAlerts.$inferInsert;
+export type DsarFulfillmentTask = typeof dsarFulfillmentTasks.$inferSelect;
+export type InsertDsarFulfillmentTask = typeof dsarFulfillmentTasks.$inferInsert;

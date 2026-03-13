@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { SageMakerRuntimeClient, InvokeEndpointCommand } from "@aws-sdk/client-sagemaker-runtime";
 import { config as appConfig } from "../config";
 import { logger } from "../logger";
@@ -44,8 +44,10 @@ const COST_TABLE: Record<string, { input: number; output: number }> = {
   "mistral.mistral-large-2402-v1:0": { input: 0.004, output: 0.012 },
   "anthropic.claude-3-sonnet": { input: 0.003, output: 0.015 },
   "anthropic.claude-3-haiku": { input: 0.00025, output: 0.00125 },
+  "anthropic.claude-sonnet-4-20250514-v1:0": { input: 0.003, output: 0.015 },
+  "anthropic.claude-opus-4-20250514-v1:0": { input: 0.015, output: 0.075 },
   "default-triage": { input: 0.00015, output: 0.0002 },
-  default: { input: 0.002, output: 0.006 },
+  default: { input: 0.003, output: 0.015 },
 };
 
 const TRIAGE_RATES = { input: 0.00015, output: 0.0002 };
@@ -515,6 +517,126 @@ export function getGatewayDashboardData(): GatewayDashboardData {
       costTable: COST_TABLE,
     },
   };
+}
+
+// ─── Streaming Support ──────────────────────────────────────────────────────
+
+export interface StreamCallbacks {
+  onChunk: (text: string) => void;
+  onComplete: (
+    fullText: string,
+    metrics: { inputTokens: number; outputTokens: number; latencyMs: number },
+  ) => void | Promise<void>;
+  onError: (error: Error) => void;
+}
+
+/**
+ * Stream a model invocation via Bedrock ConverseStream. Calls onChunk for each
+ * text delta, then onComplete with the full accumulated text and token metrics.
+ * Falls back to non-streaming invokeModel if backend is sagemaker.
+ */
+export async function invokeModelStream(opts: ModelInvokeOptions, callbacks: StreamCallbacks): Promise<void> {
+  // SageMaker doesn't support streaming via Converse API — fall back to non-streaming
+  if (opts.backend === "sagemaker") {
+    try {
+      const result = await invokeModel(opts);
+      callbacks.onChunk(result.text);
+      await callbacks.onComplete(result.text, {
+        inputTokens: result.inputTokensEstimate,
+        outputTokens: result.outputTokensEstimate,
+        latencyMs: result.latencyMs,
+      });
+    } catch (err) {
+      callbacks.onError(err instanceof Error ? err : new Error(String(err)));
+    }
+    return;
+  }
+
+  const circuitKey = getCircuitKey(opts.backend, opts.modelId);
+  if (isCircuitOpen(circuitKey)) {
+    callbacks.onError(
+      new Error(`Circuit breaker open for ${opts.backend}:${opts.modelId}. Service is temporarily unavailable.`),
+    );
+    return;
+  }
+
+  if (opts.orgId) {
+    const budgetOk = await checkBudget(opts.orgId);
+    if (!budgetOk.allowed) {
+      callbacks.onError(new Error(`AI budget exceeded for org ${opts.orgId}: ${budgetOk.reason}`));
+      return;
+    }
+  }
+
+  gatewayMetrics.totalRequests++;
+  const modelStats = getOrCreateModelStats(opts.modelId);
+  modelStats.requests++;
+
+  const start = Date.now();
+
+  try {
+    const command = new ConverseStreamCommand({
+      modelId: opts.modelId,
+      messages: [{ role: "user" as const, content: [{ text: opts.userMessage }] }],
+      system: [{ text: opts.systemPrompt }],
+      inferenceConfig: {
+        maxTokens: opts.maxTokens,
+        temperature: opts.temperature,
+        topP: opts.topP,
+      },
+    });
+
+    const response = await bedrockClient.send(command);
+    const stream = response.stream;
+    if (!stream) {
+      throw new Error("No stream returned from Bedrock ConverseStream");
+    }
+
+    let fullText = "";
+    let apiInputTokens = 0;
+    let apiOutputTokens = 0;
+
+    for await (const event of stream) {
+      if (event.contentBlockDelta) {
+        const delta = event.contentBlockDelta.delta;
+        if (delta && "text" in delta && delta.text) {
+          fullText += delta.text;
+          callbacks.onChunk(delta.text);
+        }
+      } else if (event.metadata) {
+        apiInputTokens = event.metadata.usage?.inputTokens ?? 0;
+        apiOutputTokens = event.metadata.usage?.outputTokens ?? 0;
+      }
+    }
+
+    const latencyMs = Date.now() - start;
+    const inputTokens = apiInputTokens || countTokens(opts.systemPrompt + opts.userMessage);
+    const outputTokens = apiOutputTokens || countTokens(fullText);
+
+    recordCircuitSuccess(circuitKey);
+    modelStats.totalLatencyMs += latencyMs;
+    recordLatency(opts.modelId, opts.backend, latencyMs, false);
+
+    if (opts.orgId) {
+      const costEstimateUsd = estimateCost(opts.modelId, inputTokens, outputTokens, opts.tier);
+      await trackUsage(opts.orgId, {
+        inputTokens,
+        outputTokens,
+        costUsd: costEstimateUsd,
+        modelId: opts.modelId,
+        promptId: opts.promptId,
+        promptVersion: opts.promptVersion,
+        latencyMs,
+      });
+    }
+
+    await callbacks.onComplete(fullText, { inputTokens, outputTokens, latencyMs });
+  } catch (error: unknown) {
+    const classified = classifyModelError(error);
+    recordGatewayError(opts.modelId, opts.backend, classified.message, classified.retryable);
+    if (classified.retryable) recordCircuitFailure(circuitKey);
+    callbacks.onError(new Error(classified.message));
+  }
 }
 
 export function resetGatewayMetrics(): void {

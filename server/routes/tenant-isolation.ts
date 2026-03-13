@@ -2,6 +2,10 @@ import type { Express } from "express";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { replyBadRequest } from "../api-response";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
+import { organizations, DATA_REGIONS, DATA_REGION_ENDPOINTS, type DataRegion } from "../../shared/schema";
+import { invalidateRegionCache, isValidDataRegion } from "../middleware/data-residency";
 import {
   getTenantIsolationConfig,
   setTenantIsolationConfig,
@@ -417,4 +421,100 @@ export function registerTenantIsolationRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to check quota" });
     }
   });
+
+  /* ── Region Code Management ────────────────────────────────────── */
+
+  app.get(
+    "/api/tenant-isolation/region",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId as string;
+        const org = await storage.getOrganization(orgId);
+        if (!org) {
+          return res.status(404).json({ message: "Organization not found" });
+        }
+
+        const region = (org.dataRegion as DataRegion) || "US";
+        const endpoint = DATA_REGION_ENDPOINTS[region] || DATA_REGION_ENDPOINTS.US;
+
+        res.json({
+          orgId,
+          regionCode: region,
+          dataResidency: org.dataResidency || "us-east-1",
+          regionLabel: endpoint.label,
+          awsRegion: endpoint.awsRegion,
+          gdprApplicable: endpoint.gdprApplicable,
+          availableRegions: DATA_REGIONS.map((r) => ({
+            code: r,
+            ...DATA_REGION_ENDPOINTS[r],
+          })),
+        });
+      } catch (error) {
+        log.error("Failed to get org region", { error: String(error) });
+        res.status(500).json({ message: "Failed to get organization region" });
+      }
+    },
+  );
+
+  app.put(
+    "/api/tenant-isolation/region",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId as string;
+        const user = (req as any).user;
+        const { regionCode } = req.body;
+
+        if (!regionCode || !isValidDataRegion(regionCode)) {
+          return replyBadRequest(res, `Invalid regionCode. Must be one of: ${DATA_REGIONS.join(", ")}`);
+        }
+
+        const endpoint = DATA_REGION_ENDPOINTS[regionCode as DataRegion];
+
+        await db
+          .update(organizations)
+          .set({
+            dataRegion: regionCode,
+            dataResidency: endpoint.primary,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizations.id, orgId));
+
+        invalidateRegionCache(orgId);
+
+        await storage
+          .createAuditLog({
+            orgId,
+            userId: user?.id,
+            userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin",
+            action: "org_region_updated",
+            resourceType: "organization",
+            resourceId: orgId,
+            details: { regionCode, awsRegion: endpoint.primary },
+          })
+          .catch((err) => log.error("Failed to create audit log", { error: String(err) }));
+
+        log.info("Organization region updated", { orgId, regionCode, awsRegion: endpoint.primary });
+
+        res.json({
+          orgId,
+          regionCode,
+          dataResidency: endpoint.primary,
+          regionLabel: endpoint.label,
+          awsRegion: endpoint.awsRegion,
+          gdprApplicable: endpoint.gdprApplicable,
+        });
+      } catch (error) {
+        log.error("Failed to update org region", { error: String(error) });
+        res.status(500).json({ message: "Failed to update organization region" });
+      }
+    },
+  );
 }

@@ -45,6 +45,8 @@ import {
   ShieldCheck,
   Lock,
   Fingerprint,
+  GitBranch,
+  Workflow,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +57,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -128,6 +130,96 @@ export default function IncidentDetailPage() {
   const [correctionReason, setCorrectionReason] = useState("");
   const [correctionComment, setCorrectionComment] = useState("");
   const { toast } = useToast();
+
+  // Streaming state
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
+  const streamEndRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Clean up EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  const startNarrativeStream = useCallback(() => {
+    if (!params.id || isStreaming) return;
+
+    setIsStreaming(true);
+    setStreamingText("");
+    setStreamStatus("Connecting...");
+    setNarrativeResult(null);
+
+    const es = new EventSource(`/api/ai/narrative/${params.id}/stream`, { withCredentials: true });
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      if (event.data === "[DONE]") {
+        es.close();
+        eventSourceRef.current = null;
+        setIsStreaming(false);
+        setStreamStatus(null);
+        // Refresh the incident data to get the stored narrative
+        queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id] });
+        toast({
+          title: "AI Narrative Generated",
+          description: "Attack narrative streamed and saved successfully",
+        });
+        return;
+      }
+
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+          case "connected":
+          case "status":
+            setStreamStatus(data.message);
+            break;
+          case "chunk":
+            setStreamingText((prev) => prev + data.text);
+            setStreamStatus(null);
+            // Auto-scroll to bottom of streaming content
+            if (streamEndRef.current) {
+              streamEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+            break;
+          case "done":
+            // handled by [DONE] sentinel
+            break;
+          case "error":
+            es.close();
+            eventSourceRef.current = null;
+            setIsStreaming(false);
+            setStreamStatus(null);
+            toast({
+              title: "AI Narrative Failed",
+              description: data.message || "Streaming failed",
+              variant: "destructive",
+            });
+            break;
+        }
+      } catch {
+        // Non-JSON message, ignore
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      eventSourceRef.current = null;
+      setIsStreaming(false);
+      setStreamStatus(null);
+      toast({
+        title: "AI Stream Disconnected",
+        description: "Connection lost. Please try again.",
+        variant: "destructive",
+      });
+    };
+  }, [params.id, isStreaming, toast]);
 
   function renderNarrativeWithCitations(text: string, alertList?: Alert[]) {
     const parts = text.split(/(\[Alert [^\]]+\])/g);
@@ -277,6 +369,11 @@ export default function IncidentDetailPage() {
       toast({ title: "AI Narrative Failed", description: error.message, variant: "destructive" });
     },
   });
+
+  // Use streaming by default for narrative generation
+  const handleGenerateNarrative = useCallback(() => {
+    startNarrativeStream();
+  }, [startNarrativeStream]);
 
   const currentAssignee = assigneeValue ?? incident?.assignedTo ?? "";
 
@@ -820,16 +917,16 @@ export default function IncidentDetailPage() {
             )}
           </div>
           <Button
-            onClick={() => generateNarrative.mutate()}
-            disabled={generateNarrative.isPending}
+            onClick={handleGenerateNarrative}
+            disabled={isStreaming || generateNarrative.isPending}
             data-testid="button-generate-narrative"
           >
-            {generateNarrative.isPending ? (
+            {isStreaming || generateNarrative.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Brain className="h-4 w-4 mr-2" />
             )}
-            {generateNarrative.isPending ? "Generating..." : "AI Narrative"}
+            {isStreaming ? "Streaming..." : generateNarrative.isPending ? "Generating..." : "AI Narrative"}
           </Button>
         </div>
 
@@ -932,6 +1029,10 @@ export default function IncidentDetailPage() {
             </TabsTrigger>
             <TabsTrigger value="pir" data-testid="tab-pir">
               PIR
+            </TabsTrigger>
+            <TabsTrigger value="attack-graph" data-testid="tab-attack-graph">
+              <GitBranch className="h-3.5 w-3.5 mr-1" />
+              Attack Graph
             </TabsTrigger>
           </TabsList>
           <Button
@@ -1086,6 +1187,45 @@ export default function IncidentDetailPage() {
                       </Badge>
                     </div>
                   )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Streaming AI Output */}
+          {(isStreaming || streamingText) && !narrativeResult && (
+            <Card className="border-primary/30 animate-in fade-in-0">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  AI Analysis
+                  {isStreaming && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-normal text-primary/70">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                      </span>
+                      Streaming
+                    </span>
+                  )}
+                </CardTitle>
+                {streamStatus && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {streamStatus}
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="text-sm leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[500px] overflow-y-auto"
+                  data-testid="streaming-ai-output"
+                >
+                  {streamingText}
+                  {isStreaming && (
+                    <span className="inline-block w-2 h-4 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />
+                  )}
+                  <div ref={streamEndRef} />
+                </div>
               </CardContent>
             </Card>
           )}
@@ -3011,6 +3151,10 @@ export default function IncidentDetailPage() {
             </div>
           )}
         </TabsContent>
+
+        <TabsContent value="attack-graph" className="space-y-4 mt-4">
+          <AttackGraphTab incidentId={params.id} />
+        </TabsContent>
       </Tabs>
 
       <Dialog open={showAddChainEntryDialog} onOpenChange={setShowAddChainEntryDialog}>
@@ -3343,6 +3487,419 @@ export default function IncidentDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ── Attack Graph Tab Component ──
+
+const NODE_TYPE_ICONS: Record<string, { icon: typeof Shield; color: string }> = {
+  initial_access: { icon: Target, color: "text-red-500 bg-red-500/10 border-red-500/20" },
+  host: { icon: Server, color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
+  user: { icon: User, color: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
+  process: { icon: Terminal, color: "text-green-400 bg-green-500/10 border-green-500/20" },
+  file: { icon: FileText, color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" },
+  network: { icon: Network, color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+  credential: { icon: Lock, color: "text-orange-400 bg-orange-500/10 border-orange-500/20" },
+  persistence: { icon: Shield, color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20" },
+  lateral_movement: { icon: Workflow, color: "text-purple-500 bg-purple-500/10 border-purple-500/20" },
+  exfiltration: { icon: Globe, color: "text-red-400 bg-red-500/10 border-red-500/20" },
+  c2: { icon: Activity, color: "text-red-500 bg-red-500/10 border-red-500/20" },
+  objective: { icon: Crosshair, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+};
+
+interface AttackGraphNodeData {
+  id: string;
+  graphId: string;
+  nodeId: string;
+  nodeType: string;
+  label: string;
+  description: string | null;
+  mitreTechnique: string | null;
+  mitreTactic: string | null;
+  confidence: number | null;
+  severity: string | null;
+  evidence: string[] | null;
+  depth: number | null;
+}
+
+interface AttackGraphEdgeData {
+  id: string;
+  graphId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  relationship: string;
+  technique: string | null;
+  confidence: number | null;
+  timestamp: string | null;
+  evidence: string[] | null;
+}
+
+interface AttackGraphData {
+  id: string;
+  orgId: string | null;
+  incidentId: string;
+  initialAccessDescription: string | null;
+  currentPosition: string | null;
+  objectivesAchieved: string[] | null;
+  objectivesInProgress: string[] | null;
+  totalNodes: number | null;
+  totalEdges: number | null;
+  maxDepth: number | null;
+  confidence: number | null;
+  createdAt: string | null;
+  nodes: AttackGraphNodeData[];
+  edges: AttackGraphEdgeData[];
+}
+
+function AttackGraphTab({ incidentId }: { incidentId: string }) {
+  const [selectedGraph, setSelectedGraph] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<AttackGraphNodeData | null>(null);
+
+  const { data: graphs, isLoading } = useQuery<AttackGraphData[]>({
+    queryKey: ["/api/ai/investigation-graphs", incidentId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/ai/investigation-graphs/${incidentId}`);
+      return res.json();
+    },
+  });
+
+  const activeGraph = useMemo(() => {
+    if (!graphs || graphs.length === 0) return null;
+    if (selectedGraph) return graphs.find((g) => g.id === selectedGraph) || graphs[0];
+    return graphs[0];
+  }, [graphs, selectedGraph]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  if (!graphs || graphs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <GitBranch className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+          <p className="text-sm text-muted-foreground">No attack graphs available</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Run a deep investigation to generate an attack graph for this incident
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Build adjacency for layout
+  const nodeMap = new Map<string, AttackGraphNodeData>();
+  if (activeGraph) {
+    for (const node of activeGraph.nodes) {
+      nodeMap.set(node.nodeId, node);
+    }
+  }
+
+  // Group nodes by depth for layered display
+  const nodesByDepth = new Map<number, AttackGraphNodeData[]>();
+  if (activeGraph) {
+    for (const node of activeGraph.nodes) {
+      const depth = node.depth ?? 0;
+      if (!nodesByDepth.has(depth)) nodesByDepth.set(depth, []);
+      nodesByDepth.get(depth)!.push(node);
+    }
+  }
+  const sortedDepths = Array.from(nodesByDepth.keys()).sort((a, b) => a - b);
+
+  return (
+    <div className="space-y-4">
+      {/* Graph selector */}
+      {graphs.length > 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Graph:</span>
+          {graphs.map((g, i) => (
+            <Button
+              key={g.id}
+              variant={activeGraph?.id === g.id ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedGraph(g.id)}
+            >
+              Investigation #{i + 1}
+              {g.confidence != null && (
+                <Badge variant="secondary" className="ml-1.5 text-[10px]">
+                  {Math.round(g.confidence * 100)}%
+                </Badge>
+              )}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {activeGraph && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card>
+              <CardContent className="p-3">
+                <div className="text-xs text-muted-foreground">Nodes</div>
+                <div className="text-xl font-bold">{activeGraph.totalNodes ?? activeGraph.nodes.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="text-xs text-muted-foreground">Edges</div>
+                <div className="text-xl font-bold">{activeGraph.totalEdges ?? activeGraph.edges.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="text-xs text-muted-foreground">Max Depth</div>
+                <div className="text-xl font-bold">{activeGraph.maxDepth ?? 0}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <div className="text-xs text-muted-foreground">Confidence</div>
+                <div className="text-xl font-bold">
+                  {activeGraph.confidence != null ? `${Math.round(activeGraph.confidence * 100)}%` : "—"}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Initial access & current position */}
+          {(activeGraph.initialAccessDescription || activeGraph.currentPosition) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {activeGraph.initialAccessDescription && (
+                <Card>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                      <Target className="h-3.5 w-3.5 text-red-400" />
+                      Initial Access
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <p className="text-sm text-muted-foreground">{activeGraph.initialAccessDescription}</p>
+                  </CardContent>
+                </Card>
+              )}
+              {activeGraph.currentPosition && (
+                <Card>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                      <Crosshair className="h-3.5 w-3.5 text-amber-400" />
+                      Current Position
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <p className="text-sm text-muted-foreground">{activeGraph.currentPosition}</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Objectives */}
+          {((activeGraph.objectivesAchieved && activeGraph.objectivesAchieved.length > 0) ||
+            (activeGraph.objectivesInProgress && activeGraph.objectivesInProgress.length > 0)) && (
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-xs font-medium">Attacker Objectives</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 flex flex-wrap gap-2">
+                {activeGraph.objectivesAchieved?.map((obj, i) => (
+                  <Badge key={`achieved-${i}`} variant="destructive" className="text-xs">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    {obj}
+                  </Badge>
+                ))}
+                {activeGraph.objectivesInProgress?.map((obj, i) => (
+                  <Badge key={`progress-${i}`} variant="secondary" className="text-xs">
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    {obj}
+                  </Badge>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Node graph visualization - layered by depth */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <GitBranch className="h-4 w-4 text-muted-foreground" />
+                Attack Path Visualization
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4 overflow-x-auto">
+                {sortedDepths.map((depth) => {
+                  const depthNodes = nodesByDepth.get(depth) || [];
+                  return (
+                    <div key={depth}>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                        Depth {depth}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {depthNodes.map((node) => {
+                          const typeInfo = NODE_TYPE_ICONS[node.nodeType] || {
+                            icon: Network,
+                            color: "text-gray-400 bg-gray-500/10 border-gray-500/20",
+                          };
+                          const Icon = typeInfo.icon;
+                          const isSelected = selectedNode?.id === node.id;
+                          return (
+                            <button
+                              key={node.id}
+                              onClick={() => setSelectedNode(isSelected ? null : node)}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-all ${
+                                isSelected
+                                  ? "ring-2 ring-primary border-primary bg-primary/5"
+                                  : `${typeInfo.color} hover:ring-1 hover:ring-muted-foreground/30`
+                              }`}
+                            >
+                              <Icon className="h-4 w-4 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium truncate max-w-[160px]">{node.label}</div>
+                                <div className="text-[10px] text-muted-foreground capitalize">
+                                  {node.nodeType.replace(/_/g, " ")}
+                                  {node.mitreTechnique && ` · ${node.mitreTechnique}`}
+                                </div>
+                              </div>
+                              {node.confidence != null && node.confidence > 0 && (
+                                <Badge variant="outline" className="text-[9px] shrink-0 ml-1">
+                                  {Math.round(node.confidence * 100)}%
+                                </Badge>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Edges list */}
+              {activeGraph.edges.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
+                    Relationships ({activeGraph.edges.length})
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {activeGraph.edges.map((edge) => (
+                      <div
+                        key={edge.id}
+                        className="flex items-center gap-2 text-xs text-muted-foreground px-2 py-1 rounded hover:bg-muted/50"
+                      >
+                        <span className="font-medium text-foreground truncate max-w-[120px]">
+                          {nodeMap.get(edge.sourceNodeId)?.label || edge.sourceNodeId}
+                        </span>
+                        <Badge variant="outline" className="text-[9px] shrink-0">
+                          {edge.relationship}
+                        </Badge>
+                        <span className="font-medium text-foreground truncate max-w-[120px]">
+                          {nodeMap.get(edge.targetNodeId)?.label || edge.targetNodeId}
+                        </span>
+                        {edge.technique && (
+                          <span className="text-[10px] text-muted-foreground ml-auto">{edge.technique}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Selected node detail */}
+          {selectedNode && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  {(() => {
+                    const Info = NODE_TYPE_ICONS[selectedNode.nodeType]?.icon || Network;
+                    return <Info className="h-4 w-4" />;
+                  })()}
+                  {selectedNode.label}
+                  <Badge variant="outline" className="text-[10px] capitalize ml-auto">
+                    {selectedNode.nodeType.replace(/_/g, " ")}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {selectedNode.description && (
+                  <p className="text-sm text-muted-foreground">{selectedNode.description}</p>
+                )}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  {selectedNode.mitreTechnique && (
+                    <div>
+                      <span className="text-muted-foreground">MITRE Technique</span>
+                      <div className="font-medium">{selectedNode.mitreTechnique}</div>
+                    </div>
+                  )}
+                  {selectedNode.mitreTactic && (
+                    <div>
+                      <span className="text-muted-foreground">MITRE Tactic</span>
+                      <div className="font-medium">{selectedNode.mitreTactic}</div>
+                    </div>
+                  )}
+                  {selectedNode.severity && (
+                    <div>
+                      <span className="text-muted-foreground">Severity</span>
+                      <div className="font-medium capitalize">{selectedNode.severity}</div>
+                    </div>
+                  )}
+                  {selectedNode.confidence != null && (
+                    <div>
+                      <span className="text-muted-foreground">Confidence</span>
+                      <div className="font-medium">{Math.round(selectedNode.confidence * 100)}%</div>
+                    </div>
+                  )}
+                </div>
+                {selectedNode.evidence && selectedNode.evidence.length > 0 && (
+                  <div>
+                    <span className="text-xs text-muted-foreground">Evidence</span>
+                    <ul className="mt-1 space-y-0.5">
+                      {selectedNode.evidence.map((ev, i) => (
+                        <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                          <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-green-400" />
+                          {ev}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Connected edges */}
+                {activeGraph && (
+                  <div>
+                    <span className="text-xs text-muted-foreground">Connections</span>
+                    <div className="mt-1 space-y-1">
+                      {activeGraph.edges
+                        .filter((e) => e.sourceNodeId === selectedNode.nodeId || e.targetNodeId === selectedNode.nodeId)
+                        .map((edge) => {
+                          const isSource = edge.sourceNodeId === selectedNode.nodeId;
+                          const otherNodeId = isSource ? edge.targetNodeId : edge.sourceNodeId;
+                          const otherNode = nodeMap.get(otherNodeId);
+                          return (
+                            <div key={edge.id} className="flex items-center gap-1.5 text-xs">
+                              <span className="text-muted-foreground">{isSource ? "→" : "←"}</span>
+                              <Badge variant="outline" className="text-[9px]">
+                                {edge.relationship}
+                              </Badge>
+                              <span className="font-medium">{otherNode?.label || otherNodeId}</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }
