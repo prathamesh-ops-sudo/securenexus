@@ -120,7 +120,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   const tier = request.forcetier ?? confidence.tier;
 
   // 5. Generate recommended actions
-  const recommendedActions = generateRecommendedActions(alert, confidence, investigation);
+  const recommendedActions = generateRecommendedActions(alert, confidence, investigation, tier);
 
   // 6. Execute actions for Tier 1 (auto-act if confidence > 95%)
   const executedActions: ActionResult[] = [];
@@ -311,6 +311,8 @@ export async function approveDecision(decisionId: string, orgId: string, reviewe
     .limit(1);
 
   if (!existing) throw new Error("Decision not found");
+  if (existing.status !== "pending_review")
+    throw new Error(`Decision cannot be approved: current status is '${existing.status}'`);
 
   await db
     .update(aiAnalystDecisions)
@@ -487,11 +489,12 @@ function generateRecommendedActions(
   alert: Alert,
   confidence: ConfidenceResult,
   investigation: InvestigationResult | null,
+  resolvedTier?: string,
 ): RecommendedAction[] {
   const actions: RecommendedAction[] = [];
   const category = alert.category || "";
   const severity = alert.severity || "medium";
-  const isAutoTier = confidence.tier === "tier1_autonomous";
+  const isAutoTier = (resolvedTier ?? confidence.tier) === "tier1_autonomous";
 
   // Severity-based actions
   if (severity === "critical") {
@@ -539,7 +542,7 @@ function generateRecommendedActions(
       description: `Notify SOC team of ${severity} alert`,
       config: {
         channel: "#security-alerts",
-        message: `[Autonomous SOC] ${alert.title} — ${confidence.tier} decision: ${severity} severity`,
+        message: `[Autonomous SOC] ${alert.title} — ${resolvedTier ?? confidence.tier} decision: ${severity} severity`,
       },
       autoExecute: true,
     });

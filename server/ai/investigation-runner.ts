@@ -217,7 +217,7 @@ async function correlateAlert(alert: Alert, orgId: string): Promise<CorrelationR
     for (const inc of allIncidents) {
       if (
         inc.severity === alert.severity ||
-        (inc.title && alert.title && inc.title.toLowerCase().includes(alert.category || ""))
+        (inc.title && alert.title && alert.category && inc.title.toLowerCase().includes(alert.category))
       ) {
         relatedIncidents.push({
           id: inc.id,

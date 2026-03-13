@@ -10026,3 +10026,287 @@ export type AiAnalystDecision = typeof aiAnalystDecisions.$inferSelect;
 export type InsertAiAnalystDecision = typeof aiAnalystDecisions.$inferInsert;
 export type AutonomyLogEntry = typeof autonomyLog.$inferSelect;
 export type InsertAutonomyLogEntry = typeof autonomyLog.$inferInsert;
+
+// ── Developer Security (Shift-Left Platform) ──────────────────────
+
+export const SAST_SEVERITY = ["critical", "high", "medium", "low", "info"] as const;
+export const SAST_CATEGORIES = [
+  "sql_injection",
+  "xss",
+  "path_traversal",
+  "command_injection",
+  "insecure_deserialization",
+  "hardcoded_secret",
+  "weak_crypto",
+  "ssrf",
+  "open_redirect",
+  "xxe",
+  "idor",
+  "missing_auth",
+  "race_condition",
+  "prototype_pollution",
+  "regex_dos",
+] as const;
+export const SECRET_TYPES = [
+  "aws_access_key",
+  "aws_secret_key",
+  "github_token",
+  "gitlab_token",
+  "api_key",
+  "jwt_secret",
+  "private_key",
+  "database_url",
+  "oauth_secret",
+  "slack_token",
+  "stripe_key",
+  "sendgrid_key",
+  "twilio_key",
+  "generic_password",
+  "generic_secret",
+] as const;
+export const CI_GATE_STATUSES = ["passed", "failed", "warning", "skipped"] as const;
+
+export const sastFindings = pgTable(
+  "sast_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    branch: text("branch").notNull().default("main"),
+    commitSha: text("commit_sha"),
+    pullRequestId: text("pull_request_id"),
+    filePath: text("file_path").notNull(),
+    startLine: integer("start_line").notNull(),
+    endLine: integer("end_line"),
+    codeSnippet: text("code_snippet"),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    remediation: text("remediation"),
+    cweId: text("cwe_id"),
+    owaspCategory: text("owasp_category"),
+    confidence: real("confidence").notNull().default(0.8),
+    status: text("status").notNull().default("open"),
+    assignee: text("assignee"),
+    falsePositive: boolean("false_positive").notNull().default(false),
+    falsePositiveBy: text("false_positive_by"),
+    falsePositiveReason: text("false_positive_reason"),
+    fixedInCommit: text("fixed_in_commit"),
+    fixedAt: timestamp("fixed_at"),
+    firstSeenAt: timestamp("first_seen_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow(),
+    scanId: varchar("scan_id"),
+    ruleId: text("rule_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sast_findings_org").on(table.orgId),
+    index("idx_sast_findings_repo").on(table.orgId, table.repository),
+    index("idx_sast_findings_severity").on(table.orgId, table.severity),
+    index("idx_sast_findings_category").on(table.orgId, table.category),
+    index("idx_sast_findings_status").on(table.orgId, table.status),
+    index("idx_sast_findings_pr").on(table.orgId, table.pullRequestId),
+    index("idx_sast_findings_commit").on(table.orgId, table.commitSha),
+  ],
+);
+
+export const secretsExposed = pgTable(
+  "secrets_exposed",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    branch: text("branch").notNull().default("main"),
+    commitSha: text("commit_sha").notNull(),
+    commitAuthor: text("commit_author"),
+    commitDate: timestamp("commit_date"),
+    filePath: text("file_path").notNull(),
+    line: integer("line").notNull(),
+    secretType: text("secret_type").notNull(),
+    secretHash: text("secret_hash").notNull(),
+    maskedValue: text("masked_value"),
+    severity: text("severity").notNull().default("critical"),
+    status: text("status").notNull().default("active"),
+    rotated: boolean("rotated").notNull().default(false),
+    rotatedAt: timestamp("rotated_at"),
+    rotatedBy: text("rotated_by"),
+    falsePositive: boolean("false_positive").notNull().default(false),
+    falsePositiveBy: text("false_positive_by"),
+    pullRequestId: text("pull_request_id"),
+    prCommentPosted: boolean("pr_comment_posted").notNull().default(false),
+    scanId: varchar("scan_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_secrets_exposed_org").on(table.orgId),
+    index("idx_secrets_exposed_repo").on(table.orgId, table.repository),
+    index("idx_secrets_exposed_type").on(table.orgId, table.secretType),
+    index("idx_secrets_exposed_status").on(table.orgId, table.status),
+    index("idx_secrets_exposed_commit").on(table.orgId, table.commitSha),
+  ],
+);
+
+export const ciGates = pgTable(
+  "ci_gates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    branch: text("branch").notNull(),
+    commitSha: text("commit_sha").notNull(),
+    pullRequestId: text("pull_request_id"),
+    pipelineProvider: text("pipeline_provider").notNull().default("github_actions"),
+    pipelineRunId: text("pipeline_run_id"),
+    status: text("status").notNull().default("passed"),
+    criticalFindings: integer("critical_findings").notNull().default(0),
+    highFindings: integer("high_findings").notNull().default(0),
+    mediumFindings: integer("medium_findings").notNull().default(0),
+    lowFindings: integer("low_findings").notNull().default(0),
+    secretsFound: integer("secrets_found").notNull().default(0),
+    policyViolations: integer("policy_violations").notNull().default(0),
+    gatePolicy: jsonb("gate_policy"),
+    failureReasons: text("failure_reasons").array(),
+    scanDurationMs: integer("scan_duration_ms"),
+    reportUrl: text("report_url"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ci_gates_org").on(table.orgId),
+    index("idx_ci_gates_repo").on(table.orgId, table.repository),
+    index("idx_ci_gates_status").on(table.orgId, table.status),
+    index("idx_ci_gates_commit").on(table.orgId, table.commitSha),
+    index("idx_ci_gates_pr").on(table.orgId, table.pullRequestId),
+  ],
+);
+
+export const codeReviewFindings = pgTable(
+  "code_review_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    pullRequestId: text("pull_request_id").notNull(),
+    commitSha: text("commit_sha").notNull(),
+    filePath: text("file_path").notNull(),
+    line: integer("line").notNull(),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    suggestion: text("suggestion"),
+    commentPosted: boolean("comment_posted").notNull().default(false),
+    commentId: text("comment_id"),
+    accepted: boolean("accepted"),
+    acceptedBy: text("accepted_by"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_code_review_org").on(table.orgId),
+    index("idx_code_review_repo").on(table.orgId, table.repository),
+    index("idx_code_review_pr").on(table.orgId, table.pullRequestId),
+  ],
+);
+
+export const securityDebtItems = pgTable(
+  "security_debt_items",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repository: text("repository").notNull(),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    filePath: text("file_path"),
+    findingCount: integer("finding_count").notNull().default(1),
+    exploitability: text("exploitability").notNull().default("medium"),
+    effortToFix: text("effort_to_fix").notNull().default("medium"),
+    priority: integer("priority").notNull().default(50),
+    status: text("status").notNull().default("open"),
+    assignee: text("assignee"),
+    dueDate: timestamp("due_date"),
+    relatedFindingIds: text("related_finding_ids").array(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_security_debt_org").on(table.orgId),
+    index("idx_security_debt_repo").on(table.orgId, table.repository),
+    index("idx_security_debt_priority").on(table.orgId, table.priority),
+    index("idx_security_debt_status").on(table.orgId, table.status),
+  ],
+);
+
+export const sastFindingsRelations = relations(sastFindings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [sastFindings.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const secretsExposedRelations = relations(secretsExposed, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [secretsExposed.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const ciGatesRelations = relations(ciGates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ciGates.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const codeReviewFindingsRelations = relations(codeReviewFindings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [codeReviewFindings.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const securityDebtItemsRelations = relations(securityDebtItems, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityDebtItems.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type SastFinding = typeof sastFindings.$inferSelect;
+export type InsertSastFinding = typeof sastFindings.$inferInsert;
+export type SecretExposed = typeof secretsExposed.$inferSelect;
+export type InsertSecretExposed = typeof secretsExposed.$inferInsert;
+export type CiGate = typeof ciGates.$inferSelect;
+export type InsertCiGate = typeof ciGates.$inferInsert;
+export type CodeReviewFinding = typeof codeReviewFindings.$inferSelect;
+export type InsertCodeReviewFinding = typeof codeReviewFindings.$inferInsert;
+export type SecurityDebtItem = typeof securityDebtItems.$inferSelect;
+export type InsertSecurityDebtItem = typeof securityDebtItems.$inferInsert;
