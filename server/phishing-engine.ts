@@ -115,13 +115,17 @@ export async function recordPhishingEvent(
 
   const alreadyRecorded = existingResult[timestampField] != null;
 
+  // Skip both result update and counter increment if this event was already recorded
+  // This preserves the original timestamp and prevents counter inflation
+  if (alreadyRecorded) return;
+
   await db
     .update(phishingResults)
     .set(updates)
     .where(and(eq(phishingResults.id, resultId), eq(phishingResults.orgId, orgId)));
 
-  // Only increment campaign counter if this is the first time this event type was recorded
-  if (!alreadyRecorded) {
+  // Increment campaign counter (first occurrence only)
+  {
     const counterField =
       eventType === "opened"
         ? "emailsOpened"
