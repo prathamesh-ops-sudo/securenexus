@@ -67,17 +67,19 @@ export function registerOrgsRoutes(app: Express): void {
         const now = new Date();
         const validInvitation = pendingInvitations.find((inv) => !inv.acceptedAt && new Date(inv.expiresAt) > now);
         if (validInvitation) {
-          const membership = await storage.createOrgMembership({
-            orgId: validInvitation.orgId,
-            userId,
-            role: validInvitation.role,
-            status: "active",
-            joinedAt: new Date(),
-          });
-          await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
-          invalidateDeserializeCache(userId);
           const org = await storage.getOrganization(validInvitation.orgId);
-          return res.json({ membership, organization: org });
+          if (org && !org.deletedAt) {
+            const membership = await storage.createOrgMembership({
+              orgId: validInvitation.orgId,
+              userId,
+              role: validInvitation.role,
+              status: "active",
+              joinedAt: new Date(),
+            });
+            await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
+            invalidateDeserializeCache(userId);
+            return res.json({ membership, organization: org });
+          }
         }
       }
 

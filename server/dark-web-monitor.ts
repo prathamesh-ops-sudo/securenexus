@@ -13,9 +13,21 @@ import {
   assessBreachSeverity,
   assessPasteSeverity,
 } from "./integrations/hibp";
+import { decryptSsoSecret } from "./sso-crypto";
 import { logger } from "./logger";
 
 const log = logger.child("dark-web-monitor");
+
+/** Decrypt an API key from DB. Falls back to plaintext for pre-encryption keys. */
+function decryptApiKey(ciphertext: string | null): string | null {
+  if (!ciphertext) return null;
+  try {
+    return decryptSsoSecret(ciphertext);
+  } catch {
+    // Fallback: return as-is if it's a plaintext key from before encryption was added
+    return ciphertext;
+  }
+}
 
 interface ScanResult {
   newExposures: number;
@@ -65,7 +77,7 @@ export async function runDarkWebScan(
     .from(breachMonitoringTargets)
     .where(and(eq(breachMonitoringTargets.orgId, orgId), eq(breachMonitoringTargets.isActive, true)));
 
-  const hibpApiKey = config.hibpApiKey || null;
+  const hibpApiKey = decryptApiKey(config.hibpApiKey);
 
   for (const target of targets) {
     try {

@@ -831,19 +831,24 @@ export default function DarkWebMonitoringPage() {
                 {stats ? (
                   <div className="space-y-3">
                     {[
-                      { label: "Critical", count: stats.critical, color: "bg-red-500" },
-                      { label: "High", count: stats.high, color: "bg-orange-500" },
-                      { label: "Medium", count: stats.medium, color: "bg-yellow-500" },
-                      { label: "Low", count: stats.low, color: "bg-blue-500" },
+                      { label: "Critical", count: stats.critical, dotColor: "bg-red-500", fillColor: "bg-red-500/60" },
+                      { label: "High", count: stats.high, dotColor: "bg-orange-500", fillColor: "bg-orange-500/60" },
+                      {
+                        label: "Medium",
+                        count: stats.medium,
+                        dotColor: "bg-yellow-500",
+                        fillColor: "bg-yellow-500/60",
+                      },
+                      { label: "Low", count: stats.low, dotColor: "bg-blue-500", fillColor: "bg-blue-500/60" },
                     ].map((item) => {
                       const total = stats.total || 1;
                       const pct = Math.round((item.count / total) * 100);
                       return (
                         <div key={item.label} className="flex items-center gap-2">
-                          <div className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
+                          <div className={`h-2.5 w-2.5 rounded-full ${item.dotColor}`} />
                           <span className="text-xs min-w-[60px]">{item.label}</span>
                           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${item.color}/60`} style={{ width: `${pct}%` }} />
+                            <div className={`h-full rounded-full ${item.fillColor}`} style={{ width: `${pct}%` }} />
                           </div>
                           <span className="text-xs text-muted-foreground min-w-[30px] text-right">{item.count}</span>
                         </div>
@@ -961,7 +966,7 @@ export default function DarkWebMonitoringPage() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Confidence</Label>
-                  <p>{exposureDetail.confidenceScore ?? "—"}%</p>
+                  <p>{exposureDetail.confidenceScore != null ? `${exposureDetail.confidenceScore}%` : "—"}</p>
                 </div>
               </div>
 
