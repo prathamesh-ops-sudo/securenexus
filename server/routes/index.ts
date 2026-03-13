@@ -103,6 +103,8 @@ import { registerPhysicalSecurityRoutes } from "./physical-security";
 import { registerSecurityAwarenessRoutes } from "./security-awareness";
 import { registerQuantumReadinessRoutes } from "./quantum-readiness";
 import { registerPrivacyEngineeringRoutes } from "./privacy-engineering";
+import { registerSecurityMetricsRoutes } from "./security-metrics";
+import { registerDnsSecurityRoutes } from "./dns-security";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -210,4 +212,6 @@ export function registerAllDomainRoutes(app: Express): void {
   registerSecurityAwarenessRoutes(app);
   registerQuantumReadinessRoutes(app);
   registerPrivacyEngineeringRoutes(app);
+  registerSecurityMetricsRoutes(app);
+  registerDnsSecurityRoutes(app);
 }

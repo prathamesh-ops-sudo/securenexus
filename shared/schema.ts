@@ -11874,3 +11874,335 @@ export type CrossBorderTransferAlert = typeof crossBorderTransferAlerts.$inferSe
 export type InsertCrossBorderTransferAlert = typeof crossBorderTransferAlerts.$inferInsert;
 export type DsarFulfillmentTask = typeof dsarFulfillmentTasks.$inferSelect;
 export type InsertDsarFulfillmentTask = typeof dsarFulfillmentTasks.$inferInsert;
+
+// ─── Security Metrics Intelligence ───────────────────────────────────────────
+
+export const METRIC_KPI_TYPES = [
+  "mttr",
+  "mttd",
+  "incident_volume",
+  "alert_volume",
+  "false_positive_rate",
+  "sla_compliance",
+  "coverage_score",
+  "roi_savings",
+  "cost_per_incident",
+  "analyst_efficiency",
+] as const;
+
+export const METRIC_PERIOD_TYPES = ["daily", "weekly", "monthly", "quarterly"] as const;
+
+export const SLA_SEVERITY_TARGETS = ["critical", "high", "medium", "low"] as const;
+
+export const securityKpiSnapshots = pgTable(
+  "security_kpi_snapshots",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    kpiType: text("kpi_type").notNull(),
+    period: text("period").notNull().default("daily"),
+    value: doublePrecision("value").notNull(),
+    previousValue: doublePrecision("previous_value"),
+    unit: text("unit"),
+    metadata: jsonb("metadata"),
+    periodStart: timestamp("period_start").notNull(),
+    periodEnd: timestamp("period_end").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_kpi_snapshots_org").on(table.orgId),
+    index("idx_kpi_snapshots_org_type").on(table.orgId, table.kpiType),
+    index("idx_kpi_snapshots_org_period").on(table.orgId, table.periodStart),
+  ],
+);
+
+export const vulnerabilitySlaTargets = pgTable(
+  "vulnerability_sla_targets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    severity: text("severity").notNull(),
+    targetHours: integer("target_hours").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_vuln_sla_org").on(table.orgId),
+    uniqueIndex("idx_vuln_sla_org_severity").on(table.orgId, table.severity),
+  ],
+);
+
+export const securityToolOverlaps = pgTable(
+  "security_tool_overlaps",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    capability: text("capability").notNull(),
+    tools: jsonb("tools").notNull(),
+    annualCost: doublePrecision("annual_cost"),
+    recommendation: text("recommendation"),
+    potentialSavings: doublePrecision("potential_savings"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_tool_overlaps_org").on(table.orgId)],
+);
+
+export const boardKpiConfigs = pgTable(
+  "board_kpi_configs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    kpiType: text("kpi_type").notNull(),
+    displayName: text("display_name").notNull(),
+    position: integer("position").notNull().default(0),
+    visible: boolean("visible").notNull().default(true),
+    targetValue: doublePrecision("target_value"),
+    warningThreshold: doublePrecision("warning_threshold"),
+    criticalThreshold: doublePrecision("critical_threshold"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_board_kpi_org").on(table.orgId)],
+);
+
+export const securityKpiSnapshotsRelations = relations(securityKpiSnapshots, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityKpiSnapshots.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const vulnerabilitySlaTargetsRelations = relations(vulnerabilitySlaTargets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vulnerabilitySlaTargets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const securityToolOverlapsRelations = relations(securityToolOverlaps, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityToolOverlaps.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const boardKpiConfigsRelations = relations(boardKpiConfigs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [boardKpiConfigs.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type SecurityKpiSnapshot = typeof securityKpiSnapshots.$inferSelect;
+export type InsertSecurityKpiSnapshot = typeof securityKpiSnapshots.$inferInsert;
+export type VulnerabilitySlaTarget = typeof vulnerabilitySlaTargets.$inferSelect;
+export type InsertVulnerabilitySlaTarget = typeof vulnerabilitySlaTargets.$inferInsert;
+export type SecurityToolOverlap = typeof securityToolOverlaps.$inferSelect;
+export type InsertSecurityToolOverlap = typeof securityToolOverlaps.$inferInsert;
+export type BoardKpiConfig = typeof boardKpiConfigs.$inferSelect;
+export type InsertBoardKpiConfig = typeof boardKpiConfigs.$inferInsert;
+
+// ─── DNS Security Layer ─────────────────────────────────────────────────────
+
+export const DNS_EVENT_TYPES = [
+  "query",
+  "response",
+  "blocked",
+  "sinkholed",
+  "tunneling_detected",
+  "exfiltration_detected",
+  "dga_detected",
+  "nrd_alert",
+] as const;
+
+export const DNS_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;
+
+export const DNS_FINDING_TYPES = [
+  "dga_domain",
+  "dns_tunneling",
+  "dns_exfiltration",
+  "newly_registered_domain",
+  "sinkholed_hit",
+  "high_entropy_query",
+  "excessive_nxdomain",
+  "suspicious_txt_record",
+] as const;
+
+export const SINKHOLE_STATUSES = ["active", "inactive", "expired"] as const;
+
+export const dnsEvents = pgTable(
+  "dns_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    eventType: text("event_type").notNull(),
+    queryName: text("query_name").notNull(),
+    queryType: text("query_type").default("A"),
+    responseCode: text("response_code"),
+    responseData: text("response_data"),
+    sourceIp: text("source_ip"),
+    sourceHostname: text("source_hostname"),
+    destinationIp: text("destination_ip"),
+    serverIp: text("server_ip"),
+    querySize: integer("query_size"),
+    responseSize: integer("response_size"),
+    entropy: doublePrecision("entropy"),
+    isSuspicious: boolean("is_suspicious").default(false),
+    findingId: varchar("finding_id"),
+    rawData: jsonb("raw_data"),
+    timestamp: timestamp("timestamp").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_dns_events_org").on(table.orgId),
+    index("idx_dns_events_org_type").on(table.orgId, table.eventType),
+    index("idx_dns_events_org_query").on(table.orgId, table.queryName),
+    index("idx_dns_events_org_timestamp").on(table.orgId, table.timestamp),
+    index("idx_dns_events_source_ip").on(table.orgId, table.sourceIp),
+  ],
+);
+
+export const dnsFindings = pgTable(
+  "dns_findings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    findingType: text("finding_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    domain: text("domain").notNull(),
+    description: text("description"),
+    confidence: doublePrecision("confidence"),
+    sourceIp: text("source_ip"),
+    sourceHostname: text("source_hostname"),
+    indicators: jsonb("indicators"),
+    mitreTechnique: text("mitre_technique"),
+    status: text("status").notNull().default("open"),
+    analystNotes: text("analyst_notes"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_dns_findings_org").on(table.orgId),
+    index("idx_dns_findings_org_type").on(table.orgId, table.findingType),
+    index("idx_dns_findings_org_severity").on(table.orgId, table.severity),
+    index("idx_dns_findings_org_status").on(table.orgId, table.status),
+    index("idx_dns_findings_domain").on(table.orgId, table.domain),
+  ],
+);
+
+export const sinkholedDomains = pgTable(
+  "sinkholed_domains",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    domain: text("domain").notNull(),
+    reason: text("reason"),
+    source: text("source").default("manual"),
+    status: text("status").notNull().default("active"),
+    hitCount: integer("hit_count").notNull().default(0),
+    lastHitAt: timestamp("last_hit_at"),
+    expiresAt: timestamp("expires_at"),
+    addedBy: varchar("added_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sinkholed_org").on(table.orgId),
+    uniqueIndex("idx_sinkholed_org_domain").on(table.orgId, table.domain),
+    index("idx_sinkholed_org_status").on(table.orgId, table.status),
+  ],
+);
+
+export const passiveDnsRecords = pgTable(
+  "passive_dns_records",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    domain: text("domain").notNull(),
+    recordType: text("record_type").notNull(),
+    resolvedValue: text("resolved_value").notNull(),
+    firstSeen: timestamp("first_seen").defaultNow(),
+    lastSeen: timestamp("last_seen").defaultNow(),
+    queryCount: integer("query_count").notNull().default(1),
+    sources: jsonb("sources"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_passive_dns_org").on(table.orgId),
+    index("idx_passive_dns_domain").on(table.orgId, table.domain),
+    index("idx_passive_dns_resolved").on(table.orgId, table.resolvedValue),
+    uniqueIndex("idx_passive_dns_unique").on(table.orgId, table.domain, table.recordType, table.resolvedValue),
+  ],
+);
+
+export const dnsEventsRelations = relations(dnsEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dnsEvents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const dnsFindingsRelations = relations(dnsFindings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [dnsFindings.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const sinkholedDomainsRelations = relations(sinkholedDomains, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [sinkholedDomains.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const passiveDnsRecordsRelations = relations(passiveDnsRecords, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [passiveDnsRecords.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export type DnsEvent = typeof dnsEvents.$inferSelect;
+export type InsertDnsEvent = typeof dnsEvents.$inferInsert;
+export type DnsFinding = typeof dnsFindings.$inferSelect;
+export type InsertDnsFinding = typeof dnsFindings.$inferInsert;
+export type SinkholedDomain = typeof sinkholedDomains.$inferSelect;
+export type InsertSinkholedDomain = typeof sinkholedDomains.$inferInsert;
+export type PassiveDnsRecord = typeof passiveDnsRecords.$inferSelect;
+export type InsertPassiveDnsRecord = typeof passiveDnsRecords.$inferInsert;
