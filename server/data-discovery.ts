@@ -6,7 +6,7 @@
  */
 
 import { db } from "./db";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, isNull } from "drizzle-orm";
 import {
   dataAssets,
   dataFlows,
@@ -524,7 +524,13 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
     db
       .select({ value: count() })
       .from(crossBorderTransferAlerts)
-      .where(and(eq(crossBorderTransferAlerts.orgId, orgId), eq(crossBorderTransferAlerts.requiresAction, true))),
+      .where(
+        and(
+          eq(crossBorderTransferAlerts.orgId, orgId),
+          eq(crossBorderTransferAlerts.requiresAction, true),
+          isNull(crossBorderTransferAlerts.resolvedAt),
+        ),
+      ),
     db
       .select({ value: count() })
       .from(dsarRequests)

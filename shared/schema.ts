@@ -11538,7 +11538,7 @@ export const dataAssets = pgTable(
   "data_assets",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -11583,7 +11583,7 @@ export const dataFlows = pgTable(
   "data_flows",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -11623,7 +11623,7 @@ export const privacyImpactAssessments = pgTable(
   "privacy_impact_assessments",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
@@ -11667,7 +11667,7 @@ export const privacyScans = pgTable(
   "privacy_scans",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     scanType: text("scan_type").notNull(), // "full", "pii", "phi", "pci", "classification"
@@ -11705,7 +11705,7 @@ export const consentRecords = pgTable(
   "consent_records",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     dataSubjectId: text("data_subject_id").notNull(), // external identifier
@@ -11736,7 +11736,7 @@ export const crossBorderTransferAlerts = pgTable(
   "cross_border_transfer_alerts",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     dataFlowId: uuid("data_flow_id").references(() => dataFlows.id, { onDelete: "set null" }),
@@ -11765,7 +11765,7 @@ export const dsarFulfillmentTasks = pgTable(
   "dsar_fulfillment_tasks",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: uuid("org_id")
+    orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     dsarRequestId: varchar("dsar_request_id").references(() => dsarRequests.id, { onDelete: "cascade" }),
