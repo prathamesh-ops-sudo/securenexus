@@ -109,7 +109,7 @@ jobs:
 
       # Check 17: Unit tests pass
       - name: "[17] Unit tests pass"
-        run: npx vitest run --reporter=verbose 2>&1 || true
+        run: npx vitest run --reporter=verbose
 
       # Check 22: No skipped tests (.skip)
       - name: "[22] No skipped tests (.skip)"
@@ -386,13 +386,15 @@ jobs:
 
       # Check 112: PR title follows Conventional Commits
       - name: "[112] PR title follows Conventional Commits"
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          TITLE="${{ github.event.pull_request.title }}"
+          TITLE="$PR_TITLE"
           if [[ ! "$TITLE" =~ ^(feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert)(\(.+\))?!?:\ .+ ]]; then
-            echo "::warning::PR title does not follow Conventional Commits format: $TITLE"
+            echo "::warning::PR title does not follow Conventional Commits format"
             echo "Expected: feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert(scope): description"
           else
-            echo "PR title follows Conventional Commits: $TITLE"
+            echo "PR title follows Conventional Commits"
           fi
 
       # Check 116: CODEOWNERS review required for security paths
@@ -433,10 +435,12 @@ jobs:
           FAILED=0
           for result in \
             "${{ needs.code-quality.result }}" \
+            "${{ needs.testing.result }}" \
             "${{ needs.security.result }}" \
             "${{ needs.dependencies.result }}" \
             "${{ needs.database.result }}" \
-            "${{ needs.api-contracts.result }}"; do
+            "${{ needs.api-contracts.result }}" \
+            "${{ needs.git-hygiene.result }}"; do
             if [ "$result" = "failure" ]; then
               FAILED=1
             fi

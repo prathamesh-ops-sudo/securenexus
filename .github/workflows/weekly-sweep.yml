@@ -267,7 +267,7 @@ jobs:
 
       # Check 17–21: Unit tests
       - name: "[17] Run unit tests"
-        run: npx vitest run --reporter=verbose 2>&1 || true
+        run: npx vitest run --reporter=verbose
 
   e2e-tests:
     name: "E2E Tests"

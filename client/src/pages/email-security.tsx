@@ -40,6 +40,12 @@ async function apiFetch(url: string, options?: RequestInit) {
     const csrfToken = await fetchCsrfToken();
     if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
   }
+  try {
+    const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+    if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+  } catch {
+    /* SSR / privacy mode */
+  }
   const res = await fetch(url, {
     ...options,
     credentials: "include",
