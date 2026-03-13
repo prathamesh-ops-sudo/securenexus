@@ -358,6 +358,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "TPRM", url: "/tprm", icon: Building2 }],
       },
       {
+        label: "Dark Web Monitoring",
+        items: [{ title: "Dark Web Monitoring", url: "/dark-web-monitoring", icon: EyeOff }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },

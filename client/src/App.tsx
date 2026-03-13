@@ -162,6 +162,7 @@ const MsspPartnerPortalPage = lazy(() => import("@/pages/mssp-partner-portal"));
 const AutonomousSOCPage = lazy(() => import("@/pages/autonomous-soc"));
 const DeveloperSecurityPage = lazy(() => import("@/pages/developer-security"));
 const TprmPage = lazy(() => import("@/pages/tprm"));
+const DarkWebMonitoringPage = lazy(() => import("@/pages/dark-web-monitoring"));
 
 function PageSkeleton() {
   return (
@@ -403,6 +404,7 @@ function AuthenticatedApp() {
                     <Route path="/autonomous-soc" component={AutonomousSOCPage} />
                     <Route path="/developer-security" component={DeveloperSecurityPage} />
                     <Route path="/tprm" component={TprmPage} />
+                    <Route path="/dark-web-monitoring" component={DarkWebMonitoringPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
