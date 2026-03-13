@@ -79,6 +79,8 @@ import {
   Factory,
   Smartphone,
   Palette,
+  DoorOpen,
+  GraduationCap,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -360,6 +362,14 @@ const navGroups: NavGroup[] = [
       {
         label: "Dark Web Monitoring",
         items: [{ title: "Dark Web Monitoring", url: "/dark-web-monitoring", icon: EyeOff }],
+      },
+      {
+        label: "Physical Security",
+        items: [{ title: "Physical Security", url: "/physical-security", icon: DoorOpen }],
+      },
+      {
+        label: "Security Awareness",
+        items: [{ title: "Phishing & Awareness", url: "/security-awareness", icon: GraduationCap }],
       },
       {
         label: "MSSP Partner",

@@ -10777,3 +10777,443 @@ export type DarkWebMonitoringConfig = typeof darkWebMonitoringConfig.$inferSelec
 export type InsertDarkWebMonitoringConfig = typeof darkWebMonitoringConfig.$inferInsert;
 export type DarkWebScanHistoryEntry = typeof darkWebScanHistory.$inferSelect;
 export type InsertDarkWebScanHistoryEntry = typeof darkWebScanHistory.$inferInsert;
+
+// ============================================================================
+// Physical Security Convergence
+// ============================================================================
+
+export const BADGE_EVENT_TYPES = [
+  "access_granted",
+  "access_denied",
+  "door_forced",
+  "door_held",
+  "tailgate_detected",
+  "antipassback_violation",
+  "duress_alarm",
+  "card_unknown",
+] as const;
+
+export const PHYSICAL_ASSET_TYPES = [
+  "access_point",
+  "camera",
+  "server_room",
+  "data_center",
+  "office",
+  "parking_gate",
+  "elevator",
+  "turnstile",
+  "cabinet",
+  "safe",
+] as const;
+
+export const PHYSICAL_INCIDENT_STATUSES = ["open", "investigating", "resolved", "escalated"] as const;
+
+export const VISITOR_STATUSES = ["pre_registered", "checked_in", "checked_out", "denied", "escorted"] as const;
+
+export const physicalAssets = pgTable("physical_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  assetType: text("asset_type").notNull(), // PHYSICAL_ASSET_TYPES
+  location: text("location").notNull(),
+  building: text("building"),
+  floor: text("floor"),
+  zone: text("zone"),
+  controllerType: text("controller_type"), // "lenel", "genetec", "honeywell", "generic"
+  controllerId: text("controller_id"),
+  ipAddress: text("ip_address"),
+  isOnline: boolean("is_online").default(true).notNull(),
+  lastHeartbeat: timestamp("last_heartbeat"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const badgeEvents = pgTable("badge_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  assetId: uuid("asset_id").references(() => physicalAssets.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull(), // BADGE_EVENT_TYPES
+  badgeNumber: text("badge_number"),
+  employeeName: text("employee_name"),
+  employeeEmail: text("employee_email"),
+  employeeDepartment: text("employee_department"),
+  location: text("location").notNull(),
+  doorName: text("door_name"),
+  direction: text("direction"), // "entry", "exit"
+  isAnomaly: boolean("is_anomaly").default(false).notNull(),
+  anomalyReason: text("anomaly_reason"),
+  correlatedAlertId: uuid("correlated_alert_id"),
+  rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>().default({}),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const physicalIncidents = pgTable("physical_incidents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  incidentType: text("incident_type").notNull(), // "tailgate", "forced_entry", "after_hours", "unauthorized_access", "suspicious_activity", "equipment_tamper"
+  severity: text("severity").default("medium").notNull(),
+  status: text("status").default("open").notNull(), // PHYSICAL_INCIDENT_STATUSES
+  location: text("location"),
+  badgeEventIds: jsonb("badge_event_ids").$type<string[]>().default([]),
+  correlatedDigitalIncidentId: uuid("correlated_digital_incident_id"),
+  correlatedAlertIds: jsonb("correlated_alert_ids").$type<string[]>().default([]),
+  assignedTo: text("assigned_to"),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNotes: text("resolution_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const visitors = pgTable("visitors", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  email: text("email"),
+  company: text("company"),
+  hostEmployeeName: text("host_employee_name"),
+  hostEmployeeEmail: text("host_employee_email"),
+  purpose: text("purpose"),
+  status: text("status").default("pre_registered").notNull(), // VISITOR_STATUSES
+  badgeNumber: text("badge_number"),
+  scheduledAt: timestamp("scheduled_at"),
+  checkedInAt: timestamp("checked_in_at"),
+  checkedOutAt: timestamp("checked_out_at"),
+  areasAuthorized: jsonb("areas_authorized").$type<string[]>().default([]),
+  correlatedEvents: jsonb("correlated_events").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const physicalSecurityConfig = pgTable("physical_security_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  controllerIntegrations: jsonb("controller_integrations")
+    .$type<Array<{ type: string; name: string; apiEndpoint: string; isActive: boolean }>>()
+    .default([]),
+  afterHoursStart: text("after_hours_start").default("20:00"),
+  afterHoursEnd: text("after_hours_end").default("06:00"),
+  tailgateDetectionEnabled: boolean("tailgate_detection_enabled").default(true).notNull(),
+  anomalyCorrelationEnabled: boolean("anomaly_correlation_enabled").default(true).notNull(),
+  autoCreateDigitalIncidents: boolean("auto_create_digital_incidents").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Relations
+export const physicalAssetsRelations = relations(physicalAssets, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [physicalAssets.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const badgeEventsRelations = relations(badgeEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [badgeEvents.orgId],
+    references: [organizations.id],
+  }),
+  asset: one(physicalAssets, {
+    fields: [badgeEvents.assetId],
+    references: [physicalAssets.id],
+  }),
+}));
+
+export const physicalIncidentsRelations = relations(physicalIncidents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [physicalIncidents.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const visitorsRelations = relations(visitors, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [visitors.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const physicalSecurityConfigRelations = relations(physicalSecurityConfig, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [physicalSecurityConfig.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type PhysicalAsset = typeof physicalAssets.$inferSelect;
+export type InsertPhysicalAsset = typeof physicalAssets.$inferInsert;
+export type BadgeEvent = typeof badgeEvents.$inferSelect;
+export type InsertBadgeEvent = typeof badgeEvents.$inferInsert;
+export type PhysicalIncident = typeof physicalIncidents.$inferSelect;
+export type InsertPhysicalIncident = typeof physicalIncidents.$inferInsert;
+export type Visitor = typeof visitors.$inferSelect;
+export type InsertVisitor = typeof visitors.$inferInsert;
+export type PhysicalSecurityConfig = typeof physicalSecurityConfig.$inferSelect;
+export type InsertPhysicalSecurityConfig = typeof physicalSecurityConfig.$inferInsert;
+
+// ============================================================================
+// Phishing Simulation & Security Awareness
+// ============================================================================
+
+export const PHISHING_CAMPAIGN_STATUSES = ["draft", "scheduled", "running", "completed", "paused"] as const;
+
+export const PHISHING_TEMPLATE_CATEGORIES = [
+  "credential_harvest",
+  "malware_download",
+  "data_entry",
+  "reply_to",
+  "smishing",
+  "vishing",
+  "spear_phishing",
+  "whaling",
+] as const;
+
+export const TRAINING_MODULE_TYPES = [
+  "video",
+  "quiz",
+  "interactive",
+  "document",
+  "simulation",
+  "micro_learning",
+] as const;
+
+export const phishingCampaigns = pgTable("phishing_campaigns", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").default("draft").notNull(), // PHISHING_CAMPAIGN_STATUSES
+  templateId: uuid("template_id"),
+  templateCategory: text("template_category"), // PHISHING_TEMPLATE_CATEGORIES
+  senderName: text("sender_name"),
+  senderEmail: text("sender_email"),
+  subject: text("subject"),
+  emailBody: text("email_body"),
+  landingPageHtml: text("landing_page_html"),
+  targetDepartments: jsonb("target_departments").$type<string[]>().default([]),
+  targetEmails: jsonb("target_emails").$type<string[]>().default([]),
+  totalRecipients: integer("total_recipients").default(0).notNull(),
+  emailsSent: integer("emails_sent").default(0).notNull(),
+  emailsOpened: integer("emails_opened").default(0).notNull(),
+  linksClicked: integer("links_clicked").default(0).notNull(),
+  credentialsSubmitted: integer("credentials_submitted").default(0).notNull(),
+  reported: integer("reported").default(0).notNull(),
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const phishingTemplates = pgTable("phishing_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").notNull(), // PHISHING_TEMPLATE_CATEGORIES
+  difficulty: text("difficulty").default("medium").notNull(), // "easy", "medium", "hard", "expert"
+  industry: text("industry"), // optional industry-specific
+  subject: text("subject").notNull(),
+  senderName: text("sender_name").notNull(),
+  senderEmail: text("sender_email").notNull(),
+  emailBody: text("email_body").notNull(),
+  landingPageHtml: text("landing_page_html"),
+  isBuiltIn: boolean("is_built_in").default(false).notNull(),
+  usageCount: integer("usage_count").default(0).notNull(),
+  successRate: real("success_rate"), // % of recipients who fell for it
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const phishingResults = pgTable("phishing_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  campaignId: uuid("campaign_id")
+    .notNull()
+    .references(() => phishingCampaigns.id, { onDelete: "cascade" }),
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name"),
+  department: text("department"),
+  emailSentAt: timestamp("email_sent_at"),
+  emailOpenedAt: timestamp("email_opened_at"),
+  linkClickedAt: timestamp("link_clicked_at"),
+  credentialSubmittedAt: timestamp("credential_submitted_at"),
+  reportedAt: timestamp("reported_at"),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const employeeRiskScores = pgTable("employee_risk_scores", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  name: text("name"),
+  department: text("department"),
+  riskScore: real("risk_score").default(50).notNull(), // 0-100
+  phishingClickRate: real("phishing_click_rate").default(0).notNull(), // %
+  reportRate: real("report_rate").default(0).notNull(), // %
+  trainingCompletionRate: real("training_completion_rate").default(0).notNull(), // %
+  campaignsReceived: integer("campaigns_received").default(0).notNull(),
+  campaignsClicked: integer("campaigns_clicked").default(0).notNull(),
+  campaignsReported: integer("campaigns_reported").default(0).notNull(),
+  trainingsCompleted: integer("trainings_completed").default(0).notNull(),
+  trainingsAssigned: integer("trainings_assigned").default(0).notNull(),
+  lastPhishingTestAt: timestamp("last_phishing_test_at"),
+  lastTrainingCompletedAt: timestamp("last_training_completed_at"),
+  riskTrend: text("risk_trend").default("stable").notNull(), // "improving", "stable", "worsening"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const trainingModules = pgTable("training_modules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  moduleType: text("module_type").notNull(), // TRAINING_MODULE_TYPES
+  category: text("category").notNull(), // "phishing_awareness", "password_security", "social_engineering", "data_handling", "insider_threat", "physical_security"
+  difficulty: text("difficulty").default("beginner").notNull(),
+  durationMinutes: integer("duration_minutes").default(15).notNull(),
+  contentUrl: text("content_url"),
+  passingScore: integer("passing_score").default(80),
+  isBuiltIn: boolean("is_built_in").default(false).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  completionCount: integer("completion_count").default(0).notNull(),
+  averageScore: real("average_score"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const trainingAssignments = pgTable("training_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  moduleId: uuid("module_id")
+    .notNull()
+    .references(() => trainingModules.id, { onDelete: "cascade" }),
+  employeeEmail: text("employee_email").notNull(),
+  employeeName: text("employee_name"),
+  assignedReason: text("assigned_reason"), // "phishing_click", "onboarding", "periodic", "manual"
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  dueAt: timestamp("due_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  score: integer("score"),
+  passed: boolean("passed"),
+  attempts: integer("attempts").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const securityAwarenessConfig = pgTable("security_awareness_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  autoEnrollOnClick: boolean("auto_enroll_on_click").default(true).notNull(),
+  defaultTrainingModuleId: uuid("default_training_module_id"),
+  phishingFrequencyDays: integer("phishing_frequency_days").default(30).notNull(),
+  vishingEnabled: boolean("vishing_enabled").default(false).notNull(),
+  smishingEnabled: boolean("smishing_enabled").default(false).notNull(),
+  riskScoreThreshold: integer("risk_score_threshold").default(75).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Relations
+export const phishingCampaignsRelations = relations(phishingCampaigns, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [phishingCampaigns.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const phishingTemplatesRelations = relations(phishingTemplates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [phishingTemplates.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const phishingResultsRelations = relations(phishingResults, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [phishingResults.orgId],
+    references: [organizations.id],
+  }),
+  campaign: one(phishingCampaigns, {
+    fields: [phishingResults.campaignId],
+    references: [phishingCampaigns.id],
+  }),
+}));
+
+export const employeeRiskScoresRelations = relations(employeeRiskScores, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [employeeRiskScores.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const trainingModulesRelations = relations(trainingModules, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [trainingModules.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const trainingAssignmentsRelations = relations(trainingAssignments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [trainingAssignments.orgId],
+    references: [organizations.id],
+  }),
+  module: one(trainingModules, {
+    fields: [trainingAssignments.moduleId],
+    references: [trainingModules.id],
+  }),
+}));
+
+export const securityAwarenessConfigRelations = relations(securityAwarenessConfig, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [securityAwarenessConfig.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type PhishingCampaign = typeof phishingCampaigns.$inferSelect;
+export type InsertPhishingCampaign = typeof phishingCampaigns.$inferInsert;
+export type PhishingTemplate = typeof phishingTemplates.$inferSelect;
+export type InsertPhishingTemplate = typeof phishingTemplates.$inferInsert;
+export type PhishingResult = typeof phishingResults.$inferSelect;
+export type InsertPhishingResult = typeof phishingResults.$inferInsert;
+export type EmployeeRiskScore = typeof employeeRiskScores.$inferSelect;
+export type InsertEmployeeRiskScore = typeof employeeRiskScores.$inferInsert;
+export type TrainingModule = typeof trainingModules.$inferSelect;
+export type InsertTrainingModule = typeof trainingModules.$inferInsert;
+export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
+export type InsertTrainingAssignment = typeof trainingAssignments.$inferInsert;
+export type SecurityAwarenessConfig = typeof securityAwarenessConfig.$inferSelect;
+export type InsertSecurityAwarenessConfig = typeof securityAwarenessConfig.$inferInsert;

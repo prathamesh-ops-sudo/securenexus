@@ -163,6 +163,8 @@ const AutonomousSOCPage = lazy(() => import("@/pages/autonomous-soc"));
 const DeveloperSecurityPage = lazy(() => import("@/pages/developer-security"));
 const TprmPage = lazy(() => import("@/pages/tprm"));
 const DarkWebMonitoringPage = lazy(() => import("@/pages/dark-web-monitoring"));
+const PhysicalSecurityPage = lazy(() => import("@/pages/physical-security"));
+const SecurityAwarenessPage = lazy(() => import("@/pages/security-awareness"));
 
 function PageSkeleton() {
   return (
@@ -405,6 +407,8 @@ function AuthenticatedApp() {
                     <Route path="/developer-security" component={DeveloperSecurityPage} />
                     <Route path="/tprm" component={TprmPage} />
                     <Route path="/dark-web-monitoring" component={DarkWebMonitoringPage} />
+                    <Route path="/physical-security" component={PhysicalSecurityPage} />
+                    <Route path="/security-awareness" component={SecurityAwarenessPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>

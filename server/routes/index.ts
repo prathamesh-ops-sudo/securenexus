@@ -98,6 +98,8 @@ import { registerAutonomousSocRoutes } from "./autonomous-soc";
 import { registerDeveloperSecurityRoutes } from "./developer-security";
 import { registerTprmRoutes } from "./tprm";
 import { registerDarkWebRoutes } from "./dark-web";
+import { registerPhysicalSecurityRoutes } from "./physical-security";
+import { registerSecurityAwarenessRoutes } from "./security-awareness";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -200,4 +202,6 @@ export function registerAllDomainRoutes(app: Express): void {
   registerDeveloperSecurityRoutes(app);
   registerTprmRoutes(app);
   registerDarkWebRoutes(app);
+  registerPhysicalSecurityRoutes(app);
+  registerSecurityAwarenessRoutes(app);
 }
