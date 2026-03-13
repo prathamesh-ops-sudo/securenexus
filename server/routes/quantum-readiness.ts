@@ -447,6 +447,8 @@ export function registerQuantumReadinessRoutes(app: Express): void {
         }
         if (updates.status === "migrated" || updates.status === "verified") {
           updates.completedAt = new Date();
+        } else if (updates.status) {
+          updates.completedAt = null;
         }
 
         const [updated] = await db

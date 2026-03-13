@@ -593,7 +593,11 @@ export default function QuantumReadinessPage() {
                     level: "Safe",
                     count: Math.max(
                       0,
-                      (score?.totalAssets || 0) - (score?.vulnerableAssets || 0) - (score?.lowRiskCount || 0),
+                      (score?.totalAssets || 0) -
+                        (score?.criticalRiskCount || 0) -
+                        (score?.highRiskCount || 0) -
+                        (score?.mediumRiskCount || 0) -
+                        (score?.lowRiskCount || 0),
                     ),
                     color: "bg-green-500",
                   },
