@@ -661,7 +661,27 @@ export function registerAiRoutes(app: Express): void {
         }
 
         // Build context strings for few-shot example
-        const originalContext =
+        // originalContext should be the alert data (input to the AI), not the AI's response
+        let originalAlertContext = "";
+        if (resourceType === "alert" && resourceId) {
+          try {
+            const alertData = await storage.getAlert(resourceId);
+            if (alertData) {
+              originalAlertContext = JSON.stringify({
+                title: alertData.title,
+                description: alertData.description,
+                severity: alertData.severity,
+                source: alertData.source,
+                category: alertData.category,
+                sourceIp: alertData.sourceIp,
+                destIp: alertData.destIp,
+              });
+            }
+          } catch {
+            // non-fatal — fall back to empty context
+          }
+        }
+        const aiOutputStr =
           typeof aiOutput === "object" && aiOutput !== null ? JSON.stringify(aiOutput) : String(aiOutput || "");
         const analystCorrection = [
           correctedSeverity ? `Severity: ${correctedSeverity}` : "",
@@ -679,8 +699,8 @@ export function registerAiRoutes(app: Express): void {
           category: alertCategory,
           domain:
             resourceType === "correlation" ? "correlation" : resourceType === "narrative" ? "narrative" : "triage",
-          originalContext: originalContext || undefined,
-          aiOutput: originalContext || undefined,
+          originalContext: originalAlertContext || undefined,
+          aiOutput: aiOutputStr || undefined,
           analystCorrection: analystCorrection || undefined,
           reason: correctionReason || comment || undefined,
         }).catch((err) =>

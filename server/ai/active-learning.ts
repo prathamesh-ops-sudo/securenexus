@@ -344,8 +344,8 @@ export async function recordFeedbackOutcome(params: {
     });
   }
 
-  // Log all feedback outcomes
-  if (isNegative) {
+  // Log all feedback outcomes (skip if already logged as few_shot_injected above to avoid double-counting)
+  if (isNegative && !(params.outcome === "overridden" && params.originalContext && params.analystCorrection)) {
     await pool.query(
       `INSERT INTO ai_feedback_learning_log (org_id, feedback_id, action, source, category, details)
        VALUES ($1, $2, $3, $4, $5, $6)`,
