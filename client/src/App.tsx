@@ -169,6 +169,7 @@ const QuantumReadinessPage = lazy(() => import("@/pages/quantum-readiness"));
 const PrivacyEngineeringPage = lazy(() => import("@/pages/privacy-engineering"));
 const BoardDashboardPage = lazy(() => import("@/pages/board-dashboard"));
 const DnsSecurityPage = lazy(() => import("@/pages/dns-security"));
+const EmailSecurityPage = lazy(() => import("@/pages/email-security"));
 
 function PageSkeleton() {
   return (
@@ -417,6 +418,7 @@ function AuthenticatedApp() {
                     <Route path="/privacy-engineering" component={PrivacyEngineeringPage} />
                     <Route path="/board-dashboard" component={BoardDashboardPage} />
                     <Route path="/dns-security" component={DnsSecurityPage} />
+                    <Route path="/email-security" component={EmailSecurityPage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
