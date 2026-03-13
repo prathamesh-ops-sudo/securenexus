@@ -82,6 +82,7 @@ import {
   DoorOpen,
   GraduationCap,
   Atom,
+  Radar,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -381,6 +382,10 @@ const navGroups: NavGroup[] = [
         items: [{ title: "Privacy Engineering", url: "/privacy-engineering", icon: Fingerprint }],
       },
       {
+        label: "DNS Security",
+        items: [{ title: "DNS Security", url: "/dns-security", icon: Radar }],
+      },
+      {
         label: "MSSP Partner",
         items: [
           { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },
@@ -421,6 +426,10 @@ const navGroups: NavGroup[] = [
       {
         label: "Data Sovereignty",
         items: [{ title: "Data Residency", url: "/data-residency", icon: Globe }],
+      },
+      {
+        label: "Executive Metrics",
+        items: [{ title: "Board Dashboard", url: "/board-dashboard", icon: TrendingUp }],
       },
     ],
   },
