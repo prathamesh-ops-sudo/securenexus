@@ -343,6 +343,8 @@ export default function TprmPage() {
       qc.invalidateQueries({ queryKey: ["/api/tprm/summary"] });
       qc.invalidateQueries({ queryKey: ["/api/tprm/monitoring/status"] });
       qc.invalidateQueries({ queryKey: ["/api/tprm/breach-alerts"] });
+      qc.invalidateQueries({ queryKey: ["/api/tprm/contract-risk-map"] });
+      qc.invalidateQueries({ queryKey: ["/api/tprm/fourth-party-risk"] });
     },
     onError: (err: Error) => {
       toast({ title: "Monitoring failed", description: err.message, variant: "destructive" });
