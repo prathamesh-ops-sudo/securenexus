@@ -88,6 +88,28 @@ export function getSession() {
   });
 }
 
+/**
+ * Resolve a callback URL to an absolute URL.
+ * If APP_BASE_URL is set and the callback is a relative path, prefix it.
+ * This prevents redirect_uri mismatch behind reverse proxies (App Runner, CloudFront)
+ * where passport may reconstruct the wrong origin from request headers.
+ */
+function resolveCallbackUrl(callbackUrl: string): string {
+  if (callbackUrl.startsWith("http://") || callbackUrl.startsWith("https://")) {
+    return callbackUrl;
+  }
+  const baseUrl = process.env.APP_BASE_URL;
+  if (baseUrl) {
+    const resolved = baseUrl.replace(/\/+$/, "") + callbackUrl;
+    logger.child("auth-session").info("Resolved relative OAuth callback to absolute URL", {
+      relative: callbackUrl,
+      resolved,
+    });
+    return resolved;
+  }
+  return callbackUrl;
+}
+
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
@@ -116,12 +138,13 @@ export async function setupAuth(app: Express) {
   );
 
   if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
+    const googleCallbackUrl = resolveCallbackUrl(config.oauth.google.callbackUrl);
     passport.use(
       new GoogleStrategy(
         {
           clientID: config.oauth.google.clientId,
           clientSecret: config.oauth.google.clientSecret,
-          callbackURL: config.oauth.google.callbackUrl,
+          callbackURL: googleCallbackUrl,
         },
         async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
           try {
@@ -146,16 +169,17 @@ export async function setupAuth(app: Express) {
         },
       ),
     );
-    logger.child("auth-session").info("Google OAuth strategy configured");
+    logger.child("auth-session").info("Google OAuth strategy configured", { callbackURL: googleCallbackUrl });
   }
 
   if (config.oauth.github.clientId && config.oauth.github.clientSecret) {
+    const githubCallbackUrl = resolveCallbackUrl(config.oauth.github.callbackUrl);
     passport.use(
       new GitHubStrategy(
         {
           clientID: config.oauth.github.clientId,
           clientSecret: config.oauth.github.clientSecret,
-          callbackURL: config.oauth.github.callbackUrl,
+          callbackURL: githubCallbackUrl,
           scope: ["user:email"],
         },
         async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
@@ -185,7 +209,7 @@ export async function setupAuth(app: Express) {
         },
       ),
     );
-    logger.child("auth-session").info("GitHub OAuth strategy configured");
+    logger.child("auth-session").info("GitHub OAuth strategy configured", { callbackURL: githubCallbackUrl });
   }
 
   passport.serializeUser((user: any, cb) => cb(null, user.id));
