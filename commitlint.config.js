@@ -1,4 +1,5 @@
 /** @type {import('@commitlint/types').UserConfig} */
+// Enforces Conventional Commits across all PRs
 module.exports = {
   extends: ["@commitlint/config-conventional"],
   rules: {
