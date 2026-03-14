@@ -194,9 +194,10 @@ jobs:
           echo "No eval() usage found"
 
       # Check 40: No dangerouslySetInnerHTML without sanitization
+      # Allowed: chart.tsx (CSS styles), content-layout.tsx (JSON-LD structured data)
       - name: "[40] No dangerouslySetInnerHTML"
         run: |
-          FOUND=$(grep -rn 'dangerouslySetInnerHTML' client/src/ --include='*.tsx' --include='*.ts' || true)
+          FOUND=$(grep -rn 'dangerouslySetInnerHTML' client/src/ --include='*.tsx' --include='*.ts' | grep -v 'chart\.tsx' | grep -v 'content-layout\.tsx' || true)
           if [ -n "$FOUND" ]; then
             echo "::error::dangerouslySetInnerHTML usage found — XSS risk:"
             echo "$FOUND"
