@@ -92,6 +92,8 @@ jobs:
         run: npm ci
 
       # Check 33: Gitleaks secret scanning (full history)
+      - name: "[33] Cleanup stale gitleaks tmp"
+        run: rm -f /tmp/gitleaks.tmp
       - name: "[33] Gitleaks secret scanning"
         uses: gitleaks/gitleaks-action@v2
         env:
