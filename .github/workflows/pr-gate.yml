@@ -186,7 +186,7 @@ jobs:
       # Check 39: No eval() usage
       - name: "[39] No eval() usage"
         run: |
-          FOUND=$(grep -rn '\beval(' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' | grep -v 'node_modules' | grep -v '\.test\.' | grep -v '// eslint' | grep -v 'remediation' | grep -v '".*eval(' || true)
+          FOUND=$(grep -rn '\beval(' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' | grep -v 'node_modules' | grep -v '\.test\.' | grep -v '// eslint' | grep -v 'remediation' || true)
           if [ -n "$FOUND" ]; then
             echo "::error::eval() usage found:"
             echo "$FOUND"
