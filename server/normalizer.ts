@@ -954,13 +954,15 @@ export function validateAlertFieldLengths(fields: Record<string, unknown>): { va
 export function toInsertAlert(normalized: NormalizedAlert, orgId?: string): InsertAlert {
   const ocsfData = toOCSFSecurityFinding(normalized);
 
-  const lengthCheck = validateAlertFieldLengths({
-    title: normalized.title,
-    description: normalized.description,
-  });
-  if (!lengthCheck.valid) {
-    throw new Error(`Alert field validation failed: ${lengthCheck.errors.join("; ")}`);
-  }
+  const title =
+    normalized.title.length > ALERT_FIELD_LIMITS.title
+      ? normalized.title.slice(0, ALERT_FIELD_LIMITS.title)
+      : normalized.title;
+  const description = normalized.description
+    ? normalized.description.length > ALERT_FIELD_LIMITS.description
+      ? normalized.description.slice(0, ALERT_FIELD_LIMITS.description)
+      : normalized.description
+    : null;
 
   return {
     orgId: orgId || null,
@@ -968,8 +970,8 @@ export function toInsertAlert(normalized: NormalizedAlert, orgId?: string): Inse
     sourceEventId: normalized.sourceEventId || null,
     category: normalized.category,
     severity: normalized.severity,
-    title: normalized.title,
-    description: normalized.description || null,
+    title,
+    description,
     rawData: normalized.rawData,
     normalizedData: normalized.normalizedData,
     ocsfData,
