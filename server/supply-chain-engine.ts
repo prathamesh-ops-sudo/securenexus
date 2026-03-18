@@ -887,6 +887,22 @@ export async function processSpdxSbom(
         cvssScore: cve.cvssScore,
         fixedVersion: cve.fixedVersion,
       });
+
+      // Also create a unified vulnFinding so SPDX SBOM CVEs appear in the Vuln Scanner
+      await db.insert(vulnFindings).values({
+        orgId,
+        source: "sbom",
+        sensorId: null,
+        cveId: cve.cveId,
+        packageName: pkg.name,
+        installedVersion: version,
+        fixedVersion: cve.fixedVersion,
+        severity: cve.severity,
+        cvssScore: cve.cvssScore,
+        description: cve.description,
+        status: "open",
+      });
+
       result.findingsCount++;
       result.vulnerabilityCount++;
     }

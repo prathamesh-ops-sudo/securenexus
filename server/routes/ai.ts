@@ -301,7 +301,7 @@ export function registerAiRoutes(app: Express): void {
   });
 
   app.get("/api/ai/inference-metrics", isAuthenticated, strictLimiter, async (req, res) => {
-    res.json(getInferenceMetrics());
+    res.json(await getInferenceMetrics());
   });
 
   // --- GET /api/ai/inference-history — persistent inference log with filters ---

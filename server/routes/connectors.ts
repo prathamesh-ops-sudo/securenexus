@@ -31,9 +31,11 @@ export function registerConnectorsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
-      const allConnectors = await storage.getConnectors(orgId);
-      const sanitized = allConnectors.map((c) => ({ ...c, config: sanitizeConfig(c.config) }));
-      res.json(sanitized.slice(offset, offset + limit));
+
+      // Use DB-layer pagination instead of loading all connectors into memory
+      const { items } = await storage.getConnectorsPaginated({ orgId, offset, limit });
+      const sanitized = items.map((c) => ({ ...c, config: sanitizeConfig(c.config) }));
+      res.json(sanitized);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch connectors" });
     }
@@ -43,8 +45,10 @@ export function registerConnectorsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const { offset, limit } = parsePaginationParams(req.query as Record<string, unknown>);
-      const runs = await storage.getDeadLetterJobRuns(orgId);
-      res.json(runs.slice(offset, offset + limit));
+
+      // Use DB-layer pagination instead of loading all dead-letter runs into memory
+      const { items } = await storage.getDeadLetterJobRunsPaginated({ orgId, offset, limit });
+      res.json(items);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch dead-letter job runs" });
     }
