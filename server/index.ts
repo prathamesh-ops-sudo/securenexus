@@ -83,16 +83,19 @@ applySecurityMiddleware(app);
 const PRODUCTION_ENVS = new Set(["production", "staging", "uat"]);
 const globalApiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: PRODUCTION_ENVS.has(config.nodeEnv) ? 300 : 0, // 300 req/min per IP in production, unlimited in dev
+  limit: PRODUCTION_ENVS.has(config.nodeEnv) ? 300 : 0, // 300 req/min per IP in production, disabled in dev
+  skip: PRODUCTION_ENVS.has(config.nodeEnv)
+    ? (req: Request) =>
+        req.path === "/api/ops/health" ||
+        req.path === "/api/ops/ready" ||
+        req.path === "/api/ops/live" ||
+        req.path === "/api/health" ||
+        req.path === "/api/ops/metrics"
+    : () => true, // skip rate limiting entirely in development
+  validate: { limit: false }, // suppress WRN_ERL_MAX_ZERO — 0 intentionally means "disabled" in dev
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => req.ip || req.socket.remoteAddress || "unknown",
-  skip: (req: Request) =>
-    req.path === "/api/ops/health" ||
-    req.path === "/api/ops/ready" ||
-    req.path === "/api/ops/live" ||
-    req.path === "/api/health" ||
-    req.path === "/api/ops/metrics",
   handler: (_req: Request, res: Response) => {
     replyRateLimit(res, "Too many requests. Please try again later.");
   },
