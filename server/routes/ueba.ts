@@ -474,6 +474,9 @@ export function registerUebaRoutes(app: Express): void {
                   new Set([...((existingBaseline.processAllowList as string[]) || []), ...updatedProcesses]),
                 ).slice(0, 200),
                 avgDailyEventVolume: userEvts.length / Math.max(1, windowHours / 24),
+                // Migrate stale login-hours defaults (8,20) to the correct (6,2) window
+                normalLoginHoursStart: 6,
+                normalLoginHoursEnd: 2,
                 lastUpdated: new Date(),
               })
               .where(eq(uebaBaselines.id, existingBaseline.id));
