@@ -790,6 +790,75 @@ export default function AlertsPage() {
     },
   });
 
+  // ── 2.15: Escalate alert to incident mutation ──
+  const escalateToIncidentMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("POST", `/api/alerts/${alertId}/escalate`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      toast({
+        title: "Alert escalated to incident",
+        description: `Incident "${data.incident?.title}" created`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Escalation failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // ── 2.16: Available playbooks query ──
+  const { data: availablePlaybooks } = useQuery<
+    { id: string; name: string; description: string; trigger: string; severity: string; enabled: boolean }[]
+  >({
+    queryKey: ["/api/alerts", focusedAlertId, "available-playbooks"],
+    queryFn: async () => {
+      if (!focusedAlertId) return [];
+      const res = await apiRequest("GET", `/api/alerts/${focusedAlertId}/available-playbooks`);
+      return res.json();
+    },
+    enabled: !!focusedAlertId && isDetailOpen && detailTab === "overview",
+  });
+
+  // ── 2.16: Trigger playbook mutation ──
+  const triggerPlaybookMutation = useMutation({
+    mutationFn: async ({ alertId, playbookId }: { alertId: string; playbookId: string }) => {
+      const res = await apiRequest("POST", `/api/alerts/${alertId}/trigger-playbook`, { playbookId });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Playbook triggered",
+        description: `"${data.playbookName}" execution started`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Playbook trigger failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // ── 2.17: War room link query ──
+  const { data: warRoomLink } = useQuery<{
+    hasWarRoom: boolean;
+    warRoom: {
+      id: string;
+      name: string;
+      status: string;
+      severity: string;
+      incidentId: string;
+      createdAt: string;
+    } | null;
+  }>({
+    queryKey: ["/api/alerts", focusedAlertId, "war-room"],
+    queryFn: async () => {
+      if (!focusedAlertId) return { hasWarRoom: false, warRoom: null };
+      const res = await apiRequest("GET", `/api/alerts/${focusedAlertId}/war-room`);
+      return res.json();
+    },
+    enabled: !!focusedAlertId && isDetailOpen && detailTab === "overview",
+  });
+
   // ── 2.11: SLA compliance helper ──
   const getSlaStatus = useCallback((alert: Alert) => {
     const createdAt = new Date(alert.createdAt || Date.now()).getTime();
@@ -2770,6 +2839,109 @@ export default function AlertsPage() {
                           </Button>
                         </div>
                       </div>
+
+                      {/* 2.15: Escalate to Incident */}
+                      {!selectedAlert.incidentId && (
+                        <div className="space-y-2 pt-2 border-t">
+                          <div className="text-[10px] text-muted-foreground uppercase">Incident Escalation</div>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="w-full"
+                            onClick={() => escalateToIncidentMutation.mutate(selectedAlert.id)}
+                            disabled={escalateToIncidentMutation.isPending}
+                          >
+                            {escalateToIncidentMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                            ) : (
+                              <ArrowUpRight className="h-3 w-3 mr-1.5" />
+                            )}
+                            Escalate to Incident
+                          </Button>
+                          <p className="text-[10px] text-muted-foreground">
+                            Creates a new incident pre-filled with alert details, MITRE mapping, IOCs, and affected
+                            assets.
+                          </p>
+                        </div>
+                      )}
+                      {selectedAlert.incidentId && (
+                        <div className="space-y-2 pt-2 border-t">
+                          <div className="text-[10px] text-muted-foreground uppercase">Linked Incident</div>
+                          <Link href={`/incidents`}>
+                            <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 border cursor-pointer hover:bg-muted transition-colors">
+                              <ExternalLink className="h-3.5 w-3.5 text-primary" />
+                              <span className="text-xs font-medium">
+                                Incident {selectedAlert.incidentId.slice(0, 8)}...
+                              </span>
+                            </div>
+                          </Link>
+                        </div>
+                      )}
+
+                      {/* 2.17: War Room Link */}
+                      {warRoomLink?.hasWarRoom && warRoomLink.warRoom && (
+                        <div className="space-y-2 pt-2 border-t">
+                          <div className="text-[10px] text-muted-foreground uppercase">Active War Room</div>
+                          <Link href={`/war-room`}>
+                            <div className="flex items-center gap-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/20 cursor-pointer hover:bg-red-500/20 transition-colors">
+                              <Activity className="h-4 w-4 text-red-500" />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-medium block truncate">{warRoomLink.warRoom.name}</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {warRoomLink.warRoom.status} &middot; {warRoomLink.warRoom.severity}
+                                </span>
+                              </div>
+                              <Badge variant="destructive" className="text-[9px]">
+                                Join
+                              </Badge>
+                            </div>
+                          </Link>
+                        </div>
+                      )}
+
+                      {/* 2.16: Trigger Playbook */}
+                      {availablePlaybooks && availablePlaybooks.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t">
+                          <div className="text-[10px] text-muted-foreground uppercase">
+                            Available Playbooks ({availablePlaybooks.length})
+                          </div>
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                            {availablePlaybooks.slice(0, 5).map((pb) => (
+                              <div
+                                key={pb.id}
+                                className="flex items-center justify-between gap-2 p-2 rounded-md border hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-xs font-medium block truncate">{pb.name}</span>
+                                  {pb.description && (
+                                    <span className="text-[10px] text-muted-foreground block truncate">
+                                      {pb.description}
+                                    </span>
+                                  )}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[10px] px-2 shrink-0"
+                                  onClick={() =>
+                                    triggerPlaybookMutation.mutate({
+                                      alertId: selectedAlert.id,
+                                      playbookId: pb.id,
+                                    })
+                                  }
+                                  disabled={triggerPlaybookMutation.isPending || !pb.enabled}
+                                >
+                                  {triggerPlaybookMutation.isPending ? (
+                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                  ) : (
+                                    "Run"
+                                  )}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
 

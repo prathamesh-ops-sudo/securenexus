@@ -522,6 +522,23 @@ export function registerComplianceRoutes(app: Express): void {
       if (!scopeValue || typeof scopeValue !== "string" || !scopeValue.trim()) {
         return res.status(400).json({ message: "scopeValue is required" });
       }
+      // 2.14: Check for duplicate suppression rules (same source + severity + scopeValue)
+      const existingRules = await storage.getSuppressionRules(orgId);
+      const duplicate = existingRules.find(
+        (r) =>
+          r.scope === scope?.trim() &&
+          r.scopeValue === scopeValue?.trim() &&
+          (r.source || null) === (source || null) &&
+          (r.severity || null) === (severity || null),
+      );
+      if (duplicate) {
+        return res.status(409).json({
+          message: "A suppression rule with identical criteria already exists",
+          existingRuleId: duplicate.id,
+          existingRuleName: duplicate.name,
+        });
+      }
+
       const ruleData: Record<string, unknown> = {
         name: name.trim(),
         scope: scope.trim(),

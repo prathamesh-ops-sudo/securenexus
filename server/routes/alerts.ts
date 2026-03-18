@@ -11,6 +11,24 @@ import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { validateAlertFieldLengths } from "../normalizer";
 import { enrichAlert, getAlertEnrichment, reEnrichAlert } from "../alert-enrichment";
 
+// 2.13: Valid alert status transitions — enforce state machine server-side
+const VALID_ALERT_TRANSITIONS: Record<string, string[]> = {
+  new: ["triaged", "correlated", "investigating", "resolved", "dismissed", "false_positive"],
+  triaged: ["investigating", "correlated", "resolved", "dismissed", "false_positive"],
+  correlated: ["triaged", "investigating", "resolved", "dismissed", "false_positive"],
+  investigating: ["resolved", "dismissed", "false_positive", "triaged"],
+  resolved: ["new", "investigating"], // reopening allowed via explicit transition back
+  dismissed: ["new", "investigating"], // can reopen dismissed alerts
+  false_positive: ["new", "investigating"], // can reopen false positives
+};
+
+function isValidStatusTransition(currentStatus: string, newStatus: string): boolean {
+  if (currentStatus === newStatus) return true; // no-op is always valid
+  const allowed = VALID_ALERT_TRANSITIONS[currentStatus];
+  if (!allowed) return true; // unknown current status — allow (backwards compat)
+  return allowed.includes(newStatus);
+}
+
 export function registerAlertsRoutes(app: Express): void {
   // Alerts
   app.get("/api/alerts", isAuthenticated, async (req, res) => {
@@ -158,6 +176,18 @@ export function registerAlertsRoutes(app: Express): void {
         if (!lengthCheck.valid) {
           return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
         }
+        // 2.13: Validate status transition if status is being changed
+        if (parsed.data.status) {
+          const existing = await storage.getAlert(p(req.params.id));
+          if (existing && !isValidStatusTransition(existing.status, parsed.data.status)) {
+            return res.status(422).json({
+              message: `Invalid status transition from "${existing.status}" to "${parsed.data.status}"`,
+              currentStatus: existing.status,
+              requestedStatus: parsed.data.status,
+              allowedTransitions: VALID_ALERT_TRANSITIONS[existing.status] || [],
+            });
+          }
+        }
         const alert = await storage.updateAlert(p(req.params.id), parsed.data);
         if (!alert) return res.status(404).json({ message: "Alert not found" });
         publishOutboxEvent(alert.orgId, "alert.updated", "alert", alert.id, {
@@ -182,6 +212,16 @@ export function registerAlertsRoutes(app: Express): void {
       try {
         const { status, incidentId } = req.body;
         if (!status) return res.status(400).json({ message: "Status required" });
+        // 2.13: Validate status transition
+        const existingForStatus = await storage.getAlert(p(req.params.id));
+        if (existingForStatus && !isValidStatusTransition(existingForStatus.status, status)) {
+          return res.status(422).json({
+            message: `Invalid status transition from "${existingForStatus.status}" to "${status}"`,
+            currentStatus: existingForStatus.status,
+            requestedStatus: status,
+            allowedTransitions: VALID_ALERT_TRANSITIONS[existingForStatus.status] || [],
+          });
+        }
         const alert = await storage.updateAlertStatus(p(req.params.id), status, incidentId);
         if (!alert) return res.status(404).json({ message: "Alert not found" });
         const closedStatuses = ["resolved", "closed", "false_positive"];
@@ -554,6 +594,177 @@ export function registerAlertsRoutes(app: Express): void {
       res.json(clusterAlerts);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch cluster alerts" });
+    }
+  });
+
+  // === 2.15: Alert → Incident escalation with pre-fill ===
+  app.post(
+    "/api/alerts/:id/escalate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const alert = await storage.getAlert(p(req.params.id));
+        if (!alert || alert.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        // Build pre-filled incident data from alert
+        const incidentData = {
+          orgId,
+          title: `[Escalated] ${alert.title}`,
+          summary: alert.description || `Escalated from alert: ${alert.title}`,
+          severity: alert.severity === "informational" ? "low" : alert.severity,
+          status: "open",
+          priority:
+            alert.severity === "critical" ? 1 : alert.severity === "high" ? 2 : alert.severity === "medium" ? 3 : 4,
+          mitreTactics: alert.mitreTactic ? [alert.mitreTactic] : [],
+          mitreTechniques: alert.mitreTechnique ? [alert.mitreTechnique] : [],
+          affectedAssets: [alert.hostname, alert.sourceIp, alert.destIp].filter(Boolean),
+          iocs: [alert.sourceIp, alert.destIp, alert.domain, alert.fileHash, alert.url].filter(Boolean),
+          ...(req.body.overrides || {}),
+        };
+        const incident = await storage.createIncident(incidentData as any);
+        // Link the alert to the new incident
+        await storage.updateAlert(p(req.params.id), {
+          incidentId: incident.id,
+          status: "investigating",
+          acknowledgedAt: alert.acknowledgedAt || new Date(),
+          investigatingAt: alert.investigatingAt || new Date(),
+        } as any);
+        publishOutboxEvent(orgId, "incident.created", "incident", incident.id, {
+          title: incident.title,
+          severity: incident.severity,
+          escalatedFromAlert: alert.id,
+        });
+        cacheInvalidate("dashboard:");
+        res.status(201).json({ incident, alertId: alert.id });
+      } catch (error) {
+        logger.child("routes").error("Failed to escalate alert to incident", { error: String(error) });
+        res.status(500).json({ message: "Failed to escalate alert" });
+      }
+    },
+  );
+
+  // === 2.16: Alert → Playbook trigger ===
+  app.get("/api/alerts/:id/available-playbooks", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const alert = await storage.getAlert(p(req.params.id));
+      if (!alert || !orgId || alert.orgId !== orgId) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      const allPlaybooks = await storage.getPlaybooks(orgId);
+      // Filter by trigger type — show manual and alert-related playbooks
+      const matching = allPlaybooks.filter((pb) => {
+        const trigger = pb.trigger || "";
+        if (trigger === "manual") return true;
+        if (trigger === "alert_created" || trigger === "alert_severity") return true;
+        return true;
+      });
+      res.json(
+        matching.map((pb) => ({
+          id: pb.id,
+          name: pb.name,
+          description: pb.description,
+          trigger: pb.trigger,
+          status: pb.status,
+          enabled: pb.status === "active",
+        })),
+      );
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch available playbooks" });
+    }
+  });
+
+  app.post(
+    "/api/alerts/:id/trigger-playbook",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const userId = (req as any).user?.id;
+        const { playbookId } = req.body;
+        if (!playbookId) {
+          return res.status(400).json({ message: "playbookId is required" });
+        }
+        const alert = await storage.getAlert(p(req.params.id));
+        if (!alert || alert.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const playbook = await storage.getPlaybook(playbookId);
+        if (!playbook || playbook.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+        // Create execution with alert context pre-filled
+        const execution = await storage.createPlaybookExecution({
+          playbookId,
+          triggeredBy: userId || "system",
+          status: "pending",
+          triggerData: {
+            alertId: alert.id,
+            alertTitle: alert.title,
+            alertSeverity: alert.severity,
+            alertSource: alert.source,
+            alertCategory: alert.category,
+            sourceIp: alert.sourceIp,
+            destIp: alert.destIp,
+            hostname: alert.hostname,
+            domain: alert.domain,
+            mitreTactic: alert.mitreTactic,
+            mitreTechnique: alert.mitreTechnique,
+          },
+        } as any);
+        publishOutboxEvent(orgId, "playbook.triggered", "playbook", playbookId, {
+          executionId: execution.id,
+          alertId: alert.id,
+          playbookName: playbook.name,
+        });
+        res.status(201).json({ execution, playbookName: playbook.name, alertId: alert.id });
+      } catch (error) {
+        logger.child("routes").error("Failed to trigger playbook from alert", { error: String(error) });
+        res.status(500).json({ message: "Failed to trigger playbook" });
+      }
+    },
+  );
+
+  // === 2.17: Alert → War Room link ===
+  app.get("/api/alerts/:id/war-room", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const alert = await storage.getAlert(p(req.params.id));
+      if (!alert || !orgId || alert.orgId !== orgId) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      // If alert is linked to an incident, check for war rooms
+      if (!alert.incidentId) {
+        return res.json({ hasWarRoom: false, warRoom: null });
+      }
+      const rooms = await storage.getWarRooms(orgId);
+      const linkedRoom = rooms.find((r) => r.incidentId === alert.incidentId && r.status !== "closed");
+      if (linkedRoom) {
+        return res.json({
+          hasWarRoom: true,
+          warRoom: {
+            id: linkedRoom.id,
+            name: linkedRoom.name,
+            status: linkedRoom.status,
+            severity: linkedRoom.severity,
+            incidentId: linkedRoom.incidentId,
+            createdAt: linkedRoom.createdAt,
+          },
+        });
+      }
+      res.json({ hasWarRoom: false, warRoom: null });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check war room link" });
     }
   });
 
