@@ -64,6 +64,7 @@ export function prometheusMiddleware(req: Request, res: Response, next: NextFunc
     for (let i = 0; i < HISTOGRAM_BUCKETS.length; i++) {
       if (durationSec <= HISTOGRAM_BUCKETS[i]) {
         m.bucketCounts[i]++;
+        break;
       }
     }
   });
