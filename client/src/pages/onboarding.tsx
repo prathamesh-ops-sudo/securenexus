@@ -26,7 +26,7 @@ export default function OnboardingPage() {
   });
 
   const completed = data?.completedCount ?? 0;
-  const total = data?.totalSteps ?? 4;
+  const total = data?.totalSteps ?? 5;
   const percent = total > 0 ? (completed / total) * 100 : 0;
 
   if (isLoading) return <FormPageSkeleton />;
