@@ -20,6 +20,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
+import { NotificationBell } from "@/components/notification-bell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingScreen } from "@/components/loading-screen";
@@ -279,7 +280,10 @@ function AuthenticatedApp() {
                   <SidebarTrigger data-testid="button-sidebar-toggle" />
                   <div className={`w-2 h-2 rounded-full ${dotColor}`} data-testid="indicator-sse-status" />
                 </div>
-                <ThemeToggle />
+                <div className="flex items-center gap-1">
+                  <NotificationBell />
+                  <ThemeToggle />
+                </div>
               </header>
               <main id="main-content" className="flex-1 overflow-auto" tabIndex={0}>
                 <Suspense fallback={<PageSkeleton />}>

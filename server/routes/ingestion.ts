@@ -9,6 +9,7 @@ import {
   p,
   publishOutboxEvent,
   randomBytes,
+  requireScope,
   sendEnvelope,
   storage,
   verifyWebhookSignature,
@@ -191,6 +192,7 @@ export function registerIngestionRoutes(app: Express): void {
   app.post(
     "/api/ingest/:source",
     apiKeyAuth,
+    requireScope("ingest:write"),
     verifyWebhookSignature,
     idempotencyCheck,
     ingestionLimiter,
@@ -338,6 +340,7 @@ export function registerIngestionRoutes(app: Express): void {
   app.post(
     "/api/ingest/:source/bulk",
     apiKeyAuth,
+    requireScope("ingest:write"),
     verifyWebhookSignature,
     idempotencyCheck,
     ingestionLimiter,

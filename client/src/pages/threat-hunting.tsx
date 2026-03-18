@@ -48,7 +48,9 @@ import {
   ArrowRight,
   FileWarning,
   Link2,
+  Plug,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -496,9 +498,17 @@ LIMIT 100`,
         </div>
       ) : hunts.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center">
-            <Crosshair className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">No hunts yet. Create your first threat hunt to get started.</p>
+          <CardContent>
+            <EmptyState
+              icon={Crosshair}
+              title="No threat hunts created yet"
+              description="Threat hunting requires log data from connected sources. Create a hunt using Sigma, YARA, KQL, or SQL queries to proactively search for threats."
+              action={{
+                label: "Create Your First Hunt",
+                icon: Plus,
+                onClick: () => setOpen(true),
+              }}
+            />
           </CardContent>
         </Card>
       ) : (

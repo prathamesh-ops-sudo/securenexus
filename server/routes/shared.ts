@@ -125,6 +125,56 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
   next();
 }
 
+/**
+ * Scope enforcement middleware for API key authenticated routes.
+ * Checks that the API key has the required scope(s) before allowing access.
+ * Must be used AFTER apiKeyAuth middleware.
+ *
+ * @param requiredScope - A single scope string (e.g. "ingest:write") or an array
+ *   of scopes where ANY match grants access (OR logic).
+ */
+export function requireScope(requiredScope: string | string[]) {
+  const required = Array.isArray(requiredScope) ? requiredScope : [requiredScope];
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const apiKey = (req as any).apiKey;
+    if (!apiKey) {
+      return replyForbidden(
+        res,
+        "API key context missing. Ensure apiKeyAuth middleware runs before requireScope.",
+        ERROR_CODES.API_KEY_MISSING,
+      );
+    }
+
+    const keyScopes: string[] = Array.isArray(apiKey.scopes) ? apiKey.scopes : [];
+
+    // Check if the key has at least one of the required scopes
+    const hasScope = required.some((scope) => {
+      if (keyScopes.includes(scope)) return true;
+      // Allow parent scope to satisfy child (e.g. "ingest" satisfies "ingest:write")
+      const parent = scope.split(":")[0];
+      if (parent !== scope && keyScopes.includes(parent)) return true;
+      return false;
+    });
+
+    if (!hasScope) {
+      logger.child("scope").warn("API key scope denied", {
+        keyId: apiKey.id,
+        keyPrefix: apiKey.keyPrefix,
+        requiredScopes: required,
+        actualScopes: keyScopes,
+      });
+      return replyForbidden(
+        res,
+        `Insufficient scope. Required: ${required.join(" or ")}. Key scopes: ${keyScopes.join(", ") || "none"}.`,
+        ERROR_CODES.API_KEY_SCOPE_DENIED,
+      );
+    }
+
+    next();
+  };
+}
+
 export function verifyWebhookSignature(req: Request, res: Response, next: NextFunction) {
   const apiKey = (req as any).apiKey;
   const signature = req.headers["x-webhook-signature"] as string | undefined;

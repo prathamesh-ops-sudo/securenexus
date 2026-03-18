@@ -41,7 +41,9 @@ import {
   Clock,
   BarChart3,
   BookOpen,
+  Plug,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 
 // =========================================================================
 // TYPES
@@ -460,11 +462,12 @@ function RecentAnomaliesCard({ anomalies }: { anomalies?: OtAnomaly[] }) {
       </CardHeader>
       <CardContent>
         {recent.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <CheckCircle className="h-10 w-10 text-green-500 mb-2" />
-            <p className="text-sm text-muted-foreground">No anomalies detected</p>
-            <p className="text-xs text-muted-foreground mt-1">OT network is operating normally</p>
-          </div>
+          <EmptyState
+            icon={CheckCircle}
+            title="No anomalies detected"
+            description="OT network is operating normally. Anomalies will appear here when the passive sensor detects protocol violations, unauthorized commands, or firmware changes."
+            compact
+          />
         ) : (
           <div className="space-y-3">
             {recent.map((a) => (
@@ -505,11 +508,12 @@ function ProtocolDistributionCard({ stats }: { stats?: OtStats }) {
       </CardHeader>
       <CardContent>
         {protocols.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Radio className="h-10 w-10 text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">No protocol events captured</p>
-            <p className="text-xs text-muted-foreground mt-1">Deploy an OT sensor to start capturing traffic</p>
-          </div>
+          <EmptyState
+            icon={Radio}
+            title="No protocol events captured"
+            description="Deploy a passive OT sensor on your SCADA/ICS network to start capturing Modbus, DNP3, OPC UA, and other industrial protocol traffic."
+            compact
+          />
         ) : (
           <div className="space-y-3">
             {protocols.map((p) => {
@@ -708,12 +712,12 @@ function AssetInventory({ assets }: { assets?: OtAsset[] }) {
 
       {filtered.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Cpu className="h-10 w-10 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">No OT assets found</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Add assets manually or deploy a passive OT sensor for auto-discovery
-            </p>
+          <CardContent>
+            <EmptyState
+              icon={Cpu}
+              title="No OT assets found"
+              description="Add PLCs, RTUs, HMIs, and other OT/ICS assets manually or deploy a passive network sensor for automatic asset discovery via protocol fingerprinting."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -807,10 +811,12 @@ function AnomalyDashboard({ anomalies }: { anomalies?: OtAnomaly[] }) {
 
       {list.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <CheckCircle className="h-10 w-10 text-green-500 mb-3" />
-            <p className="text-sm text-muted-foreground">No anomalies detected</p>
-            <p className="text-xs text-muted-foreground mt-1">OT/ICS network is operating within normal parameters</p>
+          <CardContent>
+            <EmptyState
+              icon={CheckCircle}
+              title="No anomalies detected"
+              description="OT/ICS network is operating within normal parameters. Anomalies are detected when traffic deviates from established baselines or matches known ICS-CERT advisories."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -921,10 +927,12 @@ function BoundaryMonitor({ boundary }: { boundary?: Record<string, unknown> }) {
 
       {(data?.crossings || []).length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Shield className="h-10 w-10 text-green-500 mb-3" />
-            <p className="text-sm text-muted-foreground">No boundary crossings detected</p>
-            <p className="text-xs text-muted-foreground mt-1">The air gap between IT and OT networks is intact</p>
+          <CardContent>
+            <EmptyState
+              icon={Shield}
+              title="No boundary crossings detected"
+              description="The air gap between IT (Level 4-5) and OT (Level 0-3) networks is intact. Crossings will appear when traffic is detected traversing the IT/OT boundary."
+            />
           </CardContent>
         </Card>
       ) : (

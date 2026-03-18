@@ -23,7 +23,10 @@ import {
   XCircle,
   Play,
   BarChart3,
+  Plug,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
+import { useLocation } from "wouter";
 
 interface EntityScore {
   id: string;
@@ -132,6 +135,7 @@ async function apiFetch(url: string, options?: RequestInit) {
 }
 
 export default function UebaPage() {
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState("leaderboard");
@@ -337,14 +341,23 @@ export default function UebaPage() {
                     </TableRow>
                   ) : !entitiesData?.entities?.length ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12">
-                        <div className="flex flex-col items-center gap-2">
-                          <Users className="h-10 w-10 text-muted-foreground/50" />
-                          <p className="text-muted-foreground">No entities tracked yet</p>
-                          <p className="text-xs text-muted-foreground">
-                            Run an analysis to build baselines from sensor telemetry
-                          </p>
-                        </div>
+                      <TableCell colSpan={8}>
+                        <EmptyState
+                          icon={Users}
+                          title="No entities tracked yet"
+                          description="UEBA requires entity behavior data from connectors like CrowdStrike, Okta, or Microsoft Defender to build behavioral baselines."
+                          action={{
+                            label: "Connect a Data Source",
+                            icon: Plug,
+                            onClick: () => navigate("/connectors"),
+                          }}
+                          secondaryAction={{
+                            label: "Run Analysis",
+                            icon: Play,
+                            onClick: () => analyzeMutation.mutate(),
+                            variant: "outline",
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -447,14 +460,17 @@ export default function UebaPage() {
                     </TableRow>
                   ) : !anomaliesData?.anomalies?.length ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12">
-                        <div className="flex flex-col items-center gap-2">
-                          <Activity className="h-10 w-10 text-muted-foreground/50" />
-                          <p className="text-muted-foreground">No anomalies detected</p>
-                          <p className="text-xs text-muted-foreground">
-                            Run behavioral analysis to detect anomalies in sensor telemetry
-                          </p>
-                        </div>
+                      <TableCell colSpan={7}>
+                        <EmptyState
+                          icon={Activity}
+                          title="No anomalies detected"
+                          description="Anomalies appear when UEBA detects behavior that deviates from established baselines. Connect identity or endpoint data sources to start."
+                          action={{
+                            label: "Connect a Data Source",
+                            icon: Plug,
+                            onClick: () => navigate("/connectors"),
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (

@@ -30,7 +30,10 @@ import {
   Info,
   BarChart3,
   Network,
+  Plug,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
+import { useLocation } from "wouter";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -594,12 +597,18 @@ export default function SupplyChainPage() {
                 <TableBody>
                   {!findingsData?.findings?.length ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8">
-                        <div className="flex flex-col items-center gap-2">
-                          <ShieldCheck className="h-8 w-8 text-green-400/50" />
-                          <p className="text-muted-foreground text-sm">No supply chain findings</p>
-                          <p className="text-xs text-muted-foreground">Upload an SBOM or run an IaC scan to start</p>
-                        </div>
+                      <TableCell colSpan={5}>
+                        <EmptyState
+                          icon={ShieldCheck}
+                          title="No supply chain findings"
+                          description="Upload a CycloneDX or SPDX SBOM to scan for vulnerable dependencies, license violations, and typosquatting risks."
+                          action={{
+                            label: "Upload SBOM",
+                            icon: Upload,
+                            onClick: () => setUploadOpen(true),
+                          }}
+                          compact
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -716,14 +725,17 @@ export default function SupplyChainPage() {
                     </TableRow>
                   ) : !findingsData?.findings?.length ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12">
-                        <div className="flex flex-col items-center gap-2">
-                          <ShieldCheck className="h-10 w-10 text-green-400/50" />
-                          <p className="text-muted-foreground">No supply chain findings</p>
-                          <p className="text-xs text-muted-foreground">
-                            Upload an SBOM or run an IaC scan to detect issues
-                          </p>
-                        </div>
+                      <TableCell colSpan={8}>
+                        <EmptyState
+                          icon={ShieldCheck}
+                          title="No supply chain findings"
+                          description="Upload a CycloneDX or SPDX SBOM to scan for CVEs, license violations, and typosquatting. You can also run an IaC scan to detect misconfigurations."
+                          action={{
+                            label: "Upload SBOM",
+                            icon: Upload,
+                            onClick: () => setUploadOpen(true),
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -880,14 +892,17 @@ export default function SupplyChainPage() {
                     </TableRow>
                   ) : !depsData?.dependencies?.length ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12">
-                        <div className="flex flex-col items-center gap-2">
-                          <Network className="h-10 w-10 text-teal-400/30" />
-                          <p className="text-muted-foreground">No dependencies tracked</p>
-                          <p className="text-xs text-muted-foreground">
-                            Upload an SBOM to populate the dependency graph
-                          </p>
-                        </div>
+                      <TableCell colSpan={8}>
+                        <EmptyState
+                          icon={Network}
+                          title="No dependencies tracked"
+                          description="The dependency graph is populated from uploaded SBOMs. Upload a CycloneDX or SPDX JSON file to visualize your software supply chain."
+                          action={{
+                            label: "Upload SBOM",
+                            icon: Upload,
+                            onClick: () => setUploadOpen(true),
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -973,20 +988,17 @@ export default function SupplyChainPage() {
                 <TableBody>
                   {!sbomsData?.sboms?.length ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12">
-                        <div className="flex flex-col items-center gap-2">
-                          <Package className="h-10 w-10 text-teal-400/30" />
-                          <p className="text-muted-foreground">No SBOMs uploaded</p>
-                          <p className="text-xs text-muted-foreground">Upload CycloneDX or SPDX JSON to get started</p>
-                          <Button
-                            size="sm"
-                            className="mt-2 gap-1.5 bg-teal-600 hover:bg-teal-700"
-                            onClick={() => setUploadOpen(true)}
-                          >
-                            <Upload className="h-3.5 w-3.5" />
-                            Upload SBOM
-                          </Button>
-                        </div>
+                      <TableCell colSpan={9}>
+                        <EmptyState
+                          icon={Package}
+                          title="No SBOMs uploaded"
+                          description="Upload a CycloneDX or SPDX JSON file to inventory your software components, detect vulnerable dependencies, and monitor license compliance."
+                          action={{
+                            label: "Upload SBOM",
+                            icon: Upload,
+                            onClick: () => setUploadOpen(true),
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
