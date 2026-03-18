@@ -1,9 +1,8 @@
 name: Auto-Approve & Auto-Merge Devin PRs
 
+# PAUSED — re-enable pull_request trigger when ready to resume CI
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   pull-requests: write

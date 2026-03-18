@@ -1,9 +1,8 @@
 name: PR Gate
 
+# PAUSED — re-enable pull_request trigger when ready to resume CI
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 env:
   NODE_VERSION: "20"

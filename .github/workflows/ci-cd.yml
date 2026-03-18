@@ -1,8 +1,7 @@
 name: CI/CD Pipeline
 
+# PAUSED — re-enable push trigger when ready to resume CI
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 env:
