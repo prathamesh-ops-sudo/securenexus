@@ -28,6 +28,9 @@ import {
   streamDeepInvestigation,
   conductMultiTurnInvestigation,
   generateDetectionRules,
+  getInferenceHistory,
+  getInferenceStats,
+  getPromptVersion,
 } from "../ai";
 import { recordFeedbackOutcome } from "../ai/active-learning";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
@@ -300,6 +303,99 @@ export function registerAiRoutes(app: Express): void {
   app.get("/api/ai/inference-metrics", isAuthenticated, strictLimiter, async (req, res) => {
     res.json(getInferenceMetrics());
   });
+
+  // --- GET /api/ai/inference-history — persistent inference log with filters ---
+  app.get("/api/ai/inference-history", isAuthenticated, strictLimiter, async (req: Request, res: Response) => {
+    try {
+      const tier = req.query.tier ? String(req.query.tier) : undefined;
+      const limit = req.query.limit ? Math.min(Math.max(parseInt(String(req.query.limit), 10) || 100, 1), 1000) : 100;
+      const sinceDays = req.query.days ? Math.min(Math.max(parseInt(String(req.query.days), 10) || 7, 1), 90) : 7;
+      const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+      const history = await getInferenceHistory({ tier, limit, since });
+      res.json(history);
+    } catch (error: unknown) {
+      logger.child("ai").error("Inference history query failed", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch inference history" });
+    }
+  });
+
+  // --- GET /api/ai/inference-stats — aggregated daily + per-tier stats ---
+  app.get("/api/ai/inference-stats", isAuthenticated, strictLimiter, async (req: Request, res: Response) => {
+    try {
+      const days = req.query.days ? Math.min(Math.max(parseInt(String(req.query.days), 10) || 7, 1), 90) : 7;
+      const stats = await getInferenceStats(days);
+      res.json(stats);
+    } catch (error: unknown) {
+      logger.child("ai").error("Inference stats query failed", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch inference stats" });
+    }
+  });
+
+  // --- POST /api/ai/test-prompt — dry-run a prompt with sample input (no production side-effects) ---
+  app.post(
+    "/api/ai/test-prompt",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const { promptId, version, sampleInput } = req.body;
+        if (!promptId || typeof promptId !== "string") {
+          return res.status(400).json({ message: "promptId is required" });
+        }
+        if (!sampleInput || typeof sampleInput !== "string") {
+          return res.status(400).json({ message: "sampleInput is required" });
+        }
+
+        // Fetch the specific version or current version
+        let prompt;
+        if (typeof version === "number") {
+          prompt = await getPromptVersion(promptId, version);
+        } else {
+          const allPrompts = await getAllRegisteredPrompts();
+          prompt = allPrompts.find((pt) => pt.id === promptId);
+        }
+
+        if (!prompt) {
+          return res.status(404).json({ message: "Prompt not found" });
+        }
+
+        // Invoke the model with the prompt but don't record it as a production invocation
+        const start = Date.now();
+        const result = await gatewayInvoke({
+          modelId: appConfig.ai.modelId,
+          backend: appConfig.ai.backend,
+          systemPrompt: prompt.systemPrompt,
+          userMessage: sampleInput,
+          maxTokens: prompt.maxTokens,
+          temperature: prompt.temperature,
+          topP: appConfig.ai.topP,
+          sagemakerEndpoint: appConfig.ai.sagemakerEndpoint,
+          skipCache: true,
+        });
+
+        res.json({
+          output: result.text,
+          latencyMs: Date.now() - start,
+          model: result.modelId,
+          inputTokens: result.inputTokensEstimate,
+          outputTokens: result.outputTokensEstimate,
+          cached: result.cached,
+          prompt: {
+            id: prompt.id,
+            version: prompt.version,
+            name: prompt.name,
+            tier: prompt.tier,
+          },
+        });
+      } catch (error: unknown) {
+        logger.child("ai").error("Test prompt failed", { error: String(error) });
+        const errMsg = (error as Error).message || String(error);
+        res.status(500).json({ message: errMsg.length <= 200 ? errMsg : "Test prompt invocation failed" });
+      }
+    },
+  );
 
   app.post(
     "/api/ai/correlate",
