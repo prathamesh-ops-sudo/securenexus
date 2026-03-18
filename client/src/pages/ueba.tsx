@@ -104,6 +104,13 @@ function riskBarColor(score: number): string {
 
 async function apiFetch(url: string, options?: RequestInit) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // Include org context header
+  try {
+    const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+    if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+  } catch {
+    /* SSR / privacy mode */
+  }
   // Include CSRF token for mutating requests
   const method = options?.method?.toUpperCase() ?? "GET";
   if (method !== "GET" && method !== "HEAD") {
