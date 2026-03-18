@@ -47,7 +47,9 @@ import {
   Download,
   Eye,
   AlertOctagon,
+  Plug,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -696,7 +698,12 @@ export default function RansomwareDefensePage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-zinc-500">No kill switch events yet</p>
+                  <EmptyState
+                    icon={Power}
+                    title="No kill switch events"
+                    description="The emergency kill switch has not been activated. It will instantly isolate all endpoints when active ransomware encryption is detected."
+                    compact
+                  />
                 )}
               </CardContent>
             </Card>
@@ -722,7 +729,12 @@ export default function RansomwareDefensePage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-zinc-500">No tabletop exercises yet</p>
+                  <EmptyState
+                    icon={Users}
+                    title="No tabletop exercises yet"
+                    description="Simulate ransomware attacks to train your team. Create exercises from templates or build custom scenarios."
+                    compact
+                  />
                 )}
               </CardContent>
             </Card>
@@ -803,9 +815,11 @@ export default function RansomwareDefensePage() {
                   </TableBody>
                 </Table>
               ) : (
-                <p className="text-sm text-zinc-500 text-center py-8">
-                  No kill switch events. The kill switch has not been activated.
-                </p>
+                <EmptyState
+                  icon={Power}
+                  title="No kill switch activations"
+                  description="The kill switch has not been activated. When triggered, it isolates all endpoints to contain active ransomware encryption."
+                />
               )}
             </CardContent>
           </Card>
@@ -913,13 +927,16 @@ export default function RansomwareDefensePage() {
                   </TableBody>
                 </Table>
               ) : (
-                <div className="text-center py-12">
-                  <FileWarning className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-                  <p className="text-sm text-zinc-500 mb-3">No canary files deployed</p>
-                  <Button variant="outline" className="border-zinc-700" onClick={() => setCanaryTemplateOpen(true)}>
-                    Deploy Template Pack
-                  </Button>
-                </div>
+                <EmptyState
+                  icon={FileWarning}
+                  title="No canary files deployed"
+                  description="Canary files are fake documents placed on critical file shares. Any access or encryption attempt triggers an immediate ransomware alert with zero false positives."
+                  action={{
+                    label: "Deploy Template Pack",
+                    icon: Zap,
+                    onClick: () => setCanaryTemplateOpen(true),
+                  }}
+                />
               )}
             </CardContent>
           </Card>
@@ -986,17 +1003,17 @@ export default function RansomwareDefensePage() {
             </div>
           ) : (
             <Card className="bg-zinc-900/50 border-zinc-800">
-              <CardContent className="text-center py-12">
-                <Skull className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-                <p className="text-sm text-zinc-500 mb-3">No ransomware groups tracked yet</p>
-                <Button
-                  variant="outline"
-                  className="border-zinc-700"
-                  onClick={() => importSeedGroups.mutate()}
-                  disabled={importSeedGroups.isPending}
-                >
-                  Import Known Groups
-                </Button>
+              <CardContent>
+                <EmptyState
+                  icon={Skull}
+                  title="No ransomware groups tracked"
+                  description="Import seed data to populate known ransomware groups with their TTPs, payment addresses, and decryptor availability. This powers AI-generated recovery runbooks."
+                  action={{
+                    label: "Import Known Groups",
+                    icon: Download,
+                    onClick: () => importSeedGroups.mutate(),
+                  }}
+                />
               </CardContent>
             </Card>
           )}
@@ -1045,12 +1062,17 @@ export default function RansomwareDefensePage() {
             </div>
           ) : (
             <Card className="bg-zinc-900/50 border-zinc-800">
-              <CardContent className="text-center py-12">
-                <BookOpen className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-                <p className="text-sm text-zinc-500 mb-3">No recovery runbooks yet</p>
-                <Button variant="outline" className="border-zinc-700" onClick={() => setRunbookOpen(true)}>
-                  Generate Your First Runbook
-                </Button>
+              <CardContent>
+                <EmptyState
+                  icon={BookOpen}
+                  title="No recovery runbooks yet"
+                  description="AI-generated step-by-step recovery plans based on specific ransomware variants. Import ransomware group intelligence first, then generate targeted runbooks."
+                  action={{
+                    label: "Generate Your First Runbook",
+                    icon: Zap,
+                    onClick: () => setRunbookOpen(true),
+                  }}
+                />
               </CardContent>
             </Card>
           )}
@@ -1188,12 +1210,17 @@ export default function RansomwareDefensePage() {
           ) : (
             !exerciseTemplates?.length && (
               <Card className="bg-zinc-900/50 border-zinc-800">
-                <CardContent className="text-center py-12">
-                  <Users className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-                  <p className="text-sm text-zinc-500 mb-3">No exercises created yet</p>
-                  <Button variant="outline" className="border-zinc-700" onClick={() => setExerciseOpen(true)}>
-                    Create Your First Exercise
-                  </Button>
+                <CardContent>
+                  <EmptyState
+                    icon={Users}
+                    title="No exercises created yet"
+                    description="Tabletop exercises simulate ransomware attacks for training. Use predefined templates or create custom scenarios to test your incident response procedures."
+                    action={{
+                      label: "Create Your First Exercise",
+                      icon: Plus,
+                      onClick: () => setExerciseOpen(true),
+                    }}
+                  />
                 </CardContent>
               </Card>
             )
@@ -1310,12 +1337,17 @@ export default function RansomwareDefensePage() {
             </Card>
           ) : (
             <Card className="bg-zinc-900/50 border-zinc-800">
-              <CardContent className="text-center py-12">
-                <HardDrive className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-                <p className="text-sm text-zinc-500 mb-3">No backups registered for verification</p>
-                <Button variant="outline" className="border-zinc-700" onClick={() => setBackupOpen(true)}>
-                  Register Your First Backup
-                </Button>
+              <CardContent>
+                <EmptyState
+                  icon={HardDrive}
+                  title="No backups registered for verification"
+                  description="Register your backup targets (S3, Azure Blob, on-prem NAS) to continuously verify they are restorable and not compromised by ransomware."
+                  action={{
+                    label: "Register Your First Backup",
+                    icon: Plus,
+                    onClick: () => setBackupOpen(true),
+                  }}
+                />
               </CardContent>
             </Card>
           )}

@@ -1152,15 +1152,43 @@ export default function Dashboard() {
     [widgetConfig],
   );
 
+  // Contextual widget awareness: auto-hide widgets that have no data
+  const widgetHasData = useCallback(
+    (id: WidgetId): boolean => {
+      if (!analytics) return true; // still loading, assume visible
+      switch (id) {
+        case "severity":
+          return (analytics.severityDistribution ?? []).some((d) => d.value > 0);
+        case "sources":
+          return (analytics.sourceDistribution ?? []).length > 0;
+        case "trend":
+          return (analytics.alertTrend ?? []).some((d) => d.count > 0);
+        case "mitre":
+          return (analytics.topMitreTactics ?? []).length > 0;
+        case "categories":
+          return (analytics.categoryDistribution ?? []).length > 0;
+        case "connectors":
+          return (analytics.connectorHealth ?? []).length > 0;
+        case "ingestion":
+          return (analytics.ingestionRate ?? []).some((d) => d.created > 0 || d.deduped > 0);
+        case "whatChanged":
+          return true; // always relevant
+        default:
+          return true;
+      }
+    },
+    [analytics],
+  );
+
   const visibleChartWidgets = useMemo(() => {
     const chartIds: WidgetId[] = ["severity", "sources", "trend"];
-    return chartIds.filter((id) => isWidgetVisible(id));
-  }, [isWidgetVisible]);
+    return chartIds.filter((id) => isWidgetVisible(id) && widgetHasData(id));
+  }, [isWidgetVisible, widgetHasData]);
 
   const visibleBottomWidgets = useMemo(() => {
     const bottomIds: WidgetId[] = ["mitre", "categories", "connectors", "ingestion", "whatChanged"];
-    return bottomIds.filter((id) => isWidgetVisible(id));
-  }, [isWidgetVisible]);
+    return bottomIds.filter((id) => isWidgetVisible(id) && widgetHasData(id));
+  }, [isWidgetVisible, widgetHasData]);
 
   const securityScore = useMemo(() => {
     if (!stats) return null;

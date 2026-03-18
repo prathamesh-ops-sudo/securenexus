@@ -43,6 +43,7 @@ import {
   GitBranch,
   Zap,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { apiRequest } from "@/lib/queryClient";
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -497,9 +498,12 @@ export default function PhysicalSecurityPage() {
             </CardHeader>
             <CardContent>
               {(dashboard?.recentEvents ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No badge events in the last 24 hours. Connect a badge system to start monitoring.
-                </p>
+                <EmptyState
+                  icon={DoorOpen}
+                  title="No badge events in the last 24 hours"
+                  description="Connect a physical access control system (badge readers, turnstiles) to start monitoring entry/exit events and detecting anomalous access patterns."
+                  compact
+                />
               ) : (
                 <div className="space-y-2">
                   {dashboard?.recentEvents.map((event) => (
@@ -571,8 +575,17 @@ export default function PhysicalSecurityPage() {
             </div>
           ) : (assetsData?.items ?? []).length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                No physical assets registered. Add access points, cameras, or server rooms.
+              <CardContent>
+                <EmptyState
+                  icon={Shield}
+                  title="No physical assets registered"
+                  description="Register access points, cameras, server rooms, and other physical security assets to enable convergence with cyber security events."
+                  action={{
+                    label: "Add Asset",
+                    icon: Plus,
+                    onClick: () => setShowAddAsset(true),
+                  }}
+                />
               </CardContent>
             </Card>
           ) : (
@@ -644,8 +657,12 @@ export default function PhysicalSecurityPage() {
             </div>
           ) : (eventsData?.items ?? []).length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                No badge events recorded. Events will appear here as badge systems report access activity.
+              <CardContent>
+                <EmptyState
+                  icon={DoorOpen}
+                  title="No badge events recorded"
+                  description="Badge events appear as physical access control systems report swipe, tap, and tailgating activity. Connect a badge system from the Connectors page."
+                />
               </CardContent>
             </Card>
           ) : (
@@ -718,8 +735,17 @@ export default function PhysicalSecurityPage() {
 
           {(incidentsData?.items ?? []).length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                No physical incidents. Incidents are created manually or via the correlation engine.
+              <CardContent>
+                <EmptyState
+                  icon={ShieldAlert}
+                  title="No physical incidents"
+                  description="Physical incidents are created manually or automatically by the correlation engine when anomalous badge patterns are detected (e.g., tailgating, after-hours access)."
+                  action={{
+                    label: "Create Incident",
+                    icon: Plus,
+                    onClick: () => setShowAddIncident(true),
+                  }}
+                />
               </CardContent>
             </Card>
           ) : (
@@ -804,8 +830,17 @@ export default function PhysicalSecurityPage() {
 
           {(visitorsData?.items ?? []).length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                No visitors registered. Register visitors to track physical access and correlate with digital events.
+              <CardContent>
+                <EmptyState
+                  icon={UserCheck}
+                  title="No visitors registered"
+                  description="Pre-register visitors to track physical access, assign temporary badges, and correlate visitor presence with digital security events."
+                  action={{
+                    label: "Register Visitor",
+                    icon: Plus,
+                    onClick: () => setShowAddVisitor(true),
+                  }}
+                />
               </CardContent>
             </Card>
           ) : (

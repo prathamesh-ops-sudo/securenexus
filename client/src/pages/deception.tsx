@@ -41,7 +41,9 @@ import {
   Network,
   MonitorSpeaker,
   Copy,
+  Plug,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 
 const TOKEN_TYPE_LABELS: Record<string, { label: string; icon: typeof Key; description: string }> = {
   aws_key: { label: "AWS Credentials", icon: Key, description: "Fake AWS access key + secret" },
@@ -269,13 +271,14 @@ function RecentHitsCard({ hits }: { hits: Array<Record<string, unknown>> }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Recent Hits</CardTitle>
-          <CardDescription>No deception hits detected yet</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <Shield className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p>Deploy canary tokens and honeypots to start detecting intruders</p>
-          </div>
+          <EmptyState
+            icon={Shield}
+            title="No deception hits detected yet"
+            description="Deploy canary tokens and honeypots across your environment. When an attacker interacts with them, hits will appear here with full attribution."
+            compact
+          />
         </CardContent>
       </Card>
     );
@@ -420,10 +423,12 @@ function CanaryTokensSection({ tokens }: { tokens: Array<Record<string, unknown>
 
       {tokens.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">
-            <Key className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">No canary tokens deployed</p>
-            <p className="text-sm mt-1">Create fake credentials that alert you the moment an attacker uses them</p>
+          <CardContent>
+            <EmptyState
+              icon={Key}
+              title="No canary tokens deployed"
+              description="Canary tokens are fake credentials (AWS keys, API tokens, DB strings) that trigger an alert the moment an attacker uses them. Deploy them across your environment for zero-noise intrusion detection."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -562,12 +567,12 @@ function HoneypotAssetsSection({ assets }: { assets: Array<Record<string, unknow
 
       {assets.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">
-            <Server className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">No honeypot assets deployed</p>
-            <p className="text-sm mt-1">
-              Deploy fake services, accounts, and file shares that alert on any interaction
-            </p>
+          <CardContent>
+            <EmptyState
+              icon={Server}
+              title="No honeypot assets deployed"
+              description="Honeypots are decoy services (SSH, RDP, databases, file shares) that look real to attackers. Any interaction is a confirmed true positive — no false alarms."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -643,12 +648,12 @@ function DeceptionHitsSection({ hits }: { hits: Array<Record<string, unknown>> }
   if (hits.length === 0) {
     return (
       <Card>
-        <CardContent className="p-8 text-center text-muted-foreground">
-          <Target className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No deception hits recorded</p>
-          <p className="text-sm mt-1">
-            When an attacker interacts with your canary tokens or honeypots, hits will appear here
-          </p>
+        <CardContent>
+          <EmptyState
+            icon={Target}
+            title="No deception hits recorded"
+            description="Hits appear when attackers interact with your canary tokens or honeypots. Deploy deception assets from the Canary Tokens or Honeypots tabs to start detecting intrusions."
+          />
         </CardContent>
       </Card>
     );
