@@ -1,4 +1,8 @@
 import crypto from "crypto";
+import { db } from "./db";
+import { collectorInstances, collectorEvents, collectorScans } from "@shared/schema";
+import { eq, and, desc, sql, count } from "drizzle-orm";
+import { logger } from "./logger";
 
 export type CollectorType =
   | "agent_endpoint"
@@ -510,12 +514,6 @@ const COLLECTOR_TEMPLATES: CollectorTemplate[] = [
 ];
 
 const MAX_INSTANCES = 500;
-const MAX_EVENTS = 5000;
-const MAX_SCANS = 500;
-
-const instanceStore = new Map<string, CollectorInstance>();
-const eventStore = new Map<string, IngestedEvent>();
-const scanStore = new Map<string, ScanResult>();
 
 function generateId(): string {
   return crypto.randomBytes(12).toString("hex");
@@ -534,7 +532,7 @@ export function getTemplateBySlug(slug: string): CollectorTemplate | null {
   return COLLECTOR_TEMPLATES.find((t) => t.slug === slug) ?? null;
 }
 
-export function deployCollector(
+export async function deployCollector(
   templateSlug: string,
   orgId: string,
   name: string,
@@ -542,7 +540,7 @@ export function deployCollector(
   deploymentMethod: DeploymentMethod,
   config: Record<string, unknown>,
   tags: string[],
-): CollectorInstance {
+): Promise<CollectorInstance> {
   const template = COLLECTOR_TEMPLATES.find((t) => t.slug === templateSlug);
   if (!template) throw new Error(`Unknown collector template: ${templateSlug}`);
   if (!template.platforms.includes(platform) && !template.platforms.includes("any")) {
@@ -552,100 +550,126 @@ export function deployCollector(
     throw new Error(`Template ${templateSlug} does not support deployment method: ${deploymentMethod}`);
   }
 
-  const orgInstanceCount = Array.from(instanceStore.values()).filter((i) => i.orgId === orgId).length;
-  if (orgInstanceCount >= MAX_INSTANCES) {
+  const [countResult] = await db
+    .select({ value: count() })
+    .from(collectorInstances)
+    .where(eq(collectorInstances.orgId, orgId));
+  if ((countResult?.value ?? 0) >= MAX_INSTANCES) {
     throw new Error("Maximum collector instances reached for this organization");
   }
 
-  const instance: CollectorInstance = {
-    id: generateId(),
-    templateSlug,
-    orgId,
-    name,
-    status: template.requiresAgent ? "pending_install" : "active",
-    platform,
-    deploymentMethod,
-    config,
-    hostInfo: null,
-    metrics: {
-      eventsPerSecond: 0,
-      bytesIngested: 0,
-      errorsLast24h: 0,
-      uptimePercent: 0,
-      latencyP50Ms: 0,
-      latencyP99Ms: 0,
-      lastEventCount: 0,
-      totalEventsIngested: 0,
-    },
-    installedAt: new Date().toISOString(),
-    lastHeartbeatAt: null,
-    lastDataAt: null,
-    version: "1.0.0",
-    tags,
+  const id = generateId();
+  const metrics = {
+    eventsPerSecond: 0,
+    bytesIngested: 0,
+    errorsLast24h: 0,
+    uptimePercent: 0,
+    latencyP50Ms: 0,
+    latencyP99Ms: 0,
+    lastEventCount: 0,
+    totalEventsIngested: 0,
   };
 
-  instanceStore.set(instance.id, instance);
-  return instance;
+  const [inserted] = await db
+    .insert(collectorInstances)
+    .values({
+      id,
+      orgId,
+      templateSlug,
+      name,
+      status: template.requiresAgent ? "pending_install" : "active",
+      platform,
+      deploymentMethod,
+      config,
+      metrics,
+      tags,
+    })
+    .returning();
+
+  return dbRowToInstance(inserted);
 }
 
-export function getCollectorInstances(orgId: string, type?: CollectorType): CollectorInstance[] {
-  const instances = Array.from(instanceStore.values()).filter((i) => i.orgId === orgId);
+export async function getCollectorInstances(orgId: string, type?: CollectorType): Promise<CollectorInstance[]> {
+  const rows = await db
+    .select()
+    .from(collectorInstances)
+    .where(eq(collectorInstances.orgId, orgId))
+    .orderBy(desc(collectorInstances.createdAt));
+
+  let instances = rows.map(dbRowToInstance);
   if (type) {
     const slugsOfType = COLLECTOR_TEMPLATES.filter((t) => t.type === type).map((t) => t.slug);
-    return instances.filter((i) => slugsOfType.includes(i.templateSlug));
+    instances = instances.filter((i) => slugsOfType.includes(i.templateSlug));
   }
   return instances;
 }
 
-export function getCollectorInstance(instanceId: string, orgId: string): CollectorInstance | null {
-  const instance = instanceStore.get(instanceId);
-  if (!instance || instance.orgId !== orgId) return null;
-  return instance;
+export async function getCollectorInstance(instanceId: string, orgId: string): Promise<CollectorInstance | null> {
+  const [row] = await db
+    .select()
+    .from(collectorInstances)
+    .where(and(eq(collectorInstances.id, instanceId), eq(collectorInstances.orgId, orgId)))
+    .limit(1);
+  return row ? dbRowToInstance(row) : null;
 }
 
-export function updateCollectorConfig(
+export async function updateCollectorConfig(
   instanceId: string,
   orgId: string,
   updates: { name?: string; config?: Record<string, unknown>; tags?: string[]; status?: CollectorStatus },
-): CollectorInstance | null {
-  const instance = instanceStore.get(instanceId);
-  if (!instance || instance.orgId !== orgId) return null;
+): Promise<CollectorInstance | null> {
+  const existing = await getCollectorInstance(instanceId, orgId);
+  if (!existing) return null;
 
-  if (updates.name !== undefined) instance.name = updates.name;
-  if (updates.config !== undefined) instance.config = { ...instance.config, ...updates.config };
-  if (updates.tags !== undefined) instance.tags = updates.tags;
-  if (updates.status !== undefined) instance.status = updates.status;
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (updates.name !== undefined) patch.name = updates.name;
+  if (updates.config !== undefined) patch.config = { ...((existing as any).config || {}), ...updates.config };
+  if (updates.tags !== undefined) patch.tags = updates.tags;
+  if (updates.status !== undefined) patch.status = updates.status;
 
-  instanceStore.set(instanceId, instance);
-  return instance;
+  const [updated] = await db
+    .update(collectorInstances)
+    .set(patch as any)
+    .where(and(eq(collectorInstances.id, instanceId), eq(collectorInstances.orgId, orgId)))
+    .returning();
+
+  return updated ? dbRowToInstance(updated) : null;
 }
 
-export function deleteCollector(instanceId: string, orgId: string): boolean {
-  const instance = instanceStore.get(instanceId);
-  if (!instance || instance.orgId !== orgId) return false;
-  instanceStore.delete(instanceId);
-  return true;
+export async function deleteCollector(instanceId: string, orgId: string): Promise<boolean> {
+  const result = await db
+    .delete(collectorInstances)
+    .where(and(eq(collectorInstances.id, instanceId), eq(collectorInstances.orgId, orgId)));
+  return (result as any).rowCount > 0;
 }
 
-export function sendHeartbeat(
+export async function sendHeartbeat(
   instanceId: string,
   orgId: string,
   hostInfo: HostInfo,
   metrics: Partial<CollectorMetrics>,
-): CollectorInstance | null {
-  const instance = instanceStore.get(instanceId);
-  if (!instance || instance.orgId !== orgId) return null;
+): Promise<CollectorInstance | null> {
+  const existing = await getCollectorInstance(instanceId, orgId);
+  if (!existing) return null;
 
-  instance.hostInfo = hostInfo;
-  instance.lastHeartbeatAt = new Date().toISOString();
-  instance.status = "active";
-  instance.metrics = { ...instance.metrics, ...metrics };
+  const mergedMetrics = { ...((existing as any).metrics || {}), ...metrics };
 
-  instanceStore.set(instanceId, instance);
-  return instance;
+  const [updated] = await db
+    .update(collectorInstances)
+    .set({
+      hostInfo: hostInfo as any,
+      lastHeartbeatAt: new Date(),
+      status: "active",
+      metrics: mergedMetrics,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(collectorInstances.id, instanceId), eq(collectorInstances.orgId, orgId)))
+    .returning();
+
+  return updated ? dbRowToInstance(updated) : null;
 }
 
-export function ingestEvents(
+export async function ingestEvents(
   collectorId: string,
   orgId: string,
   events: Array<{
@@ -655,44 +679,47 @@ export function ingestEvents(
     rawData: Record<string, unknown>;
     tags?: string[];
   }>,
-): IngestedEvent[] {
-  const instance = instanceStore.get(collectorId);
-  if (!instance || instance.orgId !== orgId) throw new Error("Collector not found or access denied");
+): Promise<IngestedEvent[]> {
+  const existing = await getCollectorInstance(collectorId, orgId);
+  if (!existing) throw new Error("Collector not found or access denied");
 
-  if (eventStore.size + events.length > MAX_EVENTS) {
-    const entriesToDelete = eventStore.size + events.length - MAX_EVENTS;
-    const keys = Array.from(eventStore.keys());
-    for (let i = 0; i < entriesToDelete; i++) {
-      eventStore.delete(keys[i]);
-    }
-  }
+  const rows = await db
+    .insert(collectorEvents)
+    .values(
+      events.map((e) => ({
+        id: generateId(),
+        collectorId,
+        orgId,
+        eventType: e.eventType,
+        severity: e.severity,
+        source: e.source,
+        rawData: e.rawData,
+        parsedFields: extractFields(e.rawData),
+        tags: e.tags ?? [],
+        processed: false,
+      })),
+    )
+    .returning();
 
-  const ingested: IngestedEvent[] = events.map((e) => {
-    const event: IngestedEvent = {
-      id: generateId(),
-      collectorId,
-      orgId,
-      eventType: e.eventType,
-      severity: e.severity,
-      source: e.source,
-      timestamp: new Date().toISOString(),
-      rawData: e.rawData,
-      parsedFields: extractFields(e.rawData),
-      tags: e.tags ?? [],
-      processed: false,
-    };
-    eventStore.set(event.id, event);
-    return event;
-  });
+  // Update collector metrics
+  const currentMetrics = (existing as any).metrics || {};
+  const bytesAdded = JSON.stringify(events).length;
+  await db
+    .update(collectorInstances)
+    .set({
+      lastDataAt: new Date(),
+      metrics: {
+        ...currentMetrics,
+        totalEventsIngested: (currentMetrics.totalEventsIngested || 0) + events.length,
+        lastEventCount: events.length,
+        eventsPerSecond: Math.round(events.length / 10),
+        bytesIngested: (currentMetrics.bytesIngested || 0) + bytesAdded,
+      },
+      updatedAt: new Date(),
+    })
+    .where(and(eq(collectorInstances.id, collectorId), eq(collectorInstances.orgId, orgId)));
 
-  instance.lastDataAt = new Date().toISOString();
-  instance.metrics.totalEventsIngested += events.length;
-  instance.metrics.lastEventCount = events.length;
-  instance.metrics.eventsPerSecond = Math.round(events.length / 10);
-  instance.metrics.bytesIngested += JSON.stringify(events).length;
-  instanceStore.set(collectorId, instance);
-
-  return ingested;
+  return rows.map(dbRowToEvent);
 }
 
 function extractFields(raw: Record<string, unknown>): Record<string, unknown> {
@@ -708,25 +735,32 @@ function extractFields(raw: Record<string, unknown>): Record<string, unknown> {
   return parsed;
 }
 
-export function getIngestedEvents(orgId: string, collectorId?: string, limit: number = 50): IngestedEvent[] {
-  let events = Array.from(eventStore.values()).filter((e) => e.orgId === orgId);
-  if (collectorId) events = events.filter((e) => e.collectorId === collectorId);
-  return events.slice(-limit).reverse();
+export async function getIngestedEvents(
+  orgId: string,
+  collectorId?: string,
+  limit: number = 50,
+): Promise<IngestedEvent[]> {
+  const conditions = [eq(collectorEvents.orgId, orgId)];
+  if (collectorId) conditions.push(eq(collectorEvents.collectorId, collectorId));
+
+  const rows = await db
+    .select()
+    .from(collectorEvents)
+    .where(and(...conditions))
+    .orderBy(desc(collectorEvents.timestamp))
+    .limit(limit);
+
+  return rows.map(dbRowToEvent);
 }
 
-export function triggerScan(
+export async function triggerScan(
   collectorId: string,
   orgId: string,
   scanType: ScanResult["scanType"],
   targets: string[],
-): ScanResult {
-  const instance = instanceStore.get(collectorId);
-  if (!instance || instance.orgId !== orgId) throw new Error("Collector not found or access denied");
-
-  if (scanStore.size >= MAX_SCANS) {
-    const keys = Array.from(scanStore.keys());
-    scanStore.delete(keys[0]);
-  }
+): Promise<ScanResult> {
+  const existing = await getCollectorInstance(collectorId, orgId);
+  if (!existing) throw new Error("Collector not found or access denied");
 
   const criticalCount = randomBetween(0, 3);
   const highCount = randomBetween(1, 8);
@@ -777,95 +811,400 @@ export function triggerScan(
   const actualMedium = findings.filter((f) => f.severity === "medium").length;
   const actualLow = findings.filter((f) => f.severity === "low").length;
 
-  const scan: ScanResult = {
-    id: generateId(),
-    collectorId,
-    orgId,
-    scanType,
-    status: "completed",
-    startedAt: new Date(Date.now() - randomBetween(30000, 120000)).toISOString(),
-    completedAt: new Date().toISOString(),
+  const summary = {
     findingsCount: findings.length,
     criticalCount: actualCritical,
     highCount: actualHigh,
     mediumCount: actualMedium,
     lowCount: actualLow,
-    targets,
-    findings,
   };
 
-  scanStore.set(scan.id, scan);
-  return scan;
+  const [inserted] = await db
+    .insert(collectorScans)
+    .values({
+      id: generateId(),
+      collectorId,
+      orgId,
+      scanType,
+      status: "completed",
+      targets,
+      findings: findings as any,
+      summary,
+      startedAt: new Date(Date.now() - randomBetween(30000, 120000)),
+      completedAt: new Date(),
+    })
+    .returning();
+
+  return dbRowToScan(inserted, findings);
 }
 
-export function getScanResults(orgId: string, collectorId?: string, limit: number = 20): ScanResult[] {
-  let scans = Array.from(scanStore.values()).filter((s) => s.orgId === orgId);
-  if (collectorId) scans = scans.filter((s) => s.collectorId === collectorId);
-  return scans.slice(-limit).reverse();
+export async function getScanResults(orgId: string, collectorId?: string, limit: number = 20): Promise<ScanResult[]> {
+  const conditions = [eq(collectorScans.orgId, orgId)];
+  if (collectorId) conditions.push(eq(collectorScans.collectorId, collectorId));
+
+  const rows = await db
+    .select()
+    .from(collectorScans)
+    .where(and(...conditions))
+    .orderBy(desc(collectorScans.createdAt))
+    .limit(limit);
+
+  return rows.map((r) => dbRowToScan(r));
 }
 
-export function getScanResult(scanId: string, orgId: string): ScanResult | null {
-  const scan = scanStore.get(scanId);
-  if (!scan || scan.orgId !== orgId) return null;
-  return scan;
+export async function getScanResult(scanId: string, orgId: string): Promise<ScanResult | null> {
+  const [row] = await db
+    .select()
+    .from(collectorScans)
+    .where(and(eq(collectorScans.id, scanId), eq(collectorScans.orgId, orgId)))
+    .limit(1);
+  return row ? dbRowToScan(row) : null;
 }
 
 export function getDeploymentScript(templateSlug: string, instanceId: string): string {
   const template = COLLECTOR_TEMPLATES.find((t) => t.slug === templateSlug);
   if (!template) return "";
 
-  const baseUrl = "https://nexus.aricatech.xyz";
+  const baseUrl = process.env.APP_URL || "https://staging.aricatech.xyz";
 
   if (templateSlug.startsWith("endpoint-agent-linux")) {
     return `#!/bin/bash
-# SecureNexus Endpoint Agent Installer — Linux
+# SecureNexus Endpoint Agent — Linux
+# Lightweight collector using auditd + curl (no binary agent needed)
 set -euo pipefail
 
 COLLECTOR_ID="${instanceId}"
-API_ENDPOINT="${baseUrl}/api/native-collectors"
+API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+INTERVAL=\${SN_INTERVAL:-30}
 
-echo "Installing SecureNexus Endpoint Agent..."
-curl -fsSL ${baseUrl}/agent/linux/install.sh | sudo bash -s -- \\
-  --collector-id "$COLLECTOR_ID" \\
-  --api-endpoint "$API_ENDPOINT" \\
-  --enable-fim \\
-  --enable-process-audit
+echo "[SecureNexus] Setting up endpoint collector (ID: $COLLECTOR_ID)..."
 
-echo "Agent installed and reporting to SecureNexus."`;
+# Ensure dependencies
+for cmd in curl jq; do
+  command -v "$cmd" >/dev/null 2>&1 || { echo "Installing $cmd..."; sudo apt-get install -y "$cmd" 2>/dev/null || sudo yum install -y "$cmd"; }
+done
+
+# Enable auditd if available
+if command -v auditctl >/dev/null 2>&1; then
+  sudo auditctl -a always,exit -F arch=b64 -S execve -k sn_process 2>/dev/null || true
+  sudo auditctl -w /etc/passwd -p wa -k sn_auth 2>/dev/null || true
+  sudo auditctl -w /etc/shadow -p wa -k sn_auth 2>/dev/null || true
+  echo "[SecureNexus] auditd rules installed."
+fi
+
+# Create systemd service for continuous collection
+cat > /tmp/securenexus-collector.sh << 'COLLECTOR_SCRIPT'
+#!/bin/bash
+API="$1"
+while true; do
+  EVENTS='[]'
+
+  # Collect auth events
+  if [ -f /var/log/auth.log ]; then
+    AUTH_EVENTS=$(tail -100 /var/log/auth.log 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "auth_log", severity: "info", source: "auth.log", rawData: {line: .}}]' 2>/dev/null || echo '[]')
+    EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
+  elif [ -f /var/log/secure ]; then
+    AUTH_EVENTS=$(tail -100 /var/log/secure 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "auth_log", severity: "info", source: "secure", rawData: {line: .}}]' 2>/dev/null || echo '[]')
+    EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
+  fi
+
+  # Collect process events
+  PROC_EVENTS=$(ps aux --no-headers 2>/dev/null | head -50 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "process_event", severity: "info", source: "ps", rawData: {line: .}}]' 2>/dev/null || echo '[]')
+  EVENTS=$(echo "$EVENTS $PROC_EVENTS" | jq -s 'add')
+
+  # Collect network connections
+  NET_EVENTS=$(ss -tunap 2>/dev/null | head -50 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "network_connection", severity: "info", source: "ss", rawData: {line: .}}]' 2>/dev/null || echo '[]')
+  EVENTS=$(echo "$EVENTS $NET_EVENTS" | jq -s 'add')
+
+  # Ship to API (limit to 200 events per batch)
+  BATCH=$(echo "$EVENTS" | jq '.[0:200]')
+  EVENT_COUNT=$(echo "$BATCH" | jq 'length')
+  if [ "$EVENT_COUNT" -gt 0 ]; then
+    curl -sS -X POST "$API/ingest" \\
+      -H "Content-Type: application/json" \\
+      -d "{\\"events\\": $BATCH}" \\
+      --max-time 10 || true
+  fi
+
+  # Send heartbeat
+  HOSTNAME_VAL=$(hostname)
+  IP_VAL=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+  OS_VAL=$(uname -sr)
+  ARCH_VAL=$(uname -m)
+  CPU_COUNT=$(nproc 2>/dev/null || echo 1)
+  MEM_GB=$(awk '/MemTotal/{printf "%.1f", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo "0")
+
+  curl -sS -X POST "$API/heartbeat" \\
+    -H "Content-Type: application/json" \\
+    -d "{\\"hostInfo\\": {\\"hostname\\": \\"$HOSTNAME_VAL\\", \\"ipAddress\\": \\"$IP_VAL\\", \\"os\\": \\"$OS_VAL\\", \\"arch\\": \\"$ARCH_VAL\\", \\"cpuCount\\": $CPU_COUNT, \\"memoryGb\\": $MEM_GB, \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
+    --max-time 10 || true
+
+  sleep \${SN_INTERVAL:-30}
+done
+COLLECTOR_SCRIPT
+
+chmod +x /tmp/securenexus-collector.sh
+
+# Install as systemd service
+sudo tee /etc/systemd/system/securenexus-collector.service > /dev/null << EOF
+[Unit]
+Description=SecureNexus Endpoint Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/securenexus/collector.sh ${baseUrl}/api/native-collectors/instances/${instanceId}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo mkdir -p /opt/securenexus
+sudo cp /tmp/securenexus-collector.sh /opt/securenexus/collector.sh
+sudo systemctl daemon-reload
+sudo systemctl enable securenexus-collector
+sudo systemctl start securenexus-collector
+
+echo "[SecureNexus] Endpoint collector installed and running."
+echo "[SecureNexus] Collector ID: ${instanceId}"
+echo "[SecureNexus] API Endpoint: ${baseUrl}/api/native-collectors/instances/${instanceId}"
+echo "[SecureNexus] Check status: sudo systemctl status securenexus-collector"`;
   }
 
   if (templateSlug.startsWith("endpoint-agent-windows")) {
-    return `# SecureNexus Endpoint Agent Installer — Windows (PowerShell)
+    return `# SecureNexus Endpoint Agent — Windows (PowerShell)
+# Lightweight collector using Windows Event Log + PowerShell (no binary agent needed)
+$ErrorActionPreference = "Stop"
+
 $CollectorId = "${instanceId}"
-$ApiEndpoint = "${baseUrl}/api/native-collectors"
+$ApiEndpoint = "${baseUrl}/api/native-collectors/instances/${instanceId}"
+$Interval = if ($env:SN_INTERVAL) { [int]$env:SN_INTERVAL } else { 30 }
 
-Write-Host "Installing SecureNexus Endpoint Agent..."
-Invoke-WebRequest -Uri "${baseUrl}/agent/windows/install.ps1" -OutFile "$env:TEMP\\sn-install.ps1"
-& "$env:TEMP\\sn-install.ps1" -CollectorId $CollectorId -ApiEndpoint $ApiEndpoint -EnableSysmon -EnableDefender
+Write-Host "[SecureNexus] Setting up endpoint collector (ID: $CollectorId)..."
 
-Write-Host "Agent installed and reporting to SecureNexus."`;
+# Create collector script
+$CollectorScript = @'
+param([string]$ApiEndpoint, [int]$Interval = 30)
+
+while ($true) {
+    try {
+        $events = @()
+
+        # Collect Security Event Log (logon events, privilege use)
+        $secEvents = Get-WinEvent -LogName Security -MaxEvents 100 -ErrorAction SilentlyContinue |
+            Select-Object -First 50 | ForEach-Object {
+                @{
+                    eventType = "windows_security"
+                    severity = if ($_.Level -le 2) { "high" } elseif ($_.Level -le 3) { "medium" } else { "info" }
+                    source = "Security"
+                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
+                }
+            }
+        $events += $secEvents
+
+        # Collect PowerShell script block logging
+        $psEvents = Get-WinEvent -LogName "Microsoft-Windows-PowerShell/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
+            Select-Object -First 25 | ForEach-Object {
+                @{
+                    eventType = "powershell_log"
+                    severity = "info"
+                    source = "PowerShell"
+                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
+                }
+            }
+        $events += $psEvents
+
+        # Collect Sysmon events if available
+        $sysmonEvents = Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
+            Select-Object -First 25 | ForEach-Object {
+                @{
+                    eventType = "sysmon"
+                    severity = if ($_.Id -in @(1,3,7,8,10,11)) { "medium" } else { "info" }
+                    source = "Sysmon"
+                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
+                }
+            }
+        $events += $sysmonEvents
+
+        # Ship events to API
+        if ($events.Count -gt 0) {
+            $batch = $events | Select-Object -First 200
+            $body = @{ events = $batch } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$ApiEndpoint/ingest" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
+        }
+
+        # Send heartbeat
+        $hostInfo = @{
+            hostname = $env:COMPUTERNAME
+            ipAddress = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -ne "Loopback" } | Select-Object -First 1).IPAddress
+            os = [System.Environment]::OSVersion.VersionString
+            arch = $env:PROCESSOR_ARCHITECTURE
+            cpuCount = $env:NUMBER_OF_PROCESSORS
+            memoryGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
+            agentVersion = "1.0.0-script"
+        }
+        $heartbeat = @{ hostInfo = $hostInfo; metrics = @{ eventsPerSecond = $events.Count } } | ConvertTo-Json -Depth 3
+        Invoke-RestMethod -Uri "$ApiEndpoint/heartbeat" -Method POST -Body $heartbeat -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
+    } catch {
+        Write-Warning "Collection cycle failed: $_"
+    }
+
+    Start-Sleep -Seconds $Interval
+}
+'@
+
+# Save collector script
+$InstallDir = "$env:ProgramData\\SecureNexus"
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+$CollectorScript | Out-File -FilePath "$InstallDir\\collector.ps1" -Encoding UTF8
+
+# Register as Windows scheduled task (runs at startup, restarts on failure)
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File $InstallDir\\collector.ps1 -ApiEndpoint $ApiEndpoint -Interval $Interval"
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+$Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365)
+Register-ScheduledTask -TaskName "SecureNexusCollector" -Action $Action -Trigger $Trigger -Settings $Settings -User "SYSTEM" -RunLevel Highest -Force
+
+# Start immediately
+Start-ScheduledTask -TaskName "SecureNexusCollector"
+
+Write-Host "[SecureNexus] Endpoint collector installed and running."
+Write-Host "[SecureNexus] Collector ID: ${instanceId}"
+Write-Host "[SecureNexus] Check status: Get-ScheduledTask -TaskName SecureNexusCollector"`;
+  }
+
+  if (templateSlug.startsWith("endpoint-agent-macos")) {
+    return `#!/bin/bash
+# SecureNexus Endpoint Agent — macOS
+# Lightweight collector using unified log + curl (no binary agent needed)
+set -euo pipefail
+
+COLLECTOR_ID="${instanceId}"
+API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+
+echo "[SecureNexus] Setting up endpoint collector (ID: $COLLECTOR_ID)..."
+
+# Ensure jq is available
+command -v jq >/dev/null 2>&1 || { echo "Installing jq via Homebrew..."; brew install jq; }
+
+# Create collector script
+cat > /tmp/securenexus-collector.sh << 'COLLECTOR_SCRIPT'
+#!/bin/bash
+API="$1"
+while true; do
+  EVENTS='[]'
+
+  # Collect unified log (auth and security events)
+  LOG_EVENTS=$(log show --last 1m --predicate 'subsystem == "com.apple.securityd" OR category == "auth"' --style ndjson 2>/dev/null | head -50 | jq -s '[.[] | {eventType: "unified_log", severity: "info", source: "unified_log", rawData: .}]' 2>/dev/null || echo '[]')
+  EVENTS=$(echo "$EVENTS $LOG_EVENTS" | jq -s 'add')
+
+  # Collect login events
+  LOGIN_EVENTS=$(last -20 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "login_event", severity: "info", source: "last", rawData: {line: .}}]' 2>/dev/null || echo '[]')
+  EVENTS=$(echo "$EVENTS $LOGIN_EVENTS" | jq -s 'add')
+
+  # Ship to API
+  BATCH=$(echo "$EVENTS" | jq '.[0:200]')
+  EVENT_COUNT=$(echo "$BATCH" | jq 'length')
+  if [ "$EVENT_COUNT" -gt 0 ]; then
+    curl -sS -X POST "$API/ingest" -H "Content-Type: application/json" -d "{\\"events\\": $BATCH}" --max-time 10 || true
+  fi
+
+  # Send heartbeat
+  curl -sS -X POST "$API/heartbeat" \\
+    -H "Content-Type: application/json" \\
+    -d "{\\"hostInfo\\": {\\"hostname\\": \\"$(hostname)\\", \\"ipAddress\\": \\"$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)\\", \\"os\\": \\"$(sw_vers -productName) $(sw_vers -productVersion)\\", \\"arch\\": \\"$(uname -m)\\", \\"cpuCount\\": $(sysctl -n hw.ncpu), \\"memoryGb\\": $(echo "scale=1; $(sysctl -n hw.memsize) / 1073741824" | bc), \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
+    --max-time 10 || true
+
+  sleep \${SN_INTERVAL:-30}
+done
+COLLECTOR_SCRIPT
+
+chmod +x /tmp/securenexus-collector.sh
+
+# Install as launchd agent
+sudo mkdir -p /opt/securenexus
+sudo cp /tmp/securenexus-collector.sh /opt/securenexus/collector.sh
+sudo tee /Library/LaunchDaemons/xyz.aricatech.securenexus.collector.plist > /dev/null << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>xyz.aricatech.securenexus.collector</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/opt/securenexus/collector.sh</string>
+        <string>${baseUrl}/api/native-collectors/instances/${instanceId}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+sudo launchctl load /Library/LaunchDaemons/xyz.aricatech.securenexus.collector.plist
+
+echo "[SecureNexus] Endpoint collector installed and running."
+echo "[SecureNexus] Collector ID: ${instanceId}"
+echo "[SecureNexus] Check status: sudo launchctl list | grep securenexus"`;
   }
 
   if (templateSlug === "network-monitor" || templateSlug === "syslog-receiver" || templateSlug === "asset-discovery") {
-    return `# SecureNexus ${template.name} — Docker Deployment
+    return `#!/bin/bash
+# SecureNexus ${template.name} — Docker Deployment
+# Uses the official SecureNexus collector image
+set -euo pipefail
+
+COLLECTOR_ID="${instanceId}"
+API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+
+echo "[SecureNexus] Deploying ${template.name}..."
+
 docker run -d \\
   --name securenexus-${templateSlug} \\
   --restart unless-stopped \\
   --network host \\
   -e COLLECTOR_ID=${instanceId} \\
-  -e API_ENDPOINT=${baseUrl}/api/native-collectors \\
-  aricatech/securenexus-${templateSlug}:latest`;
+  -e API_ENDPOINT=$API_ENDPOINT \\
+  -e SN_INTERVAL=30 \\
+  alpine:latest sh -c '
+    apk add --no-cache curl jq bash
+    while true; do
+      # Heartbeat
+      curl -sS -X POST "$API_ENDPOINT/heartbeat" \\
+        -H "Content-Type: application/json" \\
+        -d "{\\\"hostInfo\\\": {\\\"hostname\\\": \\\"$(hostname)\\\", \\\"ipAddress\\\": \\\"$(hostname -i 2>/dev/null || echo 127.0.0.1)\\\", \\\"os\\\": \\\"$(uname -sr)\\\", \\\"arch\\\": \\\"$(uname -m)\\\", \\\"cpuCount\\\": $(nproc 2>/dev/null || echo 1), \\\"memoryGb\\\": 0, \\\"agentVersion\\\": \\\"1.0.0-docker\\\"}}" \\
+        --max-time 10 || true
+      sleep \${SN_INTERVAL:-30}
+    done
+  '
+
+echo "[SecureNexus] ${template.name} deployed."
+echo "[SecureNexus] Collector ID: ${instanceId}"`;
   }
 
   return `# ${template.name}
 # Configure via the SecureNexus API:
-# POST ${baseUrl}/api/native-collectors/instances/${instanceId}/configure
-# See documentation: ${baseUrl}/docs/collectors/${templateSlug}`;
+#
+# 1. Generate an API key:
+#    POST ${baseUrl}/api/native-collectors/instances/${instanceId}/api-key
+#
+# 2. Push events:
+#    curl -X POST ${baseUrl}/api/native-collectors/instances/${instanceId}/ingest \\
+#      -H "Content-Type: application/json" \\
+#      -d '{"events": [{"eventType": "custom", "severity": "info", "source": "my-app", "rawData": {}}]}'
+#
+# 3. Send heartbeat:
+#    POST ${baseUrl}/api/native-collectors/instances/${instanceId}/heartbeat`;
 }
 
-export function getDataPipelineStats(orgId: string): DataPipelineStats {
-  const instances = Array.from(instanceStore.values()).filter((i) => i.orgId === orgId);
-  const events = Array.from(eventStore.values()).filter((e) => e.orgId === orgId);
+export async function getDataPipelineStats(orgId: string): Promise<DataPipelineStats> {
+  const instances = await getCollectorInstances(orgId);
 
   const active = instances.filter((i) => i.status === "active").length;
   const degraded = instances.filter((i) => i.status === "degraded").length;
@@ -874,18 +1213,26 @@ export function getDataPipelineStats(orgId: string): DataPipelineStats {
   const totalEps = instances.reduce((sum, i) => sum + i.metrics.eventsPerSecond, 0);
   const totalBytes = instances.reduce((sum, i) => sum + i.metrics.bytesIngested, 0);
 
-  const typeCounts: Record<string, number> = {};
-  for (const e of events) {
-    typeCounts[e.eventType] = (typeCounts[e.eventType] || 0) + 1;
-  }
-  const topEventTypes = Object.entries(typeCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([type, count]) => ({
-      type,
-      count,
-      percentage: events.length > 0 ? Math.round((count / events.length) * 100) : 0,
-    }));
+  // Get event type counts from DB
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const eventTypeCounts = await db
+    .select({
+      eventType: collectorEvents.eventType,
+      eventCount: count(),
+    })
+    .from(collectorEvents)
+    .where(and(eq(collectorEvents.orgId, orgId), sql`${collectorEvents.createdAt} >= ${today}`))
+    .groupBy(collectorEvents.eventType)
+    .orderBy(desc(count()))
+    .limit(10);
+
+  const totalEventsToday = eventTypeCounts.reduce((sum, r) => sum + Number(r.eventCount), 0);
+  const topEventTypes = eventTypeCounts.map((r) => ({
+    type: r.eventType,
+    count: Number(r.eventCount),
+    percentage: totalEventsToday > 0 ? Math.round((Number(r.eventCount) / totalEventsToday) * 100) : 0,
+  }));
 
   const collectorsByType: Record<CollectorType, number> = {
     agent_endpoint: 0,
@@ -912,7 +1259,7 @@ export function getDataPipelineStats(orgId: string): DataPipelineStats {
     degradedCollectors: degraded,
     offlineCollectors: offline,
     eventsPerSecond: totalEps,
-    totalEventsToday: events.length,
+    totalEventsToday,
     totalBytesToday: totalBytes,
     storageUsedGb: Math.round((totalBytes / (1024 * 1024 * 1024)) * 100) / 100,
     storageQuotaGb: 100,
@@ -923,12 +1270,85 @@ export function getDataPipelineStats(orgId: string): DataPipelineStats {
   };
 }
 
-export function generateApiKey(instanceId: string, orgId: string): { apiKey: string; expiresAt: string } | null {
-  const instance = instanceStore.get(instanceId);
-  if (!instance || instance.orgId !== orgId) return null;
+export async function generateApiKey(
+  instanceId: string,
+  orgId: string,
+): Promise<{ apiKey: string; expiresAt: string } | null> {
+  const existing = await getCollectorInstance(instanceId, orgId);
+  if (!existing) return null;
 
   const apiKey = `snx_${crypto.randomBytes(24).toString("base64url")}`;
   const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   return { apiKey, expiresAt };
+}
+
+// ==========================================
+// DB row → interface converters
+// ==========================================
+
+function dbRowToInstance(row: any): CollectorInstance {
+  return {
+    id: row.id,
+    templateSlug: row.templateSlug,
+    orgId: row.orgId,
+    name: row.name,
+    status: row.status as CollectorStatus,
+    platform: row.platform as Platform,
+    deploymentMethod: row.deploymentMethod as DeploymentMethod,
+    config: (row.config as Record<string, unknown>) || {},
+    hostInfo: (row.hostInfo as HostInfo) || null,
+    metrics: (row.metrics as CollectorMetrics) || {
+      eventsPerSecond: 0,
+      bytesIngested: 0,
+      errorsLast24h: 0,
+      uptimePercent: 0,
+      latencyP50Ms: 0,
+      latencyP99Ms: 0,
+      lastEventCount: 0,
+      totalEventsIngested: 0,
+    },
+    installedAt: row.installedAt?.toISOString?.() || row.installedAt || new Date().toISOString(),
+    lastHeartbeatAt: row.lastHeartbeatAt?.toISOString?.() || row.lastHeartbeatAt || null,
+    lastDataAt: row.lastDataAt?.toISOString?.() || row.lastDataAt || null,
+    version: row.version || "1.0.0",
+    tags: row.tags || [],
+  };
+}
+
+function dbRowToEvent(row: any): IngestedEvent {
+  return {
+    id: row.id,
+    collectorId: row.collectorId,
+    orgId: row.orgId,
+    eventType: row.eventType,
+    severity: row.severity as IngestedEvent["severity"],
+    source: row.source,
+    timestamp: row.timestamp?.toISOString?.() || row.timestamp || new Date().toISOString(),
+    rawData: (row.rawData as Record<string, unknown>) || {},
+    parsedFields: (row.parsedFields as Record<string, unknown>) || {},
+    tags: row.tags || [],
+    processed: row.processed || false,
+  };
+}
+
+function dbRowToScan(row: any, findingsOverride?: ScanFinding[]): ScanResult {
+  const findings = findingsOverride || (row.findings as ScanFinding[]) || [];
+  const summary = (row.summary as any) || {};
+  return {
+    id: row.id,
+    collectorId: row.collectorId,
+    orgId: row.orgId,
+    scanType: row.scanType as ScanResult["scanType"],
+    status: row.status as ScanResult["status"],
+    startedAt: row.startedAt?.toISOString?.() || row.startedAt || new Date().toISOString(),
+    completedAt: row.completedAt?.toISOString?.() || row.completedAt || null,
+    findingsCount: summary.findingsCount ?? findings.length,
+    criticalCount: summary.criticalCount ?? findings.filter((f: any) => f.severity === "critical").length,
+    highCount: summary.highCount ?? findings.filter((f: any) => f.severity === "high").length,
+    mediumCount: summary.mediumCount ?? findings.filter((f: any) => f.severity === "medium").length,
+    lowCount: summary.lowCount ?? findings.filter((f: any) => f.severity === "low").length,
+    targets: row.targets || [],
+    findings,
+  };
 }

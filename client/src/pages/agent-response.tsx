@@ -99,6 +99,7 @@ const statusColors: Record<string, string> = {
   rejected: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   timed_out: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   cancelled: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  simulated: "bg-amber-500/20 text-amber-400 border-amber-500/30",
 };
 
 const riskColors: Record<string, string> = {
@@ -556,9 +557,19 @@ export default function AgentResponsePage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={statusColors[action.status] || ""}>
-                            {action.status.replace(/_/g, " ")}
-                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className={statusColors[action.status] || ""}>
+                              {action.status.replace(/_/g, " ")}
+                            </Badge>
+                            {action.status === "simulated" && (
+                              <span
+                                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                title="No sensor agent deployed — action was simulated"
+                              >
+                                No Sensor
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-sm">{action.requestedByName || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
@@ -836,10 +847,15 @@ export default function AgentResponsePage() {
           </DialogHeader>
           {selectedAction && (
             <div className="space-y-4">
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Badge variant="outline" className={statusColors[selectedAction.status] || ""}>
                   {selectedAction.status.replace(/_/g, " ")}
                 </Badge>
+                {selectedAction.status === "simulated" && (
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20">
+                    No Sensor Deployed
+                  </Badge>
+                )}
                 <Badge variant="outline" className={riskColors[selectedAction.riskLevel] || ""}>
                   {selectedAction.riskLevel} risk
                 </Badge>

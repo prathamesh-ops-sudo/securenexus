@@ -5950,6 +5950,140 @@ export type SensorEvent = typeof sensorEvents.$inferSelect;
 export type InsertSensorEvent = typeof sensorEvents.$inferInsert;
 
 // ==========================================
+// NATIVE COLLECTORS (DB-BACKED)
+// ==========================================
+
+export const COLLECTOR_STATUSES = ["pending_install", "active", "degraded", "offline", "error", "disabled"] as const;
+
+export const collectorInstances = pgTable(
+  "collector_instances",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    templateSlug: text("template_slug").notNull(),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("pending_install"),
+    platform: text("platform").notNull(),
+    deploymentMethod: text("deployment_method").notNull(),
+    config: jsonb("config").default({}),
+    hostInfo: jsonb("host_info"),
+    metrics: jsonb("metrics").default({
+      eventsPerSecond: 0,
+      bytesIngested: 0,
+      errorsLast24h: 0,
+      uptimePercent: 0,
+      latencyP50Ms: 0,
+      latencyP99Ms: 0,
+      lastEventCount: 0,
+      totalEventsIngested: 0,
+    }),
+    version: text("version").default("1.0.0"),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    lastHeartbeatAt: timestamp("last_heartbeat_at"),
+    lastDataAt: timestamp("last_data_at"),
+    installedAt: timestamp("installed_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_collector_instances_org").on(table.orgId),
+    index("idx_collector_instances_status").on(table.orgId, table.status),
+    index("idx_collector_instances_template").on(table.orgId, table.templateSlug),
+  ],
+);
+
+export const collectorInstancesRelations = relations(collectorInstances, ({ one }) => ({
+  organization: one(organizations, { fields: [collectorInstances.orgId], references: [organizations.id] }),
+}));
+
+export type CollectorInstance = typeof collectorInstances.$inferSelect;
+export type InsertCollectorInstance = typeof collectorInstances.$inferInsert;
+
+export const collectorEvents = pgTable(
+  "collector_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    collectorId: varchar("collector_id")
+      .notNull()
+      .references(() => collectorInstances.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    eventType: text("event_type").notNull(),
+    severity: text("severity").notNull().default("info"),
+    source: text("source").notNull(),
+    timestamp: timestamp("timestamp").defaultNow(),
+    rawData: jsonb("raw_data").default({}),
+    parsedFields: jsonb("parsed_fields").default({}),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    processed: boolean("processed").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_collector_events_org").on(table.orgId),
+    index("idx_collector_events_collector").on(table.collectorId),
+    index("idx_collector_events_type").on(table.orgId, table.eventType),
+    index("idx_collector_events_ts").on(table.orgId, table.timestamp),
+  ],
+);
+
+export const collectorEventsRelations = relations(collectorEvents, ({ one }) => ({
+  organization: one(organizations, { fields: [collectorEvents.orgId], references: [organizations.id] }),
+  collector: one(collectorInstances, { fields: [collectorEvents.collectorId], references: [collectorInstances.id] }),
+}));
+
+export type CollectorEvent = typeof collectorEvents.$inferSelect;
+export type InsertCollectorEvent = typeof collectorEvents.$inferInsert;
+
+export const collectorScans = pgTable(
+  "collector_scans",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    collectorId: varchar("collector_id")
+      .notNull()
+      .references(() => collectorInstances.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    scanType: text("scan_type").notNull(),
+    status: text("status").notNull().default("running"),
+    targets: text("targets")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    findings: jsonb("findings").default([]),
+    summary: jsonb("summary").default({}),
+    startedAt: timestamp("started_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_collector_scans_org").on(table.orgId),
+    index("idx_collector_scans_collector").on(table.collectorId),
+    index("idx_collector_scans_type").on(table.orgId, table.scanType),
+  ],
+);
+
+export const collectorScansRelations = relations(collectorScans, ({ one }) => ({
+  organization: one(organizations, { fields: [collectorScans.orgId], references: [organizations.id] }),
+  collector: one(collectorInstances, { fields: [collectorScans.collectorId], references: [collectorInstances.id] }),
+}));
+
+export type CollectorScan = typeof collectorScans.$inferSelect;
+export type InsertCollectorScan = typeof collectorScans.$inferInsert;
+
+// ==========================================
 // NATIVE DETECTION ENGINE
 // ==========================================
 
