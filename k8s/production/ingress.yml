@@ -77,6 +77,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: securenexus-stable
+                name: securenexus
                 port:
                   number: 80

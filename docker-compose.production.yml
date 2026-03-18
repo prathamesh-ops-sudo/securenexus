@@ -62,6 +62,8 @@ services:
       POSTGRES_USER: securenexus
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: securenexus
+    secrets:
+      - db_password
     volumes:
       - pgdata:/var/lib/postgresql/data
     deploy:
