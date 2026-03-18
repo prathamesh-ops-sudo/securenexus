@@ -36,11 +36,13 @@ data:
       - job_name: 'securenexus-staging'
         static_configs:
           - targets: ['securenexus.staging.svc.cluster.local:5000']
-        metrics_path: /api/ops/health
+        metrics_path: /api/ops/metrics
+        scrape_interval: 15s
       - job_name: 'securenexus-production'
         static_configs:
           - targets: ['securenexus-stable.production.svc.cluster.local:5000']
-        metrics_path: /api/ops/health
+        metrics_path: /api/ops/metrics
+        scrape_interval: 15s
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -64,8 +66,8 @@ spec:
         - name: prometheus
           image: prom/prometheus:v3.2.1
           args:
-            - '--config.file=/etc/prometheus/prometheus.yml'
-            - '--storage.tsdb.retention.time=7d'
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.retention.time=7d"
           ports:
             - containerPort: 9090
           volumeMounts:

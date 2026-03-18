@@ -16,6 +16,7 @@ import { logger, correlationMiddleware, requestLogger } from "./logger";
 import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
 import { registerWellKnownRoutes } from "./routes/well-known";
 import { requestTimeoutMiddleware } from "./request-timeout";
+import { prometheusMiddleware, renderMetrics } from "./prometheus";
 import { initializeScalingState, gracefulShutdown, registerShutdownHandler } from "./scaling-state";
 import { startPoolHealthMonitor, drainPool } from "./db";
 import { startRetentionScheduler } from "./retention-scheduler";
@@ -85,7 +86,8 @@ const globalApiLimiter = rateLimit({
     req.path === "/api/ops/health" ||
     req.path === "/api/ops/ready" ||
     req.path === "/api/ops/live" ||
-    req.path === "/api/health",
+    req.path === "/api/health" ||
+    req.path === "/api/ops/metrics",
   handler: (_req: Request, res: Response) => {
     replyRateLimit(res, "Too many requests. Please try again later.");
   },
@@ -108,8 +110,14 @@ applyInputSanitization(app);
 // Well-known endpoints (security.txt, robots.txt) — before auth
 registerWellKnownRoutes(app);
 
+// Prometheus metrics endpoint — no auth required for K8s scraping
+app.get("/api/ops/metrics", (_req, res) => {
+  res.type("text/plain; version=0.0.4; charset=utf-8").send(renderMetrics());
+});
+
 app.use(inFlightMiddleware);
 app.use(requestTimeoutMiddleware(30_000)); // 30s timeout for API requests (excludes SSE/streaming)
+app.use(prometheusMiddleware);
 app.use(sliMiddleware);
 app.use(performanceBudgetMiddleware);
 
