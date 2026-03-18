@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
@@ -29,6 +29,11 @@ import {
   ExternalLink,
   XCircle,
   X,
+  GripVertical,
+  Clock,
+  Keyboard,
+  ChevronDown,
+  Pause,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +57,42 @@ import {
   Area,
 } from "recharts";
 import { formatChartDateLabel, formatTime } from "@/lib/i18n";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+type TimeRange = "1h" | "4h" | "24h" | "7d" | "30d";
+
+const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
+  { value: "1h", label: "Last 1h" },
+  { value: "4h", label: "Last 4h" },
+  { value: "24h", label: "Last 24h" },
+  { value: "7d", label: "Last 7d" },
+  { value: "30d", label: "Last 30d" },
+];
+
+type AutoRefreshInterval = 0 | 30000 | 60000 | 300000;
+
+const AUTO_REFRESH_OPTIONS: { value: AutoRefreshInterval; label: string }[] = [
+  { value: 0, label: "Off" },
+  { value: 30000, label: "30s" },
+  { value: 60000, label: "1m" },
+  { value: 300000, label: "5m" },
+];
 
 type WidgetId = "severity" | "sources" | "trend" | "mitre" | "categories" | "connectors" | "ingestion" | "whatChanged";
 
@@ -496,7 +537,7 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
                   strokeWidth={2.5}
                   fill="url(#trendGradient)"
                   dot={{ r: 3, fill: "#a78bfa", strokeWidth: 2, stroke: "#818cf8" }}
-                  activeDot={{ r: 6, fill: "#a78bfa", strokeWidth: 2, stroke: "#fff" }}
+                  activeDot={{ r: 6, fill: "#a78bfa", strokeWidth: 2, stroke: "hsl(var(--background))" }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -705,7 +746,7 @@ function IngestionRateChart({ data }: { data: AnalyticsData["ingestionRate"] }) 
                   strokeWidth={2.5}
                   fill="url(#ingestionGradient)"
                   dot={{ r: 2, fill: "#c084fc", strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: "#c084fc", strokeWidth: 2, stroke: "#fff" }}
+                  activeDot={{ r: 5, fill: "#c084fc", strokeWidth: 2, stroke: "hsl(var(--background))" }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -931,6 +972,97 @@ function WidgetCustomizer({
   );
 }
 
+// ─── Sortable Widget Wrapper (1.2: Drag-and-drop) ────────────────────────────
+
+function SortableWidget({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: "relative" as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} className="group/sortable">
+      <div
+        {...listeners}
+        className="absolute top-2 left-2 z-10 opacity-0 group-hover/sortable:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 rounded bg-muted/80 hover:bg-muted"
+        title="Drag to reorder"
+      >
+        <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── Widget Skeleton (1.1: Per-widget independent skeleton) ──────────────────
+
+function WidgetSkeleton({ label }: { label: string }) {
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <Skeleton className="h-4 w-32" />
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3" role="status" aria-label={`Loading ${label}`}>
+          <Skeleton className="h-[160px] w-full rounded" />
+          <div className="flex gap-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+          <span className="sr-only">Loading {label}...</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Keyboard Shortcuts Help Overlay (1.8) ───────────────────────────────────
+
+function KeyboardShortcutsHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null;
+  const shortcuts = [
+    { key: "R", description: "Refresh all data" },
+    { key: "S", description: "Open/close widget settings" },
+    { key: "T", description: "Cycle time range" },
+    { key: "P", description: "Toggle auto-refresh" },
+    { key: "?", description: "Show this help" },
+    { key: "Esc", description: "Close overlays" },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <Card className="w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Keyboard className="h-4 w-4" />
+              Keyboard Shortcuts
+            </CardTitle>
+            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={onClose}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {shortcuts.map((s) => (
+              <div key={s.key} className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{s.description}</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-mono font-semibold min-w-[24px] text-center">
+                  {s.key}
+                </kbd>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 interface CircuitAlert {
   id: string;
   title: string;
@@ -1057,12 +1189,24 @@ function AICircuitBreakerBanner() {
 export default function Dashboard() {
   usePageTitle("Security Dashboard — SecureNexus Agentic SOC", true);
   const { user } = useAuth();
-  const [timeRange, setTimeRange] = useState<"24h" | "live">("24h");
+  const [timeRange, setTimeRange] = useState<TimeRange>("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig[]>(loadWidgetConfig);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<AutoRefreshInterval>(0);
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false);
+  const [showRefreshPicker, setShowRefreshPicker] = useState(false);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const timeRangeRef = useRef<HTMLDivElement>(null);
+  const refreshPickerRef = useRef<HTMLDivElement>(null);
+
+  // DnD sensors (1.2)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -1085,8 +1229,8 @@ export default function Dashboard() {
     newAlertsToday: number;
     escalatedIncidents: number;
   }>({
-    queryKey: ["/api/dashboard/stats"],
-    refetchInterval: timeRange === "live" ? 5000 : 30000,
+    queryKey: ["/api/dashboard/stats", `?range=${timeRange}`],
+    refetchInterval: autoRefreshInterval || false,
   });
 
   const {
@@ -1096,8 +1240,8 @@ export default function Dashboard() {
     dataUpdatedAt: analyticsUpdatedAt,
     refetch: refetchAnalytics,
   } = useQuery<AnalyticsData>({
-    queryKey: ["/api/dashboard/analytics"],
-    refetchInterval: timeRange === "live" ? 5000 : 30000,
+    queryKey: ["/api/dashboard/analytics", `?range=${timeRange}`],
+    refetchInterval: autoRefreshInterval || false,
   });
 
   const { data: opMetrics, refetch: refetchOpMetrics } = useQuery<{
@@ -1109,7 +1253,7 @@ export default function Dashboard() {
     mttrTrend: { date: string; avgValue: number; sampleCount: number }[];
   }>({
     queryKey: ["/api/dashboard/operational-metrics"],
-    refetchInterval: timeRange === "live" ? 10000 : 60000,
+    refetchInterval: autoRefreshInterval || false,
   });
 
   useEffect(() => {
@@ -1125,6 +1269,94 @@ export default function Dashboard() {
     setLastUpdated(new Date());
     setTimeout(() => setIsRefreshing(false), 600);
   }, [refetchStats, refetchAnalytics, refetchOpMetrics]);
+
+  // (1.2) Drag-and-drop handler
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setWidgetConfig((prev) => {
+      const oldIndex = prev.findIndex((w) => w.id === active.id);
+      const newIndex = prev.findIndex((w) => w.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const updated = arrayMove(prev, oldIndex, newIndex).map((w, i) => ({ ...w, order: i }));
+      saveWidgetConfig(updated);
+      return updated;
+    });
+  }, []);
+
+  // (1.5) Auto-refresh toggle
+  const cycleAutoRefresh = useCallback(() => {
+    setAutoRefreshInterval((prev) => {
+      const idx = AUTO_REFRESH_OPTIONS.findIndex((o) => o.value === prev);
+      return AUTO_REFRESH_OPTIONS[(idx + 1) % AUTO_REFRESH_OPTIONS.length].value;
+    });
+  }, []);
+
+  // (1.3) Cycle time range
+  const cycleTimeRange = useCallback(() => {
+    setTimeRange((prev) => {
+      const idx = TIME_RANGE_OPTIONS.findIndex((o) => o.value === prev);
+      const next = TIME_RANGE_OPTIONS[(idx + 1) % TIME_RANGE_OPTIONS.length].value;
+      return next;
+    });
+    handleRefresh();
+  }, [handleRefresh]);
+
+  // (1.8) Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing in an input or textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      switch (e.key.toLowerCase()) {
+        case "r":
+          e.preventDefault();
+          handleRefresh();
+          break;
+        case "s":
+          e.preventDefault();
+          setShowCustomizer((v) => !v);
+          break;
+        case "t":
+          e.preventDefault();
+          cycleTimeRange();
+          break;
+        case "p":
+          e.preventDefault();
+          cycleAutoRefresh();
+          break;
+        case "?":
+          e.preventDefault();
+          setShowKeyboardHelp((v) => !v);
+          break;
+        case "escape":
+          setShowKeyboardHelp(false);
+          setShowCustomizer(false);
+          setShowNotifications(false);
+          setShowTimeRangePicker(false);
+          setShowRefreshPicker(false);
+          break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleRefresh, cycleTimeRange, cycleAutoRefresh]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (timeRangeRef.current && !timeRangeRef.current.contains(e.target as Node)) {
+        setShowTimeRangePicker(false);
+      }
+      if (refreshPickerRef.current && !refreshPickerRef.current.contains(e.target as Node)) {
+        setShowRefreshPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const toggleWidget = useCallback((id: WidgetId) => {
     setWidgetConfig((prev) => {
@@ -1194,15 +1426,30 @@ export default function Dashboard() {
     [analytics],
   );
 
+  // Build ordered widget lists from widgetConfig (respects drag-and-drop order)
   const visibleChartWidgets = useMemo(() => {
     const chartIds: WidgetId[] = ["severity", "sources", "trend"];
-    return chartIds.filter((id) => isWidgetVisible(id) && widgetHasData(id));
-  }, [isWidgetVisible, widgetHasData]);
+    return widgetConfig
+      .filter((w) => chartIds.includes(w.id) && w.visible && widgetHasData(w.id))
+      .sort((a, b) => a.order - b.order)
+      .map((w) => w.id);
+  }, [widgetConfig, widgetHasData]);
 
   const visibleBottomWidgets = useMemo(() => {
     const bottomIds: WidgetId[] = ["mitre", "categories", "connectors", "ingestion", "whatChanged"];
-    return bottomIds.filter((id) => isWidgetVisible(id) && widgetHasData(id));
-  }, [isWidgetVisible, widgetHasData]);
+    return widgetConfig
+      .filter((w) => bottomIds.includes(w.id) && w.visible && widgetHasData(w.id))
+      .sort((a, b) => a.order - b.order)
+      .map((w) => w.id);
+  }, [widgetConfig, widgetHasData]);
+
+  const allVisibleWidgetIds = useMemo(
+    () => [...visibleChartWidgets, ...visibleBottomWidgets],
+    [visibleChartWidgets, visibleBottomWidgets],
+  );
+
+  const autoRefreshLabel = AUTO_REFRESH_OPTIONS.find((o) => o.value === autoRefreshInterval)?.label ?? "Off";
+  const timeRangeLabel = TIME_RANGE_OPTIONS.find((o) => o.value === timeRange)?.label ?? "Last 24h";
 
   const securityScore = useMemo(() => {
     if (!stats) return null;
@@ -1231,44 +1478,93 @@ export default function Dashboard() {
               {user?.firstName ? `, ${user.firstName}` : ""}
             </h1>
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Your brief for {timeRange === "live" ? "right now" : "the last 24 hours"} · Updated{" "}
+              Your brief for the {timeRangeLabel.toLowerCase().replace("last ", "last ")} · Updated{" "}
               {formatTime(lastUpdated)}
+              {autoRefreshInterval > 0 && (
+                <span className="ml-1.5 text-emerald-500">· Auto-refresh {autoRefreshLabel}</span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {showSecurityScore && <SecurityScorePill score={securityScore} />}
-            <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
+
+            {/* (1.3) Time Range Selector */}
+            <div className="relative" ref={timeRangeRef}>
               <Button
                 data-testid="dashboard-btn-4"
                 size="sm"
-                variant={timeRange === "24h" ? "secondary" : "ghost"}
-                className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "24h" ? "shadow-sm" : "hover:bg-muted/50"}`}
-                onClick={() => {
-                  setTimeRange("24h");
-                  handleRefresh();
-                }}
+                variant="outline"
+                className="h-7 px-3 text-xs font-medium gap-1.5"
+                onClick={() => setShowTimeRangePicker((v) => !v)}
               >
-                Last 24h
+                <Clock className="h-3.5 w-3.5" />
+                {timeRangeLabel}
+                <ChevronDown className="h-3 w-3 opacity-50" />
               </Button>
+              {showTimeRangePicker && (
+                <div className="absolute right-0 top-9 w-36 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                  {TIME_RANGE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`w-full px-3 py-1.5 text-left text-xs hover:bg-muted/60 transition-colors ${
+                        timeRange === opt.value ? "bg-muted font-medium" : ""
+                      }`}
+                      onClick={() => {
+                        setTimeRange(opt.value);
+                        setShowTimeRangePicker(false);
+                        handleRefresh();
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* (1.5) Auto-refresh Toggle */}
+            <div className="relative" ref={refreshPickerRef}>
               <Button
                 size="sm"
-                variant={timeRange === "live" ? "secondary" : "ghost"}
-                className={`h-7 px-3 text-xs font-medium rounded-md transition-all duration-200 ${timeRange === "live" ? "shadow-sm" : "hover:bg-muted/50"}`}
-                onClick={() => {
-                  setTimeRange("live");
-                  handleRefresh();
-                }}
+                variant={autoRefreshInterval > 0 ? "secondary" : "outline"}
+                className="h-7 px-2.5 text-xs font-medium gap-1.5"
+                onClick={() => setShowRefreshPicker((v) => !v)}
+                title={`Auto-refresh: ${autoRefreshLabel}`}
               >
-                <span className={`${timeRange === "live" ? "flex items-center gap-1.5" : ""}`}>
-                  {timeRange === "live" && (
+                {autoRefreshInterval > 0 ? (
+                  <>
                     <span className="relative flex h-1.5 w-1.5">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                       <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
                     </span>
-                  )}
-                  Live
-                </span>
+                    {autoRefreshLabel}
+                  </>
+                ) : (
+                  <>
+                    <Pause className="h-3.5 w-3.5" />
+                    Auto
+                  </>
+                )}
+                <ChevronDown className="h-3 w-3 opacity-50" />
               </Button>
+              {showRefreshPicker && (
+                <div className="absolute right-0 top-9 w-32 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                  {AUTO_REFRESH_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`w-full px-3 py-1.5 text-left text-xs hover:bg-muted/60 transition-colors ${
+                        autoRefreshInterval === opt.value ? "bg-muted font-medium" : ""
+                      }`}
+                      onClick={() => {
+                        setAutoRefreshInterval(opt.value);
+                        setShowRefreshPicker(false);
+                      }}
+                    >
+                      {opt.value === 0 ? "Off" : `Every ${opt.label}`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <Button
               size="icon"
@@ -1288,11 +1584,22 @@ export default function Dashboard() {
               variant={showCustomizer ? "secondary" : "ghost"}
               className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
               onClick={() => setShowCustomizer(!showCustomizer)}
-              aria-label="Customize dashboard widgets"
+              aria-label="Customize dashboard widgets (S)"
               aria-expanded={showCustomizer}
-              title="Customize dashboard"
+              title="Customize dashboard (S)"
             >
               <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            {/* (1.8) Keyboard shortcuts help button */}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 hover:bg-muted/60 active:scale-95 transition-all duration-150"
+              onClick={() => setShowKeyboardHelp(true)}
+              aria-label="Keyboard shortcuts (?)"
+              title="Keyboard shortcuts (?)"
+            >
+              <Keyboard className="h-4 w-4" aria-hidden="true" />
             </Button>
             <div className="relative">
               <Button
@@ -1506,73 +1813,75 @@ export default function Dashboard() {
           </div>
         )}
 
-        {visibleChartWidgets.length > 0 && (
-          <div
-            className={`grid grid-cols-1 ${visibleChartWidgets.length === 2 ? "lg:grid-cols-2" : visibleChartWidgets.length >= 3 ? "lg:grid-cols-3" : ""} gap-4`}
-          >
-            {analyticsLoading ? (
-              visibleChartWidgets.map((_, i) => (
-                <Card key={i}>
-                  <ChartSkeleton />
-                </Card>
-              ))
-            ) : analyticsError ? (
-              <Card className="col-span-full">
-                <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-                  <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                    <AlertTriangle className="h-6 w-6 text-destructive" />
-                  </div>
-                  <p className="text-sm font-medium">Failed to load chart data</p>
-                  <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching analytics.</p>
-                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAnalytics()}>
-                    Try Again
-                  </Button>
-                </div>
-              </Card>
-            ) : analytics ? (
-              <>
-                {isWidgetVisible("severity") && <SeverityChart data={analytics.severityDistribution} />}
-                {isWidgetVisible("sources") && <SourceChart data={analytics.sourceDistribution} />}
-                {isWidgetVisible("trend") && <TrendChart data={analytics.alertTrend} />}
-              </>
-            ) : (
-              <Card className="col-span-3">
-                <div
-                  className="flex flex-col items-center justify-center h-[240px] text-sm text-muted-foreground"
-                  role="status"
-                  aria-label="No analytics data"
-                >
-                  <Activity className="h-8 w-8 mb-3 opacity-50" aria-hidden="true" />
-                  <p>No analytics data available</p>
-                  <p className="text-xs mt-1">Connect a data source to start seeing analytics</p>
-                </div>
-              </Card>
+        {/* (1.2) Drag-and-drop context wraps all widgets */}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={allVisibleWidgetIds} strategy={rectSortingStrategy}>
+            {/* Chart widgets row */}
+            {visibleChartWidgets.length > 0 && (
+              <div
+                className={`grid grid-cols-1 ${visibleChartWidgets.length === 2 ? "md:grid-cols-2" : visibleChartWidgets.length >= 3 ? "md:grid-cols-2 lg:grid-cols-3" : ""} gap-4`}
+              >
+                {analyticsError ? (
+                  <Card className="col-span-full">
+                    <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+                      <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                        <AlertTriangle className="h-6 w-6 text-destructive" />
+                      </div>
+                      <p className="text-sm font-medium">Failed to load chart data</p>
+                      <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching analytics.</p>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAnalytics()}>
+                        Try Again
+                      </Button>
+                    </div>
+                  </Card>
+                ) : (
+                  visibleChartWidgets.map((widgetId) => (
+                    <SortableWidget key={widgetId} id={widgetId}>
+                      {/* (1.1) Per-widget skeleton loading */}
+                      {analyticsLoading ? (
+                        <WidgetSkeleton label={widgetConfig.find((w) => w.id === widgetId)?.label ?? widgetId} />
+                      ) : analytics ? (
+                        <>
+                          {widgetId === "severity" && <SeverityChart data={analytics.severityDistribution} />}
+                          {widgetId === "sources" && <SourceChart data={analytics.sourceDistribution} />}
+                          {widgetId === "trend" && <TrendChart data={analytics.alertTrend} />}
+                        </>
+                      ) : null}
+                    </SortableWidget>
+                  ))
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {visibleBottomWidgets.length > 0 && (
-          <div
-            className={`grid grid-cols-1 md:grid-cols-2 ${visibleBottomWidgets.length >= 4 ? "lg:grid-cols-4" : visibleBottomWidgets.length === 3 ? "lg:grid-cols-3" : visibleBottomWidgets.length === 2 ? "lg:grid-cols-2" : ""} gap-4`}
-          >
-            {analyticsLoading ? (
-              visibleBottomWidgets.map((_, i) => (
-                <Card key={i}>
-                  <ChartSkeleton />
-                </Card>
-              ))
-            ) : analytics ? (
-              <>
-                {isWidgetVisible("mitre") && <MitreTacticsWidget data={analytics.topMitreTactics} />}
-                {isWidgetVisible("categories") && <CategoryWidget data={analytics.categoryDistribution} />}
-                {isWidgetVisible("connectors") && <ConnectorHealthWidget data={analytics.connectorHealth} />}
-                {isWidgetVisible("ingestion") && <IngestionRateChart data={analytics.ingestionRate} />}
-                {isWidgetVisible("whatChanged") && <WhatChangedWidget stats={stats} />}
-              </>
-            ) : null}
-          </div>
-        )}
+            {/* Bottom widgets row */}
+            {visibleBottomWidgets.length > 0 && (
+              <div
+                className={`grid grid-cols-1 sm:grid-cols-2 ${visibleBottomWidgets.length >= 4 ? "lg:grid-cols-4" : visibleBottomWidgets.length === 3 ? "lg:grid-cols-3" : visibleBottomWidgets.length === 2 ? "lg:grid-cols-2" : ""} gap-4`}
+              >
+                {visibleBottomWidgets.map((widgetId) => (
+                  <SortableWidget key={widgetId} id={widgetId}>
+                    {/* (1.1) Per-widget skeleton loading */}
+                    {analyticsLoading ? (
+                      <WidgetSkeleton label={widgetConfig.find((w) => w.id === widgetId)?.label ?? widgetId} />
+                    ) : analytics ? (
+                      <>
+                        {widgetId === "mitre" && <MitreTacticsWidget data={analytics.topMitreTactics} />}
+                        {widgetId === "categories" && <CategoryWidget data={analytics.categoryDistribution} />}
+                        {widgetId === "connectors" && <ConnectorHealthWidget data={analytics.connectorHealth} />}
+                        {widgetId === "ingestion" && <IngestionRateChart data={analytics.ingestionRate} />}
+                        {widgetId === "whatChanged" && <WhatChangedWidget stats={stats} />}
+                      </>
+                    ) : null}
+                  </SortableWidget>
+                ))}
+              </div>
+            )}
+          </SortableContext>
+        </DndContext>
       </div>
+
+      {/* (1.8) Keyboard shortcuts overlay */}
+      <KeyboardShortcutsHelp open={showKeyboardHelp} onClose={() => setShowKeyboardHelp(false)} />
 
       <footer className="border-t border-border/20 py-2.5 px-6 text-center">
         <span className="text-[10px] text-muted-foreground/40">
