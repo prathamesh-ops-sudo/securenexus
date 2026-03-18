@@ -19,6 +19,7 @@ import { runFullRollup, getRollupConfig } from "../metrics-rollup";
 import { getRecentTraces, getTraceById, getTraceStats } from "../tracing";
 import { getDispatcherStatus } from "../notification-dispatcher";
 import { getBreachHistory } from "../slo-alerting";
+import { getRecentErrors, getErrorGroups, getErrorStats } from "../error-tracker";
 
 export function registerAdminRoutes(app: Express): void {
   app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -588,6 +589,67 @@ export function registerAdminRoutes(app: Express): void {
           errors: [
             { code: "BREACH_HISTORY_FAILED", message: "Failed to fetch breach history", details: error?.message },
           ],
+        });
+      }
+    },
+  );
+
+  // ── Centralized Error Tracking endpoints ──
+
+  app.get(
+    "/api/v1/admin/errors/stats",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (_req, res) => {
+      try {
+        return sendEnvelope(res, getErrorStats());
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "ERROR_STATS_FAILED", message: "Failed to fetch error stats", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/errors/groups",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+        return sendEnvelope(res, getErrorGroups(limit));
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "ERROR_GROUPS_FAILED", message: "Failed to fetch error groups", details: error?.message }],
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/errors/recent",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+        const route = typeof req.query.route === "string" ? req.query.route : undefined;
+        const userId = typeof req.query.userId === "string" ? req.query.userId : undefined;
+        const orgId = typeof req.query.orgId === "string" ? req.query.orgId : undefined;
+        return sendEnvelope(res, getRecentErrors({ route, userId, orgId, limit }));
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "RECENT_ERRORS_FAILED", message: "Failed to fetch recent errors", details: error?.message }],
         });
       }
     },

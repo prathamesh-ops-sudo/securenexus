@@ -12,6 +12,7 @@ import { eq, and } from "drizzle-orm";
 import { users } from "@shared/models/auth";
 import { organizationMemberships } from "@shared/schema";
 import { config } from "../config";
+import { pool } from "../db";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { replyUnauthenticated } from "../api-response";
@@ -50,6 +51,32 @@ export function invalidateDeserializeCache(userId?: string) {
     deserializeCache.delete(userId);
   } else {
     deserializeCache.clear();
+  }
+}
+
+/**
+ * Destroy all sessions for a given user by deleting rows from the sessions table
+ * whose sess->passport->user matches the userId. This forces the user to re-login
+ * after privilege escalation (role change, suspension, etc.).
+ */
+export async function invalidateUserSessions(userId: string): Promise<number> {
+  try {
+    const result = await pool.query(`DELETE FROM sessions WHERE sess->'passport'->>'user' = $1`, [userId]);
+    const count = Number(result.rowCount) || 0;
+    invalidateDeserializeCache(userId);
+    if (count > 0) {
+      logger.child("auth-session").info("Invalidated user sessions after privilege change", {
+        userId,
+        sessionsDestroyed: count,
+      });
+    }
+    return count;
+  } catch (err) {
+    logger.child("auth-session").error("Failed to invalidate user sessions", {
+      userId,
+      error: String(err),
+    });
+    return 0;
   }
 }
 

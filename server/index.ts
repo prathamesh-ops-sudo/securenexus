@@ -31,6 +31,7 @@ import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
 import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
+import { errorTrackingMiddleware, trackError } from "./error-tracker";
 
 const startedAt = Date.now();
 
@@ -38,6 +39,10 @@ process.on("unhandledRejection", (reason: unknown) => {
   logger.child("process").error("Unhandled promise rejection", {
     error: String(reason),
     stack: reason instanceof Error ? reason.stack : undefined,
+  });
+  trackError(reason instanceof Error ? reason : new Error(String(reason)), {
+    route: "unhandledRejection",
+    method: "PROCESS",
   });
 });
 
@@ -142,6 +147,9 @@ export function log(message: string, source = "express") {
   await seedDatabase();
 
   await bootstrapSuperAdmin();
+
+  // Centralized error tracking middleware — captures all unhandled errors
+  app.use(errorTrackingMiddleware);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

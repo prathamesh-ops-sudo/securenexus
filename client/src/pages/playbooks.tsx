@@ -837,6 +837,7 @@ export default function PlaybooksPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [executeDryRun, setExecuteDryRun] = useState(false);
   const [executeDialogId, setExecuteDialogId] = useState<string | null>(null);
+  const [blastRadiusConfirmed, setBlastRadiusConfirmed] = useState(false);
   const [proposalObjective, setProposalObjective] = useState("");
   const [proposalSeverity, setProposalSeverity] = useState("high");
   const [proposal, setProposal] = useState<any | null>(null);
@@ -923,6 +924,18 @@ export default function PlaybooksPage() {
     },
   });
 
+  const executeBlastRadiusQuery = useQuery<BlastRadiusPreview>({
+    queryKey: ["/api/playbooks", executeDialogId, "blast-radius-live"],
+    queryFn: async () => {
+      const res = await apiRequest("POST", `/api/playbooks/${executeDialogId}/blast-radius`, {
+        executionContext: { source: "manual_execute" },
+      });
+      return res.json();
+    },
+    enabled: !!executeDialogId,
+    staleTime: 0,
+  });
+
   const executeMutation = useMutation({
     mutationFn: async ({ id, dryRun }: { id: string; dryRun: boolean }) => {
       const res = await apiRequest("POST", `/api/playbooks/${id}/execute`, { dryRun });
@@ -933,6 +946,7 @@ export default function PlaybooksPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/playbook-executions"] });
       setExecuteDialogId(null);
       setExecuteDryRun(false);
+      setBlastRadiusConfirmed(false);
       toast({ title: "Playbook executed", description: "Manual execution started." });
     },
     onError: (err: any) => {
@@ -2326,10 +2340,11 @@ export default function PlaybooksPage() {
           if (!open) {
             setExecuteDialogId(null);
             setExecuteDryRun(false);
+            setBlastRadiusConfirmed(false);
           }
         }}
       >
-        <DialogContent className="max-w-md" data-testid="dialog-execute">
+        <DialogContent className="max-w-lg" data-testid="dialog-execute">
           <DialogHeader>
             <DialogTitle>Execute Playbook</DialogTitle>
             <DialogDescription>
@@ -2338,6 +2353,133 @@ export default function PlaybooksPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Blast Radius Preview */}
+            {executeBlastRadiusQuery.isLoading ? (
+              <div className="rounded-md border p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Calculating blast radius...
+                </div>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : executeBlastRadiusQuery.data ? (
+              <div
+                className={`rounded-md border p-4 space-y-3 ${
+                  executeBlastRadiusQuery.data.riskLevel === "critical"
+                    ? "border-red-500/50 bg-red-500/5"
+                    : executeBlastRadiusQuery.data.riskLevel === "high"
+                      ? "border-orange-500/50 bg-orange-500/5"
+                      : executeBlastRadiusQuery.data.riskLevel === "medium"
+                        ? "border-yellow-500/50 bg-yellow-500/5"
+                        : "border-green-500/50 bg-green-500/5"
+                }`}
+                data-testid="blast-radius-preview"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    <span className="text-sm font-medium">Blast Radius Preview</span>
+                  </div>
+                  <Badge
+                    variant={
+                      executeBlastRadiusQuery.data.riskLevel === "critical" ||
+                      executeBlastRadiusQuery.data.riskLevel === "high"
+                        ? "destructive"
+                        : "outline"
+                    }
+                  >
+                    {executeBlastRadiusQuery.data.riskLevel} risk
+                  </Badge>
+                </div>
+
+                <div className="text-xs space-y-1">
+                  <p>
+                    <span className="font-medium">{executeBlastRadiusQuery.data.affectedEntityCount}</span> entities
+                    affected &middot; Est. {Math.ceil((executeBlastRadiusQuery.data.estimatedDurationMs || 0) / 1000)}s
+                    duration
+                  </p>
+                  {executeBlastRadiusQuery.data.reversible === false && (
+                    <p className="text-red-400 font-medium flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Contains irreversible actions
+                    </p>
+                  )}
+                </div>
+
+                {Array.isArray(executeBlastRadiusQuery.data.affectedEntities) &&
+                  executeBlastRadiusQuery.data.affectedEntities.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">Affected entities:</p>
+                      <div className="space-y-0.5">
+                        {(
+                          executeBlastRadiusQuery.data.affectedEntities as Array<{
+                            type: string;
+                            identifier: string;
+                            impact: string;
+                          }>
+                        )
+                          .slice(0, 5)
+                          .map((entity, idx) => (
+                            <div key={idx} className="text-xs flex items-center gap-2 rounded px-2 py-0.5 bg-muted/50">
+                              <Badge variant="outline" className="text-[10px] px-1 py-0">
+                                {entity.type}
+                              </Badge>
+                              <span className="truncate">{entity.identifier}</span>
+                              <span className="text-muted-foreground ml-auto shrink-0">{entity.impact}</span>
+                            </div>
+                          ))}
+                        {(
+                          executeBlastRadiusQuery.data.affectedEntities as Array<{
+                            type: string;
+                            identifier: string;
+                            impact: string;
+                          }>
+                        ).length > 5 && (
+                          <p className="text-xs text-muted-foreground pl-2">
+                            +
+                            {(
+                              executeBlastRadiusQuery.data.affectedEntities as Array<{
+                                type: string;
+                                identifier: string;
+                                impact: string;
+                              }>
+                            ).length - 5}{" "}
+                            more
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                {Array.isArray(executeBlastRadiusQuery.data.riskFactors) &&
+                  executeBlastRadiusQuery.data.riskFactors.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">Risk factors:</p>
+                      {(executeBlastRadiusQuery.data.riskFactors as string[]).map((rf, idx) => (
+                        <p key={idx} className="text-xs text-yellow-500 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3 shrink-0" /> {rf}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                {/* Explicit confirmation checkbox */}
+                <div className="flex items-center gap-2 pt-1 border-t border-muted">
+                  <input
+                    type="checkbox"
+                    id="blast-radius-confirm"
+                    checked={blastRadiusConfirmed}
+                    onChange={(e) => setBlastRadiusConfirmed(e.target.checked)}
+                    className="h-4 w-4 rounded border-muted-foreground"
+                    data-testid="checkbox-blast-confirm"
+                  />
+                  <label htmlFor="blast-radius-confirm" className="text-xs">
+                    I have reviewed the blast radius and accept the risk
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex items-center justify-between gap-4">
               <div>
                 <Label className="text-sm font-medium">Dry Run Mode</Label>
@@ -2359,6 +2501,7 @@ export default function PlaybooksPage() {
               onClick={() => {
                 setExecuteDialogId(null);
                 setExecuteDryRun(false);
+                setBlastRadiusConfirmed(false);
               }}
               data-testid="button-cancel-execute"
             >
@@ -2370,7 +2513,11 @@ export default function PlaybooksPage() {
                   executeMutation.mutate({ id: executeDialogId, dryRun: executeDryRun });
                 }
               }}
-              disabled={executeMutation.isPending}
+              disabled={
+                executeMutation.isPending ||
+                executeBlastRadiusQuery.isLoading ||
+                (!blastRadiusConfirmed && !executeDryRun && !!executeBlastRadiusQuery.data)
+              }
               data-testid="button-confirm-execute"
             >
               {executeMutation.isPending ? (

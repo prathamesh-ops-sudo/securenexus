@@ -18,6 +18,8 @@ import {
   Bell,
   Eye,
   EyeOff,
+  Timer,
+  Gauge,
   Pin,
   LayoutDashboard,
   RotateCcw,
@@ -1098,6 +1100,18 @@ export default function Dashboard() {
     refetchInterval: timeRange === "live" ? 5000 : 30000,
   });
 
+  const { data: opMetrics, refetch: refetchOpMetrics } = useQuery<{
+    mttrHours: number | null;
+    mttdMinutes: number | null;
+    alertsProcessed24h: number;
+    alertsResolved24h: number;
+    resolutionRate: number | null;
+    mttrTrend: { date: string; avgValue: number; sampleCount: number }[];
+  }>({
+    queryKey: ["/api/dashboard/operational-metrics"],
+    refetchInterval: timeRange === "live" ? 10000 : 60000,
+  });
+
   useEffect(() => {
     const latest = Math.max(statsUpdatedAt || 0, analyticsUpdatedAt || 0);
     if (latest > 0) {
@@ -1107,10 +1121,10 @@ export default function Dashboard() {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await Promise.all([refetchStats(), refetchAnalytics()]);
+    await Promise.all([refetchStats(), refetchAnalytics(), refetchOpMetrics()]);
     setLastUpdated(new Date());
     setTimeout(() => setIsRefreshing(false), 600);
-  }, [refetchStats, refetchAnalytics]);
+  }, [refetchStats, refetchAnalytics, refetchOpMetrics]);
 
   const toggleWidget = useCallback((id: WidgetId) => {
     setWidgetConfig((prev) => {
@@ -1449,6 +1463,48 @@ export default function Dashboard() {
             </>
           )}
         </div>
+
+        {/* Operational Metrics Row: MTTD, MTTR, Resolution Rate */}
+        {opMetrics && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard
+              title="MTTD"
+              value={opMetrics.mttdMinutes != null ? `${opMetrics.mttdMinutes}m` : "—"}
+              icon={Timer}
+              subtitle="Mean Time to Detect (30d)"
+              iconColor="text-cyan-500"
+            />
+            <StatCard
+              title="MTTR"
+              value={opMetrics.mttrHours != null ? `${opMetrics.mttrHours}h` : "—"}
+              icon={Target}
+              subtitle="Mean Time to Resolve (30d)"
+              iconColor="text-orange-500"
+            />
+            <StatCard
+              title="Resolution Rate"
+              value={opMetrics.resolutionRate != null ? `${opMetrics.resolutionRate}%` : "—"}
+              icon={Gauge}
+              subtitle={`${opMetrics.alertsResolved24h}/${opMetrics.alertsProcessed24h} alerts (24h)`}
+              subtitleColor={
+                opMetrics.resolutionRate != null && opMetrics.resolutionRate >= 80
+                  ? "text-emerald-400"
+                  : opMetrics.resolutionRate != null && opMetrics.resolutionRate >= 50
+                    ? "text-amber-400"
+                    : "text-red-400"
+              }
+              iconColor="text-indigo-500"
+            />
+            <StatCard
+              title="Throughput"
+              value={opMetrics.alertsProcessed24h}
+              icon={Activity}
+              subtitle="Alerts processed (24h)"
+              iconColor="text-emerald-500"
+              href="/alerts"
+            />
+          </div>
+        )}
 
         {visibleChartWidgets.length > 0 && (
           <div

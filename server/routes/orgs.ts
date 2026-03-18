@@ -8,7 +8,7 @@ import { uploadFile, getSignedUrl, deleteFile } from "../s3";
 import { sendEmail } from "../email-service";
 import { invitationEmail, memberSuspendedEmail, memberRoleChangedEmail } from "../email-templates";
 import { authStorage } from "../auth/storage";
-import { invalidateDeserializeCache } from "../auth/session";
+import { invalidateDeserializeCache, invalidateUserSessions } from "../auth/session";
 
 const LOGO_MAX_SIZE = 2 * 1024 * 1024;
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -153,7 +153,8 @@ export function registerOrgsRoutes(app: Express): void {
 
         const oldRole = target.role;
         const updated = await storage.updateOrgMembership(memberId, { role });
-        invalidateDeserializeCache(target.userId);
+        // Session token rotation: invalidate all sessions after privilege escalation
+        await invalidateUserSessions(target.userId);
         await storage.createAuditLog({
           userId,
           userName: (req as any).user?.firstName
@@ -212,7 +213,8 @@ export function registerOrgsRoutes(app: Express): void {
         if (target.role === "owner") return res.status(400).json({ error: "Cannot suspend an owner" });
 
         const updated = await storage.updateOrgMembership(memberId, { status: "suspended", suspendedAt: new Date() });
-        invalidateDeserializeCache(target.userId);
+        // Session token rotation: invalidate all sessions on suspension
+        await invalidateUserSessions(target.userId);
         await storage.createAuditLog({
           userId,
           userName: (req as any).user?.firstName
