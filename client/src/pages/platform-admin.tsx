@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Building2,
   Users,
@@ -38,6 +40,9 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCw,
+  Plus,
+  X,
+  Loader2,
 } from "lucide-react";
 
 type AdminTab =
@@ -212,6 +217,15 @@ function OverviewTab() {
 function OrganizationsTab() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [tenantForm, setTenantForm] = useState({
+    orgName: "",
+    adminEmail: "",
+    adminFirstName: "",
+    adminLastName: "",
+    industry: "",
+    companySize: "",
+  });
   const limit = 20;
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -224,6 +238,32 @@ function OrganizationsTab() {
         offset: page * limit,
         search,
       }),
+  });
+
+  const createTenantMutation = useMutation({
+    mutationFn: async (payload: typeof tenantForm) => {
+      const res = await apiRequest("POST", "/api/platform-admin/tenants", payload);
+      return res.json();
+    },
+    onSuccess: (result: { organization: { name: string }; adminUser: { email: string; isNewUser: boolean } }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/stats"] });
+      toast({
+        title: "Tenant created",
+        description: `${result.organization.name} created with ${result.adminUser.email} as admin${result.adminUser.isNewUser ? " (new account)" : ""}`,
+      });
+      setShowCreateForm(false);
+      setTenantForm({
+        orgName: "",
+        adminEmail: "",
+        adminFirstName: "",
+        adminLastName: "",
+        industry: "",
+        companySize: "",
+      });
+    },
+    onError: () => toast({ title: "Failed to create tenant", variant: "destructive" }),
   });
 
   const suspendMutation = useMutation({
@@ -252,6 +292,130 @@ function OrganizationsTab() {
 
   return (
     <div className="space-y-4">
+      {/* Create Tenant Form */}
+      {showCreateForm && (
+        <Card className="glass-card border-border/40">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Create New Tenant</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreateForm(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Create an organization and assign an admin. The admin will receive an email invitation.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                createTenantMutation.mutate(tenantForm);
+              }}
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="orgName">Organization Name *</Label>
+                <Input
+                  id="orgName"
+                  placeholder="Acme Corp"
+                  value={tenantForm.orgName}
+                  onChange={(e) => setTenantForm({ ...tenantForm, orgName: e.target.value })}
+                  required
+                  minLength={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adminEmail">Admin Email *</Label>
+                <Input
+                  id="adminEmail"
+                  type="email"
+                  placeholder="admin@company.com"
+                  value={tenantForm.adminEmail}
+                  onChange={(e) => setTenantForm({ ...tenantForm, adminEmail: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adminFirstName">Admin First Name</Label>
+                <Input
+                  id="adminFirstName"
+                  placeholder="John"
+                  value={tenantForm.adminFirstName}
+                  onChange={(e) => setTenantForm({ ...tenantForm, adminFirstName: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adminLastName">Admin Last Name</Label>
+                <Input
+                  id="adminLastName"
+                  placeholder="Doe"
+                  value={tenantForm.adminLastName}
+                  onChange={(e) => setTenantForm({ ...tenantForm, adminLastName: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="industry">Industry</Label>
+                <Select
+                  value={tenantForm.industry}
+                  onValueChange={(val) => setTenantForm({ ...tenantForm, industry: val })}
+                >
+                  <SelectTrigger id="industry">
+                    <SelectValue placeholder="Select industry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="technology">Technology</SelectItem>
+                    <SelectItem value="finance">Finance</SelectItem>
+                    <SelectItem value="healthcare">Healthcare</SelectItem>
+                    <SelectItem value="government">Government</SelectItem>
+                    <SelectItem value="education">Education</SelectItem>
+                    <SelectItem value="retail">Retail</SelectItem>
+                    <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                    <SelectItem value="energy">Energy</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companySize">Company Size</Label>
+                <Select
+                  value={tenantForm.companySize}
+                  onValueChange={(val) => setTenantForm({ ...tenantForm, companySize: val })}
+                >
+                  <SelectTrigger id="companySize">
+                    <SelectValue placeholder="Select size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1-10">1-10</SelectItem>
+                    <SelectItem value="11-50">11-50</SelectItem>
+                    <SelectItem value="51-200">51-200</SelectItem>
+                    <SelectItem value="201-1000">201-1000</SelectItem>
+                    <SelectItem value="1001-5000">1001-5000</SelectItem>
+                    <SelectItem value="5000+">5000+</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-2 flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowCreateForm(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createTenantMutation.isPending}>
+                  {createTenantMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" /> Create Tenant
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -265,6 +429,11 @@ function OrganizationsTab() {
             }}
           />
         </div>
+        {!showCreateForm && (
+          <Button onClick={() => setShowCreateForm(true)} size="sm">
+            <Plus className="h-4 w-4 mr-1" /> New Tenant
+          </Button>
+        )}
       </div>
 
       {isPending ? (

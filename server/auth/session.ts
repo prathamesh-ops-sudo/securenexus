@@ -16,6 +16,7 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { replyUnauthenticated } from "../api-response";
 import { logger } from "../logger";
+import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 
 const scryptAsync = promisify(scrypt);
 
@@ -245,6 +246,15 @@ export async function setupAuth(app: Express) {
         deserializeCache.delete(id);
         return cb(null, null);
       }
+
+      // Auto-promote super-admin on login if email matches
+      if (!user.isSuperAdmin && user.email) {
+        const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+        if (promoted) {
+          (user as any).isSuperAdmin = true;
+        }
+      }
+
       (user as any).orgId = row.membershipOrgId || null;
       (user as any).orgRole = row.membershipRole || null;
 

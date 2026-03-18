@@ -22,6 +22,9 @@ import { eq, desc, sql, and, count, ilike, or, isNull, gte, lte } from "drizzle-
 import { getPoolHealth, checkPoolConnectivity } from "../db";
 import { logger } from "../logger";
 import { randomBytes } from "crypto";
+import { authStorage } from "../auth/storage";
+import { hashPassword } from "../auth/session";
+import { sendEmail } from "../email-service";
 import {
   getLockedAccounts,
   adminUnlockAccount,
@@ -1459,6 +1462,137 @@ export function registerPlatformAdminRoutes(app: Express): void {
       }
     },
   );
+
+  // ── Create Tenant: org + admin user + membership in one shot ──
+  app.post("/api/platform-admin/tenants", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { orgName, adminEmail, adminFirstName, adminLastName, industry, companySize } = req.body;
+
+      if (!orgName || typeof orgName !== "string" || orgName.trim().length < 2) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_ORG_NAME", message: "Organization name is required (min 2 chars)" }],
+        });
+      }
+      if (!adminEmail || typeof adminEmail !== "string" || !adminEmail.includes("@")) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_EMAIL", message: "A valid admin email address is required" }],
+        });
+      }
+
+      const normalizedEmail = adminEmail.trim().toLowerCase();
+      const trimmedName = orgName.trim();
+
+      // Generate slug from org name
+      const baseSlug = trimmedName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+      const slug = `${baseSlug}-${randomBytes(3).toString("hex")}`;
+
+      // 1. Create the organization
+      const org = await storage.createOrganization({
+        name: trimmedName,
+        slug,
+        industry: industry || null,
+        companySize: companySize || null,
+        contactEmail: normalizedEmail,
+      });
+
+      // 2. Find or create the admin user
+      let adminUser = await authStorage.getUserByEmail(normalizedEmail);
+      let isNewUser = false;
+      if (!adminUser) {
+        // Create user with a random temporary password (they'll reset via email)
+        const tempPassword = randomBytes(16).toString("hex");
+        const hashedPw = await hashPassword(tempPassword);
+        adminUser = await authStorage.upsertUser({
+          email: normalizedEmail,
+          passwordHash: hashedPw,
+          firstName: adminFirstName || null,
+          lastName: adminLastName || null,
+        });
+        isNewUser = true;
+      }
+
+      // 3. Create membership as admin
+      await storage.createOrgMembership({
+        orgId: org.id,
+        userId: adminUser.id,
+        role: "admin",
+        status: "active",
+        joinedAt: new Date(),
+        invitedBy: (req as any).user.id,
+      });
+
+      // 4. Invalidate cache so the admin user picks up org context on next request
+      invalidateDeserializeCache(adminUser.id);
+
+      // 5. Audit log
+      await storage.createAuditLog({
+        userId: (req as any).user.id,
+        userName: (req as any).user.email,
+        action: "platform_admin_tenant_created",
+        resourceType: "organization",
+        resourceId: org.id,
+        details: {
+          orgName: trimmedName,
+          adminEmail: normalizedEmail,
+          adminUserId: adminUser.id,
+          isNewUser,
+        },
+      });
+
+      // 6. Send welcome/invitation email
+      sendEmail({
+        to: normalizedEmail,
+        subject: `You've been added as admin of ${trimmedName} on SecureNexus`,
+        html: `<p>Hi ${adminFirstName || "there"},</p>
+<p>You have been added as the <strong>admin</strong> of <strong>${trimmedName}</strong> on SecureNexus by the platform team.</p>
+<p>${isNewUser ? "An account has been created for you. Please reset your password to get started." : "You can log in with your existing account."}</p>
+<p>As an admin, you can:</p>
+<ul>
+  <li>Invite team members to your organization</li>
+  <li>Manage roles and permissions</li>
+  <li>Configure security features</li>
+</ul>
+<p><a href="${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}">Log in to SecureNexus</a></p>`,
+        text: `Hi ${adminFirstName || "there"}, you have been added as admin of ${trimmedName} on SecureNexus. ${isNewUser ? "Please reset your password to get started." : "Log in with your existing account."} Visit: ${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}`,
+      }).catch((err) =>
+        log.error("Failed to send tenant welcome email", { error: String(err), email: normalizedEmail }),
+      );
+
+      log.info("Tenant created", {
+        orgId: org.id,
+        orgName: trimmedName,
+        adminEmail: normalizedEmail,
+        createdBy: (req as any).user.email,
+      });
+
+      return sendEnvelope(
+        res,
+        {
+          organization: org,
+          adminUser: {
+            id: adminUser.id,
+            email: adminUser.email,
+            firstName: adminUser.firstName,
+            lastName: adminUser.lastName,
+            isNewUser,
+          },
+        },
+        { status: 201 },
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Failed to create tenant", { error: message });
+      return sendEnvelope(res, null, {
+        status: 500,
+        errors: [{ code: "TENANT_CREATE_FAILED", message: "Failed to create tenant", details: message }],
+      });
+    }
+  });
 
   app.get(
     "/api/platform-admin/failed-login-history",
