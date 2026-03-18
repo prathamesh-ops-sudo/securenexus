@@ -5,18 +5,18 @@ LABEL org.opencontainers.image.source="https://github.com/prathamesh-ops-sudo/se
 LABEL org.opencontainers.image.description="SecureNexus - AI-Powered Security Operations Platform"
 LABEL org.opencontainers.image.vendor="Arica Technologies"
 
-# ── Install dependencies ─────────────────────────────────────────
+# ── Install dependencies ─────────────────────────────────────
 FROM base AS deps
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
-# ── Build application ──────────────────────────────────────────
+# ── Build application ────────────────────────────────────────
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# ── Production image ───────────────────────────────────────────
+# ── Production image ─────────────────────────────────────────
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=5000

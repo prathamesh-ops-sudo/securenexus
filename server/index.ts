@@ -228,6 +228,8 @@ export function log(message: string, source = "express") {
         externalMb: Math.round(mem.external / 1024 / 1024),
         cpuUserMs: Math.round(cpuUsage.user / 1000),
         cpuSystemMs: Math.round(cpuUsage.system / 1000),
+        activeHandles: (process as any)._getActiveHandles?.()?.length,
+        activeRequests: (process as any)._getActiveRequests?.()?.length,
       });
     }, HEARTBEAT_INTERVAL_MS);
     heartbeatTimer.unref();
