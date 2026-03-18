@@ -212,7 +212,7 @@ export function registerConnectorsRoutes(app: Express): void {
           name,
         });
         // connectors is a resource-count metric — enforcement queries active count directly
-        res.status(201).json(connector);
+        res.status(201).json({ ...connector, config: sanitizeConfig(connector.config) });
       } catch (error: any) {
         logger.child("routes").error("Route error", { error: String(error) });
         res.status(500).json({ message: "Failed to create connector. Please try again." });
@@ -250,7 +250,10 @@ export function registerConnectorsRoutes(app: Express): void {
         if (status) updateData.status = status;
         if (pollingIntervalMin) updateData.pollingIntervalMin = pollingIntervalMin;
         const updated = await storage.updateConnector(p(req.params.id), updateData);
-        res.json(updated);
+        if (!updated) {
+          return res.status(404).json({ message: "Connector not found" });
+        }
+        res.json({ ...updated, config: sanitizeConfig(updated.config) });
       } catch (error: any) {
         logger.child("routes").error("Route error", { error: String(error) });
         res.status(500).json({ message: "Failed to update connector. Please try again." });

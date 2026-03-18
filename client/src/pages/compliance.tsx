@@ -54,6 +54,7 @@ import { apiRequest, queryClient, ensureArray } from "@/lib/queryClient";
 import { formatDateShort as formatDate, formatDateTime } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { DetailPageSkeleton } from "@/components/page-skeleton";
 
 interface CompliancePolicy {
   id: string;
@@ -272,6 +273,7 @@ function ComplianceCenterTab() {
     isPending,
     isError,
     refetch,
+    isLoading,
   } = useQuery<ComplianceCenterData>({
     queryKey: ["/api/compliance/center"],
   });
@@ -3096,6 +3098,7 @@ function ComplianceHelpersTab() {
 
 export default function CompliancePage() {
   usePageTitle("Compliance & Governance");
+
   return (
     <div
       className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto"

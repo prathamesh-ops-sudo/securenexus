@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useLocation } from "wouter";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 type OnboardingStatus = {
   steps: {
@@ -26,6 +27,8 @@ export default function OnboardingPage() {
   const completed = data?.completedCount ?? 0;
   const total = data?.totalSteps ?? 4;
   const percent = total > 0 ? (completed / total) * 100 : 0;
+
+  if (isLoading) return <FormPageSkeleton />;
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6" data-testid="page-onboarding">

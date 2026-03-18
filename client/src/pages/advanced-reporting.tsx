@@ -26,6 +26,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 interface ReportType {
   id: string;
@@ -79,7 +80,7 @@ export default function AdvancedReportingPage() {
     footerText: "",
   });
 
-  const { data: reportTypes } = useQuery<{
+  const { data: reportTypes, isLoading } = useQuery<{
     reportTypes: ReportType[];
     complianceTemplates: ComplianceTemplate[];
   }>({
@@ -230,6 +231,8 @@ export default function AdvancedReportingPage() {
     financialImpactMutation.isPending ||
     socKpiMutation.isPending ||
     whiteLabelMutation.isPending;
+
+  if (isLoading) return <DashboardSkeleton />;
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">

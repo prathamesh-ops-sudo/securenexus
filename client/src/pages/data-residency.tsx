@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 const apiRequest = async (url: string, options?: RequestInit) => {
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');

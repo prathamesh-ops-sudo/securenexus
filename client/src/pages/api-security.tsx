@@ -34,6 +34,7 @@ import {
   Scan,
   Clock,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

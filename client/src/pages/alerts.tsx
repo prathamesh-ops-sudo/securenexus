@@ -957,7 +957,7 @@ export default function AlertsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Status</label>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -1619,7 +1619,7 @@ export default function AlertsPage() {
         </Card>
       )}
 
-      <ResizablePanelGroup direction="horizontal" className="rounded-lg">
+      <ResizablePanelGroup direction="horizontal" className="rounded-lg min-h-[400px]">
         <ResizablePanel defaultSize={isDetailOpen && selectedAlert ? 60 : 100} minSize={35}>
           <Card className="h-full transition-all duration-200">
             <CardContent className="p-0">

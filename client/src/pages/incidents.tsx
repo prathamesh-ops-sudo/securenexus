@@ -810,7 +810,7 @@ export default function IncidentsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Status</label>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -985,7 +985,7 @@ export default function IncidentsPage() {
         </Card>
       )}
 
-      <ResizablePanelGroup direction="horizontal" className="rounded-lg">
+      <ResizablePanelGroup direction="horizontal" className="rounded-lg min-h-[400px]">
         <ResizablePanel defaultSize={isDetailOpen && selectedIncident ? 60 : 100} minSize={35}>
           <Card className="h-full transition-all duration-200">
             <CardContent className="p-0">
@@ -1004,8 +1004,10 @@ export default function IncidentsPage() {
                       <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Incident</th>
                       <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
                       <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Priority</th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">SLA</th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">
+                        Priority
+                      </th>
+                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">SLA</th>
                       <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">
                         Assignee
                       </th>
@@ -1033,10 +1035,10 @@ export default function IncidentsPage() {
                           <td className="px-4 py-3">
                             <Skeleton className="h-4 w-20" />
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 hidden sm:table-cell">
                             <Skeleton className="h-4 w-12" />
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 hidden sm:table-cell">
                             <Skeleton className="h-4 w-16" />
                           </td>
                           <td className="px-4 py-3 hidden md:table-cell">
@@ -1111,10 +1113,10 @@ export default function IncidentsPage() {
                             <td className="px-4 py-3">
                               <IncidentStatusBadge status={incident.status} />
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3 hidden sm:table-cell">
                               <PriorityBadge priority={incident.priority ?? 3} />
                             </td>
-                            <td className="px-4 py-3" data-testid={`badge-sla-${incident.id}`}>
+                            <td className="px-4 py-3 hidden sm:table-cell" data-testid={`badge-sla-${incident.id}`}>
                               {slaStatus ? (
                                 <Badge variant={slaStatus.variant} className="text-[10px] no-default-active-elevate">
                                   {slaStatus.label}

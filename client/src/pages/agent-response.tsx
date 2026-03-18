@@ -33,6 +33,7 @@ import {
   Eye,
   Zap,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 interface ResponseAction {
   id: string;
@@ -327,6 +328,8 @@ export default function AgentResponsePage() {
   }
 
   const selectedActionType = actionTypesData?.actionTypes?.find((t) => t.type === newAction.actionType);
+
+  if (isLoading) return <TablePageSkeleton />;
 
   return (
     <div className="p-6 space-y-6">

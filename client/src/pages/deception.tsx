@@ -44,6 +44,7 @@ import {
   Plug,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { DetailPageSkeleton } from "@/components/page-skeleton";
 
 const TOKEN_TYPE_LABELS: Record<string, { label: string; icon: typeof Key; description: string }> = {
   aws_key: { label: "AWS Credentials", icon: Key, description: "Fake AWS access key + secret" },
@@ -114,7 +115,7 @@ export default function DeceptionPage() {
   const [activeTab, setActiveTab] = useState("overview");
 
   // Queries
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading } = useQuery({
     queryKey: ["/api/deception/stats"],
     queryFn: () => apiRequest("/api/deception/stats"),
   });
@@ -137,6 +138,8 @@ export default function DeceptionPage() {
   const tokens = tokensData?.tokens || [];
   const assets = assetsData?.assets || [];
   const hits = hitsData?.hits || [];
+
+  if (isLoading) return <DetailPageSkeleton />;
 
   return (
     <div className="space-y-6">

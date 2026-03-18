@@ -39,6 +39,7 @@ import {
   ThumbsUp,
   ThumbsDown,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 interface SOCStats {
   totalDecisions: number;

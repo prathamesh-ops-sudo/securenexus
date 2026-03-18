@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { useLocation } from "wouter";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 interface EntityScore {
   id: string;

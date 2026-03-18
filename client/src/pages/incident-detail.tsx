@@ -135,14 +135,20 @@ export default function IncidentDetailPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
+  const [streamElapsed, setStreamElapsed] = useState(0);
   const streamEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const streamTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const AI_TIMEOUT_SECONDS = 120;
 
-  // Clean up EventSource on unmount
+  // Clean up EventSource and timer on unmount
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
+      }
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
       }
     };
   }, []);
@@ -154,6 +160,12 @@ export default function IncidentDetailPage() {
     setStreamingText("");
     setStreamStatus("Connecting...");
     setNarrativeResult(null);
+    setStreamElapsed(0);
+    // Start elapsed timer
+    if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+    streamTimerRef.current = setInterval(() => {
+      setStreamElapsed((prev) => prev + 1);
+    }, 1000);
 
     const es = new EventSource(`/api/ai/narrative/${params.id}/stream`, { withCredentials: true });
     eventSourceRef.current = es;
@@ -164,6 +176,10 @@ export default function IncidentDetailPage() {
         eventSourceRef.current = null;
         setIsStreaming(false);
         setStreamStatus(null);
+        if (streamTimerRef.current) {
+          clearInterval(streamTimerRef.current);
+          streamTimerRef.current = null;
+        }
         // Refresh the incident data to get the stored narrative
         queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id] });
         toast({
@@ -196,6 +212,10 @@ export default function IncidentDetailPage() {
             eventSourceRef.current = null;
             setIsStreaming(false);
             setStreamStatus(null);
+            if (streamTimerRef.current) {
+              clearInterval(streamTimerRef.current);
+              streamTimerRef.current = null;
+            }
             toast({
               title: "AI Narrative Failed",
               description: data.message || "Streaming failed",
@@ -213,6 +233,10 @@ export default function IncidentDetailPage() {
       eventSourceRef.current = null;
       setIsStreaming(false);
       setStreamStatus(null);
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
       toast({
         title: "AI Stream Disconnected",
         description: "Connection lost. Please try again.",
@@ -1205,6 +1229,9 @@ export default function IncidentDetailPage() {
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
                       </span>
                       Streaming
+                      <span className="tabular-nums">
+                        {Math.floor(streamElapsed / 60)}:{String(streamElapsed % 60).padStart(2, "0")}
+                      </span>
                     </span>
                   )}
                 </CardTitle>
@@ -1213,6 +1240,21 @@ export default function IncidentDetailPage() {
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {streamStatus}
                   </p>
+                )}
+                {isStreaming && (
+                  <div className="mt-1">
+                    <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ${
+                          streamElapsed > AI_TIMEOUT_SECONDS * 0.8 ? "bg-amber-500" : "bg-primary"
+                        }`}
+                        style={{ width: `${Math.min((streamElapsed / AI_TIMEOUT_SECONDS) * 100, 100)}%` }}
+                      />
+                    </div>
+                    {streamElapsed > AI_TIMEOUT_SECONDS * 0.8 && (
+                      <p className="text-[10px] text-amber-500 mt-0.5">Analysis taking longer than expected...</p>
+                    )}
+                  </div>
                 )}
               </CardHeader>
               <CardContent>

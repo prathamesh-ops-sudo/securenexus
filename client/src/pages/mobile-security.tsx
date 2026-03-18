@@ -43,6 +43,7 @@ import {
   Users,
   TrendingUp,
 } from "lucide-react";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 const API_BASE = "/api/mobile";
 
@@ -106,7 +107,7 @@ function platformIcon(platform: string) {
 // ─── Dashboard Tab ───────────────────────────────────────────────────────────
 
 function DashboardTab() {
-  const { data: dashboard } = useQuery({
+  const { data: dashboard, isLoading } = useQuery({
     queryKey: ["mobile-dashboard"],
     queryFn: () => apiRequest(`${API_BASE}/dashboard`),
   });

@@ -50,6 +50,7 @@ import {
   Plug,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -322,7 +323,7 @@ export default function RansomwareDefensePage() {
 
   // ── Queries ─────────────────────────────────────────────────────────────
 
-  const { data: summary } = useQuery<DefenseSummary>({
+  const { data: summary, isLoading } = useQuery<DefenseSummary>({
     queryKey: ["/api/ransomware-defense/summary"],
     queryFn: () => apiFetch("/api/ransomware-defense/summary"),
   });
@@ -543,6 +544,8 @@ export default function RansomwareDefensePage() {
 
   const readiness = summary?.readiness;
   const groups = groupsData?.groups || [];
+
+  if (isLoading) return <TablePageSkeleton />;
 
   return (
     <div className="p-6 space-y-6">

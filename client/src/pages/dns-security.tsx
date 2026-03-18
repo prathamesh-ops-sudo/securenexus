@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Globe, Shield, AlertTriangle, Search, Plus, Activity, Eye, Ban, Network, Cpu, Zap } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
   return fetch(url, {
@@ -744,6 +745,8 @@ export default function DnsSecurityPage() {
     queryKey: ["/api/dns-security/dashboard"],
     queryFn: () => apiFetch("/api/dns-security/dashboard"),
   });
+
+  if (isLoading) return <DashboardSkeleton />;
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">

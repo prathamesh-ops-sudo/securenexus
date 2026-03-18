@@ -41,6 +41,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 // ── Types ─────────────────────────────────────────────────────────
 

@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   XCircle,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
   return fetch(url, {
@@ -450,6 +451,8 @@ export default function BoardDashboardPage() {
     },
   });
 
+  if (isLoading) return <DashboardSkeleton />;
+
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
       <div className="flex items-center justify-between">
@@ -477,7 +480,6 @@ export default function BoardDashboardPage() {
         </div>
       </div>
 
-      {isLoading && <p className="text-muted-foreground">Loading metrics...</p>}
       {error && <p className="text-destructive">Failed to load dashboard: {String(error)}</p>}
 
       {data && (

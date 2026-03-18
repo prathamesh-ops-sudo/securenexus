@@ -388,22 +388,12 @@ function IntegrationsTab() {
 
   function handleSubmit() {
     setSubmitAttempted(true);
-    if (!formName.trim()) {
-      toast({ title: "Missing fields", description: "Name is required.", variant: "destructive" });
-      return;
-    }
-    if (!formType) {
-      toast({ title: "Missing fields", description: "Integration type is required.", variant: "destructive" });
+    if (!formName.trim() || !formType) {
       return;
     }
     const configErrors = validateConfigFields();
     setFormErrors(configErrors);
     if (Object.keys(configErrors).length > 0) {
-      toast({
-        title: "Invalid configuration",
-        description: `Please fix ${Object.keys(configErrors).length} field error(s) before saving.`,
-        variant: "destructive",
-      });
       return;
     }
     const payload = { name: formName.trim(), type: formType, config: formConfig };
@@ -582,17 +572,24 @@ function IntegrationsTab() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="integration-name">Name</Label>
+              <Label htmlFor="integration-name">
+                Name <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="integration-name"
                 placeholder="e.g. Production Slack"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
+                className={submitAttempted && !formName.trim() ? "border-destructive" : ""}
                 data-testid="input-integration-name"
               />
+              {submitAttempted && !formName.trim() && <p className="text-xs text-destructive">Name is required</p>}
             </div>
             <div className="space-y-2">
-              <Label>Type</Label>
+              <Label>
+                Type <span className="text-destructive">*</span>
+              </Label>
+              {submitAttempted && !formType && <p className="text-xs text-destructive">Integration type is required</p>}
               <Select
                 value={formType}
                 onValueChange={(val) => {

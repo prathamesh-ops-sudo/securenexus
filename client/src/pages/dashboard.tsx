@@ -1387,7 +1387,7 @@ export default function Dashboard() {
           </Card>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Stat cards row - tighter grouping */}
           {statsLoading ? (
             Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
@@ -1466,7 +1466,7 @@ export default function Dashboard() {
 
         {/* Operational Metrics Row: MTTD, MTTR, Resolution Rate */}
         {opMetrics && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
               title="MTTD"
               value={opMetrics.mttdMinutes != null ? `${opMetrics.mttdMinutes}m` : "—"}
