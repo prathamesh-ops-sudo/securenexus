@@ -1226,7 +1226,11 @@ export default function ConnectorsPage() {
   }
 
   function handleCreate() {
-    if (!selectedType || !connectorName) return;
+    if (!selectedType || !connectorName) {
+      // Mark all fields as touched so inline errors show
+      setTouchedFields((prev) => ({ ...prev, __name: true, __type: true }));
+      return;
+    }
     const meta = connectorTypes?.find((t) => t.type === selectedType);
     if (!meta) return;
     const config: Record<string, string> = {};
@@ -1235,11 +1239,10 @@ export default function ConnectorsPage() {
     }
     const missingRequired = meta.requiredFields.filter((f) => !config[f.key]);
     if (missingRequired.length > 0) {
-      toast({
-        title: "Missing required fields",
-        description: missingRequired.map((f) => f.label).join(", "),
-        variant: "destructive",
-      });
+      // Touch all required fields so inline errors appear
+      const allTouched: Record<string, boolean> = {};
+      for (const f of meta.requiredFields) allTouched[f.key] = true;
+      setTouchedFields((prev) => ({ ...prev, ...allTouched }));
       return;
     }
     createMutation.mutate({
@@ -1668,14 +1671,21 @@ export default function ConnectorsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="connector-name">Connector Name</Label>
+              <Label htmlFor="connector-name">
+                Connector Name <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="connector-name"
                 placeholder="e.g. Production CrowdStrike"
                 value={connectorName}
                 onChange={(e) => setConnectorName(e.target.value)}
+                onBlur={() => setTouchedFields((prev) => ({ ...prev, __name: true }))}
+                className={touchedFields.__name && !connectorName.trim() ? "border-destructive" : ""}
                 data-testid="input-connector-name"
               />
+              {touchedFields.__name && !connectorName.trim() && (
+                <p className="text-xs text-destructive">Connector name is required</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Source Type</Label>

@@ -10,7 +10,7 @@ import { sendEnvelope, getOrgId, logger, storage } from "./shared";
  * wired to real database queries via the storage layer.
  */
 
-export function registerPhase2StubRoutes(app: Express): void {
+export function registerPhase2Routes(app: Express): void {
   const log = logger.child("phase2-routes");
 
   // ── CVE Browser ──────────────────────────────────────────────────

@@ -51,6 +51,7 @@ import {
   Plug,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

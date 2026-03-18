@@ -32,6 +32,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 interface ApiKeyDisplay {
   id: string;

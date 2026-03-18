@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, ShieldCheck, ShieldOff, Copy, Loader2 } from "lucide-react";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 export default function MfaSetupPage() {
   const { toast } = useToast();
@@ -19,7 +20,11 @@ export default function MfaSetupPage() {
   const [verifyToken, setVerifyToken] = useState("");
   const [disableToken, setDisableToken] = useState("");
 
-  const { data: status, isPending } = useQuery<{ mfaEnabled: boolean; mfaVerifiedAt: string | null }>({
+  const {
+    data: status,
+    isPending,
+    isLoading,
+  } = useQuery<{ mfaEnabled: boolean; mfaVerifiedAt: string | null }>({
     queryKey: ["/api/mfa/status"],
   });
 
@@ -76,6 +81,8 @@ export default function MfaSetupPage() {
   };
 
   if (isPending) {
+    if (isLoading) return <FormPageSkeleton />;
+
     return (
       <div className="flex items-center justify-center min-h-[400px]" data-testid="mfa-loading">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

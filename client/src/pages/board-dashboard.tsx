@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   XCircle,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
   return fetch(url, {
@@ -449,6 +450,8 @@ export default function BoardDashboardPage() {
       toast({ title: "KPI snapshot saved" });
     },
   });
+
+  if (isLoading) return <DashboardSkeleton />;
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">

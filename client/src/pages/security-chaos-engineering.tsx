@@ -41,6 +41,7 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 

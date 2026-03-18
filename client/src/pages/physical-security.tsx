@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { apiRequest } from "@/lib/queryClient";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 // ── Types ─────────────────────────────────────────────────────────
 

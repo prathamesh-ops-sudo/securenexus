@@ -48,6 +48,7 @@ import {
   Send,
   Award,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -281,7 +282,7 @@ export default function PostureTrustCenterPage() {
 
   // ── Queries ─────────────────────────────────────────────────────────────
 
-  const { data: summary } = useQuery<PostureSummary>({
+  const { data: summary, isLoading } = useQuery<PostureSummary>({
     queryKey: ["/api/posture-trust/summary"],
     queryFn: () => apiFetch("/api/posture-trust/summary"),
   });
@@ -432,6 +433,8 @@ export default function PostureTrustCenterPage() {
 
   const overallScore = summary?.overallScore || 0;
   const domainMeta = summary?.domainMeta || {};
+
+  if (isLoading) return <DashboardSkeleton />;
 
   return (
     <div className="space-y-6 p-6">

@@ -43,6 +43,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 // ── Types ─────────────────────────────────────────────────────────
 

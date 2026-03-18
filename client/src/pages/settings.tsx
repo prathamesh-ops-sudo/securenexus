@@ -38,6 +38,7 @@ import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { FormPageSkeleton } from "@/components/page-skeleton";
 
 const ROLES = [
   { name: "Admin", description: "Full access to all features, settings, and user management", color: "text-red-400" },

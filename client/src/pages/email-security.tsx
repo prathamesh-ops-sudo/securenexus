@@ -29,6 +29,7 @@ import {
   FileWarning,
   Globe,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 async function apiFetch(url: string, options?: RequestInit) {
   const headers: Record<string, string> = {
@@ -1155,6 +1156,8 @@ export default function EmailSecurityPage() {
     queryKey: ["/api/email-security/dashboard"],
     queryFn: () => apiFetch("/api/email-security/dashboard"),
   });
+
+  if (isLoading) return <DashboardSkeleton />;
 
   return (
     <div className="p-6 space-y-6">

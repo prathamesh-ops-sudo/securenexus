@@ -38,6 +38,7 @@ import {
   Workflow,
   ExternalLink,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ──────────────────────────────────────────────────
 

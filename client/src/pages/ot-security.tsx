@@ -44,6 +44,7 @@ import {
   Plug,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { DetailPageSkeleton } from "@/components/page-skeleton";
 
 // =========================================================================
 // TYPES
@@ -297,7 +298,7 @@ async function apiRequest(url: string, options?: RequestInit) {
 export default function OtSecurityPage() {
   const [activeTab, setActiveTab] = useState("overview");
 
-  const { data: stats } = useQuery<OtStats>({
+  const { data: stats, isLoading } = useQuery<OtStats>({
     queryKey: ["/api/ot/stats"],
     queryFn: () => apiRequest("/api/ot/stats"),
   });
@@ -331,6 +332,8 @@ export default function OtSecurityPage() {
     queryKey: ["/api/ot/boundary"],
     queryFn: () => apiRequest("/api/ot/boundary"),
   });
+
+  if (isLoading) return <DetailPageSkeleton />;
 
   return (
     <div className="flex-1 space-y-6 p-6">

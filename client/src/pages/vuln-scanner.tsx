@@ -21,6 +21,7 @@ import {
   Clock,
   Filter,
 } from "lucide-react";
+import { TablePageSkeleton } from "@/components/page-skeleton";
 
 interface VulnFinding {
   id: string;

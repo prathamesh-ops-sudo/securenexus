@@ -39,6 +39,7 @@ import {
   Crosshair,
   Rss,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 

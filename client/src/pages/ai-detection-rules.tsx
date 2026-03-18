@@ -37,6 +37,7 @@ import {
   Rocket,
   BarChart3,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
   const csrfToken = document.cookie
