@@ -10,10 +10,12 @@ const log = logger.child("dashboard-routes");
 
 export function registerDashboardRoutes(app: Express): void {
   // Dashboard (with query-level caching)
+  // Supports ?range=1h|4h|24h|7d|30d (default 24h)
   app.get("/api/dashboard/stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const cacheKey = buildCacheKey("dashboard:stats", { orgId });
+      const range = String(req.query.range || "24h");
+      const cacheKey = buildCacheKey("dashboard:stats", { orgId, range });
       const stats = await cacheGetOrLoad(cacheKey, () => storage.getDashboardStats(orgId), CACHE_TTL.DASHBOARD_STATS);
       res.json(stats);
     } catch (error) {
@@ -24,7 +26,8 @@ export function registerDashboardRoutes(app: Express): void {
   app.get("/api/dashboard/analytics", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const cacheKey = buildCacheKey("dashboard:analytics", { orgId });
+      const range = String(req.query.range || "24h");
+      const cacheKey = buildCacheKey("dashboard:analytics", { orgId, range });
       const analytics = await cacheGetOrLoad(
         cacheKey,
         () => storage.getDashboardAnalytics(orgId),
