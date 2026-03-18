@@ -1,8 +1,7 @@
 name: Weekly Codebase Sweep
 
+# PAUSED — re-enable schedule + workflow_dispatch triggers when ready to resume CI
 on:
-  schedule:
-    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 env:
