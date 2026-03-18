@@ -32,6 +32,10 @@ import {
   Keyboard,
   GitBranch,
   Network,
+  Volume2,
+  VolumeX,
+  Bell,
+  GripVertical,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,7 +45,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -167,6 +182,138 @@ const SCOPE_OPTIONS = [
   "domain",
 ] as const;
 
+// ── 2.3 Saved filter presets ──────────────────────────────────────────────────
+interface FilterPreset {
+  id: string;
+  name: string;
+  filters: {
+    severity: string;
+    status: string;
+    source: string;
+    category: string;
+    search: string;
+    queue: string;
+    dateFrom: string;
+    dateTo: string;
+    showSuppressed: boolean;
+  };
+}
+
+const FILTER_PRESETS_KEY = "securenexus.alerts.filterPresets";
+
+function loadFilterPresets(): FilterPreset[] {
+  try {
+    const raw = localStorage.getItem(FILTER_PRESETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFilterPresets(presets: FilterPreset[]) {
+  try {
+    localStorage.setItem(FILTER_PRESETS_KEY, JSON.stringify(presets));
+  } catch {
+    /* storage full or blocked */
+  }
+}
+
+// ── 2.2 Column preferences ───────────────────────────────────────────────────
+type ColumnKey = "checkbox" | "alert" | "source" | "severity" | "category" | "mitre" | "status" | "queue" | "actions";
+
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  minWidth: number;
+  defaultWidth: number;
+  hiddenBelowMd?: boolean;
+  hiddenBelowLg?: boolean;
+  fixed?: boolean; // cannot be reordered (checkbox, actions)
+}
+
+const DEFAULT_COLUMNS: ColumnDef[] = [
+  { key: "checkbox", label: "", minWidth: 40, defaultWidth: 48, fixed: true },
+  { key: "alert", label: "Alert", minWidth: 150, defaultWidth: 300 },
+  { key: "source", label: "Source", minWidth: 80, defaultWidth: 120, hiddenBelowMd: true },
+  { key: "severity", label: "Severity", minWidth: 80, defaultWidth: 120 },
+  { key: "category", label: "Category", minWidth: 80, defaultWidth: 120, hiddenBelowLg: true },
+  { key: "mitre", label: "MITRE Tactic", minWidth: 80, defaultWidth: 140, hiddenBelowLg: true },
+  { key: "status", label: "Status", minWidth: 70, defaultWidth: 100 },
+  { key: "queue", label: "Queue", minWidth: 70, defaultWidth: 100 },
+  { key: "actions", label: "Actions", minWidth: 80, defaultWidth: 100, fixed: true },
+];
+
+const COLUMN_PREFS_KEY = "securenexus.alerts.columnPrefs";
+
+interface ColumnPrefs {
+  order: ColumnKey[];
+  widths: Partial<Record<ColumnKey, number>>;
+}
+
+function loadColumnPrefs(): ColumnPrefs {
+  try {
+    const raw = localStorage.getItem(COLUMN_PREFS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return { order: DEFAULT_COLUMNS.map((c) => c.key), widths: {} };
+}
+
+function saveColumnPrefs(prefs: ColumnPrefs) {
+  try {
+    localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* storage full or blocked */
+  }
+}
+
+// ── 2.7 Sound notification ───────────────────────────────────────────────────
+const SOUND_PREFS_KEY = "securenexus.alerts.soundEnabled";
+
+function loadSoundPref(): boolean {
+  try {
+    return localStorage.getItem(SOUND_PREFS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function playCriticalAlertSound() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = "sine";
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+    // Play a second beep
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.frequency.value = 1100;
+    osc2.type = "sine";
+    gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.3);
+    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
+    osc2.start(ctx.currentTime + 0.3);
+    osc2.stop(ctx.currentTime + 0.8);
+  } catch {
+    /* AudioContext not available */
+  }
+}
+
+function sendBrowserNotification(title: string, body: string) {
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    new Notification(title, { body, icon: "/logo.svg", tag: "critical-alert" });
+  }
+}
+
 export default function AlertsPage() {
   usePageTitle("Alerts");
   const [, navigate] = useLocation();
@@ -209,6 +356,48 @@ export default function AlertsPage() {
   const PAGE_SIZE = 25;
   const { toast } = useToast();
   const { currentOrgId } = useOrgContext();
+
+  // ── 2.4 Bulk action confirmation dialog ──
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState<{
+    label: string;
+    action: () => void;
+  } | null>(null);
+
+  // ── 2.2 Column resizing/reordering ──
+  const [columnPrefs, setColumnPrefs] = useState<ColumnPrefs>(loadColumnPrefs);
+  const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
+  const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
+  const resizeStartX = useRef(0);
+  const resizeStartW = useRef(0);
+
+  // ── 2.3 Local filter presets ──
+  const [localFilterPresets, setLocalFilterPresets] = useState<FilterPreset[]>(loadFilterPresets);
+  const [presetNameInput, setPresetNameInput] = useState("");
+  const [showPresetSave, setShowPresetSave] = useState(false);
+
+  // ── 2.7 Sound notification ──
+  const [soundEnabled, setSoundEnabled] = useState(loadSoundPref);
+  const prevAlertCountRef = useRef<number>(0);
+  const prevCriticalIdsRef = useRef<Set<string>>(new Set());
+
+  // ── 2.6 Sheet-based detail panel ──
+  const [_useSheetPanel, _setUseSheetPanel] = useState(false);
+
+  // Debounced search for server-side filtering (2.1)
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(0); // reset to first page on search change
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset page when filters change (2.1)
+  useEffect(() => {
+    setPage(0);
+  }, [severityFilter, statusFilter, sourceFilter, showSuppressed]);
 
   const { data: serverSavedViews, refetch: refetchSavedViews } = useQuery<SavedView[]>({
     queryKey: [`/api/orgs/${currentOrgId}/saved-views`, "alerts"],
@@ -255,20 +444,39 @@ export default function AlertsPage() {
     },
   });
 
+  // ── 2.1 Server-side pagination — pass all filters as query params ──
   const {
     data: alertsResponse,
     isLoading,
     isError: alertsError,
     refetch: refetchAlerts,
   } = useQuery<PaginatedResponse<Alert>>({
-    queryKey: ["/api/v1/alerts"],
+    queryKey: [
+      "/api/v1/alerts",
+      page,
+      PAGE_SIZE,
+      debouncedSearch,
+      severityFilter,
+      statusFilter,
+      sourceFilter,
+      showSuppressed,
+    ],
     queryFn: () =>
       fetchPaginated<Alert>("/api/v1/alerts", {
-        offset: 0,
-        limit: 200,
+        offset: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        severity: severityFilter !== "all" ? severityFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        source: sourceFilter !== "all" ? sourceFilter : undefined,
+        suppressed: showSuppressed ? undefined : "false",
+        sortBy: "createdAt",
+        sortOrder: "desc",
       }),
   });
   const alerts = alertsResponse?.items;
+  const totalAlerts = alertsResponse?.total ?? 0;
+  const totalPages = Math.ceil(totalAlerts / PAGE_SIZE);
 
   const { data: suppressionRules, isLoading: rulesLoading } = useQuery<SuppressionRule[]>({
     queryKey: ["/api/suppression-rules"],
@@ -513,33 +721,23 @@ export default function AlertsPage() {
     return `${hours}h ${minutes}m remaining`;
   };
 
-  const filtered = alerts?.filter((alert) => {
-    const matchesSearch =
-      !search ||
-      alert.title.toLowerCase().includes(search.toLowerCase()) ||
-      alert.source.toLowerCase().includes(search.toLowerCase()) ||
-      alert.description?.toLowerCase().includes(search.toLowerCase());
-    const matchesSeverity = severityFilter === "all" || alert.severity === severityFilter;
-    const matchesStatus = statusFilter === "all" || alert.status === statusFilter;
-    const matchesSource = sourceFilter === "all" || alert.source === sourceFilter;
-    const matchesCategory = categoryFilter === "all" || alert.category === categoryFilter;
-    const matchesSuppressed = showSuppressed || !alert.suppressed;
-    const queueState = getQueueState(alert);
-    const matchesQueue = queueFilter === "all" || queueState === queueFilter;
-    const matchesDateFrom = !dateFrom || new Date(alert.createdAt || 0) >= new Date(dateFrom);
-    const matchesDateTo = !dateTo || new Date(alert.createdAt || 0) <= new Date(dateTo + "T23:59:59");
-    return (
-      matchesSearch &&
-      matchesSeverity &&
-      matchesStatus &&
-      matchesSource &&
-      matchesCategory &&
-      matchesSuppressed &&
-      matchesQueue &&
-      matchesDateFrom &&
-      matchesDateTo
-    );
-  });
+  // 2.1: With server-side pagination, the server already filters. Only apply
+  // lightweight client-side filters for fields the server doesn't support
+  // (category, queue, dateFrom, dateTo).
+  const filtered = useMemo(() => {
+    if (!alerts) return [];
+    return alerts.filter((alert) => {
+      const matchesCategory = categoryFilter === "all" || alert.category === categoryFilter;
+      const queueState = getQueueState(alert);
+      const matchesQueue = queueFilter === "all" || queueState === queueFilter;
+      const matchesDateFrom = !dateFrom || new Date(alert.createdAt || 0) >= new Date(dateFrom);
+      const matchesDateTo = !dateTo || new Date(alert.createdAt || 0) <= new Date(dateTo + "T23:59:59");
+      return matchesCategory && matchesQueue && matchesDateFrom && matchesDateTo;
+    });
+  }, [alerts, categoryFilter, queueFilter, dateFrom, dateTo, getQueueState]);
+
+  // 2.1: pageAlerts is now the filtered server page (no client-side slicing needed)
+  const pageAlerts = filtered;
 
   const severities = ["all", "critical", "high", "medium", "low"];
 
@@ -550,14 +748,208 @@ export default function AlertsPage() {
     }
   }, [filtered, focusedAlertId]);
 
+  // 2.7: Sound notification for new critical/high alerts
   useEffect(() => {
-    if (!filtered || filtered.length === 0) {
-      setPage(0);
-      return;
+    if (!alerts || alerts.length === 0) return;
+    const criticalIds = new Set(
+      alerts.filter((a) => a.severity === "critical" || a.severity === "high").map((a) => a.id),
+    );
+    // Detect new critical alerts that weren't in previous set
+    const newCritical = Array.from(criticalIds).filter((id) => !prevCriticalIdsRef.current.has(id));
+    if (newCritical.length > 0 && prevCriticalIdsRef.current.size > 0 && soundEnabled) {
+      playCriticalAlertSound();
+      const newAlert = alerts.find((a) => a.id === newCritical[0]);
+      if (newAlert) {
+        sendBrowserNotification(
+          `Critical Alert: ${newAlert.title}`,
+          `${newAlert.severity.toUpperCase()} - ${newAlert.source}: ${newAlert.description || "New alert detected"}`,
+        );
+      }
     }
-    const maxPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1);
-    if (page > maxPage) setPage(maxPage);
-  }, [filtered, page]);
+    prevCriticalIdsRef.current = criticalIds;
+    prevAlertCountRef.current = alerts.length;
+  }, [alerts, soundEnabled]);
+
+  // 2.2: Column order and width helpers
+  const orderedColumns = useMemo(() => {
+    const colMap = new Map(DEFAULT_COLUMNS.map((c) => [c.key, c]));
+    const result: ColumnDef[] = [];
+    for (const key of columnPrefs.order) {
+      const col = colMap.get(key);
+      if (col) result.push(col);
+    }
+    // Add any new columns not yet in prefs
+    for (const col of DEFAULT_COLUMNS) {
+      if (!result.some((r) => r.key === col.key)) result.push(col);
+    }
+    return result;
+  }, [columnPrefs.order]);
+
+  const getColumnWidth = useCallback(
+    (key: ColumnKey) => {
+      return columnPrefs.widths[key] || DEFAULT_COLUMNS.find((c) => c.key === key)?.defaultWidth || 100;
+    },
+    [columnPrefs.widths],
+  );
+
+  const handleColumnResizeStart = useCallback(
+    (key: ColumnKey, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setResizingColumn(key);
+      resizeStartX.current = e.clientX;
+      resizeStartW.current = getColumnWidth(key);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - resizeStartX.current;
+        const col = DEFAULT_COLUMNS.find((c) => c.key === key);
+        const minW = col?.minWidth || 40;
+        const newWidth = Math.max(minW, resizeStartW.current + delta);
+        setColumnPrefs((prev) => {
+          const updated = { ...prev, widths: { ...prev.widths, [key]: newWidth } };
+          saveColumnPrefs(updated);
+          return updated;
+        });
+      };
+
+      const handleMouseUp = () => {
+        setResizingColumn(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getColumnWidth],
+  );
+
+  const handleColumnDragStart = useCallback((key: ColumnKey) => {
+    setDraggedColumn(key);
+  }, []);
+
+  const handleColumnDragOver = useCallback(
+    (key: ColumnKey, e: React.DragEvent) => {
+      e.preventDefault();
+      if (!draggedColumn || draggedColumn === key) return;
+      const draggedCol = DEFAULT_COLUMNS.find((c) => c.key === draggedColumn);
+      const targetCol = DEFAULT_COLUMNS.find((c) => c.key === key);
+      if (draggedCol?.fixed || targetCol?.fixed) return;
+    },
+    [draggedColumn],
+  );
+
+  const handleColumnDrop = useCallback(
+    (targetKey: ColumnKey) => {
+      if (!draggedColumn || draggedColumn === targetKey) {
+        setDraggedColumn(null);
+        return;
+      }
+      const draggedCol = DEFAULT_COLUMNS.find((c) => c.key === draggedColumn);
+      const targetCol = DEFAULT_COLUMNS.find((c) => c.key === targetKey);
+      if (draggedCol?.fixed || targetCol?.fixed) {
+        setDraggedColumn(null);
+        return;
+      }
+      setColumnPrefs((prev) => {
+        const newOrder = [...prev.order];
+        const fromIdx = newOrder.indexOf(draggedColumn);
+        const toIdx = newOrder.indexOf(targetKey);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        newOrder.splice(fromIdx, 1);
+        newOrder.splice(toIdx, 0, draggedColumn);
+        const updated = { ...prev, order: newOrder };
+        saveColumnPrefs(updated);
+        return updated;
+      });
+      setDraggedColumn(null);
+    },
+    [draggedColumn],
+  );
+
+  // 2.3: Local filter preset handlers
+  const handleSaveLocalPreset = useCallback(() => {
+    if (!presetNameInput.trim()) return;
+    const preset: FilterPreset = {
+      id: Date.now().toString(36),
+      name: presetNameInput.trim(),
+      filters: {
+        severity: severityFilter,
+        status: statusFilter,
+        source: sourceFilter,
+        category: categoryFilter,
+        search,
+        queue: queueFilter,
+        dateFrom,
+        dateTo,
+        showSuppressed,
+      },
+    };
+    const updated = [...localFilterPresets, preset];
+    setLocalFilterPresets(updated);
+    saveFilterPresets(updated);
+    setPresetNameInput("");
+    setShowPresetSave(false);
+    toast({ title: "Filter Preset Saved", description: `"${preset.name}" saved locally` });
+  }, [
+    presetNameInput,
+    severityFilter,
+    statusFilter,
+    sourceFilter,
+    categoryFilter,
+    search,
+    queueFilter,
+    dateFrom,
+    dateTo,
+    showSuppressed,
+    localFilterPresets,
+    toast,
+  ]);
+
+  const handleApplyLocalPreset = useCallback(
+    (preset: FilterPreset) => {
+      setSeverityFilter(preset.filters.severity);
+      setStatusFilter(preset.filters.status);
+      setSourceFilter(preset.filters.source);
+      setCategoryFilter(preset.filters.category);
+      setSearch(preset.filters.search);
+      setQueueFilter(preset.filters.queue as "all" | "new" | "aging" | "breached");
+      setDateFrom(preset.filters.dateFrom);
+      setDateTo(preset.filters.dateTo);
+      setShowSuppressed(preset.filters.showSuppressed);
+      setPage(0);
+      toast({ title: "Preset Applied", description: `"${preset.name}" filters applied` });
+    },
+    [toast],
+  );
+
+  const handleDeleteLocalPreset = useCallback(
+    (presetId: string) => {
+      const updated = localFilterPresets.filter((p) => p.id !== presetId);
+      setLocalFilterPresets(updated);
+      saveFilterPresets(updated);
+      toast({ title: "Preset Deleted" });
+    },
+    [localFilterPresets, toast],
+  );
+
+  // 2.4: Bulk action confirmation helper
+  const confirmBulkAction = useCallback(
+    (label: string, action: () => void) => {
+      if (selectedIds.length === 0) return;
+      setPendingBulkAction({ label, action });
+      setBulkConfirmOpen(true);
+    },
+    [selectedIds.length],
+  );
+
+  const executeBulkAction = useCallback(() => {
+    if (pendingBulkAction) {
+      pendingBulkAction.action();
+    }
+    setBulkConfirmOpen(false);
+    setPendingBulkAction(null);
+  }, [pendingBulkAction]);
 
   const assignFocused = useCallback(() => {
     if (!focusedAlertId) return;
@@ -669,9 +1061,10 @@ export default function AlertsPage() {
     setDateTo(f.dateTo ?? "");
   }, []);
 
+  // 2.5: Keyboard navigation — works with server-side pagination
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!filtered || filtered.length === 0) return;
+      if (!pageAlerts || pageAlerts.length === 0) return;
       const target = e.target as HTMLElement;
       if (
         target?.tagName === "INPUT" ||
@@ -680,24 +1073,30 @@ export default function AlertsPage() {
         target?.isContentEditable
       )
         return;
-      const idx = filtered.findIndex((a) => a.id === focusedAlertId);
+      const idx = pageAlerts.findIndex((a) => a.id === focusedAlertId);
       if (e.key.toLowerCase() === "j") {
         e.preventDefault();
-        const next = Math.min(idx < 0 ? 0 : idx + 1, filtered.length - 1);
-        setFocusedAlertId(filtered[next]?.id || null);
-        const newPage = Math.floor(next / PAGE_SIZE);
-        if (newPage !== page) setPage(newPage);
+        if (idx >= pageAlerts.length - 1) {
+          // At end of current page — go to next page
+          if (page < totalPages - 1) setPage((p) => p + 1);
+        } else {
+          const next = Math.min(idx < 0 ? 0 : idx + 1, pageAlerts.length - 1);
+          setFocusedAlertId(pageAlerts[next]?.id || null);
+        }
       }
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
-        const prev = Math.max(idx < 0 ? 0 : idx - 1, 0);
-        setFocusedAlertId(filtered[prev]?.id || null);
-        const newPage = Math.floor(prev / PAGE_SIZE);
-        if (newPage !== page) setPage(newPage);
+        if (idx <= 0) {
+          // At start of current page — go to previous page
+          if (page > 0) setPage((p) => p - 1);
+        } else {
+          const prev = Math.max(idx - 1, 0);
+          setFocusedAlertId(pageAlerts[prev]?.id || null);
+        }
       }
       if (e.key.toLowerCase() === "t" && selectedIds.length > 0) {
         e.preventDefault();
-        bulkUpdate.mutate({ status: "triaged" });
+        confirmBulkAction("triage", () => bulkUpdate.mutate({ status: "triaged" }));
       }
       if (e.key.toLowerCase() === "a" && focusedAlertId) {
         e.preventDefault();
@@ -718,16 +1117,31 @@ export default function AlertsPage() {
       if (e.key === "Escape") {
         setIsDetailOpen(false);
       }
+      // ? key toggles keyboard help
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowKeyboardHelp((prev) => !prev);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [filtered, focusedAlertId, selectedIds, bulkUpdate, page, assignFocused, escalateFocused, resolveFocused]);
+  }, [
+    pageAlerts,
+    focusedAlertId,
+    selectedIds,
+    bulkUpdate,
+    page,
+    totalPages,
+    assignFocused,
+    escalateFocused,
+    resolveFocused,
+    confirmBulkAction,
+  ]);
 
   const selectedAlert = useMemo(
     () => (alerts && focusedAlertId ? (alerts.find((alert) => alert.id === focusedAlertId) ?? null) : null),
     [alerts, focusedAlertId],
   );
-  const pageAlerts = useMemo(() => filtered?.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) ?? [], [filtered, page]);
 
   const handleTriageClick = (alertId: string) => {
     setSelectedAlertForTriage(alertId);
@@ -905,7 +1319,89 @@ export default function AlertsPage() {
           <PanelRight className="h-3.5 w-3.5 mr-1.5" />
           {isDetailOpen ? "Hide Detail" : "Show Detail"}
         </Button>
+        {/* 2.7: Sound notification toggle */}
+        <Button
+          variant={soundEnabled ? "default" : "outline"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            const next = !soundEnabled;
+            setSoundEnabled(next);
+            try {
+              localStorage.setItem(SOUND_PREFS_KEY, String(next));
+            } catch {
+              /* ignore */
+            }
+            if (next && typeof Notification !== "undefined" && Notification.permission === "default") {
+              Notification.requestPermission();
+            }
+            toast({
+              title: next ? "Sound Notifications Enabled" : "Sound Notifications Disabled",
+              description: next
+                ? "You will hear an alert sound and receive browser notifications for critical/high severity alerts."
+                : "Sound and browser notifications for critical alerts are now off.",
+            });
+          }}
+          title={soundEnabled ? "Disable sound notifications" : "Enable sound notifications"}
+        >
+          {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+        </Button>
+        {/* 2.3: Quick preset save toggle */}
+        <Button variant="outline" size="sm" onClick={() => setShowPresetSave(!showPresetSave)}>
+          <Save className="h-3.5 w-3.5 mr-1.5" />
+          Presets
+        </Button>
+        {/* 2.1: Total count indicator */}
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {totalAlerts} total alert{totalAlerts !== 1 ? "s" : ""}
+        </span>
       </div>
+
+      {/* 2.3: Local filter presets save/apply section */}
+      {showPresetSave && (
+        <Card className="border-primary/20 bg-muted/30">
+          <CardContent className="pt-4 pb-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Preset name..."
+                value={presetNameInput}
+                onChange={(e) => setPresetNameInput(e.target.value)}
+                className="h-8 text-xs max-w-[200px]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveLocalPreset();
+                }}
+              />
+              <Button size="sm" className="h-8" disabled={!presetNameInput.trim()} onClick={handleSaveLocalPreset}>
+                <BookmarkPlus className="h-3 w-3 mr-1" />
+                Save Current Filters
+              </Button>
+            </div>
+            {localFilterPresets.length > 0 && (
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Quick Presets:</span>
+                {localFilterPresets.map((preset) => (
+                  <div key={preset.id} className="inline-flex items-center gap-0.5">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 text-xs"
+                      onClick={() => handleApplyLocalPreset(preset)}
+                    >
+                      {preset.name}
+                    </Button>
+                    <button
+                      onClick={() => handleDeleteLocalPreset(preset.id)}
+                      className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {showKeyboardHelp && (
         <Card className="border-primary/20 bg-muted/30">
@@ -1107,6 +1603,7 @@ export default function AlertsPage() {
 
       <FilterChips filters={activeFilters} onRemove={handleRemoveFilter} onClearAll={handleClearAllFilters} />
 
+      {/* 2.4: Bulk actions with confirmation dialog */}
       {selectedIds.length > 0 && (
         <Card>
           <CardContent className="pt-4 flex items-center flex-wrap gap-2">
@@ -1123,7 +1620,13 @@ export default function AlertsPage() {
                 <SelectItem value="false_positive">False Positive</SelectItem>
               </SelectContent>
             </Select>
-            <Button size="sm" onClick={() => bulkUpdate.mutate({ status: bulkStatus })} disabled={bulkUpdate.isPending}>
+            <Button
+              size="sm"
+              onClick={() =>
+                confirmBulkAction(`set status to "${bulkStatus}" on`, () => bulkUpdate.mutate({ status: bulkStatus }))
+              }
+              disabled={bulkUpdate.isPending}
+            >
               Apply Status
             </Button>
             <div className="flex items-center gap-1">
@@ -1137,7 +1640,10 @@ export default function AlertsPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  if (bulkAssignee.trim()) bulkUpdate.mutate({ assignedTo: bulkAssignee.trim() });
+                  if (bulkAssignee.trim())
+                    confirmBulkAction(`assign to "${bulkAssignee.trim()}"`, () =>
+                      bulkUpdate.mutate({ assignedTo: bulkAssignee.trim() }),
+                    );
                 }}
                 disabled={bulkUpdate.isPending || !bulkAssignee.trim()}
               >
@@ -1148,7 +1654,7 @@ export default function AlertsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => bulkUpdate.mutate({ status: "escalated" })}
+              onClick={() => confirmBulkAction("escalate", () => bulkUpdate.mutate({ status: "escalated" }))}
               disabled={bulkUpdate.isPending}
             >
               <ArrowUpRight className="h-3 w-3 mr-1" />
@@ -1157,7 +1663,7 @@ export default function AlertsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => bulkUpdate.mutate({ suppressed: true })}
+              onClick={() => confirmBulkAction("suppress", () => bulkUpdate.mutate({ suppressed: true }))}
               disabled={bulkUpdate.isPending}
             >
               Suppress
@@ -1165,7 +1671,7 @@ export default function AlertsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => bulkUpdate.mutate({ suppressed: false })}
+              onClick={() => confirmBulkAction("unsuppress", () => bulkUpdate.mutate({ suppressed: false }))}
               disabled={bulkUpdate.isPending}
             >
               Unsuppress
@@ -1176,6 +1682,25 @@ export default function AlertsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 2.4: Bulk action confirmation dialog */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+            <AlertDialogDescription>
+              You are about to {pendingBulkAction?.label} <strong>{selectedIds.length}</strong> alert
+              {selectedIds.length !== 1 ? "s" : ""}. This action cannot be undone. Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeBulkAction}>
+              Yes, proceed ({selectedIds.length} alert{selectedIds.length !== 1 ? "s" : ""})
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {showSuppressionRules && (
         <Card className="border-primary/30">
@@ -1875,11 +2400,11 @@ export default function AlertsPage() {
                   </tbody>
                 </table>
               </div>
-              {filtered && filtered.length > PAGE_SIZE && (
+              {/* 2.1: Server-side pagination controls */}
+              {totalAlerts > 0 && (
                 <div className="flex items-center justify-between px-4 py-3 border-t">
                   <span className="text-xs text-muted-foreground">
-                    Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of{" "}
-                    {filtered.length}
+                    Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalAlerts)} of {totalAlerts}
                   </span>
                   <div className="flex items-center gap-1">
                     <Button
@@ -1893,13 +2418,13 @@ export default function AlertsPage() {
                       <ChevronLeft className="h-3 w-3" aria-hidden="true" />
                     </Button>
                     <span className="text-xs px-2" aria-live="polite">
-                      {page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
+                      Page {page + 1} of {totalPages || 1}
                     </span>
                     <Button
                       variant="outline"
                       size="icon"
                       className="h-7 w-7"
-                      disabled={(page + 1) * PAGE_SIZE >= filtered.length}
+                      disabled={page >= totalPages - 1}
                       onClick={() => setPage((p) => p + 1)}
                       aria-label="Next page"
                     >
