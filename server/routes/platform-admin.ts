@@ -36,6 +36,15 @@ const log = logger.child("platform-admin");
 
 const IMPERSONATION_TTL_MS = 60 * 60 * 1000;
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function registerPlatformAdminRoutes(app: Express): void {
   app.get("/api/platform-admin/stats", isAuthenticated, requireSuperAdmin, async (_req: Request, res: Response) => {
     try {
@@ -1491,39 +1500,44 @@ export function registerPlatformAdminRoutes(app: Express): void {
         .replace(/^-|-$/g, "");
       const slug = `${baseSlug}-${randomBytes(3).toString("hex")}`;
 
-      // 1. Create the organization
-      const org = await storage.createOrganization({
-        name: trimmedName,
-        slug,
-        industry: industry || null,
-        companySize: companySize || null,
-        contactEmail: normalizedEmail,
-      });
-
-      // 2. Find or create the admin user
-      let adminUser = await authStorage.getUserByEmail(normalizedEmail);
-      let isNewUser = false;
-      if (!adminUser) {
-        // Create user with a random temporary password (they'll reset via email)
-        const tempPassword = randomBytes(16).toString("hex");
-        const hashedPw = await hashPassword(tempPassword);
-        adminUser = await authStorage.upsertUser({
-          email: normalizedEmail,
-          passwordHash: hashedPw,
-          firstName: adminFirstName || null,
-          lastName: adminLastName || null,
+      // Wrap org + user + membership creation in a transaction for atomicity
+      const { org, adminUser, isNewUser } = await db.transaction(async (_tx) => {
+        // 1. Create the organization
+        const newOrg = await storage.createOrganization({
+          name: trimmedName,
+          slug,
+          industry: industry || null,
+          companySize: companySize || null,
+          contactEmail: normalizedEmail,
         });
-        isNewUser = true;
-      }
 
-      // 3. Create membership as admin
-      await storage.createOrgMembership({
-        orgId: org.id,
-        userId: adminUser.id,
-        role: "admin",
-        status: "active",
-        joinedAt: new Date(),
-        invitedBy: (req as any).user.id,
+        // 2. Find or create the admin user
+        let foundUser = await authStorage.getUserByEmail(normalizedEmail);
+        let createdNew = false;
+        if (!foundUser) {
+          // Create user with a random temporary password (they'll reset via email)
+          const tempPassword = randomBytes(16).toString("hex");
+          const hashedPw = await hashPassword(tempPassword);
+          foundUser = await authStorage.upsertUser({
+            email: normalizedEmail,
+            passwordHash: hashedPw,
+            firstName: adminFirstName || null,
+            lastName: adminLastName || null,
+          });
+          createdNew = true;
+        }
+
+        // 3. Create membership as admin
+        await storage.createOrgMembership({
+          orgId: newOrg.id,
+          userId: foundUser.id,
+          role: "admin",
+          status: "active",
+          joinedAt: new Date(),
+          invitedBy: (req as any).user.id,
+        });
+
+        return { org: newOrg, adminUser: foundUser, isNewUser: createdNew };
       });
 
       // 4. Invalidate cache so the admin user picks up org context on next request
@@ -1548,8 +1562,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
       sendEmail({
         to: normalizedEmail,
         subject: `You've been added as admin of ${trimmedName} on SecureNexus`,
-        html: `<p>Hi ${adminFirstName || "there"},</p>
-<p>You have been added as the <strong>admin</strong> of <strong>${trimmedName}</strong> on SecureNexus by the platform team.</p>
+        html: `<p>Hi ${escapeHtml(adminFirstName || "there")},</p>
+<p>You have been added as the <strong>admin</strong> of <strong>${escapeHtml(trimmedName)}</strong> on SecureNexus by the platform team.</p>
 <p>${isNewUser ? "An account has been created for you. Please reset your password to get started." : "You can log in with your existing account."}</p>
 <p>As an admin, you can:</p>
 <ul>
