@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
@@ -21,6 +21,12 @@ import {
   FileText,
   Eye,
   Archive,
+  GitCompareArrows,
+  FlaskConical,
+  X,
+  ArrowRight,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +38,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 interface PromptTemplate {
   id: string;
@@ -81,6 +91,43 @@ const TIER_COLORS: Record<string, string> = {
   general: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
 };
 
+interface TestPromptResult {
+  output: string;
+  latencyMs: number;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cached: boolean;
+  prompt: { id: string; version: number; name: string; tier: string };
+}
+
+/* ── Inline diff helper ── */
+function computeLineDiff(
+  oldText: string,
+  newText: string,
+): Array<{ type: "same" | "added" | "removed"; line: string }> {
+  const oldLines = oldText.split("\n");
+  const newLines = newText.split("\n");
+  const result: Array<{ type: "same" | "added" | "removed"; line: string }> = [];
+
+  let oi = 0;
+  let ni = 0;
+  while (oi < oldLines.length || ni < newLines.length) {
+    if (oi < oldLines.length && ni < newLines.length && oldLines[oi] === newLines[ni]) {
+      result.push({ type: "same", line: oldLines[oi] });
+      oi++;
+      ni++;
+    } else if (oi < oldLines.length && (ni >= newLines.length || !newLines.includes(oldLines[oi]))) {
+      result.push({ type: "removed", line: oldLines[oi] });
+      oi++;
+    } else if (ni < newLines.length) {
+      result.push({ type: "added", line: newLines[ni] });
+      ni++;
+    }
+  }
+  return result;
+}
+
 const ACTION_COLORS: Record<string, string> = {
   registered: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   updated: "bg-blue-500/15 text-blue-400 border-blue-500/30",
@@ -126,12 +173,16 @@ function PromptDetailPanel({
   auditLog,
   isLoadingHistory,
   isLoadingAudit,
+  onOpenDiff,
+  onOpenTest,
 }: {
   prompt: PromptTemplate;
   versionHistory: PromptTemplate[];
   auditLog: PromptAuditEntry[];
   isLoadingHistory: boolean;
   isLoadingAudit: boolean;
+  onOpenDiff: (promptId: string) => void;
+  onOpenTest: (promptId: string) => void;
 }) {
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [showUserTemplate, setShowUserTemplate] = useState(false);
@@ -193,6 +244,17 @@ function PromptDetailPanel({
           </span>
         </div>
       )}
+
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onOpenDiff(prompt.id)}>
+          <GitCompareArrows className="h-3.5 w-3.5" />
+          Compare Versions
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onOpenTest(prompt.id)}>
+          <FlaskConical className="h-3.5 w-3.5" />
+          Test Prompt
+        </Button>
+      </div>
 
       <Separator />
 
@@ -347,12 +409,384 @@ function PromptDetailPanel({
   );
 }
 
+/* ── Version Diff Dialog ── */
+function VersionDiffDialog({
+  open,
+  onOpenChange,
+  promptId,
+  versionHistory,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  promptId: string;
+  versionHistory: PromptTemplate[];
+}) {
+  const sorted = versionHistory.slice().sort((a, b) => a.version - b.version);
+  const [leftVersion, setLeftVersion] = useState<string>("");
+  const [rightVersion, setRightVersion] = useState<string>("");
+
+  const leftPrompt = sorted.find((v) => String(v.version) === leftVersion);
+  const rightPrompt = sorted.find((v) => String(v.version) === rightVersion);
+
+  // Auto-select latest two versions when opened
+  if (open && sorted.length >= 2 && !leftVersion && !rightVersion) {
+    const prev = sorted[sorted.length - 2];
+    const curr = sorted[sorted.length - 1];
+    if (prev && curr) {
+      setTimeout(() => {
+        setLeftVersion(String(prev.version));
+        setRightVersion(String(curr.version));
+      }, 0);
+    }
+  }
+
+  const systemDiff =
+    leftPrompt && rightPrompt ? computeLineDiff(leftPrompt.systemPrompt, rightPrompt.systemPrompt) : [];
+  const userDiff = leftPrompt && rightPrompt ? computeLineDiff(leftPrompt.userTemplate, rightPrompt.userTemplate) : [];
+
+  const configChanges: Array<{ field: string; oldVal: string; newVal: string }> = [];
+  if (leftPrompt && rightPrompt) {
+    if (leftPrompt.maxTokens !== rightPrompt.maxTokens) {
+      configChanges.push({
+        field: "maxTokens",
+        oldVal: String(leftPrompt.maxTokens),
+        newVal: String(rightPrompt.maxTokens),
+      });
+    }
+    if (leftPrompt.temperature !== rightPrompt.temperature) {
+      configChanges.push({
+        field: "temperature",
+        oldVal: String(leftPrompt.temperature),
+        newVal: String(rightPrompt.temperature),
+      });
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) {
+          setLeftVersion("");
+          setRightVersion("");
+        }
+      }}
+    >
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitCompareArrows className="h-5 w-5" /> Version Diff — {promptId}
+          </DialogTitle>
+          <DialogDescription>Compare any two versions of this prompt side-by-side</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-3 mt-2">
+          <div className="flex-1">
+            <Label className="text-xs">Left (older)</Label>
+            <Select value={leftVersion} onValueChange={setLeftVersion}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Select version" />
+              </SelectTrigger>
+              <SelectContent>
+                {sorted.map((v) => (
+                  <SelectItem key={v.version} value={String(v.version)}>
+                    v{v.version} — {new Date(v.createdAt).toLocaleDateString()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <ArrowRight className="h-4 w-4 text-muted-foreground mt-5" />
+          <div className="flex-1">
+            <Label className="text-xs">Right (newer)</Label>
+            <Select value={rightVersion} onValueChange={setRightVersion}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Select version" />
+              </SelectTrigger>
+              <SelectContent>
+                {sorted.map((v) => (
+                  <SelectItem key={v.version} value={String(v.version)}>
+                    v{v.version} — {new Date(v.createdAt).toLocaleDateString()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {sorted.length < 2 ? (
+          <div className="flex flex-col items-center py-12 text-muted-foreground">
+            <History className="h-8 w-8 mb-2 opacity-40" />
+            <p className="text-sm">Need at least 2 versions to compare</p>
+          </div>
+        ) : !leftPrompt || !rightPrompt ? (
+          <div className="flex flex-col items-center py-12 text-muted-foreground">
+            <p className="text-sm">Select two versions above to compare</p>
+          </div>
+        ) : (
+          <ScrollArea className="flex-1 mt-3">
+            <div className="space-y-4">
+              {/* Config changes */}
+              {configChanges.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Configuration Changes</p>
+                  <div className="space-y-1">
+                    {configChanges.map((c) => (
+                      <div
+                        key={c.field}
+                        className="flex items-center gap-2 text-xs font-mono p-2 rounded border border-border/50 bg-card/50"
+                      >
+                        <span className="font-medium">{c.field}:</span>
+                        <span className="text-red-400 line-through">{c.oldVal}</span>
+                        <ArrowRight className="h-3 w-3" />
+                        <span className="text-green-400">{c.newVal}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* System Prompt diff */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">System Prompt</p>
+                {systemDiff.every((d) => d.type === "same") ? (
+                  <p className="text-xs text-muted-foreground italic p-2">No changes</p>
+                ) : (
+                  <div className="border border-border/50 rounded-lg overflow-hidden">
+                    <pre className="text-xs font-mono leading-relaxed">
+                      {systemDiff.map((d, i) => (
+                        <div
+                          key={i}
+                          className={`px-3 py-0.5 ${
+                            d.type === "added"
+                              ? "bg-green-500/10 text-green-400"
+                              : d.type === "removed"
+                                ? "bg-red-500/10 text-red-400"
+                                : ""
+                          }`}
+                        >
+                          <span className="inline-block w-4 text-muted-foreground/50 select-none">
+                            {d.type === "added" ? (
+                              <Plus className="h-3 w-3 inline" />
+                            ) : d.type === "removed" ? (
+                              <Minus className="h-3 w-3 inline" />
+                            ) : (
+                              " "
+                            )}
+                          </span>
+                          {d.line || " "}
+                        </div>
+                      ))}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* User Template diff */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">User Template</p>
+                {userDiff.every((d) => d.type === "same") ? (
+                  <p className="text-xs text-muted-foreground italic p-2">No changes</p>
+                ) : (
+                  <div className="border border-border/50 rounded-lg overflow-hidden">
+                    <pre className="text-xs font-mono leading-relaxed">
+                      {userDiff.map((d, i) => (
+                        <div
+                          key={i}
+                          className={`px-3 py-0.5 ${
+                            d.type === "added"
+                              ? "bg-green-500/10 text-green-400"
+                              : d.type === "removed"
+                                ? "bg-red-500/10 text-red-400"
+                                : ""
+                          }`}
+                        >
+                          <span className="inline-block w-4 text-muted-foreground/50 select-none">
+                            {d.type === "added" ? (
+                              <Plus className="h-3 w-3 inline" />
+                            ) : d.type === "removed" ? (
+                              <Minus className="h-3 w-3 inline" />
+                            ) : (
+                              " "
+                            )}
+                          </span>
+                          {d.line || " "}
+                        </div>
+                      ))}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </div>
+          </ScrollArea>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Test Prompt Dialog ── */
+function TestPromptDialog({
+  open,
+  onOpenChange,
+  promptId,
+  promptName,
+  versionHistory,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  promptId: string;
+  promptName: string;
+  versionHistory: PromptTemplate[];
+}) {
+  const { toast } = useToast();
+  const [sampleInput, setSampleInput] = useState("");
+  const [testVersion, setTestVersion] = useState<string>("current");
+  const [result, setResult] = useState<TestPromptResult | null>(null);
+
+  const sorted = versionHistory.slice().sort((a, b) => a.version - b.version);
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = { promptId, sampleInput };
+      if (testVersion !== "current") {
+        body.version = parseInt(testVersion, 10);
+      }
+      const res = await apiRequest("POST", "/api/ai/test-prompt", body);
+      return (await res.json()) as TestPromptResult;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Test failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleRun = () => {
+    if (!sampleInput.trim()) {
+      toast({ title: "Input required", description: "Paste a sample alert or input to test", variant: "destructive" });
+      return;
+    }
+    setResult(null);
+    testMutation.mutate();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) {
+          setResult(null);
+          setSampleInput("");
+          setTestVersion("current");
+        }
+      }}
+    >
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FlaskConical className="h-5 w-5" /> Test Prompt — {promptName}
+          </DialogTitle>
+          <DialogDescription>
+            Paste a sample alert and see the raw model output. This does not trigger production triage or record
+            metrics.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 mt-2">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <Label className="text-xs">Version</Label>
+              <Select value={testVersion} onValueChange={setTestVersion}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current">Current</SelectItem>
+                  {sorted.map((v) => (
+                    <SelectItem key={v.version} value={String(v.version)}>
+                      v{v.version}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs">Sample Input</Label>
+            <Textarea
+              value={sampleInput}
+              onChange={(e) => setSampleInput(e.target.value)}
+              placeholder={`Paste a sample alert or input here...\n\nExample:\n{\n  "alertId": "ALERT-001",\n  "severity": "critical",\n  "source": "endpoint",\n  "description": "Suspicious PowerShell execution detected on WORKSTATION-42"\n}`}
+              className="mt-1 font-mono text-xs min-h-[120px]"
+            />
+          </div>
+
+          <Button onClick={handleRun} disabled={testMutation.isPending} className="gap-1.5">
+            {testMutation.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Running...
+              </>
+            ) : (
+              <>
+                <FlaskConical className="h-3.5 w-3.5" /> Run Test
+              </>
+            )}
+          </Button>
+        </div>
+
+        {result && (
+          <div className="mt-3 space-y-3 flex-1 overflow-hidden">
+            <Separator />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-2 rounded border border-border/50 bg-card/50">
+                <p className="text-[10px] text-muted-foreground">Model</p>
+                <p className="text-xs font-mono truncate">{result.model}</p>
+              </div>
+              <div className="p-2 rounded border border-border/50 bg-card/50">
+                <p className="text-[10px] text-muted-foreground">Latency</p>
+                <p className="text-xs font-bold tabular-nums">{result.latencyMs}ms</p>
+              </div>
+              <div className="p-2 rounded border border-border/50 bg-card/50">
+                <p className="text-[10px] text-muted-foreground">In / Out Tokens</p>
+                <p className="text-xs tabular-nums">
+                  {result.inputTokens} / {result.outputTokens}
+                </p>
+              </div>
+              <div className="p-2 rounded border border-border/50 bg-card/50">
+                <p className="text-[10px] text-muted-foreground">Cached</p>
+                <p className="text-xs">{result.cached ? "Yes" : "No"}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Raw Model Output</p>
+              <ScrollArea className="h-[250px]">
+                <pre className="text-xs whitespace-pre-wrap p-3 rounded-lg border border-border/50 bg-card/50 font-mono leading-relaxed">
+                  {result.output}
+                </pre>
+              </ScrollArea>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AiPromptRegistryPage() {
   usePageTitle("AI Prompt Registry");
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("catalog");
+  const [diffDialogOpen, setDiffDialogOpen] = useState(false);
+  const [diffPromptId, setDiffPromptId] = useState<string | null>(null);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testPromptId, setTestPromptId] = useState<string | null>(null);
 
   const {
     data: promptsData,
@@ -604,6 +1038,14 @@ export default function AiPromptRegistryPage() {
                       auditLog={auditLog ?? []}
                       isLoadingHistory={isLoadingHistory}
                       isLoadingAudit={isLoadingAudit}
+                      onOpenDiff={(id) => {
+                        setDiffPromptId(id);
+                        setDiffDialogOpen(true);
+                      }}
+                      onOpenTest={(id) => {
+                        setTestPromptId(id);
+                        setTestDialogOpen(true);
+                      }}
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
@@ -739,6 +1181,27 @@ export default function AiPromptRegistryPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Version Diff Dialog */}
+      {diffPromptId && (
+        <VersionDiffDialog
+          open={diffDialogOpen}
+          onOpenChange={setDiffDialogOpen}
+          promptId={diffPromptId}
+          versionHistory={versionHistory ?? []}
+        />
+      )}
+
+      {/* Test Prompt Dialog */}
+      {testPromptId && (
+        <TestPromptDialog
+          open={testDialogOpen}
+          onOpenChange={setTestDialogOpen}
+          promptId={testPromptId}
+          promptName={prompts.find((p) => p.id === testPromptId)?.name ?? testPromptId}
+          versionHistory={versionHistory ?? []}
+        />
+      )}
     </div>
   );
 }

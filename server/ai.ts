@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, pool } from "./db";
 import { entities } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import { getEnrichmentForEntity } from "./threat-enrichment";
@@ -21,6 +21,7 @@ import {
   getAllPrompts,
   getPromptAuditLog,
   getPromptVersionHistory,
+  getPromptVersion,
 } from "./ai/prompt-registry";
 import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/budget";
 import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
@@ -47,6 +48,208 @@ interface InferenceMetrics {
 }
 
 const inferenceLog: InferenceMetrics[] = [];
+
+// ─── Persistent Inference Log (DB-backed) ─────────────────────────────────────
+
+const INFERENCE_TABLE_ENSURED = { done: false };
+
+async function ensureInferenceTable(): Promise<void> {
+  if (INFERENCE_TABLE_ENSURED.done) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_inference_log (
+      id SERIAL PRIMARY KEY,
+      tier VARCHAR NOT NULL,
+      model VARCHAR NOT NULL,
+      prompt_id VARCHAR,
+      prompt_version INTEGER,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      latency_ms INTEGER NOT NULL DEFAULT 0,
+      cost_estimate_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+      cached BOOLEAN NOT NULL DEFAULT false,
+      success BOOLEAN NOT NULL DEFAULT true,
+      error_message TEXT,
+      org_id VARCHAR,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_tier ON ai_inference_log (tier)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_created ON ai_inference_log (created_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_org ON ai_inference_log (org_id)`);
+  INFERENCE_TABLE_ENSURED.done = true;
+}
+
+async function persistInferenceEntry(
+  metrics: InferenceMetrics,
+  success: boolean = true,
+  errorMessage?: string,
+  orgId?: string,
+): Promise<void> {
+  try {
+    await ensureInferenceTable();
+    await pool.query(
+      `INSERT INTO ai_inference_log (tier, model, prompt_id, prompt_version, input_tokens, output_tokens, latency_ms, cost_estimate_usd, cached, success, error_message, org_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        metrics.tier,
+        metrics.model,
+        metrics.promptId || null,
+        metrics.promptVersion || null,
+        metrics.inputTokensEstimate,
+        metrics.outputTokensEstimate,
+        metrics.latencyMs,
+        metrics.costEstimateUsd,
+        metrics.cached,
+        success,
+        errorMessage || null,
+        orgId || null,
+      ],
+    );
+  } catch (err) {
+    log.warn("Failed to persist inference log entry", { error: String(err) });
+  }
+}
+
+export async function getInferenceHistory(options: { tier?: string; limit?: number; since?: Date }): Promise<
+  Array<{
+    id: number;
+    tier: string;
+    model: string;
+    promptId: string | null;
+    promptVersion: number | null;
+    inputTokens: number;
+    outputTokens: number;
+    latencyMs: number;
+    costEstimateUsd: number;
+    cached: boolean;
+    success: boolean;
+    errorMessage: string | null;
+    orgId: string | null;
+    createdAt: string;
+  }>
+> {
+  await ensureInferenceTable();
+  const safeLimit = Math.min(Math.max(options.limit || 100, 1), 1000);
+  const since = options.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // default 7 days
+
+  let query: string;
+  let params: unknown[];
+  if (options.tier) {
+    query = `SELECT * FROM ai_inference_log WHERE tier = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT $3`;
+    params = [options.tier, since.toISOString(), safeLimit];
+  } else {
+    query = `SELECT * FROM ai_inference_log WHERE created_at >= $1 ORDER BY created_at DESC LIMIT $2`;
+    params = [since.toISOString(), safeLimit];
+  }
+
+  const result = await pool.query(query, params);
+  return result.rows.map((row: Record<string, unknown>) => ({
+    id: row.id as number,
+    tier: row.tier as string,
+    model: row.model as string,
+    promptId: (row.prompt_id as string) || null,
+    promptVersion: (row.prompt_version as number) || null,
+    inputTokens: row.input_tokens as number,
+    outputTokens: row.output_tokens as number,
+    latencyMs: row.latency_ms as number,
+    costEstimateUsd: row.cost_estimate_usd as number,
+    cached: row.cached as boolean,
+    success: row.success as boolean,
+    errorMessage: (row.error_message as string) || null,
+    orgId: (row.org_id as string) || null,
+    createdAt: row.created_at ? (row.created_at as Date).toISOString() : new Date().toISOString(),
+  }));
+}
+
+export async function getInferenceStats(days: number = 7): Promise<{
+  dailyStats: Array<{
+    date: string;
+    totalRequests: number;
+    successCount: number;
+    errorCount: number;
+    avgLatencyMs: number;
+    p50LatencyMs: number;
+    p95LatencyMs: number;
+    p99LatencyMs: number;
+    totalCostUsd: number;
+  }>;
+  tierStats: Record<
+    string,
+    {
+      totalRequests: number;
+      successRate: number;
+      avgLatencyMs: number;
+      p95LatencyMs: number;
+      totalCostUsd: number;
+    }
+  >;
+}> {
+  await ensureInferenceTable();
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  // Daily aggregation
+  const dailyResult = await pool.query(
+    `SELECT
+       DATE(created_at) as date,
+       COUNT(*)::int as total_requests,
+       COUNT(*) FILTER (WHERE success = true)::int as success_count,
+       COUNT(*) FILTER (WHERE success = false)::int as error_count,
+       COALESCE(AVG(latency_ms), 0)::int as avg_latency_ms,
+       COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY latency_ms), 0)::int as p50_latency_ms,
+       COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms), 0)::int as p95_latency_ms,
+       COALESCE(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms), 0)::int as p99_latency_ms,
+       COALESCE(SUM(cost_estimate_usd), 0) as total_cost_usd
+     FROM ai_inference_log
+     WHERE created_at >= $1
+     GROUP BY DATE(created_at)
+     ORDER BY date ASC`,
+    [since],
+  );
+
+  // Per-tier aggregation
+  const tierResult = await pool.query(
+    `SELECT
+       tier,
+       COUNT(*)::int as total_requests,
+       CASE WHEN COUNT(*) > 0 THEN COUNT(*) FILTER (WHERE success = true)::float / COUNT(*)::float ELSE 1 END as success_rate,
+       COALESCE(AVG(latency_ms), 0)::int as avg_latency_ms,
+       COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms), 0)::int as p95_latency_ms,
+       COALESCE(SUM(cost_estimate_usd), 0) as total_cost_usd
+     FROM ai_inference_log
+     WHERE created_at >= $1
+     GROUP BY tier`,
+    [since],
+  );
+
+  const dailyStats = dailyResult.rows.map((row: Record<string, unknown>) => ({
+    date: row.date ? (row.date as Date).toISOString().split("T")[0] : "",
+    totalRequests: row.total_requests as number,
+    successCount: row.success_count as number,
+    errorCount: row.error_count as number,
+    avgLatencyMs: row.avg_latency_ms as number,
+    p50LatencyMs: row.p50_latency_ms as number,
+    p95LatencyMs: row.p95_latency_ms as number,
+    p99LatencyMs: row.p99_latency_ms as number,
+    totalCostUsd: Number(row.total_cost_usd) || 0,
+  }));
+
+  const tierStats: Record<
+    string,
+    { totalRequests: number; successRate: number; avgLatencyMs: number; p95LatencyMs: number; totalCostUsd: number }
+  > = {};
+  for (const row of tierResult.rows) {
+    const r = row as Record<string, unknown>;
+    tierStats[r.tier as string] = {
+      totalRequests: r.total_requests as number,
+      successRate: Number(r.success_rate) || 1,
+      avgLatencyMs: r.avg_latency_ms as number,
+      p95LatencyMs: r.p95_latency_ms as number,
+      totalCostUsd: Number(r.total_cost_usd) || 0,
+    };
+  }
+
+  return { dailyStats, tierStats };
+}
 
 async function invokeWithPrompt(
   promptId: string,
@@ -136,6 +339,9 @@ async function invokeWithPrompt(
 
   inferenceLog.push(metrics);
   if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
+
+  // Persist to DB asynchronously (non-blocking)
+  persistInferenceEntry(metrics, true, undefined, orgId).catch(() => {});
 
   return { text: result.text, metrics };
 }
@@ -235,6 +441,9 @@ export async function invokeWithPromptStream(
         };
         inferenceLog.push(im);
         if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
+
+        // Persist to DB asynchronously (non-blocking)
+        persistInferenceEntry(im, true, undefined, orgId).catch(() => {});
 
         await callbacks.onComplete(fullText, metrics);
       },
@@ -1036,6 +1245,7 @@ export {
   getAllOrgUsageSummaries as getAllAiOrgUsage,
   setOrgBudget as setAiOrgBudget,
   clearModelCache,
+  getPromptVersion,
 };
 
 function extractJson(text: string): string {
