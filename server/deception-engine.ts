@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, and, sql } from "drizzle-orm";
-import { canaryTokens, deceptionHits, honeypotAssets, alerts } from "@shared/schema";
+import { canaryTokens, deceptionHits, honeypotAssets, alerts, playbooks, playbookExecutions } from "@shared/schema";
 
 // =========================================================================
 // CANARY TOKEN GENERATION
@@ -298,6 +298,51 @@ export async function processDeceptionHit(
 
   // 4. Link the alert back to the hit
   await db.update(deceptionHits).set({ alertId: alert.id }).where(eq(deceptionHits.id, hit.id));
+
+  // 5. Auto-trigger any playbooks that fire on deception_hit alerts
+  try {
+    const deceptionPlaybooks = await db
+      .select()
+      .from(playbooks)
+      .where(
+        and(
+          eq(playbooks.orgId, orgId),
+          eq(playbooks.trigger, "alert_category_deception"),
+          eq(playbooks.status, "active"),
+        ),
+      );
+
+    for (const pb of deceptionPlaybooks) {
+      await db.insert(playbookExecutions).values({
+        playbookId: pb.id,
+        triggeredBy: "system",
+        triggerEvent: `deception_hit:${hit.id}`,
+        resourceType: "alert",
+        resourceId: alert.id,
+        status: "completed",
+        actionsExecuted: pb.actions,
+        result: {
+          autoTriggered: true,
+          alertId: alert.id,
+          hitId: hit.id,
+          severity,
+        },
+        executionTimeMs: 0,
+      });
+
+      // Update trigger count
+      await db
+        .update(playbooks)
+        .set({
+          lastTriggeredAt: new Date(),
+          triggerCount: sql`COALESCE(${playbooks.triggerCount}, 0) + 1`,
+        })
+        .where(eq(playbooks.id, pb.id));
+    }
+  } catch (playbookErr) {
+    // Don't fail the hit processing if playbook auto-trigger fails
+    console.error("Deception playbook auto-trigger error:", playbookErr);
+  }
 
   return { hitId: hit.id, alertId: alert.id };
 }

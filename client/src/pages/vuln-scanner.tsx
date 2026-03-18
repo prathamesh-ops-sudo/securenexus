@@ -32,7 +32,8 @@ interface VulnFinding {
   cvssScore: number | null;
   description: string | null;
   status: string;
-  sensorId: string;
+  sensorId: string | null;
+  source: string;
   acknowledgedBy: string | null;
   acknowledgedAt: string | null;
   remediatedBy: string | null;
@@ -106,15 +107,17 @@ export default function VulnScannerPage() {
   const [tab, setTab] = useState("findings");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFinding, setSelectedFinding] = useState<VulnFinding | null>(null);
 
   const { data: findingsData, isLoading: findingsLoading } = useQuery<FindingsResponse>({
-    queryKey: ["/api/native/vuln/findings", severityFilter, statusFilter, searchQuery],
+    queryKey: ["/api/native/vuln/findings", severityFilter, statusFilter, sourceFilter, searchQuery],
     queryFn: () => {
       const params = new URLSearchParams();
       if (severityFilter !== "all") params.set("severity", severityFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (sourceFilter !== "all") params.set("source", sourceFilter);
       if (searchQuery) params.set("q", searchQuery);
       return apiFetch(`/api/native/vuln/findings?${params}`);
     },
@@ -245,6 +248,19 @@ export default function VulnScannerPage() {
                 <SelectItem value="open">Open</SelectItem>
                 <SelectItem value="acknowledged">Acknowledged</SelectItem>
                 <SelectItem value="remediated">Remediated</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-[160px] bg-zinc-900/50 border-zinc-800">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                <SelectItem value="native_sensor">Native Sensor</SelectItem>
+                <SelectItem value="sbom">SBOM</SelectItem>
+                <SelectItem value="connector">Connector</SelectItem>
+                <SelectItem value="manual">Manual</SelectItem>
               </SelectContent>
             </Select>
           </div>

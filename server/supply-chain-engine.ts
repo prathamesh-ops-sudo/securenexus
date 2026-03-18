@@ -683,6 +683,22 @@ export async function processCycloneDxSbom(
         cvssScore: cve.cvssScore,
         fixedVersion: cve.fixedVersion,
       });
+
+      // Also create a unified vulnFinding so SBOM CVEs appear in the Vuln Scanner
+      await db.insert(vulnFindings).values({
+        orgId,
+        source: "sbom",
+        sensorId: null,
+        cveId: cve.cveId,
+        packageName: comp.name,
+        installedVersion: comp.version,
+        fixedVersion: cve.fixedVersion,
+        severity: cve.severity,
+        cvssScore: cve.cvssScore,
+        description: cve.description,
+        status: "open",
+      });
+
       result.findingsCount++;
       result.vulnerabilityCount++;
     }
