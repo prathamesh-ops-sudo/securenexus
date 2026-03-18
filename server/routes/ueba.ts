@@ -272,6 +272,8 @@ export function registerUebaRoutes(app: Express): void {
             if (!e.timestamp) return false;
             const hour = new Date(e.timestamp).getUTCHours();
             // Outside the entity's normal login window
+            // When loginStart === loginEnd, treat all hours as normal (no off-hours detection)
+            if (loginStart === loginEnd) return false;
             const outsideNormal =
               loginStart < loginEnd ? hour < loginStart || hour >= loginEnd : hour < loginStart && hour >= loginEnd; // wraps midnight
             return outsideNormal && (e.eventType === "auth" || e.authAction);
@@ -473,7 +475,12 @@ export function registerUebaRoutes(app: Express): void {
                 processAllowList: Array.from(
                   new Set([...((existingBaseline.processAllowList as string[]) || []), ...updatedProcesses]),
                 ).slice(0, 200),
-                avgDailyEventVolume: userEvts.length / Math.max(1, windowHours / 24),
+                // Smooth volume with EMA (α=0.3) to avoid spike sensitivity
+                avgDailyEventVolume: (() => {
+                  const current = userEvts.length / Math.max(1, windowHours / 24);
+                  const prev = (existingBaseline.avgDailyEventVolume as number) ?? 0;
+                  return prev > 0 ? 0.3 * current + 0.7 * prev : current;
+                })(),
                 // Only migrate old defaults (8,20) to the new (6,2) window; leave custom values untouched
                 ...(existingBaseline.normalLoginHoursStart === 8 && existingBaseline.normalLoginHoursEnd === 20
                   ? { normalLoginHoursStart: 6, normalLoginHoursEnd: 2 }
@@ -520,7 +527,16 @@ export function registerUebaRoutes(app: Express): void {
               entityId: hostId,
               entityName: hostId,
               anomalyType: "traffic_volume_spike",
-              severity: deviation > 10 ? "critical" : deviation > 5 ? "high" : "medium",
+              severity:
+                deviation > 10
+                  ? "critical"
+                  : deviation > 5
+                    ? "high"
+                    : deviation > 0
+                      ? "medium"
+                      : totalBytes > 1024 * 1024 * 1024
+                        ? "high"
+                        : "medium",
               riskScore: Math.min(
                 50,
                 ANOMALY_SCORES.traffic_volume_spike + (deviation > 0 ? Math.round(deviation * 2) : 0),

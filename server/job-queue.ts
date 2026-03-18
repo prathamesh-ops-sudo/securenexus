@@ -27,7 +27,7 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       if (!connector) {
         return { synced: false, error: "Connector not found" };
       }
-      const { syncResult } = await syncConnectorWithRetry(connector);
+      const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
 
       // Persist normalized alerts to DB — replicates the upsert loop from routes/connectors.ts
       let created = 0;
@@ -76,6 +76,16 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         errorMessage: syncResult.errors.length > 0 ? syncResult.errors.join("; ") : undefined,
         requestId: `job_sync_${connector.id}_${Date.now()}`,
       });
+
+      // Update the ConnectorJobRun with accurate alert counts from the actual DB upserts
+      // (syncConnectorWithRetry records 0s because syncConnector doesn't do the upserts)
+      if (jobRun?.id) {
+        await storage.updateConnectorJobRun(jobRun.id, {
+          alertsCreated: created,
+          alertsDeduped: deduped,
+          alertsFailed: failed,
+        });
+      }
 
       logger.child("job-queue").info(`connector_sync completed for ${connector.type}`, {
         connectorId: connector.id,

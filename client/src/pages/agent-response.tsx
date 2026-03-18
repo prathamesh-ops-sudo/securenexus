@@ -171,7 +171,9 @@ async function apiFetch(url: string, options?: RequestInit) {
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   const json = await res.json();
   // Unwrap the standard { data, meta, errors } envelope if present
-  return json.data ?? json;
+  if (typeof json === "object" && json !== null && "data" in json && "meta" in json && "errors" in json)
+    return json.data;
+  return json;
 }
 
 export default function AgentResponsePage() {
