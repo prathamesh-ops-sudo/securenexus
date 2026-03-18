@@ -6013,7 +6013,7 @@ export const collectorEvents = pgTable(
       .default(sql`gen_random_uuid()`),
     collectorId: varchar("collector_id")
       .notNull()
-      .references(() => collectorInstances.id),
+      .references(() => collectorInstances.id, { onDelete: "cascade" }),
     orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id),
@@ -6053,7 +6053,7 @@ export const collectorScans = pgTable(
       .default(sql`gen_random_uuid()`),
     collectorId: varchar("collector_id")
       .notNull()
-      .references(() => collectorInstances.id),
+      .references(() => collectorInstances.id, { onDelete: "cascade" }),
     orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id),
