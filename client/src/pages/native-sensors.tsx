@@ -65,6 +65,8 @@ const PLATFORM_ICONS: Record<string, string> = {
   linux: "\uD83D\uDC27",
   windows: "\uD83E\uDE9F",
   macos: "\uD83C\uDF4E",
+  ios: "\uD83D\uDCF1",
+  android: "\uD83E\uDD16",
   docker: "\uD83D\uDC33",
   kubernetes: "\u2638\uFE0F",
 };
@@ -131,6 +133,32 @@ const PLATFORM_CAPABILITIES: Record<string, { features: string[]; logSources: st
     ],
     logSources: ["http_push", "syslog"],
     requirements: "Docker 20.10+, --pid=host --net=host --privileged flags",
+  },
+  ios: {
+    features: [
+      "App activity monitoring (NSExtension framework)",
+      "Network traffic inspection (NEFilterDataProvider)",
+      "Device posture assessment (MDM compliance)",
+      "Jailbreak detection",
+      "Certificate pinning validation",
+      "Bluetooth/AirDrop peripheral monitoring",
+      "Push notification event forwarding",
+    ],
+    logSources: ["http_push"],
+    requirements: "iOS 15+, MDM enrollment or TestFlight, Network Extension entitlement",
+  },
+  android: {
+    features: [
+      "App usage monitoring (UsageStatsManager)",
+      "Network traffic inspection (VpnService)",
+      "Device posture assessment (Device Admin / Android Enterprise)",
+      "Root/bootloader unlock detection",
+      "SMS/call log monitoring (with permissions)",
+      "Wi-Fi/Bluetooth scanning",
+      "Accessibility service event capture",
+    ],
+    logSources: ["http_push"],
+    requirements: "Android 10+ (API 29+), Device Owner or Profile Owner, Google Play Protect enabled",
   },
   kubernetes: {
     features: [
@@ -289,6 +317,8 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
                     <SelectItem value="linux">Linux</SelectItem>
                     <SelectItem value="windows">Windows</SelectItem>
                     <SelectItem value="macos">macOS</SelectItem>
+                    <SelectItem value="ios">iOS</SelectItem>
+                    <SelectItem value="android">Android</SelectItem>
                     <SelectItem value="docker">Docker</SelectItem>
                     <SelectItem value="kubernetes">Kubernetes</SelectItem>
                   </SelectContent>
@@ -1150,6 +1180,8 @@ export default function NativeSensorsPage() {
                 <SelectItem value="linux">Linux</SelectItem>
                 <SelectItem value="windows">Windows</SelectItem>
                 <SelectItem value="macos">macOS</SelectItem>
+                <SelectItem value="ios">iOS</SelectItem>
+                <SelectItem value="android">Android</SelectItem>
                 <SelectItem value="docker">Docker</SelectItem>
                 <SelectItem value="kubernetes">Kubernetes</SelectItem>
               </SelectContent>

@@ -375,6 +375,39 @@ export function registerNativeSensorRoutes(app: Express): void {
           case "docker":
             command = `docker run -d --name ats-sensor -e SENSOR_ID="${sensorId}" -e API_KEY="${apiKey}" -e SERVER_URL="${serverUrl}" --pid=host --net=host --privileged aricatech/ats-sensor:latest`;
             break;
+          case "ios":
+            command = `# ATS Sensor for iOS — requires MDM enrollment or TestFlight distribution
+# 1. Install the ATS Sensor app from your MDM portal or TestFlight
+# 2. Open the app and enter the following configuration:
+#    Server URL: ${serverUrl}
+#    Sensor ID:  ${sensorId}
+#    API Key:    ${apiKey}
+#
+# Or configure via MDM managed app config (AppConfig):
+# <dict>
+#   <key>ServerURL</key><string>${serverUrl}</string>
+#   <key>SensorID</key><string>${sensorId}</string>
+#   <key>APIKey</key><string>${apiKey}</string>
+# </dict>`;
+            break;
+          case "android":
+            command = `# ATS Sensor for Android — deploy via EMM/MDM or direct APK install
+# 1. Install the ATS Sensor app from Google Play (managed) or download the APK:
+#    curl -fsSL ${serverUrl}/api/native-sensors/agent/ats-sensor.apk -o ats-sensor.apk
+#    adb install ats-sensor.apk
+# 2. Configure via intent or managed config:
+#    adb shell am start -n com.aricatech.sensor/.MainActivity \\
+#      --es server_url "${serverUrl}" \\
+#      --es sensor_id "${sensorId}" \\
+#      --es api_key "${apiKey}"
+#
+# Or configure via Android Enterprise managed configurations:
+# {
+#   "server_url": "${serverUrl}",
+#   "sensor_id": "${sensorId}",
+#   "api_key": "${apiKey}"
+# }`;
+            break;
           case "kubernetes":
             command = `kubectl apply -f - <<EOF
 apiVersion: apps/v1
