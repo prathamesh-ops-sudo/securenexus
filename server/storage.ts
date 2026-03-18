@@ -822,6 +822,11 @@ export interface IStorage {
   updateConnectorJobRun(id: string, updates: Partial<ConnectorJobRun>): Promise<ConnectorJobRun>;
   getConnectorJobRuns(connectorId: string, limit?: number): Promise<ConnectorJobRun[]>;
   getDeadLetterJobRuns(orgId?: string): Promise<ConnectorJobRun[]>;
+  getDeadLetterJobRunsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ items: ConnectorJobRun[]; total: number }>;
   getConnectorJobRunById(id: string): Promise<ConnectorJobRun | undefined>;
   getOrgAdminEmails(orgId: string): Promise<string[]>;
   getConnectorMetrics(connectorId: string): Promise<{
@@ -3658,6 +3663,27 @@ export class DatabaseStorage implements IStorage {
       .from(connectorJobRuns)
       .where(and(...conditions))
       .orderBy(desc(connectorJobRuns.startedAt));
+  }
+
+  async getDeadLetterJobRunsPaginated(params: {
+    orgId?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ items: ConnectorJobRun[]; total: number }> {
+    const conditions: any[] = [eq(connectorJobRuns.isDeadLetter, true)];
+    if (params.orgId) conditions.push(eq(connectorJobRuns.orgId, params.orgId));
+    const whereCondition = and(...conditions);
+
+    const [totalRow] = await db.select({ total: count() }).from(connectorJobRuns).where(whereCondition);
+    const items = await db
+      .select()
+      .from(connectorJobRuns)
+      .where(whereCondition)
+      .orderBy(desc(connectorJobRuns.startedAt))
+      .limit(params.limit)
+      .offset(params.offset);
+
+    return { items, total: Number(totalRow?.total ?? 0) };
   }
 
   async getConnectorJobRunById(id: string): Promise<ConnectorJobRun | undefined> {

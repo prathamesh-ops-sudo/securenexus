@@ -22,7 +22,8 @@ export interface BusEvent {
   data: Record<string, any>;
 }
 
-const MAX_BUFFER_SIZE = 64;
+// Configurable via EVENT_BUS_MAX_BUFFER_SIZE env var (default: 64)
+const MAX_BUFFER_SIZE = Math.max(1, parseInt(process.env.EVENT_BUS_MAX_BUFFER_SIZE || "64", 10) || 64);
 const SLOW_CLIENT_THRESHOLD_MS = 5000;
 const KEEP_ALIVE_INTERVAL_MS = 30000;
 const DRAIN_BATCH_SIZE = 16;
@@ -122,6 +123,14 @@ class EventBus extends EventEmitter {
       if (client.buffer.length >= MAX_BUFFER_SIZE) {
         client.dropped++;
         client.buffer.shift();
+
+        // Notify the client that messages are being dropped due to backpressure
+        try {
+          const dropNotice = `event: backpressure_drop\ndata: ${JSON.stringify({ type: "backpressure_drop", dropped: client.dropped })}\n\n`;
+          client.res.write(dropNotice);
+        } catch {
+          // Client may already be gone — removal handled elsewhere
+        }
       }
       client.buffer.push(payload);
       return;
@@ -234,12 +243,27 @@ class EventBus extends EventEmitter {
     slowClients: number;
     totalDropped: number;
     totalBuffered: number;
+    maxBufferSize: number;
+    perClientQueueDepth: {
+      clientId: string;
+      orgId: string | null;
+      queueDepth: number;
+      dropped: number;
+      draining: boolean;
+    }[];
   } {
     let slowClients = 0;
     let totalDropped = 0;
     let totalBuffered = 0;
     const now = Date.now();
     const orgCounts: Record<string, number> = {};
+    const perClientQueueDepth: {
+      clientId: string;
+      orgId: string | null;
+      queueDepth: number;
+      dropped: number;
+      draining: boolean;
+    }[] = [];
 
     Array.from(this.clients.values()).forEach((client) => {
       if (now - client.lastWriteAt > SLOW_CLIENT_THRESHOLD_MS && client.draining) {
@@ -249,6 +273,14 @@ class EventBus extends EventEmitter {
       totalBuffered += client.buffer.length;
       const key = client.orgId || "__global__";
       orgCounts[key] = (orgCounts[key] || 0) + 1;
+
+      perClientQueueDepth.push({
+        clientId: client.id,
+        orgId: client.orgId,
+        queueDepth: client.buffer.length,
+        dropped: client.dropped,
+        draining: client.draining,
+      });
     });
 
     return {
@@ -257,6 +289,8 @@ class EventBus extends EventEmitter {
       slowClients,
       totalDropped,
       totalBuffered,
+      maxBufferSize: MAX_BUFFER_SIZE,
+      perClientQueueDepth,
     };
   }
 }

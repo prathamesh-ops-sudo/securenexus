@@ -16,14 +16,25 @@ export function registerAlertsRoutes(app: Express): void {
     try {
       const orgId = (req as any).user?.orgId;
       const { search } = req.query;
+      const severity = req.query.severity as string | undefined;
+      const status = req.query.status as string | undefined;
+      const source = req.query.source as string | undefined;
       const { offset, limit, sortOrder } = parsePaginationParams(req.query as Record<string, unknown>);
-      if (search && typeof search === "string") {
-        const results = await storage.searchAlerts(search, orgId);
-        return res.json(results.slice(offset, offset + limit));
-      }
-      const allAlerts = await storage.getAlerts(orgId);
-      const sorted = sortOrder === "asc" ? [...allAlerts].reverse() : allAlerts;
-      res.json(sorted.slice(offset, offset + limit));
+
+      // Use DB-layer pagination instead of loading all alerts into memory
+      const { items, total } = await storage.getAlertsPaginatedWithSort({
+        orgId,
+        offset,
+        limit,
+        search: search && typeof search === "string" ? search : undefined,
+        severity,
+        status,
+        source,
+        sortBy: "createdAt",
+        sortOrder: sortOrder || "desc",
+      });
+
+      res.json(items);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch alerts" });
     }

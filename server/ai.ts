@@ -47,7 +47,10 @@ interface InferenceMetrics {
   promptVersion?: number;
 }
 
-const inferenceLog: InferenceMetrics[] = [];
+// In-memory inference log removed — all inference data is now persisted to the
+// ai_inference_log DB table via persistInferenceEntry(). The getInferenceMetrics()
+// function queries the DB directly, eliminating heap pressure under load and
+// surviving restarts.
 
 // ─── Persistent Inference Log (DB-backed) ─────────────────────────────────────
 
@@ -354,10 +357,7 @@ async function invokeWithPrompt(
     promptVersion: prompt.version,
   };
 
-  inferenceLog.push(metrics);
-  if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
-
-  // Persist to DB asynchronously (non-blocking)
+  // Persist to DB (non-blocking) — no in-memory array needed
   persistInferenceEntry(metrics, true, undefined, orgId).catch(() => {});
 
   return { text: result.text, metrics };
@@ -456,10 +456,7 @@ export async function invokeWithPromptStream(
           promptId: prompt.id,
           promptVersion: prompt.version,
         };
-        inferenceLog.push(im);
-        if (inferenceLog.length > 1000) inferenceLog.splice(0, inferenceLog.length - 500);
-
-        // Persist to DB asynchronously (non-blocking)
+        // Persist to DB (non-blocking) — no in-memory array needed
         persistInferenceEntry(im, true, undefined, orgId).catch(() => {});
 
         await callbacks.onComplete(fullText, metrics);
@@ -1229,28 +1226,65 @@ export async function getModelConfig(): Promise<{
   };
 }
 
-export function getInferenceMetrics(): {
+export async function getInferenceMetrics(): Promise<{
   recentOperations: InferenceMetrics[];
   totalCostUsd: number;
   operationsByTier: Record<string, { count: number; avgLatencyMs: number; totalCostUsd: number; cachedCount: number }>;
-} {
-  const totalCostUsd = inferenceLog.reduce((sum, m) => sum + m.costEstimateUsd, 0);
-  const byTier: Record<string, { count: number; avgLatencyMs: number; totalCostUsd: number; cachedCount: number }> = {};
-  for (const m of inferenceLog) {
-    if (!byTier[m.tier]) byTier[m.tier] = { count: 0, avgLatencyMs: 0, totalCostUsd: 0, cachedCount: 0 };
-    byTier[m.tier].count++;
-    byTier[m.tier].totalCostUsd += m.costEstimateUsd;
-    byTier[m.tier].avgLatencyMs += m.latencyMs;
-    if (m.cached) byTier[m.tier].cachedCount++;
+}> {
+  try {
+    await ensureInferenceTable();
+
+    // Fetch recent 20 operations from DB
+    const recentResult = await pool.query(
+      `SELECT tier, model, prompt_id, prompt_version, input_tokens, output_tokens,
+              latency_ms, cost_estimate_usd, cached
+       FROM ai_inference_log ORDER BY created_at DESC LIMIT 20`,
+    );
+    const recentOperations: InferenceMetrics[] = recentResult.rows.map((r: Record<string, unknown>) => ({
+      tier: r.tier as InferenceTier,
+      model: r.model as string,
+      inputTokensEstimate: r.input_tokens as number,
+      outputTokensEstimate: r.output_tokens as number,
+      latencyMs: r.latency_ms as number,
+      costEstimateUsd: Number(r.cost_estimate_usd) || 0,
+      cached: r.cached as boolean,
+      promptId: (r.prompt_id as string) || undefined,
+      promptVersion: (r.prompt_version as number) || undefined,
+    }));
+
+    // Aggregate by tier from DB
+    const tierResult = await pool.query(
+      `SELECT tier,
+              COUNT(*)::int AS cnt,
+              COALESCE(AVG(latency_ms), 0)::int AS avg_latency,
+              COALESCE(SUM(cost_estimate_usd), 0) AS total_cost,
+              COUNT(*) FILTER (WHERE cached = true)::int AS cached_count
+       FROM ai_inference_log GROUP BY tier`,
+    );
+    const byTier: Record<string, { count: number; avgLatencyMs: number; totalCostUsd: number; cachedCount: number }> =
+      {};
+    let totalCostUsd = 0;
+    for (const row of tierResult.rows) {
+      const r = row as Record<string, unknown>;
+      const cost = Number(r.total_cost) || 0;
+      byTier[r.tier as string] = {
+        count: r.cnt as number,
+        avgLatencyMs: r.avg_latency as number,
+        totalCostUsd: cost,
+        cachedCount: r.cached_count as number,
+      };
+      totalCostUsd += cost;
+    }
+
+    return {
+      recentOperations,
+      totalCostUsd: Math.round(totalCostUsd * 1000000) / 1000000,
+      operationsByTier: byTier,
+    };
+  } catch (err) {
+    log.warn("Failed to fetch inference metrics from DB", { error: String(err) });
+    return { recentOperations: [], totalCostUsd: 0, operationsByTier: {} };
   }
-  for (const tier of Object.keys(byTier)) {
-    byTier[tier].avgLatencyMs = Math.round(byTier[tier].avgLatencyMs / byTier[tier].count);
-  }
-  return {
-    recentOperations: inferenceLog.slice(-20),
-    totalCostUsd: Math.round(totalCostUsd * 1000000) / 1000000,
-    operationsByTier: byTier,
-  };
 }
 
 export {
