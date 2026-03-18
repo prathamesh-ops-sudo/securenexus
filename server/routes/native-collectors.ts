@@ -125,19 +125,19 @@ export function registerNativeCollectorRoutes(app: Express): void {
     res.json(template);
   });
 
-  app.get("/api/native-collectors/stats", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+  app.get("/api/native-collectors/stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const orgId = (req as any).orgId as string;
-    res.json(getDataPipelineStats(orgId));
+    res.json(await getDataPipelineStats(orgId));
   });
 
-  app.post("/api/native-collectors/deploy", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+  app.post("/api/native-collectors/deploy", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const parsed = deploySchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
     }
     const orgId = (req as any).orgId as string;
     try {
-      const instance = deployCollector(
+      const instance = await deployCollector(
         parsed.data.templateSlug,
         orgId,
         parsed.data.name,
@@ -152,58 +152,77 @@ export function registerNativeCollectorRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/native-collectors/instances", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+  app.get("/api/native-collectors/instances", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const orgId = (req as any).orgId as string;
     const type = req.query.type as CollectorType | undefined;
-    res.json(getCollectorInstances(orgId, type).map(redactInstanceConfig));
+    const instances = await getCollectorInstances(orgId, type);
+    res.json(instances.map(redactInstanceConfig));
   });
 
-  app.get("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
-    const orgId = (req as any).orgId as string;
-    const instanceId = req.params.id as string;
-    const instance = getCollectorInstance(instanceId, orgId);
-    if (!instance) return res.status(404).json({ message: "Collector not found" });
-    res.json(redactInstanceConfig(instance));
-  });
+  app.get(
+    "/api/native-collectors/instances/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      const instance = await getCollectorInstance(instanceId, orgId);
+      if (!instance) return res.status(404).json({ message: "Collector not found" });
+      res.json(redactInstanceConfig(instance));
+    },
+  );
 
-  app.patch("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
-    const parsed = updateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
-    }
-    const orgId = (req as any).orgId as string;
-    const instanceId = req.params.id as string;
-    const instance = getCollectorInstance(instanceId, orgId);
-    if (!instance) return res.status(404).json({ message: "Collector not found" });
-    const safeData = parsed.data.config
-      ? { ...parsed.data, config: stripRedactedKeys(parsed.data.config, instance.templateSlug) }
-      : parsed.data;
-    const updated = updateCollectorConfig(instanceId, orgId, safeData as any);
-    if (!updated) return res.status(404).json({ message: "Collector not found" });
-    res.json(redactInstanceConfig(updated));
-  });
+  app.patch(
+    "/api/native-collectors/instances/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+      }
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      const instance = await getCollectorInstance(instanceId, orgId);
+      if (!instance) return res.status(404).json({ message: "Collector not found" });
+      const safeData = parsed.data.config
+        ? { ...parsed.data, config: stripRedactedKeys(parsed.data.config, instance.templateSlug) }
+        : parsed.data;
+      const updated = await updateCollectorConfig(instanceId, orgId, safeData as any);
+      if (!updated) return res.status(404).json({ message: "Collector not found" });
+      res.json(redactInstanceConfig(updated));
+    },
+  );
 
-  app.delete("/api/native-collectors/instances/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
-    const orgId = (req as any).orgId as string;
-    const instanceId = req.params.id as string;
-    const deleted = deleteCollector(instanceId, orgId);
-    if (!deleted) return res.status(404).json({ message: "Collector not found" });
-    res.json({ success: true });
-  });
+  app.delete(
+    "/api/native-collectors/instances/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      const orgId = (req as any).orgId as string;
+      const instanceId = req.params.id as string;
+      const deleted = await deleteCollector(instanceId, orgId);
+      if (!deleted) return res.status(404).json({ message: "Collector not found" });
+      res.json({ success: true });
+    },
+  );
 
   app.post(
     "/api/native-collectors/instances/:id/heartbeat",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    (req, res) => {
+    async (req, res) => {
       const parsed = heartbeatSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
       }
       const orgId = (req as any).orgId as string;
       const instanceId = req.params.id as string;
-      const updated = sendHeartbeat(instanceId, orgId, parsed.data.hostInfo, parsed.data.metrics);
+      const updated = await sendHeartbeat(instanceId, orgId, parsed.data.hostInfo, parsed.data.metrics);
       if (!updated) return res.status(404).json({ message: "Collector not found" });
       res.json(redactInstanceConfig(updated));
     },
@@ -214,7 +233,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    (req, res) => {
+    async (req, res) => {
       const parsed = ingestSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
@@ -222,7 +241,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
       const orgId = (req as any).orgId as string;
       const instanceId = req.params.id as string;
       try {
-        const events = ingestEvents(instanceId, orgId, parsed.data.events);
+        const events = await ingestEvents(instanceId, orgId, parsed.data.events);
         res.status(201).json({ ingested: events.length, events });
       } catch (err: unknown) {
         res.status(400).json({ message: (err as Error).message });
@@ -230,11 +249,11 @@ export function registerNativeCollectorRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/native-collectors/events", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+  app.get("/api/native-collectors/events", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const orgId = (req as any).orgId as string;
     const collectorId = req.query.collectorId as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 200);
-    res.json(getIngestedEvents(orgId, collectorId, limit));
+    res.json(await getIngestedEvents(orgId, collectorId, limit));
   });
 
   app.post(
@@ -242,7 +261,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    (req, res) => {
+    async (req, res) => {
       const parsed = scanSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
@@ -250,7 +269,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
       const orgId = (req as any).orgId as string;
       const instanceId = req.params.id as string;
       try {
-        const scan = triggerScan(instanceId, orgId, parsed.data.scanType, parsed.data.targets);
+        const scan = await triggerScan(instanceId, orgId, parsed.data.scanType, parsed.data.targets);
         res.json(scan);
       } catch (err: unknown) {
         res.status(400).json({ message: (err as Error).message });
@@ -258,17 +277,17 @@ export function registerNativeCollectorRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/native-collectors/scans", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+  app.get("/api/native-collectors/scans", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const orgId = (req as any).orgId as string;
     const collectorId = req.query.collectorId as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 20, 100);
-    res.json(getScanResults(orgId, collectorId, limit));
+    res.json(await getScanResults(orgId, collectorId, limit));
   });
 
-  app.get("/api/native-collectors/scans/:id", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
+  app.get("/api/native-collectors/scans/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const orgId = (req as any).orgId as string;
     const scanId = req.params.id as string;
-    const scan = getScanResult(scanId, orgId);
+    const scan = await getScanResult(scanId, orgId);
     if (!scan) return res.status(404).json({ message: "Scan not found" });
     res.json(scan);
   });
@@ -278,10 +297,10 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    (req, res) => {
+    async (req, res) => {
       const orgId = (req as any).orgId as string;
       const instanceId = req.params.id as string;
-      const instance = getCollectorInstance(instanceId, orgId);
+      const instance = await getCollectorInstance(instanceId, orgId);
       if (!instance) return res.status(404).json({ message: "Collector not found" });
       const script = getDeploymentScript(instance.templateSlug, instanceId);
       res.json({ script, templateSlug: instance.templateSlug });
@@ -293,10 +312,10 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    (req, res) => {
+    async (req, res) => {
       const orgId = (req as any).orgId as string;
       const instanceId = req.params.id as string;
-      const result = generateApiKey(instanceId, orgId);
+      const result = await generateApiKey(instanceId, orgId);
       if (!result) return res.status(404).json({ message: "Collector not found" });
       res.json(result);
     },

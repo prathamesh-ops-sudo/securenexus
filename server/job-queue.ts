@@ -22,13 +22,87 @@ function buildJobFingerprint(type: string, orgId: string, payload: unknown): str
 const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   connector_sync: async (job) => {
     try {
-      const { syncConnector } = await import("./connector-engine");
+      const { syncConnectorWithRetry } = await import("./connector-engine");
       const connector = await storage.getConnector(job.payload?.connectorId);
       if (!connector) {
         return { synced: false, error: "Connector not found" };
       }
-      const result = await syncConnector(connector);
-      return { synced: true, ...result };
+      const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
+
+      // Persist normalized alerts to DB — replicates the upsert loop from routes/connectors.ts
+      let created = 0;
+      let deduped = 0;
+      let failed = syncResult.alertsFailed;
+      const UPSERT_BATCH = 50;
+
+      for (let i = 0; i < syncResult.rawAlerts.length; i += UPSERT_BATCH) {
+        const batch = syncResult.rawAlerts.slice(i, i + UPSERT_BATCH);
+        const results = await Promise.allSettled(batch.map((alertData) => storage.upsertAlert(alertData as any)));
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            if (r.value.isNew) created++;
+            else deduped++;
+          } else {
+            failed++;
+            syncResult.errors.push(`DB insert failed: ${r.reason?.message ?? "unknown"}`);
+          }
+        }
+      }
+
+      // Update connector sync status
+      const totalSynced = (connector.totalAlertsSynced || 0) + created;
+      const syncStatus = syncResult.errors.length > 0 && created === 0 ? "error" : "success";
+
+      await storage.updateConnectorSyncStatus(connector.id, {
+        lastSyncAt: new Date(),
+        lastSyncStatus: syncStatus,
+        lastSyncAlerts: created,
+        lastSyncError: syncResult.errors.length > 0 ? syncResult.errors[0] : undefined,
+        totalAlertsSynced: totalSynced,
+      });
+
+      await storage.updateConnector(connector.id, {
+        status: syncStatus === "error" ? "error" : "active",
+      } as any);
+
+      // Log ingestion result
+      await storage.createIngestionLog({
+        source: connector.type,
+        status: syncStatus,
+        alertsReceived: syncResult.alertsReceived,
+        alertsCreated: created,
+        alertsDeduped: deduped,
+        alertsFailed: failed,
+        errorMessage: syncResult.errors.length > 0 ? syncResult.errors.join("; ") : undefined,
+        requestId: `job_sync_${connector.id}_${Date.now()}`,
+      });
+
+      // Update the ConnectorJobRun with accurate alert counts from the actual DB upserts
+      // (syncConnectorWithRetry records 0s because syncConnector doesn't do the upserts)
+      if (jobRun?.id) {
+        await storage.updateConnectorJobRun(jobRun.id, {
+          alertsCreated: created,
+          alertsDeduped: deduped,
+          alertsFailed: failed,
+        });
+      }
+
+      logger.child("job-queue").info(`connector_sync completed for ${connector.type}`, {
+        connectorId: connector.id,
+        alertsReceived: syncResult.alertsReceived,
+        alertsCreated: created,
+        alertsDeduped: deduped,
+        alertsFailed: failed,
+      });
+
+      return {
+        synced: true,
+        alertsReceived: syncResult.alertsReceived,
+        alertsCreated: created,
+        alertsDeduped: deduped,
+        alertsFailed: failed,
+        errors: syncResult.errors,
+      };
     } catch (err: any) {
       return { synced: false, type: "connector_sync", error: err.message || String(err) };
     }

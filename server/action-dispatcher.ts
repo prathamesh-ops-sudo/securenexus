@@ -431,13 +431,15 @@ async function executeAgentResponseAction(
 /**
  * Legacy simulation fallback — used when no native sensor is deployed
  * or when the agent response pipeline is unavailable.
+ * Now persists to responseActions table with status "simulated" so
+ * the UI can distinguish simulated actions from real ones.
  */
-function legacySimulateEdrAction(
+async function legacySimulateEdrAction(
   actionType: string,
   config: any,
   context: ActionContext,
   executedAt: string,
-): ActionResult {
+): Promise<ActionResult> {
   const target = config?.target || config?.hostname || config?.ip || config?.hash || "unknown";
   const actionLabels: Record<string, string> = {
     isolate_host: `Isolated host "${target}" from network`,
@@ -447,6 +449,26 @@ function legacySimulateEdrAction(
     disable_user: `Disabled user account "${target}"`,
     kill_process: `Terminated process "${target}" on affected hosts`,
   };
+
+  // Persist simulated action to DB so it's visible in the response actions UI
+  if (context.storage && context.orgId) {
+    try {
+      await context.storage.createResponseAction({
+        orgId: context.orgId,
+        actionType,
+        incidentId: context.incidentId,
+        alertId: context.alertId,
+        targetType: actionType.split("_")[0],
+        targetValue: target,
+        status: "simulated",
+        requestPayload: { actionType, target, simulated: true, reason: "No native sensor agent found for target" },
+        responsePayload: { simulated: true, message: actionLabels[actionType] || actionType },
+        executedBy: context.userId,
+      });
+    } catch (err) {
+      log.warn("Failed to persist simulated action to DB", { actionType, target, error: String(err) });
+    }
+  }
 
   return {
     actionType,
