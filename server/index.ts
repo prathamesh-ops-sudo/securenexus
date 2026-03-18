@@ -1,4 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -7,11 +9,14 @@ import { sliMiddleware, startSliCollection } from "./sli-middleware";
 import { performanceBudgetMiddleware } from "./db-performance";
 import { startJobWorker } from "./job-queue";
 import { startSloAlerting } from "./slo-alerting";
-import { replyInternal } from "./api-response";
+import { replyInternal, replyRateLimit } from "./api-response";
 import { envelopeMiddleware, autoDeprecationMiddleware } from "./envelope-middleware";
 import { config } from "./config";
 import { logger, correlationMiddleware, requestLogger } from "./logger";
 import { applySecurityMiddleware, applyInputSanitization } from "./security-middleware";
+import { registerWellKnownRoutes } from "./routes/well-known";
+import { requestTimeoutMiddleware } from "./request-timeout";
+import { prometheusMiddleware, renderMetrics } from "./prometheus";
 import { initializeScalingState, gracefulShutdown, registerShutdownHandler } from "./scaling-state";
 import { startPoolHealthMonitor, drainPool } from "./db";
 import { startRetentionScheduler } from "./retention-scheduler";
@@ -55,7 +60,39 @@ declare module "http" {
 
 app.disable("x-powered-by");
 
+// Response compression (gzip/deflate) — must come before route handlers
+app.use(
+  compression({
+    threshold: 1024, // only compress responses > 1KB
+    filter: (req, res) => {
+      // Don't compress SSE streams
+      if (req.headers.accept === "text/event-stream") return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
+
 applySecurityMiddleware(app);
+
+// Global API rate limit — prevents abuse across all endpoints
+const PRODUCTION_ENVS = new Set(["production", "staging", "uat"]);
+const globalApiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: PRODUCTION_ENVS.has(config.nodeEnv) ? 300 : 0, // 300 req/min per IP in production, unlimited in dev
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.ip || req.socket.remoteAddress || "unknown",
+  skip: (req: Request) =>
+    req.path === "/api/ops/health" ||
+    req.path === "/api/ops/ready" ||
+    req.path === "/api/ops/live" ||
+    req.path === "/api/health" ||
+    req.path === "/api/ops/metrics",
+  handler: (_req: Request, res: Response) => {
+    replyRateLimit(res, "Too many requests. Please try again later.");
+  },
+});
+app.use("/api/", globalApiLimiter);
 
 app.use(
   express.json({
@@ -70,7 +107,17 @@ app.use(express.urlencoded({ extended: false }));
 
 applyInputSanitization(app);
 
+// Well-known endpoints (security.txt, robots.txt) — before auth
+registerWellKnownRoutes(app);
+
+// Prometheus metrics endpoint — no auth required for K8s scraping
+app.get("/api/ops/metrics", (_req, res) => {
+  res.type("text/plain; version=0.0.4; charset=utf-8").send(renderMetrics());
+});
+
 app.use(inFlightMiddleware);
+app.use(requestTimeoutMiddleware(30_000)); // 30s timeout for API requests (excludes SSE/streaming)
+app.use(prometheusMiddleware);
 app.use(sliMiddleware);
 app.use(performanceBudgetMiddleware);
 
@@ -172,10 +219,15 @@ export function log(message: string, source = "express") {
     const HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000;
     const heartbeatTimer = setInterval(() => {
       const mem = process.memoryUsage();
+      const cpuUsage = process.cpuUsage();
       logger.child("heartbeat").debug("alive", {
         uptimeSec: Math.floor(process.uptime()),
         rssMb: Math.round(mem.rss / 1024 / 1024),
         heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+        externalMb: Math.round(mem.external / 1024 / 1024),
+        cpuUserMs: Math.round(cpuUsage.user / 1000),
+        cpuSystemMs: Math.round(cpuUsage.system / 1000),
       });
     }, HEARTBEAT_INTERVAL_MS);
     heartbeatTimer.unref();
