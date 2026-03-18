@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import {
   AlertTriangle,
   Search,
@@ -443,6 +443,22 @@ export default function AlertsPage() {
     },
   });
 
+  const { data: circuitAlerts } = useQuery<
+    { id: string; title: string; description: string; severity: string; created_at: string }[]
+  >({
+    queryKey: ["/api/ai/circuit-alerts"],
+    refetchInterval: 60000,
+  });
+
+  const dismissCircuitAlert = useMutation({
+    mutationFn: async (alertId: string) => {
+      await apiRequest("PATCH", `/api/ai/circuit-alerts/${alertId}/dismiss`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/circuit-alerts"] });
+    },
+  });
+
   const scanDuplicates = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/dedup-clusters/scan", {});
@@ -721,6 +737,40 @@ export default function AlertsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" aria-label="Alerts Management">
+      {/* AI Circuit Breaker Banner */}
+      {circuitAlerts &&
+        circuitAlerts.length > 0 &&
+        (() => {
+          const newest = circuitAlerts[0];
+          const minutesAgo = Math.max(1, Math.round((Date.now() - new Date(newest.created_at).getTime()) / 60000));
+          return (
+            <div
+              className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-center justify-between gap-3"
+              data-testid="circuit-breaker-banner"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <XCircle className="h-4 w-4 text-red-500 shrink-0" aria-hidden="true" />
+                <p className="text-xs text-red-700 dark:text-red-300 truncate">
+                  AI inference failures detected {minutesAgo} min ago ({circuitAlerts.length} alert
+                  {circuitAlerts.length > 1 ? "s" : ""}).{" "}
+                  <Link href="/ai-engine" className="underline font-medium">
+                    Check status
+                  </Link>
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0 shrink-0"
+                onClick={() => dismissCircuitAlert.mutate(circuitAlerts[0].id)}
+                aria-label="Dismiss banner"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          );
+        })()}
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">

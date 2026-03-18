@@ -5,6 +5,7 @@ import { logger } from "../logger";
 import { getAwsClientConfig } from "../aws-credentials";
 import { trackUsage, checkBudget } from "./budget";
 import { countTokens } from "./tokenizer";
+import { broadcastEvent } from "../event-bus";
 
 const log = logger.child("model-gateway");
 
@@ -89,10 +90,23 @@ function recordCircuitFailure(key: string): void {
   state.failures++;
   state.lastFailure = Date.now();
   if (state.failures >= CIRCUIT_FAILURE_THRESHOLD) {
-    if (state.openUntil < Date.now()) {
-      gatewayMetrics.circuitBreakerTrips++;
-    }
+    const isNewTrip = state.openUntil < Date.now();
     state.openUntil = Date.now() + CIRCUIT_RESET_MS;
+    if (isNewTrip) {
+      gatewayMetrics.circuitBreakerTrips++;
+      const [backend, ...modelParts] = key.split(":");
+      const modelId = modelParts.join(":");
+      broadcastEvent({
+        type: "system.ai_circuit_open",
+        orgId: null,
+        data: {
+          modelId,
+          backend,
+          resetAt: new Date(state.openUntil).toISOString(),
+          failureCount: state.failures,
+        },
+      });
+    }
     log.warn("Circuit breaker opened for model", { key, failures: state.failures, resetMs: CIRCUIT_RESET_MS });
   }
   circuitBreakers.set(key, state);
