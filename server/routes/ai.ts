@@ -233,18 +233,20 @@ export function registerAiRoutes(app: Express): void {
   });
 
   // --- GET /api/ai/circuit-alerts — recent AI service failure alerts ---
-  app.get("/api/ai/circuit-alerts", isAuthenticated, async (_req: Request, res: Response) => {
+  app.get("/api/ai/circuit-alerts", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
     try {
-      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const orgId = getOrgId(req);
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       const result = await pool.query(
         `SELECT id, title, description, severity, status, category, created_at, raw_data
          FROM alerts
          WHERE category = 'ai_service_failure'
            AND status != 'resolved'
            AND created_at >= $1
+           AND (org_id = $2 OR org_id IS NULL)
          ORDER BY created_at DESC
          LIMIT 10`,
-        [thirtyMinutesAgo],
+        [twoHoursAgo, orgId],
       );
       res.json(result.rows);
     } catch (error: unknown) {
@@ -257,10 +259,20 @@ export function registerAiRoutes(app: Express): void {
   app.patch(
     "/api/ai/circuit-alerts/:alertId/dismiss",
     isAuthenticated,
+    resolveOrgContext,
     requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const alertId = p(req.params.alertId);
+        const orgId = getOrgId(req);
+        // Verify the alert belongs to this org (or is system-wide)
+        const check = await pool.query(
+          `SELECT id FROM alerts WHERE id = $1 AND (org_id = $2 OR org_id IS NULL) AND category = 'ai_service_failure'`,
+          [alertId, orgId],
+        );
+        if (check.rows.length === 0) {
+          return res.status(404).json({ message: "Alert not found." });
+        }
         await storage.updateAlert(alertId, { status: "resolved" });
         res.json({ success: true });
       } catch (error: unknown) {

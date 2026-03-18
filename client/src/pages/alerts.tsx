@@ -741,9 +741,8 @@ export default function AlertsPage() {
       {circuitAlerts &&
         circuitAlerts.length > 0 &&
         (() => {
-          const oldest = circuitAlerts[circuitAlerts.length - 1];
-          const minutesAgo = Math.round((Date.now() - new Date(oldest.created_at).getTime()) / 60000);
-          if (minutesAgo < 30) return null;
+          const newest = circuitAlerts[0];
+          const minutesAgo = Math.max(1, Math.round((Date.now() - new Date(newest.created_at).getTime()) / 60000));
           return (
             <div
               className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-center justify-between gap-3"
@@ -752,7 +751,8 @@ export default function AlertsPage() {
               <div className="flex items-center gap-2 min-w-0">
                 <XCircle className="h-4 w-4 text-red-500 shrink-0" aria-hidden="true" />
                 <p className="text-xs text-red-700 dark:text-red-300 truncate">
-                  AI triage paused for {minutesAgo} min due to repeated inference failures.{" "}
+                  AI inference failures detected {minutesAgo} min ago ({circuitAlerts.length} alert
+                  {circuitAlerts.length > 1 ? "s" : ""}).{" "}
                   <Link href="/ai-engine" className="underline font-medium">
                     Check status
                   </Link>
