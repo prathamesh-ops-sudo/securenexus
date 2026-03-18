@@ -22,6 +22,7 @@ import { resolveAndLinkEntities } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { SOURCE_KEYS, normalizeAlert, toInsertAlert } from "../normalizer";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
+import { broadcastDashboardCounters } from "./dashboard";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
 export function registerIngestionRoutes(app: Express): void {
@@ -266,6 +267,10 @@ export function registerIngestionRoutes(app: Express): void {
                 : null,
             },
           });
+          broadcastDashboardCounters(orgId, {
+            alerts: 1,
+            criticalAlerts: alert.severity === "critical" ? 1 : 0,
+          });
 
           publishOutboxEvent(orgId, "alert.created", "alert", alert.id, {
             title: alert.title,
@@ -390,6 +395,10 @@ export function registerIngestionRoutes(app: Express): void {
                   category: alert.category,
                   bulk: true,
                 },
+              });
+              broadcastDashboardCounters(orgId || null, {
+                alerts: 1,
+                criticalAlerts: alert.severity === "critical" ? 1 : 0,
               });
             } else {
               deduped++;

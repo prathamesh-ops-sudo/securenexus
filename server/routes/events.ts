@@ -25,6 +25,8 @@ export function registerEventsRoutes(app: Express): void {
       "incident:updated",
       "correlation:found",
       "entity:resolved",
+      "connector:health",
+      "dashboard:counters",
       "system:health",
     ]);
     const rawTypes = req.query.types as string | undefined;

@@ -5,18 +5,73 @@ import { CACHE_TTL, buildCacheKey, cacheGetOrLoad } from "../query-cache";
 import { resolveOrgContext, requireOrgId } from "../rbac";
 import { pool } from "../db";
 import { logger } from "../logger";
+import { broadcastEvent } from "../event-bus";
+
+/**
+ * Parse ISO-8601 `from` / `to` query parameters into Date objects.
+ * Returns undefined for missing or invalid values.
+ */
+function parseTimeRange(req: Request): { from?: Date; to?: Date } {
+  const fromStr = req.query.from as string | undefined;
+  const toStr = req.query.to as string | undefined;
+  let from: Date | undefined;
+  let to: Date | undefined;
+  if (fromStr) {
+    const d = new Date(fromStr);
+    if (!isNaN(d.getTime())) from = d;
+  }
+  if (toStr) {
+    const d = new Date(toStr);
+    if (!isNaN(d.getTime())) to = d;
+  }
+  return { from, to };
+}
 
 const log = logger.child("dashboard-routes");
 
+/**
+ * Broadcast a dashboard:counters event so SSE-connected clients can
+ * update alert/incident/connector counters in real-time without polling.
+ *
+ * `deltas` carries incremental changes:
+ *   { alerts: +1, incidents: +1, criticalAlerts: +1, connectorHealthChanged: true }
+ */
+export function broadcastDashboardCounters(
+  orgId: string | null,
+  deltas: {
+    alerts?: number;
+    incidents?: number;
+    criticalAlerts?: number;
+    resolvedIncidents?: number;
+    connectorHealthChanged?: boolean;
+  },
+): void {
+  broadcastEvent({
+    type: "dashboard:counters",
+    orgId,
+    data: { deltas },
+  });
+}
+
 export function registerDashboardRoutes(app: Express): void {
   // Dashboard (with query-level caching)
-  // Supports ?range=1h|4h|24h|7d|30d (default 24h)
+  // Supports ?range=1h|4h|24h|7d|30d (default 24h) AND ?from=<ISO>&to=<ISO> for precise time bounds
   app.get("/api/dashboard/stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const range = String(req.query.range || "24h");
-      const cacheKey = buildCacheKey("dashboard:stats", { orgId, range });
-      const stats = await cacheGetOrLoad(cacheKey, () => storage.getDashboardStats(orgId), CACHE_TTL.DASHBOARD_STATS);
+      const { from, to } = parseTimeRange(req);
+      const cacheKey = buildCacheKey("dashboard:stats", {
+        orgId,
+        range,
+        from: from?.toISOString() ?? "",
+        to: to?.toISOString() ?? "",
+      });
+      const stats = await cacheGetOrLoad(
+        cacheKey,
+        () => storage.getDashboardStats(orgId, from, to),
+        CACHE_TTL.DASHBOARD_STATS,
+      );
       res.json(stats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch stats" });
@@ -27,10 +82,16 @@ export function registerDashboardRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const range = String(req.query.range || "24h");
-      const cacheKey = buildCacheKey("dashboard:analytics", { orgId, range });
+      const { from, to } = parseTimeRange(req);
+      const cacheKey = buildCacheKey("dashboard:analytics", {
+        orgId,
+        range,
+        from: from?.toISOString() ?? "",
+        to: to?.toISOString() ?? "",
+      });
       const analytics = await cacheGetOrLoad(
         cacheKey,
-        () => storage.getDashboardAnalytics(orgId),
+        () => storage.getDashboardAnalytics(orgId, from, to),
         CACHE_TTL.DASHBOARD_ANALYTICS,
       );
       res.json(analytics);

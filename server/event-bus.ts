@@ -11,6 +11,8 @@ export type EventType =
   | "incident:updated"
   | "correlation:found"
   | "entity:resolved"
+  | "connector:health"
+  | "dashboard:counters"
   | "system:health"
   | "system.ai_circuit_open";
 

@@ -21,6 +21,7 @@ import { parsePaginationParams } from "../db-performance";
 import { getEntitiesForIncident } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
+import { broadcastDashboardCounters } from "./dashboard";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { upsertIncidentEmbedding } from "../ai/vector-search";
 
@@ -172,6 +173,9 @@ export function registerIncidentsRoutes(app: Express): void {
             priority: incident.priority,
           },
         });
+        broadcastDashboardCounters(incident.orgId || null, {
+          incidents: 1,
+        });
         dispatchWebhookEvent(incident.orgId, "incident.created", incident);
         publishOutboxEvent(incident.orgId, "incident.created", "incident", incident.id, {
           title: incident.title,
@@ -317,6 +321,16 @@ export function registerIncidentsRoutes(app: Express): void {
           severity: incident.severity,
         });
         cacheInvalidate("dashboard:");
+
+        // Broadcast dashboard counter delta for resolved incidents
+        const closedStatuses2 = ["resolved", "closed"];
+        if (
+          parsed.data.status &&
+          closedStatuses2.includes(parsed.data.status) &&
+          !closedStatuses2.includes(existingIncident.status)
+        ) {
+          broadcastDashboardCounters(incident.orgId || null, { resolvedIncidents: 1 });
+        }
 
         // Auto-index updated incident for RAG vector search (fire-and-forget)
         if (incident.orgId) {

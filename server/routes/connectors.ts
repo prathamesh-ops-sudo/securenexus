@@ -16,6 +16,8 @@ import {
 } from "../connector-engine";
 import { parsePaginationParams } from "../db-performance";
 import { cacheInvalidate } from "../query-cache";
+import { broadcastDashboardCounters } from "./dashboard";
+import { broadcastEvent } from "../event-bus";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { sendEmail } from "../email-service";
 
@@ -365,6 +367,14 @@ export function registerConnectorsRoutes(app: Express): void {
         lastSyncAlerts: created,
         lastSyncError: syncResult.errors.length > 0 ? syncResult.errors[0] : undefined,
         totalAlertsSynced: totalSynced,
+      });
+      broadcastEvent({
+        type: "connector:health",
+        orgId: connector.orgId || null,
+        data: { connectorId: connector.id, status: syncStatus, alertsSynced: created },
+      });
+      broadcastDashboardCounters(connector.orgId || null, {
+        connectorHealthChanged: true,
       });
 
       await storage.updateConnector(connector.id, { status: syncStatus === "error" ? "error" : "active" } as any);

@@ -509,7 +509,11 @@ export interface IStorage {
   upsertThreatIntelConfig(config: InsertThreatIntelConfig): Promise<ThreatIntelConfig>;
   deleteThreatIntelConfig(orgId: string, provider: string): Promise<void>;
 
-  getDashboardStats(orgId?: string): Promise<{
+  getDashboardStats(
+    orgId?: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<{
     totalAlerts: number;
     openIncidents: number;
     criticalAlerts: number;
@@ -518,7 +522,11 @@ export interface IStorage {
     escalatedIncidents: number;
   }>;
 
-  getDashboardAnalytics(orgId?: string): Promise<{
+  getDashboardAnalytics(
+    orgId?: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<{
     severityDistribution: { name: string; value: number }[];
     sourceDistribution: { name: string; value: number }[];
     categoryDistribution: { name: string; value: number }[];
@@ -1706,7 +1714,11 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getDashboardStats(orgId?: string): Promise<{
+  async getDashboardStats(
+    orgId?: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<{
     totalAlerts: number;
     openIncidents: number;
     criticalAlerts: number;
@@ -1714,52 +1726,47 @@ export class DatabaseStorage implements IStorage {
     newAlertsToday: number;
     escalatedIncidents: number;
   }> {
-    const conditions = orgId ? [eq(alerts.orgId, orgId)] : [];
-    const incidentConditions = orgId ? [eq(incidents.orgId, orgId)] : [];
+    const alertConds: ReturnType<typeof eq>[] = [];
+    const incidentConds: ReturnType<typeof eq>[] = [];
+    if (orgId) {
+      alertConds.push(eq(alerts.orgId, orgId));
+      incidentConds.push(eq(incidents.orgId, orgId));
+    }
+    if (from) {
+      alertConds.push(gte(alerts.createdAt, from));
+      incidentConds.push(gte(incidents.createdAt, from));
+    }
+    if (to) {
+      alertConds.push(lte(alerts.createdAt, to));
+      incidentConds.push(lte(incidents.createdAt, to));
+    }
+    const alertWhere = alertConds.length ? and(...alertConds) : undefined;
+    const incidentWhere = incidentConds.length ? and(...incidentConds) : undefined;
 
-    const [totalAlertsResult] = await db
-      .select({ count: count() })
-      .from(alerts)
-      .where(conditions.length ? conditions[0] : undefined);
+    const [totalAlertsResult] = await db.select({ count: count() }).from(alerts).where(alertWhere);
     const [criticalResult] = await db
       .select({ count: count() })
       .from(alerts)
-      .where(conditions.length ? and(conditions[0], eq(alerts.severity, "critical")) : eq(alerts.severity, "critical"));
+      .where(alertWhere ? and(alertWhere, eq(alerts.severity, "critical")) : eq(alerts.severity, "critical"));
     const [openResult] = await db
       .select({ count: count() })
       .from(incidents)
-      .where(
-        incidentConditions.length
-          ? and(incidentConditions[0], eq(incidents.status, "open"))
-          : eq(incidents.status, "open"),
-      );
+      .where(incidentWhere ? and(incidentWhere, eq(incidents.status, "open")) : eq(incidents.status, "open"));
     const [resolvedResult] = await db
       .select({ count: count() })
       .from(incidents)
-      .where(
-        incidentConditions.length
-          ? and(incidentConditions[0], eq(incidents.status, "resolved"))
-          : eq(incidents.status, "resolved"),
-      );
+      .where(incidentWhere ? and(incidentWhere, eq(incidents.status, "resolved")) : eq(incidents.status, "resolved"));
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const [newTodayResult] = await db
       .select({ count: count() })
       .from(alerts)
-      .where(
-        conditions.length
-          ? and(conditions[0], sql`${alerts.createdAt} >= ${today}`)
-          : sql`${alerts.createdAt} >= ${today}`,
-      );
+      .where(alertWhere ? and(alertWhere, sql`${alerts.createdAt} >= ${today}`) : sql`${alerts.createdAt} >= ${today}`);
     const [escalatedResult] = await db
       .select({ count: count() })
       .from(incidents)
-      .where(
-        incidentConditions.length
-          ? and(incidentConditions[0], eq(incidents.escalated, true))
-          : eq(incidents.escalated, true),
-      );
+      .where(incidentWhere ? and(incidentWhere, eq(incidents.escalated, true)) : eq(incidents.escalated, true));
 
     return {
       totalAlerts: totalAlertsResult?.count ?? 0,
@@ -2002,7 +2009,11 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(threatIntelConfigs.orgId, orgId), eq(threatIntelConfigs.provider, provider)));
   }
 
-  async getDashboardAnalytics(orgId?: string): Promise<{
+  async getDashboardAnalytics(
+    orgId?: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<{
     severityDistribution: { name: string; value: number }[];
     sourceDistribution: { name: string; value: number }[];
     categoryDistribution: { name: string; value: number }[];
@@ -2020,10 +2031,29 @@ export class DatabaseStorage implements IStorage {
     }[];
     ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
   }> {
-    const alertCond = orgId ? eq(alerts.orgId, orgId) : undefined;
-    const incidentCond = orgId ? eq(incidents.orgId, orgId) : undefined;
+    // Build base conditions with optional time range
+    const alertConds: ReturnType<typeof eq>[] = [];
+    const incidentConds: ReturnType<typeof eq>[] = [];
+    const ingestionConds: ReturnType<typeof eq>[] = [];
+    if (orgId) {
+      alertConds.push(eq(alerts.orgId, orgId));
+      incidentConds.push(eq(incidents.orgId, orgId));
+      ingestionConds.push(eq(ingestionLogs.orgId, orgId));
+    }
+    if (from) {
+      alertConds.push(gte(alerts.createdAt, from));
+      incidentConds.push(gte(incidents.createdAt, from));
+      ingestionConds.push(gte(ingestionLogs.receivedAt, from));
+    }
+    if (to) {
+      alertConds.push(lte(alerts.createdAt, to));
+      incidentConds.push(lte(incidents.createdAt, to));
+      ingestionConds.push(lte(ingestionLogs.receivedAt, to));
+    }
+    const alertCond = alertConds.length ? and(...alertConds) : undefined;
+    const incidentCond = incidentConds.length ? and(...incidentConds) : undefined;
     const connectorCond = orgId ? eq(connectors.orgId, orgId) : undefined;
-    const ingestionCond = orgId ? eq(ingestionLogs.orgId, orgId) : undefined;
+    const ingestionCond = ingestionConds.length ? and(...ingestionConds) : undefined;
 
     const severityDistribution = await db
       .select({ name: alerts.severity, value: sql<number>`COUNT(*)::int` })
@@ -2055,9 +2085,11 @@ export class DatabaseStorage implements IStorage {
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    // For trend, use the broader of from/7-days-ago so we always show at least 7 days of trend
+    const trendStart = from && from < sevenDaysAgo ? from : sevenDaysAgo;
     const trendCond = alertCond
-      ? and(alertCond, sql`${alerts.createdAt} >= ${sevenDaysAgo}`)
-      : sql`${alerts.createdAt} >= ${sevenDaysAgo}`;
+      ? and(alertCond, sql`${alerts.createdAt} >= ${trendStart}`)
+      : sql`${alerts.createdAt} >= ${trendStart}`;
     const alertTrend = await db
       .select({
         date: sql<string>`TO_CHAR(${alerts.createdAt}, 'YYYY-MM-DD')`,
