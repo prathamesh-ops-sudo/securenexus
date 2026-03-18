@@ -3,6 +3,10 @@ import { getOrgId, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad } from "../query-cache";
 import { resolveOrgContext, requireOrgId } from "../rbac";
+import { pool } from "../db";
+import { logger } from "../logger";
+
+const log = logger.child("dashboard-routes");
 
 export function registerDashboardRoutes(app: Express): void {
   // Dashboard (with query-level caching)
@@ -31,6 +35,98 @@ export function registerDashboardRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to fetch analytics" });
     }
   });
+
+  // Operational metrics from metrics rollup tables (MTTD, MTTR, throughput trends)
+  app.get(
+    "/api/dashboard/operational-metrics",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const cacheKey = buildCacheKey("dashboard:operational-metrics", { orgId });
+        const data = await cacheGetOrLoad(
+          cacheKey,
+          async () => {
+            // Pull MTTD/MTTR from hourly rollup if available, otherwise compute from incidents
+            const [mttrResult, mttdResult, throughputResult, trendResult] = await Promise.all([
+              // MTTR: avg time from incident open to resolved (last 30 days)
+              pool.query(
+                `
+              SELECT AVG(EXTRACT(EPOCH FROM (i.resolved_at - i.created_at)) / 3600)::numeric(10,2) AS mttr_hours
+              FROM incidents i
+              WHERE i.org_id = $1
+                AND i.status = 'resolved'
+                AND i.resolved_at IS NOT NULL
+                AND i.created_at >= NOW() - INTERVAL '30 days'
+            `,
+                [orgId],
+              ),
+              // MTTD: avg time from alert created to first investigation (triage)
+              pool.query(
+                `
+              SELECT AVG(EXTRACT(EPOCH FROM (i.created_at - a.created_at)) / 60)::numeric(10,1) AS mttd_minutes
+              FROM incidents i
+              JOIN alerts a ON a.id = i.alert_id AND a.org_id = $1
+              WHERE i.org_id = $1
+                AND i.created_at >= NOW() - INTERVAL '30 days'
+            `,
+                [orgId],
+              ),
+              // Throughput: alerts processed per hour (last 24h)
+              pool.query(
+                `
+              SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status = 'resolved' OR status = 'closed')::int AS resolved
+              FROM alerts
+              WHERE org_id = $1 AND created_at >= NOW() - INTERVAL '24 hours'
+            `,
+                [orgId],
+              ),
+              // Daily trend for last 7 days from metrics rollup (if available)
+              pool.query(`
+              SELECT day::text AS date,
+                avg_value AS "avgValue",
+                sample_count AS "sampleCount"
+              FROM sli_metrics_daily
+              WHERE service = 'incidents' AND metric = 'mttr_hours'
+                AND day >= NOW() - INTERVAL '7 days'
+              ORDER BY day ASC
+              LIMIT 7
+            `),
+            ]);
+
+            const mttrHours = mttrResult.rows[0]?.mttr_hours != null ? Number(mttrResult.rows[0].mttr_hours) : null;
+            const mttdMinutes =
+              mttdResult.rows[0]?.mttd_minutes != null ? Number(mttdResult.rows[0].mttd_minutes) : null;
+            const alertsProcessed24h = throughputResult.rows[0]?.total ?? 0;
+            const alertsResolved24h = throughputResult.rows[0]?.resolved ?? 0;
+            const mttrTrend = trendResult.rows.map((r: { date: string; avgValue: number; sampleCount: number }) => ({
+              date: r.date,
+              avgValue: Number(r.avgValue),
+              sampleCount: Number(r.sampleCount),
+            }));
+
+            return {
+              mttrHours,
+              mttdMinutes,
+              alertsProcessed24h,
+              alertsResolved24h,
+              resolutionRate:
+                alertsProcessed24h > 0 ? Math.round((alertsResolved24h / alertsProcessed24h) * 100) : null,
+              mttrTrend,
+            };
+          },
+          CACHE_TTL.DASHBOARD_STATS,
+        );
+        res.json(data);
+      } catch (err) {
+        log.error("Failed to fetch operational metrics", { error: String(err) });
+        res.status(500).json({ message: "Failed to fetch operational metrics" });
+      }
+    },
+  );
 
   app.get("/api/dashboard/:role", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const user = req.user as any;
