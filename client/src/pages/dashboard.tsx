@@ -937,6 +937,73 @@ interface CircuitAlert {
   created_at: string;
 }
 
+function DeceptionHitsWidget() {
+  const { data: hitsData } = useQuery<{
+    hits: Array<{
+      id: string;
+      sourceIp: string;
+      sourceType: string;
+      sourceName: string;
+      severity: string;
+      hitAt: string;
+    }>;
+  }>({
+    queryKey: ["/api/deception/hits"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/deception/hits");
+      return res.json();
+    },
+    refetchInterval: 60000,
+  });
+
+  // Filter to last 24h client-side
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const allHits = hitsData?.hits ?? [];
+  const recentHits = allHits.filter((h) => new Date(h.hitAt).getTime() >= cutoff);
+  const total = recentHits.length;
+  const recent = recentHits.slice(0, 5);
+
+  return (
+    <Card className="bg-zinc-900/50 border-zinc-800">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Target className="h-4 w-4 text-red-400" />
+          Deception Hits (24h)
+          {total > 0 && (
+            <Badge variant="destructive" className="ml-auto text-[10px] px-1.5 py-0">
+              {total}
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {recent.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">No deception hits in the last 24 hours</p>
+        ) : (
+          <div className="space-y-2">
+            {recent.map((hit) => (
+              <div key={hit.id} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${hit.severity === "critical" ? "bg-red-500" : hit.severity === "high" ? "bg-orange-500" : "bg-yellow-500"}`}
+                  />
+                  <span className="text-muted-foreground">{hit.sourceIp}</span>
+                </div>
+                <span className="text-muted-foreground">{hit.sourceType}</span>
+              </div>
+            ))}
+            {total > 5 && (
+              <Link href="/deception" className="text-xs text-blue-400 hover:underline block text-center pt-1">
+                View all {total} hits
+              </Link>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AICircuitBreakerBanner() {
   const { data: circuitAlerts } = useQuery<CircuitAlert[]>({
     queryKey: ["/api/ai/circuit-alerts"],
@@ -1112,6 +1179,7 @@ export default function Dashboard() {
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
         <AnomalyBanners stats={stats} />
         <AICircuitBreakerBanner />
+        <DeceptionHitsWidget />
         <GuidedWorkflowBanner />
 
         <div className="flex items-start justify-between gap-4 flex-wrap">

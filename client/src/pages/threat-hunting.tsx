@@ -46,6 +46,8 @@ import {
   CheckCircle2,
   XCircle,
   ArrowRight,
+  FileWarning,
+  Link2,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -81,6 +83,7 @@ interface HuntResult {
   executionDurationMs: number | null;
   executedAt: string;
   executedBy: string | null;
+  linkedIncidentId: string | null;
 }
 
 interface HuntScheduleRow {
@@ -1104,7 +1107,11 @@ function HuntSchedulesTab() {
 // ─── Hunt Results Tab ───────────────────────────────────────────────────────
 
 function HuntResultsTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedHuntId, setSelectedHuntId] = useState<string>("");
+  const [linkDialogResultId, setLinkDialogResultId] = useState<string | null>(null);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string>("");
 
   const { data: huntsData } = useQuery<{ hunts: ThreatHunt[] }>({
     queryKey: ["/api/threat-hunting/hunts"],
@@ -1115,8 +1122,39 @@ function HuntResultsTab() {
     enabled: !!selectedHuntId,
   });
 
+  const { data: incidentsData } = useQuery<{ incidents: Array<{ id: string; title: string; status: string }> }>({
+    queryKey: ["/api/incidents"],
+    enabled: !!linkDialogResultId,
+  });
+
+  const createIncidentMutation = useMutation({
+    mutationFn: (resultId: string) =>
+      apiRequest("POST", `/api/threat-hunting/results/${resultId}/create-incident`).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Incident created from hunt result" });
+      queryClient.invalidateQueries({ queryKey: [`/api/threat-hunting/results/${selectedHuntId}`] });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Failed to create incident", description: e.message, variant: "destructive" }),
+  });
+
+  const linkIncidentMutation = useMutation({
+    mutationFn: ({ resultId, incidentId }: { resultId: string; incidentId: string }) =>
+      apiRequest("PATCH", `/api/threat-hunting/results/${resultId}/link-incident`, { incidentId }).then((r) =>
+        r.json(),
+      ),
+    onSuccess: () => {
+      toast({ title: "Hunt result linked to incident" });
+      setLinkDialogResultId(null);
+      setSelectedIncidentId("");
+      queryClient.invalidateQueries({ queryKey: [`/api/threat-hunting/results/${selectedHuntId}`] });
+    },
+    onError: (e: Error) => toast({ title: "Failed to link incident", description: e.message, variant: "destructive" }),
+  });
+
   const hunts = huntsData?.hunts || [];
   const results = resultsData?.results || [];
+  const existingIncidents = incidentsData?.incidents || [];
 
   return (
     <div className="space-y-4">
@@ -1176,6 +1214,36 @@ function HuntResultsTab() {
                       </p>
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    {r.linkedIncidentId ? (
+                      <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">
+                        <Link2 className="h-3 w-3 mr-1" />
+                        Linked
+                      </Badge>
+                    ) : r.eventCount > 0 ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => createIncidentMutation.mutate(r.id)}
+                          disabled={createIncidentMutation.isPending}
+                        >
+                          <FileWarning className="h-3 w-3" />
+                          Create Incident
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setLinkDialogResultId(r.id)}
+                        >
+                          <Link2 className="h-3 w-3" />
+                          Link to Incident
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
                 {r.eventCount > 0 && Array.isArray(r.eventsJson) && r.eventsJson.length > 0 && (
                   <ScrollArea className="max-h-48">
@@ -1189,6 +1257,64 @@ function HuntResultsTab() {
           ))}
         </div>
       )}
+
+      {/* Link to Incident Dialog */}
+      <Dialog
+        open={!!linkDialogResultId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLinkDialogResultId(null);
+            setSelectedIncidentId("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link to Existing Incident</DialogTitle>
+            <DialogDescription>Select an incident to attach this hunt result as evidence.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Select value={selectedIncidentId} onValueChange={setSelectedIncidentId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an incident..." />
+              </SelectTrigger>
+              <SelectContent>
+                {existingIncidents.map((inc) => (
+                  <SelectItem key={inc.id} value={inc.id}>
+                    {inc.title} ({inc.status})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setLinkDialogResultId(null);
+                setSelectedIncidentId("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedIncidentId || linkIncidentMutation.isPending}
+              onClick={() => {
+                if (linkDialogResultId && selectedIncidentId) {
+                  linkIncidentMutation.mutate({ resultId: linkDialogResultId, incidentId: selectedIncidentId });
+                }
+              }}
+            >
+              {linkIncidentMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Link2 className="h-4 w-4 mr-1" />
+              )}
+              Link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

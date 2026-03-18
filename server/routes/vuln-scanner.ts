@@ -296,10 +296,13 @@ export function registerVulnScannerRoutes(app: Express): void {
       const limit = Math.min(Number.isNaN(limitParam) ? 100 : limitParam, 500);
       const offset = Number.isNaN(offsetParam) ? 0 : offsetParam;
 
+      const source = req.query.source as string | undefined;
+
       const conditions: unknown[] = [eq(vulnFindings.orgId, orgId)];
       if (severity && severity !== "all") conditions.push(eq(vulnFindings.severity, severity));
       if (status && status !== "all") conditions.push(eq(vulnFindings.status, status));
       if (sensorId) conditions.push(eq(vulnFindings.sensorId, sensorId));
+      if (source && source !== "all") conditions.push(eq(vulnFindings.source, source));
       if (q) {
         conditions.push(or(ilike(vulnFindings.cveId, `%${q}%`), ilike(vulnFindings.packageName, `%${q}%`)));
       }

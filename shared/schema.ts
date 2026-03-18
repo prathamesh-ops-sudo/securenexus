@@ -107,6 +107,7 @@ export const ALERT_CATEGORIES = [
   "command_and_control",
   "cloud_misconfiguration",
   "policy_violation",
+  "deception_hit",
   "other",
 ] as const;
 export const INGESTION_STATUSES = ["success", "partial", "failed", "deduped"] as const;
@@ -116,6 +117,7 @@ export const PLAYBOOK_TRIGGERS = [
   "alert_critical",
   "incident_created",
   "incident_escalated",
+  "alert_category_deception",
   "manual",
 ] as const;
 export const ENTITY_TYPES = ["user", "host", "ip", "domain", "file_hash", "email", "url", "process"] as const;
@@ -6336,9 +6338,8 @@ export const vulnFindings = pgTable(
     orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id),
-    sensorId: varchar("sensor_id")
-      .notNull()
-      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    sensorId: varchar("sensor_id").references(() => nativeSensors.id, { onDelete: "cascade" }),
+    source: text("source").notNull().default("native_sensor"),
     packageId: varchar("package_id").references(() => vulnPackages.id, { onDelete: "cascade" }),
     cveId: text("cve_id").notNull(),
     packageName: text("package_name").notNull(),
@@ -7909,6 +7910,7 @@ export const huntResults = pgTable(
     executionDurationMs: integer("execution_duration_ms"),
     executedAt: timestamp("executed_at").defaultNow().notNull(),
     executedBy: text("executed_by"),
+    linkedIncidentId: varchar("linked_incident_id").references(() => incidents.id),
   },
   (table) => [index("idx_th_results_hunt").on(table.huntId), index("idx_th_results_org").on(table.orgId)],
 );

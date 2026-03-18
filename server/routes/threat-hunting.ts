@@ -10,6 +10,7 @@ import {
   huntSchedules,
   huntPlaybooks,
   alerts,
+  incidents,
   HUNT_QUERY_TYPES,
   HUNT_STATUSES,
 } from "@shared/schema";
@@ -784,6 +785,97 @@ export function registerThreatHuntingRoutes(app: Express): void {
     } catch (error) {
       log.error("Get MITRE coverage error", { error: String(error) });
       res.status(500).json({ message: "Failed to get MITRE coverage" });
+    }
+  });
+
+  // =========================================================================
+  // HUNT RESULT → INCIDENT INTEGRATION
+  // =========================================================================
+
+  // Create a new incident from a hunt result
+  app.post("/api/threat-hunting/results/:id/create-incident", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const resultId = String(req.params.id);
+
+      const [result] = await db
+        .select()
+        .from(huntResults)
+        .where(and(eq(huntResults.id, resultId), eq(huntResults.orgId, orgId)));
+
+      if (!result) {
+        return res.status(404).json({ message: "Hunt result not found" });
+      }
+
+      // Get the parent hunt for context
+      const [hunt] = await db
+        .select()
+        .from(threatHunts)
+        .where(and(eq(threatHunts.id, result.huntId), eq(threatHunts.orgId, orgId)));
+
+      const huntName = hunt?.name || "Unknown Hunt";
+
+      const [incident] = await db
+        .insert(incidents)
+        .values({
+          orgId,
+          title: `Threat Hunt Finding: ${huntName}`,
+          summary: `Incident created from threat hunt "${huntName}" result with ${result.eventCount} matched events. Executed at ${result.executedAt?.toISOString() || "unknown time"}.`,
+          severity: result.eventCount >= 10 ? "critical" : result.eventCount >= 5 ? "high" : "medium",
+          status: "open",
+          mitreTechniques: hunt?.mitreTechniques as string[] | undefined,
+          affectedAssets: result.eventsJson
+            ? { huntResultEvents: (result.eventsJson as unknown[]).slice(0, 20) }
+            : undefined,
+        })
+        .returning();
+
+      // Update the hunt result to reference the new incident
+      await db.update(huntResults).set({ linkedIncidentId: incident.id }).where(eq(huntResults.id, resultId));
+
+      res.json({ incident, message: "Incident created and linked to hunt result" });
+    } catch (error) {
+      log.error("Create incident from hunt result error", { error: String(error) });
+      res.status(500).json({ message: "Failed to create incident" });
+    }
+  });
+
+  // Link a hunt result to an existing incident
+  app.patch("/api/threat-hunting/results/:id/link-incident", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const resultId = String(req.params.id);
+      const { incidentId } = req.body;
+
+      if (!incidentId || typeof incidentId !== "string") {
+        return res.status(400).json({ message: "incidentId is required" });
+      }
+
+      const [result] = await db
+        .select()
+        .from(huntResults)
+        .where(and(eq(huntResults.id, resultId), eq(huntResults.orgId, orgId)));
+
+      if (!result) {
+        return res.status(404).json({ message: "Hunt result not found" });
+      }
+
+      // Verify the incident belongs to the same org
+      const [incident] = await db
+        .select()
+        .from(incidents)
+        .where(and(eq(incidents.id, incidentId), eq(incidents.orgId, orgId)));
+
+      if (!incident) {
+        return res.status(404).json({ message: "Incident not found" });
+      }
+
+      await db.update(huntResults).set({ linkedIncidentId: incidentId }).where(eq(huntResults.id, resultId));
+
+      res.json({ message: "Hunt result linked to incident", incidentId });
+    } catch (error) {
+      log.error("Link hunt result to incident error", { error: String(error) });
+      res.status(500).json({ message: "Failed to link to incident" });
     }
   });
 }
