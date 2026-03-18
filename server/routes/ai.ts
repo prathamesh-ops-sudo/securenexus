@@ -309,6 +309,7 @@ export function registerAiRoutes(app: Express): void {
     "/api/ai/inference-history",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
     strictLimiter,
     async (req: Request, res: Response) => {
       try {
@@ -331,6 +332,7 @@ export function registerAiRoutes(app: Express): void {
     "/api/ai/inference-stats",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
     strictLimiter,
     async (req: Request, res: Response) => {
       try {
