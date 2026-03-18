@@ -24,6 +24,7 @@ export interface ConnectorTestResult {
   message: string;
   latencyMs: number;
   details?: unknown;
+  preview?: Array<{ timestamp: string; title: string; description: string }>;
 }
 
 export interface SyncResult {

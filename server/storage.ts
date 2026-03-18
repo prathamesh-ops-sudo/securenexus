@@ -379,6 +379,7 @@ import {
   type InsertWarRoomHandoff,
   warRoomHandoffs,
 } from "@shared/schema";
+import { users } from "@shared/models/auth";
 import { db } from "./db";
 import { eq, desc, sql, and, count, ilike, or, asc, inArray, isNull, gte, lte, gt, ne } from "drizzle-orm";
 import { createHash } from "crypto";
@@ -821,6 +822,8 @@ export interface IStorage {
   updateConnectorJobRun(id: string, updates: Partial<ConnectorJobRun>): Promise<ConnectorJobRun>;
   getConnectorJobRuns(connectorId: string, limit?: number): Promise<ConnectorJobRun[]>;
   getDeadLetterJobRuns(orgId?: string): Promise<ConnectorJobRun[]>;
+  getConnectorJobRunById(id: string): Promise<ConnectorJobRun | undefined>;
+  getOrgAdminEmails(orgId: string): Promise<string[]>;
   getConnectorMetrics(connectorId: string): Promise<{
     avgLatencyMs: number;
     errorRate: number;
@@ -3655,6 +3658,26 @@ export class DatabaseStorage implements IStorage {
       .from(connectorJobRuns)
       .where(and(...conditions))
       .orderBy(desc(connectorJobRuns.startedAt));
+  }
+
+  async getConnectorJobRunById(id: string): Promise<ConnectorJobRun | undefined> {
+    const [run] = await db.select().from(connectorJobRuns).where(eq(connectorJobRuns.id, id)).limit(1);
+    return run;
+  }
+
+  async getOrgAdminEmails(orgId: string): Promise<string[]> {
+    const rows = await db
+      .select({ email: users.email })
+      .from(organizationMemberships)
+      .innerJoin(users, eq(organizationMemberships.userId, users.id))
+      .where(
+        and(
+          eq(organizationMemberships.orgId, orgId),
+          inArray(organizationMemberships.role, ["admin", "org_admin", "owner"]),
+          eq(organizationMemberships.status, "active"),
+        ),
+      );
+    return rows.map((r) => r.email).filter(Boolean) as string[];
   }
 
   async getConnectorMetrics(connectorId: string): Promise<{

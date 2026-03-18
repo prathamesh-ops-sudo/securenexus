@@ -51,6 +51,10 @@ import {
   ChevronRight,
   KeyRound,
   RotateCcw,
+  History,
+  FileJson,
+  ChevronUp,
+  Mail,
 } from "lucide-react";
 import type { ConnectorJobRun, ConnectorHealthCheck } from "@shared/schema";
 
@@ -645,9 +649,15 @@ function ConnectorTestResultCard({
   result,
   connectorType,
 }: {
-  result: { success: boolean; latencyMs?: number; message?: string } | null;
+  result: {
+    success: boolean;
+    latencyMs?: number;
+    message?: string;
+    preview?: Array<{ timestamp: string; title: string; description: string }>;
+  } | null;
   connectorType: string;
 }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
   if (!result) return null;
 
   const remediationMap: Record<string, string[]> = {
@@ -705,6 +715,33 @@ function ConnectorTestResultCard({
         <p className="text-xs text-muted-foreground mt-1.5">
           The {connectorType} connector is configured correctly and responding.
         </p>
+        {result.preview && result.preview.length > 0 && (
+          <div className="mt-2">
+            <button
+              onClick={() => setPreviewOpen(!previewOpen)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              data-testid="button-toggle-preview"
+            >
+              {previewOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              Preview: {result.preview.length} recent event{result.preview.length !== 1 ? "s" : ""}
+            </button>
+            {previewOpen && (
+              <div className="mt-2 space-y-2">
+                {result.preview.map((evt, i) => (
+                  <div key={i} className="p-2 rounded border border-border/50 bg-muted/20">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium">{evt.title}</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto">{formatDateTime(evt.timestamp)}</span>
+                    </div>
+                    {evt.description && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{evt.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -735,9 +772,13 @@ function ConnectorTestResultCard({
 }
 
 function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
+  const { toast } = useToast();
   const { data: deadLetters, isLoading } = useQuery<ConnectorJobRun[]>({
     queryKey: ["/api/connectors/dead-letters"],
   });
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [payloadDialogData, setPayloadDialogData] = useState<ConnectorJobRun | null>(null);
+  const [alertChecking, setAlertChecking] = useState(false);
 
   const connectorNameMap = connectors.reduce(
     (acc, c) => {
@@ -747,51 +788,269 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
     {} as Record<string, string>,
   );
 
+  const retryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setRetryingId(id);
+      const res = await apiRequest("POST", `/api/connectors/dead-letters/${id}/retry`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setRetryingId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/connectors/dead-letters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
+      if (data.success) {
+        toast({ title: "Retry successful", description: `Received ${data.alertsReceived} alerts` });
+      } else {
+        toast({
+          title: "Retry completed with errors",
+          description: data.errors?.[0] || "Unknown error",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (err: any) => {
+      setRetryingId(null);
+      toast({ title: "Retry failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleCheckAlert = async () => {
+    setAlertChecking(true);
+    try {
+      const res = await apiRequest("POST", "/api/connectors/dead-letters/check-alert");
+      const data = await res.json();
+      if (data.alerted) {
+        toast({
+          title: "Alert sent",
+          description: `Notified ${data.recipients} admin(s) about ${data.count} dead-letter entries`,
+        });
+      } else {
+        toast({
+          title: "No alert needed",
+          description: `Only ${data.count} dead-letter entries in the last hour (threshold: 10)`,
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Alert check failed", description: err.message, variant: "destructive" });
+    } finally {
+      setAlertChecking(false);
+    }
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Dead Letter Queue</CardTitle>
-        <CardDescription>Job runs that have exhausted all retry attempts</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-lg">Dead Letter Queue</CardTitle>
+            <CardDescription>Job runs that have exhausted all retry attempts</CardDescription>
           </div>
-        ) : !deadLetters?.length ? (
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <Skull className="h-10 w-10 mb-3" />
-            <p className="text-sm">No dead letter entries</p>
-            <p className="text-xs mt-1">All job runs have been processed successfully or are still retrying</p>
-          </div>
-        ) : (
-          <Table data-testid="table-dead-letters">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Connector</TableHead>
-                <TableHead>Error</TableHead>
-                <TableHead>Started At</TableHead>
-                <TableHead>Attempts</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {deadLetters.map((dl) => (
-                <TableRow key={dl.id} data-testid={`row-dead-letter-${dl.id}`}>
-                  <TableCell className="font-medium">{connectorNameMap[dl.connectorId] || dl.connectorId}</TableCell>
-                  <TableCell className="text-sm text-destructive max-w-md truncate">{dl.errorMessage || "-"}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {dl.startedAt ? formatDateTime(dl.startedAt) : "-"}
-                  </TableCell>
-                  <TableCell className="text-sm font-mono">
-                    {dl.attempt}/{dl.maxAttempts}
-                  </TableCell>
+          {deadLetters && deadLetters.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCheckAlert}
+              disabled={alertChecking}
+              data-testid="button-check-dlq-alert"
+            >
+              {alertChecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+              Check &amp; Alert Admins
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !deadLetters?.length ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Skull className="h-10 w-10 mb-3" />
+              <p className="text-sm">No dead letter entries</p>
+              <p className="text-xs mt-1">All job runs have been processed successfully or are still retrying</p>
+            </div>
+          ) : (
+            <Table data-testid="table-dead-letters">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Connector</TableHead>
+                  <TableHead>Error</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Started At</TableHead>
+                  <TableHead>Attempts</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {deadLetters.map((dl) => (
+                  <TableRow key={dl.id} data-testid={`row-dead-letter-${dl.id}`}>
+                    <TableCell className="font-medium">{connectorNameMap[dl.connectorId] || dl.connectorId}</TableCell>
+                    <TableCell className="text-sm text-destructive max-w-md truncate">
+                      {dl.errorMessage || "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {dl.errorType || "unknown"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {dl.startedAt ? formatDateTime(dl.startedAt) : "-"}
+                    </TableCell>
+                    <TableCell className="text-sm font-mono">
+                      {dl.attempt}/{dl.maxAttempts}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setPayloadDialogData(dl)}
+                          aria-label="View raw payload"
+                          data-testid={`button-view-payload-${dl.id}`}
+                        >
+                          <FileJson className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => retryMutation.mutate(dl.id)}
+                          disabled={retryingId === dl.id}
+                          data-testid={`button-retry-${dl.id}`}
+                        >
+                          {retryingId === dl.id ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                          )}
+                          Retry
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={!!payloadDialogData}
+        onOpenChange={(open) => {
+          if (!open) setPayloadDialogData(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Dead Letter Details</DialogTitle>
+            <DialogDescription>
+              Job run {payloadDialogData?.id} for connector{" "}
+              {connectorNameMap[payloadDialogData?.connectorId || ""] || payloadDialogData?.connectorId}
+            </DialogDescription>
+          </DialogHeader>
+          {payloadDialogData && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Status:</span>{" "}
+                  <Badge variant="destructive">{payloadDialogData.status}</Badge>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Error Type:</span> {payloadDialogData.errorType || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">HTTP Status:</span> {payloadDialogData.httpStatus || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Throttled:</span> {payloadDialogData.throttled ? "Yes" : "No"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Attempts:</span> {payloadDialogData.attempt}/
+                  {payloadDialogData.maxAttempts}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Latency:</span>{" "}
+                  {payloadDialogData.latencyMs ? `${payloadDialogData.latencyMs}ms` : "-"}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium mb-1">Error Message</p>
+                <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
+                  {payloadDialogData.errorMessage || "No error message"}
+                </pre>
+              </div>
+              {payloadDialogData.checkpointData != null ? (
+                <div>
+                  <p className="text-sm font-medium mb-1">Checkpoint Data</p>
+                  <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
+                    {JSON.stringify(payloadDialogData.checkpointData as Record<string, unknown>, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ConnectorSyncHistory({ connectorId, connectorName }: { connectorId: string; connectorName: string }) {
+  const { data: jobs, isLoading } = useQuery<ConnectorJobRun[]>({
+    queryKey: [`/api/connectors/${connectorId}/jobs`, { limit: 20 }],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/${connectorId}/jobs?limit=20`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch sync history");
+      return res.json();
+    },
+  });
+
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-2 mb-3">
+        <History className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-medium">Sync History</h4>
+        <span className="text-xs text-muted-foreground">Last 20 syncs for {connectorName}</span>
+      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : !jobs?.length ? (
+        <p className="text-sm text-muted-foreground py-4 text-center">No sync history yet</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Status</TableHead>
+              <TableHead>Started</TableHead>
+              <TableHead>Received</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Deduped</TableHead>
+              <TableHead>Latency</TableHead>
+              <TableHead>Error</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => (
+              <TableRow key={job.id}>
+                <TableCell>{jobStatusBadge(job.status)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {job.startedAt ? formatDateTime(job.startedAt) : "-"}
+                </TableCell>
+                <TableCell className="text-sm font-mono">{job.alertsReceived ?? 0}</TableCell>
+                <TableCell className="text-sm font-mono">{job.alertsCreated ?? 0}</TableCell>
+                <TableCell className="text-sm font-mono">{job.alertsDeduped ?? 0}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {job.latencyMs ? `${job.latencyMs}ms` : "-"}
+                </TableCell>
+                <TableCell className="text-xs text-destructive max-w-xs truncate">{job.errorMessage || "-"}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 }
 
@@ -805,7 +1064,15 @@ export default function ConnectorsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<
-    Record<string, { success: boolean; latencyMs?: number; message?: string }>
+    Record<
+      string,
+      {
+        success: boolean;
+        latencyMs?: number;
+        message?: string;
+        preview?: Array<{ timestamp: string; title: string; description: string }>;
+      }
+    >
   >({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
   const [healthCheckingId, setHealthCheckingId] = useState<string | null>(null);
@@ -866,7 +1133,18 @@ export default function ConnectorsPage() {
       const res = await apiRequest("POST", `/api/connectors/${id}/test`);
       return { id, data: await res.json() };
     },
-    onSuccess: ({ id, data }: { id: string; data: { success: boolean; latencyMs?: number; message?: string } }) => {
+    onSuccess: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        success: boolean;
+        latencyMs?: number;
+        message?: string;
+        preview?: Array<{ timestamp: string; title: string; description: string }>;
+      };
+    }) => {
       setTestingId(null);
       setTestResults((prev) => ({ ...prev, [id]: data }));
       if (data.success) {
@@ -1302,6 +1580,7 @@ export default function ConnectorsPage() {
                                   </div>
                                 )}
                                 <ConnectorObservabilityPanel connector={connector} />
+                                <ConnectorSyncHistory connectorId={connector.id} connectorName={connector.name} />
                                 <ConnectorSecretRotationPanel connectorId={connector.id} />
                               </TableCell>
                             </TableRow>

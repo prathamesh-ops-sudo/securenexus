@@ -74,7 +74,38 @@ export async function testConnector(type: string, config: ConnectorConfig): Prom
   if (!plugin) {
     return { success: false, message: "Unknown connector type: " + type, latencyMs: 0 };
   }
-  return plugin.test(config);
+  const result = await plugin.test(config);
+
+  // If the test succeeded, fetch a preview of the last 3 events from the source
+  if (result.success) {
+    try {
+      const rawEvents = await plugin.fetch(config, new Date(Date.now() - 24 * 60 * 60 * 1000));
+      const previewEvents = rawEvents.slice(0, 3).map((raw) => {
+        try {
+          const normalized = plugin.normalize(raw);
+          return {
+            timestamp: normalized.detectedAt ? new Date(normalized.detectedAt).toISOString() : new Date().toISOString(),
+            title: normalized.title || "Untitled alert",
+            description: normalized.description?.slice(0, 200) || "",
+          };
+        } catch {
+          return {
+            timestamp: new Date().toISOString(),
+            title: "Raw event (normalization failed)",
+            description: JSON.stringify(raw).slice(0, 200),
+          };
+        }
+      });
+      if (previewEvents.length > 0) {
+        result.preview = previewEvents;
+      }
+    } catch (previewErr) {
+      // Preview is best-effort; don't fail the test result
+      logger.child("connector-engine").debug("Preview fetch failed during test", { error: String(previewErr) });
+    }
+  }
+
+  return result;
 }
 
 function normalizeBatch(
