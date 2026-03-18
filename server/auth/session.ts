@@ -131,6 +131,13 @@ export async function setupAuth(app: Express) {
         if (!isValid) {
           return done(null, false, { message: "Invalid email or password" });
         }
+        // Auto-promote super-admin on login (not on every deserialize)
+        if (!user.isSuperAdmin && user.email) {
+          const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+          if (promoted) {
+            (user as any).isSuperAdmin = true;
+          }
+        }
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -162,6 +169,13 @@ export async function setupAuth(app: Express) {
             }
             if (user.disabledAt) {
               return done(null, false, { message: "Account is disabled" });
+            }
+            // Auto-promote super-admin on login (not on every deserialize)
+            if (!user.isSuperAdmin && user.email) {
+              const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+              if (promoted) {
+                (user as any).isSuperAdmin = true;
+              }
             }
             return done(null, user);
           } catch (err) {
@@ -202,6 +216,13 @@ export async function setupAuth(app: Express) {
             }
             if (user.disabledAt) {
               return done(null, false, { message: "Account is disabled" });
+            }
+            // Auto-promote super-admin on login (not on every deserialize)
+            if (!user.isSuperAdmin && user.email) {
+              const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+              if (promoted) {
+                (user as any).isSuperAdmin = true;
+              }
             }
             return done(null, user);
           } catch (err) {
@@ -245,14 +266,6 @@ export async function setupAuth(app: Express) {
       if (user.disabledAt) {
         deserializeCache.delete(id);
         return cb(null, null);
-      }
-
-      // Auto-promote super-admin on login if email matches
-      if (!user.isSuperAdmin && user.email) {
-        const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
-        if (promoted) {
-          (user as any).isSuperAdmin = true;
-        }
       }
 
       (user as any).orgId = row.membershipOrgId || null;
