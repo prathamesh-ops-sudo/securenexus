@@ -110,7 +110,12 @@ async function persistInferenceEntry(
   }
 }
 
-export async function getInferenceHistory(options: { tier?: string; limit?: number; since?: Date }): Promise<
+export async function getInferenceHistory(options: {
+  tier?: string;
+  limit?: number;
+  since?: Date;
+  orgId?: string;
+}): Promise<
   Array<{
     id: number;
     tier: string;
@@ -134,9 +139,15 @@ export async function getInferenceHistory(options: { tier?: string; limit?: numb
 
   let query: string;
   let params: unknown[];
-  if (options.tier) {
+  if (options.tier && options.orgId) {
+    query = `SELECT * FROM ai_inference_log WHERE tier = $1 AND created_at >= $2 AND org_id = $3 ORDER BY created_at DESC LIMIT $4`;
+    params = [options.tier, since.toISOString(), options.orgId, safeLimit];
+  } else if (options.tier) {
     query = `SELECT * FROM ai_inference_log WHERE tier = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT $3`;
     params = [options.tier, since.toISOString(), safeLimit];
+  } else if (options.orgId) {
+    query = `SELECT * FROM ai_inference_log WHERE created_at >= $1 AND org_id = $2 ORDER BY created_at DESC LIMIT $3`;
+    params = [since.toISOString(), options.orgId, safeLimit];
   } else {
     query = `SELECT * FROM ai_inference_log WHERE created_at >= $1 ORDER BY created_at DESC LIMIT $2`;
     params = [since.toISOString(), safeLimit];
@@ -161,7 +172,10 @@ export async function getInferenceHistory(options: { tier?: string; limit?: numb
   }));
 }
 
-export async function getInferenceStats(days: number = 7): Promise<{
+export async function getInferenceStats(
+  days: number = 7,
+  orgId?: string,
+): Promise<{
   dailyStats: Array<{
     date: string;
     totalRequests: number;
@@ -187,6 +201,9 @@ export async function getInferenceStats(days: number = 7): Promise<{
   await ensureInferenceTable();
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
+  const orgFilter = orgId ? ` AND org_id = $2` : ``;
+  const dailyParams: unknown[] = orgId ? [since, orgId] : [since];
+
   // Daily aggregation
   const dailyResult = await pool.query(
     `SELECT
@@ -200,10 +217,10 @@ export async function getInferenceStats(days: number = 7): Promise<{
        COALESCE(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms), 0)::int as p99_latency_ms,
        COALESCE(SUM(cost_estimate_usd), 0) as total_cost_usd
      FROM ai_inference_log
-     WHERE created_at >= $1
+     WHERE created_at >= $1${orgFilter}
      GROUP BY DATE(created_at)
      ORDER BY date ASC`,
-    [since],
+    dailyParams,
   );
 
   // Per-tier aggregation
@@ -216,9 +233,9 @@ export async function getInferenceStats(days: number = 7): Promise<{
        COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms), 0)::int as p95_latency_ms,
        COALESCE(SUM(cost_estimate_usd), 0) as total_cost_usd
      FROM ai_inference_log
-     WHERE created_at >= $1
+     WHERE created_at >= $1${orgFilter}
      GROUP BY tier`,
-    [since],
+    dailyParams,
   );
 
   const dailyStats = dailyResult.rows.map((row: Record<string, unknown>) => ({

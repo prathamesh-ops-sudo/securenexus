@@ -305,31 +305,45 @@ export function registerAiRoutes(app: Express): void {
   });
 
   // --- GET /api/ai/inference-history — persistent inference log with filters ---
-  app.get("/api/ai/inference-history", isAuthenticated, strictLimiter, async (req: Request, res: Response) => {
-    try {
-      const tier = req.query.tier ? String(req.query.tier) : undefined;
-      const limit = req.query.limit ? Math.min(Math.max(parseInt(String(req.query.limit), 10) || 100, 1), 1000) : 100;
-      const sinceDays = req.query.days ? Math.min(Math.max(parseInt(String(req.query.days), 10) || 7, 1), 90) : 7;
-      const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
-      const history = await getInferenceHistory({ tier, limit, since });
-      res.json(history);
-    } catch (error: unknown) {
-      logger.child("ai").error("Inference history query failed", { error: String(error) });
-      res.status(500).json({ message: "Failed to fetch inference history" });
-    }
-  });
+  app.get(
+    "/api/ai/inference-history",
+    isAuthenticated,
+    resolveOrgContext,
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const tier = req.query.tier ? String(req.query.tier) : undefined;
+        const limit = req.query.limit ? Math.min(Math.max(parseInt(String(req.query.limit), 10) || 100, 1), 1000) : 100;
+        const sinceDays = req.query.days ? Math.min(Math.max(parseInt(String(req.query.days), 10) || 7, 1), 90) : 7;
+        const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+        const history = await getInferenceHistory({ tier, limit, since, orgId });
+        res.json(history);
+      } catch (error: unknown) {
+        logger.child("ai").error("Inference history query failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch inference history" });
+      }
+    },
+  );
 
   // --- GET /api/ai/inference-stats — aggregated daily + per-tier stats ---
-  app.get("/api/ai/inference-stats", isAuthenticated, strictLimiter, async (req: Request, res: Response) => {
-    try {
-      const days = req.query.days ? Math.min(Math.max(parseInt(String(req.query.days), 10) || 7, 1), 90) : 7;
-      const stats = await getInferenceStats(days);
-      res.json(stats);
-    } catch (error: unknown) {
-      logger.child("ai").error("Inference stats query failed", { error: String(error) });
-      res.status(500).json({ message: "Failed to fetch inference stats" });
-    }
-  });
+  app.get(
+    "/api/ai/inference-stats",
+    isAuthenticated,
+    resolveOrgContext,
+    strictLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const days = req.query.days ? Math.min(Math.max(parseInt(String(req.query.days), 10) || 7, 1), 90) : 7;
+        const stats = await getInferenceStats(days, orgId);
+        res.json(stats);
+      } catch (error: unknown) {
+        logger.child("ai").error("Inference stats query failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch inference stats" });
+      }
+    },
+  );
 
   // --- POST /api/ai/test-prompt — dry-run a prompt with sample input (no production side-effects) ---
   app.post(
