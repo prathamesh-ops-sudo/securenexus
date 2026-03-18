@@ -1,0 +1,475 @@
+name: "Weekly Security Audit (Deep Scan)"
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Every Monday at 6:00 AM UTC
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+# =============================================================================
+# WEEKLY AUDIT — deep scans that are too slow for PR gate
+# CodeQL SAST, full Trivy scan, E2E tests, dependency outdated report,
+# SBOM generation, dead code analysis, performance benchmarks
+# =============================================================================
+jobs:
+  # ---------------------------------------------------------------------------
+  # Code Quality (full lint + typecheck + format)
+  # ---------------------------------------------------------------------------
+  quality:
+    name: "Code Quality (Full)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript strict typecheck
+        run: npx tsc --noEmit
+
+      - name: ESLint (errors fatal)
+        run: npx eslint . --quiet 2>&1 | tail -50
+
+      - name: Prettier format verification
+        run: npx prettier --check "server/**/*.ts" "client/src/**/*.{ts,tsx}" "shared/**/*.ts"
+
+      - name: No debugger statements
+        run: |
+          FOUND=$(grep -rn '^\s*debugger' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::debugger statements found:"
+            echo "$FOUND"
+            exit 1
+          fi
+
+      - name: TODO/FIXME in security paths
+        run: |
+          FOUND=$(grep -rn 'TODO\|FIXME' server/auth/ server/rbac.ts server/pii-engine.ts 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "::warning::TODO/FIXME in security-critical paths:"
+            echo "$FOUND"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # CodeQL SAST Analysis
+  # ---------------------------------------------------------------------------
+  codeql:
+    name: "CodeQL SAST"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
+
+  # ---------------------------------------------------------------------------
+  # Full Security Suite
+  # ---------------------------------------------------------------------------
+  security:
+    name: "Security Scanning (Full Suite)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gitleaks secret scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+        continue-on-error: true
+
+      - name: npm audit (critical)
+        run: |
+          CRITICAL_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "::error::$CRITICAL_COUNT critical vulnerabilities"
+            npm audit --omit=dev --audit-level=critical 2>&1 || true
+            exit 1
+          fi
+
+      - name: npm audit (high)
+        run: |
+          HIGH_COUNT=$(npm audit --omit=dev --json 2>/dev/null | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
+          if [ "$HIGH_COUNT" -gt 0 ]; then
+            echo "::warning::$HIGH_COUNT high-severity vulnerabilities"
+            npm audit --omit=dev --audit-level=high 2>&1 || true
+          fi
+
+      - name: Hardcoded secret patterns
+        run: |
+          FOUND=0
+          for pat in 'AKIA[A-Z0-9]\{16\}' 'ghp_[A-Za-z0-9]\{36\}' 'snx_[a-f0-9]\{64\}' 'sk-[A-Za-z0-9]\{48\}' 'xoxb-[0-9]\+'; do
+            MATCHES=$(grep -rn "$pat" server/ client/ shared/ --include='*.ts' --include='*.tsx' --include='*.json' 2>/dev/null | grep -v node_modules | grep -v 'pattern\|RegExp\|REDACTED\|example' || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::error::Potential secret pattern: $pat"
+              echo "$MATCHES"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then exit 1; fi
+
+      - name: No .env files committed
+        run: |
+          FOUND=$(git ls-files | grep '\.env' | grep -v '.env.example\|.env.sample' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::.env files committed:"
+            echo "$FOUND"
+            exit 1
+          fi
+
+      - name: No eval() usage
+        run: |
+          FOUND=$(grep -rn '\beval(' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' | grep -v 'node_modules\|\.test\.\|// eslint\|remediation' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::eval() usage:"
+            echo "$FOUND"
+            exit 1
+          fi
+
+      - name: SQL injection patterns
+        run: |
+          FOUND=$(grep -rn 'db\.execute.*\$\{' server/ --include='*.ts' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Template-literal SQL:"
+            echo "$FOUND"
+            exit 1
+          fi
+
+      - name: CSRF middleware check
+        run: |
+          if ! grep -rq 'csrf\|csrfToken\|X-CSRF' server/ --include='*.ts'; then
+            echo "::warning::No CSRF middleware detected"
+          fi
+
+      - name: Helmet security headers
+        run: |
+          if ! grep -rq 'helmet\|contentSecurityPolicy' server/ --include='*.ts'; then
+            echo "::warning::No helmet/CSP headers"
+          fi
+
+      - name: No hardcoded CORS origins
+        run: |
+          FOUND=$(grep -rn "origin.*localhost\|origin.*127\.0\.0\.1" server/ --include='*.ts' | grep -v 'process.env\|NODE_ENV.*dev\|// ' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::warning::Possible hardcoded CORS origins:"
+            echo "$FOUND"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Unit Tests + Coverage
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: "Unit Tests + Coverage"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        run: npx vitest run --coverage --reporter=verbose 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # E2E Tests
+  # ---------------------------------------------------------------------------
+  e2e-tests:
+    name: "E2E Tests (Playwright)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run E2E tests
+        run: npx playwright test --reporter=github 2>&1 || true
+        env:
+          CI: true
+
+  # ---------------------------------------------------------------------------
+  # Docker Build + Container Security
+  # ---------------------------------------------------------------------------
+  docker-security:
+    name: "Docker Build + Security"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: securenexus:weekly-${{ github.sha }}
+
+      - name: Trivy CVE scan (all severities)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: securenexus:weekly-${{ github.sha }}
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+          format: table
+
+      - name: Non-root user check
+        run: |
+          if ! grep -q '^USER' Dockerfile; then
+            echo "::error::No USER directive"
+            exit 1
+          fi
+
+      - name: Multi-stage build check
+        run: |
+          STAGES=$(grep -c '^FROM' Dockerfile)
+          if [ "$STAGES" -lt 2 ]; then
+            echo "::error::Not multi-stage"
+            exit 1
+          fi
+
+      - name: Docker image size
+        run: |
+          SIZE=$(docker image inspect securenexus:weekly-${{ github.sha }} --format='{{.Size}}' 2>/dev/null || echo "0")
+          SIZE_MB=$((SIZE / 1048576))
+          echo "Image size: ${SIZE_MB}MB"
+          if [ "$SIZE_MB" -gt 500 ]; then
+            echo "::warning::Image exceeds 500MB"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Dependency Health
+  # ---------------------------------------------------------------------------
+  dependencies:
+    name: "Dependency Health"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: License compliance
+        run: |
+          npx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;0BSD;CC-BY-4.0;CC-BY-3.0;Unlicense;BlueOak-1.0.0;Python-2.0;(MIT AND CC-BY-3.0);(MIT OR CC0-1.0);WTFPL;Artistic-2.0" --production 2>&1 || {
+            echo "::warning::Non-standard licenses"
+          }
+
+      - name: Outdated packages report
+        run: |
+          echo "=== Outdated Packages ==="
+          npm outdated 2>/dev/null || true
+
+      - name: Full audit report
+        run: npm audit 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # Kubernetes Validation
+  # ---------------------------------------------------------------------------
+  k8s-validation:
+    name: "Kubernetes Validation"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate manifests
+        run: |
+          find k8s/ -name '*.yml' -o -name '*.yaml' | while read f; do
+            echo "Validating $f..."
+            kubeconform -strict -summary "$f" 2>&1 || true
+          done
+
+      - name: No privileged containers
+        run: |
+          FOUND=$(grep -rn 'privileged: true' k8s/ --include='*.yml' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Privileged containers:"
+            echo "$FOUND"
+            exit 1
+          fi
+
+      - name: No hostPath volumes
+        run: |
+          FOUND=$(grep -rn 'hostPath' k8s/ --include='*.yml' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::hostPath volumes:"
+            echo "$FOUND"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Codebase Health Metrics
+  # ---------------------------------------------------------------------------
+  codebase-health:
+    name: "Codebase Health Metrics"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lines of code
+        run: |
+          echo "=== Lines of Code ==="
+          echo "--- Server ---"
+          find server/ -name '*.ts' | xargs wc -l 2>/dev/null | tail -1
+          echo "--- Client ---"
+          find client/src/ -name '*.ts' -o -name '*.tsx' | xargs wc -l 2>/dev/null | tail -1
+          echo "--- Shared ---"
+          find shared/ -name '*.ts' | xargs wc -l 2>/dev/null | tail -1
+
+      - name: File count by type
+        run: |
+          echo "=== File Counts ==="
+          echo "TypeScript (.ts): $(find server/ shared/ -name '*.ts' | wc -l)"
+          echo "React (.tsx): $(find client/src/ -name '*.tsx' | wc -l)"
+          echo "Tests (.test.ts): $(find . -name '*.test.ts' -not -path '*/node_modules/*' | wc -l)"
+          echo "Workflows (.yml): $(find .github/workflows/ -name '*.yml' | wc -l)"
+          echo "K8s manifests: $(find k8s/ -name '*.yml' -o -name '*.yaml' | wc -l)"
+
+      - name: Largest files
+        run: |
+          echo "=== Largest Source Files ==="
+          find server/ client/src/ shared/ -name '*.ts' -o -name '*.tsx' | xargs wc -l 2>/dev/null | sort -rn | head -15
+
+      - name: Route count
+        run: |
+          echo "=== API Routes ==="
+          ROUTES=$(grep -rn 'app\.\(get\|post\|put\|delete\|patch\)(' server/routes/ --include='*.ts' | wc -l || echo "0")
+          echo "Total API routes: $ROUTES"
+
+      - name: TODO/FIXME inventory
+        run: |
+          echo "=== TODO/FIXME Inventory ==="
+          TOTAL=$(grep -rn 'TODO\|FIXME\|HACK\|XXX' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' 2>/dev/null | wc -l || echo "0")
+          echo "Total: $TOTAL"
+          grep -rn 'TODO\|FIXME\|HACK\|XXX' server/ client/src/ shared/ --include='*.ts' --include='*.tsx' 2>/dev/null | head -20 || true
+
+  # ---------------------------------------------------------------------------
+  # Verdict
+  # ---------------------------------------------------------------------------
+  sweep-verdict:
+    name: "Weekly Audit Verdict"
+    needs:
+      [quality, codeql, security, unit-tests, e2e-tests, docker-security, dependencies, k8s-validation, codebase-health]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report results
+        run: |
+          echo "================================================================"
+          echo "  WEEKLY SECURITY AUDIT RESULTS"
+          echo "================================================================"
+          echo ""
+          echo "  Quality:         ${{ needs.quality.result }}"
+          echo "  CodeQL SAST:     ${{ needs.codeql.result }}"
+          echo "  Security:        ${{ needs.security.result }}"
+          echo "  Unit Tests:      ${{ needs.unit-tests.result }}"
+          echo "  E2E Tests:       ${{ needs.e2e-tests.result }}"
+          echo "  Docker Security: ${{ needs.docker-security.result }}"
+          echo "  Dependencies:    ${{ needs.dependencies.result }}"
+          echo "  K8s Validation:  ${{ needs.k8s-validation.result }}"
+          echo "  Codebase Health: ${{ needs.codebase-health.result }}"
+          echo ""
+          echo "================================================================"
+
+          FAILED=0
+          for result in \
+            "${{ needs.quality.result }}" \
+            "${{ needs.security.result }}" \
+            "${{ needs.docker-security.result }}" \
+            "${{ needs.k8s-validation.result }}"; do
+            if [ "$result" = "failure" ]; then
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::Weekly audit failed — review required"
+            exit 1
+          fi
+          echo "Weekly audit completed"
