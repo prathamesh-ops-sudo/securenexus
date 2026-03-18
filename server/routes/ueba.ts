@@ -264,9 +264,10 @@ export function registerUebaRoutes(app: Express): void {
           let userAnomaliesCreated = 0;
           const baseline = baselineMap.get(`user::${userName}`);
 
-          // Determine off-hours window from baseline (fall back to 2-5 AM if no baseline)
-          const loginStart = baseline?.normalLoginHoursStart ?? 8;
-          const loginEnd = baseline?.normalLoginHoursEnd ?? 20;
+          // Determine off-hours window from baseline
+          // Fallback: normal hours 6:00–1:59 UTC → off-hours 2:00–5:59 (matches legacy 2-5 AM check)
+          const loginStart = baseline?.normalLoginHoursStart ?? 6;
+          const loginEnd = baseline?.normalLoginHoursEnd ?? 2;
           const offHoursEvents = userEvts.filter((e: (typeof events)[number]) => {
             if (!e.timestamp) return false;
             const hour = new Date(e.timestamp).getUTCHours();
@@ -466,8 +467,12 @@ export function registerUebaRoutes(app: Express): void {
             await db
               .update(uebaBaselines)
               .set({
-                knownSourceIps: updatedIps.slice(0, 100),
-                processAllowList: updatedProcesses.slice(0, 200),
+                knownSourceIps: Array.from(
+                  new Set([...((existingBaseline.knownSourceIps as string[]) || []), ...updatedIps]),
+                ).slice(0, 100),
+                processAllowList: Array.from(
+                  new Set([...((existingBaseline.processAllowList as string[]) || []), ...updatedProcesses]),
+                ).slice(0, 200),
                 avgDailyEventVolume: userEvts.length / Math.max(1, windowHours / 24),
                 lastUpdated: new Date(),
               })
@@ -481,8 +486,8 @@ export function registerUebaRoutes(app: Express): void {
               knownSourceIps: updatedIps.slice(0, 100),
               processAllowList: updatedProcesses.slice(0, 200),
               avgDailyEventVolume: userEvts.length / Math.max(1, windowHours / 24),
-              normalLoginHoursStart: 8,
-              normalLoginHoursEnd: 20,
+              normalLoginHoursStart: 6,
+              normalLoginHoursEnd: 2,
             });
           }
           baselinesUpdated++;

@@ -22,12 +22,12 @@ function buildJobFingerprint(type: string, orgId: string, payload: unknown): str
 const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   connector_sync: async (job) => {
     try {
-      const { syncConnector } = await import("./connector-engine");
+      const { syncConnectorWithRetry } = await import("./connector-engine");
       const connector = await storage.getConnector(job.payload?.connectorId);
       if (!connector) {
         return { synced: false, error: "Connector not found" };
       }
-      const syncResult = await syncConnector(connector);
+      const { syncResult } = await syncConnectorWithRetry(connector);
 
       // Persist normalized alerts to DB — replicates the upsert loop from routes/connectors.ts
       let created = 0;
