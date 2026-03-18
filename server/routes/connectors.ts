@@ -17,6 +17,7 @@ import {
 import { parsePaginationParams } from "../db-performance";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { sendEmail } from "../email-service";
 
 export function registerConnectorsRoutes(app: Express): void {
   // Connector Engine Routes
@@ -48,6 +49,112 @@ export function registerConnectorsRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to fetch dead-letter job runs" });
     }
   });
+
+  // Retry a dead-letter job run
+  app.post(
+    "/api/connectors/dead-letters/:id/retry",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const jobRun = await storage.getConnectorJobRunById(p(req.params.id));
+        if (!jobRun || !jobRun.isDeadLetter) {
+          return res.status(404).json({ message: "Dead letter entry not found" });
+        }
+        if (jobRun.orgId && jobRun.orgId !== orgId) {
+          return res.status(404).json({ message: "Dead letter entry not found" });
+        }
+        const connector = await storage.getConnector(jobRun.connectorId);
+        if (!connector) {
+          return res.status(404).json({ message: "Associated connector no longer exists" });
+        }
+        // Mark old dead letter as retried
+        await storage.updateConnectorJobRun(jobRun.id, {
+          isDeadLetter: false,
+          status: "retried",
+        });
+        // Trigger a fresh sync
+        const { jobRun: newJobRun, syncResult } = await syncConnectorWithRetry(connector);
+        await storage.createAuditLog({
+          orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "dead_letter_retried",
+          resourceType: "connector",
+          resourceId: connector.id,
+          details: { originalJobRunId: jobRun.id, newJobRunId: newJobRun.id },
+        });
+        cacheInvalidate("dashboard:");
+        res.json({
+          success: newJobRun.status !== "failed",
+          newJobRunId: newJobRun.id,
+          status: newJobRun.status,
+          alertsReceived: syncResult.alertsReceived,
+          errors: syncResult.errors,
+        });
+      } catch (error: any) {
+        logger.child("routes").error("Dead letter retry failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to retry dead letter entry" });
+      }
+    },
+  );
+
+  // Check dead letter count and alert admins if threshold exceeded
+  app.post(
+    "/api/connectors/dead-letters/check-alert",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const allDeadLetters = await storage.getDeadLetterJobRuns(orgId);
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const recentDeadLetters = allDeadLetters.filter((dl) => dl.startedAt && new Date(dl.startedAt) >= oneHourAgo);
+        if (recentDeadLetters.length >= 10) {
+          // Fetch org admin emails
+          const org = await storage.getOrganization(orgId);
+          const orgName = org?.name || orgId;
+          const adminUsers = await storage.getOrgAdminEmails(orgId);
+          if (adminUsers.length > 0) {
+            await sendEmail({
+              to: adminUsers,
+              subject: `[SecureNexus] Dead Letter Alert: ${recentDeadLetters.length} failed connector jobs in the last hour`,
+              html: `
+                <h2>Dead Letter Queue Alert</h2>
+                <p>Organization <strong>${orgName}</strong> has accumulated <strong>${recentDeadLetters.length}</strong> dead-letter entries in the past hour.</p>
+                <p>This indicates connector sync failures that have exhausted all retry attempts.</p>
+                <h3>Recent Failures:</h3>
+                <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+                  <tr><th>Connector</th><th>Error</th><th>Time</th></tr>
+                  ${recentDeadLetters
+                    .slice(0, 10)
+                    .map(
+                      (dl) =>
+                        `<tr><td>${dl.connectorId}</td><td>${dl.errorMessage || "Unknown"}</td><td>${dl.startedAt ? new Date(dl.startedAt).toISOString() : "-"}</td></tr>`,
+                    )
+                    .join("")}
+                </table>
+                <p>Please review the Dead Letter Queue tab on the Connectors page.</p>
+              `,
+            });
+          }
+          res.json({ alerted: true, count: recentDeadLetters.length, recipients: adminUsers.length });
+        } else {
+          res.json({ alerted: false, count: recentDeadLetters.length });
+        }
+      } catch (error: any) {
+        logger.child("routes").error("Dead letter alert check failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to check dead letter alerts" });
+      }
+    },
+  );
 
   app.get("/api/connectors/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
