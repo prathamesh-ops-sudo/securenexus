@@ -103,13 +103,23 @@ function riskBarColor(score: number): string {
 }
 
 async function apiFetch(url: string, options?: RequestInit) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // Include CSRF token for mutating requests
+  const method = options?.method?.toUpperCase() ?? "GET";
+  if (method !== "GET" && method !== "HEAD") {
+    const { fetchCsrfToken } = await import("@/lib/queryClient");
+    const csrfToken = await fetchCsrfToken();
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  }
   const res = await fetch(url, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: { ...headers, ...options?.headers },
     credentials: "include",
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  // Unwrap the standard { data, meta, errors } envelope if present
+  return json.data ?? json;
 }
 
 export default function UebaPage() {
