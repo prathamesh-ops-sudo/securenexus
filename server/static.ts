@@ -14,7 +14,23 @@ export function serveStatic(app: Express) {
     throw new Error(`Could not find the build directory: ${distPath}, make sure to build the client first`);
   }
 
-  app.use(express.static(distPath));
+  // Hashed assets (JS/CSS with content hashes in filename) — immutable cache
+  app.use(
+    "/assets",
+    express.static(path.join(distPath, "assets"), {
+      maxAge: "1y",
+      immutable: true,
+    }),
+  );
+
+  // Other static files (favicon, images, fonts) — short cache with revalidation
+  app.use(
+    express.static(distPath, {
+      maxAge: "1h",
+      etag: true,
+      lastModified: true,
+    }),
+  );
 
   const indexPath = path.resolve(distPath, "index.html");
   let cachedHtml: string | null = null;
@@ -25,6 +41,15 @@ export function serveStatic(app: Express) {
     }
     const nonce: string = res.locals.cspNonce ?? "";
     const html = injectNonces(cachedHtml, nonce);
-    res.status(200).set({ "Content-Type": "text/html" }).end(html);
+    // HTML must never be cached — always serve fresh for CSP nonces and SPA routing
+    res
+      .status(200)
+      .set({
+        "Content-Type": "text/html",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+      })
+      .end(html);
   });
 }
