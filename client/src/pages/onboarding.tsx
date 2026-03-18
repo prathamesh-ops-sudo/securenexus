@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, AlertCircle, ArrowRight, Plug, ArrowDownToLine, Monitor, Cloud } from "lucide-react";
+import { CheckCircle2, AlertCircle, ArrowRight, Plug, ArrowDownToLine, Monitor, Cloud, Shield } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -12,6 +12,7 @@ type OnboardingStatus = {
     ingestion: { completed: boolean; totalIngested: number };
     endpoints: { completed: boolean; count: number };
     cspm: { completed: boolean; count: number };
+    sensors: { completed: boolean; count: number };
   };
   completedCount: number;
   totalSteps: number;
@@ -204,6 +205,40 @@ export default function OnboardingPage() {
             <p className="text-xs text-muted-foreground">Cloud accounts configured: {data?.steps.cspm.count ?? 0}.</p>
             <Button size="sm" variant="default" className="w-full justify-between" onClick={() => navigate("/cspm")}>
               Go to CSPM
+              <ArrowRight className="h-3 w-3 ml-1" />
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Step 5: Deploy native sensors */}
+        <Card data-testid="card-onboarding-sensors" className="flex flex-col">
+          <CardHeader className="pb-2 flex flex-row items-start gap-3">
+            <div className="mt-1">
+              <Shield className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                Deploy native sensors
+                {data?.steps.sensors?.completed ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                )}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Install lightweight agents on Linux, Windows, macOS, iOS, or Android to collect real-time telemetry.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col justify-between space-y-3">
+            <p className="text-xs text-muted-foreground">Sensors deployed: {data?.steps.sensors?.count ?? 0}.</p>
+            <Button
+              size="sm"
+              variant="default"
+              className="w-full justify-between"
+              onClick={() => navigate("/native-sensors")}
+            >
+              Go to Native Sensors
               <ArrowRight className="h-3 w-3 ml-1" />
             </Button>
           </CardContent>

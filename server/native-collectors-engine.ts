@@ -17,7 +17,18 @@ export type CollectorType =
 
 export type CollectorStatus = "active" | "degraded" | "offline" | "pending_install" | "disabled";
 export type DeploymentMethod = "script" | "docker" | "kubernetes" | "manual" | "cloud_api";
-export type Platform = "linux" | "windows" | "macos" | "docker" | "kubernetes" | "aws" | "azure" | "gcp" | "any";
+export type Platform =
+  | "linux"
+  | "windows"
+  | "macos"
+  | "ios"
+  | "android"
+  | "docker"
+  | "kubernetes"
+  | "aws"
+  | "azure"
+  | "gcp"
+  | "any";
 
 export interface CollectorTemplate {
   slug: string;

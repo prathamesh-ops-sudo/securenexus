@@ -5833,7 +5833,7 @@ export type InsertThreatReport = typeof threatReports.$inferInsert;
 // ==========================================
 
 export const SENSOR_STATUSES = ["online", "offline", "degraded", "provisioning"] as const;
-export const SENSOR_PLATFORMS = ["linux", "windows", "macos", "docker", "kubernetes"] as const;
+export const SENSOR_PLATFORMS = ["linux", "windows", "macos", "ios", "android", "docker", "kubernetes"] as const;
 export const SENSOR_EVENT_TYPES = ["process", "network", "file", "auth", "dns", "log"] as const;
 
 export const nativeSensors = pgTable(

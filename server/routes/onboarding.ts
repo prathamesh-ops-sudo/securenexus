@@ -1,7 +1,9 @@
 import type { Express } from "express";
 import { getOrgId, sendEnvelope, storage, logger, randomBytes } from "./shared";
 import { isAuthenticated } from "../auth";
-import { WIZARD_STEPS } from "@shared/schema";
+import { WIZARD_STEPS, nativeSensors } from "@shared/schema";
+import { db } from "../db";
+import { eq, count } from "drizzle-orm";
 import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
 import { sendEmail } from "../email-service";
 import { invitationEmail } from "../email-templates";
@@ -62,23 +64,27 @@ export function registerOnboardingRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
 
-      const [integrations, ingestionStats, endpoints, cspmAccounts] = await Promise.all([
+      const [integrations, ingestionStats, endpoints, cspmAccounts, sensorCountResult] = await Promise.all([
         storage.getIntegrationConfigs(orgId),
         storage.getIngestionStats(orgId),
         storage.getEndpointAssets(orgId),
         storage.getCspmAccounts(orgId),
+        db.select({ value: count() }).from(nativeSensors).where(eq(nativeSensors.orgId, orgId)),
       ]);
 
       const hasIntegrations = integrations.length > 0;
       const hasIngestion = (ingestionStats.totalIngested ?? 0) > 0;
       const hasEndpoints = endpoints.length > 0;
       const hasCspmAccounts = cspmAccounts.length > 0;
+      const sensorCount = sensorCountResult[0]?.value ?? 0;
+      const hasSensors = sensorCount > 0;
 
       const completedSteps = [
         hasIntegrations && "integrations",
         hasIngestion && "ingestion",
         hasEndpoints && "endpoints",
         hasCspmAccounts && "cspm",
+        hasSensors && "sensors",
       ].filter(Boolean);
 
       const status = {
@@ -87,9 +93,10 @@ export function registerOnboardingRoutes(app: Express): void {
           ingestion: { completed: hasIngestion, totalIngested: ingestionStats.totalIngested ?? 0 },
           endpoints: { completed: hasEndpoints, count: endpoints.length },
           cspm: { completed: hasCspmAccounts, count: cspmAccounts.length },
+          sensors: { completed: hasSensors, count: sensorCount },
         },
         completedCount: completedSteps.length,
-        totalSteps: 4,
+        totalSteps: 5,
       };
 
       return sendEnvelope(res, status);
