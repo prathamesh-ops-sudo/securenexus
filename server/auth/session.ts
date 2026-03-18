@@ -16,6 +16,7 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { replyUnauthenticated } from "../api-response";
 import { logger } from "../logger";
+import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 
 const scryptAsync = promisify(scrypt);
 
@@ -130,6 +131,13 @@ export async function setupAuth(app: Express) {
         if (!isValid) {
           return done(null, false, { message: "Invalid email or password" });
         }
+        // Auto-promote super-admin on login (not on every deserialize)
+        if (!user.isSuperAdmin && user.email) {
+          const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+          if (promoted) {
+            (user as any).isSuperAdmin = true;
+          }
+        }
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -161,6 +169,13 @@ export async function setupAuth(app: Express) {
             }
             if (user.disabledAt) {
               return done(null, false, { message: "Account is disabled" });
+            }
+            // Auto-promote super-admin on login (not on every deserialize)
+            if (!user.isSuperAdmin && user.email) {
+              const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+              if (promoted) {
+                (user as any).isSuperAdmin = true;
+              }
             }
             return done(null, user);
           } catch (err) {
@@ -201,6 +216,13 @@ export async function setupAuth(app: Express) {
             }
             if (user.disabledAt) {
               return done(null, false, { message: "Account is disabled" });
+            }
+            // Auto-promote super-admin on login (not on every deserialize)
+            if (!user.isSuperAdmin && user.email) {
+              const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+              if (promoted) {
+                (user as any).isSuperAdmin = true;
+              }
             }
             return done(null, user);
           } catch (err) {
@@ -245,6 +267,7 @@ export async function setupAuth(app: Express) {
         deserializeCache.delete(id);
         return cb(null, null);
       }
+
       (user as any).orgId = row.membershipOrgId || null;
       (user as any).orgRole = row.membershipRole || null;
 
