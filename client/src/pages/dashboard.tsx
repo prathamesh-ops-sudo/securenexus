@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
   Shield,
@@ -24,6 +25,8 @@ import {
   ArrowUp,
   Minus,
   ExternalLink,
+  XCircle,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -926,6 +929,63 @@ function WidgetCustomizer({
   );
 }
 
+interface CircuitAlert {
+  id: string;
+  title: string;
+  description: string;
+  severity: string;
+  created_at: string;
+}
+
+function AICircuitBreakerBanner() {
+  const { data: circuitAlerts } = useQuery<CircuitAlert[]>({
+    queryKey: ["/api/ai/circuit-alerts"],
+    refetchInterval: 60000,
+  });
+
+  const dismiss = useMutation({
+    mutationFn: async (alertId: string) => {
+      await apiRequest("PATCH", `/api/ai/circuit-alerts/${alertId}/dismiss`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/circuit-alerts"] });
+    },
+  });
+
+  if (!circuitAlerts || circuitAlerts.length === 0) return null;
+
+  const oldest = circuitAlerts[circuitAlerts.length - 1];
+  const minutesAgo = Math.round((Date.now() - new Date(oldest.created_at).getTime()) / 60000);
+
+  if (minutesAgo < 30) return null;
+
+  return (
+    <div
+      className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-center justify-between gap-3"
+      data-testid="circuit-breaker-banner"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <XCircle className="h-4 w-4 text-red-500 shrink-0" aria-hidden="true" />
+        <p className="text-xs text-red-700 dark:text-red-300 truncate">
+          AI triage paused for {minutesAgo} min due to repeated inference failures.{" "}
+          <Link href="/ai-engine" className="underline font-medium">
+            Check status
+          </Link>
+        </p>
+      </div>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 w-6 p-0 shrink-0"
+        onClick={() => dismiss.mutate(circuitAlerts[0].id)}
+        aria-label="Dismiss banner"
+      >
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   usePageTitle("Security Dashboard — SecureNexus Agentic SOC", true);
   const { user } = useAuth();
@@ -1052,6 +1112,7 @@ export default function Dashboard() {
     <div className="flex flex-col min-h-[calc(100vh-2rem)]" aria-label="Security Operations Dashboard">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
         <AnomalyBanners stats={stats} />
+        <AICircuitBreakerBanner />
         <GuidedWorkflowBanner />
 
         <div className="flex items-start justify-between gap-4 flex-wrap">

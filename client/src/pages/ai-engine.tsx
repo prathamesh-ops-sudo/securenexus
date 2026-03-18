@@ -102,6 +102,17 @@ interface AIConfig {
   maxTokens: number;
 }
 
+interface SetupStatus {
+  ready: boolean;
+  checks: {
+    bedrockReachable: boolean;
+    modelsEnabled: { default: boolean; investigation: boolean; triage: boolean };
+    budgetSet: boolean;
+    promptsInitialized: boolean;
+    circuitHealthy: boolean;
+  };
+}
+
 interface AIHealth {
   status: string;
   backend: string;
@@ -184,6 +195,11 @@ export default function AIEnginePage() {
     isError: healthError,
   } = useQuery<AIHealth>({
     queryKey: ["/api/ai/health"],
+  });
+
+  const { data: setupStatus, isLoading: setupLoading } = useQuery<SetupStatus>({
+    queryKey: ["/api/ai/setup-status"],
+    refetchInterval: 60000,
   });
 
   const { data: alertsResponse, isLoading: alertsLoading } = useQuery<PaginatedResponse<Alert>>({
@@ -368,6 +384,65 @@ export default function AIEnginePage() {
           </Badge>
         ) : null}
       </div>
+
+      {/* Setup Health Banner — shown until all checks pass */}
+      {!setupLoading && setupStatus && !setupStatus.ready && (
+        <Card className="border-amber-500/30 bg-amber-500/5" data-testid="card-setup-banner">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" aria-hidden="true" />
+              <CardTitle className="text-sm font-medium">AI Engine Setup Required</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Complete the following items to enable AI-powered analysis.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="flex items-center gap-2">
+                {setupStatus.checks.bedrockReachable ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                )}
+                <span className="text-xs">Bedrock Reachable</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {Object.values(setupStatus.checks.modelsEnabled).some(Boolean) ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                )}
+                <span className="text-xs">Models Configured</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {setupStatus.checks.budgetSet ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                )}
+                <span className="text-xs">Budget Configured</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {setupStatus.checks.promptsInitialized ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                )}
+                <span className="text-xs">Prompts Initialized</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {setupStatus.checks.circuitHealthy ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                )}
+                <span className="text-xs">Circuit Breakers OK</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="section-hero-stats">
         <Card className="relative overflow-visible" data-testid="stat-alerts-pending">

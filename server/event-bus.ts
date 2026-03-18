@@ -11,7 +11,8 @@ export type EventType =
   | "incident:updated"
   | "correlation:found"
   | "entity:resolved"
-  | "system:health";
+  | "system:health"
+  | "system.ai_circuit_open";
 
 export interface BusEvent {
   type: EventType;

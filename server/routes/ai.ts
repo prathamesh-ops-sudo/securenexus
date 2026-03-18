@@ -32,8 +32,10 @@ import {
 import { recordFeedbackOutcome } from "../ai/active-learning";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import type { InsertAttackGraphNode, InsertAttackGraphEdge } from "@shared/schema";
-import { invokeModel as gatewayInvoke } from "../ai/model-gateway";
+import { invokeModel as gatewayInvoke, getCircuitBreakerStatus } from "../ai/model-gateway";
 import { config as appConfig } from "../config";
+import { eventBus, type BusEvent } from "../event-bus";
+import { pool } from "../db";
 
 /**
  * Persist attack graph data from a deep investigation result to the database.
@@ -136,6 +138,138 @@ async function persistAttackGraph(result: Record<string, unknown>, incidentId: s
 }
 
 export function registerAiRoutes(app: Express): void {
+  // --- Circuit breaker event listener: auto-create system alert ---
+  eventBus.on("system.ai_circuit_open", (event: BusEvent) => {
+    const { modelId, backend, resetAt, failureCount } = event.data;
+    storage
+      .createAlert({
+        title: "AI service circuit breaker opened",
+        description: `AI model ${modelId} (${backend}) circuit breaker tripped after ${failureCount} consecutive failures. Service will attempt recovery at ${resetAt}.`,
+        source: "system",
+        severity: "high",
+        status: "new",
+        category: "ai_service_failure",
+        rawData: { modelId, backend, resetAt, failureCount, eventType: "system.ai_circuit_open" },
+      })
+      .then((alert) => {
+        logger.child("ai").warn("Auto-created alert for AI circuit breaker trip", {
+          alertId: alert.id,
+          modelId,
+          backend,
+        });
+      })
+      .catch((err) => {
+        logger.child("ai").error("Failed to auto-create circuit breaker alert", { error: String(err) });
+      });
+  });
+
+  // --- GET /api/ai/setup-status — first-run setup health checklist ---
+  app.get("/api/ai/setup-status", isAuthenticated, resolveOrgContext, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // 1. Check Bedrock reachability via a lightweight health check
+      let bedrockReachable = false;
+      try {
+        const healthResult = await checkModelHealth();
+        bedrockReachable = healthResult.status === "healthy";
+      } catch {
+        bedrockReachable = false;
+      }
+
+      // 2. Check model availability from config
+      const modelConfig = await getModelConfig();
+      const modelsEnabled = {
+        default: !!modelConfig.model,
+        investigation: !!appConfig.ai.investigation.modelId,
+        triage: !!appConfig.ai.triage.modelId,
+      };
+
+      // 3. Check if budget is set for this org
+      let budgetSet = false;
+      try {
+        const budgetResult = await pool.query(`SELECT budget_usd FROM org_ai_budgets WHERE org_id = $1 LIMIT 1`, [
+          orgId,
+        ]);
+        budgetSet = budgetResult.rows.length > 0 && (budgetResult.rows[0] as { budget_usd: number }).budget_usd > 0;
+      } catch {
+        budgetSet = false;
+      }
+
+      // 4. Check if prompts are initialized
+      let promptsInitialized = false;
+      try {
+        const catalog = await getPromptCatalogSummary();
+        promptsInitialized = catalog.totalPrompts > 0;
+      } catch {
+        promptsInitialized = false;
+      }
+
+      // 5. Check circuit breaker status
+      const circuitBreakers = getCircuitBreakerStatus();
+      const circuitHealthy = Object.values(circuitBreakers).every((cb) => !(cb as { isOpen: boolean }).isOpen);
+
+      const allGreen =
+        bedrockReachable &&
+        Object.values(modelsEnabled).some(Boolean) &&
+        budgetSet &&
+        promptsInitialized &&
+        circuitHealthy;
+
+      res.json({
+        ready: allGreen,
+        checks: {
+          bedrockReachable,
+          modelsEnabled,
+          budgetSet,
+          promptsInitialized,
+          circuitHealthy,
+        },
+      });
+    } catch (error: unknown) {
+      logger.child("ai").error("Setup status check failed", { error: String(error) });
+      res.status(500).json({ message: "Failed to check AI setup status." });
+    }
+  });
+
+  // --- GET /api/ai/circuit-alerts — recent AI service failure alerts ---
+  app.get("/api/ai/circuit-alerts", isAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const result = await pool.query(
+        `SELECT id, title, description, severity, status, category, created_at, raw_data
+         FROM alerts
+         WHERE category = 'ai_service_failure'
+           AND status != 'resolved'
+           AND created_at >= $1
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [thirtyMinutesAgo],
+      );
+      res.json(result.rows);
+    } catch (error: unknown) {
+      logger.child("ai").error("Circuit alerts query failed", { error: String(error) });
+      res.json([]);
+    }
+  });
+
+  // --- PATCH /api/ai/circuit-alerts/:alertId/dismiss — dismiss a circuit breaker alert ---
+  app.patch(
+    "/api/ai/circuit-alerts/:alertId/dismiss",
+    isAuthenticated,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const alertId = p(req.params.alertId);
+        await storage.updateAlert(alertId, { status: "resolved" });
+        res.json({ success: true });
+      } catch (error: unknown) {
+        logger.child("ai").error("Dismiss circuit alert failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to dismiss alert." });
+      }
+    },
+  );
+
   // AI Engine - SecureNexus Cyber Analyst (Mistral Large 2 Instruct / SageMaker)
   app.get("/api/ai/health", isAuthenticated, strictLimiter, async (_req, res) => {
     try {
