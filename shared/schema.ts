@@ -299,6 +299,17 @@ export const alerts = pgTable(
     dedupClusterId: varchar("dedup_cluster_id"),
     analystNotes: text("analyst_notes"),
     assignedTo: varchar("assigned_to"),
+    // 2.11: SLA lifecycle timestamps
+    acknowledgedAt: timestamp("acknowledged_at"),
+    investigatingAt: timestamp("investigating_at"),
+    resolvedAt: timestamp("resolved_at"),
+    slaBreached: boolean("sla_breached").default(false),
+    slaBreachType: text("sla_breach_type"),
+    // 2.9: Dedup count for canonical alerts
+    dedupCount: integer("dedup_count").default(0),
+    // 2.12: Enrichment metadata
+    enrichmentData: jsonb("enrichment_data"),
+    enrichedAt: timestamp("enriched_at"),
     detectedAt: timestamp("detected_at"),
     ingestedAt: timestamp("ingested_at").defaultNow(),
     createdAt: timestamp("created_at").defaultNow(),
@@ -3331,6 +3342,29 @@ export const incidentSlaPolicies = pgTable(
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => [index("idx_sla_policies_org").on(table.orgId), index("idx_sla_policies_severity").on(table.severity)],
+);
+
+// 2.11: Alert-level SLA policies (separate from incident SLA)
+export const alertSlaPolicies = pgTable(
+  "alert_sla_policies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    name: text("name").notNull(),
+    severity: text("severity").notNull(),
+    ackMinutes: integer("ack_minutes").notNull(),
+    investigateMinutes: integer("investigate_minutes").notNull(),
+    resolveMinutes: integer("resolve_minutes").notNull(),
+    enabled: boolean("enabled").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_alert_sla_policies_org").on(table.orgId),
+    index("idx_alert_sla_policies_severity").on(table.severity),
+  ],
 );
 
 export const connectorJobRuns = pgTable(

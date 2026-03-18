@@ -186,6 +186,7 @@ import {
   type IncidentSlaPolicy,
   type InsertIncidentSlaPolicy,
   incidentSlaPolicies,
+  alertSlaPolicies,
   type PostIncidentReview,
   type InsertPostIncidentReview,
   postIncidentReviews,
@@ -1276,6 +1277,18 @@ export interface IStorage {
   getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]>;
   getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined>;
   updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined>;
+  // 2.11: Alert SLA Policies
+  getAlertSlaPolicies(orgId: string): Promise<any[]>;
+  createAlertSlaPolicy(data: {
+    orgId: string;
+    name: string;
+    severity: string;
+    ackMinutes: number;
+    investigateMinutes: number;
+    resolveMinutes: number;
+  }): Promise<any>;
+  // 2.9: Dedup cluster alerts
+  getAlertsByDedupCluster(clusterId: string, orgId?: string): Promise<Alert[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6216,6 +6229,39 @@ export class DatabaseStorage implements IStorage {
   async updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined> {
     const [updated] = await db.update(warRoomHandoffs).set(data).where(eq(warRoomHandoffs.id, id)).returning();
     return updated;
+  }
+
+  // ─── 2.11: Alert SLA Policies ──────────────────────────────────────────────
+  async getAlertSlaPolicies(orgId: string): Promise<any[]> {
+    return db
+      .select()
+      .from(alertSlaPolicies)
+      .where(eq(alertSlaPolicies.orgId, orgId))
+      .orderBy(desc(alertSlaPolicies.createdAt));
+  }
+
+  async createAlertSlaPolicy(data: {
+    orgId: string;
+    name: string;
+    severity: string;
+    ackMinutes: number;
+    investigateMinutes: number;
+    resolveMinutes: number;
+  }): Promise<any> {
+    const [created] = await db.insert(alertSlaPolicies).values(data).returning();
+    return created;
+  }
+
+  // ─── 2.9: Get alerts by dedup cluster ──────────────────────────────────────
+  async getAlertsByDedupCluster(clusterId: string, orgId?: string): Promise<Alert[]> {
+    const conditions = [eq(alerts.dedupClusterId, clusterId)];
+    if (orgId) conditions.push(eq(alerts.orgId, orgId));
+    return db
+      .select()
+      .from(alerts)
+      .where(and(...conditions))
+      .orderBy(desc(alerts.createdAt))
+      .limit(100);
   }
 }
 

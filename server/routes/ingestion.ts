@@ -23,6 +23,7 @@ import { broadcastEvent } from "../event-bus";
 import { SOURCE_KEYS, normalizeAlert, toInsertAlert } from "../normalizer";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { enrichAlert } from "../alert-enrichment";
 
 export function registerIngestionRoutes(app: Express): void {
   // API Key Management (authenticated user routes)
@@ -235,6 +236,10 @@ export function registerIngestionRoutes(app: Express): void {
           } catch (err) {
             logger.child("routes").warn("Entity/correlation processing warning", { error: String(err) });
           }
+          // 2.12: Fire-and-forget enrichment pipeline
+          enrichAlert(alert.id).catch((err) =>
+            logger.child("enrichment").warn("Alert enrichment failed", { alertId: alert.id, error: String(err) }),
+          );
         }
 
         await storage.createIngestionLog({
@@ -379,6 +384,12 @@ export function registerIngestionRoutes(app: Express): void {
               } catch (err) {
                 logger.child("ingestion").warn("Bulk ingestion entity/correlation warning", { error: String(err) });
               }
+              // 2.12: Fire-and-forget enrichment pipeline
+              enrichAlert(alert.id).catch((err) =>
+                logger
+                  .child("enrichment")
+                  .warn("Bulk alert enrichment failed", { alertId: alert.id, error: String(err) }),
+              );
               broadcastEvent({
                 type: "alert:created",
                 orgId: orgId || null,

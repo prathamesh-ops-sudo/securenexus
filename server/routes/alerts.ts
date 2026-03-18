@@ -9,6 +9,7 @@ import { findRelatedAlertsByEntity, getEntitiesForAlert } from "../entity-resolv
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { validateAlertFieldLengths } from "../normalizer";
+import { enrichAlert, getAlertEnrichment, reEnrichAlert } from "../alert-enrichment";
 
 export function registerAlertsRoutes(app: Express): void {
   // Alerts
@@ -375,6 +376,184 @@ export function registerAlertsRoutes(app: Express): void {
       res.json(alert);
     } catch (error) {
       res.status(500).json({ message: "Failed to update alert confidence" });
+    }
+  });
+
+  // === 2.11: SLA lifecycle — auto-set timestamps on status transitions ===
+  app.patch(
+    "/api/alerts/:id/acknowledge",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const now = new Date();
+        const patch: Record<string, unknown> = {
+          status: "triaged",
+          acknowledgedAt: existing.acknowledgedAt || now,
+        };
+        const alert = await storage.updateAlert(p(req.params.id), patch as any);
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        cacheInvalidate("dashboard:");
+        res.json(alert);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to acknowledge alert" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/alerts/:id/investigate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const now = new Date();
+        const patch: Record<string, unknown> = {
+          status: "investigating",
+          acknowledgedAt: existing.acknowledgedAt || now,
+          investigatingAt: existing.investigatingAt || now,
+        };
+        const alert = await storage.updateAlert(p(req.params.id), patch as any);
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        cacheInvalidate("dashboard:");
+        res.json(alert);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to mark alert as investigating" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/alerts/:id/resolve",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const now = new Date();
+        const patch: Record<string, unknown> = {
+          status: "resolved",
+          acknowledgedAt: existing.acknowledgedAt || now,
+          investigatingAt: existing.investigatingAt || now,
+          resolvedAt: existing.resolvedAt || now,
+        };
+        const alert = await storage.updateAlert(p(req.params.id), patch as any);
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        cacheInvalidate("dashboard:");
+        res.json(alert);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to resolve alert" });
+      }
+    },
+  );
+
+  // === 2.11: Alert SLA policies CRUD ===
+  app.get("/api/alert-sla-policies", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const policies = await storage.getAlertSlaPolicies(orgId);
+      res.json(policies);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch alert SLA policies" });
+    }
+  });
+
+  app.post(
+    "/api/alert-sla-policies",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("settings", "write"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, severity, ackMinutes, investigateMinutes, resolveMinutes } = req.body;
+        if (!name || !severity || !ackMinutes || !investigateMinutes || !resolveMinutes) {
+          return res.status(400).json({ message: "All fields required" });
+        }
+        const policy = await storage.createAlertSlaPolicy({
+          orgId,
+          name,
+          severity,
+          ackMinutes,
+          investigateMinutes,
+          resolveMinutes,
+        });
+        res.status(201).json(policy);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create SLA policy" });
+      }
+    },
+  );
+
+  // === 2.12: Alert Enrichment endpoints ===
+  app.get("/api/alerts/:id/enrichment", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const alert = await storage.getAlert(p(req.params.id));
+      if (!alert || !orgId || alert.orgId !== orgId) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      const enrichment = await getAlertEnrichment(p(req.params.id));
+      res.json(enrichment || { geoIp: null, whois: null, virusTotal: null, mitre: null, enrichedAt: null });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch alert enrichment" });
+    }
+  });
+
+  app.post(
+    "/api/alerts/:id/enrich",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const enrichment = await reEnrichAlert(p(req.params.id));
+        res.json(enrichment);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to enrich alert" });
+      }
+    },
+  );
+
+  // === 2.9: Dedup cluster detail endpoint ===
+  app.get("/api/dedup-clusters/:id/alerts", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const clusterAlerts = await storage.getAlertsByDedupCluster(p(req.params.id), orgId);
+      res.json(clusterAlerts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch cluster alerts" });
     }
   });
 

@@ -384,6 +384,9 @@ export default function AlertsPage() {
   // ── 2.6 Sheet-based detail panel ──
   const [_useSheetPanel, _setUseSheetPanel] = useState(false);
 
+  // ── 2.10/2.11/2.12 Detail panel tabs ──
+  const [detailTab, setDetailTab] = useState<"overview" | "related" | "sla" | "enrichment">("overview");
+
   // Debounced search for server-side filtering (2.1)
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
@@ -695,6 +698,142 @@ export default function AlertsPage() {
       toast({ title: "Bulk update failed", description: error.message, variant: "destructive" });
     },
   });
+
+  // ── 2.10: Related alerts query (fetched when detail panel is open) ──
+  const { data: relatedAlerts, isLoading: relatedLoading } = useQuery<{ alertId: string; sharedEntities: string[] }[]>({
+    queryKey: ["/api/alerts", focusedAlertId, "related"],
+    queryFn: async () => {
+      if (!focusedAlertId) return [];
+      const res = await apiRequest("GET", `/api/alerts/${focusedAlertId}/related`);
+      return res.json();
+    },
+    enabled: !!focusedAlertId && isDetailOpen && detailTab === "related",
+  });
+
+  // ── 2.12: Enrichment data query ──
+  const { data: enrichmentData, isLoading: enrichmentLoading } = useQuery<{
+    geoIp: { ip: string; country: string; countryCode: string; city: string; isp: string; isKnownBad: boolean } | null;
+    whois: {
+      domain: string;
+      registrar: string;
+      ageInDays: number;
+      isNewlyRegistered: boolean;
+      registrantCountry: string;
+    } | null;
+    virusTotal: {
+      indicator: string;
+      type: string;
+      malicious: number;
+      suspicious: number;
+      harmless: number;
+      reputation: number;
+      tags: string[];
+    } | null;
+    mitre: { tactic: string; technique: string; confidence: number; source: string } | null;
+    enrichedAt: string | null;
+  }>({
+    queryKey: ["/api/alerts", focusedAlertId, "enrichment"],
+    queryFn: async () => {
+      if (!focusedAlertId) return { geoIp: null, whois: null, virusTotal: null, mitre: null, enrichedAt: null };
+      const res = await apiRequest("GET", `/api/alerts/${focusedAlertId}/enrichment`);
+      return res.json();
+    },
+    enabled: !!focusedAlertId && isDetailOpen && detailTab === "enrichment",
+  });
+
+  // ── 2.12: Manual re-enrich mutation ──
+  const reEnrichMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("POST", `/api/alerts/${alertId}/enrich`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts", focusedAlertId, "enrichment"] });
+      toast({ title: "Alert re-enriched" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Enrichment failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // ── 2.11: SLA lifecycle mutations ──
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("PATCH", `/api/alerts/${alertId}/acknowledge`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      toast({ title: "Alert acknowledged" });
+    },
+  });
+
+  const investigateMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("PATCH", `/api/alerts/${alertId}/investigate`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      toast({ title: "Alert marked as investigating" });
+    },
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      const res = await apiRequest("PATCH", `/api/alerts/${alertId}/resolve`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/alerts"] });
+      toast({ title: "Alert resolved" });
+    },
+  });
+
+  // ── 2.11: SLA compliance helper ──
+  const getSlaStatus = useCallback((alert: Alert) => {
+    const createdAt = new Date(alert.createdAt || Date.now()).getTime();
+    const now = Date.now();
+    const ageMinutes = (now - createdAt) / 60000;
+
+    // Default SLA thresholds (can be overridden by org policy)
+    const slaThresholds: Record<string, { ack: number; investigate: number; resolve: number }> = {
+      critical: { ack: 15, investigate: 60, resolve: 240 },
+      high: { ack: 30, investigate: 120, resolve: 480 },
+      medium: { ack: 60, investigate: 240, resolve: 1440 },
+      low: { ack: 120, investigate: 480, resolve: 2880 },
+    };
+    const thresholds = slaThresholds[alert.severity] || slaThresholds.medium;
+    const ackTime = (alert as any).acknowledgedAt
+      ? (new Date((alert as any).acknowledgedAt).getTime() - createdAt) / 60000
+      : null;
+    const investigateTime = (alert as any).investigatingAt
+      ? (new Date((alert as any).investigatingAt).getTime() - createdAt) / 60000
+      : null;
+    const resolveTime = (alert as any).resolvedAt
+      ? (new Date((alert as any).resolvedAt).getTime() - createdAt) / 60000
+      : null;
+
+    return {
+      ack: {
+        threshold: thresholds.ack,
+        actual: ackTime,
+        breached: ackTime ? ackTime > thresholds.ack : ageMinutes > thresholds.ack && !ackTime,
+      },
+      investigate: {
+        threshold: thresholds.investigate,
+        actual: investigateTime,
+        breached: investigateTime
+          ? investigateTime > thresholds.investigate
+          : ageMinutes > thresholds.investigate && !investigateTime,
+      },
+      resolve: {
+        threshold: thresholds.resolve,
+        actual: resolveTime,
+        breached: resolveTime ? resolveTime > thresholds.resolve : ageMinutes > thresholds.resolve && !resolveTime,
+      },
+    };
+  }, []);
 
   const getQueueState = (alert: Alert): "new" | "aging" | "breached" | "other" => {
     const ageMs = Date.now() - new Date(alert.createdAt || Date.now()).getTime();
@@ -2283,10 +2422,10 @@ export default function AlertsPage() {
                                   {Math.round(alert.confidenceScore * 100)}%
                                 </Badge>
                               )}
-                              {alert.dedupClusterId && (
+                              {(alert.dedupClusterId || (alert as any).dedupCount > 0) && (
                                 <Badge variant="outline" className="text-[10px]">
                                   <Layers className="h-2.5 w-2.5 mr-0.5" />
-                                  Dup
+                                  {(alert as any).dedupCount > 0 ? `${(alert as any).dedupCount} dup` : "Dup"}
                                 </Badge>
                               )}
                             </div>
@@ -2453,135 +2592,627 @@ export default function AlertsPage() {
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
+                {/* 2.10/2.11/2.12: Tabbed detail panel */}
+                <div className="flex items-center border-b px-2">
+                  {(["overview", "related", "sla", "enrichment"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setDetailTab(tab)}
+                      className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+                        detailTab === tab
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {tab === "overview"
+                        ? "Overview"
+                        : tab === "related"
+                          ? "Related"
+                          : tab === "sla"
+                            ? "SLA"
+                            : "Enrichment"}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  <div>
-                    <h4 className="text-base font-semibold">{selectedAlert.title}</h4>
-                    <p className="text-xs text-muted-foreground mt-1">{selectedAlert.description}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase">Severity</span>
-                      <div className="mt-0.5">
-                        <SeverityBadge severity={selectedAlert.severity} />
+                  {/* ── Overview Tab ── */}
+                  {detailTab === "overview" && (
+                    <>
+                      <div>
+                        <h4 className="text-base font-semibold">{selectedAlert.title}</h4>
+                        <p className="text-xs text-muted-foreground mt-1">{selectedAlert.description}</p>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase">Status</span>
-                      <div className="mt-0.5">
-                        <AlertStatusBadge status={selectedAlert.status} />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase">Severity</span>
+                          <div className="mt-0.5">
+                            <SeverityBadge severity={selectedAlert.severity} />
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase">Status</span>
+                          <div className="mt-0.5">
+                            <AlertStatusBadge status={selectedAlert.status} />
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase">Source</span>
+                          <p className="text-xs mt-0.5">{selectedAlert.source}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase">Category</span>
+                          <p className="text-xs mt-0.5">{selectedAlert.category?.replace(/_/g, " ") || "-"}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase">Source</span>
-                      <p className="text-xs mt-0.5">{selectedAlert.source}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase">Category</span>
-                      <p className="text-xs mt-0.5">{selectedAlert.category?.replace(/_/g, " ") || "-"}</p>
-                    </div>
-                  </div>
-                  {selectedAlert.assignedTo && (
-                    <div className="flex items-center gap-2">
-                      <User className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs">
-                        Assigned to: <span className="font-medium">{selectedAlert.assignedTo}</span>
-                      </span>
-                    </div>
+                      {/* 2.9: Dedup count badge */}
+                      {((selectedAlert as any).dedupCount > 0 || selectedAlert.dedupClusterId) && (
+                        <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 border">
+                          <Layers className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <span className="text-xs font-medium">Deduplicated Alert</span>
+                            {(selectedAlert as any).dedupCount > 0 && (
+                              <Badge variant="secondary" className="ml-2 text-[10px]">
+                                {(selectedAlert as any).dedupCount} duplicate
+                                {(selectedAlert as any).dedupCount !== 1 ? "s" : ""}
+                              </Badge>
+                            )}
+                            {selectedAlert.dedupClusterId && (
+                              <span className="text-[10px] text-muted-foreground ml-2">
+                                Cluster: {selectedAlert.dedupClusterId.slice(0, 8)}...
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {selectedAlert.assignedTo && (
+                        <div className="flex items-center gap-2">
+                          <User className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs">
+                            Assigned to: <span className="font-medium">{selectedAlert.assignedTo}</span>
+                          </span>
+                        </div>
+                      )}
+                      {selectedAlert.mitreTactic && (
+                        <div className="flex items-center gap-2">
+                          <Tag className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs">{selectedAlert.mitreTactic}</span>
+                          {selectedAlert.mitreTechnique && (
+                            <span className="text-xs font-mono text-muted-foreground">
+                              {selectedAlert.mitreTechnique}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {(selectedAlert.sourceIp || selectedAlert.destIp || selectedAlert.hostname) && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] text-muted-foreground uppercase">Entities</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedAlert.sourceIp && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
+                                <MapPin className="h-2.5 w-2.5" />
+                                src: {selectedAlert.sourceIp}
+                              </span>
+                            )}
+                            {selectedAlert.destIp && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
+                                <MapPin className="h-2.5 w-2.5" />
+                                dst: {selectedAlert.destIp}
+                              </span>
+                            )}
+                            {selectedAlert.hostname && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
+                                {selectedAlert.hostname}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {selectedAlert.confidenceScore != null && (
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase">Confidence</span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary rounded-full"
+                                style={{ width: `${Math.round(selectedAlert.confidenceScore * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-medium">
+                              {Math.round(selectedAlert.confidenceScore * 100)}%
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {(() => {
+                        const qs = getQueueState(selectedAlert);
+                        const countdown = getQueueCountdown(selectedAlert);
+                        if (qs === "other")
+                          return <span className="text-[9px] text-muted-foreground/50">Queue: N/A (not new)</span>;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs">
+                              Queue: <span className="uppercase font-medium">{qs}</span>
+                            </span>
+                            {countdown && <span className="text-xs text-muted-foreground">{countdown}</span>}
+                          </div>
+                        );
+                      })()}
+                      <div className="space-y-2 pt-2 border-t">
+                        <div className="text-[10px] text-muted-foreground uppercase">Quick Actions</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button size="sm" variant="outline" onClick={assignFocused}>
+                            <UserPlus className="h-3 w-3 mr-1" />
+                            Assign (A)
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={escalateFocused}>
+                            <ArrowUpRight className="h-3 w-3 mr-1" />
+                            Escalate (E)
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={resolveFocused}>
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Resolve (R)
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" onClick={() => navigate("/alerts/" + selectedAlert.id)}>
+                            <ExternalLink className="h-3 w-3 mr-1.5" />
+                            Full Detail
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleTriageClick(selectedAlert.id)}
+                            disabled={triage.isPending}
+                          >
+                            <Brain className="h-3 w-3 mr-1.5" />
+                            AI Triage
+                          </Button>
+                        </div>
+                      </div>
+                    </>
                   )}
-                  {selectedAlert.mitreTactic && (
-                    <div className="flex items-center gap-2">
-                      <Tag className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs">{selectedAlert.mitreTactic}</span>
-                      {selectedAlert.mitreTechnique && (
-                        <span className="text-xs font-mono text-muted-foreground">{selectedAlert.mitreTechnique}</span>
+
+                  {/* ── 2.10: Related Alerts Tab ── */}
+                  {detailTab === "related" && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Network className="h-4 w-4" />
+                          Related Alerts
+                        </h4>
+                        <span className="text-[10px] text-muted-foreground">
+                          Correlated by shared entities (IP, domain, user)
+                        </span>
+                      </div>
+                      {relatedLoading ? (
+                        <div className="space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-12 w-full" />
+                          ))}
+                        </div>
+                      ) : relatedAlerts && relatedAlerts.length > 0 ? (
+                        <div className="space-y-2">
+                          {relatedAlerts.map((rel) => {
+                            const relAlert = alerts?.find((a) => a.id === rel.alertId);
+                            return (
+                              <div
+                                key={rel.alertId}
+                                className="p-2.5 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
+                                onClick={() => {
+                                  setFocusedAlertId(rel.alertId);
+                                  setDetailTab("overview");
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-medium truncate">
+                                    {relAlert?.title || `Alert ${rel.alertId.slice(0, 8)}...`}
+                                  </span>
+                                  {relAlert && <SeverityBadge severity={relAlert.severity} />}
+                                </div>
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {rel.sharedEntities.map((entity, i) => (
+                                    <Badge key={i} variant="outline" className="text-[9px] px-1.5 py-0">
+                                      <GitBranch className="h-2 w-2 mr-0.5" />
+                                      {entity}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Network className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-xs">No related alerts found</p>
+                          <p className="text-[10px] mt-1">Alerts sharing entities will appear here</p>
+                        </div>
                       )}
                     </div>
                   )}
-                  {(selectedAlert.sourceIp || selectedAlert.destIp || selectedAlert.hostname) && (
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] text-muted-foreground uppercase">Entities</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedAlert.sourceIp && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
-                            <MapPin className="h-2.5 w-2.5" />
-                            src: {selectedAlert.sourceIp}
-                          </span>
-                        )}
-                        {selectedAlert.destIp && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
-                            <MapPin className="h-2.5 w-2.5" />
-                            dst: {selectedAlert.destIp}
-                          </span>
-                        )}
-                        {selectedAlert.hostname && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-[10px]">
-                            {selectedAlert.hostname}
-                          </span>
-                        )}
+
+                  {/* ── 2.11: SLA Tracking Tab ── */}
+                  {detailTab === "sla" && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Clock className="h-4 w-4" />
+                          SLA Compliance
+                        </h4>
                       </div>
+                      {(() => {
+                        const sla = getSlaStatus(selectedAlert);
+                        const formatMinutes = (m: number) => {
+                          if (m < 60) return `${Math.round(m)}m`;
+                          const h = Math.floor(m / 60);
+                          const r = Math.round(m % 60);
+                          return r > 0 ? `${h}h ${r}m` : `${h}h`;
+                        };
+                        return (
+                          <div className="space-y-3">
+                            {/* Acknowledge SLA */}
+                            <div
+                              className={`p-3 rounded-lg border ${sla.ack.breached ? "border-red-500/30 bg-red-500/5" : sla.ack.actual != null ? "border-green-500/30 bg-green-500/5" : "border-yellow-500/30 bg-yellow-500/5"}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium">Acknowledge</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  SLA: {formatMinutes(sla.ack.threshold)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between mt-1">
+                                {sla.ack.actual != null ? (
+                                  <span className={`text-xs ${sla.ack.breached ? "text-red-500" : "text-green-500"}`}>
+                                    {sla.ack.breached ? "Breached" : "Met"} — {formatMinutes(sla.ack.actual)}
+                                  </span>
+                                ) : (
+                                  <span className={`text-xs ${sla.ack.breached ? "text-red-500" : "text-yellow-500"}`}>
+                                    {sla.ack.breached ? "SLA Breached — Not acknowledged" : "Pending"}
+                                  </span>
+                                )}
+                                {!(selectedAlert as any).acknowledgedAt && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-[10px]"
+                                    onClick={() => acknowledgeMutation.mutate(selectedAlert.id)}
+                                    disabled={acknowledgeMutation.isPending}
+                                  >
+                                    {acknowledgeMutation.isPending ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      "Acknowledge"
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            {/* Investigate SLA */}
+                            <div
+                              className={`p-3 rounded-lg border ${sla.investigate.breached ? "border-red-500/30 bg-red-500/5" : sla.investigate.actual != null ? "border-green-500/30 bg-green-500/5" : "border-yellow-500/30 bg-yellow-500/5"}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium">Investigation Started</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  SLA: {formatMinutes(sla.investigate.threshold)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between mt-1">
+                                {sla.investigate.actual != null ? (
+                                  <span
+                                    className={`text-xs ${sla.investigate.breached ? "text-red-500" : "text-green-500"}`}
+                                  >
+                                    {sla.investigate.breached ? "Breached" : "Met"} —{" "}
+                                    {formatMinutes(sla.investigate.actual)}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`text-xs ${sla.investigate.breached ? "text-red-500" : "text-yellow-500"}`}
+                                  >
+                                    {sla.investigate.breached ? "SLA Breached — Not started" : "Pending"}
+                                  </span>
+                                )}
+                                {!(selectedAlert as any).investigatingAt && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-[10px]"
+                                    onClick={() => investigateMutation.mutate(selectedAlert.id)}
+                                    disabled={investigateMutation.isPending}
+                                  >
+                                    {investigateMutation.isPending ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      "Start Investigation"
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            {/* Resolve SLA */}
+                            <div
+                              className={`p-3 rounded-lg border ${sla.resolve.breached ? "border-red-500/30 bg-red-500/5" : sla.resolve.actual != null ? "border-green-500/30 bg-green-500/5" : "border-yellow-500/30 bg-yellow-500/5"}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium">Resolved</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  SLA: {formatMinutes(sla.resolve.threshold)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between mt-1">
+                                {sla.resolve.actual != null ? (
+                                  <span
+                                    className={`text-xs ${sla.resolve.breached ? "text-red-500" : "text-green-500"}`}
+                                  >
+                                    {sla.resolve.breached ? "Breached" : "Met"} — {formatMinutes(sla.resolve.actual)}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`text-xs ${sla.resolve.breached ? "text-red-500" : "text-yellow-500"}`}
+                                  >
+                                    {sla.resolve.breached ? "SLA Breached — Not resolved" : "Pending"}
+                                  </span>
+                                )}
+                                {!(selectedAlert as any).resolvedAt && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-[10px]"
+                                    onClick={() => resolveMutation.mutate(selectedAlert.id)}
+                                    disabled={resolveMutation.isPending}
+                                  >
+                                    {resolveMutation.isPending ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      "Resolve"
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            {/* SLA Timeline */}
+                            <div className="pt-2 border-t">
+                              <span className="text-[10px] text-muted-foreground uppercase">Lifecycle Timeline</span>
+                              <div className="flex items-center gap-1 mt-2">
+                                <div className="flex flex-col items-center">
+                                  <div
+                                    className={`w-3 h-3 rounded-full ${selectedAlert.createdAt ? "bg-primary" : "bg-muted"}`}
+                                  />
+                                  <span className="text-[9px] text-muted-foreground mt-0.5">Created</span>
+                                </div>
+                                <div
+                                  className={`flex-1 h-0.5 ${(selectedAlert as any).acknowledgedAt ? "bg-primary" : "bg-muted"}`}
+                                />
+                                <div className="flex flex-col items-center">
+                                  <div
+                                    className={`w-3 h-3 rounded-full ${(selectedAlert as any).acknowledgedAt ? "bg-primary" : "bg-muted"}`}
+                                  />
+                                  <span className="text-[9px] text-muted-foreground mt-0.5">Ack</span>
+                                </div>
+                                <div
+                                  className={`flex-1 h-0.5 ${(selectedAlert as any).investigatingAt ? "bg-primary" : "bg-muted"}`}
+                                />
+                                <div className="flex flex-col items-center">
+                                  <div
+                                    className={`w-3 h-3 rounded-full ${(selectedAlert as any).investigatingAt ? "bg-primary" : "bg-muted"}`}
+                                  />
+                                  <span className="text-[9px] text-muted-foreground mt-0.5">Investigate</span>
+                                </div>
+                                <div
+                                  className={`flex-1 h-0.5 ${(selectedAlert as any).resolvedAt ? "bg-primary" : "bg-muted"}`}
+                                />
+                                <div className="flex flex-col items-center">
+                                  <div
+                                    className={`w-3 h-3 rounded-full ${(selectedAlert as any).resolvedAt ? "bg-primary" : "bg-muted"}`}
+                                  />
+                                  <span className="text-[9px] text-muted-foreground mt-0.5">Resolved</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
-                  {selectedAlert.confidenceScore != null && (
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase">Confidence</span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full"
-                            style={{ width: `${Math.round(selectedAlert.confidenceScore * 100)}%` }}
-                          />
+
+                  {/* ── 2.12: Enrichment Tab ── */}
+                  {detailTab === "enrichment" && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Sparkles className="h-4 w-4" />
+                          Enrichment Data
+                        </h4>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[10px]"
+                          onClick={() => reEnrichMutation.mutate(selectedAlert.id)}
+                          disabled={reEnrichMutation.isPending}
+                        >
+                          {reEnrichMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Sparkles className="h-3 w-3 mr-1" />
+                          )}
+                          Re-enrich
+                        </Button>
+                      </div>
+                      {enrichmentLoading ? (
+                        <div className="space-y-2">
+                          {[1, 2, 3, 4].map((i) => (
+                            <Skeleton key={i} className="h-16 w-full" />
+                          ))}
                         </div>
-                        <span className="text-xs font-medium">{Math.round(selectedAlert.confidenceScore * 100)}%</span>
-                      </div>
+                      ) : enrichmentData ? (
+                        <div className="space-y-3">
+                          {enrichmentData.enrichedAt && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Last enriched: {new Date(enrichmentData.enrichedAt).toLocaleString()}
+                            </span>
+                          )}
+                          {/* Geo-IP */}
+                          {enrichmentData.geoIp && (
+                            <div className="p-3 rounded-lg border">
+                              <div className="flex items-center gap-2 mb-2">
+                                <MapPin className="h-3.5 w-3.5 text-blue-500" />
+                                <span className="text-xs font-medium">Geo-IP Lookup</span>
+                                {enrichmentData.geoIp.isKnownBad && (
+                                  <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
+                                    Known Bad
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div>
+                                  <span className="text-muted-foreground">IP:</span>{" "}
+                                  <span className="font-mono">{enrichmentData.geoIp.ip}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Country:</span> {enrichmentData.geoIp.country}{" "}
+                                  ({enrichmentData.geoIp.countryCode})
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">City:</span> {enrichmentData.geoIp.city}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">ISP:</span> {enrichmentData.geoIp.isp}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {/* WHOIS */}
+                          {enrichmentData.whois && (
+                            <div className="p-3 rounded-lg border">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Network className="h-3.5 w-3.5 text-purple-500" />
+                                <span className="text-xs font-medium">WHOIS</span>
+                                {enrichmentData.whois.isNewlyRegistered && (
+                                  <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
+                                    Newly Registered
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div>
+                                  <span className="text-muted-foreground">Domain:</span>{" "}
+                                  <span className="font-mono">{enrichmentData.whois.domain}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Registrar:</span>{" "}
+                                  {enrichmentData.whois.registrar}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Age:</span> {enrichmentData.whois.ageInDays}{" "}
+                                  days
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Country:</span>{" "}
+                                  {enrichmentData.whois.registrantCountry}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {/* VirusTotal */}
+                          {enrichmentData.virusTotal && (
+                            <div className="p-3 rounded-lg border">
+                              <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
+                                <span className="text-xs font-medium">VirusTotal</span>
+                                {enrichmentData.virusTotal.malicious > 5 && (
+                                  <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
+                                    Malicious
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div>
+                                  <span className="text-muted-foreground">Indicator:</span>{" "}
+                                  <span className="font-mono">{enrichmentData.virusTotal.indicator}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Type:</span> {enrichmentData.virusTotal.type}
+                                </div>
+                                <div>
+                                  <span className="text-red-500">Malicious: {enrichmentData.virusTotal.malicious}</span>
+                                </div>
+                                <div>
+                                  <span className="text-yellow-500">
+                                    Suspicious: {enrichmentData.virusTotal.suspicious}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-green-500">Harmless: {enrichmentData.virusTotal.harmless}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Reputation:</span>{" "}
+                                  <span
+                                    className={
+                                      enrichmentData.virusTotal.reputation < 0 ? "text-red-500" : "text-green-500"
+                                    }
+                                  >
+                                    {enrichmentData.virusTotal.reputation}
+                                  </span>
+                                </div>
+                              </div>
+                              {enrichmentData.virusTotal.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {enrichmentData.virusTotal.tags.map((tag, i) => (
+                                    <Badge key={i} variant="outline" className="text-[9px] px-1.5 py-0">
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {/* MITRE ATT&CK */}
+                          {enrichmentData.mitre && (
+                            <div className="p-3 rounded-lg border">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Tag className="h-3.5 w-3.5 text-red-500" />
+                                <span className="text-xs font-medium">MITRE ATT&CK Auto-Tag</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div>
+                                  <span className="text-muted-foreground">Tactic:</span> {enrichmentData.mitre.tactic}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Technique:</span>{" "}
+                                  {enrichmentData.mitre.technique}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Confidence:</span>{" "}
+                                  {Math.round(enrichmentData.mitre.confidence * 100)}%
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Source:</span> {enrichmentData.mitre.source}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {/* No enrichment data */}
+                          {!enrichmentData.geoIp &&
+                            !enrichmentData.whois &&
+                            !enrichmentData.virusTotal &&
+                            !enrichmentData.mitre && (
+                              <div className="text-center py-8 text-muted-foreground">
+                                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                <p className="text-xs">No enrichment data available</p>
+                                <p className="text-[10px] mt-1">Click "Re-enrich" to run the enrichment pipeline</p>
+                              </div>
+                            )}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-xs">No enrichment data available</p>
+                          <p className="text-[10px] mt-1">Click "Re-enrich" to run the enrichment pipeline</p>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {(() => {
-                    const qs = getQueueState(selectedAlert);
-                    const countdown = getQueueCountdown(selectedAlert);
-                    if (qs === "other")
-                      return <span className="text-[9px] text-muted-foreground/50">Queue: N/A (not new)</span>;
-                    return (
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs">
-                          Queue: <span className="uppercase font-medium">{qs}</span>
-                        </span>
-                        {countdown && <span className="text-xs text-muted-foreground">{countdown}</span>}
-                      </div>
-                    );
-                  })()}
-                  <div className="space-y-2 pt-2 border-t">
-                    <div className="text-[10px] text-muted-foreground uppercase">Quick Actions</div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Button size="sm" variant="outline" onClick={assignFocused}>
-                        <UserPlus className="h-3 w-3 mr-1" />
-                        Assign (A)
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={escalateFocused}>
-                        <ArrowUpRight className="h-3 w-3 mr-1" />
-                        Escalate (E)
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={resolveFocused}>
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Resolve (R)
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={() => navigate("/alerts/" + selectedAlert.id)}>
-                        <ExternalLink className="h-3 w-3 mr-1.5" />
-                        Full Detail
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTriageClick(selectedAlert.id)}
-                        disabled={triage.isPending}
-                      >
-                        <Brain className="h-3 w-3 mr-1.5" />
-                        AI Triage
-                      </Button>
-                    </div>
-                  </div>
                 </div>
               </Card>
             </ResizablePanel>
