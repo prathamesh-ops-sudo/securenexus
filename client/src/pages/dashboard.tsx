@@ -669,7 +669,11 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
             {data.slice(0, 5).map((c) => {
               const cfg = statusConfig[c.status] || statusConfig.inactive;
               return (
-                <div key={c.name} className="flex items-center justify-between gap-2 text-xs">
+                <Link
+                  key={c.name}
+                  href={`/connectors?highlight=${encodeURIComponent(c.name)}`}
+                  className="flex items-center justify-between gap-2 text-xs rounded-md px-1.5 py-1 -mx-1.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dotColor}`} />
                     <span className="truncate font-medium">{c.name}</span>
@@ -677,8 +681,9 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className={`capitalize font-medium ${cfg.color}`}>{c.status}</span>
                     <span className="text-muted-foreground tabular-nums">{formatSyncTime(c.lastSyncAt)}</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -1135,6 +1140,99 @@ function DeceptionHitsWidget() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** (1.14) Security Posture Score widget — surfaces org posture from /api/posture-trust/latest */
+function PostureScoreWidget() {
+  const { data: postureData, isLoading } = useQuery<{
+    score: { overallScore: number; generatedAt: string } | null;
+    subScores: { domain: string; score: number }[];
+  } | null>({
+    queryKey: ["/api/posture-trust/latest"],
+    refetchInterval: 60000,
+  });
+
+  const score = postureData?.score?.overallScore ?? null;
+  const label =
+    score === null ? "—" : score >= 90 ? "Excellent" : score >= 70 ? "Good" : score >= 50 ? "At Risk" : "Critical";
+  const color =
+    score === null
+      ? "text-muted-foreground"
+      : score >= 90
+        ? "text-emerald-400"
+        : score >= 70
+          ? "text-cyan-400"
+          : score >= 50
+            ? "text-amber-400"
+            : "text-red-400";
+  const stroke =
+    score === null
+      ? "#64748b"
+      : score >= 90
+        ? "#34d399"
+        : score >= 70
+          ? "#22d3ee"
+          : score >= 50
+            ? "#fbbf24"
+            : "#ef4444";
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const offset = score !== null ? circumference - (score / 100) * circumference : circumference;
+
+  if (isLoading) {
+    return (
+      <Card className="row-span-2">
+        <CardContent className="p-4 flex flex-col items-center justify-center h-full gap-2">
+          <Skeleton className="h-16 w-16 rounded-full" />
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-3 w-20" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Link href="/posture-trust-center">
+      <Card className="row-span-2 group cursor-pointer hover:border-border/80 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-px transition-all duration-200">
+        <CardContent className="p-4 flex flex-col items-center justify-center h-full gap-1">
+          <div className="relative h-16 w-16 mb-1">
+            <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="32" cy="32" r={radius} stroke="rgba(148,163,184,0.18)" strokeWidth="6" fill="none" />
+              <circle
+                cx="32"
+                cy="32"
+                r={radius}
+                stroke={stroke}
+                strokeWidth="6"
+                fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                strokeLinecap="round"
+                style={{ transition: "stroke-dashoffset 650ms ease-out" }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className={`text-lg font-bold tabular-nums ${color}`}>{score ?? "—"}</span>
+            </div>
+          </div>
+          <span className="text-[11px] font-medium text-muted-foreground tracking-wide">Posture Score</span>
+          <span className={`text-xs font-semibold ${color}`}>{label}</span>
+          {postureData?.subScores && postureData.subScores.length > 0 && (
+            <div className="flex gap-1 mt-1 flex-wrap justify-center">
+              {postureData.subScores.slice(0, 3).map((s) => (
+                <Badge key={s.domain} variant="outline" className="text-[9px] px-1.5 py-0 h-4">
+                  {s.domain}: {s.score}
+                </Badge>
+              ))}
+            </div>
+          )}
+          <span className="text-[9px] text-muted-foreground/50 mt-0.5 flex items-center gap-1 group-hover:text-primary/60 transition-colors">
+            View details <ExternalLink className="h-2.5 w-2.5" />
+          </span>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -1694,81 +1792,85 @@ export default function Dashboard() {
           </Card>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {/* Stat cards row - tighter grouping */}
-          {statsLoading ? (
-            Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
-          ) : statsError ? (
-            <Card className="col-span-full">
-              <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-                <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                  <AlertTriangle className="h-6 w-6 text-destructive" />
+        {/* (1.14) Security Posture Score — prominent top-level metric */}
+        <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-3">
+          <PostureScoreWidget />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* Stat cards row - tighter grouping */}
+            {statsLoading ? (
+              Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
+            ) : statsError ? (
+              <Card className="col-span-full">
+                <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
+                  <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
+                    <AlertTriangle className="h-6 w-6 text-destructive" />
+                  </div>
+                  <p className="text-sm font-medium">Failed to load dashboard stats</p>
+                  <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchStats()}>
+                    Try Again
+                  </Button>
                 </div>
-                <p className="text-sm font-medium">Failed to load dashboard stats</p>
-                <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchStats()}>
-                  Try Again
-                </Button>
-              </div>
-            </Card>
-          ) : (
-            <>
-              <StatCard
-                title="Total Alerts"
-                value={stats?.totalAlerts ?? 0}
-                icon={AlertTriangle}
-                subtitle="All sources"
-                iconColor="text-amber-500"
-                href="/alerts"
-              />
-              <StatCard
-                title="Critical"
-                value={stats?.criticalAlerts ?? 0}
-                icon={Shield}
-                subtitle={stats?.criticalAlerts ? "Action Required" : "All clear"}
-                subtitleColor={stats?.criticalAlerts ? "text-orange-400" : "text-emerald-400"}
-                iconColor="text-red-500"
-                badge={(stats?.criticalAlerts ?? 0) > 0}
-                href="/alerts?severity=critical"
-              />
-              <StatCard
-                title="Open Incidents"
-                value={stats?.openIncidents ?? 0}
-                icon={FileWarning}
-                subtitle={stats?.openIncidents ? "Investigating" : "None open"}
-                subtitleColor={stats?.openIncidents ? "text-orange-400" : "text-emerald-400"}
-                iconColor="text-orange-500"
-                badge={(stats?.openIncidents ?? 0) > 0}
-                href="/incidents?status=open"
-              />
-              <StatCard
-                title="New Today"
-                value={stats?.newAlertsToday ?? 0}
-                icon={Zap}
-                subtitle="+0 from avg"
-                subtitleColor="text-cyan-400"
-                iconColor="text-cyan-500"
-                href="/alerts"
-              />
-              <StatCard
-                title="Escalated"
-                value={stats?.escalatedIncidents ?? 0}
-                icon={ArrowUpRight}
-                subtitle={stats?.escalatedIncidents ? "Tier 2 review" : "None pending"}
-                subtitleColor={stats?.escalatedIncidents ? "text-amber-400" : "text-muted-foreground"}
-                iconColor="text-indigo-500"
-                href="/incidents"
-              />
-              <StatCard
-                title="Resolved"
-                value={stats?.resolvedIncidents ?? 0}
-                icon={CheckCircle2}
-                subtitle="Last 24h"
-                iconColor="text-emerald-500"
-                href="/incidents?status=resolved"
-              />
-            </>
-          )}
+              </Card>
+            ) : (
+              <>
+                <StatCard
+                  title="Total Alerts"
+                  value={stats?.totalAlerts ?? 0}
+                  icon={AlertTriangle}
+                  subtitle="All sources"
+                  iconColor="text-amber-500"
+                  href="/alerts"
+                />
+                <StatCard
+                  title="Critical"
+                  value={stats?.criticalAlerts ?? 0}
+                  icon={Shield}
+                  subtitle={stats?.criticalAlerts ? "Action Required" : "All clear"}
+                  subtitleColor={stats?.criticalAlerts ? "text-orange-400" : "text-emerald-400"}
+                  iconColor="text-red-500"
+                  badge={(stats?.criticalAlerts ?? 0) > 0}
+                  href="/alerts?severity=critical"
+                />
+                <StatCard
+                  title="Open Incidents"
+                  value={stats?.openIncidents ?? 0}
+                  icon={FileWarning}
+                  subtitle={stats?.openIncidents ? "Investigating" : "None open"}
+                  subtitleColor={stats?.openIncidents ? "text-orange-400" : "text-emerald-400"}
+                  iconColor="text-orange-500"
+                  badge={(stats?.openIncidents ?? 0) > 0}
+                  href="/incidents?status=open"
+                />
+                <StatCard
+                  title="New Today"
+                  value={stats?.newAlertsToday ?? 0}
+                  icon={Zap}
+                  subtitle="+0 from avg"
+                  subtitleColor="text-cyan-400"
+                  iconColor="text-cyan-500"
+                  href="/alerts"
+                />
+                <StatCard
+                  title="Escalated"
+                  value={stats?.escalatedIncidents ?? 0}
+                  icon={ArrowUpRight}
+                  subtitle={stats?.escalatedIncidents ? "Tier 2 review" : "None pending"}
+                  subtitleColor={stats?.escalatedIncidents ? "text-amber-400" : "text-muted-foreground"}
+                  iconColor="text-indigo-500"
+                  href="/incidents"
+                />
+                <StatCard
+                  title="Resolved"
+                  value={stats?.resolvedIncidents ?? 0}
+                  icon={CheckCircle2}
+                  subtitle="Last 24h"
+                  iconColor="text-emerald-500"
+                  href="/incidents?status=resolved"
+                />
+              </>
+            )}
+          </div>
         </div>
 
         {/* Operational Metrics Row: MTTD, MTTR, Resolution Rate */}
@@ -1780,6 +1882,7 @@ export default function Dashboard() {
               icon={Timer}
               subtitle="Mean Time to Detect (30d)"
               iconColor="text-cyan-500"
+              href="/metrics-rollup?metric=mttd"
             />
             <StatCard
               title="MTTR"
@@ -1787,6 +1890,7 @@ export default function Dashboard() {
               icon={Target}
               subtitle="Mean Time to Resolve (30d)"
               iconColor="text-orange-500"
+              href="/metrics-rollup?metric=mttr"
             />
             <StatCard
               title="Resolution Rate"
