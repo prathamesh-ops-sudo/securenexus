@@ -480,7 +480,6 @@ export default function BoardDashboardPage() {
         </div>
       </div>
 
-      {isLoading && <p className="text-muted-foreground">Loading metrics...</p>}
       {error && <p className="text-destructive">Failed to load dashboard: {String(error)}</p>}
 
       {data && (

@@ -212,6 +212,10 @@ export default function IncidentDetailPage() {
             eventSourceRef.current = null;
             setIsStreaming(false);
             setStreamStatus(null);
+            if (streamTimerRef.current) {
+              clearInterval(streamTimerRef.current);
+              streamTimerRef.current = null;
+            }
             toast({
               title: "AI Narrative Failed",
               description: data.message || "Streaming failed",
