@@ -44,11 +44,57 @@ The GitHub Actions CI/CD pipeline may not auto-deploy. If staging needs manual d
 - `aws-cli` v2 is required (v1 generates `v1alpha1` API version that newer kubectl rejects). If aws-cli v1 is installed, upgrade to v2.
 - EKS kubeconfig: `aws eks update-kubeconfig --name securenexus --region us-east-1`
 
+## Local Dev Server
+
+### Starting the Dev Server
+```bash
+set -a && source .env && set +a && npm run dev
+```
+- Runs on port 5000 (Vite + Express backend)
+- PostgreSQL must be running locally
+- Rate limiter: In dev mode, `express-rate-limit` v7 is configured to skip all requests (`skip: () => true`). If you see 429 errors blocking all requests, check that the rate limiter config uses `limit` (not `max`) and has `skip: () => true` for dev mode.
+
+### Known Dev Mode Issues
+- **express-rate-limit v7**: `max: 0` blocks ALL requests (v6 treated it as unlimited). The fix is to use `skip: () => true` in dev mode and `validate: { limit: false }` to suppress the WRN_ERL_MAX_ZERO warning.
+
 ## Testing UI Changes
 
 ### Test User Credentials
 - A test user `testuser-devin@aricatech.com` / `TestPass123!` was created during a previous session. It may still be available.
 - If the test user doesn't work, create a new one via the registration flow at the staging URL.
+
+### Native Sensors Testing
+
+**Supported Platforms (7 total):**
+- Linux, Windows, macOS, iOS, Android, Docker, Kubernetes
+
+**Testing Flow:**
+1. Navigate to `/native-sensors` via sidebar: Standalone Security → Native Sensors
+2. Click "Register Sensor" to open the registration dialog
+3. Enter hostname and select platform from dropdown
+4. Platform capabilities and requirements display automatically based on selection
+5. After registration, click the sensor row to open details, then "Generate Install Command"
+6. Verify install command format matches platform (iOS: MDM/AppConfig XML, Android: EMM/ADB commands)
+7. Check Deployment Guide tab — all 7 platform buttons should be visible with correct emoji icons
+
+**Platform-Specific Verification:**
+- iOS: Capabilities include jailbreak detection, MDM compliance, NEFilterDataProvider. Requirements: iOS 15+, MDM/TestFlight.
+- Android: Capabilities include UsageStatsManager, VpnService, root detection. Requirements: Android 10+ (API 29+), Device Owner/Profile Owner.
+
+**Browser Automation Tips:**
+- Platform dropdown items may timeout with `devinid` clicks. Use coordinate-based clicks as fallback for dropdown selection.
+- After registering a sensor, the dialog shows credentials with install command. Click "Done" to close.
+
+### Onboarding 5th Step Testing
+
+**Navigation:** Sidebar → Admin & Settings → Onboarding → `/onboarding`
+
+**Verification Points:**
+- Page header shows "X of 5 core steps completed" (totalSteps must be 5, not 4)
+- 5 cards visible: Integrations, Ingestion, Endpoints, CSPM, Deploy native sensors
+- "Deploy native sensors" card shows sensor count and green checkmark when count > 0
+- "Go to Native Sensors" button navigates back to `/native-sensors`
+- Frontend fallback: `data?.totalSteps ?? 5` (was previously 4, fixed in PR #445)
 
 ### Coming Soon Pages (501 Detection)
 These pages detect 501 responses from stub endpoints and show "Coming Soon" UI:
@@ -68,3 +114,4 @@ The frontend detects 501 via `error?.message?.startsWith("501:")`. This depends 
 - After a deployment rollout, the first page load may be slow due to pod startup
 - Use screen recording to capture the full test flow for the user
 - Annotate recordings at each major test step for clarity
+- For local testing, ensure PostgreSQL is running and `.env` file is sourced before starting the dev server
