@@ -30,6 +30,9 @@ import {
   Power,
   PowerOff,
   Pencil,
+  Eye,
+  GitCompare,
+  Activity,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +143,55 @@ interface IocStats {
   typeDistribution: { type: string; count: number }[];
 }
 
+interface FeedIngestionStats {
+  feedId: string;
+  feedName: string;
+  total: number;
+  last24h: number;
+  last7d: number;
+  lastFetchAt: string | null;
+  lastFetchStatus: string | null;
+  lastFetchCount: number;
+}
+
+interface FeedPreviewResult {
+  success: boolean;
+  error?: string;
+  sampleIocs: Array<{
+    iocType: string;
+    iocValue: string;
+    confidence: number;
+    severity: string;
+    source: string;
+  }>;
+  totalParsed: number;
+  feedName?: string;
+  feedType?: string;
+  contentType?: string;
+}
+
+interface FeedComparisonData {
+  feeds: Array<{
+    feedId: string;
+    feedName: string;
+    feedType: string;
+    enabled: boolean;
+    uniqueIocs: number;
+    totalIocs: number;
+    fpCount: number;
+    fpRate: number;
+    lastFetchAt: string | null;
+    lastFetchStatus: string | null;
+  }>;
+  overlapMatrix: Array<{
+    feedA: string;
+    feedB: string;
+    overlapCount: number;
+    overlapPctA: number;
+    overlapPctB: number;
+  }>;
+}
+
 const IOC_TYPE_OPTIONS = ["ip", "domain", "url", "hash", "email", "cve"];
 const MATCH_FIELD_OPTIONS = ["sourceIp", "destIp", "domain", "url", "fileHash", "sender", "subject"];
 const ACTION_OPTIONS = [
@@ -210,6 +262,50 @@ const FEED_TYPE_COLORS: Record<string, string> = {
   virustotal: "bg-red-500/15 text-red-400 border-red-500/30",
   csv: "bg-amber-500/15 text-amber-400 border-amber-500/30",
 };
+
+// 4.1: Feed health status indicator — colored dot (green/yellow/red)
+function FeedHealthDot({ status, lastFetchAt }: { status: string | null; lastFetchAt: string | null }) {
+  let color = "bg-slate-400";
+  let label = "Unknown";
+  let pulse = false;
+
+  if (!status && !lastFetchAt) {
+    color = "bg-slate-400";
+    label = "Never synced";
+  } else if (status === "success") {
+    // Check if stale (> 24h since last fetch)
+    const hoursSince = lastFetchAt ? (Date.now() - new Date(lastFetchAt).getTime()) / (1000 * 60 * 60) : Infinity;
+    if (hoursSince <= 24) {
+      color = "bg-emerald-500";
+      label = "Active — syncing";
+      pulse = true;
+    } else {
+      color = "bg-amber-500";
+      label = `Stale — last sync ${Math.round(hoursSince)}h ago`;
+    }
+  } else if (status) {
+    color = "bg-red-500";
+    label = `Error — ${status}`;
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="relative flex h-2.5 w-2.5">
+            {pulse && (
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${color} opacity-75`} />
+            )}
+            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${color}`} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function FeedStatusBadge({ status }: { status: string | null }) {
   if (!status) {
@@ -304,6 +400,10 @@ export default function IocIngestionMatchingPage() {
   const [showRuleDialog, setShowRuleDialog] = useState(false);
   const [editingRule, setEditingRule] = useState<IocMatchRule | null>(null);
   const [ruleForm, setRuleForm] = useState(EMPTY_RULE_FORM);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [previewFeedId, setPreviewFeedId] = useState<string | null>(null);
+  const [showStatsDialog, setShowStatsDialog] = useState(false);
+  const [statsFeedId, setStatsFeedId] = useState<string | null>(null);
 
   const {
     data: feeds,
@@ -328,6 +428,30 @@ export default function IocIngestionMatchingPage() {
 
   const { data: matchRules, isLoading: isLoadingRules } = useQuery<IocMatchRule[]>({
     queryKey: ["/api/ioc-match-rules"],
+  });
+
+  // 4.2: Feed ingestion stats query
+  const { data: feedStatsData, isLoading: isLoadingFeedStats } = useQuery<FeedIngestionStats>({
+    queryKey: ["/api/ioc-feeds", statsFeedId, "stats"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/ioc-feeds/${statsFeedId}/stats`);
+      return res.json();
+    },
+    enabled: !!statsFeedId && showStatsDialog,
+  });
+
+  // 4.3: Feed preview mutation
+  const previewMutation = useMutation({
+    mutationFn: async (feedId: string) => {
+      const res = await apiRequest("POST", `/api/ioc-feeds/${feedId}/preview`);
+      return res.json() as Promise<FeedPreviewResult>;
+    },
+  });
+
+  // 4.4: Feed comparison data
+  const { data: comparisonData, isLoading: isLoadingComparison } = useQuery<FeedComparisonData>({
+    queryKey: ["/api/ioc-feeds/compare"],
+    enabled: activeTab === "comparison",
   });
 
   const ingestMutation = useMutation({
@@ -619,6 +743,9 @@ export default function IocIngestionMatchingPage() {
           <TabsTrigger value="enrichment" className="gap-1">
             <BarChart3 className="h-4 w-4" /> Enrichment
           </TabsTrigger>
+          <TabsTrigger value="comparison" className="gap-1">
+            <GitCompare className="h-4 w-4" /> Feed Comparison
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="feeds" className="mt-4">
@@ -643,6 +770,7 @@ export default function IocIngestionMatchingPage() {
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
+                        <FeedHealthDot status={feed.lastFetchStatus} lastFetchAt={feed.lastFetchAt} />
                         <Rss className="h-4 w-4 text-cyan-400" />
                         <span className="text-sm font-semibold">{feed.name}</span>
                       </div>
@@ -690,30 +818,69 @@ export default function IocIngestionMatchingPage() {
 
                     <div className="flex items-center justify-between">
                       <FeedStatusBadge status={feed.lastFetchStatus} />
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1 h-7"
-                              onClick={() => {
-                                setIngestingFeedIds((prev) => new Set(prev).add(feed.id));
-                                ingestMutation.mutate({ feedId: feed.id, rawData: null });
-                              }}
-                              disabled={ingestingFeedIds.has(feed.id)}
-                            >
-                              {ingestingFeedIds.has(feed.id) ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Play className="h-3 w-3" />
-                              )}
-                              Ingest
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Trigger manual ingestion for this feed</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <div className="flex items-center gap-1">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => {
+                                  setStatsFeedId(feed.id);
+                                  setShowStatsDialog(true);
+                                }}
+                              >
+                                <Activity className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>View ingestion stats</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => {
+                                  setPreviewFeedId(feed.id);
+                                  setShowPreviewDialog(true);
+                                  previewMutation.mutate(feed.id);
+                                }}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Preview sample IOCs</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1 h-7"
+                                onClick={() => {
+                                  setIngestingFeedIds((prev) => new Set(prev).add(feed.id));
+                                  ingestMutation.mutate({ feedId: feed.id, rawData: null });
+                                }}
+                                disabled={ingestingFeedIds.has(feed.id)}
+                              >
+                                {ingestingFeedIds.has(feed.id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Play className="h-3 w-3" />
+                                )}
+                                Ingest
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Trigger manual ingestion for this feed</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1226,15 +1393,7 @@ export default function IocIngestionMatchingPage() {
                     {allFeeds.slice(0, 8).map((feed) => (
                       <div key={feed.id} className="flex items-center justify-between py-1">
                         <div className="flex items-center gap-2">
-                          <div
-                            className={`w-2 h-2 rounded-full ${
-                              feed.lastFetchStatus === "success"
-                                ? "bg-emerald-500"
-                                : feed.lastFetchStatus
-                                  ? "bg-red-500"
-                                  : "bg-slate-500"
-                            }`}
-                          />
+                          <FeedHealthDot status={feed.lastFetchStatus} lastFetchAt={feed.lastFetchAt} />
                           <span className="text-xs truncate max-w-[140px]">{feed.name}</span>
                         </div>
                         <span className="text-[10px] text-muted-foreground">
@@ -1253,7 +1412,343 @@ export default function IocIngestionMatchingPage() {
             </Card>
           </div>
         </TabsContent>
+
+        {/* 4.4: Feed Comparison Tab */}
+        <TabsContent value="comparison" className="mt-4">
+          {isLoadingComparison ? (
+            <div className="space-y-4">
+              <Skeleton className="h-64" />
+              <Skeleton className="h-48" />
+            </div>
+          ) : !comparisonData || comparisonData.feeds.length === 0 ? (
+            <Card className="glass-card">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <GitCompare className="h-10 w-10 mb-3 opacity-40" />
+                <p className="text-sm">No feeds to compare</p>
+                <p className="text-xs mt-1">Add at least two feeds to see comparison data</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Per-feed coverage table */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Feed Coverage Comparison</CardTitle>
+                  <CardDescription className="text-xs">
+                    Side-by-side comparison of unique IOCs, false positive rates, and feed quality
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="max-h-[400px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Feed</TableHead>
+                          <TableHead className="w-20">Type</TableHead>
+                          <TableHead className="w-20 text-right">Total IOCs</TableHead>
+                          <TableHead className="w-24 text-right">Unique IOCs</TableHead>
+                          <TableHead className="w-20 text-right">FP Count</TableHead>
+                          <TableHead className="w-20 text-right">FP Rate</TableHead>
+                          <TableHead className="w-20">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {comparisonData.feeds.map((f) => (
+                          <TableRow key={f.feedId}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <FeedHealthDot status={f.lastFetchStatus} lastFetchAt={f.lastFetchAt} />
+                                <span className="text-xs font-medium">{f.feedName}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${FEED_TYPE_COLORS[f.feedType] || "bg-slate-500/15 text-slate-400 border-slate-500/30"}`}
+                              >
+                                {f.feedType.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-medium">
+                              {f.totalIocs.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-medium">
+                              {f.uniqueIocs.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right text-xs">{f.fpCount}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${
+                                  f.fpRate > 10
+                                    ? "bg-red-500/15 text-red-400 border-red-500/30"
+                                    : f.fpRate > 5
+                                      ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                      : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                }`}
+                              >
+                                {f.fpRate}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${
+                                  f.enabled
+                                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                    : "bg-slate-500/15 text-slate-400 border-slate-500/30"
+                                }`}
+                              >
+                                {f.enabled ? "Active" : "Disabled"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* Overlap matrix */}
+              {comparisonData.overlapMatrix.length > 0 && (
+                <Card className="glass-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Feed Overlap Matrix</CardTitle>
+                    <CardDescription className="text-xs">
+                      Percentage of shared IOCs between feeds. High overlap may indicate redundant feeds.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {comparisonData.overlapMatrix.map((overlap) => {
+                        const feedAName =
+                          comparisonData.feeds.find((f) => f.feedId === overlap.feedA)?.feedName || "Unknown";
+                        const feedBName =
+                          comparisonData.feeds.find((f) => f.feedId === overlap.feedB)?.feedName || "Unknown";
+                        const maxPct = Math.max(overlap.overlapPctA, overlap.overlapPctB);
+                        return (
+                          <div key={`${overlap.feedA}-${overlap.feedB}`} className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs">
+                                {feedAName} <span className="text-muted-foreground">↔</span> {feedBName}
+                              </span>
+                              <span className="text-xs font-medium">{overlap.overlapCount} shared IOCs</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    maxPct > 50 ? "bg-amber-500" : maxPct > 20 ? "bg-cyan-500" : "bg-emerald-500"
+                                  }`}
+                                  style={{ width: `${Math.min(maxPct, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground w-16 text-right">
+                                {overlap.overlapPctA}% / {overlap.overlapPctB}%
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* 4.2: Feed Ingestion Stats Dialog */}
+      <Dialog
+        open={showStatsDialog}
+        onOpenChange={(open) => {
+          setShowStatsDialog(open);
+          if (!open) setStatsFeedId(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="h-4 w-4" /> Feed Ingestion Statistics
+            </DialogTitle>
+            <DialogDescription>{feedStatsData ? feedStatsData.feedName : "Loading..."}</DialogDescription>
+          </DialogHeader>
+          {isLoadingFeedStats ? (
+            <div className="space-y-3 py-4">
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </div>
+          ) : feedStatsData ? (
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total IOCs</p>
+                  <p className="text-xl font-bold mt-1">{feedStatsData.total.toLocaleString()}</p>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Last 24h</p>
+                  <p className="text-xl font-bold mt-1 text-cyan-400">{feedStatsData.last24h.toLocaleString()}</p>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Last 7d</p>
+                  <p className="text-xl font-bold mt-1 text-emerald-400">{feedStatsData.last7d.toLocaleString()}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Last Fetch Status</span>
+                  <FeedStatusBadge status={feedStatsData.lastFetchStatus} />
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Last Fetch Count</span>
+                  <span className="font-medium">{feedStatsData.lastFetchCount} entries</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Last Sync</span>
+                  <span className="font-medium">
+                    {feedStatsData.lastFetchAt ? new Date(feedStatsData.lastFetchAt).toLocaleString() : "Never"}
+                  </span>
+                </div>
+              </div>
+              {feedStatsData.total > 0 && (
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Ingestion Velocity</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-500 rounded-full"
+                        style={{
+                          width: `${Math.min((feedStatsData.last7d / Math.max(feedStatsData.total, 1)) * 100, 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      {feedStatsData.total > 0 ? Math.round((feedStatsData.last7d / feedStatsData.total) * 100) : 0}% in
+                      last 7d
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground py-4 text-center">No data available</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 4.3: Feed Preview Dialog */}
+      <Dialog
+        open={showPreviewDialog}
+        onOpenChange={(open) => {
+          setShowPreviewDialog(open);
+          if (!open) {
+            setPreviewFeedId(null);
+            previewMutation.reset();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-4 w-4" /> Feed Preview — Sample IOCs
+            </DialogTitle>
+            <DialogDescription>
+              Preview of the first 10 IOCs this feed would ingest. Use this to evaluate feed quality before enabling.
+            </DialogDescription>
+          </DialogHeader>
+          {previewMutation.isPending ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-cyan-400 mb-2" />
+              <p className="text-xs text-muted-foreground">Fetching preview from feed source...</p>
+            </div>
+          ) : previewMutation.isError ? (
+            <div className="flex flex-col items-center justify-center py-8 text-red-400">
+              <AlertTriangle className="h-6 w-6 mb-2" />
+              <p className="text-xs">Failed to fetch preview: {previewMutation.error?.message}</p>
+            </div>
+          ) : previewMutation.data ? (
+            <div className="space-y-4 py-2">
+              {!previewMutation.data.success ? (
+                <div className="flex flex-col items-center justify-center py-6 text-amber-400">
+                  <AlertTriangle className="h-6 w-6 mb-2" />
+                  <p className="text-sm font-medium">Preview Failed</p>
+                  <p className="text-xs text-muted-foreground mt-1">{previewMutation.data.error}</p>
+                </div>
+              ) : previewMutation.data.sampleIocs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                  <Database className="h-6 w-6 mb-2 opacity-40" />
+                  <p className="text-sm">No IOCs found in feed</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    {previewMutation.data.feedName && (
+                      <span>
+                        Feed: <strong className="text-foreground">{previewMutation.data.feedName}</strong>
+                      </span>
+                    )}
+                    {previewMutation.data.feedType && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {previewMutation.data.feedType.toUpperCase()}
+                      </Badge>
+                    )}
+                    <span>{previewMutation.data.totalParsed} IOCs parsed</span>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-20">Type</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead className="w-24">Confidence</TableHead>
+                        <TableHead className="w-20">Severity</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {previewMutation.data.sampleIocs.map((ioc, idx) => {
+                        const TypeIcon = IOC_TYPE_ICONS[ioc.iocType] || Database;
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <TypeIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs">{ioc.iocType}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-xs font-mono break-all">{ioc.iocValue}</span>
+                            </TableCell>
+                            <TableCell>
+                              <ConfidenceBar confidence={ioc.confidence} />
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${
+                                  ioc.severity === "critical"
+                                    ? "bg-red-500/15 text-red-400 border-red-500/30"
+                                    : ioc.severity === "high"
+                                      ? "bg-orange-500/15 text-orange-400 border-orange-500/30"
+                                      : ioc.severity === "medium"
+                                        ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                        : "bg-slate-500/15 text-slate-400 border-slate-500/30"
+                                }`}
+                              >
+                                {ioc.severity}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
         <DialogContent className="max-w-lg">

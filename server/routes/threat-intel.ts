@@ -376,6 +376,123 @@ export function registerThreatIntelRoutes(app: Express): void {
     },
   );
 
+  // ── 4.4: Feed comparison table (registered before /:id to avoid route shadowing) ──
+  app.get(
+    "/api/ioc-feeds/compare",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feeds = await storage.getIocFeeds(orgId);
+        if (!feeds || feeds.length === 0) {
+          return res.json({ feeds: [], overlapMatrix: [] });
+        }
+
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and, count, countDistinct, sql } = await import("drizzle-orm");
+
+        // Get per-feed stats
+        const feedStats = await Promise.all(
+          feeds.map(async (feed) => {
+            const [uniqueResult] = await database
+              .select({ count: countDistinct(iocEntries.iocValue) })
+              .from(iocEntries)
+              .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.feedId, feed.id)));
+
+            const [totalResult] = await database
+              .select({ count: count() })
+              .from(iocEntries)
+              .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.feedId, feed.id)));
+
+            const [fpResult] = await database
+              .select({ count: count() })
+              .from(iocEntries)
+              .where(
+                and(
+                  eq(iocEntries.orgId, orgId),
+                  eq(iocEntries.feedId, feed.id),
+                  sql`${iocEntries.status} IN ('whitelisted', 'revoked')`,
+                ),
+              );
+
+            const totalCount = totalResult?.count ?? 0;
+            const fpCount = fpResult?.count ?? 0;
+            const fpRate = totalCount > 0 ? Math.round((fpCount / totalCount) * 10000) / 100 : 0;
+
+            return {
+              feedId: feed.id,
+              feedName: feed.name,
+              feedType: feed.feedType,
+              enabled: feed.enabled ?? true,
+              uniqueIocs: uniqueResult?.count ?? 0,
+              totalIocs: totalCount,
+              fpCount,
+              fpRate,
+              lastFetchAt: feed.lastFetchAt,
+              lastFetchStatus: feed.lastFetchStatus,
+            };
+          }),
+        );
+
+        // Build overlap matrix (only if <= 10 feeds to avoid N^2 explosion)
+        const overlapMatrix: Array<{
+          feedA: string;
+          feedB: string;
+          overlapCount: number;
+          overlapPctA: number;
+          overlapPctB: number;
+        }> = [];
+
+        if (feeds.length <= 10) {
+          for (let i = 0; i < feeds.length; i++) {
+            for (let j = i + 1; j < feeds.length; j++) {
+              const feedA = feeds[i];
+              const feedB = feeds[j];
+
+              const [overlapResult] = await database
+                .select({ count: count() })
+                .from(iocEntries)
+                .where(
+                  and(
+                    eq(iocEntries.orgId, orgId),
+                    eq(iocEntries.feedId, feedA.id),
+                    sql`${iocEntries.iocValue} IN (
+                      SELECT ${iocEntries.iocValue} FROM ${iocEntries}
+                      WHERE ${iocEntries.feedId} = ${feedB.id}
+                        AND ${iocEntries.orgId} = ${orgId}
+                    )`,
+                  ),
+                );
+
+              const overlapCount = overlapResult?.count ?? 0;
+              const statsA = feedStats.find((s) => s.feedId === feedA.id);
+              const statsB = feedStats.find((s) => s.feedId === feedB.id);
+              const uniqueA = statsA?.uniqueIocs ?? 0;
+              const uniqueB = statsB?.uniqueIocs ?? 0;
+
+              overlapMatrix.push({
+                feedA: feedA.id,
+                feedB: feedB.id,
+                overlapCount,
+                overlapPctA: uniqueA > 0 ? Math.round((overlapCount / uniqueA) * 10000) / 100 : 0,
+                overlapPctB: uniqueB > 0 ? Math.round((overlapCount / uniqueB) * 10000) / 100 : 0,
+              });
+            }
+          }
+        }
+
+        res.json({ feeds: feedStats, overlapMatrix });
+      } catch (error) {
+        logger.child("routes").error("Failed to compare feeds", { error: String(error) });
+        res.status(500).json({ message: "Failed to compare feeds" });
+      }
+    },
+  );
+
   // Threat Intel Fusion Layer - IOC Feeds, Entries, Watchlists, Match Rules, Matches
   app.get(
     "/api/ioc-feeds",
@@ -1128,6 +1245,199 @@ export function registerThreatIntelRoutes(app: Express): void {
         res.json({ slug, enabled: false });
       } catch (error) {
         res.status(500).json({ message: "Failed to disable feed" });
+      }
+    },
+  );
+
+  // ── 4.2: Feed ingestion statistics per feed (total, 24h, 7d) ──
+  app.get(
+    "/api/ioc-feeds/:id/stats",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feed = await storage.getIocFeed(p(req.params.id));
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
+
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and, gte, count } = await import("drizzle-orm");
+
+        const now = new Date();
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const [totalResult] = await database
+          .select({ count: count() })
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.feedId, feed.id)));
+
+        const [last24hResult] = await database
+          .select({ count: count() })
+          .from(iocEntries)
+          .where(
+            and(eq(iocEntries.orgId, orgId), eq(iocEntries.feedId, feed.id), gte(iocEntries.createdAt, oneDayAgo)),
+          );
+
+        const [last7dResult] = await database
+          .select({ count: count() })
+          .from(iocEntries)
+          .where(
+            and(eq(iocEntries.orgId, orgId), eq(iocEntries.feedId, feed.id), gte(iocEntries.createdAt, sevenDaysAgo)),
+          );
+
+        res.json({
+          feedId: feed.id,
+          feedName: feed.name,
+          total: totalResult?.count ?? 0,
+          last24h: last24hResult?.count ?? 0,
+          last7d: last7dResult?.count ?? 0,
+          lastFetchAt: feed.lastFetchAt,
+          lastFetchStatus: feed.lastFetchStatus,
+          lastFetchCount: feed.lastFetchCount ?? 0,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to fetch feed stats", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch feed statistics" });
+      }
+    },
+  );
+
+  // ── 4.3: Feed preview — sample IOCs before enabling ──
+  app.post(
+    "/api/ioc-feeds/:id/preview",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feed = await storage.getIocFeed(p(req.params.id));
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
+
+        if (!feed.url) {
+          return res.status(400).json({ message: "Feed has no URL configured for preview" });
+        }
+
+        // Fetch feed content without persisting
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 15000);
+          const response = await fetch(feed.url, {
+            signal: controller.signal,
+            headers: { Accept: "application/json, text/csv, text/plain, */*" },
+          });
+          clearTimeout(timeout);
+
+          if (!response.ok) {
+            return res.json({
+              success: false,
+              error: `Feed returned HTTP ${response.status}`,
+              sampleIocs: [],
+              totalParsed: 0,
+            });
+          }
+
+          const contentType = response.headers.get("content-type") || "";
+          const rawText = await response.text();
+
+          // Parse based on feed type
+          const sampleIocs: Array<{
+            iocType: string;
+            iocValue: string;
+            confidence: number;
+            severity: string;
+            source: string;
+          }> = [];
+
+          if (feed.feedType === "csv" || contentType.includes("text/csv") || contentType.includes("text/plain")) {
+            const lines = rawText.split("\n").filter((l) => l.trim());
+            // Skip header line if it looks like a header
+            const startIdx = lines.length > 0 && lines[0].toLowerCase().includes("type") ? 1 : 0;
+            for (let i = startIdx; i < Math.min(lines.length, startIdx + 10); i++) {
+              const parts = lines[i].split(",").map((part) => part.trim());
+              if (parts.length >= 2) {
+                sampleIocs.push({
+                  iocType: parts[0] || "unknown",
+                  iocValue: parts[1] || "",
+                  confidence: parts[2] ? parseInt(parts[2], 10) || 50 : 50,
+                  severity: parts[3] || "medium",
+                  source: feed.name,
+                });
+              }
+            }
+          } else {
+            // Try JSON parsing
+            try {
+              const jsonData = JSON.parse(rawText);
+              const items = Array.isArray(jsonData)
+                ? jsonData
+                : jsonData.data
+                  ? Array.isArray(jsonData.data)
+                    ? jsonData.data
+                    : [jsonData.data]
+                  : jsonData.indicators
+                    ? jsonData.indicators
+                    : jsonData.objects
+                      ? jsonData.objects.filter((o: Record<string, unknown>) => o.type === "indicator" || o.pattern)
+                      : [jsonData];
+
+              for (let i = 0; i < Math.min(items.length, 10); i++) {
+                const item = items[i];
+                sampleIocs.push({
+                  iocType: item.type || item.ioc_type || item.iocType || "unknown",
+                  iocValue:
+                    item.value || item.ioc_value || item.iocValue || item.indicator || item.pattern || "unknown",
+                  confidence: item.confidence ?? item.score ?? 50,
+                  severity: item.severity || item.threat_level || "medium",
+                  source: feed.name,
+                });
+              }
+            } catch {
+              // Plain text — treat each line as an IOC value
+              const lines = rawText.split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+              for (let i = 0; i < Math.min(lines.length, 10); i++) {
+                const val = lines[i].trim();
+                // Detect IOC type
+                let iocType = "unknown";
+                if (/^\d{1,3}(\.\d{1,3}){3}(\/\d+)?$/.test(val)) iocType = "ip";
+                else if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(val)) iocType = "domain";
+                else if (/^https?:\/\//.test(val)) iocType = "url";
+                else if (/^[a-fA-F0-9]{32,}$/.test(val)) iocType = "hash";
+                sampleIocs.push({
+                  iocType,
+                  iocValue: val,
+                  confidence: 50,
+                  severity: "medium",
+                  source: feed.name,
+                });
+              }
+            }
+          }
+
+          res.json({
+            success: true,
+            sampleIocs,
+            totalParsed: sampleIocs.length,
+            feedName: feed.name,
+            feedType: feed.feedType,
+            contentType,
+          });
+        } catch (fetchErr: any) {
+          res.json({
+            success: false,
+            error: fetchErr.name === "AbortError" ? "Feed request timed out (15s)" : fetchErr.message,
+            sampleIocs: [],
+            totalParsed: 0,
+          });
+        }
+      } catch (error) {
+        logger.child("routes").error("Failed to preview feed", { error: String(error) });
+        res.status(500).json({ message: "Failed to preview feed" });
       }
     },
   );
