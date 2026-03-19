@@ -630,6 +630,230 @@ export function registerThreatIntelRoutes(app: Express): void {
     },
   );
 
+  // ── 4.5: Update feed polling schedule ──
+  app.patch(
+    "/api/ioc-feeds/:id/schedule",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feed = await storage.getIocFeed(p(req.params.id));
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
+
+        const { schedule } = req.body;
+        const validSchedules = ["manual", "1h", "6h", "12h", "24h"];
+        if (!schedule || !validSchedules.includes(schedule)) {
+          return res.status(400).json({ message: `Invalid schedule. Must be one of: ${validSchedules.join(", ")}` });
+        }
+
+        const updated = await storage.updateIocFeed(p(req.params.id), { schedule });
+        if (!updated) return res.status(404).json({ message: "Feed not found" });
+
+        // If switching to a non-manual schedule, enqueue the first poll
+        if (schedule !== "manual") {
+          const { scheduleJob } = await import("../job-queue");
+          const intervalMs: Record<string, number> = {
+            "1h": 3600000,
+            "6h": 21600000,
+            "12h": 43200000,
+            "24h": 86400000,
+          };
+          const nextRun = new Date(Date.now() + (intervalMs[schedule] || 3600000));
+          try {
+            await scheduleJob("ioc_feed_poll", orgId, { feedId: feed.id }, nextRun);
+            logger
+              .child("routes")
+              .info(`Scheduled next ioc_feed_poll for feed ${feed.name} at ${nextRun.toISOString()}`);
+          } catch (schedErr) {
+            logger.child("routes").warn(`Failed to schedule feed poll: ${String(schedErr)}`);
+          }
+        }
+
+        res.json({ ...updated, message: `Schedule updated to ${schedule}` });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update feed schedule" });
+      }
+    },
+  );
+
+  // ── 4.8: Update feed authentication config ──
+  app.patch(
+    "/api/ioc-feeds/:id/auth",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feed = await storage.getIocFeed(p(req.params.id));
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
+
+        const {
+          authType,
+          apiKeyHeader,
+          apiKeyValue,
+          bearerToken,
+          basicUsername,
+          basicPassword,
+          clientCertPem,
+          clientKeyPem,
+          caCertPem,
+        } = req.body;
+        const validAuthTypes = ["none", "api_key", "bearer", "basic", "mtls"];
+        if (!authType || !validAuthTypes.includes(authType)) {
+          return res.status(400).json({ message: `Invalid authType. Must be one of: ${validAuthTypes.join(", ")}` });
+        }
+
+        // Validate required fields per auth type
+        if (authType === "api_key" && (!apiKeyHeader || !apiKeyValue)) {
+          return res.status(400).json({ message: "api_key auth requires apiKeyHeader and apiKeyValue" });
+        }
+        if (authType === "bearer" && !bearerToken) {
+          return res.status(400).json({ message: "bearer auth requires bearerToken" });
+        }
+        if (authType === "basic" && (!basicUsername || !basicPassword)) {
+          return res.status(400).json({ message: "basic auth requires basicUsername and basicPassword" });
+        }
+        if (authType === "mtls" && (!clientCertPem || !clientKeyPem)) {
+          return res.status(400).json({ message: "mtls auth requires clientCertPem and clientKeyPem" });
+        }
+
+        const existingConfig = (feed.config as Record<string, any>) || {};
+        const authConfig: Record<string, any> = { authType };
+        if (authType === "api_key") {
+          authConfig.apiKeyHeader = apiKeyHeader;
+          authConfig.apiKeyValue = apiKeyValue;
+        } else if (authType === "bearer") {
+          authConfig.bearerToken = bearerToken;
+        } else if (authType === "basic") {
+          authConfig.basicUsername = basicUsername;
+          authConfig.basicPassword = basicPassword;
+        } else if (authType === "mtls") {
+          authConfig.clientCertPem = clientCertPem;
+          authConfig.clientKeyPem = clientKeyPem;
+          if (caCertPem) authConfig.caCertPem = caCertPem;
+        }
+
+        const updatedConfig = { ...existingConfig, auth: authConfig };
+        const updated = await storage.updateIocFeed(p(req.params.id), { config: updatedConfig });
+        if (!updated) return res.status(404).json({ message: "Feed not found" });
+
+        // Return feed but mask sensitive auth fields
+        const maskedAuth = { ...authConfig };
+        if (maskedAuth.apiKeyValue) maskedAuth.apiKeyValue = "***";
+        if (maskedAuth.bearerToken) maskedAuth.bearerToken = "***";
+        if (maskedAuth.basicPassword) maskedAuth.basicPassword = "***";
+        if (maskedAuth.clientKeyPem) maskedAuth.clientKeyPem = "***";
+
+        res.json({ ...updated, config: { ...updatedConfig, auth: maskedAuth } });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update feed authentication" });
+      }
+    },
+  );
+
+  // ── 4.7: Parse STIX 2.1 full objects ──
+  app.post(
+    "/api/ioc-feeds/:id/ingest-stix-full",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feed = await storage.getIocFeed(p(req.params.id));
+        if (!feed || feed.orgId !== orgId) return res.status(404).json({ message: "Feed not found" });
+
+        const { parseSTIXBundleFull, ingestFeed } = await import("../ioc-ingestion");
+        const stixData = req.body.data || req.body;
+        const fullResult = parseSTIXBundleFull(stixData);
+
+        // Ingest the indicators normally
+        const ingestionResult = await ingestFeed(feed, stixData);
+
+        // Ingest STIX objects as pseudo-IOC entries for searchability
+        const stixObjectEntries: any[] = [];
+        const objectTypes = [
+          { arr: fullResult.threatActors, type: "threat-actor" },
+          { arr: fullResult.campaigns, type: "campaign" },
+          { arr: fullResult.malware, type: "malware" },
+          { arr: fullResult.tools, type: "tool" },
+          { arr: fullResult.attackPatterns, type: "attack-pattern" },
+        ];
+
+        for (const { arr, type } of objectTypes) {
+          for (const obj of arr) {
+            stixObjectEntries.push({
+              orgId: feed.orgId,
+              feedId: feed.id,
+              iocType: type,
+              iocValue: obj.name,
+              confidence: 80,
+              severity: "medium",
+              tags: obj.labels || [],
+              source: "STIX 2.1",
+              status: "active",
+              metadata: {
+                stixId: obj.stixId,
+                stixType: obj.stixType,
+                description: obj.description,
+                aliases: obj.aliases,
+                ...obj.metadata,
+                relationships: fullResult.relationships
+                  .filter((r) => r.sourceRef === obj.stixId || r.targetRef === obj.stixId)
+                  .map((r) => ({
+                    type: r.relationshipType,
+                    sourceRef: r.sourceRef,
+                    targetRef: r.targetRef,
+                    description: r.description,
+                  })),
+              },
+              expiresAt: null,
+            });
+          }
+        }
+
+        // Batch insert STIX objects
+        let stixObjectsIngested = 0;
+        if (stixObjectEntries.length > 0) {
+          const { db: database } = await import("../db");
+          const { iocEntries } = await import("@shared/schema");
+          const CHUNK = 50;
+          for (let i = 0; i < stixObjectEntries.length; i += CHUNK) {
+            const chunk = stixObjectEntries.slice(i, i + CHUNK);
+            try {
+              const inserted = await database.insert(iocEntries).values(chunk).onConflictDoNothing().returning();
+              stixObjectsIngested += inserted.length;
+            } catch (e: any) {
+              logger.child("routes").warn(`STIX object insert error: ${e.message}`);
+            }
+          }
+        }
+
+        res.json({
+          ...ingestionResult,
+          stixObjects: {
+            threatActors: fullResult.threatActors.length,
+            campaigns: fullResult.campaigns.length,
+            malware: fullResult.malware.length,
+            tools: fullResult.tools.length,
+            attackPatterns: fullResult.attackPatterns.length,
+            relationships: fullResult.relationships.length,
+            ingested: stixObjectsIngested,
+          },
+        });
+      } catch (error) {
+        logger.child("routes").error("STIX full ingestion error", { error: String(error) });
+        res.status(500).json({ message: "Failed to ingest STIX bundle" });
+      }
+    },
+  );
+
   app.get(
     "/api/ioc-entries",
     isAuthenticated,

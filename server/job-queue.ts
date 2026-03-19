@@ -214,7 +214,68 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       return { collected: false, type: "sli_collection", error: err.message || String(err) };
     }
   },
+  ioc_feed_poll: async (job) => {
+    try {
+      const feedId = job.payload?.feedId;
+      const orgId = job.orgId;
+      if (!feedId || !orgId) {
+        return { polled: false, error: "Missing feedId or orgId in job payload" };
+      }
+      const feed = await storage.getIocFeed(feedId);
+      if (!feed || feed.orgId !== orgId) {
+        return { polled: false, error: "Feed not found or org mismatch" };
+      }
+      if (!feed.enabled) {
+        return { polled: false, error: "Feed is disabled — skipping poll" };
+      }
+      const { fetchAndIngestFeed } = await import("./ioc-ingestion");
+      const result = await fetchAndIngestFeed(feed);
+      logger.child("job-queue").info(`ioc_feed_poll completed for feed ${feed.name}`, {
+        feedId: feed.id,
+        newEntries: result.newEntries,
+        totalParsed: result.totalParsed,
+        errors: result.errors.length,
+      });
+
+      // Re-schedule the next poll based on feed schedule
+      const schedule = feed.schedule || "manual";
+      if (schedule !== "manual") {
+        const intervalMs = parseScheduleToMs(schedule);
+        if (intervalMs > 0) {
+          const nextRunAt = new Date(Date.now() + intervalMs);
+          await scheduleJob("ioc_feed_poll", orgId, { feedId }, nextRunAt);
+          logger
+            .child("job-queue")
+            .info(`Scheduled next ioc_feed_poll for feed ${feed.name} at ${nextRunAt.toISOString()}`);
+        }
+      }
+
+      return {
+        polled: true,
+        feedId: feed.id,
+        feedName: feed.name,
+        newEntries: result.newEntries,
+        totalParsed: result.totalParsed,
+        errors: result.errors,
+        duration: result.duration,
+      };
+    } catch (err: any) {
+      return { polled: false, type: "ioc_feed_poll", error: err.message || String(err) };
+    }
+  },
 };
+
+function parseScheduleToMs(schedule: string): number {
+  const map: Record<string, number> = {
+    "1h": 60 * 60 * 1000,
+    "6h": 6 * 60 * 60 * 1000,
+    "12h": 12 * 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    daily: 24 * 60 * 60 * 1000,
+    hourly: 60 * 60 * 1000,
+  };
+  return map[schedule] || 0;
+}
 
 let workerRunning = false;
 let workerInterval: NodeJS.Timeout | null = null;

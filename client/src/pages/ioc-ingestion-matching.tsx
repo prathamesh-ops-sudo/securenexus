@@ -33,6 +33,9 @@ import {
   Eye,
   GitCompare,
   Activity,
+  Shield,
+  Key,
+  Lock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -404,6 +407,23 @@ export default function IocIngestionMatchingPage() {
   const [previewFeedId, setPreviewFeedId] = useState<string | null>(null);
   const [showStatsDialog, setShowStatsDialog] = useState(false);
   const [statsFeedId, setStatsFeedId] = useState<string | null>(null);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [authFeedId, setAuthFeedId] = useState<string | null>(null);
+  const [authForm, setAuthForm] = useState<{
+    authType: string;
+    apiKeyHeader: string;
+    apiKeyValue: string;
+    bearerToken: string;
+    basicUsername: string;
+    basicPassword: string;
+  }>({
+    authType: "none",
+    apiKeyHeader: "X-API-Key",
+    apiKeyValue: "",
+    bearerToken: "",
+    basicUsername: "",
+    basicPassword: "",
+  });
 
   const {
     data: feeds,
@@ -566,6 +586,40 @@ export default function IocIngestionMatchingPage() {
     },
     onError: (err: Error) => {
       toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // 4.5: Schedule mutation
+  const scheduleMutation = useMutation({
+    mutationFn: async ({ feedId, schedule }: { feedId: string; schedule: string }) => {
+      const res = await apiRequest("PATCH", `/api/ioc-feeds/${feedId}/schedule`, { schedule });
+      return res.json();
+    },
+    onSuccess: (_data: unknown, variables: { feedId: string; schedule: string }) => {
+      toast({
+        title: "Schedule Updated",
+        description: `Feed schedule set to ${variables.schedule === "manual" ? "manual" : "every " + variables.schedule}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to Update Schedule", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // 4.8: Auth config mutation
+  const authMutation = useMutation({
+    mutationFn: async ({ feedId, authConfig }: { feedId: string; authConfig: Record<string, string> }) => {
+      const res = await apiRequest("PATCH", `/api/ioc-feeds/${feedId}/auth`, authConfig);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Authentication Updated", description: "Feed authentication config saved." });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-feeds"] });
+      setShowAuthDialog(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to Update Auth", description: err.message, variant: "destructive" });
     },
   });
 
@@ -812,12 +866,45 @@ export default function IocIngestionMatchingPage() {
                       </div>
                       <div>
                         <p className="text-[10px] text-muted-foreground">Schedule</p>
-                        <p className="text-sm font-medium">{feed.schedule || "Manual"}</p>
+                        <Select
+                          value={feed.schedule || "manual"}
+                          onValueChange={(val) => scheduleMutation.mutate({ feedId: feed.id, schedule: val })}
+                        >
+                          <SelectTrigger className="h-6 w-[90px] text-xs border-border/40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="manual">Manual</SelectItem>
+                            <SelectItem value="1h">Every 1h</SelectItem>
+                            <SelectItem value="6h">Every 6h</SelectItem>
+                            <SelectItem value="12h">Every 12h</SelectItem>
+                            <SelectItem value="24h">Every 24h</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <FeedStatusBadge status={feed.lastFetchStatus} />
+                      <div className="flex items-center gap-2">
+                        <FeedStatusBadge status={feed.lastFetchStatus} />
+                        {(() => {
+                          const cfg = (feed.config as Record<string, unknown>) || {};
+                          const auth = (cfg.auth as Record<string, string>) || {};
+                          const at = auth.authType;
+                          if (at && at !== "none") {
+                            return (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] bg-green-500/15 text-green-400 border-green-500/30"
+                              >
+                                <Lock className="h-2.5 w-2.5 mr-0.5" />
+                                {at.toUpperCase()}
+                              </Badge>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                       <div className="flex items-center gap-1">
                         <TooltipProvider>
                           <Tooltip>
@@ -854,6 +941,34 @@ export default function IocIngestionMatchingPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Preview sample IOCs</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => {
+                                  setAuthFeedId(feed.id);
+                                  const config = (feed.config as Record<string, unknown>) || {};
+                                  const auth = (config.auth as Record<string, string>) || {};
+                                  setAuthForm({
+                                    authType: auth.authType || "none",
+                                    apiKeyHeader: auth.apiKeyHeader || "X-API-Key",
+                                    apiKeyValue: "",
+                                    bearerToken: "",
+                                    basicUsername: auth.basicUsername || "",
+                                    basicPassword: "",
+                                  });
+                                  setShowAuthDialog(true);
+                                }}
+                              >
+                                <Key className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Configure authentication</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                         <TooltipProvider>
@@ -2044,6 +2159,135 @@ export default function IocIngestionMatchingPage() {
                 <Settings2 className="h-4 w-4 mr-1" />
               )}
               {editingRule ? "Update Rule" : "Create Rule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 4.8: Feed Authentication Config Dialog */}
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" /> Feed Authentication
+            </DialogTitle>
+            <DialogDescription>Configure how this feed authenticates with its source.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs">Auth Type</Label>
+              <Select
+                value={authForm.authType}
+                onValueChange={(val) => setAuthForm((prev) => ({ ...prev, authType: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="api_key">API Key (Custom Header)</SelectItem>
+                  <SelectItem value="bearer">Bearer Token</SelectItem>
+                  <SelectItem value="basic">Basic Auth</SelectItem>
+                  <SelectItem value="mtls">mTLS Certificate</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {authForm.authType === "api_key" && (
+              <>
+                <div>
+                  <Label className="text-xs">Header Name</Label>
+                  <Input
+                    value={authForm.apiKeyHeader}
+                    onChange={(e) => setAuthForm((prev) => ({ ...prev, apiKeyHeader: e.target.value }))}
+                    placeholder="X-API-Key"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">API Key Value</Label>
+                  <Input
+                    type="password"
+                    value={authForm.apiKeyValue}
+                    onChange={(e) => setAuthForm((prev) => ({ ...prev, apiKeyValue: e.target.value }))}
+                    placeholder="Enter API key"
+                  />
+                </div>
+              </>
+            )}
+
+            {authForm.authType === "bearer" && (
+              <div>
+                <Label className="text-xs">Bearer Token</Label>
+                <Input
+                  type="password"
+                  value={authForm.bearerToken}
+                  onChange={(e) => setAuthForm((prev) => ({ ...prev, bearerToken: e.target.value }))}
+                  placeholder="Enter bearer token"
+                />
+              </div>
+            )}
+
+            {authForm.authType === "basic" && (
+              <>
+                <div>
+                  <Label className="text-xs">Username</Label>
+                  <Input
+                    value={authForm.basicUsername}
+                    onChange={(e) => setAuthForm((prev) => ({ ...prev, basicUsername: e.target.value }))}
+                    placeholder="Username"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Password</Label>
+                  <Input
+                    type="password"
+                    value={authForm.basicPassword}
+                    onChange={(e) => setAuthForm((prev) => ({ ...prev, basicPassword: e.target.value }))}
+                    placeholder="Password"
+                  />
+                </div>
+              </>
+            )}
+
+            {authForm.authType === "mtls" && (
+              <div className="text-xs text-muted-foreground p-3 bg-muted/50 rounded-md">
+                <Shield className="h-4 w-4 inline mr-1" />
+                mTLS certificate upload requires admin CLI access. Use the API endpoint directly:
+                <code className="block mt-1 text-[10px] font-mono break-all">
+                  PATCH /api/ioc-feeds/:id/auth with clientCertPem and clientKeyPem
+                </code>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAuthDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!authFeedId) return;
+                authMutation.mutate({
+                  feedId: authFeedId,
+                  authConfig: {
+                    authType: authForm.authType,
+                    ...(authForm.authType === "api_key"
+                      ? { apiKeyHeader: authForm.apiKeyHeader, apiKeyValue: authForm.apiKeyValue }
+                      : {}),
+                    ...(authForm.authType === "bearer" ? { bearerToken: authForm.bearerToken } : {}),
+                    ...(authForm.authType === "basic"
+                      ? { basicUsername: authForm.basicUsername, basicPassword: authForm.basicPassword }
+                      : {}),
+                  },
+                });
+              }}
+              disabled={authMutation.isPending}
+            >
+              {authMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Key className="h-4 w-4 mr-1" />
+              )}
+              Save Auth Config
             </Button>
           </DialogFooter>
         </DialogContent>

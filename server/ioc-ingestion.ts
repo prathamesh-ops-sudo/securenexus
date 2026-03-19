@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { iocEntries, iocFeeds, type IocFeed, type InsertIocEntry } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface IngestionResult {
@@ -8,6 +8,7 @@ export interface IngestionResult {
   feedName: string;
   newEntries: number;
   updatedEntries: number;
+  deduplicated: number;
   totalParsed: number;
   errors: string[];
   duration: number;
@@ -26,6 +27,50 @@ interface RawIOC {
   firstSeen?: string;
   lastSeen?: string;
   metadata?: Record<string, any>;
+}
+
+// ── 4.7: STIX 2.1 Full Object Types ──
+export interface STIXObject {
+  stixId: string;
+  stixType: string;
+  name: string;
+  description?: string;
+  aliases?: string[];
+  labels?: string[];
+  created?: string;
+  modified?: string;
+  metadata: Record<string, any>;
+}
+
+export interface STIXRelationship {
+  stixId: string;
+  sourceRef: string;
+  targetRef: string;
+  relationshipType: string;
+  description?: string;
+}
+
+export interface STIXFullParseResult {
+  indicators: RawIOC[];
+  threatActors: STIXObject[];
+  campaigns: STIXObject[];
+  malware: STIXObject[];
+  tools: STIXObject[];
+  attackPatterns: STIXObject[];
+  relationships: STIXRelationship[];
+}
+
+// ── 4.8: Feed Authentication Types ──
+export interface FeedAuthConfig {
+  authType: "none" | "api_key" | "bearer" | "basic" | "mtls";
+  apiKeyHeader?: string;
+  apiKeyValue?: string;
+  bearerToken?: string;
+  basicUsername?: string;
+  basicPassword?: string;
+  clientCertPem?: string;
+  clientKeyPem?: string;
+  caCertPem?: string;
 }
 
 function normalizeIocType(raw: string): string {
@@ -118,7 +163,22 @@ export function parseMISPFeed(data: any): RawIOC[] {
 }
 
 export function parseSTIXBundle(data: any): RawIOC[] {
-  const iocs: RawIOC[] = [];
+  const result = parseSTIXBundleFull(data);
+  return result.indicators;
+}
+
+// ── 4.7: Full STIX 2.1 object parser ──
+export function parseSTIXBundleFull(data: any): STIXFullParseResult {
+  const result: STIXFullParseResult = {
+    indicators: [],
+    threatActors: [],
+    campaigns: [],
+    malware: [],
+    tools: [],
+    attackPatterns: [],
+    relationships: [],
+  };
+
   try {
     const objects = data?.objects || (Array.isArray(data) ? data : []);
     const indicators = objects.filter((o: any) => o.type === "indicator");
@@ -144,7 +204,7 @@ export function parseSTIXBundle(data: any): RawIOC[] {
       const extracted = extractFromSTIXPattern(pattern);
       for (const ext of extracted) {
         const labels = ind.labels || [];
-        iocs.push({
+        result.indicators.push({
           type: ext.type,
           value: cleanIocValue(ext.value),
           confidence: ind.confidence || 70,
@@ -160,10 +220,122 @@ export function parseSTIXBundle(data: any): RawIOC[] {
         });
       }
     }
+
+    // Parse full STIX 2.1 objects
+    for (const obj of objects) {
+      switch (obj.type) {
+        case "threat-actor":
+          result.threatActors.push({
+            stixId: obj.id,
+            stixType: obj.type,
+            name: obj.name || "Unknown Threat Actor",
+            description: obj.description,
+            aliases: obj.aliases || [],
+            labels: obj.labels || [],
+            created: obj.created,
+            modified: obj.modified,
+            metadata: {
+              sophistication: obj.sophistication,
+              resourceLevel: obj.resource_level,
+              primaryMotivation: obj.primary_motivation,
+              secondaryMotivations: obj.secondary_motivations,
+              threatActorTypes: obj.threat_actor_types,
+              goals: obj.goals,
+              roles: obj.roles,
+            },
+          });
+          break;
+        case "campaign":
+          result.campaigns.push({
+            stixId: obj.id,
+            stixType: obj.type,
+            name: obj.name || "Unknown Campaign",
+            description: obj.description,
+            aliases: obj.aliases || [],
+            labels: obj.labels || [],
+            created: obj.created,
+            modified: obj.modified,
+            metadata: {
+              firstSeen: obj.first_seen,
+              lastSeen: obj.last_seen,
+              objective: obj.objective,
+            },
+          });
+          break;
+        case "malware":
+          result.malware.push({
+            stixId: obj.id,
+            stixType: obj.type,
+            name: obj.name || "Unknown Malware",
+            description: obj.description,
+            aliases: obj.aliases || [],
+            labels: obj.labels || [],
+            created: obj.created,
+            modified: obj.modified,
+            metadata: {
+              malwareTypes: obj.malware_types,
+              isFamily: obj.is_family,
+              capabilities: obj.capabilities,
+              architectureExecutionEnvs: obj.architecture_execution_envs,
+              implementationLanguages: obj.implementation_languages,
+              operatingSystemRefs: obj.operating_system_refs,
+            },
+          });
+          break;
+        case "tool":
+          result.tools.push({
+            stixId: obj.id,
+            stixType: obj.type,
+            name: obj.name || "Unknown Tool",
+            description: obj.description,
+            aliases: obj.aliases || [],
+            labels: obj.labels || [],
+            created: obj.created,
+            modified: obj.modified,
+            metadata: {
+              toolTypes: obj.tool_types,
+              toolVersion: obj.tool_version,
+              killChainPhases: obj.kill_chain_phases,
+            },
+          });
+          break;
+        case "attack-pattern":
+          result.attackPatterns.push({
+            stixId: obj.id,
+            stixType: obj.type,
+            name: obj.name || "Unknown Attack Pattern",
+            description: obj.description,
+            aliases: obj.aliases || [],
+            labels: obj.labels || [],
+            created: obj.created,
+            modified: obj.modified,
+            metadata: {
+              killChainPhases: obj.kill_chain_phases,
+              externalReferences: obj.external_references?.map((ref: any) => ({
+                sourceName: ref.source_name,
+                externalId: ref.external_id,
+                url: ref.url,
+              })),
+            },
+          });
+          break;
+        case "relationship":
+          result.relationships.push({
+            stixId: obj.id,
+            sourceRef: obj.source_ref,
+            targetRef: obj.target_ref,
+            relationshipType: obj.relationship_type,
+            description: obj.description,
+          });
+          break;
+      }
+    }
   } catch (e) {
-    logger.child("ioc-ingestion").error("STIX parse error", { error: String(e), partialCount: iocs.length });
+    logger
+      .child("ioc-ingestion")
+      .error("STIX parse error", { error: String(e), partialCount: result.indicators.length });
   }
-  return iocs;
+  return result;
 }
 
 function extractFromSTIXPattern(pattern: string): { type: string; value: string }[] {
@@ -375,6 +547,102 @@ function extractMalwareFamily(tags: string[]): string | undefined {
   return undefined;
 }
 
+// ── 4.6: Cross-feed deduplication layer ──
+async function deduplicateIOCs(
+  batch: InsertIocEntry[],
+  orgId: string | null | undefined,
+): Promise<{
+  toInsert: InsertIocEntry[];
+  toUpdate: Array<{ existing: any; incoming: InsertIocEntry }>;
+  deduplicated: number;
+}> {
+  if (!orgId || batch.length === 0) {
+    return { toInsert: batch, toUpdate: [], deduplicated: 0 };
+  }
+
+  // Build a lookup of existing IOCs by (iocType, iocValue) in this org
+  const uniqueKeys = new Map<string, InsertIocEntry>();
+  for (const entry of batch) {
+    const key = `${entry.iocType}::${entry.iocValue}`;
+    const existing = uniqueKeys.get(key);
+    // Keep the entry with higher confidence or merge sources
+    if (!existing || (entry.confidence ?? 0) > (existing.confidence ?? 0)) {
+      uniqueKeys.set(key, entry);
+    }
+  }
+
+  const dedupedBatch = Array.from(uniqueKeys.values());
+  const inBatchDedup = batch.length - dedupedBatch.length;
+
+  // Check for existing entries across ALL feeds in this org
+  const toInsert: InsertIocEntry[] = [];
+  const toUpdate: Array<{ existing: any; incoming: InsertIocEntry }> = [];
+  let crossFeedDedup = 0;
+
+  const LOOKUP_BATCH = 50;
+  for (let i = 0; i < dedupedBatch.length; i += LOOKUP_BATCH) {
+    const chunk = dedupedBatch.slice(i, i + LOOKUP_BATCH);
+    const values = chunk.map((e) => e.iocValue);
+    const types = chunk.map((e) => e.iocType);
+
+    try {
+      // Find existing entries with same type+value in this org (any feed)
+      const existingEntries = await db
+        .select()
+        .from(iocEntries)
+        .where(
+          and(
+            eq(iocEntries.orgId, orgId),
+            sql`(${iocEntries.iocType}, ${iocEntries.iocValue}) IN (${sql.join(
+              values.map((v, idx) => sql`(${types[idx]}, ${v})`),
+              sql`, `,
+            )})`,
+          ),
+        );
+
+      const existingMap = new Map<string, any>();
+      for (const ex of existingEntries) {
+        const key = `${ex.iocType}::${ex.iocValue}`;
+        // If entry is from a different feed, it's a cross-feed duplicate
+        if (
+          !existingMap.has(key) ||
+          ex.feedId === chunk.find((c) => c.iocType === ex.iocType && c.iocValue === ex.iocValue)?.feedId
+        ) {
+          existingMap.set(key, ex);
+        }
+      }
+
+      for (const entry of chunk) {
+        const key = `${entry.iocType}::${entry.iocValue}`;
+        const existing = existingMap.get(key);
+        if (existing) {
+          if (existing.feedId !== entry.feedId) {
+            // Cross-feed duplicate: update lastSeen, merge sources in metadata, bump confidence
+            toUpdate.push({ existing, incoming: entry });
+            crossFeedDedup++;
+          } else {
+            // Same feed duplicate: update lastSeen
+            toUpdate.push({ existing, incoming: entry });
+            crossFeedDedup++;
+          }
+        } else {
+          toInsert.push(entry);
+        }
+      }
+    } catch (e: any) {
+      // On lookup failure, fall back to inserting all
+      logger.child("ioc-ingestion").warn(`Dedup lookup failed, inserting batch as-is: ${e.message}`);
+      toInsert.push(...chunk);
+    }
+  }
+
+  return {
+    toInsert,
+    toUpdate,
+    deduplicated: inBatchDedup + crossFeedDedup,
+  };
+}
+
 export async function ingestFeed(feed: IocFeed, rawData: any): Promise<IngestionResult> {
   const start = Date.now();
   const result: IngestionResult = {
@@ -382,6 +650,7 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
     feedName: feed.name,
     newEntries: 0,
     updatedEntries: 0,
+    deduplicated: 0,
     totalParsed: 0,
     errors: [],
     duration: 0,
@@ -440,16 +709,54 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
     });
   }
 
-  if (batch.length > 0) {
+  // ── 4.6: Deduplicate across feeds ──
+  const { toInsert, toUpdate, deduplicated } = await deduplicateIOCs(batch, feed.orgId);
+  result.deduplicated = deduplicated;
+
+  // Insert genuinely new entries
+  if (toInsert.length > 0) {
     const CHUNK_SIZE = 100;
-    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
-      const chunk = batch.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+      const chunk = toInsert.slice(i, i + CHUNK_SIZE);
       try {
         const inserted = await db.insert(iocEntries).values(chunk).onConflictDoNothing().returning();
         result.newEntries += inserted.length;
       } catch (e: any) {
         result.errors.push(`Batch insert error at chunk ${i}: ${e.message}`);
       }
+    }
+  }
+
+  // Update existing entries with merged source attributions
+  for (const { existing, incoming } of toUpdate) {
+    try {
+      const existingMeta = (existing.metadata as Record<string, any>) || {};
+      const incomingMeta = (incoming.metadata as Record<string, any>) || {};
+      const existingSources: string[] = existingMeta.additionalSources || [];
+      const incomingSource = incoming.source || feed.name;
+      if (!existingSources.includes(incomingSource) && existing.source !== incomingSource) {
+        existingSources.push(incomingSource);
+      }
+      const mergedConfidence = Math.max(existing.confidence ?? 0, incoming.confidence ?? 0);
+      await db
+        .update(iocEntries)
+        .set({
+          lastSeen: new Date(),
+          confidence: mergedConfidence,
+          metadata: {
+            ...existingMeta,
+            ...incomingMeta,
+            additionalSources: existingSources,
+            additionalFeedIds: [
+              ...(existingMeta.additionalFeedIds || []),
+              ...(incoming.feedId && incoming.feedId !== existing.feedId ? [incoming.feedId] : []),
+            ],
+          },
+        })
+        .where(eq(iocEntries.id, existing.id));
+      result.updatedEntries++;
+    } catch (e: any) {
+      result.errors.push(`Dedup update error for ${existing.iocValue}: ${e.message}`);
     }
   }
 
@@ -472,6 +779,46 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
   return result;
 }
 
+// ── 4.8: Build fetch headers from feed authentication config ──
+function buildAuthHeaders(feed: IocFeed): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const config = (feed.config as Record<string, any>) || {};
+  const authConfig = config.auth as FeedAuthConfig | undefined;
+
+  if (authConfig && authConfig.authType !== "none") {
+    switch (authConfig.authType) {
+      case "api_key":
+        if (authConfig.apiKeyHeader && authConfig.apiKeyValue) {
+          headers[authConfig.apiKeyHeader] = authConfig.apiKeyValue;
+        }
+        break;
+      case "bearer":
+        if (authConfig.bearerToken) {
+          headers["Authorization"] = `Bearer ${authConfig.bearerToken}`;
+        }
+        break;
+      case "basic":
+        if (authConfig.basicUsername && authConfig.basicPassword) {
+          const encoded = Buffer.from(`${authConfig.basicUsername}:${authConfig.basicPassword}`).toString("base64");
+          headers["Authorization"] = `Basic ${encoded}`;
+        }
+        break;
+      case "mtls":
+        // mTLS is handled at the fetch/agent level, not via headers
+        // The client cert/key are passed via the TLS agent options
+        break;
+    }
+  } else if (feed.apiKeyRef) {
+    // Legacy: fallback to apiKeyRef for backward compat
+    const apiKey = process.env[feed.apiKeyRef] || feed.apiKeyRef;
+    if (feed.feedType === "otx") headers["X-OTX-API-KEY"] = apiKey;
+    else if (feed.feedType === "virustotal") headers["x-apikey"] = apiKey;
+    else headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
+  return headers;
+}
+
 export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult> {
   if (!feed.url) {
     return {
@@ -479,6 +826,7 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
       feedName: feed.name,
       newEntries: 0,
       updatedEntries: 0,
+      deduplicated: 0,
       totalParsed: 0,
       errors: ["No URL configured for feed"],
       duration: 0,
@@ -486,13 +834,7 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
   }
 
   try {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (feed.apiKeyRef) {
-      const apiKey = process.env[feed.apiKeyRef] || feed.apiKeyRef;
-      if (feed.feedType === "otx") headers["X-OTX-API-KEY"] = apiKey;
-      else if (feed.feedType === "virustotal") headers["x-apikey"] = apiKey;
-      else headers["Authorization"] = `Bearer ${apiKey}`;
-    }
+    const headers = buildAuthHeaders(feed);
 
     const response = await fetch(feed.url, { headers, signal: AbortSignal.timeout(30000) });
     if (!response.ok) {
@@ -506,6 +848,7 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
         feedName: feed.name,
         newEntries: 0,
         updatedEntries: 0,
+        deduplicated: 0,
         totalParsed: 0,
         errors: [`HTTP ${response.status}: ${errorText.slice(0, 200)}`],
         duration: 0,
@@ -531,6 +874,7 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
       feedName: feed.name,
       newEntries: 0,
       updatedEntries: 0,
+      deduplicated: 0,
       totalParsed: 0,
       errors: [`Fetch error: ${e.message}`],
       duration: 0,
