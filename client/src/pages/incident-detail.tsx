@@ -47,6 +47,15 @@ import {
   Fingerprint,
   GitBranch,
   Workflow,
+  PanelLeftClose,
+  PanelRightClose,
+  Columns,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  ChevronDown,
+  ChevronRight,
+  Layers,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +96,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
 const INCIDENT_STATUSES = [
   "open",
@@ -130,6 +140,36 @@ export default function IncidentDetailPage() {
   const [correctionReason, setCorrectionReason] = useState("");
   const [correctionComment, setCorrectionComment] = useState("");
   const { toast } = useToast();
+
+  // 3.3: Split-screen AI Investigation state
+  const [splitScreenEnabled, setSplitScreenEnabled] = useState(false);
+
+  // 3.4: Timeline swimlane state
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [expandedTimelineEvent, setExpandedTimelineEvent] = useState<string | null>(null);
+
+  // 3.5: PIR template state
+  type PirTemplate = "freeform" | "five_whys" | "blameless_postmortem" | "rca";
+  const [pirTemplate, setPirTemplate] = useState<PirTemplate>("freeform");
+  const [fiveWhys, setFiveWhys] = useState<string[]>(["", "", "", "", ""]);
+  const [blamelessFields, setBlamelessFields] = useState({
+    incidentSummary: "",
+    impactAnalysis: "",
+    detectionMethod: "",
+    responseTimeline: "",
+    rootCause: "",
+    contributingFactors: "",
+    actionItems: "",
+    preventionMeasures: "",
+  });
+  const [rcaFields, setRcaFields] = useState({
+    problemStatement: "",
+    dataCollection: "",
+    causalFactors: "",
+    rootCause: "",
+    recommendations: "",
+    implementationPlan: "",
+  });
 
   // Streaming state
   const [isStreaming, setIsStreaming] = useState(false);
@@ -409,7 +449,64 @@ export default function IncidentDetailPage() {
     setAssigneeValue(null);
   }
 
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    // 3.2: Restore last active tab from URL hash or localStorage
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "");
+      if (
+        hash &&
+        [
+          "overview",
+          "evidence",
+          "hypotheses",
+          "tasks",
+          "runbooks",
+          "audit-chain",
+          "approvals",
+          "pir",
+          "attack-graph",
+        ].includes(hash)
+      ) {
+        return hash;
+      }
+      try {
+        const stored = localStorage.getItem(`incident-tab-${params.id}`);
+        if (
+          stored &&
+          [
+            "overview",
+            "evidence",
+            "hypotheses",
+            "tasks",
+            "runbooks",
+            "audit-chain",
+            "approvals",
+            "pir",
+            "attack-graph",
+          ].includes(stored)
+        ) {
+          return stored;
+        }
+      } catch {
+        // localStorage unavailable
+      }
+    }
+    return "overview";
+  });
+
+  const handleTabChange = useCallback(
+    (tab: string) => {
+      setActiveTab(tab);
+      // Persist tab state in both URL hash and localStorage
+      try {
+        window.location.hash = tab;
+        localStorage.setItem(`incident-tab-${params.id}`, tab);
+      } catch {
+        // localStorage unavailable
+      }
+    },
+    [params.id],
+  );
 
   const [showAddEvidenceDialog, setShowAddEvidenceDialog] = useState(false);
   const [evidenceTitle, setEvidenceTitle] = useState("");
@@ -816,6 +913,27 @@ export default function IncidentDetailPage() {
       setPirActionItems([]);
       setPirAttendees([]);
       setPirDate("");
+      // 3.5: Reset template state on delete
+      setPirTemplate("freeform");
+      setFiveWhys(["", "", "", "", ""]);
+      setBlamelessFields({
+        incidentSummary: "",
+        impactAnalysis: "",
+        detectionMethod: "",
+        responseTimeline: "",
+        rootCause: "",
+        contributingFactors: "",
+        actionItems: "",
+        preventionMeasures: "",
+      });
+      setRcaFields({
+        problemStatement: "",
+        dataCollection: "",
+        causalFactors: "",
+        rootCause: "",
+        recommendations: "",
+        implementationPlan: "",
+      });
       toast({ title: "Post-Incident Review Deleted" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -842,12 +960,29 @@ export default function IncidentDetailPage() {
           }
         : undefined;
 
+    // 3.5: Include template-specific data in lessonsLearned JSON
+    let templateData: Record<string, unknown> | undefined;
+    if (pirTemplate === "five_whys") {
+      templateData = { template: "five_whys", fiveWhys };
+    } else if (pirTemplate === "blameless_postmortem") {
+      templateData = { template: "blameless_postmortem", ...blamelessFields };
+    } else if (pirTemplate === "rca") {
+      templateData = { template: "rca", ...rcaFields };
+    }
+
     const data = {
       status: pirStatus,
       title: pirTitle,
       summary: pirSummary || undefined,
-      timelineJson,
-      rootCauseAnalysis: pirRootCause || undefined,
+      timelineJson: templateData ? { ...((timelineJson as object) || {}), templateData } : timelineJson,
+      rootCauseAnalysis:
+        pirTemplate === "five_whys"
+          ? fiveWhys[4] || fiveWhys[3] || fiveWhys[2] || pirRootCause || undefined
+          : pirTemplate === "blameless_postmortem"
+            ? blamelessFields.rootCause || pirRootCause || undefined
+            : pirTemplate === "rca"
+              ? rcaFields.rootCause || pirRootCause || undefined
+              : pirRootCause || undefined,
       lessonsLearned,
       actionItems: pirActionItems.length > 0 ? pirActionItems : undefined,
       participants: pirAttendees.length > 0 ? pirAttendees : undefined,
@@ -1017,7 +1152,7 @@ export default function IncidentDetailPage() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <TabsList data-testid="tabs-investigation">
             <TabsTrigger value="overview" data-testid="tab-overview">
@@ -1468,100 +1603,269 @@ export default function IncidentDetailPage() {
             </Card>
           </div>
 
+          {/* 3.3: Split-screen AI Investigation toggle */}
           {incident.aiNarrative && (
-            <Card className="">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-primary" />
-                  AI-Generated Narrative
-                  {(incident as any).referencedAlertIds?.length > 0 && (
-                    <Badge variant="secondary" className="text-[9px]">
-                      {(incident as any).referencedAlertIds.length} citations
-                    </Badge>
+            <div data-testid="ai-investigation-section">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Brain className="h-4 w-4 text-primary" />
+                  AI Investigation
+                </h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSplitScreenEnabled(!splitScreenEnabled)}
+                  data-testid="button-toggle-split-screen"
+                  className="text-xs"
+                >
+                  {splitScreenEnabled ? (
+                    <>
+                      <PanelLeftClose className="h-3.5 w-3.5 mr-1.5" />
+                      Single View
+                    </>
+                  ) : (
+                    <>
+                      <Columns className="h-3.5 w-3.5 mr-1.5" />
+                      Split View
+                    </>
                   )}
-                </CardTitle>
-                {incident.aiSummary && (
-                  <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-summary">
-                    {incident.aiSummary}
-                  </p>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-sm leading-relaxed text-muted-foreground" data-testid="text-ai-narrative">
-                  {renderNarrativeWithCitations(incident.aiNarrative, relatedAlerts || undefined)}
-                </div>
-                {(incident as any).reasoningTrace && (
-                  <div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowReasoningTrace(!showReasoningTrace)}
-                      data-testid="button-toggle-reasoning-trace"
-                      className="text-xs"
-                    >
-                      <FileText className="h-3 w-3 mr-1" />
-                      {showReasoningTrace ? "Hide" : "Show"} Reasoning Trace
-                    </Button>
-                    {showReasoningTrace && (
-                      <div
-                        className="mt-2 p-3 rounded-md bg-muted/50 border text-[11px] font-mono whitespace-pre-wrap text-muted-foreground"
-                        data-testid="reasoning-trace-content"
-                      >
-                        {(incident as any).reasoningTrace}
+                </Button>
+              </div>
+
+              {splitScreenEnabled ? (
+                <ResizablePanelGroup
+                  direction="horizontal"
+                  className="rounded-lg border min-h-[400px]"
+                  data-testid="split-screen-panels"
+                >
+                  <ResizablePanel defaultSize={55} minSize={30}>
+                    <div className="h-full overflow-y-auto p-4 space-y-3">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                        AI Analysis
                       </div>
-                    )}
-                  </div>
-                )}
-                {incident.confidence != null && (
-                  <div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowConfidenceBreakdown(!showConfidenceBreakdown)}
-                      data-testid="button-toggle-confidence"
-                      className="text-xs"
-                    >
-                      <BarChart3 className="h-3 w-3 mr-1" />
-                      {showConfidenceBreakdown ? "Hide" : "Show"} Confidence Breakdown
-                    </Button>
-                    {showConfidenceBreakdown && (
-                      <div
-                        className="mt-2 p-3 rounded-md bg-muted/50 border space-y-2"
-                        data-testid="confidence-breakdown"
-                      >
-                        <div className="text-[11px] font-medium">
-                          Correlation Confidence: {Math.round(incident.confidence * 100)}%
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { label: "Shared Entities", weight: 0.25 },
-                            { label: "Temporal Proximity", weight: 0.15 },
-                            { label: "MITRE Alignment", weight: 0.2 },
-                            { label: "Severity Pattern", weight: 0.1 },
-                            { label: "Source Correlation", weight: 0.05 },
-                            { label: "Category Match", weight: 0.15 },
-                            { label: "Kill Chain Progression", weight: 0.1 },
-                          ].map((factor) => (
-                            <div key={factor.label} className="flex items-center gap-2">
-                              <span className="text-[10px] text-muted-foreground w-32 shrink-0">{factor.label}</span>
-                              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-primary rounded-full"
-                                  style={{ width: `${(factor.weight * 100 * (incident.confidence || 0)) / 0.25}%` }}
-                                />
-                              </div>
-                              <span className="text-[10px] text-muted-foreground w-8 text-right">
-                                {Math.round(factor.weight * 100)}%
-                              </span>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                            <Shield className="h-4 w-4 text-primary" />
+                            AI-Generated Narrative
+                            {(incident as any).referencedAlertIds?.length > 0 && (
+                              <Badge variant="secondary" className="text-[9px]">
+                                {(incident as any).referencedAlertIds.length} citations
+                              </Badge>
+                            )}
+                          </CardTitle>
+                          {incident.aiSummary && (
+                            <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-summary">
+                              {incident.aiSummary}
+                            </p>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div
+                            className="text-sm leading-relaxed text-muted-foreground"
+                            data-testid="text-ai-narrative"
+                          >
+                            {renderNarrativeWithCitations(incident.aiNarrative, relatedAlerts || undefined)}
+                          </div>
+                          {(incident as any).reasoningTrace && (
+                            <div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowReasoningTrace(!showReasoningTrace)}
+                                className="text-xs"
+                              >
+                                <FileText className="h-3 w-3 mr-1" />
+                                {showReasoningTrace ? "Hide" : "Show"} Reasoning Trace
+                              </Button>
+                              {showReasoningTrace && (
+                                <div className="mt-2 p-3 rounded-md bg-muted/50 border text-[11px] font-mono whitespace-pre-wrap text-muted-foreground">
+                                  {(incident as any).reasoningTrace}
+                                </div>
+                              )}
                             </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                      {rootCauseSummary && (
+                        <Card className="border-amber-500/20">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                              <Target className="h-4 w-4 text-amber-500" />
+                              Root-Cause Summary
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <p className="text-sm leading-relaxed text-muted-foreground">{rootCauseSummary.summary}</p>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={45} minSize={25}>
+                    <div className="h-full overflow-y-auto p-4 space-y-3">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                        Raw Evidence & Alerts
+                      </div>
+                      {relatedAlerts && relatedAlerts.length > 0 ? (
+                        <div className="space-y-2">
+                          {relatedAlerts.map((alert: Alert) => (
+                            <Card key={alert.id} className="text-xs">
+                              <CardContent className="p-3 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium truncate flex-1">{alert.title}</span>
+                                  <SeverityBadge severity={alert.severity} />
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {alert.source} &middot;{" "}
+                                  {formatRelativeTime((alert as any).firedAt || alert.detectedAt || alert.createdAt)}
+                                </div>
+                                {alert.description && (
+                                  <p className="text-muted-foreground text-[11px] line-clamp-3">{alert.description}</p>
+                                )}
+                                {(alert as any).rawPayload && (
+                                  <details className="mt-1">
+                                    <summary className="text-[10px] text-primary cursor-pointer hover:underline">
+                                      Raw Payload
+                                    </summary>
+                                    <pre className="mt-1 p-2 rounded bg-muted/50 border text-[10px] font-mono overflow-x-auto max-h-40 whitespace-pre-wrap">
+                                      {typeof (alert as any).rawPayload === "string"
+                                        ? (alert as any).rawPayload
+                                        : JSON.stringify((alert as any).rawPayload, null, 2)}
+                                    </pre>
+                                  </details>
+                                )}
+                              </CardContent>
+                            </Card>
                           ))}
                         </div>
+                      ) : (
+                        <Card>
+                          <CardContent className="p-6 text-center">
+                            <AlertTriangle className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+                            <p className="text-xs text-muted-foreground">No related alerts found</p>
+                          </CardContent>
+                        </Card>
+                      )}
+                      {incidentEntities && incidentEntities.length > 0 && (
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-semibold">Extracted Entities</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex flex-wrap gap-1">
+                              {incidentEntities.map((entity: any) => (
+                                <Badge key={entity.id} variant="outline" className="text-[10px]">
+                                  {entity.entityType}: {entity.entityValue}
+                                </Badge>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              ) : (
+                /* Single view — original layout */
+                <Card className="">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-primary" />
+                      AI-Generated Narrative
+                      {(incident as any).referencedAlertIds?.length > 0 && (
+                        <Badge variant="secondary" className="text-[9px]">
+                          {(incident as any).referencedAlertIds.length} citations
+                        </Badge>
+                      )}
+                    </CardTitle>
+                    {incident.aiSummary && (
+                      <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-summary">
+                        {incident.aiSummary}
+                      </p>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="text-sm leading-relaxed text-muted-foreground" data-testid="text-ai-narrative">
+                      {renderNarrativeWithCitations(incident.aiNarrative, relatedAlerts || undefined)}
+                    </div>
+                    {(incident as any).reasoningTrace && (
+                      <div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowReasoningTrace(!showReasoningTrace)}
+                          data-testid="button-toggle-reasoning-trace"
+                          className="text-xs"
+                        >
+                          <FileText className="h-3 w-3 mr-1" />
+                          {showReasoningTrace ? "Hide" : "Show"} Reasoning Trace
+                        </Button>
+                        {showReasoningTrace && (
+                          <div
+                            className="mt-2 p-3 rounded-md bg-muted/50 border text-[11px] font-mono whitespace-pre-wrap text-muted-foreground"
+                            data-testid="reasoning-trace-content"
+                          >
+                            {(incident as any).reasoningTrace}
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    {incident.confidence != null && (
+                      <div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowConfidenceBreakdown(!showConfidenceBreakdown)}
+                          data-testid="button-toggle-confidence"
+                          className="text-xs"
+                        >
+                          <BarChart3 className="h-3 w-3 mr-1" />
+                          {showConfidenceBreakdown ? "Hide" : "Show"} Confidence Breakdown
+                        </Button>
+                        {showConfidenceBreakdown && (
+                          <div
+                            className="mt-2 p-3 rounded-md bg-muted/50 border space-y-2"
+                            data-testid="confidence-breakdown"
+                          >
+                            <div className="text-[11px] font-medium">
+                              Correlation Confidence: {Math.round(incident.confidence * 100)}%
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { label: "Shared Entities", weight: 0.25 },
+                                { label: "Temporal Proximity", weight: 0.15 },
+                                { label: "MITRE Alignment", weight: 0.2 },
+                                { label: "Severity Pattern", weight: 0.1 },
+                                { label: "Source Correlation", weight: 0.05 },
+                                { label: "Category Match", weight: 0.15 },
+                                { label: "Kill Chain Progression", weight: 0.1 },
+                              ].map((factor) => (
+                                <div key={factor.label} className="flex items-center gap-2">
+                                  <span className="text-[10px] text-muted-foreground w-32 shrink-0">
+                                    {factor.label}
+                                  </span>
+                                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-primary rounded-full"
+                                      style={{ width: `${(factor.weight * 100 * (incident.confidence || 0)) / 0.25}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground w-8 text-right">
+                                    {Math.round(factor.weight * 100)}%
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
 
           {rootCauseSummary && (
@@ -1834,36 +2138,153 @@ export default function IncidentDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          {/* 3.4: Visual Timeline with Swimlanes */}
+          <Card data-testid="visual-timeline">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                Activity Timeline
+              <CardTitle className="text-sm font-semibold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Activity Timeline
+                  {activityLogs && activityLogs.length > 0 && (
+                    <Badge variant="secondary" className="text-[9px]">
+                      {activityLogs.length} events
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setTimelineZoom(Math.max(0.5, timelineZoom - 0.25))}
+                    data-testid="timeline-zoom-out"
+                  >
+                    <ZoomOut className="h-3 w-3" />
+                  </Button>
+                  <span className="text-[10px] text-muted-foreground w-10 text-center">
+                    {Math.round(timelineZoom * 100)}%
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setTimelineZoom(Math.min(3, timelineZoom + 0.25))}
+                    data-testid="timeline-zoom-in"
+                  >
+                    <ZoomIn className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setTimelineZoom(1)}
+                    data-testid="timeline-zoom-fit"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
               {activityLogs && activityLogs.length > 0 ? (
-                <div className="relative space-y-0">
-                  {activityLogs.map((log, index) => (
+                (() => {
+                  // Group activity logs by actor/system (swimlanes)
+                  const swimlanes: Record<string, typeof activityLogs> = {};
+                  activityLogs.forEach((log) => {
+                    const actor = log.userName || "System";
+                    if (!swimlanes[actor]) swimlanes[actor] = [];
+                    swimlanes[actor].push(log);
+                  });
+                  const laneNames = Object.keys(swimlanes);
+                  const LANE_COLORS = [
+                    "border-blue-500/40 bg-blue-500/5",
+                    "border-green-500/40 bg-green-500/5",
+                    "border-purple-500/40 bg-purple-500/5",
+                    "border-orange-500/40 bg-orange-500/5",
+                    "border-teal-500/40 bg-teal-500/5",
+                    "border-pink-500/40 bg-pink-500/5",
+                  ];
+                  const DOT_COLORS = [
+                    "bg-blue-500",
+                    "bg-green-500",
+                    "bg-purple-500",
+                    "bg-orange-500",
+                    "bg-teal-500",
+                    "bg-pink-500",
+                  ];
+
+                  return (
                     <div
-                      key={log.id}
-                      className="flex items-start gap-3 relative pb-4"
-                      data-testid={`timeline-entry-${index}`}
+                      className="space-y-0 overflow-x-auto"
+                      style={{ zoom: timelineZoom }}
+                      data-testid="swimlane-container"
                     >
-                      <div className="flex flex-col items-center">
-                        <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
-                        {index < activityLogs.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                      </div>
-                      <div className="flex-1 min-w-0 pb-1">
-                        <div className="text-sm">{formatActionDescription(log.action, log.details)}</div>
-                        <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
-                          {log.userName && <span>{log.userName}</span>}
-                          <span>{formatRelativeTime(log.createdAt)}</span>
+                      {laneNames.map((lane, laneIdx) => (
+                        <div
+                          key={lane}
+                          className={`border-l-2 ${LANE_COLORS[laneIdx % LANE_COLORS.length]} rounded-r-md mb-2`}
+                          data-testid={`swimlane-${lane.replace(/\s+/g, "-").toLowerCase()}`}
+                        >
+                          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/30">
+                            <Layers className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              {lane}
+                            </span>
+                            <Badge variant="outline" className="text-[9px] h-4">
+                              {swimlanes[lane].length}
+                            </Badge>
+                          </div>
+                          <div className="px-3 py-1.5 space-y-0">
+                            {swimlanes[lane].map((log, index) => {
+                              const isExpanded = expandedTimelineEvent === log.id;
+                              return (
+                                <div
+                                  key={log.id}
+                                  className="flex items-start gap-2.5 relative py-1.5 cursor-pointer hover:bg-muted/30 rounded-md px-1 transition-colors"
+                                  data-testid={`timeline-entry-${log.id}`}
+                                  onClick={() => setExpandedTimelineEvent(isExpanded ? null : log.id)}
+                                >
+                                  <div className="flex flex-col items-center pt-1">
+                                    <div
+                                      className={`w-2 h-2 rounded-full ${DOT_COLORS[laneIdx % DOT_COLORS.length]} flex-shrink-0`}
+                                    />
+                                    {index < swimlanes[lane].length - 1 && (
+                                      <div className="w-px flex-1 bg-border/50 mt-0.5" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      {isExpanded ? (
+                                        <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                      ) : (
+                                        <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                      )}
+                                      <div className="text-xs font-medium">
+                                        {formatActionDescription(log.action, log.details)}
+                                      </div>
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5 ml-4.5">
+                                      <span>{formatTimestamp(log.createdAt)}</span>
+                                      <span className="text-muted-foreground/50">&middot;</span>
+                                      <span>{formatRelativeTime(log.createdAt)}</span>
+                                    </div>
+                                    {isExpanded && log.details != null ? (
+                                      <div className="mt-1.5 ml-4.5 p-2 rounded bg-muted/40 border text-[10px] font-mono whitespace-pre-wrap text-muted-foreground">
+                                        {typeof log.details === "string"
+                                          ? log.details
+                                          : JSON.stringify(log.details, null, 2)}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()
               ) : (
                 <p className="text-sm text-muted-foreground">No activity recorded yet</p>
               )}
@@ -2944,6 +3365,7 @@ export default function IncidentDetailPage() {
           )}
         </TabsContent>
 
+        {/* 3.5: PIR Tab with Template System */}
         <TabsContent value="pir" className="space-y-4 mt-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
@@ -2962,28 +3384,77 @@ export default function IncidentDetailPage() {
               <CardContent className="p-8 text-center">
                 <ClipboardCheck className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">No post-incident review yet</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Start a review to document lessons learned and action items
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => {
-                    setPirFormLoaded(true);
-                    setPirStatus("draft");
-                  }}
-                  data-testid="button-start-pir"
+                <p className="text-xs text-muted-foreground mt-1">Choose a template to start a structured review</p>
+                <div
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4"
+                  data-testid="pir-template-chooser"
                 >
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Start Post-Incident Review
-                </Button>
+                  {[
+                    {
+                      key: "freeform" as PirTemplate,
+                      label: "Free-form",
+                      desc: "Open-ended review with standard fields",
+                      icon: <FileText className="h-5 w-5" />,
+                    },
+                    {
+                      key: "five_whys" as PirTemplate,
+                      label: "5 Whys",
+                      desc: "Iterative root-cause drilling technique",
+                      icon: <Lightbulb className="h-5 w-5" />,
+                    },
+                    {
+                      key: "blameless_postmortem" as PirTemplate,
+                      label: "Blameless Postmortem",
+                      desc: "SRE-style review focusing on systems, not people",
+                      icon: <ListChecks className="h-5 w-5" />,
+                    },
+                    {
+                      key: "rca" as PirTemplate,
+                      label: "RCA Template",
+                      desc: "Formal root-cause analysis with recommendations",
+                      icon: <Target className="h-5 w-5" />,
+                    },
+                  ].map((tpl) => (
+                    <Card
+                      key={tpl.key}
+                      className="cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => {
+                        setPirTemplate(tpl.key);
+                        setPirFormLoaded(true);
+                        setPirStatus("draft");
+                      }}
+                      data-testid={`pir-template-${tpl.key}`}
+                    >
+                      <CardContent className="p-4 text-center space-y-2">
+                        <div className="mx-auto text-muted-foreground">{tpl.icon}</div>
+                        <div className="text-xs font-semibold">{tpl.label}</div>
+                        <div className="text-[10px] text-muted-foreground">{tpl.desc}</div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-4">
+              {/* Template selector (can switch after starting) */}
               <Card>
                 <CardContent className="p-4 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Template</Label>
+                      <Select value={pirTemplate} onValueChange={(v) => setPirTemplate(v as PirTemplate)}>
+                        <SelectTrigger data-testid="select-pir-template">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="freeform">Free-form</SelectItem>
+                          <SelectItem value="five_whys">5 Whys</SelectItem>
+                          <SelectItem value="blameless_postmortem">Blameless Postmortem</SelectItem>
+                          <SelectItem value="rca">RCA Template</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-2">
                       <Label>Status</Label>
                       <Select value={pirStatus} onValueChange={setPirStatus}>
@@ -3017,57 +3488,293 @@ export default function IncidentDetailPage() {
                       data-testid="textarea-pir-summary"
                     />
                   </div>
+                </CardContent>
+              </Card>
 
-                  <div className="space-y-2">
-                    <Label>Timeline</Label>
-                    <Textarea
-                      value={pirTimeline}
-                      onChange={(e) => setPirTimeline(e.target.value)}
-                      placeholder="Document the timeline of events..."
-                      data-testid="textarea-pir-timeline"
-                    />
-                  </div>
+              {/* Template-specific guided fields */}
+              {pirTemplate === "five_whys" && (
+                <Card data-testid="pir-five-whys-template">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Lightbulb className="h-4 w-4 text-amber-500" />5 Whys Analysis
+                    </CardTitle>
+                    <p className="text-[10px] text-muted-foreground">
+                      Ask "Why?" iteratively to drill down to the root cause. Each answer should lead to the next "Why?"
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {fiveWhys.map((why, i) => (
+                      <div key={i} className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1.5">
+                          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold">
+                            {i + 1}
+                          </span>
+                          Why {i === 0 ? "did this incident occur?" : `did that happen? (from answer ${i})`}
+                        </Label>
+                        <Textarea
+                          value={why}
+                          onChange={(e) => {
+                            const updated = [...fiveWhys];
+                            updated[i] = e.target.value;
+                            setFiveWhys(updated);
+                          }}
+                          placeholder={
+                            i === 0 ? "Why did the incident happen?" : `Why did the previous answer (${i}) happen?`
+                          }
+                          className="min-h-[60px]"
+                          data-testid={`textarea-why-${i + 1}`}
+                        />
+                      </div>
+                    ))}
+                    <div className="p-3 rounded-md bg-amber-500/5 border border-amber-500/20">
+                      <div className="text-xs font-medium text-amber-500 mb-1">Root Cause (derived)</div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {fiveWhys[4]?.trim() ||
+                          fiveWhys[3]?.trim() ||
+                          fiveWhys[2]?.trim() ||
+                          "Complete the analysis above to identify the root cause"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                  <div className="space-y-2">
-                    <Label>Root Cause</Label>
-                    <Textarea
-                      value={pirRootCause}
-                      onChange={(e) => setPirRootCause(e.target.value)}
-                      placeholder="Describe the root cause of the incident..."
-                      data-testid="textarea-pir-root-cause"
-                    />
-                  </div>
+              {pirTemplate === "blameless_postmortem" && (
+                <Card data-testid="pir-blameless-template">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <ListChecks className="h-4 w-4 text-blue-500" />
+                      Blameless Postmortem
+                    </CardTitle>
+                    <p className="text-[10px] text-muted-foreground">
+                      Focus on systems and processes, not individuals. Document what happened, why, and how to prevent
+                      recurrence.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Incident Summary</Label>
+                      <Textarea
+                        value={blamelessFields.incidentSummary}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, incidentSummary: e.target.value })}
+                        placeholder="Brief description: what happened, when, and the scope of impact..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-blameless-summary"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Impact Analysis</Label>
+                      <Textarea
+                        value={blamelessFields.impactAnalysis}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, impactAnalysis: e.target.value })}
+                        placeholder="What was the business/security impact? Users affected, data exposed, SLA breaches..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-blameless-impact"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Detection Method</Label>
+                      <Textarea
+                        value={blamelessFields.detectionMethod}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, detectionMethod: e.target.value })}
+                        placeholder="How was this incident detected? Automated alert, user report, third-party notification..."
+                        className="min-h-[50px]"
+                        data-testid="textarea-blameless-detection"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Response Timeline</Label>
+                      <Textarea
+                        value={blamelessFields.responseTimeline}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, responseTimeline: e.target.value })}
+                        placeholder="Chronological list of key response actions and their timestamps..."
+                        className="min-h-[80px]"
+                        data-testid="textarea-blameless-response-timeline"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Root Cause</Label>
+                      <Textarea
+                        value={blamelessFields.rootCause}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, rootCause: e.target.value })}
+                        placeholder="What was the underlying root cause? Focus on systemic issues, not individual mistakes..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-blameless-root-cause"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Contributing Factors</Label>
+                      <Textarea
+                        value={blamelessFields.contributingFactors}
+                        onChange={(e) =>
+                          setBlamelessFields({ ...blamelessFields, contributingFactors: e.target.value })
+                        }
+                        placeholder="What conditions allowed this to happen? Missing controls, process gaps, tool limitations..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-blameless-contributing"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Action Items</Label>
+                      <Textarea
+                        value={blamelessFields.actionItems}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, actionItems: e.target.value })}
+                        placeholder="Specific, measurable action items with owners and deadlines..."
+                        className="min-h-[80px]"
+                        data-testid="textarea-blameless-actions"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Prevention Measures</Label>
+                      <Textarea
+                        value={blamelessFields.preventionMeasures}
+                        onChange={(e) => setBlamelessFields({ ...blamelessFields, preventionMeasures: e.target.value })}
+                        placeholder="What systemic changes will prevent this class of incident from recurring?"
+                        className="min-h-[60px]"
+                        data-testid="textarea-blameless-prevention"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                  <div className="space-y-2">
-                    <Label>Lessons Learned</Label>
-                    <Textarea
-                      value={pirLessons}
-                      onChange={(e) => setPirLessons(e.target.value)}
-                      placeholder="What lessons were learned from this incident?"
-                      data-testid="textarea-pir-lessons"
-                    />
-                  </div>
+              {pirTemplate === "rca" && (
+                <Card data-testid="pir-rca-template">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Target className="h-4 w-4 text-red-500" />
+                      Root Cause Analysis (RCA)
+                    </CardTitle>
+                    <p className="text-[10px] text-muted-foreground">
+                      Formal analysis framework: define the problem, gather data, identify causal factors, and recommend
+                      corrective actions.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Problem Statement</Label>
+                      <Textarea
+                        value={rcaFields.problemStatement}
+                        onChange={(e) => setRcaFields({ ...rcaFields, problemStatement: e.target.value })}
+                        placeholder="Clear, concise statement of what went wrong. Include severity, timing, and scope..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-rca-problem"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Data Collection</Label>
+                      <Textarea
+                        value={rcaFields.dataCollection}
+                        onChange={(e) => setRcaFields({ ...rcaFields, dataCollection: e.target.value })}
+                        placeholder="Evidence gathered: logs, alerts, network captures, user reports, forensic artifacts..."
+                        className="min-h-[80px]"
+                        data-testid="textarea-rca-data"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Causal Factors</Label>
+                      <Textarea
+                        value={rcaFields.causalFactors}
+                        onChange={(e) => setRcaFields({ ...rcaFields, causalFactors: e.target.value })}
+                        placeholder="List all contributing causes. Use fishbone/Ishikawa categories: People, Process, Technology, Environment..."
+                        className="min-h-[80px]"
+                        data-testid="textarea-rca-causal"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Root Cause</Label>
+                      <Textarea
+                        value={rcaFields.rootCause}
+                        onChange={(e) => setRcaFields({ ...rcaFields, rootCause: e.target.value })}
+                        placeholder="The fundamental cause that, if eliminated, would prevent recurrence..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-rca-root-cause"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Recommendations</Label>
+                      <Textarea
+                        value={rcaFields.recommendations}
+                        onChange={(e) => setRcaFields({ ...rcaFields, recommendations: e.target.value })}
+                        placeholder="Corrective actions: immediate fixes, short-term mitigations, long-term improvements..."
+                        className="min-h-[80px]"
+                        data-testid="textarea-rca-recommendations"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Implementation Plan</Label>
+                      <Textarea
+                        value={rcaFields.implementationPlan}
+                        onChange={(e) => setRcaFields({ ...rcaFields, implementationPlan: e.target.value })}
+                        placeholder="Timeline, owners, milestones, and success criteria for each recommendation..."
+                        className="min-h-[60px]"
+                        data-testid="textarea-rca-implementation"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                  <div className="space-y-2">
-                    <Label>What Went Well</Label>
-                    <Textarea
-                      value={pirWell}
-                      onChange={(e) => setPirWell(e.target.value)}
-                      placeholder="What aspects of the response went well?"
-                      data-testid="textarea-pir-well"
-                    />
-                  </div>
+              {/* Free-form fields (always shown for freeform, hidden for structured templates) */}
+              {pirTemplate === "freeform" && (
+                <Card data-testid="pir-freeform-template">
+                  <CardContent className="p-4 space-y-4">
+                    <div className="space-y-2">
+                      <Label>Timeline</Label>
+                      <Textarea
+                        value={pirTimeline}
+                        onChange={(e) => setPirTimeline(e.target.value)}
+                        placeholder="Document the timeline of events..."
+                        data-testid="textarea-pir-timeline"
+                      />
+                    </div>
 
-                  <div className="space-y-2">
-                    <Label>What Went Wrong</Label>
-                    <Textarea
-                      value={pirWrong}
-                      onChange={(e) => setPirWrong(e.target.value)}
-                      placeholder="What could have been handled better?"
-                      data-testid="textarea-pir-wrong"
-                    />
-                  </div>
+                    <div className="space-y-2">
+                      <Label>Root Cause</Label>
+                      <Textarea
+                        value={pirRootCause}
+                        onChange={(e) => setPirRootCause(e.target.value)}
+                        placeholder="Describe the root cause of the incident..."
+                        data-testid="textarea-pir-root-cause"
+                      />
+                    </div>
 
+                    <div className="space-y-2">
+                      <Label>Lessons Learned</Label>
+                      <Textarea
+                        value={pirLessons}
+                        onChange={(e) => setPirLessons(e.target.value)}
+                        placeholder="What lessons were learned from this incident?"
+                        data-testid="textarea-pir-lessons"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>What Went Well</Label>
+                      <Textarea
+                        value={pirWell}
+                        onChange={(e) => setPirWell(e.target.value)}
+                        placeholder="What aspects of the response went well?"
+                        data-testid="textarea-pir-well"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>What Went Wrong</Label>
+                      <Textarea
+                        value={pirWrong}
+                        onChange={(e) => setPirWrong(e.target.value)}
+                        placeholder="What could have been handled better?"
+                        data-testid="textarea-pir-wrong"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Shared: Action Items + Attendees (all templates) */}
+              <Card>
+                <CardContent className="p-4 space-y-4">
                   <div className="space-y-2">
                     <Label>Action Items</Label>
                     {pirActionItems.length > 0 && (

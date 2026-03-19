@@ -18,6 +18,9 @@ import {
   SlidersHorizontal,
   BookmarkPlus,
   Keyboard,
+  LayoutGrid,
+  List,
+  GripVertical,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,7 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -126,6 +129,16 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 type QueueTab = "all" | "unassigned" | "escalated" | "aging";
+type ViewMode = "table" | "kanban";
+
+const KANBAN_COLUMNS: { key: string; label: string; color: string }[] = [
+  { key: "open", label: "New / Open", color: "bg-blue-500" },
+  { key: "investigating", label: "Investigating", color: "bg-yellow-500" },
+  { key: "contained", label: "Containment", color: "bg-orange-500" },
+  { key: "eradicated", label: "Eradication", color: "bg-purple-500" },
+  { key: "recovered", label: "Recovery", color: "bg-teal-500" },
+  { key: "resolved", label: "Resolved", color: "bg-green-500" },
+];
 
 interface QueuesResponse {
   unassigned: Incident[];
@@ -362,6 +375,15 @@ export default function IncidentsPage() {
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [showQueryBuilder, setShowQueryBuilder] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      return (localStorage.getItem("incidents-view-mode") as ViewMode) || "table";
+    } catch {
+      return "table";
+    }
+  });
+  const dragItemRef = useRef<string | null>(null);
+  const dragOverColumnRef = useRef<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const { currentOrgId } = useOrgContext();
@@ -605,6 +627,52 @@ export default function IncidentsPage() {
     setDateTo(f.dateTo ?? "");
   }, []);
 
+  const toggleViewMode = useCallback(() => {
+    const next = viewMode === "table" ? "kanban" : "table";
+    setViewMode(next);
+    try {
+      localStorage.setItem("incidents-view-mode", next);
+    } catch {
+      // localStorage unavailable
+    }
+  }, [viewMode]);
+
+  const kanbanGroups = useMemo(() => {
+    const groups: Record<string, Incident[]> = {};
+    KANBAN_COLUMNS.forEach((col) => {
+      groups[col.key] = [];
+    });
+    filtered.forEach((inc) => {
+      const key = inc.status === "closed" ? "resolved" : inc.status;
+      if (groups[key]) {
+        groups[key].push(inc);
+      } else {
+        // Fallback: put in "open" column
+        groups["open"].push(inc);
+      }
+    });
+    return groups;
+  }, [filtered]);
+
+  const handleKanbanDrop = useCallback(
+    (incidentId: string, newStatus: string) => {
+      const incident = filtered.find((i) => i.id === incidentId);
+      if (!incident || incident.status === newStatus) return;
+      optimisticStatusUpdate(incidentId, { status: newStatus } as Partial<Incident>);
+      apiRequest("PATCH", `/api/incidents/${incidentId}`, { status: newStatus })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/incidents/queues"] });
+          toast({ title: "Status Updated", description: `Moved to ${STATUS_LABELS[newStatus] || newStatus}` });
+        })
+        .catch(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/incidents"] });
+          toast({ title: "Update Failed", variant: "destructive" });
+        });
+    },
+    [filtered, optimisticStatusUpdate, toast],
+  );
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!filtered || filtered.length === 0) return;
@@ -741,6 +809,40 @@ export default function IncidentsPage() {
           <Keyboard className="h-3.5 w-3.5 mr-1.5" />
           Keys
         </Button>
+        <div className="flex items-center border rounded-md overflow-hidden">
+          <Button
+            variant={viewMode === "table" ? "default" : "ghost"}
+            size="sm"
+            className="rounded-none h-8 px-2"
+            onClick={() => {
+              setViewMode("table");
+              try {
+                localStorage.setItem("incidents-view-mode", "table");
+              } catch {
+                // localStorage unavailable
+              }
+            }}
+            data-testid="button-view-table"
+          >
+            <List className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={viewMode === "kanban" ? "default" : "ghost"}
+            size="sm"
+            className="rounded-none h-8 px-2"
+            onClick={() => {
+              setViewMode("kanban");
+              try {
+                localStorage.setItem("incidents-view-mode", "kanban");
+              } catch {
+                // localStorage unavailable
+              }
+            }}
+            data-testid="button-view-kanban"
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+          </Button>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -985,308 +1087,413 @@ export default function IncidentsPage() {
         </Card>
       )}
 
-      <ResizablePanelGroup direction="horizontal" className="rounded-lg min-h-[400px]">
-        <ResizablePanel defaultSize={isDetailOpen && selectedIncident ? 60 : 100} minSize={35}>
-          <Card className="h-full transition-all duration-200">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="px-4 py-3 w-10">
-                        <Checkbox
-                          checked={allSelected}
-                          onCheckedChange={toggleSelectAll}
-                          aria-label="Select all incidents on this page"
-                          data-testid="checkbox-select-all"
-                        />
-                      </th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Incident</th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">
-                        Priority
-                      </th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">SLA</th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">
-                        Assignee
-                      </th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">
-                        Alert Count
-                      </th>
-                      <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">
-                        Updated
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentLoading ? (
-                      Array.from({ length: 6 }).map((_, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="px-4 py-3">
-                            <Skeleton className="h-4 w-4" />
-                          </td>
-                          <td className="px-4 py-3">
-                            <Skeleton className="h-4 w-48" />
-                          </td>
-                          <td className="px-4 py-3">
-                            <Skeleton className="h-4 w-16" />
-                          </td>
-                          <td className="px-4 py-3">
-                            <Skeleton className="h-4 w-20" />
-                          </td>
-                          <td className="px-4 py-3 hidden sm:table-cell">
-                            <Skeleton className="h-4 w-12" />
-                          </td>
-                          <td className="px-4 py-3 hidden sm:table-cell">
-                            <Skeleton className="h-4 w-16" />
-                          </td>
-                          <td className="px-4 py-3 hidden md:table-cell">
-                            <Skeleton className="h-4 w-20" />
-                          </td>
-                          <td className="px-4 py-3 hidden lg:table-cell">
-                            <Skeleton className="h-4 w-12" />
-                          </td>
-                          <td className="px-4 py-3 hidden lg:table-cell">
-                            <Skeleton className="h-4 w-16" />
-                          </td>
-                        </tr>
-                      ))
-                    ) : incidentsError ? (
-                      <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center">
-                          <div role="alert" className="flex flex-col items-center gap-3">
-                            <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20">
-                              <FileWarning className="h-6 w-6 text-destructive" />
-                            </div>
-                            <p className="text-sm font-medium">Failed to load incidents</p>
-                            <p className="text-xs text-muted-foreground">
-                              An error occurred while fetching incident data.
-                            </p>
-                            <Button variant="outline" size="sm" onClick={() => refetchIncidents()}>
-                              Try Again
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : filtered.length > 0 ? (
-                      filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((incident) => {
-                        const slaStatus = getSlaStatus(incident);
-                        const isSelected = selectedIds.includes(incident.id);
-                        const isFocused = focusedIncidentId === incident.id;
-                        return (
-                          <tr
-                            key={incident.id}
-                            className={`border-b last:border-0 hover-elevate cursor-pointer ${isSelected ? "bg-primary/5" : ""} ${isFocused ? "ring-1 ring-primary/40 bg-primary/5" : ""}`}
-                            data-testid={`row-incident-${incident.id}`}
-                            onClick={() => {
-                              setFocusedIncidentId(incident.id);
-                              setIsDetailOpen(true);
-                            }}
-                          >
-                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => toggleSelect(incident.id)}
-                                aria-label={`Select incident ${incident.title}`}
-                                data-testid={`checkbox-incident-${incident.id}`}
-                              />
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <FileWarning
-                                  className="h-3 w-3 text-muted-foreground flex-shrink-0"
-                                  aria-hidden="true"
-                                />
-                                <div>
-                                  <div className="text-sm font-medium">{incident.title}</div>
-                                  <div className="text-xs text-muted-foreground truncate max-w-[300px]">
-                                    {incident.summary}
-                                  </div>
-                                  <IncidentMiniTimeline incident={incident} />
+      {viewMode === "kanban" ? (
+        <div className="overflow-x-auto pb-4" data-testid="kanban-board">
+          <div className="flex gap-3 min-w-max">
+            {KANBAN_COLUMNS.map((col) => {
+              const columnIncidents = kanbanGroups[col.key] || [];
+              return (
+                <div
+                  key={col.key}
+                  className="w-72 flex-shrink-0 rounded-lg border bg-muted/20 flex flex-col max-h-[calc(100vh-16rem)]"
+                  data-testid={`kanban-column-${col.key}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add("ring-2", "ring-primary/40");
+                    dragOverColumnRef.current = col.key;
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove("ring-2", "ring-primary/40");
+                    dragOverColumnRef.current = null;
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("ring-2", "ring-primary/40");
+                    const incidentId = e.dataTransfer.getData("text/plain");
+                    if (incidentId) {
+                      handleKanbanDrop(incidentId, col.key);
+                    }
+                    dragItemRef.current = null;
+                    dragOverColumnRef.current = null;
+                  }}
+                >
+                  <div className="px-3 py-2.5 border-b flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${col.color}`} />
+                      <span className="text-xs font-semibold">{col.label}</span>
+                    </div>
+                    <Badge variant="secondary" className="text-[10px] h-5 min-w-[20px] justify-center">
+                      {columnIncidents.length}
+                    </Badge>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                    {columnIncidents.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-muted-foreground">Drop incidents here</div>
+                    ) : (
+                      columnIncidents.map((incident) => (
+                        <div
+                          key={incident.id}
+                          draggable
+                          onDragStart={(e) => {
+                            dragItemRef.current = incident.id;
+                            e.dataTransfer.setData("text/plain", incident.id);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragEnd={() => {
+                            dragItemRef.current = null;
+                          }}
+                          className="p-3 rounded-md border bg-background cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow"
+                          data-testid={`kanban-card-${incident.id}`}
+                          onClick={() => {
+                            setFocusedIncidentId(incident.id);
+                            navigate(`/incidents/${incident.id}`);
+                          }}
+                        >
+                          <div className="flex items-start gap-2 mb-2">
+                            <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium leading-tight truncate">{incident.title}</div>
+                              {incident.summary && (
+                                <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">
+                                  {incident.summary}
                                 </div>
-                              </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <SeverityBadge severity={incident.severity} />
+                            <PriorityBadge priority={incident.priority ?? 3} />
+                            {incident.assignedTo && (
+                              <span className="text-[9px] text-muted-foreground flex items-center gap-0.5">
+                                <User className="h-2.5 w-2.5" />
+                                {incident.assignedTo}
+                              </span>
+                            )}
+                          </div>
+                          {incident.alertCount != null && incident.alertCount > 0 && (
+                            <div className="mt-1.5 text-[9px] text-muted-foreground">
+                              {incident.alertCount} alert{incident.alertCount !== 1 ? "s" : ""}
+                            </div>
+                          )}
+                          <IncidentMiniTimeline incident={incident} />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <ResizablePanelGroup direction="horizontal" className="rounded-lg min-h-[400px]">
+          <ResizablePanel defaultSize={isDetailOpen && selectedIncident ? 60 : 100} minSize={35}>
+            <Card className="h-full transition-all duration-200">
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="px-4 py-3 w-10">
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={toggleSelectAll}
+                            aria-label="Select all incidents on this page"
+                            data-testid="checkbox-select-all"
+                          />
+                        </th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Incident</th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Severity</th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">
+                          Priority
+                        </th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">
+                          SLA
+                        </th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">
+                          Assignee
+                        </th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">
+                          Alert Count
+                        </th>
+                        <th className="px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">
+                          Updated
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {currentLoading ? (
+                        Array.from({ length: 6 }).map((_, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="px-4 py-3">
+                              <Skeleton className="h-4 w-4" />
                             </td>
                             <td className="px-4 py-3">
-                              <SeverityBadge severity={incident.severity} />
+                              <Skeleton className="h-4 w-48" />
                             </td>
                             <td className="px-4 py-3">
-                              <IncidentStatusBadge status={incident.status} />
+                              <Skeleton className="h-4 w-16" />
+                            </td>
+                            <td className="px-4 py-3">
+                              <Skeleton className="h-4 w-20" />
                             </td>
                             <td className="px-4 py-3 hidden sm:table-cell">
-                              <PriorityBadge priority={incident.priority ?? 3} />
+                              <Skeleton className="h-4 w-12" />
                             </td>
-                            <td className="px-4 py-3 hidden sm:table-cell" data-testid={`badge-sla-${incident.id}`}>
-                              {slaStatus ? (
-                                <Badge variant={slaStatus.variant} className="text-[10px] no-default-active-elevate">
-                                  {slaStatus.label}
-                                </Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">-</span>
-                              )}
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              <Skeleton className="h-4 w-16" />
                             </td>
                             <td className="px-4 py-3 hidden md:table-cell">
-                              <span className="text-xs text-muted-foreground">{incident.assignedTo || "-"}</span>
+                              <Skeleton className="h-4 w-20" />
                             </td>
                             <td className="px-4 py-3 hidden lg:table-cell">
-                              <span className="text-xs text-muted-foreground">{incident.alertCount ?? 0}</span>
+                              <Skeleton className="h-4 w-12" />
                             </td>
                             <td className="px-4 py-3 hidden lg:table-cell">
-                              <span className="text-xs text-muted-foreground">
-                                {formatRelativeTime(incident.updatedAt)}
-                              </span>
+                              <Skeleton className="h-4 w-16" />
                             </td>
                           </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                          <div role="status" aria-label="No incidents found">
-                            <FileWarning className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" aria-hidden="true" />
-                            <p className="font-medium">No incidents found</p>
-                            <p className="text-xs mt-1">Adjust your filters or check back later</p>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {filtered.length > PAGE_SIZE && (
-                <div className="flex items-center justify-between px-4 py-3 border-t">
-                  <span className="text-xs text-muted-foreground">
-                    Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of{" "}
-                    {filtered.length}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={page === 0}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      <ChevronLeft className="h-3 w-3" />
-                    </Button>
-                    <span className="text-xs px-2">
-                      {page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
+                        ))
+                      ) : incidentsError ? (
+                        <tr>
+                          <td colSpan={9} className="px-4 py-12 text-center">
+                            <div role="alert" className="flex flex-col items-center gap-3">
+                              <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20">
+                                <FileWarning className="h-6 w-6 text-destructive" />
+                              </div>
+                              <p className="text-sm font-medium">Failed to load incidents</p>
+                              <p className="text-xs text-muted-foreground">
+                                An error occurred while fetching incident data.
+                              </p>
+                              <Button variant="outline" size="sm" onClick={() => refetchIncidents()}>
+                                Try Again
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : filtered.length > 0 ? (
+                        filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((incident) => {
+                          const slaStatus = getSlaStatus(incident);
+                          const isSelected = selectedIds.includes(incident.id);
+                          const isFocused = focusedIncidentId === incident.id;
+                          return (
+                            <tr
+                              key={incident.id}
+                              className={`border-b last:border-0 hover-elevate cursor-pointer ${isSelected ? "bg-primary/5" : ""} ${isFocused ? "ring-1 ring-primary/40 bg-primary/5" : ""}`}
+                              data-testid={`row-incident-${incident.id}`}
+                              onClick={() => {
+                                setFocusedIncidentId(incident.id);
+                                setIsDetailOpen(true);
+                              }}
+                            >
+                              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleSelect(incident.id)}
+                                  aria-label={`Select incident ${incident.title}`}
+                                  data-testid={`checkbox-incident-${incident.id}`}
+                                />
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <FileWarning
+                                    className="h-3 w-3 text-muted-foreground flex-shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                  <div>
+                                    <div className="text-sm font-medium">{incident.title}</div>
+                                    <div className="text-xs text-muted-foreground truncate max-w-[300px]">
+                                      {incident.summary}
+                                    </div>
+                                    <IncidentMiniTimeline incident={incident} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <SeverityBadge severity={incident.severity} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <IncidentStatusBadge status={incident.status} />
+                              </td>
+                              <td className="px-4 py-3 hidden sm:table-cell">
+                                <PriorityBadge priority={incident.priority ?? 3} />
+                              </td>
+                              <td className="px-4 py-3 hidden sm:table-cell" data-testid={`badge-sla-${incident.id}`}>
+                                {slaStatus ? (
+                                  <Badge variant={slaStatus.variant} className="text-[10px] no-default-active-elevate">
+                                    {slaStatus.label}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 hidden md:table-cell">
+                                <span className="text-xs text-muted-foreground">{incident.assignedTo || "-"}</span>
+                              </td>
+                              <td className="px-4 py-3 hidden lg:table-cell">
+                                <span className="text-xs text-muted-foreground">{incident.alertCount ?? 0}</span>
+                              </td>
+                              <td className="px-4 py-3 hidden lg:table-cell">
+                                <span className="text-xs text-muted-foreground">
+                                  {formatRelativeTime(incident.updatedAt)}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                            <div role="status" aria-label="No incidents found">
+                              <FileWarning
+                                className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50"
+                                aria-hidden="true"
+                              />
+                              <p className="font-medium">No incidents found</p>
+                              <p className="text-xs mt-1">Adjust your filters or check back later</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {filtered.length > PAGE_SIZE && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t">
+                    <span className="text-xs text-muted-foreground">
+                      Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of{" "}
+                      {filtered.length}
                     </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={page === 0}
+                        onClick={() => setPage((p) => p - 1)}
+                      >
+                        <ChevronLeft className="h-3 w-3" />
+                      </Button>
+                      <span className="text-xs px-2">
+                        {page + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={(page + 1) * PAGE_SIZE >= filtered.length}
+                        onClick={() => setPage((p) => p + 1)}
+                      >
+                        <ChevronRight className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </ResizablePanel>
+
+          {isDetailOpen && selectedIncident && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={40} minSize={20}>
+                <Card className="flex flex-col h-full max-h-[calc(100vh-12rem)]">
+                  <div className="flex items-center justify-between px-4 py-3 border-b">
+                    <div className="flex items-center gap-2">
+                      <PanelRight className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold truncate">{selectedIncident.title}</span>
+                    </div>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      disabled={(page + 1) * PAGE_SIZE >= filtered.length}
-                      onClick={() => setPage((p) => p + 1)}
+                      onClick={() => setIsDetailOpen(false)}
+                      aria-label="Close detail panel"
                     >
-                      <ChevronRight className="h-3 w-3" />
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </Button>
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </ResizablePanel>
-
-        {isDetailOpen && selectedIncident && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={40} minSize={20}>
-              <Card className="flex flex-col h-full max-h-[calc(100vh-12rem)]">
-                <div className="flex items-center justify-between px-4 py-3 border-b">
-                  <div className="flex items-center gap-2">
-                    <PanelRight className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold truncate">{selectedIncident.title}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setIsDetailOpen(false)}
-                    aria-label="Close detail panel"
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Severity</span>
-                      <div className="mt-1">
-                        <SeverityBadge severity={selectedIncident.severity} />
+                  <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Severity</span>
+                        <div className="mt-1">
+                          <SeverityBadge severity={selectedIncident.severity} />
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Status</span>
+                        <div className="mt-1">
+                          <IncidentStatusBadge status={selectedIncident.status} />
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</span>
+                        <div className="mt-1">
+                          <PriorityBadge priority={selectedIncident.priority ?? 3} />
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Assigned To</span>
+                        <div className="mt-1 flex items-center gap-1">
+                          <User className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs">{selectedIncident.assignedTo || "Unassigned"}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Alert Count</span>
+                        <div className="mt-1 text-xs">{selectedIncident.alertCount ?? 0}</div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Updated</span>
+                        <div className="mt-1 flex items-center gap-1">
+                          <Clock className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs">{formatRelativeTime(selectedIncident.updatedAt)}</span>
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Status</span>
-                      <div className="mt-1">
-                        <IncidentStatusBadge status={selectedIncident.status} />
+                    {selectedIncident.summary && (
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Summary</span>
+                        <p className="text-xs mt-1 text-muted-foreground leading-relaxed">{selectedIncident.summary}</p>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</span>
-                      <div className="mt-1">
-                        <PriorityBadge priority={selectedIncident.priority ?? 3} />
+                    )}
+                    <IncidentMiniTimeline incident={selectedIncident} />
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Quick Actions</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={assignFocused}>
+                          <UserPlus className="h-3 w-3 mr-1" />
+                          Assign <kbd className="ml-1 text-[9px] opacity-50">A</kbd>
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={escalateFocused}>
+                          <ArrowUpRight className="h-3 w-3 mr-1" />
+                          Escalate <kbd className="ml-1 text-[9px] opacity-50">E</kbd>
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={resolveFocused}>
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Resolve <kbd className="ml-1 text-[9px] opacity-50">R</kbd>
+                        </Button>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Assigned To</span>
-                      <div className="mt-1 flex items-center gap-1">
-                        <User className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs">{selectedIncident.assignedTo || "Unassigned"}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Alert Count</span>
-                      <div className="mt-1 text-xs">{selectedIncident.alertCount ?? 0}</div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Updated</span>
-                      <div className="mt-1 flex items-center gap-1">
-                        <Clock className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs">{formatRelativeTime(selectedIncident.updatedAt)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {selectedIncident.summary && (
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Summary</span>
-                      <p className="text-xs mt-1 text-muted-foreground leading-relaxed">{selectedIncident.summary}</p>
-                    </div>
-                  )}
-                  <IncidentMiniTimeline incident={selectedIncident} />
-                  <div className="space-y-2">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Quick Actions</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      <Button size="sm" variant="outline" className="text-xs h-8" onClick={assignFocused}>
-                        <UserPlus className="h-3 w-3 mr-1" />
-                        Assign <kbd className="ml-1 text-[9px] opacity-50">A</kbd>
-                      </Button>
-                      <Button size="sm" variant="outline" className="text-xs h-8" onClick={escalateFocused}>
-                        <ArrowUpRight className="h-3 w-3 mr-1" />
-                        Escalate <kbd className="ml-1 text-[9px] opacity-50">E</kbd>
-                      </Button>
-                      <Button size="sm" variant="outline" className="text-xs h-8" onClick={resolveFocused}>
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Resolve <kbd className="ml-1 text-[9px] opacity-50">R</kbd>
-                      </Button>
                     </div>
                   </div>
-                </div>
-                <div className="px-4 py-3 border-t">
-                  <Button
-                    size="sm"
-                    className="w-full text-xs"
-                    onClick={() => navigate(`/incidents/${selectedIncident.id}`)}
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1.5" />
-                    View Full Details
-                  </Button>
-                </div>
-              </Card>
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+                  <div className="px-4 py-3 border-t">
+                    <Button
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => navigate(`/incidents/${selectedIncident.id}`)}
+                    >
+                      <ExternalLink className="h-3 w-3 mr-1.5" />
+                      View Full Details
+                    </Button>
+                  </div>
+                </Card>
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+      )}
     </div>
   );
 }
