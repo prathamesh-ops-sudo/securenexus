@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { iocEntries, iocFeeds, type IocFeed, type InsertIocEntry } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { iocEntries, iocFeeds, iocMatches, alerts, campaigns, type IocFeed, type InsertIocEntry } from "@shared/schema";
+import { eq, and, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface IngestionResult {
@@ -775,6 +775,41 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
     result.errors.push(`Feed update error: ${e.message}`);
   }
 
+  // ── 4.9: Automatically match newly ingested IOCs against existing alerts ──
+  if (result.newEntries > 0 && feed.orgId) {
+    try {
+      const autoMatchResult = await matchNewIOCsAgainstAlerts(batch, feed.orgId, feed.id, feed.name);
+      logger
+        .child("ioc-ingestion")
+        .info(`Auto-matched ${autoMatchResult.matchCount} alerts against ${result.newEntries} new IOCs`, {
+          feedId: feed.id,
+          matchCount: autoMatchResult.matchCount,
+        });
+      (result as IngestionResult & { autoMatches?: number }).autoMatches = autoMatchResult.matchCount;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.child("ioc-ingestion").warn("Auto-match against alerts failed (non-fatal)", { error: msg });
+    }
+  }
+
+  // ── 4.10: Auto-link IOCs to campaigns when feed includes campaign/threat actor attribution ──
+  if (result.newEntries > 0 && feed.orgId) {
+    try {
+      const linkResult = await autoLinkIOCsToCampaigns(batch, feed.orgId);
+      logger
+        .child("ioc-ingestion")
+        .info(`Auto-linked ${linkResult.linked} IOCs to ${linkResult.campaignsMatched} campaigns`, {
+          feedId: feed.id,
+          linked: linkResult.linked,
+          campaignsMatched: linkResult.campaignsMatched,
+        });
+      (result as IngestionResult & { campaignLinks?: number }).campaignLinks = linkResult.linked;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.child("ioc-ingestion").warn("Campaign auto-link failed (non-fatal)", { error: msg });
+    }
+  }
+
   result.duration = Date.now() - start;
   return result;
 }
@@ -880,4 +915,282 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
       duration: 0,
     };
   }
+}
+
+// ── 4.9: Reverse-match newly ingested IOCs against existing alerts ──
+// For each new IOC, scan recent open alerts for matching fields (sourceIp, destIp, domain, url, fileHash, hostname)
+// and create iocMatch records so the IOC Management page shows retroactive matches.
+async function matchNewIOCsAgainstAlerts(
+  batch: InsertIocEntry[],
+  orgId: string,
+  feedId: string,
+  feedName: string,
+): Promise<{ matchCount: number }> {
+  const log = logger.child("ioc-auto-match");
+  let matchCount = 0;
+
+  // Build lookup maps by IOC type → values
+  const ipValues: string[] = [];
+  const domainValues: string[] = [];
+  const urlValues: string[] = [];
+  const hashValues: string[] = [];
+  const iocLookup = new Map<string, InsertIocEntry>(); // "type:value" → entry
+
+  for (const entry of batch) {
+    if (!entry.iocValue || !entry.iocType) continue;
+    const val = entry.iocValue.toLowerCase();
+    const key = `${entry.iocType}:${val}`;
+    iocLookup.set(key, entry);
+
+    switch (entry.iocType) {
+      case "ip":
+      case "ipv4":
+      case "ipv6":
+        ipValues.push(val);
+        break;
+      case "domain":
+      case "hostname":
+        domainValues.push(val);
+        break;
+      case "url":
+        urlValues.push(val);
+        break;
+      case "hash":
+      case "md5":
+      case "sha1":
+      case "sha256":
+        hashValues.push(val);
+        break;
+    }
+  }
+
+  // Build OR conditions to find alerts with any matching field
+  const orConditions = [];
+  if (ipValues.length > 0) {
+    orConditions.push(
+      sql`LOWER(${alerts.sourceIp}) IN (${sql.join(
+        ipValues.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    );
+    orConditions.push(
+      sql`LOWER(${alerts.destIp}) IN (${sql.join(
+        ipValues.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    );
+  }
+  if (domainValues.length > 0) {
+    orConditions.push(
+      sql`LOWER(${alerts.domain}) IN (${sql.join(
+        domainValues.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    );
+    orConditions.push(
+      sql`LOWER(${alerts.hostname}) IN (${sql.join(
+        domainValues.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    );
+  }
+  if (urlValues.length > 0) {
+    orConditions.push(
+      sql`LOWER(${alerts.url}) IN (${sql.join(
+        urlValues.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    );
+  }
+  if (hashValues.length > 0) {
+    orConditions.push(
+      sql`LOWER(${alerts.fileHash}) IN (${sql.join(
+        hashValues.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    );
+  }
+
+  if (orConditions.length === 0) return { matchCount: 0 };
+
+  // Fetch recent open alerts (last 90 days, non-resolved) that have matching fields
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const matchingAlerts = await db
+    .select()
+    .from(alerts)
+    .where(
+      and(
+        eq(alerts.orgId, orgId),
+        sql`${alerts.status} NOT IN ('resolved', 'closed', 'false_positive')`,
+        sql`${alerts.createdAt} >= ${ninetyDaysAgo}`,
+        or(...orConditions),
+      ),
+    )
+    .limit(500);
+
+  if (matchingAlerts.length === 0) return { matchCount: 0 };
+
+  // For each matching alert, create iocMatch records
+  const fieldMappings: { alertField: keyof typeof alerts.$inferSelect; iocType: string }[] = [
+    { alertField: "sourceIp", iocType: "ip" },
+    { alertField: "destIp", iocType: "ip" },
+    { alertField: "domain", iocType: "domain" },
+    { alertField: "hostname", iocType: "domain" },
+    { alertField: "url", iocType: "url" },
+    { alertField: "fileHash", iocType: "hash" },
+  ];
+
+  for (const alert of matchingAlerts) {
+    for (const mapping of fieldMappings) {
+      const alertValue = alert[mapping.alertField];
+      if (!alertValue || typeof alertValue !== "string") continue;
+      const normalizedAlertVal = alertValue.trim().toLowerCase();
+
+      // Check if this alert field value matches any IOC in the batch
+      const iocKey = `${mapping.iocType}:${normalizedAlertVal}`;
+      const matchedIoc = iocLookup.get(iocKey);
+      if (!matchedIoc) continue;
+
+      // Resolve actual inserted IOC entry ID from DB
+      try {
+        const [iocRow] = await db
+          .select({ id: iocEntries.id })
+          .from(iocEntries)
+          .where(
+            and(
+              eq(iocEntries.orgId, orgId),
+              eq(iocEntries.iocType, matchedIoc.iocType!),
+              eq(iocEntries.iocValue, matchedIoc.iocValue!),
+            ),
+          )
+          .limit(1);
+        if (!iocRow) continue;
+
+        await db.insert(iocMatches).values({
+          orgId,
+          iocEntryId: iocRow.id,
+          alertId: alert.id,
+          matchField: mapping.alertField as string,
+          matchValue: normalizedAlertVal,
+          confidence: matchedIoc.confidence || 50,
+          enrichmentData: {
+            autoMatched: true,
+            matchSource: "feed_ingestion",
+            feedId,
+            feedName,
+            malwareFamily: matchedIoc.malwareFamily,
+            campaignName: matchedIoc.campaignName,
+            severity: matchedIoc.severity,
+            tags: matchedIoc.tags,
+          },
+        });
+        matchCount++;
+      } catch (e) {
+        // Duplicate match or constraint violation — skip silently
+        log.debug("Skipped duplicate auto-match", {
+          alertId: alert.id,
+          field: mapping.alertField,
+          value: normalizedAlertVal,
+        });
+      }
+    }
+  }
+
+  log.info(`Auto-matched ${matchCount} alert-IOC pairs from ${matchingAlerts.length} alerts`);
+  return { matchCount };
+}
+
+// ── 4.10: Auto-link IOCs to existing campaigns based on campaign/threat actor attribution ──
+// When ingested IOCs carry campaignName metadata, find matching campaigns in the org
+// and update IOC entries with the campaign ID + update the campaign's alert/IOC count.
+async function autoLinkIOCsToCampaigns(
+  batch: InsertIocEntry[],
+  orgId: string,
+): Promise<{ linked: number; campaignsMatched: number }> {
+  const log = logger.child("ioc-campaign-link");
+
+  // Collect unique campaign names from the batch
+  const campaignNames = new Set<string>();
+  for (const entry of batch) {
+    if (entry.campaignName && entry.campaignName.trim()) {
+      campaignNames.add(entry.campaignName.trim().toLowerCase());
+    }
+  }
+
+  if (campaignNames.size === 0) return { linked: 0, campaignsMatched: 0 };
+
+  // Fetch existing campaigns for this org
+  const orgCampaigns = await db.select().from(campaigns).where(eq(campaigns.orgId, orgId));
+
+  // Build name → campaign lookup (case-insensitive)
+  const campaignMap = new Map<string, (typeof orgCampaigns)[number]>();
+  for (const c of orgCampaigns) {
+    campaignMap.set(c.name.toLowerCase(), c);
+    // Also try matching on fingerprint/entity signature for fuzzy matching
+    if (c.fingerprint) {
+      campaignMap.set(c.fingerprint.toLowerCase(), c);
+    }
+  }
+
+  let linked = 0;
+  const matchedCampaignIds = new Set<string>();
+
+  for (const entry of batch) {
+    if (!entry.campaignName || !entry.campaignName.trim()) continue;
+    const nameKey = entry.campaignName.trim().toLowerCase();
+    const matchedCampaign = campaignMap.get(nameKey);
+
+    if (!matchedCampaign) continue;
+
+    // Update IOC entries that match this value+type to set campaignId
+    try {
+      if (entry.iocValue && entry.iocType) {
+        const updated = await db
+          .update(iocEntries)
+          .set({
+            campaignId: matchedCampaign.id,
+            metadata: sql`COALESCE(${iocEntries.metadata}, '{}'::jsonb) || jsonb_build_object('linkedCampaign', ${matchedCampaign.name}, 'linkedAt', ${new Date().toISOString()})`,
+          })
+          .where(
+            and(
+              eq(iocEntries.orgId, orgId),
+              eq(iocEntries.iocType, entry.iocType),
+              eq(iocEntries.iocValue, entry.iocValue),
+              sql`${iocEntries.campaignId} IS NULL`,
+            ),
+          )
+          .returning({ id: iocEntries.id });
+
+        if (updated.length > 0) {
+          linked += updated.length;
+          matchedCampaignIds.add(matchedCampaign.id);
+        }
+      }
+    } catch (e) {
+      log.debug("Failed to link IOC to campaign", {
+        iocValue: entry.iocValue,
+        campaignId: matchedCampaign.id,
+        error: String(e),
+      });
+    }
+  }
+
+  // Update campaign last-seen timestamps for matched campaigns
+  const campaignIdArr = Array.from(matchedCampaignIds);
+  for (const cId of campaignIdArr) {
+    try {
+      await db
+        .update(campaigns)
+        .set({
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(campaigns.id, cId));
+    } catch (e) {
+      log.debug("Failed to update campaign lastSeenAt", { campaignId: cId, error: String(e) });
+    }
+  }
+
+  log.info(`Linked ${linked} IOCs to ${matchedCampaignIds.size} campaigns`);
+  return { linked, campaignsMatched: matchedCampaignIds.size };
 }
