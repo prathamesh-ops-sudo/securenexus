@@ -15,6 +15,11 @@ import {
   insertPostIncidentReviewSchema,
   insertPirActionItemSchema,
   incidents,
+  ticketSyncJobs,
+  integrationConfigs,
+  compliancePolicies,
+  iocEntries,
+  COMPLIANCE_FRAMEWORKS,
 } from "@shared/schema";
 import { createHash } from "crypto";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
@@ -26,7 +31,7 @@ import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { upsertIncidentEmbedding } from "../ai/vector-search";
 import { dispatchNotification } from "../notification-dispatcher";
 import { db } from "../db";
-import { eq, and, gte } from "drizzle-orm";
+import { eq, and, gte, desc, sql, inArray } from "drizzle-orm";
 
 function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string } | null {
   const now = new Date();
@@ -1647,6 +1652,435 @@ export function registerIncidentsRoutes(app: Express): void {
         res.json(refreshed);
       } catch (error) {
         res.status(500).json({ message: "Failed to classify incident" });
+      }
+    },
+  );
+
+  // ==========================================
+  // 3.10: Incident → JIRA/ServiceNow Ticket Sync
+  // ==========================================
+
+  // Create a linked ticket from incident detail page
+  app.post(
+    "/api/incidents/:id/ticket",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const { integrationId, platform, project, priority, customFields } = req.body;
+        if (!integrationId || !platform) {
+          return res.status(400).json({ message: "integrationId and platform are required" });
+        }
+
+        // Verify integration belongs to org
+        const [integration] = await db
+          .select()
+          .from(integrationConfigs)
+          .where(and(eq(integrationConfigs.id, integrationId), eq(integrationConfigs.orgId, orgId)))
+          .limit(1);
+        if (!integration) {
+          return res.status(404).json({ message: "Integration not found" });
+        }
+
+        // Create the external ticket via action dispatcher
+        const context: ActionContext = {
+          incidentId: incident.id,
+          orgId,
+          userId: (req as any).user?.id,
+          storage,
+        };
+        const actionResult = await dispatchAction(
+          `create_${platform}_ticket`,
+          {
+            summary: `[SecureNexus] ${incident.title}`,
+            description: `Severity: ${incident.severity}\nStatus: ${incident.status}\n\n${incident.summary || ""}`,
+            priority: priority || incident.severity,
+            project: project || "SEC",
+            webhookUrl: (integration.config as any)?.webhookUrl || (integration.config as any)?.apiUrl,
+            authHeader: (integration.config as any)?.authHeader,
+            ...customFields,
+          },
+          context,
+        );
+
+        // Create bi-directional sync job
+        const syncJob = await storage.createTicketSyncJob({
+          orgId,
+          integrationId,
+          incidentId: incident.id,
+          externalTicketId: actionResult.details?.ticketId || null,
+          externalTicketUrl: actionResult.details?.ticketUrl || null,
+          direction: "bidirectional",
+          syncStatus: actionResult.status === "completed" ? "synced" : "error",
+          lastSyncedAt: new Date(),
+          lastSyncError: actionResult.status === "failed" ? actionResult.message : null,
+          fieldMapping: { title: "summary", status: "status", severity: "priority" },
+          statusMapping: {
+            open: platform === "jira" ? "To Do" : "New",
+            investigating: platform === "jira" ? "In Progress" : "In Progress",
+            contained: platform === "jira" ? "In Review" : "On Hold",
+            resolved: platform === "jira" ? "Done" : "Resolved",
+            closed: platform === "jira" ? "Closed" : "Closed",
+          },
+          createdBy: (req as any).user?.id,
+        });
+
+        res.status(201).json({
+          syncJob,
+          ticketResult: actionResult,
+        });
+      } catch (error) {
+        logger.child("ticket-sync").error("Failed to create linked ticket", { error: String(error) });
+        res.status(500).json({ message: "Failed to create linked ticket" });
+      }
+    },
+  );
+
+  // Get linked tickets for an incident
+  app.get(
+    "/api/incidents/:id/tickets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const linkedTickets = await db
+          .select()
+          .from(ticketSyncJobs)
+          .where(and(eq(ticketSyncJobs.incidentId, incident.id), eq(ticketSyncJobs.orgId, orgId)))
+          .orderBy(desc(ticketSyncJobs.createdAt));
+
+        res.json(linkedTickets);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch linked tickets" });
+      }
+    },
+  );
+
+  // Sync status from external ticket back to incident (webhook endpoint for bi-directional sync)
+  app.post("/api/incidents/ticket-webhook", async (req, res) => {
+    try {
+      const { syncJobId, externalStatus, externalTicketId } = req.body;
+      if (!syncJobId && !externalTicketId) {
+        return res.status(400).json({ message: "syncJobId or externalTicketId is required" });
+      }
+
+      let syncJob;
+      if (syncJobId) {
+        syncJob = await storage.getTicketSyncJob(syncJobId);
+      } else {
+        // Look up by external ticket ID
+        const [found] = await db
+          .select()
+          .from(ticketSyncJobs)
+          .where(eq(ticketSyncJobs.externalTicketId, externalTicketId))
+          .limit(1);
+        syncJob = found;
+      }
+
+      if (!syncJob || !syncJob.incidentId) {
+        return res.status(404).json({ message: "Sync job not found" });
+      }
+
+      // Map external status to SecureNexus status
+      const reverseMapping = syncJob.statusMapping as Record<string, string>;
+      let mappedStatus: string | null = null;
+      for (const [snStatus, extStatus] of Object.entries(reverseMapping)) {
+        if (typeof extStatus === "string" && extStatus.toLowerCase() === String(externalStatus).toLowerCase()) {
+          mappedStatus = snStatus;
+          break;
+        }
+      }
+
+      if (mappedStatus) {
+        await storage.updateIncident(syncJob.incidentId, { status: mappedStatus } as any);
+        await storage.updateTicketSyncJob(syncJob.id, {
+          syncStatus: "synced",
+          lastSyncedAt: new Date(),
+          statusSyncs: (syncJob.statusSyncs || 0) + 1,
+        });
+
+        logger.child("ticket-sync").info("Bi-directional status sync applied", {
+          incidentId: syncJob.incidentId,
+          externalStatus,
+          mappedStatus,
+        });
+      }
+
+      res.json({ success: true, mappedStatus });
+    } catch (error) {
+      logger.child("ticket-sync").error("Webhook sync failed", { error: String(error) });
+      res.status(500).json({ message: "Webhook sync failed" });
+    }
+  });
+
+  // ==========================================
+  // 3.11: Incident → Compliance Mapping
+  // ==========================================
+
+  // Tag incident with compliance frameworks
+  app.post(
+    "/api/incidents/:id/compliance",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const { frameworks } = req.body;
+        if (!Array.isArray(frameworks) || frameworks.length === 0) {
+          return res.status(400).json({ message: "frameworks array is required" });
+        }
+
+        // Validate framework names
+        const validFrameworks = frameworks.filter((f: string) =>
+          COMPLIANCE_FRAMEWORKS.includes(f as (typeof COMPLIANCE_FRAMEWORKS)[number]),
+        );
+        if (validFrameworks.length === 0) {
+          return res.status(400).json({ message: "No valid compliance frameworks provided" });
+        }
+
+        // Store in incident metadata (affectedAssets field extended or new complianceFrameworks)
+        const existingFrameworks = ((incident as any).complianceFrameworks as string[]) || [];
+        const merged = Array.from(new Set([...existingFrameworks, ...validFrameworks]));
+
+        const updated = await storage.updateIncident(incident.id, {
+          complianceFrameworks: merged,
+        } as any);
+
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to tag compliance frameworks" });
+      }
+    },
+  );
+
+  // Get compliance impact report for an incident
+  app.get(
+    "/api/incidents/:id/compliance-report",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const taggedFrameworks: string[] = ((incident as any).complianceFrameworks as string[]) || [];
+
+        // Fetch relevant compliance policies for the tagged frameworks
+        let affectedPolicies: any[] = [];
+        if (taggedFrameworks.length > 0) {
+          affectedPolicies = await db.select().from(compliancePolicies).where(eq(compliancePolicies.orgId, orgId));
+        }
+
+        // Build compliance impact report
+        const frameworkLabels: Record<string, string> = {
+          soc2: "SOC 2",
+          iso27001: "ISO 27001",
+          gdpr: "GDPR",
+          hipaa: "HIPAA",
+          pci_dss: "PCI DSS",
+          nist: "NIST CSF",
+          dpdp: "DPDP (India)",
+          sox: "SOX",
+          nis2: "NIS2",
+          dora: "DORA",
+          ccpa: "CCPA/CPRA",
+          cmmc: "CMMC",
+          nerc_cip: "NERC CIP",
+          swift_csp: "SWIFT CSP",
+          iec_62443: "IEC 62443",
+          cbest: "CBEST",
+          mas_trm: "MAS TRM",
+          ifsca: "IFSCA",
+          pdpa: "PDPA",
+          popia: "POPIA",
+          lgpd: "LGPD",
+          pipeda: "PIPEDA",
+          asd_essential8: "ASD Essential 8",
+        };
+
+        const report = {
+          incidentId: incident.id,
+          incidentTitle: incident.title,
+          severity: incident.severity,
+          status: incident.status,
+          generatedAt: new Date().toISOString(),
+          taggedFrameworks: taggedFrameworks.map((f) => ({
+            id: f,
+            label: frameworkLabels[f] || f.toUpperCase(),
+          })),
+          affectedPolicies: affectedPolicies.map((pol) => ({
+            id: pol.id,
+            enabledFrameworks: pol.enabledFrameworks,
+            dataProcessingBasis: pol.dataProcessingBasis,
+            dpoEmail: pol.dpoEmail,
+          })),
+          impactSummary: {
+            totalFrameworksAffected: taggedFrameworks.length,
+            totalPoliciesAffected: affectedPolicies.length,
+            requiresNotification: taggedFrameworks.some((f) =>
+              ["gdpr", "hipaa", "dpdp", "ccpa", "popia", "lgpd", "pdpa", "pipeda"].includes(f),
+            ),
+            notificationDeadlineHours: taggedFrameworks.includes("gdpr")
+              ? 72
+              : taggedFrameworks.includes("hipaa")
+                ? 60
+                : taggedFrameworks.includes("dpdp")
+                  ? 72
+                  : null,
+            regulatoryBody: taggedFrameworks.includes("gdpr")
+              ? "Data Protection Authority"
+              : taggedFrameworks.includes("hipaa")
+                ? "HHS Office for Civil Rights"
+                : taggedFrameworks.includes("pci_dss")
+                  ? "PCI SSC / Acquiring Bank"
+                  : null,
+          },
+        };
+
+        res.json(report);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to generate compliance impact report" });
+      }
+    },
+  );
+
+  // ==========================================
+  // 3.12: Incident → Threat Intel Feedback Loop
+  // ==========================================
+
+  // Auto-submit IOCs extracted during incident investigation back to IOC Management
+  app.post(
+    "/api/incidents/:id/submit-iocs",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        // Extract IOCs from incident data
+        const incidentIocs = (incident.iocs as any[]) || [];
+        if (incidentIocs.length === 0) {
+          return res.json({ submitted: 0, message: "No IOCs found in incident" });
+        }
+
+        let submitted = 0;
+        let duplicates = 0;
+        const submittedEntries: any[] = [];
+
+        for (const ioc of incidentIocs) {
+          const iocType = ioc.type || ioc.iocType || "unknown";
+          const iocValue = ioc.value || ioc.iocValue;
+          if (!iocValue || iocType === "unknown") continue;
+
+          // Check for duplicates
+          const existingEntries = await storage.getIocEntriesByValue(iocType, iocValue, orgId);
+          if (existingEntries.length > 0) {
+            duplicates += 1;
+            continue;
+          }
+
+          // Submit to IOC Management system
+          const entry = await storage.createIocEntry({
+            orgId,
+            iocType,
+            iocValue: iocValue.toLowerCase(),
+            confidence: ioc.confidence || 70,
+            severity: incident.severity || "medium",
+            source: `incident:${incident.id}`,
+            tags: ["auto-submitted", "incident-ioc", incident.incidentType || "other"],
+            status: "active",
+          });
+
+          submittedEntries.push(entry);
+          submitted += 1;
+        }
+
+        logger.child("ioc-feedback").info("IOCs submitted from incident to IOC Management", {
+          incidentId: incident.id,
+          submitted,
+          duplicates,
+          total: incidentIocs.length,
+        });
+
+        res.json({
+          submitted,
+          duplicates,
+          total: incidentIocs.length,
+          entries: submittedEntries,
+        });
+      } catch (error) {
+        logger.child("ioc-feedback").error("Failed to submit IOCs", { error: String(error) });
+        res.status(500).json({ message: "Failed to submit IOCs to threat intel" });
+      }
+    },
+  );
+
+  // Get IOC submission status for an incident
+  app.get(
+    "/api/incidents/:id/ioc-submissions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        // Find IOC entries sourced from this incident
+        const submittedIocs = await db
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.source, `incident:${incident.id}`)))
+          .orderBy(desc(iocEntries.createdAt));
+
+        res.json({
+          incidentId: incident.id,
+          totalSubmitted: submittedIocs.length,
+          entries: submittedIocs,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch IOC submissions" });
       }
     },
   );

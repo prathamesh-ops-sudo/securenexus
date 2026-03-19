@@ -383,6 +383,8 @@ export const incidents = pgTable(
     mttrMinutes: integer("mttr_minutes"),
     // 3.8: Auto-classified incident type (data_breach, malware, phishing, insider_threat, etc.)
     incidentType: text("incident_type").default("other"),
+    // 3.11: Compliance frameworks affected by this incident
+    complianceFrameworks: text("compliance_frameworks").array(),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
