@@ -14,6 +14,7 @@ import {
   insertIncidentResponseApprovalSchema,
   insertPostIncidentReviewSchema,
   insertPirActionItemSchema,
+  incidents,
 } from "@shared/schema";
 import { createHash } from "crypto";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
@@ -23,6 +24,9 @@ import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { upsertIncidentEmbedding } from "../ai/vector-search";
+import { dispatchNotification } from "../notification-dispatcher";
+import { db } from "../db";
+import { eq, and, gte } from "drizzle-orm";
 
 function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string } | null {
   const now = new Date();
@@ -36,6 +40,146 @@ function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string
   if (incident.ackDueAt || incident.containDueAt || incident.resolveDueAt)
     return { slaLabel: "On Track", slaVariant: "default" };
   return null;
+}
+
+// ─── 3.8: Incident Auto-Classification ────────────────────────────────────────
+const INCIDENT_TYPE_RULES: Array<{ type: string; keywords: string[] }> = [
+  {
+    type: "data_breach",
+    keywords: ["data breach", "data leak", "exfiltration", "data exposure", "pii", "sensitive data", "data loss"],
+  },
+  {
+    type: "malware",
+    keywords: ["malware", "ransomware", "trojan", "worm", "virus", "backdoor", "rootkit", "cryptominer"],
+  },
+  {
+    type: "phishing",
+    keywords: ["phishing", "spear phishing", "credential harvest", "social engineering", "bec", "business email"],
+  },
+  {
+    type: "insider_threat",
+    keywords: ["insider", "privilege abuse", "unauthorized access", "employee", "internal threat"],
+  },
+  { type: "denial_of_service", keywords: ["ddos", "dos", "denial of service", "volumetric attack", "amplification"] },
+  {
+    type: "credential_compromise",
+    keywords: ["credential", "password", "brute force", "credential stuffing", "account takeover"],
+  },
+  {
+    type: "vulnerability_exploit",
+    keywords: ["exploit", "cve-", "zero-day", "0day", "rce", "remote code execution", "vulnerability"],
+  },
+  {
+    type: "lateral_movement",
+    keywords: ["lateral movement", "pivoting", "pass the hash", "pass the ticket", "remote execution"],
+  },
+  { type: "command_and_control", keywords: ["c2", "c&c", "command and control", "beacon", "callback"] },
+  { type: "supply_chain", keywords: ["supply chain", "third party", "vendor compromise", "dependency", "package"] },
+];
+
+async function classifyIncident(incident: {
+  id: string;
+  title: string;
+  summary?: string | null;
+  orgId?: string | null;
+}): Promise<void> {
+  const searchText = `${incident.title} ${incident.summary || ""}`.toLowerCase();
+
+  // Try to classify from alert content too
+  let alertText = "";
+  try {
+    const relatedAlerts = await storage.getAlertsByIncident(incident.id);
+    alertText = relatedAlerts
+      .map((a) => `${a.title || ""} ${a.description || ""} ${a.category || ""}`)
+      .join(" ")
+      .toLowerCase();
+  } catch {
+    // Alerts may not exist yet
+  }
+
+  const combinedText = `${searchText} ${alertText}`;
+
+  let bestType = "other";
+  let bestScore = 0;
+
+  for (const rule of INCIDENT_TYPE_RULES) {
+    let score = 0;
+    for (const keyword of rule.keywords) {
+      if (combinedText.includes(keyword)) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestType = rule.type;
+    }
+  }
+
+  if (bestScore > 0) {
+    await storage.updateIncident(incident.id, { incidentType: bestType } as any);
+    logger.child("classification").info("Auto-classified incident", {
+      incidentId: incident.id,
+      type: bestType,
+      score: bestScore,
+    });
+  }
+}
+
+// ─── 3.9: Incident Status Change Notifications ───────────────────────────────
+
+async function notifyIncidentStatusChange(
+  incident: { id: string; title: string; severity?: string | null; orgId?: string | null; assignedTo?: string | null },
+  oldStatus: string | null,
+  newStatus: string,
+  changedBy: string,
+): Promise<void> {
+  if (!incident.orgId) return;
+
+  const severityMap: Record<string, "info" | "warning" | "critical"> = {
+    low: "info",
+    medium: "info",
+    high: "warning",
+    critical: "critical",
+  };
+
+  const notifSeverity = severityMap[incident.severity || "medium"] || "info";
+
+  // Build notification payload
+  const payload = {
+    title: `Incident Status Changed: ${incident.title}`,
+    body: `Status changed from "${oldStatus || "unknown"}" to "${newStatus}" by ${changedBy}. Severity: ${incident.severity || "medium"}.`,
+    severity: notifSeverity as "info" | "warning" | "critical",
+    source: "incident-management",
+    metadata: {
+      incidentId: incident.id,
+      oldStatus,
+      newStatus,
+      changedBy,
+      severity: incident.severity,
+    },
+  };
+
+  // Dispatch via notification channels (Slack, Teams, Email, PagerDuty, Webhooks)
+  await dispatchNotification(payload, "incident.status_changed", incident.orgId);
+
+  // Also broadcast a real-time event for in-app notification bell
+  broadcastEvent({
+    type: "notification:created",
+    orgId: incident.orgId,
+    data: {
+      title: payload.title,
+      body: payload.body,
+      severity: notifSeverity,
+      source: "incident-management",
+      incidentId: incident.id,
+      eventType: "incident.status_changed",
+    },
+  });
+
+  logger.child("notification").info("Dispatched incident status change notification", {
+    incidentId: incident.id,
+    oldStatus,
+    newStatus,
+    orgId: incident.orgId,
+  });
 }
 
 function enrichWithSla(incident: any): any {
@@ -203,6 +347,11 @@ export function registerIncidentsRoutes(app: Express): void {
           }).catch((err) => logger.child("rag").warn("Failed to index incident for RAG", { error: String(err) }));
         }
 
+        // 3.8: Auto-classify incident type on creation (fire-and-forget)
+        classifyIncident(incident).catch((err) =>
+          logger.child("classification").warn("Auto-classification failed", { error: String(err) }),
+        );
+
         res.status(201).json(incident);
       } catch (error) {
         logger.child("routes").error("Error creating incident", { error: String(error) });
@@ -263,6 +412,11 @@ export function registerIncidentsRoutes(app: Express): void {
             action: "incident_status_change",
             details: { from: existingIncident.status, to: parsed.data.status },
           });
+
+          // 3.9: Notify assigned team members on status change (fire-and-forget)
+          notifyIncidentStatusChange(incident, existingIncident.status, parsed.data.status, userName).catch((err) =>
+            logger.child("notification").warn("Status change notification failed", { error: String(err) }),
+          );
         }
 
         if (parsed.data.priority !== undefined && parsed.data.priority !== existingIncident.priority) {
@@ -1374,4 +1528,126 @@ export function registerIncidentsRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to delete PIR action item" });
     }
   });
+
+  // ==========================================
+  // 3.7: Incident Metrics Aggregation
+  // ==========================================
+  app.get("/api/incidents/metrics/aggregated", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "Org context required" });
+
+      const daysBack = Math.min(Number(req.query.days) || 90, 365);
+      const periodStart = new Date(Date.now() - daysBack * 86400000);
+      const periodEnd = new Date();
+
+      // MTTR by severity
+      const resolvedIncidents = await db
+        .select({
+          severity: incidents.severity,
+          createdAt: incidents.createdAt,
+          resolvedAt: incidents.resolvedAt,
+          incidentType: incidents.incidentType,
+          status: incidents.status,
+        })
+        .from(incidents)
+        .where(and(eq(incidents.orgId, orgId), gte(incidents.createdAt, periodStart)));
+
+      const mttrBySeverity: Record<string, { totalMinutes: number; count: number; avgMinutes: number }> = {};
+      const incidentsByCategory: Record<string, number> = {};
+      let totalResolved = 0;
+      let totalReopened = 0;
+      const totalIncidents = resolvedIncidents.length;
+
+      // Per-month breakdown for category trends
+      const monthlyCategories: Record<string, Record<string, number>> = {};
+
+      for (const inc of resolvedIncidents) {
+        // Category aggregation
+        const cat = inc.incidentType || "other";
+        incidentsByCategory[cat] = (incidentsByCategory[cat] || 0) + 1;
+
+        // Monthly breakdown
+        if (inc.createdAt) {
+          const monthKey = `${new Date(inc.createdAt).getFullYear()}-${String(new Date(inc.createdAt).getMonth() + 1).padStart(2, "0")}`;
+          if (!monthlyCategories[monthKey]) monthlyCategories[monthKey] = {};
+          monthlyCategories[monthKey][cat] = (monthlyCategories[monthKey][cat] || 0) + 1;
+        }
+
+        // MTTR calculation for resolved incidents
+        if (inc.resolvedAt && inc.createdAt) {
+          totalResolved += 1;
+          const mttrMs = new Date(inc.resolvedAt).getTime() - new Date(inc.createdAt).getTime();
+          const mttrMin = mttrMs / 60000;
+          const sev = inc.severity || "medium";
+          if (!mttrBySeverity[sev]) mttrBySeverity[sev] = { totalMinutes: 0, count: 0, avgMinutes: 0 };
+          mttrBySeverity[sev].totalMinutes += mttrMin;
+          mttrBySeverity[sev].count += 1;
+        }
+
+        // Count reopened (status went back to open after being resolved/closed)
+        if (inc.status === "open" && inc.resolvedAt) {
+          totalReopened += 1;
+        }
+      }
+
+      // Compute averages
+      for (const sev of Object.keys(mttrBySeverity)) {
+        const entry = mttrBySeverity[sev];
+        entry.avgMinutes = entry.count > 0 ? Math.round(entry.totalMinutes / entry.count) : 0;
+      }
+
+      const resolutionRate = totalIncidents > 0 ? Math.round((totalResolved / totalIncidents) * 100) : 0;
+
+      res.json({
+        periodStart: periodStart.toISOString(),
+        periodEnd: periodEnd.toISOString(),
+        totalIncidents,
+        totalResolved,
+        totalReopened,
+        resolutionRate,
+        mttrBySeverity,
+        incidentsByCategory,
+        monthlyCategories,
+      });
+    } catch (error) {
+      logger.child("metrics").error("Failed to compute incident metrics", { error: String(error) });
+      res.status(500).json({ message: "Failed to compute incident metrics" });
+    }
+  });
+
+  // ==========================================
+  // 3.8: Manual Re-classify Incident Type
+  // ==========================================
+  app.post(
+    "/api/incidents/:id/classify",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident || !orgId || incident.orgId !== orgId) {
+          return res.status(404).json({ message: "Incident not found" });
+        }
+
+        const { incidentType } = req.body;
+        if (incidentType && typeof incidentType === "string") {
+          // Manual override
+          const updated = await storage.updateIncident(incident.id, { incidentType } as any);
+          return res.json(updated);
+        }
+
+        // Re-run auto-classification
+        await classifyIncident(incident);
+        const refreshed = await storage.getIncident(incident.id);
+        res.json(refreshed);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to classify incident" });
+      }
+    },
+  );
 }

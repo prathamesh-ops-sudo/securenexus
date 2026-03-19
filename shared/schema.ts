@@ -381,6 +381,8 @@ export const incidents = pgTable(
     slaTotalPausedMinutes: integer("sla_total_paused_minutes").notNull().default(0),
     // Mean Time To Resolve in minutes, computed and stored when the incident is resolved/closed
     mttrMinutes: integer("mttr_minutes"),
+    // 3.8: Auto-classified incident type (data_breach, malware, phishing, insider_threat, etc.)
+    incidentType: text("incident_type").default("other"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
@@ -388,6 +390,7 @@ export const incidents = pgTable(
     index("idx_incidents_org").on(table.orgId),
     index("idx_incidents_status").on(table.status),
     index("idx_incidents_severity").on(table.severity),
+    index("idx_incidents_type").on(table.incidentType),
     index("idx_incidents_org_created").on(table.orgId, table.createdAt),
     index("idx_incidents_org_status_created").on(table.orgId, table.status, table.createdAt),
     index("idx_incidents_org_severity_created").on(table.orgId, table.severity, table.createdAt),

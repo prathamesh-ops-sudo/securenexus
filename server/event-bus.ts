@@ -9,6 +9,7 @@ export type EventType =
   | "alert:updated"
   | "incident:created"
   | "incident:updated"
+  | "notification:created"
   | "correlation:found"
   | "entity:resolved"
   | "system:health"

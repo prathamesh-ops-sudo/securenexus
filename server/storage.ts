@@ -4881,7 +4881,25 @@ export class DatabaseStorage implements IStorage {
     else if (params.status) conditions.push(eq(incidents.status, params.status));
     if (params.search) {
       const pattern = `%${params.search}%`;
-      conditions.push(or(ilike(incidents.title, pattern), ilike(incidents.summary, pattern)));
+      // 3.6: Full-text search across title, summary, aiNarrative, aiSummary, and associated alert content
+      const alertSubquery = db
+        .select({ incidentId: alerts.incidentId })
+        .from(alerts)
+        .where(
+          and(
+            params.orgId ? eq(alerts.orgId, params.orgId) : undefined,
+            or(ilike(alerts.title, pattern), ilike(alerts.description, pattern)),
+          ),
+        );
+      conditions.push(
+        or(
+          ilike(incidents.title, pattern),
+          ilike(incidents.summary, pattern),
+          ilike(incidents.aiNarrative, pattern),
+          ilike(incidents.aiSummary, pattern),
+          sql`${incidents.id} IN (${alertSubquery})`,
+        ),
+      );
     }
     const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -4891,6 +4909,7 @@ export class DatabaseStorage implements IStorage {
       severity: incidents.severity,
       status: incidents.status,
       title: incidents.title,
+      priority: incidents.priority,
     };
     const sortColumn = INCIDENT_SORT_COLUMNS[params.sortBy || "createdAt"] || incidents.createdAt;
     const orderFn = params.sortOrder === "asc" ? asc : desc;
