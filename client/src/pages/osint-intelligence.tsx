@@ -203,6 +203,68 @@ interface QuotaSummary {
   sources: QuotaSourceSummary[];
 }
 
+// 5.7: Asset correlation types
+interface CorrelationMatch {
+  queryId: string;
+  queryType: string;
+  queryValue: string;
+  queryCreatedAt: string | null;
+  assetId: string;
+  assetName: string;
+  assetType: string;
+  assetCriticality: string;
+  matchType: string;
+  matchValue: string;
+  findingDetails: Record<string, unknown>;
+  riskLevel: string;
+}
+
+interface AssetCorrelation {
+  totalCorrelations: number;
+  uniqueAssetsMatched: number;
+  totalAssetsInInventory: number;
+  criticalMatches: number;
+  highMatches: number;
+  correlations: CorrelationMatch[];
+}
+
+// 5.8: Attack surface types
+interface AttackSurfaceData {
+  summary: {
+    attackSurfaceScore: number;
+    riskLevel: string;
+    totalExposedIps: number;
+    totalExposedDomains: number;
+    totalExposedServices: number;
+    totalVulnerabilities: number;
+    totalQueries: number;
+    contributingSources: number;
+  };
+  exposedIps: {
+    ip: string;
+    ports: number[];
+    vulns: string[];
+    sources: string[];
+    lastSeen: string;
+    country: string;
+    city: string;
+    asn: string;
+    org: string;
+  }[];
+  exposedDomains: {
+    domain: string;
+    subdomains: string[];
+    sources: string[];
+    lastSeen: string;
+    certificates: Record<string, unknown>[];
+    dnsRecords: Record<string, unknown>[];
+  }[];
+  exposedServices: { port: number; protocol: string; count: number; ips: string[] }[];
+  vulnerabilities: { cve: string; affectedIps: string[]; severity: string }[];
+  timeline: { timestamp: string; event: string; source: string; value: string; queryType: string }[];
+  sources: { id: string; name: string; provider: string }[];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────
 
 function timeAgo(dateStr: string | null): string {
@@ -344,6 +406,16 @@ export default function OsintIntelligencePage() {
   // 5.6: Quota data
   const { data: quotaData } = useQuery<QuotaSummary>({
     queryKey: ["/api/osint/quota"],
+  });
+
+  // 5.7: Asset correlation data
+  const { data: assetCorrelation, isLoading: correlationLoading } = useQuery<AssetCorrelation>({
+    queryKey: ["/api/osint/asset-correlation"],
+  });
+
+  // 5.8: Attack surface data
+  const { data: attackSurface, isLoading: attackSurfaceLoading } = useQuery<AttackSurfaceData>({
+    queryKey: ["/api/osint/attack-surface"],
   });
 
   // ── Mutations ───────────────────────────────────────────────────
@@ -582,6 +654,12 @@ export default function OsintIntelligencePage() {
           </TabsTrigger>
           <TabsTrigger value="quota">
             <BarChart3 className="h-4 w-4 mr-1" /> API Quota
+          </TabsTrigger>
+          <TabsTrigger value="asset-correlation">
+            <Zap className="h-4 w-4 mr-1" /> Asset Correlation
+          </TabsTrigger>
+          <TabsTrigger value="attack-surface">
+            <Shield className="h-4 w-4 mr-1" /> Attack Surface
           </TabsTrigger>
         </TabsList>
 
@@ -1125,6 +1203,392 @@ export default function OsintIntelligencePage() {
               </Card>
             )}
           </div>
+        </TabsContent>
+
+        {/* ── 5.7: Asset Correlation Tab ── */}
+        <TabsContent value="asset-correlation" className="space-y-4">
+          {correlationLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Correlating OSINT findings with assets...
+            </div>
+          ) : assetCorrelation ? (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold">{assetCorrelation.totalCorrelations}</div>
+                    <div className="text-xs text-muted-foreground">Total Matches</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold">{assetCorrelation.uniqueAssetsMatched}</div>
+                    <div className="text-xs text-muted-foreground">Assets Matched</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold">{assetCorrelation.totalAssetsInInventory}</div>
+                    <div className="text-xs text-muted-foreground">Total Assets</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold text-red-600">{assetCorrelation.criticalMatches}</div>
+                    <div className="text-xs text-muted-foreground">Critical</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold text-amber-600">{assetCorrelation.highMatches}</div>
+                    <div className="text-xs text-muted-foreground">High</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Correlation list */}
+              {assetCorrelation.correlations.length > 0 ? (
+                <div className="space-y-2">
+                  {assetCorrelation.correlations.map((c, idx) => (
+                    <Card key={idx}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge
+                                variant={
+                                  c.riskLevel === "critical"
+                                    ? "destructive"
+                                    : c.riskLevel === "high"
+                                      ? "destructive"
+                                      : "secondary"
+                                }
+                                className={
+                                  c.riskLevel === "high"
+                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                                    : ""
+                                }
+                              >
+                                {c.riskLevel}
+                              </Badge>
+                              <Badge variant="outline">{c.matchType}</Badge>
+                              <span className="font-mono text-sm font-medium truncate">{c.matchValue}</span>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-medium">{c.assetName}</span>
+                              <span className="text-muted-foreground"> ({c.assetType})</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              OSINT: {c.queryType.replace(/_/g, " ")} &mdash;{" "}
+                              <span className="font-mono">{c.queryValue}</span>
+                              {c.queryCreatedAt && <> &middot; {timeAgo(c.queryCreatedAt)}</>}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="outline" className="text-xs">
+                              {c.assetCriticality} asset
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No OSINT findings match your asset inventory.</p>
+                    <p className="text-xs mt-1">Run OSINT queries and ensure assets have IPs/hostnames populated.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="text-center py-8 text-muted-foreground">
+                <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>Run OSINT queries and add assets to see correlations.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ── 5.8: Attack Surface Tab ── */}
+        <TabsContent value="attack-surface" className="space-y-4">
+          {attackSurfaceLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Building attack surface view...
+            </div>
+          ) : attackSurface ? (
+            <>
+              {/* Risk score banner */}
+              <Card
+                className={
+                  attackSurface.summary.riskLevel === "critical"
+                    ? "border-red-300 dark:border-red-800"
+                    : attackSurface.summary.riskLevel === "high"
+                      ? "border-amber-300 dark:border-amber-800"
+                      : ""
+                }
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-muted-foreground">Attack Surface Score</div>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span
+                          className={`text-3xl font-bold ${
+                            attackSurface.summary.riskLevel === "critical"
+                              ? "text-red-600"
+                              : attackSurface.summary.riskLevel === "high"
+                                ? "text-amber-600"
+                                : attackSurface.summary.riskLevel === "medium"
+                                  ? "text-yellow-600"
+                                  : "text-emerald-600"
+                          }`}
+                        >
+                          {attackSurface.summary.attackSurfaceScore}
+                        </span>
+                        <Badge
+                          variant={
+                            attackSurface.summary.riskLevel === "critical"
+                              ? "destructive"
+                              : attackSurface.summary.riskLevel === "high"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                          className={
+                            attackSurface.summary.riskLevel === "high"
+                              ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                              : ""
+                          }
+                        >
+                          {attackSurface.summary.riskLevel}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <div>{attackSurface.summary.totalQueries} queries analyzed</div>
+                      <div>{attackSurface.summary.contributingSources} sources contributing</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Summary metrics */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <Server className="h-5 w-5 mx-auto mb-1 text-blue-500" />
+                    <div className="text-2xl font-bold">{attackSurface.summary.totalExposedIps}</div>
+                    <div className="text-xs text-muted-foreground">Exposed IPs</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <Globe className="h-5 w-5 mx-auto mb-1 text-indigo-500" />
+                    <div className="text-2xl font-bold">{attackSurface.summary.totalExposedDomains}</div>
+                    <div className="text-xs text-muted-foreground">Exposed Domains</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <Settings2 className="h-5 w-5 mx-auto mb-1 text-orange-500" />
+                    <div className="text-2xl font-bold">{attackSurface.summary.totalExposedServices}</div>
+                    <div className="text-xs text-muted-foreground">Exposed Services</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <AlertTriangle className="h-5 w-5 mx-auto mb-1 text-red-500" />
+                    <div className="text-2xl font-bold">{attackSurface.summary.totalVulnerabilities}</div>
+                    <div className="text-xs text-muted-foreground">Vulnerabilities</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Exposed IPs */}
+              {attackSurface.exposedIps.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Exposed IP Addresses</CardTitle>
+                    <CardDescription>
+                      IPs discovered across OSINT queries with open ports and vulnerabilities
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {attackSurface.exposedIps.map((ip) => (
+                        <div key={ip.ip} className="border rounded-md p-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <span className="font-mono text-sm font-medium">{ip.ip}</span>
+                              {ip.country && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  {ip.city && `${ip.city}, `}
+                                  {ip.country}
+                                </span>
+                              )}
+                              {ip.org && <span className="text-xs text-muted-foreground ml-2">({ip.org})</span>}
+                            </div>
+                            {ip.vulns.length > 0 && (
+                              <Badge variant="destructive" className="text-xs">
+                                {ip.vulns.length} vuln{ip.vulns.length !== 1 ? "s" : ""}
+                              </Badge>
+                            )}
+                          </div>
+                          {ip.ports.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {ip.ports.map((port) => (
+                                <Badge key={port} variant="outline" className="text-xs font-mono">
+                                  {port}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          {ip.vulns.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {ip.vulns.map((v) => (
+                                <Badge key={v} variant="destructive" className="text-xs font-mono">
+                                  {v}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Exposed Domains */}
+              {attackSurface.exposedDomains.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Exposed Domains</CardTitle>
+                    <CardDescription>Domains and subdomains discovered via OSINT queries</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {attackSurface.exposedDomains.map((d) => (
+                        <div key={d.domain} className="border rounded-md p-3">
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4 text-indigo-500" />
+                            <span className="font-mono text-sm font-medium">{d.domain}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {d.subdomains.length} subdomain{d.subdomains.length !== 1 ? "s" : ""}
+                            </Badge>
+                          </div>
+                          {d.subdomains.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {d.subdomains.map((sub) => (
+                                <Badge key={sub} variant="secondary" className="text-xs font-mono">
+                                  {sub}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Exposed Services */}
+              {attackSurface.exposedServices.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Exposed Services</CardTitle>
+                    <CardDescription>Open ports and services discovered across all IPs</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {attackSurface.exposedServices.map((svc) => (
+                        <div key={svc.port} className="border rounded-md p-3 text-center">
+                          <div className="font-mono text-lg font-bold">{svc.port}</div>
+                          <div className="text-xs text-muted-foreground">{svc.protocol}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {svc.ips.length} host{svc.ips.length !== 1 ? "s" : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Vulnerabilities */}
+              {attackSurface.vulnerabilities.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Discovered Vulnerabilities</CardTitle>
+                    <CardDescription>CVEs identified across exposed assets</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {attackSurface.vulnerabilities.map((v) => (
+                        <div key={v.cve} className="flex items-center justify-between border rounded-md p-3">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 text-red-500" />
+                            <span className="font-mono text-sm font-medium">{v.cve}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {v.affectedIps.length} affected host{v.affectedIps.length !== 1 ? "s" : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Timeline */}
+              {attackSurface.timeline.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Recent Activity Timeline</CardTitle>
+                    <CardDescription>Latest discoveries and changes across all OSINT sources</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="relative border-l-2 border-muted ml-4 space-y-3">
+                      {attackSurface.timeline.slice(0, 20).map((entry, idx) => (
+                        <div key={idx} className="relative pl-6">
+                          <div className="absolute -left-[9px] top-1 h-4 w-4 rounded-full border-2 border-background bg-blue-500" />
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(entry.timestamp).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                          <div className="font-medium text-sm mt-0.5">{entry.event}</div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                            <Badge variant="outline" className="text-xs px-1.5 py-0">
+                              {entry.source}
+                            </Badge>
+                            <span className="font-mono">{entry.value}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="text-center py-8 text-muted-foreground">
+                <Shield className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No attack surface data yet.</p>
+                <p className="text-xs mt-1">Run OSINT queries to populate the external exposure dashboard.</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 

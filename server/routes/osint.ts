@@ -11,8 +11,9 @@ import {
   osintScheduledScans,
   osintScanSnapshots,
   osintQuotaLogs,
+  assetInventory,
 } from "@shared/schema";
-import { eq, and, desc, sql, gte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, or, ilike } from "drizzle-orm";
 import { createHash } from "crypto";
 
 export function registerOsintRoutes(app: Express): void {
@@ -1027,9 +1028,487 @@ export function registerOsintRoutes(app: Express): void {
       }
     },
   );
+  // ── 5.7: OSINT → Asset Inventory correlation ──────────────────────────────
+
+  // GET /api/osint/asset-correlation — correlate OSINT findings with asset inventory
+  app.get("/api/osint/asset-correlation", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Fetch recent OSINT queries (last 30 days)
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const recentQueries = await db
+        .select()
+        .from(osintQueries)
+        .where(and(eq(osintQueries.orgId, orgId), gte(osintQueries.createdAt, thirtyDaysAgo)))
+        .orderBy(desc(osintQueries.createdAt))
+        .limit(200);
+
+      // Fetch all active assets
+      const assets = await db.select().from(assetInventory).where(eq(assetInventory.orgId, orgId));
+
+      // Build lookup sets from assets
+      const assetIps = new Map<string, (typeof assets)[number]>();
+      const assetHostnames = new Map<string, (typeof assets)[number]>();
+      const assetFqdns = new Map<string, (typeof assets)[number]>();
+
+      for (const asset of assets) {
+        if (asset.ipAddress) assetIps.set(asset.ipAddress.toLowerCase(), asset);
+        if (asset.hostname) assetHostnames.set(asset.hostname.toLowerCase(), asset);
+        if (asset.fqdn) assetFqdns.set(asset.fqdn.toLowerCase(), asset);
+      }
+
+      // Correlate OSINT findings with assets
+      interface CorrelationMatch {
+        queryId: string;
+        queryType: string;
+        queryValue: string;
+        queryCreatedAt: string | null;
+        assetId: string;
+        assetName: string;
+        assetType: string;
+        assetCriticality: string;
+        matchType: string; // ip, hostname, domain, fqdn
+        matchValue: string;
+        findingDetails: Record<string, unknown>;
+        riskLevel: string;
+      }
+
+      const correlations: CorrelationMatch[] = [];
+      const seenPairs = new Set<string>();
+
+      for (const query of recentQueries) {
+        const results = (query.results as Record<string, unknown>[]) || [];
+
+        for (const result of results) {
+          // Check IP matches
+          const ip = (result.ip as string) || "";
+          if (ip && assetIps.has(ip.toLowerCase())) {
+            const pairKey = `${query.id}:${assetIps.get(ip.toLowerCase())!.id}:ip:${ip}`;
+            if (!seenPairs.has(pairKey)) {
+              seenPairs.add(pairKey);
+              const asset = assetIps.get(ip.toLowerCase())!;
+              correlations.push({
+                queryId: query.id,
+                queryType: query.queryType,
+                queryValue: query.queryValue,
+                queryCreatedAt: query.createdAt?.toISOString() ?? null,
+                assetId: asset.id,
+                assetName: asset.name,
+                assetType: asset.assetType,
+                assetCriticality: asset.criticality,
+                matchType: "ip",
+                matchValue: ip,
+                findingDetails: result,
+                riskLevel:
+                  asset.criticality === "critical" ? "critical" : asset.criticality === "high" ? "high" : "medium",
+              });
+            }
+          }
+
+          // Check domain matches
+          const domain = (result.domain as string) || "";
+          if (domain) {
+            // Check against hostnames
+            for (const [hostname, asset] of Array.from(assetHostnames.entries())) {
+              if (domain.toLowerCase() === hostname || hostname.endsWith("." + domain.toLowerCase())) {
+                const pairKey = `${query.id}:${asset.id}:hostname:${hostname}`;
+                if (!seenPairs.has(pairKey)) {
+                  seenPairs.add(pairKey);
+                  correlations.push({
+                    queryId: query.id,
+                    queryType: query.queryType,
+                    queryValue: query.queryValue,
+                    queryCreatedAt: query.createdAt?.toISOString() ?? null,
+                    assetId: asset.id,
+                    assetName: asset.name,
+                    assetType: asset.assetType,
+                    assetCriticality: asset.criticality,
+                    matchType: "hostname",
+                    matchValue: hostname,
+                    findingDetails: result,
+                    riskLevel:
+                      asset.criticality === "critical" ? "critical" : asset.criticality === "high" ? "high" : "medium",
+                  });
+                }
+              }
+            }
+            // Check against FQDNs
+            for (const [fqdn, asset] of Array.from(assetFqdns.entries())) {
+              if (domain.toLowerCase() === fqdn || fqdn.endsWith("." + domain.toLowerCase())) {
+                const pairKey = `${query.id}:${asset.id}:fqdn:${fqdn}`;
+                if (!seenPairs.has(pairKey)) {
+                  seenPairs.add(pairKey);
+                  correlations.push({
+                    queryId: query.id,
+                    queryType: query.queryType,
+                    queryValue: query.queryValue,
+                    queryCreatedAt: query.createdAt?.toISOString() ?? null,
+                    assetId: asset.id,
+                    assetName: asset.name,
+                    assetType: asset.assetType,
+                    assetCriticality: asset.criticality,
+                    matchType: "fqdn",
+                    matchValue: fqdn,
+                    findingDetails: result,
+                    riskLevel:
+                      asset.criticality === "critical" ? "critical" : asset.criticality === "high" ? "high" : "medium",
+                  });
+                }
+              }
+            }
+
+            // Check subdomains in domain results
+            const subdomains = (result.subdomains as string[]) || [];
+            for (const sub of subdomains) {
+              for (const [fqdn, asset] of Array.from(assetFqdns.entries())) {
+                if (sub.toLowerCase() === fqdn) {
+                  const pairKey = `${query.id}:${asset.id}:subdomain:${sub}`;
+                  if (!seenPairs.has(pairKey)) {
+                    seenPairs.add(pairKey);
+                    correlations.push({
+                      queryId: query.id,
+                      queryType: query.queryType,
+                      queryValue: query.queryValue,
+                      queryCreatedAt: query.createdAt?.toISOString() ?? null,
+                      assetId: asset.id,
+                      assetName: asset.name,
+                      assetType: asset.assetType,
+                      assetCriticality: asset.criticality,
+                      matchType: "subdomain",
+                      matchValue: sub,
+                      findingDetails: result,
+                      riskLevel:
+                        asset.criticality === "critical"
+                          ? "critical"
+                          : asset.criticality === "high"
+                            ? "high"
+                            : "medium",
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Sort by risk level
+      const riskOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+      correlations.sort((a, b) => (riskOrder[a.riskLevel] ?? 3) - (riskOrder[b.riskLevel] ?? 3));
+
+      // Summary statistics
+      const uniqueAssets = new Set(correlations.map((c) => c.assetId));
+      const criticalMatches = correlations.filter((c) => c.riskLevel === "critical").length;
+      const highMatches = correlations.filter((c) => c.riskLevel === "high").length;
+
+      res.json({
+        totalCorrelations: correlations.length,
+        uniqueAssetsMatched: uniqueAssets.size,
+        totalAssetsInInventory: assets.length,
+        criticalMatches,
+        highMatches,
+        correlations,
+      });
+    } catch (error) {
+      log.error("Failed to correlate OSINT findings with assets", { error });
+      res.status(500).json({ message: "Failed to correlate OSINT findings with assets" });
+    }
+  });
+
+  // POST /api/osint/asset-correlation/refresh — force re-correlate a specific query
+  app.post(
+    "/api/osint/asset-correlation/refresh",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { queryId } = req.body;
+        if (!queryId) return res.status(400).json({ message: "queryId is required" });
+
+        const [query] = await db
+          .select()
+          .from(osintQueries)
+          .where(and(eq(osintQueries.id, queryId), eq(osintQueries.orgId, orgId)))
+          .limit(1);
+        if (!query) return res.status(404).json({ message: "Query not found" });
+
+        // Check for matching assets
+        const results = (query.results as Record<string, unknown>[]) || [];
+        const matchedAssetIds: string[] = [];
+
+        for (const result of results) {
+          const ip = (result.ip as string) || "";
+          const domain = (result.domain as string) || "";
+
+          const conditions = [];
+          if (ip) conditions.push(ilike(assetInventory.ipAddress, ip));
+          if (domain) {
+            conditions.push(ilike(assetInventory.hostname, `%${domain}%`));
+            conditions.push(ilike(assetInventory.fqdn, `%${domain}%`));
+          }
+
+          if (conditions.length > 0) {
+            const matched = await db
+              .select({ id: assetInventory.id })
+              .from(assetInventory)
+              .where(and(eq(assetInventory.orgId, orgId), or(...conditions)))
+              .limit(10);
+            for (const m of matched) {
+              if (!matchedAssetIds.includes(m.id)) matchedAssetIds.push(m.id);
+            }
+          }
+        }
+
+        res.json({
+          queryId: query.id,
+          matchedAssetCount: matchedAssetIds.length,
+          matchedAssetIds,
+        });
+      } catch (error) {
+        log.error("Failed to refresh asset correlation", { error });
+        res.status(500).json({ message: "Failed to refresh asset correlation" });
+      }
+    },
+  );
+
+  // ── 5.8: OSINT → Attack Surface Monitoring ─────────────────────────────────
+
+  // GET /api/osint/attack-surface — unified attack surface dashboard
+  app.get("/api/osint/attack-surface", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Gather all OSINT query results from last 30 days
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const recentQueries = await db
+        .select()
+        .from(osintQueries)
+        .where(and(eq(osintQueries.orgId, orgId), gte(osintQueries.createdAt, thirtyDaysAgo)))
+        .orderBy(desc(osintQueries.createdAt))
+        .limit(500);
+
+      // Aggregate external exposure data
+      const exposedIps = new Map<
+        string,
+        {
+          ip: string;
+          ports: number[];
+          vulns: string[];
+          sources: string[];
+          lastSeen: string;
+          country: string;
+          city: string;
+          asn: string;
+          org: string;
+        }
+      >();
+      const exposedDomains = new Map<
+        string,
+        {
+          domain: string;
+          subdomains: string[];
+          sources: string[];
+          lastSeen: string;
+          certificates: Record<string, unknown>[];
+          dnsRecords: Record<string, unknown>[];
+        }
+      >();
+      const exposedServices = new Map<string, { port: number; protocol: string; count: number; ips: string[] }>();
+      const vulnerabilities = new Map<string, { cve: string; affectedIps: string[]; severity: string }>();
+      const allTimeline: { timestamp: string; event: string; source: string; value: string; queryType: string }[] = [];
+
+      // Sources contributing data
+      const sourceIds = new Set<string>();
+
+      for (const query of recentQueries) {
+        if (query.sourceId) sourceIds.add(query.sourceId);
+        const results = (query.results as Record<string, unknown>[]) || [];
+        const timeline =
+          (query.timeline as { timestamp: string; event: string; source: string; value: string }[]) || [];
+
+        for (const entry of timeline) {
+          allTimeline.push({ ...entry, queryType: query.queryType });
+        }
+
+        for (const result of results) {
+          // Aggregate IPs
+          const ip = result.ip as string | undefined;
+          if (ip) {
+            const existing = exposedIps.get(ip);
+            const ports = (result.ports as number[]) || [];
+            const vulns = (result.vulns as string[]) || [];
+            if (existing) {
+              for (const port of ports) {
+                if (!existing.ports.includes(port)) existing.ports.push(port);
+              }
+              for (const v of vulns) {
+                if (!existing.vulns.includes(v)) existing.vulns.push(v);
+              }
+              if (!existing.sources.includes(query.queryType)) existing.sources.push(query.queryType);
+              if (result.lastSeen && (result.lastSeen as string) > existing.lastSeen) {
+                existing.lastSeen = result.lastSeen as string;
+              }
+            } else {
+              exposedIps.set(ip, {
+                ip,
+                ports,
+                vulns,
+                sources: [query.queryType],
+                lastSeen: (result.lastSeen as string) || query.createdAt?.toISOString() || "",
+                country: (result.country as string) || "",
+                city: (result.city as string) || "",
+                asn: (result.asn as string) || "",
+                org: (result.org as string) || "",
+              });
+            }
+
+            // Track services
+            for (const port of ports) {
+              const key = `${port}`;
+              const svc = exposedServices.get(key);
+              if (svc) {
+                svc.count++;
+                if (!svc.ips.includes(ip)) svc.ips.push(ip);
+              } else {
+                exposedServices.set(key, { port, protocol: portToProtocol(port), count: 1, ips: [ip] });
+              }
+            }
+
+            // Track vulns
+            for (const v of vulns) {
+              const existing = vulnerabilities.get(v);
+              if (existing) {
+                if (!existing.affectedIps.includes(ip)) existing.affectedIps.push(ip);
+              } else {
+                vulnerabilities.set(v, { cve: v, affectedIps: [ip], severity: "high" });
+              }
+            }
+          }
+
+          // Aggregate domains
+          const domain = result.domain as string | undefined;
+          if (domain) {
+            const existing = exposedDomains.get(domain);
+            const subdomains = (result.subdomains as string[]) || [];
+            const certificates = (result.certificates as Record<string, unknown>[]) || [];
+            const dnsRecords = (result.dnsRecords as Record<string, unknown>[]) || [];
+            if (existing) {
+              for (const sub of subdomains) {
+                if (!existing.subdomains.includes(sub)) existing.subdomains.push(sub);
+              }
+              if (!existing.sources.includes(query.queryType)) existing.sources.push(query.queryType);
+              for (const cert of certificates) existing.certificates.push(cert);
+              for (const dns of dnsRecords) existing.dnsRecords.push(dns);
+            } else {
+              exposedDomains.set(domain, {
+                domain,
+                subdomains,
+                sources: [query.queryType],
+                lastSeen: query.createdAt?.toISOString() || "",
+                certificates,
+                dnsRecords,
+              });
+            }
+          }
+        }
+      }
+
+      // Fetch contributing sources info
+      const sourcesInfo =
+        sourceIds.size > 0
+          ? await db
+              .select({ id: osintSources.id, name: osintSources.name, provider: osintSources.provider })
+              .from(osintSources)
+              .where(and(eq(osintSources.orgId, orgId)))
+          : [];
+
+      // Compute risk score
+      const totalExposedPorts = Array.from(exposedServices.values()).reduce((sum, s) => sum + s.count, 0);
+      const totalVulns = vulnerabilities.size;
+      const criticalPorts = [22, 23, 3389, 445, 1433, 3306, 5432, 27017];
+      const criticalPortExposure = Array.from(exposedServices.values()).filter((s) =>
+        criticalPorts.includes(s.port),
+      ).length;
+      const attackSurfaceScore = Math.min(
+        100,
+        Math.round(
+          exposedIps.size * 5 +
+            exposedDomains.size * 3 +
+            totalVulns * 10 +
+            criticalPortExposure * 15 +
+            totalExposedPorts * 2,
+        ),
+      );
+
+      // Sort timeline
+      allTimeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      res.json({
+        summary: {
+          attackSurfaceScore,
+          riskLevel:
+            attackSurfaceScore >= 70
+              ? "critical"
+              : attackSurfaceScore >= 40
+                ? "high"
+                : attackSurfaceScore >= 20
+                  ? "medium"
+                  : "low",
+          totalExposedIps: exposedIps.size,
+          totalExposedDomains: exposedDomains.size,
+          totalExposedServices: exposedServices.size,
+          totalVulnerabilities: totalVulns,
+          totalQueries: recentQueries.length,
+          contributingSources: sourcesInfo.length,
+        },
+        exposedIps: Array.from(exposedIps.values()).sort((a, b) => b.vulns.length - a.vulns.length),
+        exposedDomains: Array.from(exposedDomains.values()),
+        exposedServices: Array.from(exposedServices.values()).sort((a, b) => b.count - a.count),
+        vulnerabilities: Array.from(vulnerabilities.values()).sort(
+          (a, b) => b.affectedIps.length - a.affectedIps.length,
+        ),
+        timeline: allTimeline.slice(0, 50),
+        sources: sourcesInfo,
+      });
+    } catch (error) {
+      log.error("Failed to generate attack surface view", { error });
+      res.status(500).json({ message: "Failed to generate attack surface view" });
+    }
+  });
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+// Map common port numbers to protocol names for attack surface display
+function portToProtocol(port: number): string {
+  const map: Record<number, string> = {
+    21: "FTP",
+    22: "SSH",
+    23: "Telnet",
+    25: "SMTP",
+    53: "DNS",
+    80: "HTTP",
+    110: "POP3",
+    143: "IMAP",
+    443: "HTTPS",
+    445: "SMB",
+    993: "IMAPS",
+    995: "POP3S",
+    1433: "MSSQL",
+    3306: "MySQL",
+    3389: "RDP",
+    5432: "PostgreSQL",
+    5900: "VNC",
+    6379: "Redis",
+    8080: "HTTP-Alt",
+    8443: "HTTPS-Alt",
+    27017: "MongoDB",
+  };
+  return map[port] || `Port ${port}`;
+}
 
 async function simulateSourceTest(provider: string): Promise<{
   success: boolean;
