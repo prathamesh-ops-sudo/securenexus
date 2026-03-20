@@ -12615,3 +12615,167 @@ export type EmailUrlRewrite = typeof emailUrlRewrites.$inferSelect;
 export type InsertEmailUrlRewrite = typeof emailUrlRewrites.$inferInsert;
 export type EmailQuarantineItem = typeof emailQuarantineItems.$inferSelect;
 export type InsertEmailQuarantineItem = typeof emailQuarantineItems.$inferInsert;
+
+// ── 5.x: OSINT Intelligence ──────────────────────────────────────────────────
+
+// 5.1 + 5.3: OSINT Sources — tracks each OSINT source (Shodan, Censys, VirusTotal, etc.)
+// and its health / API quota / connectivity status
+export const osintSources = pgTable(
+  "osint_sources",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    name: text("name").notNull(),
+    provider: text("provider").notNull(), // shodan, censys, virustotal, greynoise, urlscan, pastes, etc.
+    apiKeyRef: text("api_key_ref"), // env var or encrypted key reference
+    enabled: boolean("enabled").default(true).notNull(),
+    status: text("status").default("unknown").notNull(), // healthy, degraded, error, unknown
+    lastQueryAt: timestamp("last_query_at"),
+    lastSuccessAt: timestamp("last_success_at"),
+    lastErrorAt: timestamp("last_error_at"),
+    lastErrorMessage: text("last_error_message"),
+    apiQuotaTotal: integer("api_quota_total"),
+    apiQuotaUsed: integer("api_quota_used"),
+    apiQuotaResetAt: timestamp("api_quota_reset_at"),
+    avgResponseTimeMs: integer("avg_response_time_ms"),
+    totalQueries: integer("total_queries").default(0).notNull(),
+    successfulQueries: integer("successful_queries").default(0).notNull(),
+    failedQueries: integer("failed_queries").default(0).notNull(),
+    config: jsonb("config").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_osint_sources_org").on(table.orgId), index("idx_osint_sources_provider").on(table.provider)],
+);
+
+// 5.1: OSINT Queries — stores each OSINT query and its results for visualization
+export const osintQueries = pgTable(
+  "osint_queries",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    sourceId: varchar("source_id").references(() => osintSources.id),
+    queryType: text("query_type").notNull(), // ip_lookup, domain_lookup, hash_lookup, search, passive_dns, cert_search
+    queryValue: text("query_value").notNull(),
+    status: text("status").default("pending").notNull(), // pending, running, completed, error
+    resultCount: integer("result_count").default(0),
+    results: jsonb("results").default([]),
+    // Visualization metadata
+    geoData: jsonb("geo_data").default([]), // [{ip, lat, lng, country, city, asn}]
+    domainGraph: jsonb("domain_graph").default({}), // {nodes: [{id, label, type}], edges: [{source, target, label}]}
+    timeline: jsonb("timeline").default([]), // [{timestamp, event, source, value}]
+    errorMessage: text("error_message"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_osint_queries_org").on(table.orgId),
+    index("idx_osint_queries_source").on(table.sourceId),
+    index("idx_osint_queries_type").on(table.queryType),
+  ],
+);
+
+// 5.2: OSINT Alert Rules — automated alerting on OSINT findings
+export const osintAlertRules = pgTable(
+  "osint_alert_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    enabled: boolean("enabled").default(true).notNull(),
+    sourceProvider: text("source_provider"), // shodan, censys, virustotal, pastes, all
+    ruleType: text("rule_type").notNull(), // new_service, paste_mention, new_vuln, domain_change, ip_reputation_drop, cert_expiry
+    conditions: jsonb("conditions").default({}), // {ipRanges: [], domains: [], keywords: [], severityThreshold: 'high'}
+    actions: jsonb("actions").default({}), // {createAlert: true, alertSeverity: 'high', notifyChannels: [], autoEnrich: true}
+    schedule: text("schedule").default("hourly"), // realtime, hourly, daily, weekly
+    lastRunAt: timestamp("last_run_at"),
+    lastMatchCount: integer("last_match_count").default(0),
+    totalMatches: integer("total_matches").default(0).notNull(),
+    totalRuns: integer("total_runs").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_osint_alert_rules_org").on(table.orgId),
+    index("idx_osint_alert_rules_enabled").on(table.enabled),
+  ],
+);
+
+// 5.2: OSINT Alert Rule matches — history of triggered matches
+export const osintAlertMatches = pgTable(
+  "osint_alert_matches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    ruleId: varchar("rule_id").references(() => osintAlertRules.id),
+    queryId: varchar("query_id").references(() => osintQueries.id),
+    alertId: varchar("alert_id").references(() => alerts.id),
+    matchData: jsonb("match_data").default({}),
+    severity: text("severity").default("medium"),
+    status: text("status").default("new"), // new, acknowledged, resolved
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_osint_alert_matches_org").on(table.orgId),
+    index("idx_osint_alert_matches_rule").on(table.ruleId),
+  ],
+);
+
+export const osintSourcesRelations = relations(osintSources, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintSources.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const osintQueriesRelations = relations(osintQueries, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintQueries.orgId],
+    references: [organizations.id],
+  }),
+  source: one(osintSources, {
+    fields: [osintQueries.sourceId],
+    references: [osintSources.id],
+  }),
+}));
+
+export const osintAlertRulesRelations = relations(osintAlertRules, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintAlertRules.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const osintAlertMatchesRelations = relations(osintAlertMatches, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintAlertMatches.orgId],
+    references: [organizations.id],
+  }),
+  rule: one(osintAlertRules, {
+    fields: [osintAlertMatches.ruleId],
+    references: [osintAlertRules.id],
+  }),
+  query: one(osintQueries, {
+    fields: [osintAlertMatches.queryId],
+    references: [osintQueries.id],
+  }),
+}));
+
+export type OsintSource = typeof osintSources.$inferSelect;
+export type InsertOsintSource = typeof osintSources.$inferInsert;
+export type OsintQuery = typeof osintQueries.$inferSelect;
+export type InsertOsintQuery = typeof osintQueries.$inferInsert;
+export type OsintAlertRule = typeof osintAlertRules.$inferSelect;
+export type InsertOsintAlertRule = typeof osintAlertRules.$inferInsert;
+export type OsintAlertMatch = typeof osintAlertMatches.$inferSelect;
+export type InsertOsintAlertMatch = typeof osintAlertMatches.$inferInsert;

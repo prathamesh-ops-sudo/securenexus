@@ -144,6 +144,7 @@ const navGroups: NavGroup[] = [
         items: [
           { title: "Threat Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
           { title: "OSINT Monitoring", url: "/osint-feeds-config", icon: Rss },
+          { title: "OSINT Intelligence", url: "/osint-intelligence", icon: Globe },
           { title: "IOC Management", url: "/ioc-ingestion-matching", icon: Upload },
           { title: "CVE Database", url: "/cve-browser", icon: Bug },
         ],

@@ -78,6 +78,7 @@ const EmailTemplatesPage = lazy(() => import("@/pages/email-templates"));
 const MetricsRollupPage = lazy(() => import("@/pages/metrics-rollup"));
 const ModelGatewayPage = lazy(() => import("@/pages/model-gateway"));
 const OsintFeedsConfigPage = lazy(() => import("@/pages/osint-feeds-config"));
+const OsintIntelligencePage = lazy(() => import("@/pages/osint-intelligence"));
 const OutboxMonitoringPage = lazy(() => import("@/pages/outbox-monitoring"));
 const ApiVersioningPage = lazy(() => import("@/pages/api-versioning"));
 const FileManagerPage = lazy(() => import("@/pages/file-manager"));
@@ -330,6 +331,7 @@ function AuthenticatedApp() {
                     <Route path="/metrics-rollup" component={MetricsRollupPage} />
                     <Route path="/model-gateway" component={ModelGatewayPage} />
                     <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
+                    <Route path="/osint-intelligence" component={OsintIntelligencePage} />
                     <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
                     <Route path="/api-versioning" component={ApiVersioningPage} />
                     <Route path="/file-manager" component={FileManagerPage} />
