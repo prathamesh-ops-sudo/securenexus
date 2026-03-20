@@ -1665,4 +1665,672 @@ export function registerThreatIntelRoutes(app: Express): void {
       }
     },
   );
+
+  // ── 6.1: IOC confidence scoring — distribution + bulk update ──────────────
+
+  app.get(
+    "/api/ioc-entries/confidence/distribution",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and, count, sql: sqlFn } = await import("drizzle-orm");
+
+        // Get confidence distribution in buckets: 0-19, 20-39, 40-59, 60-79, 80-100
+        const allEntries = await database
+          .select({
+            confidence: iocEntries.confidence,
+            status: iocEntries.status,
+          })
+          .from(iocEntries)
+          .where(eq(iocEntries.orgId, orgId));
+
+        const buckets = [
+          { label: "Very Low (0-19)", min: 0, max: 19, count: 0 },
+          { label: "Low (20-39)", min: 20, max: 39, count: 0 },
+          { label: "Medium (40-59)", min: 40, max: 59, count: 0 },
+          { label: "High (60-79)", min: 60, max: 79, count: 0 },
+          { label: "Very High (80-100)", min: 80, max: 100, count: 0 },
+        ];
+
+        let totalConfidence = 0;
+        let activeCount = 0;
+        const severityBreakdown: Record<string, { count: number; avgConfidence: number; totalConf: number }> = {};
+
+        for (const entry of allEntries) {
+          const conf = entry.confidence ?? 50;
+          totalConfidence += conf;
+          if (entry.status === "active") activeCount++;
+
+          for (const bucket of buckets) {
+            if (conf >= bucket.min && conf <= bucket.max) {
+              bucket.count++;
+              break;
+            }
+          }
+        }
+
+        const avgConfidence = allEntries.length > 0 ? Math.round(totalConfidence / allEntries.length) : 0;
+
+        // Top high-confidence IOCs
+        const highConfEntries = await database
+          .select()
+          .from(iocEntries)
+          .where(eq(iocEntries.orgId, orgId))
+          .orderBy(sqlFn`${iocEntries.confidence} DESC NULLS LAST`)
+          .limit(20);
+
+        // Low-confidence IOCs that may need review
+        const lowConfEntries = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")))
+          .orderBy(sqlFn`${iocEntries.confidence} ASC NULLS LAST`)
+          .limit(20);
+
+        res.json({
+          totalEntries: allEntries.length,
+          activeEntries: activeCount,
+          averageConfidence: avgConfidence,
+          distribution: buckets,
+          highConfidence: highConfEntries,
+          lowConfidence: lowConfEntries,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get confidence distribution", { error: String(error) });
+        res.status(500).json({ message: "Failed to get confidence distribution" });
+      }
+    },
+  );
+
+  // Bulk update confidence scores
+  app.post(
+    "/api/ioc-entries/confidence/bulk-update",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { updates } = req.body as { updates: { id: string; confidence: number }[] };
+        if (!Array.isArray(updates) || updates.length === 0) {
+          return res.status(400).json({ message: "updates array is required" });
+        }
+        if (updates.length > 100) {
+          return res.status(400).json({ message: "Maximum 100 updates per request" });
+        }
+
+        let updatedCount = 0;
+        for (const update of updates) {
+          const conf = Math.max(0, Math.min(100, Math.round(update.confidence)));
+          const existing = await storage.getIocEntry(update.id);
+          if (existing && existing.orgId === orgId) {
+            await storage.updateIocEntry(update.id, { confidence: conf });
+            updatedCount++;
+          }
+        }
+
+        res.json({ updatedCount, requestedCount: updates.length });
+      } catch (error) {
+        logger.child("routes").error("Failed to bulk update confidence", { error: String(error) });
+        res.status(500).json({ message: "Failed to bulk update confidence scores" });
+      }
+    },
+  );
+
+  // ── 6.2: IOC expiration and aging — TTL management ──────────────
+
+  app.get(
+    "/api/ioc-entries/expiration/summary",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and, lt, gte, isNotNull } = await import("drizzle-orm");
+
+        const now = new Date();
+        const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+        // Expired IOCs
+        const expired = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), isNotNull(iocEntries.expiresAt), lt(iocEntries.expiresAt, now)));
+
+        // Expiring within 7 days
+        const expiringSoon = await database
+          .select()
+          .from(iocEntries)
+          .where(
+            and(
+              eq(iocEntries.orgId, orgId),
+              isNotNull(iocEntries.expiresAt),
+              gte(iocEntries.expiresAt, now),
+              lt(iocEntries.expiresAt, sevenDays),
+            ),
+          );
+
+        // Expiring within 30 days
+        const expiringMonth = await database
+          .select()
+          .from(iocEntries)
+          .where(
+            and(
+              eq(iocEntries.orgId, orgId),
+              isNotNull(iocEntries.expiresAt),
+              gte(iocEntries.expiresAt, sevenDays),
+              lt(iocEntries.expiresAt, thirtyDays),
+            ),
+          );
+
+        // No expiration set
+        const noExpiration = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")))
+          .then((rows) => rows.filter((r) => !r.expiresAt));
+
+        // Aging stats — IOCs by age
+        const allActive = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")));
+
+        const agingBuckets = [
+          { label: "< 24 hours", count: 0 },
+          { label: "1-7 days", count: 0 },
+          { label: "7-30 days", count: 0 },
+          { label: "30-90 days", count: 0 },
+          { label: "> 90 days", count: 0 },
+        ];
+
+        for (const entry of allActive) {
+          const ageMs = now.getTime() - new Date(entry.createdAt ?? now).getTime();
+          const ageDays = ageMs / (24 * 60 * 60 * 1000);
+          if (ageDays < 1) agingBuckets[0].count++;
+          else if (ageDays < 7) agingBuckets[1].count++;
+          else if (ageDays < 30) agingBuckets[2].count++;
+          else if (ageDays < 90) agingBuckets[3].count++;
+          else agingBuckets[4].count++;
+        }
+
+        res.json({
+          expired: expired.map((e) => ({
+            ...e,
+            createdAt: e.createdAt?.toISOString() ?? null,
+            firstSeen: e.firstSeen?.toISOString() ?? null,
+            lastSeen: e.lastSeen?.toISOString() ?? null,
+            expiresAt: e.expiresAt?.toISOString() ?? null,
+          })),
+          expiringSoon: expiringSoon.map((e) => ({
+            ...e,
+            createdAt: e.createdAt?.toISOString() ?? null,
+            firstSeen: e.firstSeen?.toISOString() ?? null,
+            lastSeen: e.lastSeen?.toISOString() ?? null,
+            expiresAt: e.expiresAt?.toISOString() ?? null,
+          })),
+          expiringMonth: expiringMonth.map((e) => ({
+            ...e,
+            createdAt: e.createdAt?.toISOString() ?? null,
+            firstSeen: e.firstSeen?.toISOString() ?? null,
+            lastSeen: e.lastSeen?.toISOString() ?? null,
+            expiresAt: e.expiresAt?.toISOString() ?? null,
+          })),
+          noExpirationCount: noExpiration.length,
+          agingDistribution: agingBuckets,
+          summary: {
+            totalExpired: expired.length,
+            totalExpiringSoon: expiringSoon.length,
+            totalExpiringMonth: expiringMonth.length,
+            totalNoExpiration: noExpiration.length,
+          },
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get expiration summary", { error: String(error) });
+        res.status(500).json({ message: "Failed to get expiration summary" });
+      }
+    },
+  );
+
+  // Set TTL on IOC entries (bulk)
+  app.post(
+    "/api/ioc-entries/expiration/set-ttl",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { iocIds, ttlDays } = req.body as { iocIds: string[]; ttlDays: number };
+        if (!Array.isArray(iocIds) || iocIds.length === 0) {
+          return res.status(400).json({ message: "iocIds array is required" });
+        }
+        if (typeof ttlDays !== "number" || ttlDays < 1 || ttlDays > 3650) {
+          return res.status(400).json({ message: "ttlDays must be 1-3650" });
+        }
+        if (iocIds.length > 500) {
+          return res.status(400).json({ message: "Maximum 500 IOCs per request" });
+        }
+
+        const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+        let updatedCount = 0;
+
+        for (const id of iocIds) {
+          const existing = await storage.getIocEntry(id);
+          if (existing && existing.orgId === orgId) {
+            await storage.updateIocEntry(id, { expiresAt });
+            updatedCount++;
+          }
+        }
+
+        res.json({ updatedCount, expiresAt: expiresAt.toISOString() });
+      } catch (error) {
+        logger.child("routes").error("Failed to set TTL", { error: String(error) });
+        res.status(500).json({ message: "Failed to set TTL on IOC entries" });
+      }
+    },
+  );
+
+  // Purge expired IOCs (mark as expired status)
+  app.post(
+    "/api/ioc-entries/expiration/purge",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and, lt, isNotNull } = await import("drizzle-orm");
+
+        const now = new Date();
+        const expiredRows = await database
+          .select({ id: iocEntries.id })
+          .from(iocEntries)
+          .where(
+            and(
+              eq(iocEntries.orgId, orgId),
+              eq(iocEntries.status, "active"),
+              isNotNull(iocEntries.expiresAt),
+              lt(iocEntries.expiresAt, now),
+            ),
+          );
+
+        let purgedCount = 0;
+        for (const row of expiredRows) {
+          await storage.updateIocEntry(row.id, { status: "expired" });
+          purgedCount++;
+        }
+
+        res.json({ purgedCount });
+      } catch (error) {
+        logger.child("routes").error("Failed to purge expired IOCs", { error: String(error) });
+        res.status(500).json({ message: "Failed to purge expired IOCs" });
+      }
+    },
+  );
+
+  // ── 6.3: IOC relationship graph ──────────────
+
+  app.get(
+    "/api/ioc-entries/relationships",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and, desc } = await import("drizzle-orm");
+
+        // Fetch active IOCs with metadata
+        const entries = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")))
+          .orderBy(desc(iocEntries.createdAt))
+          .limit(500);
+
+        // Build relationship graph nodes and edges
+        interface GraphNode {
+          id: string;
+          label: string;
+          type: string;
+          confidence: number;
+          severity: string;
+          malwareFamily: string | null;
+          campaignName: string | null;
+        }
+
+        interface GraphEdge {
+          source: string;
+          target: string;
+          label: string;
+          weight: number;
+        }
+
+        const nodes: GraphNode[] = [];
+        const edges: GraphEdge[] = [];
+        const nodeIds = new Set<string>();
+
+        // Add IOC entries as nodes
+        for (const entry of entries) {
+          nodes.push({
+            id: entry.id,
+            label: entry.iocValue,
+            type: entry.iocType,
+            confidence: entry.confidence ?? 50,
+            severity: entry.severity ?? "medium",
+            malwareFamily: entry.malwareFamily,
+            campaignName: entry.campaignName,
+          });
+          nodeIds.add(entry.id);
+        }
+
+        // Build edges based on relationships:
+        // 1. Same malware family
+        const familyGroups = new Map<string, string[]>();
+        for (const entry of entries) {
+          if (entry.malwareFamily) {
+            const key = entry.malwareFamily.toLowerCase();
+            if (!familyGroups.has(key)) familyGroups.set(key, []);
+            familyGroups.get(key)!.push(entry.id);
+          }
+        }
+        for (const [family, ids] of Array.from(familyGroups.entries())) {
+          for (let i = 0; i < ids.length && i < 10; i++) {
+            for (let j = i + 1; j < ids.length && j < 10; j++) {
+              edges.push({
+                source: ids[i],
+                target: ids[j],
+                label: `malware: ${family}`,
+                weight: 3,
+              });
+            }
+          }
+        }
+
+        // 2. Same campaign
+        const campaignGroups = new Map<string, string[]>();
+        for (const entry of entries) {
+          if (entry.campaignId || entry.campaignName) {
+            const key = (entry.campaignId || entry.campaignName || "").toLowerCase();
+            if (!campaignGroups.has(key)) campaignGroups.set(key, []);
+            campaignGroups.get(key)!.push(entry.id);
+          }
+        }
+        for (const [campaign, ids] of Array.from(campaignGroups.entries())) {
+          for (let i = 0; i < ids.length && i < 10; i++) {
+            for (let j = i + 1; j < ids.length && j < 10; j++) {
+              edges.push({
+                source: ids[i],
+                target: ids[j],
+                label: `campaign: ${campaign}`,
+                weight: 4,
+              });
+            }
+          }
+        }
+
+        // 3. Same feed
+        const feedGroups = new Map<string, string[]>();
+        for (const entry of entries) {
+          if (entry.feedId) {
+            if (!feedGroups.has(entry.feedId)) feedGroups.set(entry.feedId, []);
+            feedGroups.get(entry.feedId)!.push(entry.id);
+          }
+        }
+        for (const [, ids] of Array.from(feedGroups.entries())) {
+          // Only create feed edges for small groups to avoid clutter
+          if (ids.length <= 5) {
+            for (let i = 0; i < ids.length; i++) {
+              for (let j = i + 1; j < ids.length; j++) {
+                edges.push({
+                  source: ids[i],
+                  target: ids[j],
+                  label: "same feed",
+                  weight: 1,
+                });
+              }
+            }
+          }
+        }
+
+        // 4. IP ↔ Domain relationships from metadata
+        const ipEntries = entries.filter((e) => e.iocType === "ip");
+        const domainEntries = entries.filter((e) => e.iocType === "domain");
+        for (const ip of ipEntries) {
+          const meta = (ip.metadata || {}) as Record<string, unknown>;
+          const resolvedDomains = (meta.resolvedDomains as string[]) || (meta.domains as string[]) || [];
+          for (const domainVal of resolvedDomains) {
+            const matchDomain = domainEntries.find((d) => d.iocValue.toLowerCase() === domainVal.toLowerCase());
+            if (matchDomain) {
+              edges.push({
+                source: ip.id,
+                target: matchDomain.id,
+                label: "resolves to",
+                weight: 5,
+              });
+            }
+          }
+        }
+
+        // 5. Hash ↔ C2 (IP/domain) relationships from metadata
+        const hashEntries = entries.filter((e) => e.iocType === "hash");
+        for (const hash of hashEntries) {
+          const meta = (hash.metadata || {}) as Record<string, unknown>;
+          const c2Servers = (meta.c2Servers as string[]) || (meta.c2 as string[]) || [];
+          for (const c2 of c2Servers) {
+            const matchIp = ipEntries.find((ip) => ip.iocValue === c2);
+            const matchDomain = domainEntries.find((d) => d.iocValue.toLowerCase() === c2.toLowerCase());
+            const target = matchIp || matchDomain;
+            if (target) {
+              edges.push({
+                source: hash.id,
+                target: target.id,
+                label: "communicates with",
+                weight: 5,
+              });
+            }
+          }
+        }
+
+        // Deduplicate edges
+        const edgeKeys = new Set<string>();
+        const uniqueEdges = edges.filter((e) => {
+          const key = [e.source, e.target].sort().join(":") + ":" + e.label;
+          if (edgeKeys.has(key)) return false;
+          edgeKeys.add(key);
+          return true;
+        });
+
+        // Statistics
+        const stats = {
+          totalNodes: nodes.length,
+          totalEdges: uniqueEdges.length,
+          malwareFamilies: familyGroups.size,
+          campaigns: campaignGroups.size,
+          connectedComponents: 0, // simplified
+        };
+
+        res.json({ nodes, edges: uniqueEdges, stats });
+      } catch (error) {
+        logger.child("routes").error("Failed to build IOC relationship graph", { error: String(error) });
+        res.status(500).json({ message: "Failed to build IOC relationship graph" });
+      }
+    },
+  );
+
+  // ── 6.4: Bulk export (CSV, STIX, OpenIOC) ──────────────
+
+  app.get(
+    "/api/ioc-entries/export/:format",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const format = p(req.params.format);
+        if (!["csv", "stix", "openioc", "json"].includes(format)) {
+          return res.status(400).json({ message: "Supported formats: csv, stix, openioc, json" });
+        }
+
+        const { feedId, iocType, status, minConfidence } = req.query;
+        const entries = await storage.getIocEntries(
+          orgId,
+          feedId as string | undefined,
+          iocType as string | undefined,
+          status as string | undefined,
+          5000, // max export limit
+        );
+
+        // Filter by min confidence if specified
+        const filtered = minConfidence
+          ? entries.filter((e) => (e.confidence ?? 0) >= parseInt(minConfidence as string, 10))
+          : entries;
+
+        if (format === "csv") {
+          const header =
+            "ioc_type,ioc_value,confidence,severity,malware_family,campaign_name,source,status,first_seen,last_seen,expires_at,tags";
+          const rows = filtered.map((e) =>
+            [
+              e.iocType,
+              `"${(e.iocValue || "").replace(/"/g, '""')}"`,
+              e.confidence ?? 50,
+              e.severity ?? "medium",
+              `"${(e.malwareFamily || "").replace(/"/g, '""')}"`,
+              `"${(e.campaignName || "").replace(/"/g, '""')}"`,
+              `"${(e.source || "").replace(/"/g, '""')}"`,
+              e.status ?? "active",
+              e.firstSeen ? new Date(e.firstSeen).toISOString() : "",
+              e.lastSeen ? new Date(e.lastSeen).toISOString() : "",
+              e.expiresAt ? new Date(e.expiresAt).toISOString() : "",
+              `"${(e.tags || []).join(";")}"`,
+            ].join(","),
+          );
+          const csvContent = [header, ...rows].join("\n");
+          res.setHeader("Content-Type", "text/csv; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename="ioc-export-${Date.now()}.csv"`);
+          return res.send(csvContent);
+        }
+
+        if (format === "stix") {
+          const stixBundle = {
+            type: "bundle",
+            id: `bundle--${crypto.randomUUID()}`,
+            spec_version: "2.1",
+            objects: filtered.map((e) => {
+              const iocTypeToStixPattern: Record<string, (v: string) => string> = {
+                ip: (v) => `[ipv4-addr:value = '${v}']`,
+                domain: (v) => `[domain-name:value = '${v}']`,
+                url: (v) => `[url:value = '${v}']`,
+                hash: (v) =>
+                  v.length === 32
+                    ? `[file:hashes.MD5 = '${v}']`
+                    : v.length === 40
+                      ? `[file:hashes.'SHA-1' = '${v}']`
+                      : `[file:hashes.'SHA-256' = '${v}']`,
+                email: (v) => `[email-addr:value = '${v}']`,
+                cve: (v) => `[vulnerability:name = '${v}']`,
+              };
+              const patternFn = iocTypeToStixPattern[e.iocType] || ((v: string) => `[x-custom:value = '${v}']`);
+              return {
+                type: "indicator",
+                spec_version: "2.1",
+                id: `indicator--${e.id}`,
+                created: e.createdAt ? new Date(e.createdAt).toISOString() : new Date().toISOString(),
+                modified: e.lastSeen ? new Date(e.lastSeen).toISOString() : new Date().toISOString(),
+                name: `${e.iocType}: ${e.iocValue}`,
+                description: e.malwareFamily ? `Malware family: ${e.malwareFamily}` : undefined,
+                pattern: patternFn(e.iocValue),
+                pattern_type: "stix",
+                valid_from: e.firstSeen ? new Date(e.firstSeen).toISOString() : new Date().toISOString(),
+                valid_until: e.expiresAt ? new Date(e.expiresAt).toISOString() : undefined,
+                confidence: e.confidence ?? 50,
+                labels: e.tags || [],
+                indicator_types: e.malwareFamily ? ["malicious-activity"] : ["anomalous-activity"],
+              };
+            }),
+          };
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename="ioc-export-${Date.now()}.stix.json"`);
+          return res.json(stixBundle);
+        }
+
+        if (format === "openioc") {
+          const iocXmlEntries = filtered
+            .map((e) => {
+              const typeMap: Record<string, string> = {
+                ip: "Network/DNS",
+                domain: "Network/DNS",
+                url: "Network/URI",
+                hash: "FileItem/Md5sum",
+                email: "Email/From",
+                cve: "Vulnerability/CVE",
+              };
+              const indicatorType = typeMap[e.iocType] || "Custom/Value";
+              return `    <IndicatorItem id="${e.id}" condition="is">
+      <Context document="ioc" search="${indicatorType}" type="mir"/>
+      <Content type="string">${escapeXml(e.iocValue)}</Content>
+      <Comment>${escapeXml(e.malwareFamily || e.source || "")}</Comment>
+    </IndicatorItem>`;
+            })
+            .join("\n");
+
+          const openIocXml = `<?xml version="1.0" encoding="UTF-8"?>
+<ioc xmlns="http://schemas.mandiant.com/2010/ioc" id="export-${Date.now()}" last-modified="${new Date().toISOString()}">
+  <short_description>IOC Export</short_description>
+  <description>Exported ${filtered.length} IOC entries</description>
+  <keywords/>
+  <authored_by>SecureNexus</authored_by>
+  <authored_date>${new Date().toISOString()}</authored_date>
+  <definition>
+    <Indicator operator="OR" id="indicator-${Date.now()}">
+${iocXmlEntries}
+    </Indicator>
+  </definition>
+</ioc>`;
+          res.setHeader("Content-Type", "application/xml; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename="ioc-export-${Date.now()}.ioc"`);
+          return res.send(openIocXml);
+        }
+
+        // JSON format (default)
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="ioc-export-${Date.now()}.json"`);
+        return res.json({ exportedAt: new Date().toISOString(), count: filtered.length, entries: filtered });
+      } catch (error) {
+        logger.child("routes").error("Failed to export IOC entries", { error: String(error) });
+        res.status(500).json({ message: "Failed to export IOC entries" });
+      }
+    },
+  );
+}
+
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

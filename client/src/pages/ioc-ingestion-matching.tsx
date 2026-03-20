@@ -36,6 +36,13 @@ import {
   Shield,
   Key,
   Lock,
+  Download,
+  Timer,
+  Gauge,
+  Network,
+  FileText,
+  Hourglass,
+  ArrowDownToLine,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +200,61 @@ interface FeedComparisonData {
     overlapPctA: number;
     overlapPctB: number;
   }>;
+}
+
+// 6.1: Confidence distribution types
+interface ConfidenceDistribution {
+  totalEntries: number;
+  activeEntries: number;
+  averageConfidence: number;
+  distribution: { label: string; min: number; max: number; count: number }[];
+  highConfidence: IocEntry[];
+  lowConfidence: IocEntry[];
+}
+
+// 6.2: Expiration summary types
+interface ExpirationSummary {
+  expired: IocEntry[];
+  expiringSoon: IocEntry[];
+  expiringMonth: IocEntry[];
+  noExpirationCount: number;
+  agingDistribution: { label: string; count: number }[];
+  summary: {
+    totalExpired: number;
+    totalExpiringSoon: number;
+    totalExpiringMonth: number;
+    totalNoExpiration: number;
+  };
+}
+
+// 6.3: IOC relationship graph types
+interface IocGraphNode {
+  id: string;
+  label: string;
+  type: string;
+  confidence: number;
+  severity: string;
+  malwareFamily: string | null;
+  campaignName: string | null;
+}
+
+interface IocGraphEdge {
+  source: string;
+  target: string;
+  label: string;
+  weight: number;
+}
+
+interface IocRelationshipGraph {
+  nodes: IocGraphNode[];
+  edges: IocGraphEdge[];
+  stats: {
+    totalNodes: number;
+    totalEdges: number;
+    malwareFamilies: number;
+    campaigns: number;
+    connectedComponents: number;
+  };
 }
 
 const IOC_TYPE_OPTIONS = ["ip", "domain", "url", "hash", "email", "cve"];
@@ -472,6 +534,24 @@ export default function IocIngestionMatchingPage() {
   const { data: comparisonData, isLoading: isLoadingComparison } = useQuery<FeedComparisonData>({
     queryKey: ["/api/ioc-feeds/compare"],
     enabled: activeTab === "comparison",
+  });
+
+  // 6.1: Confidence distribution
+  const { data: confidenceData, isLoading: isLoadingConfidence } = useQuery<ConfidenceDistribution>({
+    queryKey: ["/api/ioc-entries/confidence/distribution"],
+    enabled: activeTab === "confidence",
+  });
+
+  // 6.2: Expiration summary
+  const { data: expirationData, isLoading: isLoadingExpiration } = useQuery<ExpirationSummary>({
+    queryKey: ["/api/ioc-entries/expiration/summary"],
+    enabled: activeTab === "expiration",
+  });
+
+  // 6.3: Relationship graph
+  const { data: graphData, isLoading: isLoadingGraph } = useQuery<IocRelationshipGraph>({
+    queryKey: ["/api/ioc-entries/relationships"],
+    enabled: activeTab === "graph",
   });
 
   const ingestMutation = useMutation({
@@ -799,6 +879,18 @@ export default function IocIngestionMatchingPage() {
           </TabsTrigger>
           <TabsTrigger value="comparison" className="gap-1">
             <GitCompare className="h-4 w-4" /> Feed Comparison
+          </TabsTrigger>
+          <TabsTrigger value="confidence" className="gap-1">
+            <Gauge className="h-4 w-4" /> Confidence
+          </TabsTrigger>
+          <TabsTrigger value="expiration" className="gap-1">
+            <Timer className="h-4 w-4" /> Expiration
+          </TabsTrigger>
+          <TabsTrigger value="graph" className="gap-1">
+            <Network className="h-4 w-4" /> Relationships
+          </TabsTrigger>
+          <TabsTrigger value="export" className="gap-1">
+            <Download className="h-4 w-4" /> Export
           </TabsTrigger>
         </TabsList>
 
@@ -1672,6 +1764,774 @@ export default function IocIngestionMatchingPage() {
               )}
             </div>
           )}
+        </TabsContent>
+
+        {/* ── 6.1: Confidence Scoring Tab ── */}
+        <TabsContent value="confidence" className="mt-4">
+          {isLoadingConfidence ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-24" />
+              ))}
+            </div>
+          ) : !confidenceData ? (
+            <Card className="glass-card">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Gauge className="h-10 w-10 mb-3 opacity-40" />
+                <p className="text-sm">No confidence data available</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Average Confidence</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-3xl font-bold">{confidenceData.averageConfidence}%</p>
+                      <Badge
+                        variant="outline"
+                        className={
+                          confidenceData.averageConfidence >= 80
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                            : confidenceData.averageConfidence >= 50
+                              ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                              : "bg-red-500/15 text-red-400 border-red-500/30"
+                        }
+                      >
+                        {confidenceData.averageConfidence >= 80
+                          ? "High"
+                          : confidenceData.averageConfidence >= 50
+                            ? "Medium"
+                            : "Low"}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Total IOC Entries</p>
+                    <p className="text-3xl font-bold mt-1">{confidenceData.totalEntries.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {confidenceData.activeEntries.toLocaleString()} active
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">High Confidence (≥80)</p>
+                    <p className="text-3xl font-bold mt-1 text-emerald-400">
+                      {confidenceData.distribution.find((d) => d.min === 80)?.count ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {confidenceData.totalEntries > 0
+                        ? Math.round(
+                            ((confidenceData.distribution.find((d) => d.min === 80)?.count ?? 0) /
+                              confidenceData.totalEntries) *
+                              100,
+                          )
+                        : 0}
+                      % of total
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Distribution Chart */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Confidence Distribution</CardTitle>
+                  <CardDescription>IOC entries grouped by confidence score buckets</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {confidenceData.distribution.map((bucket) => {
+                      const pct =
+                        confidenceData.totalEntries > 0 ? (bucket.count / confidenceData.totalEntries) * 100 : 0;
+                      const color =
+                        bucket.min >= 80
+                          ? "bg-emerald-500"
+                          : bucket.min >= 60
+                            ? "bg-cyan-500"
+                            : bucket.min >= 40
+                              ? "bg-amber-500"
+                              : bucket.min >= 20
+                                ? "bg-orange-500"
+                                : "bg-red-500";
+                      return (
+                        <div key={bucket.label} className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground w-32">{bucket.label}</span>
+                          <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${color} rounded-full transition-all`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium w-16 text-right">
+                            {bucket.count} ({Math.round(pct)}%)
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* High & Low Confidence Tables */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card className="glass-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-emerald-400" /> High-Confidence IOCs
+                    </CardTitle>
+                    <CardDescription>Most reliable indicators — prioritize for active blocking</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[300px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Type</TableHead>
+                            <TableHead className="text-xs">Value</TableHead>
+                            <TableHead className="text-xs text-right">Score</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {confidenceData.highConfidence.map((entry) => {
+                            const Icon = IOC_TYPE_ICONS[entry.iocType] || Database;
+                            return (
+                              <TableRow key={entry.id}>
+                                <TableCell className="py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="text-xs">{entry.iocType}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <span className="text-xs font-mono truncate max-w-[200px] block">
+                                    {entry.iocValue}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-1.5 text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      (entry.confidence ?? 0) >= 80
+                                        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                        : (entry.confidence ?? 0) >= 50
+                                          ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                          : "bg-red-500/15 text-red-400 border-red-500/30"
+                                    }
+                                  >
+                                    {entry.confidence ?? 0}%
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+
+                <Card className="glass-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-400" /> Low-Confidence IOCs
+                    </CardTitle>
+                    <CardDescription>Review these indicators — may need verification or removal</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[300px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Type</TableHead>
+                            <TableHead className="text-xs">Value</TableHead>
+                            <TableHead className="text-xs text-right">Score</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {confidenceData.lowConfidence.map((entry) => {
+                            const Icon = IOC_TYPE_ICONS[entry.iocType] || Database;
+                            return (
+                              <TableRow key={entry.id}>
+                                <TableCell className="py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="text-xs">{entry.iocType}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <span className="text-xs font-mono truncate max-w-[200px] block">
+                                    {entry.iocValue}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-1.5 text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      (entry.confidence ?? 0) >= 80
+                                        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                        : (entry.confidence ?? 0) >= 50
+                                          ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                          : "bg-red-500/15 text-red-400 border-red-500/30"
+                                    }
+                                  >
+                                    {entry.confidence ?? 0}%
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.2: Expiration & Aging Tab ── */}
+        <TabsContent value="expiration" className="mt-4">
+          {isLoadingExpiration ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-24" />
+              ))}
+            </div>
+          ) : !expirationData ? (
+            <Card className="glass-card">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Timer className="h-10 w-10 mb-3 opacity-40" />
+                <p className="text-sm">No expiration data available</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <Card className="glass-card border-red-500/20">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Expired</p>
+                    <p className="text-2xl font-bold text-red-400 mt-1">{expirationData.summary.totalExpired}</p>
+                    <p className="text-xs text-muted-foreground mt-1">should be purged</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card border-amber-500/20">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Expiring Soon</p>
+                    <p className="text-2xl font-bold text-amber-400 mt-1">{expirationData.summary.totalExpiringSoon}</p>
+                    <p className="text-xs text-muted-foreground mt-1">within 7 days</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card border-cyan-500/20">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Expiring This Month</p>
+                    <p className="text-2xl font-bold text-cyan-400 mt-1">{expirationData.summary.totalExpiringMonth}</p>
+                    <p className="text-xs text-muted-foreground mt-1">within 30 days</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">No Expiration</p>
+                    <p className="text-2xl font-bold mt-1">{expirationData.summary.totalNoExpiration}</p>
+                    <p className="text-xs text-muted-foreground mt-1">consider setting TTL</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Aging Distribution */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">IOC Age Distribution</CardTitle>
+                  <CardDescription>How old are your active IOC entries?</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {expirationData.agingDistribution.map((bucket, idx) => {
+                      const total = expirationData.agingDistribution.reduce((s, b) => s + b.count, 0);
+                      const pct = total > 0 ? (bucket.count / total) * 100 : 0;
+                      const colors = ["bg-emerald-500", "bg-cyan-500", "bg-amber-500", "bg-orange-500", "bg-red-500"];
+                      return (
+                        <div key={bucket.label} className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground w-24">{bucket.label}</span>
+                          <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${colors[idx] || "bg-slate-500"} rounded-full transition-all`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium w-16 text-right">
+                            {bucket.count} ({Math.round(pct)}%)
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Expired IOCs List */}
+              {expirationData.expired.length > 0 && (
+                <Card className="glass-card border-red-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-red-400" /> Expired IOCs
+                    </CardTitle>
+                    <CardDescription>
+                      These IOCs have passed their expiration date and should be excluded from active matching
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[250px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Type</TableHead>
+                            <TableHead className="text-xs">Value</TableHead>
+                            <TableHead className="text-xs">Expired</TableHead>
+                            <TableHead className="text-xs text-right">Confidence</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {expirationData.expired.slice(0, 30).map((entry) => {
+                            const Icon = IOC_TYPE_ICONS[entry.iocType] || Database;
+                            return (
+                              <TableRow key={entry.id} className="opacity-60">
+                                <TableCell className="py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="text-xs">{entry.iocType}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <span className="text-xs font-mono truncate max-w-[200px] block line-through text-muted-foreground">
+                                    {entry.iocValue}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] bg-red-500/15 text-red-400 border-red-500/30"
+                                  >
+                                    {entry.expiresAt ? new Date(entry.expiresAt).toLocaleDateString() : "N/A"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="py-1.5 text-right">
+                                  <span className="text-xs text-muted-foreground">{entry.confidence ?? 0}%</span>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Expiring Soon IOCs */}
+              {expirationData.expiringSoon.length > 0 && (
+                <Card className="glass-card border-amber-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Hourglass className="h-4 w-4 text-amber-400" /> Expiring Within 7 Days
+                    </CardTitle>
+                    <CardDescription>These IOCs will expire soon — review or extend their TTL</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[250px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Type</TableHead>
+                            <TableHead className="text-xs">Value</TableHead>
+                            <TableHead className="text-xs">Expires In</TableHead>
+                            <TableHead className="text-xs text-right">Confidence</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {expirationData.expiringSoon.map((entry) => {
+                            const Icon = IOC_TYPE_ICONS[entry.iocType] || Database;
+                            const daysLeft = entry.expiresAt
+                              ? Math.ceil((new Date(entry.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+                              : 0;
+                            return (
+                              <TableRow key={entry.id}>
+                                <TableCell className="py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="text-xs">{entry.iocType}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <span className="text-xs font-mono truncate max-w-[200px] block">
+                                    {entry.iocValue}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                  >
+                                    {daysLeft} day{daysLeft !== 1 ? "s" : ""}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="py-1.5 text-right">
+                                  <ConfidenceBar confidence={entry.confidence ?? 0} />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.3: IOC Relationship Graph Tab ── */}
+        <TabsContent value="graph" className="mt-4">
+          {isLoadingGraph ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-24" />
+              ))}
+            </div>
+          ) : !graphData || graphData.nodes.length === 0 ? (
+            <Card className="glass-card">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Network className="h-10 w-10 mb-3 opacity-40" />
+                <p className="text-sm">No IOC relationships found</p>
+                <p className="text-xs mt-1">
+                  IOC entries need shared malware families, campaigns, or metadata to build relationships
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Graph Stats */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Nodes (IOCs)</p>
+                    <p className="text-2xl font-bold mt-1">{graphData.stats.totalNodes}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Relationships</p>
+                    <p className="text-2xl font-bold text-cyan-400 mt-1">{graphData.stats.totalEdges}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Malware Families</p>
+                    <p className="text-2xl font-bold text-red-400 mt-1">{graphData.stats.malwareFamilies}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Campaigns</p>
+                    <p className="text-2xl font-bold text-amber-400 mt-1">{graphData.stats.campaigns}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Relationship List */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">IOC Relationships</CardTitle>
+                  <CardDescription>
+                    Connections between IOCs based on shared malware families, campaigns, feeds, and metadata
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {graphData.edges.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                      <Network className="h-8 w-8 mb-2 opacity-40" />
+                      <p className="text-xs">No relationships detected between IOCs</p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[400px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Source IOC</TableHead>
+                            <TableHead className="text-xs text-center">Relationship</TableHead>
+                            <TableHead className="text-xs">Target IOC</TableHead>
+                            <TableHead className="text-xs text-right">Weight</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {graphData.edges.slice(0, 50).map((edge, idx) => {
+                            const sourceNode = graphData.nodes.find((n) => n.id === edge.source);
+                            const targetNode = graphData.nodes.find((n) => n.id === edge.target);
+                            return (
+                              <TableRow key={idx}>
+                                <TableCell className="py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    {sourceNode && (
+                                      <>
+                                        {(() => {
+                                          const Icon = IOC_TYPE_ICONS[sourceNode.type] || Database;
+                                          return <Icon className="h-3.5 w-3.5 text-muted-foreground" />;
+                                        })()}
+                                        <span className="text-xs font-mono truncate max-w-[150px] block">
+                                          {sourceNode.label}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1.5 text-center">
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      edge.label.startsWith("malware")
+                                        ? "text-[10px] bg-red-500/15 text-red-400 border-red-500/30"
+                                        : edge.label.startsWith("campaign")
+                                          ? "text-[10px] bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                          : edge.label.includes("resolves") || edge.label.includes("communicates")
+                                            ? "text-[10px] bg-purple-500/15 text-purple-400 border-purple-500/30"
+                                            : "text-[10px] bg-slate-500/15 text-slate-400 border-slate-500/30"
+                                    }
+                                  >
+                                    {edge.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    {targetNode && (
+                                      <>
+                                        {(() => {
+                                          const Icon = IOC_TYPE_ICONS[targetNode.type] || Database;
+                                          return <Icon className="h-3.5 w-3.5 text-muted-foreground" />;
+                                        })()}
+                                        <span className="text-xs font-mono truncate max-w-[150px] block">
+                                          {targetNode.label}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1.5 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    {Array.from({ length: Math.min(edge.weight, 5) }).map((_, i) => (
+                                      <div
+                                        key={i}
+                                        className={`w-1.5 h-1.5 rounded-full ${
+                                          edge.weight >= 4
+                                            ? "bg-red-400"
+                                            : edge.weight >= 3
+                                              ? "bg-amber-400"
+                                              : "bg-slate-400"
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Nodes by Type */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">IOC Nodes by Type</CardTitle>
+                  <CardDescription>Active IOCs in the relationship graph</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {["ip", "domain", "url", "hash", "email", "cve"].map((type) => {
+                      const count = graphData.nodes.filter((n) => n.type === type).length;
+                      const Icon = IOC_TYPE_ICONS[type] || Database;
+                      return (
+                        <div
+                          key={type}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-border/30"
+                        >
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs font-medium">{type.toUpperCase()}</p>
+                            <p className="text-lg font-bold">{count}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.4: Export Tab ── */}
+        <TabsContent value="export" className="mt-4">
+          <div className="space-y-6">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Download className="h-4 w-4" /> Export IOC Entries
+                </CardTitle>
+                <CardDescription>
+                  Download IOC entries in multiple formats for sharing with partners and other security tools
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* CSV Export */}
+                  <Card className="border-border/40 hover:border-border/60 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 rounded-lg bg-emerald-500/10">
+                          <FileText className="h-5 w-5 text-emerald-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">CSV</p>
+                          <p className="text-[10px] text-muted-foreground">Comma-separated values</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Compatible with Excel, Google Sheets, SIEM imports, and custom scripting
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1"
+                        onClick={() => {
+                          window.open("/api/ioc-entries/export/csv", "_blank");
+                        }}
+                      >
+                        <ArrowDownToLine className="h-3.5 w-3.5" /> Download CSV
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* STIX Export */}
+                  <Card className="border-border/40 hover:border-border/60 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 rounded-lg bg-cyan-500/10">
+                          <Shield className="h-5 w-5 text-cyan-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">STIX 2.1</p>
+                          <p className="text-[10px] text-muted-foreground">Structured Threat Information</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        OASIS standard for sharing cyber threat intelligence with TAXII-compatible platforms
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1"
+                        onClick={() => {
+                          window.open("/api/ioc-entries/export/stix", "_blank");
+                        }}
+                      >
+                        <ArrowDownToLine className="h-3.5 w-3.5" /> Download STIX
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* OpenIOC Export */}
+                  <Card className="border-border/40 hover:border-border/60 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 rounded-lg bg-amber-500/10">
+                          <Target className="h-5 w-5 text-amber-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">OpenIOC</p>
+                          <p className="text-[10px] text-muted-foreground">Mandiant format</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        XML-based format used by Mandiant and compatible with FireEye/Trellix endpoint tools
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1"
+                        onClick={() => {
+                          window.open("/api/ioc-entries/export/openioc", "_blank");
+                        }}
+                      >
+                        <ArrowDownToLine className="h-3.5 w-3.5" /> Download OpenIOC
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* JSON Export */}
+                  <Card className="border-border/40 hover:border-border/60 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 rounded-lg bg-purple-500/10">
+                          <Database className="h-5 w-5 text-purple-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">JSON</p>
+                          <p className="text-[10px] text-muted-foreground">Raw data export</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Full IOC data with all metadata fields for custom integrations and analysis pipelines
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1"
+                        onClick={() => {
+                          window.open("/api/ioc-entries/export/json", "_blank");
+                        }}
+                      >
+                        <ArrowDownToLine className="h-3.5 w-3.5" /> Download JSON
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Export Info */}
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Export Details</p>
+                    <ul className="text-xs text-muted-foreground mt-1 space-y-1 list-disc list-inside">
+                      <li>Exports include up to 5,000 IOC entries per download</li>
+                      <li>
+                        Use URL query parameters to filter:{" "}
+                        <code className="text-[10px] bg-muted px-1 rounded">
+                          ?iocType=ip&amp;status=active&amp;minConfidence=70
+                        </code>
+                      </li>
+                      <li>STIX 2.1 bundles include proper indicator patterns and validity dates</li>
+                      <li>OpenIOC format is compatible with Mandiant/FireEye/Trellix tools</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
