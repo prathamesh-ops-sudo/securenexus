@@ -3,6 +3,7 @@ import type { Server } from "http";
 import { setupAuth, registerAuthRoutes } from "./auth";
 import { applyCsrfProtection, getCsrfEndpointHandler } from "./security-middleware";
 import { startOutboxProcessor } from "./outbox-processor";
+import { startRSSIntelligenceScheduler } from "./rss-intelligence";
 import { registerOpenApiRoutes } from "./openapi";
 import { registerAllDomainRoutes } from "./routes/index";
 import { orgRateLimitMiddleware } from "./middleware/org-rate-limit";
@@ -19,6 +20,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.use("/api", securityPolicyEnforcement);
 
   startOutboxProcessor();
+  startRSSIntelligenceScheduler();
 
   registerAllDomainRoutes(app);
 

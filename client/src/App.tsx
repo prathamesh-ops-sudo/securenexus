@@ -172,6 +172,7 @@ const PrivacyEngineeringPage = lazy(() => import("@/pages/privacy-engineering"))
 const BoardDashboardPage = lazy(() => import("@/pages/board-dashboard"));
 const DnsSecurityPage = lazy(() => import("@/pages/dns-security"));
 const EmailSecurityPage = lazy(() => import("@/pages/email-security"));
+const RSSIntelligencePage = lazy(() => import("@/pages/rss-intelligence"));
 
 function PageSkeleton() {
   return (
@@ -425,6 +426,7 @@ function AuthenticatedApp() {
                     <Route path="/board-dashboard" component={BoardDashboardPage} />
                     <Route path="/dns-security" component={DnsSecurityPage} />
                     <Route path="/email-security" component={EmailSecurityPage} />
+                    <Route path="/rss-intelligence" component={RSSIntelligencePage} />
                     <Route component={NotFound} />
                   </Switch>
                 </Suspense>
