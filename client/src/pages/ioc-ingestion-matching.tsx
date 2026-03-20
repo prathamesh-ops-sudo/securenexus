@@ -43,6 +43,12 @@ import {
   FileText,
   Hourglass,
   ArrowDownToLine,
+  Scan,
+  Sparkles,
+  ThumbsDown,
+  Wand2,
+  Share2,
+  Users,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -255,6 +261,75 @@ interface IocRelationshipGraph {
     campaigns: number;
     connectedComponents: number;
   };
+}
+
+// 6.5: Retroactive match summary
+interface RetroactiveMatchSummary {
+  totalMatches: number;
+  retroactiveMatches: number;
+  realtimeMatches: number;
+  activeIocs: number;
+  recentRetroactive: {
+    id: string;
+    iocEntryId: string | null;
+    alertId: string | null;
+    matchField: string | null;
+    matchValue: string | null;
+    confidence: number | null;
+    enrichmentData: Record<string, any> | null;
+    createdAt: string | null;
+  }[];
+}
+
+// 6.6: Enrichment status
+interface EnrichmentStatus {
+  totalActive: number;
+  enrichedCount: number;
+  notEnrichedCount: number;
+  enrichmentRate: number;
+  byType: { type: string; enriched: number; total: number; rate: number }[];
+  recentlyEnriched: IocEntry[];
+}
+
+// 6.7: False positive tracking
+interface FpTrackingSummary {
+  totalEntries: number;
+  trackedCount: number;
+  totalFalsePositives: number;
+  totalTruePositives: number;
+  overallFpRate: number;
+  suppressedCount: number;
+  highFpIocs: { id: string; iocValue: string; iocType: string; fpRate: number; fpCount: number; tpCount: number }[];
+  feedFpRates: { feed: string; fpCount: number; tpCount: number; total: number; fpRate: number }[];
+}
+
+// 6.8: Generated rules
+interface GeneratedRulesSummary {
+  totalRules: number;
+  rules: {
+    jobId: string;
+    name: string;
+    description: string | null;
+    severity: string | null;
+    format: string;
+    status: string;
+    qualityScore: number | null;
+    sourceId: string | null;
+    createdAt: string | null;
+  }[];
+}
+
+// 6.9: Community sharing status
+interface CommunitySharingStatus {
+  consentActive: boolean;
+  consentLevel: string;
+  totalActive: number;
+  sharedCount: number;
+  notSharedCount: number;
+  sharingRate: number;
+  sharedByType: { type: string; count: number }[];
+  contributedIocCount: number;
+  lastContributedAt: string | null;
 }
 
 const IOC_TYPE_OPTIONS = ["ip", "domain", "url", "hash", "email", "cve"];
@@ -552,6 +627,95 @@ export default function IocIngestionMatchingPage() {
   const { data: graphData, isLoading: isLoadingGraph } = useQuery<IocRelationshipGraph>({
     queryKey: ["/api/ioc-entries/relationships"],
     enabled: activeTab === "graph",
+  });
+
+  // 6.5: Retroactive match summary
+  const { data: retroMatchData, isLoading: isLoadingRetroMatch } = useQuery<RetroactiveMatchSummary>({
+    queryKey: ["/api/ioc-entries/retroactive-match/summary"],
+    enabled: activeTab === "retroactive",
+  });
+
+  // 6.6: Enrichment status
+  const { data: enrichmentStatusData, isLoading: isLoadingEnrichmentStatus } = useQuery<EnrichmentStatus>({
+    queryKey: ["/api/ioc-entries/enrichment-status"],
+    enabled: activeTab === "autoenrich",
+  });
+
+  // 6.7: False positive tracking
+  const { data: fpTrackingData, isLoading: isLoadingFpTracking } = useQuery<FpTrackingSummary>({
+    queryKey: ["/api/ioc-entries/false-positive/summary"],
+    enabled: activeTab === "fptracking",
+  });
+
+  // 6.8: Generated rules from IOCs
+  const { data: generatedRulesData, isLoading: isLoadingGeneratedRules } = useQuery<GeneratedRulesSummary>({
+    queryKey: ["/api/ioc-entries/generated-rules"],
+    enabled: activeTab === "autorules",
+  });
+
+  // 6.9: Community sharing status
+  const { data: communitySharingData, isLoading: isLoadingCommunitySharing } = useQuery<CommunitySharingStatus>({
+    queryKey: ["/api/ioc-entries/community-sharing/status"],
+    enabled: activeTab === "communityshare",
+  });
+
+  // Mutations for 6.5-6.9
+  const retroMatchMutation = useMutation({
+    mutationFn: async (params: { lookbackDays?: number; maxAlerts?: number }) => {
+      const res = await apiRequest("POST", "/api/ioc-entries/retroactive-match", params);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Retroactive Matching Complete",
+        description: `Found ${data.matchesFound} matches across ${data.alertsScanned} alerts`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries/retroactive-match/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-matches"] });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Retroactive Match Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const autoEnrichMutation = useMutation({
+    mutationFn: async (params: { iocEntryIds: string[] }) => {
+      const res = await apiRequest("POST", "/api/ioc-entries/auto-enrich", params);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Auto-Enrichment Complete",
+        description: `Enriched ${data.enrichedCount} of ${data.requestedCount} IOC entries`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries/enrichment-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries"] });
+    },
+    onError: (err: Error) => toast({ title: "Enrichment Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const generateRulesMutation = useMutation({
+    mutationFn: async (params: { ruleFormat?: string; minConfidence?: number }) => {
+      const res = await apiRequest("POST", "/api/ioc-entries/generate-rules", params);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Rule Generation Complete", description: `Generated ${data.generated} detection rules` });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries/generated-rules"] });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Rule Generation Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const shareCommMutation = useMutation({
+    mutationFn: async (params: { iocEntryIds: string[]; tlpLevel?: string }) => {
+      const res = await apiRequest("POST", "/api/ioc-entries/share-community", params);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Community Sharing Complete", description: `Shared ${data.shared} IOCs to community network` });
+      queryClient.invalidateQueries({ queryKey: ["/api/ioc-entries/community-sharing/status"] });
+    },
+    onError: (err: Error) => toast({ title: "Sharing Failed", description: err.message, variant: "destructive" }),
   });
 
   const ingestMutation = useMutation({
@@ -891,6 +1055,21 @@ export default function IocIngestionMatchingPage() {
           </TabsTrigger>
           <TabsTrigger value="export" className="gap-1">
             <Download className="h-4 w-4" /> Export
+          </TabsTrigger>
+          <TabsTrigger value="retroactive" className="gap-1">
+            <Scan className="h-4 w-4" /> Retroactive
+          </TabsTrigger>
+          <TabsTrigger value="autoenrich" className="gap-1">
+            <Sparkles className="h-4 w-4" /> Auto-Enrich
+          </TabsTrigger>
+          <TabsTrigger value="fptracking" className="gap-1">
+            <ThumbsDown className="h-4 w-4" /> FP Tracking
+          </TabsTrigger>
+          <TabsTrigger value="autorules" className="gap-1">
+            <Wand2 className="h-4 w-4" /> Auto-Rules
+          </TabsTrigger>
+          <TabsTrigger value="communityshare" className="gap-1">
+            <Share2 className="h-4 w-4" /> Community
           </TabsTrigger>
         </TabsList>
 
@@ -2532,6 +2711,741 @@ export default function IocIngestionMatchingPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* ── 6.5: Retroactive Matching Tab ── */}
+        <TabsContent value="retroactive" className="mt-4">
+          {isLoadingRetroMatch ? (
+            <LoadingSkeleton />
+          ) : (
+            <div className="space-y-4">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Matches</p>
+                    <p className="text-2xl font-bold mt-1">{retroMatchData?.totalMatches || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Retroactive</p>
+                    <p className="text-2xl font-bold mt-1 text-cyan-400">{retroMatchData?.retroactiveMatches || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Real-time</p>
+                    <p className="text-2xl font-bold mt-1 text-emerald-400">{retroMatchData?.realtimeMatches || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Active IOCs</p>
+                    <p className="text-2xl font-bold mt-1">{retroMatchData?.activeIocs || 0}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Run Retroactive Match */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Scan className="h-4 w-4 text-cyan-400" /> Run Retroactive Scan
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Scan historical alerts for matches against all active IOC entries
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={() => retroMatchMutation.mutate({ lookbackDays: 7, maxAlerts: 500 })}
+                      disabled={retroMatchMutation.isPending}
+                    >
+                      {retroMatchMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Scan className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Last 7 Days
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => retroMatchMutation.mutate({ lookbackDays: 30, maxAlerts: 1000 })}
+                      disabled={retroMatchMutation.isPending}
+                    >
+                      Last 30 Days
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => retroMatchMutation.mutate({ lookbackDays: 90, maxAlerts: 2000 })}
+                      disabled={retroMatchMutation.isPending}
+                    >
+                      Last 90 Days
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Recent Retroactive Matches */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Recent Retroactive Matches</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[300px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Match Field</TableHead>
+                          <TableHead className="text-xs">Value</TableHead>
+                          <TableHead className="text-xs">Confidence</TableHead>
+                          <TableHead className="text-xs">Matched At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(retroMatchData?.recentRetroactive || []).length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-8">
+                              No retroactive matches yet. Run a scan above.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          (retroMatchData?.recentRetroactive || []).map((m) => (
+                            <TableRow key={m.id}>
+                              <TableCell className="text-xs">
+                                <Badge variant="outline" className="text-[10px]">
+                                  {m.matchField}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs font-mono truncate max-w-[200px]">{m.matchValue}</TableCell>
+                              <TableCell className="text-xs">
+                                <Badge
+                                  className={`text-[10px] ${(m.confidence || 0) >= 80 ? "bg-emerald-500/20 text-emerald-400" : (m.confidence || 0) >= 50 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}
+                                >
+                                  {m.confidence || 0}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "—"}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.6: Auto-Enrichment Tab ── */}
+        <TabsContent value="autoenrich" className="mt-4">
+          {isLoadingEnrichmentStatus ? (
+            <LoadingSkeleton />
+          ) : (
+            <div className="space-y-4">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Enrichment Rate</p>
+                    <p className="text-2xl font-bold mt-1 text-emerald-400">
+                      {enrichmentStatusData?.enrichmentRate || 0}%
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Enriched</p>
+                    <p className="text-2xl font-bold mt-1 text-cyan-400">{enrichmentStatusData?.enrichedCount || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Not Enriched</p>
+                    <p className="text-2xl font-bold mt-1 text-amber-400">
+                      {enrichmentStatusData?.notEnrichedCount || 0}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Active</p>
+                    <p className="text-2xl font-bold mt-1">{enrichmentStatusData?.totalActive || 0}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Enrichment by Type */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-400" /> Enrichment Coverage by IOC Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="space-y-3">
+                    {(enrichmentStatusData?.byType || []).map((t) => (
+                      <div key={t.type} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium uppercase">{t.type}</span>
+                          <span className="text-muted-foreground">
+                            {t.enriched}/{t.total} ({t.rate}%)
+                          </span>
+                        </div>
+                        <Progress value={t.rate} className="h-2" />
+                      </div>
+                    ))}
+                    {(enrichmentStatusData?.byType || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-4">No IOC entries to display</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Enrich All Button */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-cyan-400" /> Auto-Enrich IOCs
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Enrich un-enriched IOCs with VirusTotal, WHOIS, passive DNS, and geo-IP data
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const unenriched = (enrichmentStatusData?.recentlyEnriched || [])
+                          .filter((e) => {
+                            const meta = e.metadata as Record<string, any> | null;
+                            return !meta?.enrichment;
+                          })
+                          .slice(0, 20)
+                          .map((e) => e.id);
+                        if (unenriched.length > 0) {
+                          autoEnrichMutation.mutate({ iocEntryIds: unenriched });
+                        } else {
+                          // Enrich the first 20 entries
+                          const allIds = (Array.isArray(entries) ? entries : []).slice(0, 20).map((e: any) => e.id);
+                          if (allIds.length > 0) autoEnrichMutation.mutate({ iocEntryIds: allIds });
+                        }
+                      }}
+                      disabled={autoEnrichMutation.isPending}
+                    >
+                      {autoEnrichMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Enrich Up to 20 IOCs
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Recently Enriched */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Recently Enriched IOCs</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[250px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Type</TableHead>
+                          <TableHead className="text-xs">Value</TableHead>
+                          <TableHead className="text-xs">Confidence</TableHead>
+                          <TableHead className="text-xs">Sources</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(enrichmentStatusData?.recentlyEnriched || []).length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-8">
+                              No enriched IOCs yet
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          (enrichmentStatusData?.recentlyEnriched || []).slice(0, 15).map((e) => (
+                            <TableRow key={e.id}>
+                              <TableCell className="text-xs">
+                                <Badge variant="outline" className="text-[10px]">
+                                  {e.iocType?.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs font-mono truncate max-w-[200px]">{e.iocValue}</TableCell>
+                              <TableCell className="text-xs">
+                                <Badge
+                                  className={`text-[10px] ${(e.confidence || 0) >= 80 ? "bg-emerald-500/20 text-emerald-400" : (e.confidence || 0) >= 50 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}
+                                >
+                                  {e.confidence || 0}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {(() => {
+                                  const meta = e.metadata as Record<string, any> | null;
+                                  const enrichment = meta?.enrichment;
+                                  if (!enrichment) return "—";
+                                  const sources = [];
+                                  if (enrichment.virusTotal) sources.push("VT");
+                                  if (enrichment.whois) sources.push("WHOIS");
+                                  if (enrichment.passiveDns) sources.push("DNS");
+                                  if (enrichment.geoIp) sources.push("GeoIP");
+                                  return sources.join(", ") || "—";
+                                })()}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.7: False Positive Tracking Tab ── */}
+        <TabsContent value="fptracking" className="mt-4">
+          {isLoadingFpTracking ? (
+            <LoadingSkeleton />
+          ) : (
+            <div className="space-y-4">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Overall FP Rate</p>
+                    <p
+                      className={`text-2xl font-bold mt-1 ${(fpTrackingData?.overallFpRate || 0) > 50 ? "text-red-400" : (fpTrackingData?.overallFpRate || 0) > 20 ? "text-amber-400" : "text-emerald-400"}`}
+                    >
+                      {fpTrackingData?.overallFpRate || 0}%
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">False Positives</p>
+                    <p className="text-2xl font-bold mt-1 text-red-400">{fpTrackingData?.totalFalsePositives || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">True Positives</p>
+                    <p className="text-2xl font-bold mt-1 text-emerald-400">
+                      {fpTrackingData?.totalTruePositives || 0}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Auto-Suppressed</p>
+                    <p className="text-2xl font-bold mt-1 text-amber-400">{fpTrackingData?.suppressedCount || 0}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* High FP IOCs */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <ThumbsDown className="h-4 w-4 text-red-400" /> High False Positive IOCs
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    IOCs with FP rate &gt; 50% and at least 3 reports. Auto-suppressed at &gt;80% with 5+ reports.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[250px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Type</TableHead>
+                          <TableHead className="text-xs">Value</TableHead>
+                          <TableHead className="text-xs">FP Rate</TableHead>
+                          <TableHead className="text-xs">FP / TP</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(fpTrackingData?.highFpIocs || []).length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-8">
+                              No high-FP IOCs detected
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          (fpTrackingData?.highFpIocs || []).map((ioc) => (
+                            <TableRow key={ioc.id}>
+                              <TableCell className="text-xs">
+                                <Badge variant="outline" className="text-[10px]">
+                                  {ioc.iocType.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs font-mono truncate max-w-[200px]">{ioc.iocValue}</TableCell>
+                              <TableCell className="text-xs">
+                                <Badge
+                                  className={`text-[10px] ${ioc.fpRate > 80 ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}
+                                >
+                                  {ioc.fpRate}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {ioc.fpCount} / {ioc.tpCount}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* Feed FP Rates */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Rss className="h-4 w-4 text-amber-400" /> False Positive Rates by Feed
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="space-y-3">
+                    {(fpTrackingData?.feedFpRates || []).map((f) => (
+                      <div key={f.feed} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium truncate max-w-[200px]">{f.feed}</span>
+                          <span
+                            className={`${f.fpRate > 50 ? "text-red-400" : f.fpRate > 20 ? "text-amber-400" : "text-emerald-400"}`}
+                          >
+                            {f.fpRate}% FP ({f.fpCount} FP / {f.tpCount} TP)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${f.fpRate > 50 ? "bg-red-500" : f.fpRate > 20 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.min(100, f.fpRate)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    {(fpTrackingData?.feedFpRates || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-4">No FP tracking data available</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.8: Auto-Rules Tab ── */}
+        <TabsContent value="autorules" className="mt-4">
+          {isLoadingGeneratedRules ? (
+            <LoadingSkeleton />
+          ) : (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Generated Rules</p>
+                    <p className="text-2xl font-bold mt-1">{generatedRulesData?.totalRules || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Quality</p>
+                    <p className="text-2xl font-bold mt-1 text-emerald-400">
+                      {generatedRulesData?.rules && generatedRulesData.rules.length > 0
+                        ? Math.round(
+                            generatedRulesData.rules.reduce((sum, r) => sum + (r.qualityScore || 0), 0) /
+                              generatedRulesData.rules.length,
+                          )
+                        : 0}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Format</p>
+                    <p className="text-2xl font-bold mt-1 text-cyan-400">
+                      {generatedRulesData?.rules?.[0]?.format?.toUpperCase() || "SIGMA"}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Generate Rules Action */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Wand2 className="h-4 w-4 text-cyan-400" /> Generate Detection Rules from IOCs
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Auto-generate Sigma/YARA detection rules from high-confidence IOC entries
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={() => generateRulesMutation.mutate({ ruleFormat: "sigma", minConfidence: 70 })}
+                      disabled={generateRulesMutation.isPending}
+                    >
+                      {generateRulesMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Wand2 className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Generate Sigma Rules
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => generateRulesMutation.mutate({ ruleFormat: "yara", minConfidence: 70 })}
+                      disabled={generateRulesMutation.isPending}
+                    >
+                      Generate YARA Rules
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Generated Rules List */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">IOC-Generated Detection Rules</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[300px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Rule Name</TableHead>
+                          <TableHead className="text-xs">Format</TableHead>
+                          <TableHead className="text-xs">Severity</TableHead>
+                          <TableHead className="text-xs">Quality</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Created</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(generatedRulesData?.rules || []).length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-xs text-muted-foreground py-8">
+                              No auto-generated rules yet. Click above to generate.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          (generatedRulesData?.rules || []).map((r) => (
+                            <TableRow key={r.jobId}>
+                              <TableCell className="text-xs font-medium truncate max-w-[200px]">{r.name}</TableCell>
+                              <TableCell className="text-xs">
+                                <Badge variant="outline" className="text-[10px]">
+                                  {r.format?.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <Badge
+                                  className={`text-[10px] ${r.severity === "critical" ? "bg-red-500/20 text-red-400" : r.severity === "high" ? "bg-orange-500/20 text-orange-400" : r.severity === "medium" ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                                >
+                                  {r.severity}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <Badge
+                                  className={`text-[10px] ${(r.qualityScore || 0) >= 80 ? "bg-emerald-500/20 text-emerald-400" : (r.qualityScore || 0) >= 50 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}
+                                >
+                                  {r.qualityScore || 0}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <Badge variant="outline" className="text-[10px]">
+                                  {r.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 6.9: Community Sharing Tab ── */}
+        <TabsContent value="communityshare" className="mt-4">
+          {isLoadingCommunitySharing ? (
+            <LoadingSkeleton />
+          ) : (
+            <div className="space-y-4">
+              {/* Consent Status */}
+              <Card
+                className={`glass-card border-l-4 ${communitySharingData?.consentActive ? "border-l-emerald-500" : "border-l-amber-500"}`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Users className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Community Intel Sharing</p>
+                        <p className="text-xs text-muted-foreground">
+                          {communitySharingData?.consentActive
+                            ? `Active — consent level: ${communitySharingData.consentLevel}`
+                            : "Not active — enable sharing consent in Community Intel settings"}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      className={`text-[10px] ${communitySharingData?.consentActive ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}
+                    >
+                      {communitySharingData?.consentActive ? "ACTIVE" : "INACTIVE"}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Sharing Rate</p>
+                    <p className="text-2xl font-bold mt-1 text-cyan-400">{communitySharingData?.sharingRate || 0}%</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Shared IOCs</p>
+                    <p className="text-2xl font-bold mt-1 text-emerald-400">{communitySharingData?.sharedCount || 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Not Shared</p>
+                    <p className="text-2xl font-bold mt-1 text-amber-400">
+                      {communitySharingData?.notSharedCount || 0}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Contributions</p>
+                    <p className="text-2xl font-bold mt-1">{communitySharingData?.contributedIocCount || 0}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Share Action */}
+              {communitySharingData?.consentActive && (
+                <Card className="glass-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Share2 className="h-4 w-4 text-cyan-400" /> Share IOCs to Community Network
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Anonymously share high-confidence IOCs with industry peers
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const activeIds = (Array.isArray(entries) ? entries : [])
+                            .filter((e: any) => e.status === "active" && (e.confidence || 0) >= 70)
+                            .slice(0, 50)
+                            .map((e: any) => e.id);
+                          if (activeIds.length > 0) {
+                            shareCommMutation.mutate({ iocEntryIds: activeIds, tlpLevel: "amber" });
+                          }
+                        }}
+                        disabled={shareCommMutation.isPending}
+                      >
+                        {shareCommMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                        ) : (
+                          <Share2 className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Share High-Confidence IOCs (TLP:AMBER)
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const activeIds = (Array.isArray(entries) ? entries : [])
+                            .filter((e: any) => e.status === "active" && (e.confidence || 0) >= 70)
+                            .slice(0, 50)
+                            .map((e: any) => e.id);
+                          if (activeIds.length > 0) {
+                            shareCommMutation.mutate({ iocEntryIds: activeIds, tlpLevel: "green" });
+                          }
+                        }}
+                        disabled={shareCommMutation.isPending}
+                      >
+                        Share (TLP:GREEN)
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Shared by Type */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Network className="h-4 w-4 text-emerald-400" /> Shared IOCs by Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {(communitySharingData?.sharedByType || []).map((t) => (
+                      <div key={t.type} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                        <span className="text-xs font-medium uppercase">{t.type}</span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {t.count}
+                        </Badge>
+                      </div>
+                    ))}
+                    {(communitySharingData?.sharedByType || []).length === 0 && (
+                      <div className="col-span-full text-center py-4">
+                        <p className="text-xs text-muted-foreground">No IOCs shared yet</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Last Contribution */}
+              {communitySharingData?.lastContributedAt && (
+                <Card className="glass-card">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      Last contribution: {new Date(communitySharingData.lastContributedAt).toLocaleString()}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 

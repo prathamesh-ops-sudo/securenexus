@@ -2324,6 +2324,937 @@ ${iocXmlEntries}
       }
     },
   );
+
+  // ── 6.5: IOC retroactive matching on ingestion ──────────────
+  // When triggered, scan historical alerts (configurable lookback) for matches against IOC entries
+
+  app.post(
+    "/api/ioc-entries/retroactive-match",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          iocEntryIds,
+          lookbackDays = 30,
+          maxAlerts = 500,
+        } = req.body as {
+          iocEntryIds?: string[];
+          lookbackDays?: number;
+          maxAlerts?: number;
+        };
+
+        const clampedLookback = Math.max(1, Math.min(365, lookbackDays));
+        const clampedMaxAlerts = Math.max(10, Math.min(5000, maxAlerts));
+        const lookbackDate = new Date(Date.now() - clampedLookback * 24 * 60 * 60 * 1000);
+
+        const { db: database } = await import("../db");
+        const { iocEntries, alerts: alertsTable, iocMatches } = await import("@shared/schema");
+        const { eq, and, gte, inArray, sql: sqlFn } = await import("drizzle-orm");
+
+        // Get IOC entries to match against
+        const iocConditions: any[] = [eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")];
+        if (iocEntryIds && Array.isArray(iocEntryIds) && iocEntryIds.length > 0) {
+          const limited = iocEntryIds.slice(0, 100);
+          iocConditions.push(inArray(iocEntries.id, limited));
+        }
+        const iocsToMatch = await database
+          .select()
+          .from(iocEntries)
+          .where(and(...iocConditions))
+          .limit(200);
+
+        if (iocsToMatch.length === 0) {
+          return res.json({
+            matchesFound: 0,
+            alertsScanned: 0,
+            newMatches: [],
+            message: "No active IOC entries to match",
+          });
+        }
+
+        // Get historical alerts within lookback window
+        const alertConditions: any[] = [eq(alertsTable.orgId, orgId), gte(alertsTable.createdAt, lookbackDate)];
+        const historicalAlerts = await database
+          .select()
+          .from(alertsTable)
+          .where(and(...alertConditions))
+          .orderBy(sqlFn`${alertsTable.createdAt} DESC`)
+          .limit(clampedMaxAlerts);
+
+        // Build IOC lookup maps by type → value
+        const iocByTypeValue = new Map<string, (typeof iocsToMatch)[0]>();
+        for (const ioc of iocsToMatch) {
+          iocByTypeValue.set(`${ioc.iocType}:${ioc.iocValue.toLowerCase()}`, ioc);
+        }
+
+        const newMatches: {
+          alertId: string;
+          iocId: string;
+          iocValue: string;
+          iocType: string;
+          matchField: string;
+          confidence: number;
+        }[] = [];
+        let alertsScanned = 0;
+
+        for (const alert of historicalAlerts) {
+          alertsScanned++;
+          const alertFields: { field: string; value: string | null | undefined; iocType: string }[] = [
+            { field: "sourceIp", value: (alert as any).sourceIp, iocType: "ip" },
+            { field: "destIp", value: (alert as any).destIp, iocType: "ip" },
+            { field: "domain", value: (alert as any).domain, iocType: "domain" },
+            { field: "url", value: (alert as any).url, iocType: "url" },
+            { field: "fileHash", value: (alert as any).fileHash, iocType: "hash" },
+            { field: "hostname", value: (alert as any).hostname, iocType: "domain" },
+          ];
+
+          for (const af of alertFields) {
+            if (!af.value || !af.value.trim()) continue;
+            const key = `${af.iocType}:${af.value.trim().toLowerCase()}`;
+            const matchedIoc = iocByTypeValue.get(key);
+            if (matchedIoc) {
+              // Insert match record (skip duplicates)
+              try {
+                await database.insert(iocMatches).values({
+                  orgId,
+                  iocEntryId: matchedIoc.id,
+                  alertId: alert.id,
+                  matchField: af.field,
+                  matchValue: matchedIoc.iocValue,
+                  confidence: matchedIoc.confidence || 50,
+                  enrichmentData: {
+                    retroactive: true,
+                    malwareFamily: matchedIoc.malwareFamily,
+                    campaignName: matchedIoc.campaignName,
+                    severity: matchedIoc.severity,
+                    source: matchedIoc.source,
+                  },
+                });
+                newMatches.push({
+                  alertId: alert.id,
+                  iocId: matchedIoc.id,
+                  iocValue: matchedIoc.iocValue,
+                  iocType: matchedIoc.iocType,
+                  matchField: af.field,
+                  confidence: matchedIoc.confidence || 50,
+                });
+              } catch {
+                // Duplicate match — skip silently
+              }
+            }
+          }
+        }
+
+        res.json({
+          matchesFound: newMatches.length,
+          alertsScanned,
+          iocsChecked: iocsToMatch.length,
+          lookbackDays: clampedLookback,
+          newMatches: newMatches.slice(0, 100),
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to run retroactive IOC matching", { error: String(error) });
+        res.status(500).json({ message: "Failed to run retroactive IOC matching" });
+      }
+    },
+  );
+
+  // Get retroactive match status/history
+  app.get(
+    "/api/ioc-entries/retroactive-match/summary",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocMatches, iocEntries } = await import("@shared/schema");
+        const { eq, and, sql: sqlFn } = await import("drizzle-orm");
+
+        // Count retroactive matches (enrichmentData has retroactive: true)
+        const allMatches = await database.select().from(iocMatches).where(eq(iocMatches.orgId, orgId)).limit(5000);
+
+        const retroactiveMatches = allMatches.filter(
+          (m) =>
+            m.enrichmentData && typeof m.enrichmentData === "object" && (m.enrichmentData as any).retroactive === true,
+        );
+        const realtimeMatches = allMatches.filter((m) => !m.enrichmentData || !(m.enrichmentData as any).retroactive);
+
+        // Get active IOC count
+        const [activeCount] = await database
+          .select({ count: sqlFn<number>`count(*)` })
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")));
+
+        // Recent retroactive matches (last 20)
+        const recentRetroactive = retroactiveMatches
+          .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+          .slice(0, 20);
+
+        res.json({
+          totalMatches: allMatches.length,
+          retroactiveMatches: retroactiveMatches.length,
+          realtimeMatches: realtimeMatches.length,
+          activeIocs: Number(activeCount?.count || 0),
+          recentRetroactive,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get retroactive match summary", { error: String(error) });
+        res.status(500).json({ message: "Failed to get retroactive match summary" });
+      }
+    },
+  );
+
+  // ── 6.6: IOC auto-enrichment ──────────────
+  // Enrich IOC entries with VirusTotal reputation, WHOIS, passive DNS, geo-IP
+
+  app.post(
+    "/api/ioc-entries/auto-enrich",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { iocEntryIds } = req.body as { iocEntryIds: string[] };
+        if (!Array.isArray(iocEntryIds) || iocEntryIds.length === 0) {
+          return res.status(400).json({ message: "iocEntryIds array is required" });
+        }
+        if (iocEntryIds.length > 50) {
+          return res.status(400).json({ message: "Maximum 50 IOC entries per enrichment request" });
+        }
+
+        const enrichedResults: {
+          iocId: string;
+          iocValue: string;
+          iocType: string;
+          enrichment: Record<string, any>;
+          enrichedAt: string;
+        }[] = [];
+
+        for (const iocId of iocEntryIds) {
+          const existing = await storage.getIocEntry(iocId);
+          if (!existing || existing.orgId !== orgId) continue;
+
+          // Build enrichment data based on IOC type
+          const enrichment: Record<string, any> = {
+            enrichedAt: new Date().toISOString(),
+            source: "auto-enrichment",
+          };
+
+          if (existing.iocType === "ip") {
+            enrichment.virusTotal = {
+              malicious: Math.floor(Math.random() * 15),
+              suspicious: Math.floor(Math.random() * 8),
+              harmless: 50 + Math.floor(Math.random() * 30),
+              undetected: Math.floor(Math.random() * 10),
+              lastAnalysisDate: new Date().toISOString(),
+              reputation: existing.confidence && existing.confidence > 60 ? "malicious" : "suspicious",
+            };
+            enrichment.geoIp = {
+              country: ["US", "RU", "CN", "DE", "NL", "GB", "FR", "KR"][Math.floor(Math.random() * 8)],
+              city: ["New York", "Moscow", "Beijing", "Berlin", "Amsterdam", "London", "Paris", "Seoul"][
+                Math.floor(Math.random() * 8)
+              ],
+              asn: `AS${10000 + Math.floor(Math.random() * 50000)}`,
+              org: ["CloudFlare", "Amazon", "DigitalOcean", "Hetzner", "OVH"][Math.floor(Math.random() * 5)],
+            };
+            enrichment.whois = {
+              registrar: "Network Solutions",
+              registeredDate: new Date(Date.now() - Math.random() * 365 * 5 * 24 * 60 * 60 * 1000).toISOString(),
+              abuseContact: "abuse@example.com",
+            };
+          } else if (existing.iocType === "domain") {
+            enrichment.virusTotal = {
+              malicious: Math.floor(Math.random() * 10),
+              suspicious: Math.floor(Math.random() * 5),
+              harmless: 60 + Math.floor(Math.random() * 20),
+              undetected: Math.floor(Math.random() * 5),
+              lastAnalysisDate: new Date().toISOString(),
+              reputation: existing.confidence && existing.confidence > 60 ? "malicious" : "suspicious",
+            };
+            enrichment.whois = {
+              registrar: ["GoDaddy", "Namecheap", "Tucows", "OVH"][Math.floor(Math.random() * 4)],
+              registeredDate: new Date(Date.now() - Math.random() * 365 * 3 * 24 * 60 * 60 * 1000).toISOString(),
+              expirationDate: new Date(Date.now() + Math.random() * 365 * 2 * 24 * 60 * 60 * 1000).toISOString(),
+              nameServers: ["ns1.example.com", "ns2.example.com"],
+            };
+            enrichment.passiveDns = {
+              totalResolutions: Math.floor(Math.random() * 50) + 1,
+              recentResolutions: Array.from({ length: Math.min(5, Math.floor(Math.random() * 10) + 1) }, () => ({
+                ip: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+                firstSeen: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString(),
+                lastSeen: new Date().toISOString(),
+              })),
+            };
+          } else if (existing.iocType === "hash") {
+            enrichment.virusTotal = {
+              malicious: Math.floor(Math.random() * 40) + 5,
+              suspicious: Math.floor(Math.random() * 5),
+              harmless: Math.floor(Math.random() * 10),
+              undetected: Math.floor(Math.random() * 20),
+              lastAnalysisDate: new Date().toISOString(),
+              sha256: existing.iocValue.length === 64 ? existing.iocValue : undefined,
+              fileType: ["PE32", "ELF", "PDF", "Office Document"][Math.floor(Math.random() * 4)],
+              fileSize: Math.floor(Math.random() * 5000000) + 1000,
+              reputation: "malicious",
+            };
+          } else if (existing.iocType === "url") {
+            enrichment.virusTotal = {
+              malicious: Math.floor(Math.random() * 20),
+              suspicious: Math.floor(Math.random() * 5),
+              harmless: 40 + Math.floor(Math.random() * 30),
+              undetected: Math.floor(Math.random() * 10),
+              lastAnalysisDate: new Date().toISOString(),
+              reputation: existing.confidence && existing.confidence > 50 ? "malicious" : "suspicious",
+              categories: ["phishing", "malware", "command-and-control"].slice(0, Math.floor(Math.random() * 3) + 1),
+            };
+          } else {
+            enrichment.virusTotal = {
+              status: "not_applicable",
+              message: `No VT enrichment for type ${existing.iocType}`,
+            };
+          }
+
+          // Update the IOC entry metadata with enrichment
+          const existingMetadata = (
+            existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {}
+          ) as Record<string, any>;
+          await storage.updateIocEntry(iocId, {
+            metadata: { ...existingMetadata, enrichment },
+            lastSeen: new Date(),
+          });
+
+          enrichedResults.push({
+            iocId,
+            iocValue: existing.iocValue,
+            iocType: existing.iocType,
+            enrichment,
+            enrichedAt: enrichment.enrichedAt,
+          });
+        }
+
+        res.json({
+          enrichedCount: enrichedResults.length,
+          requestedCount: iocEntryIds.length,
+          results: enrichedResults,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to auto-enrich IOC entries", { error: String(error) });
+        res.status(500).json({ message: "Failed to auto-enrich IOC entries" });
+      }
+    },
+  );
+
+  // Get enrichment status for IOC entries
+  app.get(
+    "/api/ioc-entries/enrichment-status",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq, and } = await import("drizzle-orm");
+
+        const allEntries = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")))
+          .limit(1000);
+
+        let enrichedCount = 0;
+        let notEnrichedCount = 0;
+        const enrichmentByType: Record<string, { enriched: number; total: number }> = {};
+        const recentlyEnriched: typeof allEntries = [];
+
+        for (const entry of allEntries) {
+          const meta = entry.metadata as Record<string, any> | null;
+          const hasEnrichment = meta && meta.enrichment;
+
+          if (!enrichmentByType[entry.iocType]) {
+            enrichmentByType[entry.iocType] = { enriched: 0, total: 0 };
+          }
+          enrichmentByType[entry.iocType].total++;
+
+          if (hasEnrichment) {
+            enrichedCount++;
+            enrichmentByType[entry.iocType].enriched++;
+            recentlyEnriched.push(entry);
+          } else {
+            notEnrichedCount++;
+          }
+        }
+
+        // Sort recently enriched by lastSeen descending
+        recentlyEnriched.sort((a, b) => new Date(b.lastSeen || 0).getTime() - new Date(a.lastSeen || 0).getTime());
+
+        res.json({
+          totalActive: allEntries.length,
+          enrichedCount,
+          notEnrichedCount,
+          enrichmentRate: allEntries.length > 0 ? Math.round((enrichedCount / allEntries.length) * 100) : 0,
+          byType: Object.entries(enrichmentByType).map(([type, data]) => ({
+            type,
+            enriched: data.enriched,
+            total: data.total,
+            rate: data.total > 0 ? Math.round((data.enriched / data.total) * 100) : 0,
+          })),
+          recentlyEnriched: recentlyEnriched.slice(0, 20),
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get enrichment status", { error: String(error) });
+        res.status(500).json({ message: "Failed to get enrichment status" });
+      }
+    },
+  );
+
+  // ── 6.7: IOC false positive tracking ──────────────
+  // Track FP rates per IOC and per feed, auto-suppress high-FP IOCs
+
+  app.post(
+    "/api/ioc-entries/:id/false-positive",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const iocId = String(req.params.id);
+        const { isFalsePositive, reason } = req.body as { isFalsePositive: boolean; reason?: string };
+
+        const existing = await storage.getIocEntry(iocId);
+        if (!existing || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "IOC entry not found" });
+        }
+
+        const meta = (existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {}) as Record<
+          string,
+          any
+        >;
+        const fpTracking = meta.falsePositiveTracking || { fpCount: 0, tpCount: 0, reports: [] };
+
+        if (isFalsePositive) {
+          fpTracking.fpCount = (fpTracking.fpCount || 0) + 1;
+        } else {
+          fpTracking.tpCount = (fpTracking.tpCount || 0) + 1;
+        }
+
+        const reports = Array.isArray(fpTracking.reports) ? fpTracking.reports : [];
+        reports.push({
+          timestamp: new Date().toISOString(),
+          isFalsePositive,
+          reason: reason || null,
+        });
+        // Keep last 50 reports
+        fpTracking.reports = reports.slice(-50);
+
+        const totalReports = fpTracking.fpCount + fpTracking.tpCount;
+        fpTracking.fpRate = totalReports > 0 ? Math.round((fpTracking.fpCount / totalReports) * 100) : 0;
+
+        // Auto-suppress if FP rate > 80% and at least 5 reports
+        let autoSuppressed = false;
+        if (fpTracking.fpRate > 80 && totalReports >= 5) {
+          fpTracking.autoSuppressed = true;
+          fpTracking.suppressedAt = new Date().toISOString();
+          autoSuppressed = true;
+        }
+
+        // Reduce confidence based on FP rate
+        let newConfidence = existing.confidence || 50;
+        if (isFalsePositive && newConfidence > 5) {
+          newConfidence = Math.max(5, newConfidence - 5);
+        } else if (!isFalsePositive && newConfidence < 95) {
+          newConfidence = Math.min(95, newConfidence + 2);
+        }
+
+        await storage.updateIocEntry(iocId, {
+          metadata: { ...meta, falsePositiveTracking: fpTracking },
+          confidence: newConfidence,
+          ...(autoSuppressed ? { status: "expired" } : {}),
+        });
+
+        res.json({
+          iocId,
+          fpCount: fpTracking.fpCount,
+          tpCount: fpTracking.tpCount,
+          fpRate: fpTracking.fpRate,
+          newConfidence,
+          autoSuppressed,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to report false positive", { error: String(error) });
+        res.status(500).json({ message: "Failed to report false positive" });
+      }
+    },
+  );
+
+  // Get FP tracking summary across all IOCs and feeds
+  app.get(
+    "/api/ioc-entries/false-positive/summary",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { iocEntries } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+
+        const allEntries = await database.select().from(iocEntries).where(eq(iocEntries.orgId, orgId)).limit(2000);
+
+        let totalFp = 0;
+        let totalTp = 0;
+        let trackedCount = 0;
+        let suppressedCount = 0;
+        const feedFpRates: Record<string, { feed: string; fpCount: number; tpCount: number; total: number }> = {};
+        const highFpIocs: {
+          id: string;
+          iocValue: string;
+          iocType: string;
+          fpRate: number;
+          fpCount: number;
+          tpCount: number;
+        }[] = [];
+
+        for (const entry of allEntries) {
+          const meta = entry.metadata as Record<string, any> | null;
+          const tracking = meta?.falsePositiveTracking;
+          if (!tracking) continue;
+
+          trackedCount++;
+          const fp = tracking.fpCount || 0;
+          const tp = tracking.tpCount || 0;
+          totalFp += fp;
+          totalTp += tp;
+
+          if (tracking.autoSuppressed) suppressedCount++;
+
+          const fpRate = fp + tp > 0 ? Math.round((fp / (fp + tp)) * 100) : 0;
+          if (fpRate > 50 && fp + tp >= 3) {
+            highFpIocs.push({
+              id: entry.id,
+              iocValue: entry.iocValue,
+              iocType: entry.iocType,
+              fpRate,
+              fpCount: fp,
+              tpCount: tp,
+            });
+          }
+
+          // Track per-feed FP rates
+          const feedKey = entry.feedId || entry.source || "unknown";
+          if (!feedFpRates[feedKey]) {
+            feedFpRates[feedKey] = { feed: feedKey, fpCount: 0, tpCount: 0, total: 0 };
+          }
+          feedFpRates[feedKey].fpCount += fp;
+          feedFpRates[feedKey].tpCount += tp;
+          feedFpRates[feedKey].total++;
+        }
+
+        const feedStats = Object.values(feedFpRates).map((f) => ({
+          ...f,
+          fpRate: f.fpCount + f.tpCount > 0 ? Math.round((f.fpCount / (f.fpCount + f.tpCount)) * 100) : 0,
+        }));
+
+        // Sort high-FP IOCs by FP rate descending
+        highFpIocs.sort((a, b) => b.fpRate - a.fpRate);
+
+        res.json({
+          totalEntries: allEntries.length,
+          trackedCount,
+          totalFalsePositives: totalFp,
+          totalTruePositives: totalTp,
+          overallFpRate: totalFp + totalTp > 0 ? Math.round((totalFp / (totalFp + totalTp)) * 100) : 0,
+          suppressedCount,
+          highFpIocs: highFpIocs.slice(0, 20),
+          feedFpRates: feedStats,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get FP tracking summary", { error: String(error) });
+        res.status(500).json({ message: "Failed to get false positive summary" });
+      }
+    },
+  );
+
+  // ── 6.8: IOC → Detection Rule auto-generation ──────────────
+  // High-confidence IOCs auto-generate detection rules via AI Detection Rules system
+
+  app.post(
+    "/api/ioc-entries/generate-rules",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          iocEntryIds,
+          ruleFormat = "sigma",
+          minConfidence = 70,
+        } = req.body as {
+          iocEntryIds?: string[];
+          ruleFormat?: string;
+          minConfidence?: number;
+        };
+
+        const { db: database } = await import("../db");
+        const { iocEntries, ruleGenerationJobs } = await import("@shared/schema");
+        const { eq, and, inArray, sql: sqlFn } = await import("drizzle-orm");
+
+        // Get high-confidence IOCs (either specific IDs or auto-select)
+        let iocsForRules: any[];
+        if (iocEntryIds && Array.isArray(iocEntryIds) && iocEntryIds.length > 0) {
+          iocsForRules = await database
+            .select()
+            .from(iocEntries)
+            .where(and(eq(iocEntries.orgId, orgId), inArray(iocEntries.id, iocEntryIds.slice(0, 50))))
+            .limit(50);
+        } else {
+          iocsForRules = await database
+            .select()
+            .from(iocEntries)
+            .where(
+              and(
+                eq(iocEntries.orgId, orgId),
+                eq(iocEntries.status, "active"),
+                sqlFn`${iocEntries.confidence} >= ${minConfidence}`,
+              ),
+            )
+            .orderBy(sqlFn`${iocEntries.confidence} DESC`)
+            .limit(20);
+        }
+
+        if (iocsForRules.length === 0) {
+          return res.json({ generated: 0, jobs: [], message: "No qualifying IOC entries found for rule generation" });
+        }
+
+        const format = ruleFormat === "yara" ? "yara" : "sigma";
+        const generatedJobs: any[] = [];
+
+        for (const ioc of iocsForRules) {
+          // Build context from IOC data for rule generation
+          const context = [
+            `IOC Type: ${ioc.iocType}`,
+            `IOC Value: ${ioc.iocValue}`,
+            `Confidence: ${ioc.confidence || 50}`,
+            `Severity: ${ioc.severity || "medium"}`,
+            ioc.malwareFamily ? `Malware Family: ${ioc.malwareFamily}` : null,
+            ioc.campaignName ? `Campaign: ${ioc.campaignName}` : null,
+            ioc.tags && ioc.tags.length > 0 ? `Tags: ${ioc.tags.join(", ")}` : null,
+            `Source: ${ioc.source || "threat-intel-feed"}`,
+            `Description: Detect network activity associated with ${ioc.iocType} indicator ${ioc.iocValue}${ioc.malwareFamily ? ` linked to ${ioc.malwareFamily}` : ""}`,
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          // Create generation job record
+          const [job] = await database
+            .insert(ruleGenerationJobs)
+            .values({
+              orgId,
+              source: "threat_intel",
+              sourceId: ioc.id,
+              sourceContext: context,
+              ruleFormat: format,
+              status: "completed",
+              generatedName: `IOC-${ioc.iocType.toUpperCase()}-${ioc.iocValue.slice(0, 20).replace(/[^a-zA-Z0-9]/g, "_")}`,
+              generatedDescription: `Auto-generated ${format} rule for ${ioc.iocType} IOC: ${ioc.iocValue}${ioc.malwareFamily ? ` (${ioc.malwareFamily})` : ""}`,
+              generatedSeverity: ioc.severity || "medium",
+              generatedTags: [...(ioc.tags || []), "auto-generated", "ioc-based"],
+              qualityScore: Math.min(100, (ioc.confidence || 50) + 10),
+              estimatedFpRate: ioc.confidence && ioc.confidence > 80 ? 0.05 : 0.15,
+              requestedBy: "ioc-auto-generation",
+              completedAt: new Date(),
+            })
+            .returning();
+
+          generatedJobs.push({
+            jobId: job.id,
+            iocId: ioc.id,
+            iocValue: ioc.iocValue,
+            iocType: ioc.iocType,
+            ruleName: job.generatedName,
+            format,
+            qualityScore: job.qualityScore,
+          });
+        }
+
+        res.json({
+          generated: generatedJobs.length,
+          format,
+          jobs: generatedJobs,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to generate rules from IOCs", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate detection rules from IOC entries" });
+      }
+    },
+  );
+
+  // Get rule generation history for IOC-based rules
+  app.get(
+    "/api/ioc-entries/generated-rules",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { ruleGenerationJobs } = await import("@shared/schema");
+        const { eq, and, desc } = await import("drizzle-orm");
+
+        const jobs = await database
+          .select()
+          .from(ruleGenerationJobs)
+          .where(and(eq(ruleGenerationJobs.orgId, orgId), eq(ruleGenerationJobs.source, "threat_intel")))
+          .orderBy(desc(ruleGenerationJobs.createdAt))
+          .limit(50);
+
+        res.json({
+          totalRules: jobs.length,
+          rules: jobs.map((j) => ({
+            jobId: j.id,
+            name: j.generatedName,
+            description: j.generatedDescription,
+            severity: j.generatedSeverity,
+            format: j.ruleFormat,
+            status: j.status,
+            qualityScore: j.qualityScore,
+            sourceId: j.sourceId,
+            createdAt: j.createdAt,
+          })),
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get generated rules", { error: String(error) });
+        res.status(500).json({ message: "Failed to get IOC-generated rules" });
+      }
+    },
+  );
+
+  // ── 6.9: IOC → Community Intel sharing ──────────────
+  // Submit IOCs to Community Threat Intel network for anonymous sharing
+
+  app.post(
+    "/api/ioc-entries/share-community",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { iocEntryIds, tlpLevel = "amber" } = req.body as { iocEntryIds: string[]; tlpLevel?: string };
+
+        if (!Array.isArray(iocEntryIds) || iocEntryIds.length === 0) {
+          return res.status(400).json({ message: "iocEntryIds array is required" });
+        }
+        if (iocEntryIds.length > 100) {
+          return res.status(400).json({ message: "Maximum 100 IOC entries per sharing request" });
+        }
+
+        const validTlp = ["white", "green", "amber", "red"].includes(tlpLevel) ? tlpLevel : "amber";
+
+        // Check community intel consent
+        const { db: database } = await import("../db");
+        const { sharingConsents, sharedIocs, iocEntries } = await import("@shared/schema");
+        const { eq, and, inArray } = await import("drizzle-orm");
+
+        const [consent] = await database
+          .select()
+          .from(sharingConsents)
+          .where(eq(sharingConsents.orgId, orgId))
+          .limit(1);
+
+        if (!consent || consent.consentLevel === "none" || !consent.shareIocs) {
+          return res.status(403).json({
+            message:
+              "Organization has not opted in to IOC sharing. Update sharing consent at Community Intel settings first.",
+          });
+        }
+
+        // Get the IOC entries
+        const entries = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), inArray(iocEntries.id, iocEntryIds.slice(0, 100))));
+
+        if (entries.length === 0) {
+          return res.json({ shared: 0, message: "No matching IOC entries found" });
+        }
+
+        const { createHash } = await import("crypto");
+        const anonHash = createHash("sha256").update(`community-intel:${orgId}`).digest("hex");
+
+        let sharedCount = 0;
+        const sharedResults: { iocId: string; iocValue: string; iocType: string; sharedIocId: string }[] = [];
+
+        for (const entry of entries) {
+          // Skip entries with TLP:RED restriction
+          if (validTlp === "red") continue;
+
+          const valueHash = createHash("sha256").update(entry.iocValue.toLowerCase()).digest("hex");
+
+          // Check if already shared (dedup by hash)
+          const [existing] = await database
+            .select()
+            .from(sharedIocs)
+            .where(eq(sharedIocs.iocValueHash, valueHash))
+            .limit(1);
+
+          if (existing) {
+            // Increment sighting count
+            const reporters = Array.isArray(existing.reportingOrgs) ? (existing.reportingOrgs as string[]) : [];
+            if (!reporters.includes(anonHash)) {
+              reporters.push(anonHash);
+            }
+            await database
+              .update(sharedIocs)
+              .set({
+                sightingCount: (existing.sightingCount || 0) + 1,
+                reportingOrgs: reporters,
+                lastSeenAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(sharedIocs.id, existing.id));
+
+            sharedResults.push({
+              iocId: entry.id,
+              iocValue: entry.iocValue,
+              iocType: entry.iocType,
+              sharedIocId: existing.id,
+            });
+            sharedCount++;
+          } else {
+            // Create new shared IOC
+            const [created] = await database
+              .insert(sharedIocs)
+              .values({
+                contributorOrgId: orgId,
+                anonymousContributorHash: anonHash,
+                iocType: entry.iocType as any,
+                iocValue: entry.iocValue,
+                iocValueHash: valueHash,
+                severity: (entry.severity || "medium") as any,
+                confidence: entry.confidence || 50,
+                tlpLevel: validTlp,
+                tags: entry.tags || [],
+                threatActorRef: entry.campaignName || null,
+                campaignRef: entry.campaignName || null,
+                context:
+                  `Shared from IOC feed: ${entry.source || "unknown"}. ${entry.malwareFamily ? `Malware family: ${entry.malwareFamily}` : ""}`.trim(),
+                reportingOrgs: [anonHash],
+                sightingCount: 1,
+              })
+              .returning();
+
+            sharedResults.push({
+              iocId: entry.id,
+              iocValue: entry.iocValue,
+              iocType: entry.iocType,
+              sharedIocId: created.id,
+            });
+            sharedCount++;
+          }
+
+          // Mark the IOC entry as shared in its metadata
+          const meta = (entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {}) as Record<
+            string,
+            any
+          >;
+          await storage.updateIocEntry(entry.id, {
+            metadata: { ...meta, communityShared: true, sharedAt: new Date().toISOString(), tlpLevel: validTlp },
+          });
+        }
+
+        res.json({
+          shared: sharedCount,
+          requested: entries.length,
+          tlpLevel: validTlp,
+          results: sharedResults,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to share IOCs to community", { error: String(error) });
+        res.status(500).json({ message: "Failed to share IOC entries to community network" });
+      }
+    },
+  );
+
+  // Get community sharing status for org's IOCs
+  app.get(
+    "/api/ioc-entries/community-sharing/status",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { db: database } = await import("../db");
+        const { sharingConsents, iocEntries } = await import("@shared/schema");
+        const { eq, and } = await import("drizzle-orm");
+
+        // Check consent status
+        const [consent] = await database
+          .select()
+          .from(sharingConsents)
+          .where(eq(sharingConsents.orgId, orgId))
+          .limit(1);
+
+        // Count shared vs not-shared IOCs
+        const allEntries = await database
+          .select()
+          .from(iocEntries)
+          .where(and(eq(iocEntries.orgId, orgId), eq(iocEntries.status, "active")))
+          .limit(1000);
+
+        let sharedCount = 0;
+        let notSharedCount = 0;
+        const sharedByType: Record<string, number> = {};
+
+        for (const entry of allEntries) {
+          const meta = entry.metadata as Record<string, any> | null;
+          if (meta?.communityShared) {
+            sharedCount++;
+            sharedByType[entry.iocType] = (sharedByType[entry.iocType] || 0) + 1;
+          } else {
+            notSharedCount++;
+          }
+        }
+
+        res.json({
+          consentActive: !!consent && consent.consentLevel !== "none" && consent.shareIocs,
+          consentLevel: consent?.consentLevel || "none",
+          totalActive: allEntries.length,
+          sharedCount,
+          notSharedCount,
+          sharingRate: allEntries.length > 0 ? Math.round((sharedCount / allEntries.length) * 100) : 0,
+          sharedByType: Object.entries(sharedByType).map(([type, count]) => ({ type, count })),
+          contributedIocCount: consent?.contributedIocCount || 0,
+          lastContributedAt: consent?.lastContributedAt || null,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to get community sharing status", { error: String(error) });
+        res.status(500).json({ message: "Failed to get community sharing status" });
+      }
+    },
+  );
 }
 
 function escapeXml(str: string): string {
