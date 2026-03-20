@@ -12771,6 +12771,121 @@ export const osintAlertMatchesRelations = relations(osintAlertMatches, ({ one })
   }),
 }));
 
+// 5.4: OSINT Scheduled Scans — recurring OSINT queries on a schedule
+export const osintScheduledScans = pgTable(
+  "osint_scheduled_scans",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    sourceId: varchar("source_id").references(() => osintSources.id),
+    name: text("name").notNull(),
+    queryType: text("query_type").notNull(),
+    queryValue: text("query_value").notNull(),
+    schedule: text("schedule").default("daily").notNull(), // hourly, daily, weekly
+    enabled: boolean("enabled").default(true).notNull(),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    lastRunStatus: text("last_run_status"), // completed, error
+    lastRunResultCount: integer("last_run_result_count"),
+    totalRuns: integer("total_runs").default(0).notNull(),
+    totalChangesDetected: integer("total_changes_detected").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_osint_scheduled_scans_org").on(table.orgId),
+    index("idx_osint_scheduled_scans_next_run").on(table.nextRunAt),
+  ],
+);
+
+// 5.5: OSINT Scan Snapshots — stores each scan execution for change detection / trend analysis
+export const osintScanSnapshots = pgTable(
+  "osint_scan_snapshots",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    scheduledScanId: varchar("scheduled_scan_id").references(() => osintScheduledScans.id),
+    queryId: varchar("query_id").references(() => osintQueries.id),
+    resultHash: text("result_hash").notNull(), // SHA-256 of sorted results for fast comparison
+    resultCount: integer("result_count").default(0).notNull(),
+    results: jsonb("results").default([]),
+    // Change detection fields
+    newFindings: jsonb("new_findings").default([]), // items present now but not in previous snapshot
+    resolvedFindings: jsonb("resolved_findings").default([]), // items in previous snapshot but not now
+    unchangedCount: integer("unchanged_count").default(0).notNull(),
+    changeScore: integer("change_score").default(0).notNull(), // 0-100, higher = more change
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_osint_scan_snapshots_org").on(table.orgId),
+    index("idx_osint_scan_snapshots_scan").on(table.scheduledScanId),
+  ],
+);
+
+// 5.6: OSINT Quota Logs — per-source API call tracking for quota management
+export const osintQuotaLogs = pgTable(
+  "osint_quota_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    sourceId: varchar("source_id").references(() => osintSources.id),
+    callCount: integer("call_count").default(1).notNull(),
+    endpoint: text("endpoint"), // which API endpoint was called
+    responseTimeMs: integer("response_time_ms"),
+    success: boolean("success").default(true).notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_osint_quota_logs_org").on(table.orgId),
+    index("idx_osint_quota_logs_source").on(table.sourceId),
+    index("idx_osint_quota_logs_created").on(table.createdAt),
+  ],
+);
+
+export const osintScheduledScansRelations = relations(osintScheduledScans, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintScheduledScans.orgId],
+    references: [organizations.id],
+  }),
+  source: one(osintSources, {
+    fields: [osintScheduledScans.sourceId],
+    references: [osintSources.id],
+  }),
+}));
+
+export const osintScanSnapshotsRelations = relations(osintScanSnapshots, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintScanSnapshots.orgId],
+    references: [organizations.id],
+  }),
+  scheduledScan: one(osintScheduledScans, {
+    fields: [osintScanSnapshots.scheduledScanId],
+    references: [osintScheduledScans.id],
+  }),
+  query: one(osintQueries, {
+    fields: [osintScanSnapshots.queryId],
+    references: [osintQueries.id],
+  }),
+}));
+
+export const osintQuotaLogsRelations = relations(osintQuotaLogs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [osintQuotaLogs.orgId],
+    references: [organizations.id],
+  }),
+  source: one(osintSources, {
+    fields: [osintQuotaLogs.sourceId],
+    references: [osintSources.id],
+  }),
+}));
+
 export type OsintSource = typeof osintSources.$inferSelect;
 export type InsertOsintSource = typeof osintSources.$inferInsert;
 export type OsintQuery = typeof osintQueries.$inferSelect;
@@ -12779,3 +12894,9 @@ export type OsintAlertRule = typeof osintAlertRules.$inferSelect;
 export type InsertOsintAlertRule = typeof osintAlertRules.$inferInsert;
 export type OsintAlertMatch = typeof osintAlertMatches.$inferSelect;
 export type InsertOsintAlertMatch = typeof osintAlertMatches.$inferInsert;
+export type OsintScheduledScan = typeof osintScheduledScans.$inferSelect;
+export type InsertOsintScheduledScan = typeof osintScheduledScans.$inferInsert;
+export type OsintScanSnapshot = typeof osintScanSnapshots.$inferSelect;
+export type InsertOsintScanSnapshot = typeof osintScanSnapshots.$inferInsert;
+export type OsintQuotaLog = typeof osintQuotaLogs.$inferSelect;
+export type InsertOsintQuotaLog = typeof osintQuotaLogs.$inferInsert;

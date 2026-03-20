@@ -155,6 +155,54 @@ interface HealthDashboard {
   }[];
 }
 
+// 5.4: Scheduled scan type
+interface ScheduledScan {
+  id: string;
+  orgId: string;
+  sourceId: string | null;
+  name: string;
+  queryType: string;
+  queryValue: string;
+  schedule: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  lastRunStatus: string | null;
+  lastRunResultCount: number | null;
+  totalRuns: number;
+  totalChangesDetected: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 5.6: Quota summary type
+interface QuotaSourceSummary {
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  enabled: boolean;
+  quotaTotal: number;
+  quotaUsed: number;
+  quotaRemaining: number;
+  quotaPercent: number;
+  quotaResetAt: string | null;
+  isWarning: boolean;
+  isCritical: boolean;
+  last24h: {
+    totalCalls: number;
+    successCalls: number;
+    failedCalls: number;
+    avgResponseTimeMs: number;
+  };
+}
+
+interface QuotaSummary {
+  totalSources: number;
+  totalWarnings: number;
+  totalCritical: number;
+  sources: QuotaSourceSummary[];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────
 
 function timeAgo(dateStr: string | null): string {
@@ -239,7 +287,15 @@ export default function OsintIntelligencePage() {
   const [showAddSourceDialog, setShowAddSourceDialog] = useState(false);
   const [showAddRuleDialog, setShowAddRuleDialog] = useState(false);
   const [showQueryDialog, setShowQueryDialog] = useState(false);
+  const [showAddScheduledScanDialog, setShowAddScheduledScanDialog] = useState(false);
   const [selectedQuery, setSelectedQuery] = useState<OsintQuery | null>(null);
+
+  // Scheduled scan form state
+  const [schedScanName, setSchedScanName] = useState("");
+  const [schedScanQueryType, setSchedScanQueryType] = useState("ip_lookup");
+  const [schedScanQueryValue, setSchedScanQueryValue] = useState("");
+  const [schedScanSchedule, setSchedScanSchedule] = useState("daily");
+  const [schedScanSourceId, setSchedScanSourceId] = useState("");
 
   // Query form state
   const [queryType, setQueryType] = useState("ip_lookup");
@@ -278,6 +334,16 @@ export default function OsintIntelligencePage() {
 
   const { data: healthDashboard } = useQuery<HealthDashboard>({
     queryKey: ["/api/osint/sources/health"],
+  });
+
+  // 5.4: Scheduled scans data
+  const { data: scheduledScans } = useQuery<ScheduledScan[]>({
+    queryKey: ["/api/osint/scheduled-scans"],
+  });
+
+  // 5.6: Quota data
+  const { data: quotaData } = useQuery<QuotaSummary>({
+    queryKey: ["/api/osint/quota"],
   });
 
   // ── Mutations ───────────────────────────────────────────────────
@@ -399,6 +465,86 @@ export default function OsintIntelligencePage() {
     },
   });
 
+  // 5.4: Scheduled scan mutations
+  const addScheduledScanMutation = useMutation({
+    mutationFn: async (params: {
+      name: string;
+      queryType: string;
+      queryValue: string;
+      schedule: string;
+      sourceId?: string;
+    }) => {
+      const res = await apiRequest("POST", "/api/osint/scheduled-scans", params);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/scheduled-scans"] });
+      setShowAddScheduledScanDialog(false);
+      setSchedScanName("");
+      setSchedScanQueryValue("");
+      toast({ title: "Scheduled scan created" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create scheduled scan", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const runScheduledScanMutation = useMutation({
+    mutationFn: async (scanId: string) => {
+      const res = await apiRequest("POST", `/api/osint/scheduled-scans/${scanId}/run`);
+      return res.json();
+    },
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/scheduled-scans"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/queries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/quota"] });
+      const data = response.data || response;
+      toast({
+        title: data.success ? "Scan completed" : "Scan failed",
+        description: data.success
+          ? `${data.resultCount} results, ${data.newFindings} new, ${data.resolvedFindings} resolved`
+          : data.error,
+        variant: data.success ? "default" : "destructive",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Scan failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleScheduledScanMutation = useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      await apiRequest("PATCH", `/api/osint/scheduled-scans/${id}`, { enabled });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/scheduled-scans"] });
+    },
+  });
+
+  const deleteScheduledScanMutation = useMutation({
+    mutationFn: async (scanId: string) => {
+      await apiRequest("DELETE", `/api/osint/scheduled-scans/${scanId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/scheduled-scans"] });
+      toast({ title: "Scheduled scan deleted" });
+    },
+  });
+
+  // 5.6: Quota reset mutation
+  const resetQuotaMutation = useMutation({
+    mutationFn: async (sourceId: string) => {
+      const res = await apiRequest("POST", `/api/osint/sources/${sourceId}/quota/reset`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/quota"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/sources"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/osint/sources/health"] });
+      toast({ title: "Quota reset" });
+    },
+  });
+
   // ── Render ──────────────────────────────────────────────────────
 
   return (
@@ -430,6 +576,12 @@ export default function OsintIntelligencePage() {
           </TabsTrigger>
           <TabsTrigger value="health">
             <Activity className="h-4 w-4 mr-1" /> Source Health
+          </TabsTrigger>
+          <TabsTrigger value="scheduled">
+            <Calendar className="h-4 w-4 mr-1" /> Scheduled Scans
+          </TabsTrigger>
+          <TabsTrigger value="quota">
+            <BarChart3 className="h-4 w-4 mr-1" /> API Quota
           </TabsTrigger>
         </TabsList>
 
@@ -723,7 +875,356 @@ export default function OsintIntelligencePage() {
             )}
           </div>
         </TabsContent>
+        {/* ── 5.4: Scheduled Scans Tab ── */}
+        <TabsContent value="scheduled" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-semibold">Scheduled OSINT Scans</h2>
+              <p className="text-sm text-muted-foreground">
+                Recurring queries that run on a schedule with automatic change detection
+              </p>
+            </div>
+            <Button size="sm" onClick={() => setShowAddScheduledScanDialog(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Scheduled Scan
+            </Button>
+          </div>
+
+          {!scheduledScans || scheduledScans.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-8 text-muted-foreground">
+                <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No scheduled scans configured.</p>
+                <p className="text-xs mt-1">Set up recurring OSINT queries to track changes over time.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setShowAddScheduledScanDialog(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Create First Scan
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-3">
+              {scheduledScans.map((scan) => (
+                <Card key={scan.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Switch
+                          checked={scan.enabled}
+                          onCheckedChange={(checked) =>
+                            toggleScheduledScanMutation.mutate({ id: scan.id, enabled: checked })
+                          }
+                        />
+                        <div>
+                          <div className="font-medium text-sm">{scan.name}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {scan.queryType.replace(/_/g, " ")} &middot;{" "}
+                            <span className="font-mono">{scan.queryValue}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {scan.schedule}
+                        </Badge>
+                        <div className="text-xs text-muted-foreground">{scan.totalRuns} runs</div>
+                        {scan.totalChangesDetected > 0 && (
+                          <Badge variant="outline" className="text-xs text-amber-600">
+                            {scan.totalChangesDetected} changes
+                          </Badge>
+                        )}
+                        {scan.lastRunStatus && (
+                          <Badge
+                            variant={scan.lastRunStatus === "completed" ? "default" : "destructive"}
+                            className="text-xs"
+                          >
+                            {scan.lastRunStatus === "completed" ? (
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                            ) : (
+                              <XCircle className="h-3 w-3 mr-1" />
+                            )}
+                            {scan.lastRunStatus}
+                          </Badge>
+                        )}
+                        {scan.lastRunAt && (
+                          <span className="text-xs text-muted-foreground">Last: {timeAgo(scan.lastRunAt)}</span>
+                        )}
+                        {scan.lastRunResultCount !== null && scan.lastRunResultCount !== undefined && (
+                          <span className="text-xs text-muted-foreground">{scan.lastRunResultCount} results</span>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="Run now"
+                          onClick={() => runScheduledScanMutation.mutate(scan.id)}
+                          disabled={runScheduledScanMutation.isPending}
+                        >
+                          {runScheduledScanMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Play className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => deleteScheduledScanMutation.mutate(scan.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    {scan.nextRunAt && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Next run: {new Date(scan.nextRunAt).toLocaleString()}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 5.6: API Quota Management Tab ── */}
+        <TabsContent value="quota" className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">API Quota Management</h2>
+            <p className="text-sm text-muted-foreground">
+              Track API usage per source, monitor quota limits, and manage rate limiting
+            </p>
+          </div>
+
+          {quotaData && quotaData.totalWarnings > 0 && (
+            <Card className="border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/10">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <span className="font-medium text-sm text-amber-700 dark:text-amber-400">
+                    {quotaData.totalWarnings} source{quotaData.totalWarnings > 1 ? "s" : ""} approaching quota limits
+                    {quotaData.totalCritical > 0 && (
+                      <span className="text-red-600 dark:text-red-400"> ({quotaData.totalCritical} critical)</span>
+                    )}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid gap-3">
+            {quotaData && quotaData.sources.length > 0 ? (
+              quotaData.sources.map((qs) => (
+                <Card
+                  key={qs.sourceId}
+                  className={qs.isCritical ? "border-red-500/50" : qs.isWarning ? "border-amber-500/50" : ""}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {providerIcon(qs.provider)}
+                        <div>
+                          <div className="font-medium text-sm">{qs.sourceName}</div>
+                          <div className="text-xs text-muted-foreground capitalize">{qs.provider}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {/* Quota bar */}
+                        <div className="text-xs text-right">
+                          <div>
+                            <span className="text-muted-foreground">Quota: </span>
+                            <span className="font-medium">
+                              {qs.quotaUsed}/{qs.quotaTotal > 0 ? qs.quotaTotal : "unlimited"}
+                            </span>
+                            {qs.quotaTotal > 0 && (
+                              <span
+                                className={`ml-1 font-medium ${
+                                  qs.isCritical ? "text-red-600" : qs.isWarning ? "text-amber-600" : "text-emerald-600"
+                                }`}
+                              >
+                                ({qs.quotaPercent}%)
+                              </span>
+                            )}
+                          </div>
+                          {qs.quotaTotal > 0 && (
+                            <div className="w-32 h-2 bg-muted rounded-full mt-1">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  qs.isCritical ? "bg-red-500" : qs.isWarning ? "bg-amber-500" : "bg-emerald-500"
+                                }`}
+                                style={{ width: `${Math.min(100, qs.quotaPercent)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 24h stats */}
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">24h: </span>
+                          <span className="font-medium">{qs.last24h.totalCalls} calls</span>
+                          {qs.last24h.failedCalls > 0 && (
+                            <span className="text-red-600 ml-1">({qs.last24h.failedCalls} failed)</span>
+                          )}
+                        </div>
+
+                        {/* Avg response */}
+                        {qs.last24h.avgResponseTimeMs > 0 && (
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Avg: </span>
+                            <span className="font-medium">{qs.last24h.avgResponseTimeMs}ms</span>
+                          </div>
+                        )}
+
+                        {/* Status badge */}
+                        {qs.isCritical ? (
+                          <Badge variant="destructive" className="text-xs">
+                            <AlertTriangle className="h-3 w-3 mr-1" /> Critical
+                          </Badge>
+                        ) : qs.isWarning ? (
+                          <Badge variant="secondary" className="text-xs text-amber-600">
+                            <AlertTriangle className="h-3 w-3 mr-1" /> Warning
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-emerald-600">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Healthy
+                          </Badge>
+                        )}
+
+                        {/* Reset button */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => resetQuotaMutation.mutate(qs.sourceId)}
+                          disabled={resetQuotaMutation.isPending}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" /> Reset
+                        </Button>
+                      </div>
+                    </div>
+                    {qs.quotaResetAt && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Auto-resets: {new Date(qs.quotaResetAt).toLocaleString()}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8 text-muted-foreground">
+                  <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No OSINT sources configured for quota tracking.</p>
+                  <p className="text-xs mt-1">Add sources and run queries to start tracking API usage.</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* ── Add Scheduled Scan Dialog ── */}
+      <Dialog open={showAddScheduledScanDialog} onOpenChange={setShowAddScheduledScanDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Scheduled Scan</DialogTitle>
+            <DialogDescription>Create a recurring OSINT query with automatic change detection</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Scan Name</Label>
+              <Input
+                placeholder="e.g. Daily domain check"
+                value={schedScanName}
+                onChange={(e) => setSchedScanName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Query Type</Label>
+              <Select value={schedScanQueryType} onValueChange={setSchedScanQueryType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {QUERY_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Query Value</Label>
+              <Input
+                placeholder="e.g. example.com or 8.8.8.8"
+                value={schedScanQueryValue}
+                onChange={(e) => setSchedScanQueryValue(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Schedule</Label>
+              <Select value={schedScanSchedule} onValueChange={setSchedScanSchedule}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hourly">Hourly</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {sources && sources.length > 0 && (
+              <div>
+                <Label>Source (optional)</Label>
+                <Select value={schedScanSourceId} onValueChange={setSchedScanSourceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All sources" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All sources</SelectItem>
+                    {sources.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} ({s.provider})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddScheduledScanDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                addScheduledScanMutation.mutate({
+                  name: schedScanName,
+                  queryType: schedScanQueryType,
+                  queryValue: schedScanQueryValue,
+                  schedule: schedScanSchedule,
+                  sourceId: schedScanSourceId && schedScanSourceId !== "all" ? schedScanSourceId : undefined,
+                })
+              }
+              disabled={!schedScanName.trim() || !schedScanQueryValue.trim() || addScheduledScanMutation.isPending}
+            >
+              {addScheduledScanMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Calendar className="h-4 w-4 mr-1" />
+              )}
+              Create Scan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── New Query Dialog ── */}
       <Dialog open={showQueryDialog} onOpenChange={setShowQueryDialog}>

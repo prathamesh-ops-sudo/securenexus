@@ -3,8 +3,17 @@ import { getOrgId, logger, p } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { db } from "../db";
-import { osintSources, osintQueries, osintAlertRules, osintAlertMatches } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import {
+  osintSources,
+  osintQueries,
+  osintAlertRules,
+  osintAlertMatches,
+  osintScheduledScans,
+  osintScanSnapshots,
+  osintQuotaLogs,
+} from "@shared/schema";
+import { eq, and, desc, sql, gte } from "drizzle-orm";
+import { createHash } from "crypto";
 
 export function registerOsintRoutes(app: Express): void {
   const log = logger.child("osint");
@@ -595,6 +604,429 @@ export function registerOsintRoutes(app: Express): void {
       }
     },
   );
+
+  // ── 5.4: Scheduled OSINT Scans ──────────────────────────────────────────────
+
+  // GET /api/osint/scheduled-scans — list all scheduled scans
+  app.get(
+    "/api/osint/scheduled-scans",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const scans = await db
+          .select()
+          .from(osintScheduledScans)
+          .where(eq(osintScheduledScans.orgId, orgId))
+          .orderBy(desc(osintScheduledScans.createdAt));
+        res.json(scans);
+      } catch (error) {
+        log.error("Failed to fetch scheduled scans", { error });
+        res.status(500).json({ message: "Failed to fetch scheduled scans" });
+      }
+    },
+  );
+
+  // POST /api/osint/scheduled-scans — create a new scheduled scan
+  app.post(
+    "/api/osint/scheduled-scans",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, queryType, queryValue, sourceId, schedule, enabled } = req.body;
+        if (!name || !queryType || !queryValue) {
+          return res.status(400).json({ message: "name, queryType, and queryValue are required" });
+        }
+        const validTypes = ["ip_lookup", "domain_lookup", "hash_lookup", "search", "passive_dns", "cert_search"];
+        if (!validTypes.includes(queryType)) {
+          return res.status(400).json({ message: `Invalid queryType. Valid: ${validTypes.join(", ")}` });
+        }
+        const validSchedules = ["hourly", "daily", "weekly"];
+        if (schedule && !validSchedules.includes(schedule)) {
+          return res.status(400).json({ message: `Invalid schedule. Valid: ${validSchedules.join(", ")}` });
+        }
+        // Validate source if provided
+        if (sourceId) {
+          const [source] = await db
+            .select()
+            .from(osintSources)
+            .where(and(eq(osintSources.id, sourceId), eq(osintSources.orgId, orgId)))
+            .limit(1);
+          if (!source) return res.status(404).json({ message: "Source not found" });
+        }
+        const nextRunAt = computeNextRunAt(schedule || "daily");
+        const [scan] = await db
+          .insert(osintScheduledScans)
+          .values({
+            orgId,
+            sourceId: sourceId || null,
+            name,
+            queryType,
+            queryValue,
+            schedule: schedule || "daily",
+            enabled: enabled !== false,
+            nextRunAt,
+          })
+          .returning();
+        res.status(201).json(scan);
+      } catch (error) {
+        log.error("Failed to create scheduled scan", { error });
+        res.status(500).json({ message: "Failed to create scheduled scan" });
+      }
+    },
+  );
+
+  // PATCH /api/osint/scheduled-scans/:id — update a scheduled scan
+  app.patch(
+    "/api/osint/scheduled-scans/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        const allowedFields = ["name", "queryType", "queryValue", "sourceId", "schedule", "enabled"];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) updates[field] = req.body[field];
+        }
+        if (Object.keys(updates).length === 0) {
+          return res.status(400).json({ message: "No valid fields to update" });
+        }
+        // If schedule changed, recompute nextRunAt
+        if (updates.schedule) {
+          updates.nextRunAt = computeNextRunAt(updates.schedule as string);
+        }
+        updates.updatedAt = new Date();
+        const [updated] = await db
+          .update(osintScheduledScans)
+          .set(updates)
+          .where(and(eq(osintScheduledScans.id, id), eq(osintScheduledScans.orgId, orgId)))
+          .returning();
+        if (!updated) return res.status(404).json({ message: "Scheduled scan not found" });
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to update scheduled scan", { error });
+        res.status(500).json({ message: "Failed to update scheduled scan" });
+      }
+    },
+  );
+
+  // DELETE /api/osint/scheduled-scans/:id
+  app.delete(
+    "/api/osint/scheduled-scans/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        const [deleted] = await db
+          .delete(osintScheduledScans)
+          .where(and(eq(osintScheduledScans.id, id), eq(osintScheduledScans.orgId, orgId)))
+          .returning();
+        if (!deleted) return res.status(404).json({ message: "Scheduled scan not found" });
+        res.json({ success: true });
+      } catch (error) {
+        log.error("Failed to delete scheduled scan", { error });
+        res.status(500).json({ message: "Failed to delete scheduled scan" });
+      }
+    },
+  );
+
+  // POST /api/osint/scheduled-scans/:id/run — manually trigger a scheduled scan
+  app.post(
+    "/api/osint/scheduled-scans/:id/run",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        const [scan] = await db
+          .select()
+          .from(osintScheduledScans)
+          .where(and(eq(osintScheduledScans.id, id), eq(osintScheduledScans.orgId, orgId)))
+          .limit(1);
+        if (!scan) return res.status(404).json({ message: "Scheduled scan not found" });
+
+        // Execute the scan
+        const result = await executeScheduledScan(scan, orgId, log);
+        res.json(result);
+      } catch (error) {
+        log.error("Failed to run scheduled scan", { error });
+        res.status(500).json({ message: "Failed to run scheduled scan" });
+      }
+    },
+  );
+
+  // ── 5.5: Scan Snapshots & Change Detection ──────────────────────────────────
+
+  // GET /api/osint/scheduled-scans/:id/snapshots — get scan history with change detection
+  app.get(
+    "/api/osint/scheduled-scans/:id/snapshots",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        // Verify scan ownership
+        const [scan] = await db
+          .select()
+          .from(osintScheduledScans)
+          .where(and(eq(osintScheduledScans.id, id), eq(osintScheduledScans.orgId, orgId)))
+          .limit(1);
+        if (!scan) return res.status(404).json({ message: "Scheduled scan not found" });
+
+        const limit = Math.min(parseInt(String(req.query.limit || "20"), 10), 100);
+        const snapshots = await db
+          .select()
+          .from(osintScanSnapshots)
+          .where(and(eq(osintScanSnapshots.scheduledScanId, id), eq(osintScanSnapshots.orgId, orgId)))
+          .orderBy(desc(osintScanSnapshots.createdAt))
+          .limit(limit);
+        res.json(snapshots);
+      } catch (error) {
+        log.error("Failed to fetch scan snapshots", { error });
+        res.status(500).json({ message: "Failed to fetch scan snapshots" });
+      }
+    },
+  );
+
+  // GET /api/osint/scheduled-scans/:id/trend — get trend data for a scheduled scan
+  app.get(
+    "/api/osint/scheduled-scans/:id/trend",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        const [scan] = await db
+          .select()
+          .from(osintScheduledScans)
+          .where(and(eq(osintScheduledScans.id, id), eq(osintScheduledScans.orgId, orgId)))
+          .limit(1);
+        if (!scan) return res.status(404).json({ message: "Scheduled scan not found" });
+
+        const snapshots = await db
+          .select({
+            id: osintScanSnapshots.id,
+            resultCount: osintScanSnapshots.resultCount,
+            changeScore: osintScanSnapshots.changeScore,
+            unchangedCount: osintScanSnapshots.unchangedCount,
+            createdAt: osintScanSnapshots.createdAt,
+          })
+          .from(osintScanSnapshots)
+          .where(and(eq(osintScanSnapshots.scheduledScanId, id), eq(osintScanSnapshots.orgId, orgId)))
+          .orderBy(desc(osintScanSnapshots.createdAt))
+          .limit(50);
+
+        res.json({
+          scanId: id,
+          scanName: scan.name,
+          queryType: scan.queryType,
+          queryValue: scan.queryValue,
+          dataPoints: snapshots.reverse(),
+        });
+      } catch (error) {
+        log.error("Failed to fetch scan trend", { error });
+        res.status(500).json({ message: "Failed to fetch scan trend" });
+      }
+    },
+  );
+
+  // ── 5.6: API Quota Management ───────────────────────────────────────────────
+
+  // GET /api/osint/quota — get quota usage summary for all sources
+  app.get(
+    "/api/osint/quota",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const sources = await db.select().from(osintSources).where(eq(osintSources.orgId, orgId));
+
+        // Get call counts for the last 24 hours per source
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const recentLogs = await db
+          .select({
+            sourceId: osintQuotaLogs.sourceId,
+            totalCalls: sql<number>`cast(sum(${osintQuotaLogs.callCount}) as int)`,
+            successCalls: sql<number>`cast(count(*) filter (where ${osintQuotaLogs.success} = true) as int)`,
+            failedCalls: sql<number>`cast(count(*) filter (where ${osintQuotaLogs.success} = false) as int)`,
+            avgResponseTime: sql<number>`cast(avg(${osintQuotaLogs.responseTimeMs}) as int)`,
+          })
+          .from(osintQuotaLogs)
+          .where(and(eq(osintQuotaLogs.orgId, orgId), gte(osintQuotaLogs.createdAt, oneDayAgo)))
+          .groupBy(osintQuotaLogs.sourceId);
+
+        const logMap = new Map(recentLogs.map((l) => [l.sourceId, l]));
+
+        const quotaSummary = sources.map((s) => {
+          const usage = logMap.get(s.id);
+          const quotaTotal = s.apiQuotaTotal ?? 0;
+          const quotaUsed = s.apiQuotaUsed ?? 0;
+          const quotaPercent = quotaTotal > 0 ? Math.round((quotaUsed / quotaTotal) * 100) : 0;
+          const isWarning = quotaPercent >= 80;
+          const isCritical = quotaPercent >= 95;
+          return {
+            sourceId: s.id,
+            sourceName: s.name,
+            provider: s.provider,
+            enabled: s.enabled,
+            quotaTotal,
+            quotaUsed,
+            quotaRemaining: quotaTotal > 0 ? quotaTotal - quotaUsed : -1,
+            quotaPercent,
+            quotaResetAt: s.apiQuotaResetAt,
+            isWarning,
+            isCritical,
+            last24h: {
+              totalCalls: usage?.totalCalls ?? 0,
+              successCalls: usage?.successCalls ?? 0,
+              failedCalls: usage?.failedCalls ?? 0,
+              avgResponseTimeMs: usage?.avgResponseTime ?? 0,
+            },
+          };
+        });
+
+        const warnings = quotaSummary.filter((s) => s.isWarning);
+        res.json({
+          sources: quotaSummary,
+          totalSources: quotaSummary.length,
+          totalWarnings: warnings.length,
+          totalCritical: quotaSummary.filter((s) => s.isCritical).length,
+          warnings: warnings.map((w) => ({
+            sourceId: w.sourceId,
+            sourceName: w.sourceName,
+            provider: w.provider,
+            quotaPercent: w.quotaPercent,
+            level: w.isCritical ? "critical" : "warning",
+          })),
+        });
+      } catch (error) {
+        log.error("Failed to fetch OSINT quota summary", { error });
+        res.status(500).json({ message: "Failed to fetch OSINT quota summary" });
+      }
+    },
+  );
+
+  // PATCH /api/osint/sources/:id/quota — update quota limits for a source
+  app.patch(
+    "/api/osint/sources/:id/quota",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        const { apiQuotaTotal, apiQuotaUsed, apiQuotaResetAt } = req.body;
+        const updates: Record<string, unknown> = {};
+        if (apiQuotaTotal !== undefined) updates.apiQuotaTotal = apiQuotaTotal;
+        if (apiQuotaUsed !== undefined) updates.apiQuotaUsed = apiQuotaUsed;
+        if (apiQuotaResetAt !== undefined) updates.apiQuotaResetAt = apiQuotaResetAt ? new Date(apiQuotaResetAt) : null;
+        if (Object.keys(updates).length === 0) {
+          return res.status(400).json({ message: "No valid fields to update" });
+        }
+        updates.updatedAt = new Date();
+        const [updated] = await db
+          .update(osintSources)
+          .set(updates)
+          .where(and(eq(osintSources.id, id), eq(osintSources.orgId, orgId)))
+          .returning();
+        if (!updated) return res.status(404).json({ message: "Source not found" });
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to update source quota", { error });
+        res.status(500).json({ message: "Failed to update source quota" });
+      }
+    },
+  );
+
+  // GET /api/osint/quota/logs — get recent quota usage logs
+  app.get(
+    "/api/osint/quota/logs",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const sourceId = req.query.sourceId ? String(req.query.sourceId) : undefined;
+        const limit = Math.min(parseInt(String(req.query.limit || "100"), 10), 500);
+
+        const conditions = [eq(osintQuotaLogs.orgId, orgId)];
+        if (sourceId) {
+          conditions.push(eq(osintQuotaLogs.sourceId, sourceId));
+        }
+
+        const logs = await db
+          .select()
+          .from(osintQuotaLogs)
+          .where(and(...conditions))
+          .orderBy(desc(osintQuotaLogs.createdAt))
+          .limit(limit);
+        res.json(logs);
+      } catch (error) {
+        log.error("Failed to fetch quota logs", { error });
+        res.status(500).json({ message: "Failed to fetch quota logs" });
+      }
+    },
+  );
+
+  // POST /api/osint/sources/:id/quota/reset — reset quota counter for a source
+  app.post(
+    "/api/osint/sources/:id/quota/reset",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = p(req.params.id);
+        const [updated] = await db
+          .update(osintSources)
+          .set({
+            apiQuotaUsed: 0,
+            apiQuotaResetAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(osintSources.id, id), eq(osintSources.orgId, orgId)))
+          .returning();
+        if (!updated) return res.status(404).json({ message: "Source not found" });
+        res.json({ success: true, quotaUsed: 0, resetAt: updated.apiQuotaResetAt });
+      } catch (error) {
+        log.error("Failed to reset source quota", { error });
+        res.status(500).json({ message: "Failed to reset source quota" });
+      }
+    },
+  );
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -653,6 +1085,235 @@ interface OsintResult {
   domainGraph: Record<string, unknown>;
   timeline: Record<string, unknown>[];
 }
+
+// ── 5.4 helper: compute the next run timestamp from a schedule string ───────
+function computeNextRunAt(schedule: string): Date {
+  const now = Date.now();
+  switch (schedule) {
+    case "hourly":
+      return new Date(now + 60 * 60 * 1000);
+    case "daily":
+      return new Date(now + 24 * 60 * 60 * 1000);
+    case "weekly":
+      return new Date(now + 7 * 24 * 60 * 60 * 1000);
+    default:
+      return new Date(now + 24 * 60 * 60 * 1000);
+  }
+}
+
+function scheduleToMs(schedule: string): number {
+  const map: Record<string, number> = {
+    hourly: 60 * 60 * 1000,
+    daily: 24 * 60 * 60 * 1000,
+    weekly: 7 * 24 * 60 * 60 * 1000,
+  };
+  return map[schedule] || 24 * 60 * 60 * 1000;
+}
+
+// ── 5.5 helper: compute result hash for change detection ────────────────────
+function computeResultHash(results: unknown[]): string {
+  const sorted = JSON.stringify((results || []).map((r) => JSON.stringify(r)).sort());
+  return createHash("sha256").update(sorted).digest("hex");
+}
+
+// ── 5.5 helper: diff two result sets and return new/resolved findings ───────
+function diffResults(
+  currentResults: Record<string, unknown>[],
+  previousResults: Record<string, unknown>[],
+): { newFindings: Record<string, unknown>[]; resolvedFindings: Record<string, unknown>[]; unchangedCount: number } {
+  const prevKeys = new Set(previousResults.map((r) => JSON.stringify(r)));
+  const currKeys = new Set(currentResults.map((r) => JSON.stringify(r)));
+
+  const newFindings: Record<string, unknown>[] = [];
+  const resolvedFindings: Record<string, unknown>[] = [];
+  let unchangedCount = 0;
+
+  for (const r of currentResults) {
+    const key = JSON.stringify(r);
+    if (prevKeys.has(key)) {
+      unchangedCount++;
+    } else {
+      newFindings.push(r);
+    }
+  }
+
+  for (const r of previousResults) {
+    const key = JSON.stringify(r);
+    if (!currKeys.has(key)) {
+      resolvedFindings.push(r);
+    }
+  }
+
+  return { newFindings, resolvedFindings, unchangedCount };
+}
+
+// ── 5.4+5.5+5.6: Execute a scheduled scan with change detection & quota tracking
+interface ScheduledScanRecord {
+  id: string;
+  orgId: string | null;
+  sourceId: string | null;
+  name: string;
+  queryType: string;
+  queryValue: string;
+  schedule: string;
+  totalRuns: number;
+  totalChangesDetected: number;
+}
+
+async function executeScheduledScan(
+  scan: ScheduledScanRecord,
+  orgId: string,
+  log: ReturnType<typeof logger.child>,
+): Promise<Record<string, unknown>> {
+  const startTime = Date.now();
+
+  // 5.6: Check quota before running
+  if (scan.sourceId) {
+    const [source] = await db
+      .select()
+      .from(osintSources)
+      .where(and(eq(osintSources.id, scan.sourceId), eq(osintSources.orgId, orgId)))
+      .limit(1);
+    if (source && source.apiQuotaTotal && source.apiQuotaTotal > 0) {
+      const used = source.apiQuotaUsed ?? 0;
+      const pct = used / source.apiQuotaTotal;
+      if (pct >= 0.95) {
+        return {
+          success: false,
+          error: "API quota exhausted for this source (≥95%). Reset quota or wait for renewal.",
+          quotaStatus: { used, total: source.apiQuotaTotal, percent: Math.round(pct * 100) },
+        };
+      }
+    }
+  }
+
+  // Generate query results (simulated, same as manual queries)
+  const queryResult = generateOsintQueryResult(scan.queryType, scan.queryValue);
+  const durationMs = Date.now() - startTime;
+
+  // Store as osintQuery
+  const [query] = await db
+    .insert(osintQueries)
+    .values({
+      orgId,
+      sourceId: scan.sourceId || null,
+      queryType: scan.queryType,
+      queryValue: scan.queryValue,
+      status: "completed",
+      resultCount: queryResult.results.length,
+      results: queryResult.results,
+      geoData: queryResult.geoData,
+      domainGraph: queryResult.domainGraph,
+      timeline: queryResult.timeline,
+      durationMs,
+      completedAt: new Date(),
+    })
+    .returning();
+
+  // 5.5: Change detection — compare with the most recent previous snapshot
+  const currentHash = computeResultHash(queryResult.results);
+  const [previousSnapshot] = await db
+    .select()
+    .from(osintScanSnapshots)
+    .where(and(eq(osintScanSnapshots.scheduledScanId, scan.id), eq(osintScanSnapshots.orgId, orgId)))
+    .orderBy(desc(osintScanSnapshots.createdAt))
+    .limit(1);
+
+  let newFindings: Record<string, unknown>[] = [];
+  let resolvedFindings: Record<string, unknown>[] = [];
+  let unchangedCount = queryResult.results.length;
+  let changeScore = 0;
+
+  if (previousSnapshot) {
+    const prevResults = (previousSnapshot.results as Record<string, unknown>[]) || [];
+    const diff = diffResults(queryResult.results, prevResults);
+    newFindings = diff.newFindings;
+    resolvedFindings = diff.resolvedFindings;
+    unchangedCount = diff.unchangedCount;
+
+    // Calculate change score: 0-100
+    const totalItems = Math.max(queryResult.results.length, prevResults.length, 1);
+    changeScore = Math.min(100, Math.round(((newFindings.length + resolvedFindings.length) / totalItems) * 100));
+  }
+
+  // Store snapshot
+  const [snapshot] = await db
+    .insert(osintScanSnapshots)
+    .values({
+      orgId,
+      scheduledScanId: scan.id,
+      queryId: query.id,
+      resultHash: currentHash,
+      resultCount: queryResult.results.length,
+      results: queryResult.results,
+      newFindings,
+      resolvedFindings,
+      unchangedCount,
+      changeScore,
+    })
+    .returning();
+
+  // 5.6: Increment quota usage and log the API call
+  if (scan.sourceId) {
+    await db
+      .update(osintSources)
+      .set({
+        apiQuotaUsed: sql`COALESCE(${osintSources.apiQuotaUsed}, 0) + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(osintSources.id, scan.sourceId), eq(osintSources.orgId, orgId)));
+
+    await db.insert(osintQuotaLogs).values({
+      orgId,
+      sourceId: scan.sourceId,
+      callCount: 1,
+      endpoint: `scheduled_scan:${scan.queryType}`,
+      responseTimeMs: durationMs,
+      success: true,
+    });
+  }
+
+  // Update the scheduled scan metadata
+  const changesDetected = newFindings.length + resolvedFindings.length;
+  await db
+    .update(osintScheduledScans)
+    .set({
+      lastRunAt: new Date(),
+      nextRunAt: computeNextRunAt(scan.schedule),
+      lastRunStatus: "completed",
+      lastRunResultCount: queryResult.results.length,
+      totalRuns: sql`${osintScheduledScans.totalRuns} + 1`,
+      totalChangesDetected: sql`${osintScheduledScans.totalChangesDetected} + ${changesDetected}`,
+      updatedAt: new Date(),
+    })
+    .where(eq(osintScheduledScans.id, scan.id));
+
+  log.info(`Scheduled scan "${scan.name}" completed`, {
+    scanId: scan.id,
+    queryId: query.id,
+    resultCount: queryResult.results.length,
+    newFindings: newFindings.length,
+    resolvedFindings: resolvedFindings.length,
+    changeScore,
+    durationMs,
+  });
+
+  return {
+    success: true,
+    queryId: query.id,
+    snapshotId: snapshot.id,
+    resultCount: queryResult.results.length,
+    newFindings: newFindings.length,
+    resolvedFindings: resolvedFindings.length,
+    unchangedCount,
+    changeScore,
+    durationMs,
+    hashChanged: previousSnapshot ? previousSnapshot.resultHash !== currentHash : true,
+  };
+}
+
+// Export for use by osint-scan-scheduler
+export { executeScheduledScan, computeNextRunAt, scheduleToMs };
 
 function generateOsintQueryResult(queryType: string, queryValue: string): OsintResult {
   const now = Date.now();
