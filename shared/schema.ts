@@ -7729,6 +7729,9 @@ export const warRooms = pgTable(
     slackChannelName: text("slack_channel_name"),
     teamsChannelId: text("teams_channel_id"),
     resolution: text("resolution"),
+    templateId: varchar("template_id"), // from which template this room was created (15.3)
+    archivedAt: timestamp("archived_at"), // (15.6)
+    archivedBy: varchar("archived_by"), // (15.6)
     createdAt: timestamp("created_at").defaultNow().notNull(),
     closedAt: timestamp("closed_at"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -7809,6 +7812,9 @@ export const warRoomMessages = pgTable(
     actorId: varchar("actor_id"),
     type: text("type").notNull().default("message"),
     content: text("content").notNull(),
+    contentFormat: text("content_format").notNull().default("plain"), // plain | markdown
+    parentMessageId: varchar("parent_message_id"), // for threading (15.2)
+    attachments: jsonb("attachments").default([]), // file attachments (15.1)
     metadata: jsonb("metadata").default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -7816,6 +7822,7 @@ export const warRoomMessages = pgTable(
     index("idx_wr_messages_room").on(table.warRoomId),
     index("idx_wr_messages_org").on(table.orgId),
     index("idx_wr_messages_created").on(table.createdAt),
+    index("idx_wr_messages_parent").on(table.parentMessageId),
   ],
 );
 
@@ -7899,6 +7906,72 @@ export const warRoomHandoffsRelations = relations(warRoomHandoffs, ({ one }) => 
 
 export type WarRoomHandoff = typeof warRoomHandoffs.$inferSelect;
 export type InsertWarRoomHandoff = typeof warRoomHandoffs.$inferInsert;
+
+// ─── War Room Templates (15.3) ──────────────────────────────────────────────
+export const warRoomTemplates = pgTable(
+  "war_room_templates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    incidentType: text("incident_type").notNull(), // ransomware | data_breach | phishing | ddos | insider_threat | supply_chain | generic
+    severity: text("severity").notNull().default("high"),
+    channels: jsonb("channels").default([]), // pre-configured channels/topics
+    checklist: jsonb("checklist").default([]), // pre-created action items
+    roleAssignments: jsonb("role_assignments").default([]), // default role assignments
+    isBuiltIn: boolean("is_built_in").notNull().default(false),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_wr_templates_org").on(table.orgId), index("idx_wr_templates_type").on(table.incidentType)],
+);
+
+export const warRoomTemplatesRelations = relations(warRoomTemplates, ({ one }) => ({
+  organization: one(organizations, { fields: [warRoomTemplates.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomTemplate = typeof warRoomTemplates.$inferSelect;
+export type InsertWarRoomTemplate = typeof warRoomTemplates.$inferInsert;
+
+// ─── War Room Activity Log (15.5) ───────────────────────────────────────────
+export const warRoomActivityLog = pgTable(
+  "war_room_activity_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    action: text("action").notNull(), // joined | left | evidence_pinned | evidence_unpinned | status_changed | playbook_triggered | role_changed | call_started | call_ended | archived | template_applied
+    actorId: varchar("actor_id"),
+    actorName: text("actor_name").notNull(),
+    details: jsonb("details").default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_wr_activity_room").on(table.warRoomId),
+    index("idx_wr_activity_org").on(table.orgId),
+    index("idx_wr_activity_created").on(table.createdAt),
+  ],
+);
+
+export const warRoomActivityLogRelations = relations(warRoomActivityLog, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomActivityLog.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomActivityLog.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomActivity = typeof warRoomActivityLog.$inferSelect;
+export type InsertWarRoomActivity = typeof warRoomActivityLog.$inferInsert;
 
 // ─── Threat Hunting Workbench ───────────────────────────────────────────────
 
