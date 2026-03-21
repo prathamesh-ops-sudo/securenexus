@@ -45,6 +45,13 @@ import {
   Play,
   Pause,
   RefreshCw,
+  History,
+  Undo2,
+  Lightbulb,
+  CheckCircle2,
+  ArrowLeftRight,
+  Radio,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -167,6 +174,44 @@ interface GraphQueryResult {
 }
 
 type LayoutType = "force-directed" | "hierarchical" | "radial" | "circular" | "grid";
+
+interface MergePreview {
+  source: Entity & { alertCount: number; aliasCount: number; aliases: { type: string; value: string }[] };
+  target: Entity & { alertCount: number; aliasCount: number; aliases: { type: string; value: string }[] };
+  comparison: {
+    field: string;
+    sourceValue: unknown;
+    targetValue: unknown;
+    hasConflict: boolean;
+    suggestedResolution: "source" | "target" | "merge";
+  }[];
+  impact: { totalAlertsAfterMerge: number; totalAliasesAfterMerge: number; sharedAlertCount: number };
+}
+
+interface MergeHistoryRecord {
+  id: string;
+  orgId: string;
+  targetEntityId: string;
+  sourceEntityId: string;
+  sourceEntitySnapshot: Record<string, unknown>;
+  targetEntitySnapshot: Record<string, unknown>;
+  movedAlertIds: string[];
+  movedAliasIds: string[];
+  mergedBy: string | null;
+  undone: boolean;
+  undoneAt: string | null;
+  undoneBy: string | null;
+  createdAt: string;
+}
+
+interface MergeSuggestion {
+  id: string;
+  entity1: { id: string; type: string; value: string; displayName: string | null; alertCount: number };
+  entity2: { id: string; type: string; value: string; displayName: string | null; alertCount: number };
+  reasons: string[];
+  confidence: number;
+  category: "fuzzy_name" | "shared_attribute" | "temporal_correlation" | "alias_match";
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Constants
@@ -742,7 +787,7 @@ function EntityAliasManager({ entityId }: { entityId: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Entity Merge Dialog (unchanged)
+// 14.1: Enhanced Entity Merge Dialog with side-by-side comparison
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function EntityMergeDialog({
@@ -761,6 +806,8 @@ function EntityMergeDialog({
   const [sourceId, setSourceId] = useState("");
   const [confirmText, setConfirmText] = useState("");
   const [mergeSearch, setMergeSearch] = useState("");
+  const [step, setStep] = useState<"select" | "preview">("select");
+  const [fieldOverrides, setFieldOverrides] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     if (open) {
@@ -768,18 +815,31 @@ function EntityMergeDialog({
       setSourceId("");
       setConfirmText("");
       setMergeSearch("");
+      setStep("select");
+      setFieldOverrides({});
     }
   }, [open, selectedEntityId]);
 
+  // Fetch merge preview when both entities are selected
+  const { data: preview, isLoading: previewLoading } = useQuery<MergePreview>({
+    queryKey: ["/api/entities/merge-preview", sourceId, targetId],
+    queryFn: async () => {
+      const res = await apiRequest("POST", "/api/entities/merge-preview", { sourceId, targetId });
+      return res.json();
+    },
+    enabled: step === "preview" && !!sourceId && !!targetId && sourceId !== targetId,
+  });
+
   const mergeMutation = useMutation({
-    mutationFn: async (data: { targetId: string; sourceId: string }) => {
-      const res = await apiRequest("POST", "/api/entities/merge", data);
+    mutationFn: async (data: { targetId: string; sourceId: string; fieldOverrides?: Record<string, unknown> }) => {
+      const res = await apiRequest("POST", "/api/entities/merge-with-preview", data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/entity-graph"] });
       queryClient.invalidateQueries({ queryKey: ["/api/entities"] });
-      toast({ title: "Entities merged", description: "Source entity absorbed into target successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/entities/merge-history"] });
+      toast({ title: "Entities merged", description: "Source entity absorbed into target. All references cascaded." });
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -815,162 +875,610 @@ function EntityMergeDialog({
 
   const targetEntity = allNodes.find((n) => n.id === targetId);
   const sourceEntity = allNodes.find((n) => n.id === sourceId);
-  const canMerge = targetId && sourceId && targetId !== sourceId && confirmText === "MERGE";
+  const canPreview = targetId && sourceId && targetId !== sourceId;
+  const canMerge = canPreview && confirmText === "MERGE";
+
+  const formatFieldValue = (val: unknown): string => {
+    if (val === null || val === undefined) return "—";
+    if (val instanceof Date || (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val))) {
+      return new Date(val as string).toLocaleDateString();
+    }
+    if (typeof val === "object") return JSON.stringify(val).substring(0, 80);
+    return String(val);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Merge className="h-4 w-4 text-cyan-400" />
-            Merge Entities
+            {step === "select" ? "Merge Entities" : "Merge Preview — Side-by-Side Comparison"}
           </DialogTitle>
           <DialogDescription>
-            Merge a source entity into a target. The source will be deleted and its alerts, aliases, and relationships
-            transferred to the target.
+            {step === "select"
+              ? "Select two entities to merge. The source will be absorbed into the target."
+              : "Review attribute conflicts and choose which values to keep."}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          {suggestions.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
-                Merge Suggestions
-              </p>
-              <div className="space-y-1">
-                {suggestions.map((s) => {
-                  const cfg = ENTITY_TYPE_CONFIG[s.type] || ENTITY_TYPE_CONFIG.ip;
-                  return (
-                    <div
-                      key={s.id}
-                      className="flex items-center gap-2 text-xs p-2 rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors"
-                      onClick={() => {
-                        setSourceId(s.id);
-                        setTargetId(selectedEntityId || "");
-                      }}
-                      data-testid={`merge-suggestion-${s.id}`}
-                    >
-                      <EntityTypeIcon type={s.type} className="h-3.5 w-3.5 shrink-0" />
-                      <span className="font-mono truncate flex-1">{s.displayName || s.value}</span>
-                      <Badge variant="outline" className={`text-[8px] ${cfg.bgColor} ${cfg.color}`}>
-                        {cfg.label}
-                      </Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label className="text-xs font-medium">Target Entity (keep)</Label>
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-              <Input
-                value={mergeSearch}
-                onChange={(e) => setMergeSearch(e.target.value)}
-                placeholder="Search entities..."
-                className="h-8 text-xs pl-7"
-              />
-            </div>
-            <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-1.5">
-              {filteredNodes.map((n) => (
-                <div
-                  key={`target-${n.id}`}
-                  className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${targetId === n.id ? "bg-cyan-500/15 border border-cyan-500/30" : "hover:bg-muted/40"}`}
-                  onClick={() => setTargetId(n.id)}
-                  data-testid={`merge-target-${n.id}`}
-                >
-                  <EntityTypeIcon type={n.type} className="h-3 w-3 shrink-0" />
-                  <span className="font-mono truncate">{n.displayName || n.value}</span>
+
+        {step === "select" ? (
+          <div className="space-y-4">
+            {suggestions.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                  Quick Suggestions
+                </p>
+                <div className="space-y-1">
+                  {suggestions.map((s) => {
+                    const cfg = ENTITY_TYPE_CONFIG[s.type] || ENTITY_TYPE_CONFIG.ip;
+                    return (
+                      <div
+                        key={s.id}
+                        className="flex items-center gap-2 text-xs p-2 rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors"
+                        onClick={() => {
+                          setSourceId(s.id);
+                          setTargetId(selectedEntityId || "");
+                        }}
+                        data-testid={`merge-suggestion-${s.id}`}
+                      >
+                        <EntityTypeIcon type={s.type} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="font-mono truncate flex-1">{s.displayName || s.value}</span>
+                        <Badge variant="outline" className={`text-[8px] ${cfg.bgColor} ${cfg.color}`}>
+                          {cfg.label}
+                        </Badge>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-            {targetEntity && (
-              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-cyan-500/10 border border-cyan-500/20">
-                <EntityTypeIcon type={targetEntity.type} className="h-3.5 w-3.5" />
-                <span className="font-mono font-medium">{targetEntity.displayName || targetEntity.value}</span>
-                <Badge variant="outline" className="text-[8px] ml-auto">
-                  Target
-                </Badge>
               </div>
             )}
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-medium">Source Entity (will be deleted)</Label>
-            <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-1.5">
-              {filteredNodes
-                .filter((n) => n.id !== targetId)
-                .map((n) => (
+
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Target Entity (keep)</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input
+                  value={mergeSearch}
+                  onChange={(e) => setMergeSearch(e.target.value)}
+                  placeholder="Search entities..."
+                  className="h-8 text-xs pl-7"
+                />
+              </div>
+              <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-1.5">
+                {filteredNodes.map((n) => (
                   <div
-                    key={`source-${n.id}`}
-                    className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${sourceId === n.id ? "bg-red-500/15 border border-red-500/30" : "hover:bg-muted/40"}`}
-                    onClick={() => setSourceId(n.id)}
-                    data-testid={`merge-source-${n.id}`}
+                    key={`target-${n.id}`}
+                    className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${targetId === n.id ? "bg-cyan-500/15 border border-cyan-500/30" : "hover:bg-muted/40"}`}
+                    onClick={() => setTargetId(n.id)}
+                    data-testid={`merge-target-${n.id}`}
                   >
                     <EntityTypeIcon type={n.type} className="h-3 w-3 shrink-0" />
                     <span className="font-mono truncate">{n.displayName || n.value}</span>
                   </div>
                 ))}
-            </div>
-            {sourceEntity && (
-              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-red-500/10 border border-red-500/20">
-                <EntityTypeIcon type={sourceEntity.type} className="h-3.5 w-3.5" />
-                <span className="font-mono font-medium">{sourceEntity.displayName || sourceEntity.value}</span>
-                <Badge variant="destructive" className="text-[8px] ml-auto">
-                  Source (deleted)
-                </Badge>
               </div>
+              {targetEntity && (
+                <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-cyan-500/10 border border-cyan-500/20">
+                  <EntityTypeIcon type={targetEntity.type} className="h-3.5 w-3.5" />
+                  <span className="font-mono font-medium">{targetEntity.displayName || targetEntity.value}</span>
+                  <Badge variant="outline" className="text-[8px] ml-auto">
+                    Target
+                  </Badge>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Source Entity (will be deleted)</Label>
+              <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-1.5">
+                {filteredNodes
+                  .filter((n) => n.id !== targetId)
+                  .map((n) => (
+                    <div
+                      key={`source-${n.id}`}
+                      className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${sourceId === n.id ? "bg-red-500/15 border border-red-500/30" : "hover:bg-muted/40"}`}
+                      onClick={() => setSourceId(n.id)}
+                      data-testid={`merge-source-${n.id}`}
+                    >
+                      <EntityTypeIcon type={n.type} className="h-3 w-3 shrink-0" />
+                      <span className="font-mono truncate">{n.displayName || n.value}</span>
+                    </div>
+                  ))}
+              </div>
+              {sourceEntity && (
+                <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-red-500/10 border border-red-500/20">
+                  <EntityTypeIcon type={sourceEntity.type} className="h-3.5 w-3.5" />
+                  <span className="font-mono font-medium">{sourceEntity.displayName || sourceEntity.value}</span>
+                  <Badge variant="destructive" className="text-[8px] ml-auto">
+                    Source (deleted)
+                  </Badge>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* 14.1: Side-by-side merge preview */
+          <div className="space-y-4">
+            {previewLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-40 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : preview ? (
+              <>
+                {/* Entity summary cards */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-md border border-cyan-500/30 bg-cyan-500/5">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Badge variant="outline" className="text-[8px]">
+                        Target (keep)
+                      </Badge>
+                    </div>
+                    <p className="text-xs font-mono font-medium truncate">
+                      {preview.target.displayName || preview.target.value}
+                    </p>
+                    <div className="flex gap-2 mt-1.5 text-[10px] text-muted-foreground">
+                      <span>{preview.target.alertCount} alerts</span>
+                      <span>{preview.target.aliasCount} aliases</span>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-md border border-red-500/30 bg-red-500/5">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Badge variant="destructive" className="text-[8px]">
+                        Source (deleted)
+                      </Badge>
+                    </div>
+                    <p className="text-xs font-mono font-medium truncate">
+                      {preview.source.displayName || preview.source.value}
+                    </p>
+                    <div className="flex gap-2 mt-1.5 text-[10px] text-muted-foreground">
+                      <span>{preview.source.alertCount} alerts</span>
+                      <span>{preview.source.aliasCount} aliases</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Impact summary */}
+                <div className="flex gap-3 text-[10px]">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/30">
+                    <Activity className="h-3 w-3 text-muted-foreground" />
+                    <span>{preview.impact.totalAlertsAfterMerge} alerts after merge</span>
+                  </div>
+                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/30">
+                    <Tag className="h-3 w-3 text-muted-foreground" />
+                    <span>{preview.impact.totalAliasesAfterMerge} aliases after merge</span>
+                  </div>
+                  {preview.impact.sharedAlertCount > 0 && (
+                    <div className="flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <ArrowLeftRight className="h-3 w-3" />
+                      <span>{preview.impact.sharedAlertCount} shared</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Field-by-field comparison table */}
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">
+                    Attribute Comparison
+                  </p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-[10px] w-24">Field</TableHead>
+                        <TableHead className="text-[10px]">Target Value</TableHead>
+                        <TableHead className="text-[10px]">Source Value</TableHead>
+                        <TableHead className="text-[10px] w-16">Keep</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {preview.comparison.map((c) => (
+                        <TableRow key={c.field} className={c.hasConflict ? "bg-amber-500/5" : ""}>
+                          <TableCell className="text-[10px] font-medium">
+                            {c.field}
+                            {c.hasConflict && <AlertTriangle className="h-2.5 w-2.5 text-amber-500 inline ml-1" />}
+                          </TableCell>
+                          <TableCell className="text-[10px] font-mono max-w-[180px] truncate">
+                            {formatFieldValue(c.targetValue)}
+                          </TableCell>
+                          <TableCell className="text-[10px] font-mono max-w-[180px] truncate">
+                            {formatFieldValue(c.sourceValue)}
+                          </TableCell>
+                          <TableCell>
+                            {c.hasConflict && c.field !== "type" && c.field !== "value" ? (
+                              <Select
+                                defaultValue={c.suggestedResolution}
+                                onValueChange={(val) => {
+                                  if (val === "source") {
+                                    setFieldOverrides((prev) => ({ ...prev, [c.field]: c.sourceValue }));
+                                  } else {
+                                    setFieldOverrides((prev) => {
+                                      const next = { ...prev };
+                                      delete next[c.field];
+                                      return next;
+                                    });
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-6 text-[9px] w-16">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="target">Target</SelectItem>
+                                  <SelectItem value="source">Source</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="text-[9px] text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Confirmation */}
+                <div className="space-y-2 p-3 rounded-md border border-amber-500/30 bg-amber-500/5">
+                  <div className="flex items-center gap-2 text-xs">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    <span className="font-medium">This merge can be undone from the Merge History panel</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    All alerts, aliases, attack paths, and references will cascade to the target entity.
+                  </p>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">
+                      Type <span className="font-bold text-foreground">MERGE</span> to confirm
+                    </Label>
+                    <Input
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      placeholder="Type MERGE"
+                      className="h-7 text-xs mt-1"
+                      data-testid="input-merge-confirm"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center py-8">Failed to load preview.</p>
             )}
           </div>
-          {targetId && sourceId && targetId !== sourceId && (
-            <div className="space-y-2 p-3 rounded-md border border-destructive/30 bg-destructive/5">
-              <div className="flex items-center gap-2 text-xs">
-                <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
-                <span className="font-medium text-destructive">This action is irreversible</span>
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                All alerts, aliases, and relationships from the source entity will be transferred to the target.
-              </p>
-              <div>
-                <Label className="text-[10px] text-muted-foreground">
-                  Type <span className="font-bold text-foreground">MERGE</span> to confirm
-                </Label>
-                <Input
-                  value={confirmText}
-                  onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder="Type MERGE"
-                  className="h-7 text-xs mt-1"
-                  data-testid="input-merge-confirm"
-                />
-              </div>
-            </div>
-          )}
-        </div>
+        )}
+
         <DialogFooter>
+          {step === "preview" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStep("select");
+                setConfirmText("");
+              }}
+            >
+              <ArrowRight className="h-3 w-3 mr-1 rotate-180" />
+              Back
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => mergeMutation.mutate({ targetId, sourceId })}
-            disabled={!canMerge || mergeMutation.isPending}
-            data-testid="button-confirm-merge"
-          >
-            {mergeMutation.isPending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Merging...
-              </>
-            ) : (
-              <>
-                <Merge className="h-3.5 w-3.5 mr-1.5" />
-                Merge Entities
-              </>
-            )}
-          </Button>
+          {step === "select" ? (
+            <Button
+              size="sm"
+              onClick={() => setStep("preview")}
+              disabled={!canPreview}
+              data-testid="button-preview-merge"
+            >
+              <Eye className="h-3.5 w-3.5 mr-1.5" />
+              Preview Merge
+            </Button>
+          ) : (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => mergeMutation.mutate({ targetId, sourceId, fieldOverrides })}
+              disabled={!canMerge || mergeMutation.isPending}
+              data-testid="button-confirm-merge"
+            >
+              {mergeMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Merging...
+                </>
+              ) : (
+                <>
+                  <Merge className="h-3.5 w-3.5 mr-1.5" />
+                  Confirm Merge
+                </>
+              )}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 14.2: Merge History and Undo Panel
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function MergeHistoryPanel({ entityId }: { entityId?: string }) {
+  const { toast } = useToast();
+
+  const { data: historyData, isLoading } = useQuery<{ history: MergeHistoryRecord[]; total: number }>({
+    queryKey: ["/api/entities/merge-history", entityId || "all"],
+    queryFn: async () => {
+      const url = entityId
+        ? `/api/entities/merge-history?entityId=${encodeURIComponent(entityId)}`
+        : "/api/entities/merge-history";
+      const res = await apiRequest("GET", url);
+      return res.json();
+    },
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: async (mergeId: string) => {
+      const res = await apiRequest("POST", `/api/entities/merge-undo/${encodeURIComponent(mergeId)}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/entities/merge-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entity-graph"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entities"] });
+      toast({ title: "Merge undone", description: "Entities have been split back apart successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Undo failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const history = historyData?.history || [];
+
+  return (
+    <Card data-testid="merge-history-panel">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          <History className="h-3.5 w-3.5 text-muted-foreground" />
+          Merge History ({history.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : history.length > 0 ? (
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {history.map((record) => {
+              const srcSnap = record.sourceEntitySnapshot;
+              const tgtSnap = record.targetEntitySnapshot;
+              return (
+                <div
+                  key={record.id}
+                  className={`p-2.5 rounded-md border text-xs space-y-1.5 ${
+                    record.undone ? "border-muted/30 bg-muted/10 opacity-60" : "border-border bg-muted/5"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Merge className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-mono truncate max-w-[120px]">
+                        {String(srcSnap.value || srcSnap.displayName || record.sourceEntityId).substring(0, 30)}
+                      </span>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-mono truncate max-w-[120px]">
+                        {String(tgtSnap.value || tgtSnap.displayName || record.targetEntityId).substring(0, 30)}
+                      </span>
+                    </div>
+                    {record.undone ? (
+                      <Badge variant="secondary" className="text-[8px]">
+                        Undone
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] text-amber-600 hover:text-amber-700"
+                        onClick={() => undoMutation.mutate(record.id)}
+                        disabled={undoMutation.isPending}
+                      >
+                        <Undo2 className="h-3 w-3 mr-1" />
+                        Undo
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-3 text-[9px] text-muted-foreground">
+                    <span className="flex items-center gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />
+                      {record.createdAt ? formatRelativeTime(record.createdAt) : "Unknown"}
+                    </span>
+                    <span>{(record.movedAlertIds || []).length} alerts moved</span>
+                    <span>{(record.movedAliasIds || []).length} aliases moved</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground text-center py-4">
+            No merge history found. Merge operations will appear here.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 14.3: Auto-Suggested Merges Queue
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function MergeSuggestionsPanel({ onMerge }: { onMerge?: (sourceId: string, targetId: string) => void }) {
+  const { toast } = useToast();
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const { data: suggestionsData, isLoading } = useQuery<{
+    suggestions: MergeSuggestion[];
+    totalFound: number;
+    minConfidenceUsed: number;
+  }>({
+    queryKey: ["/api/entities/merge-suggestions"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/entities/merge-suggestions?minConfidence=50");
+      return res.json();
+    },
+  });
+
+  const mergeMutation = useMutation({
+    mutationFn: async (data: { targetId: string; sourceId: string }) => {
+      const res = await apiRequest("POST", "/api/entities/merge-with-preview", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/entities/merge-suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entity-graph"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entities/merge-history"] });
+      toast({ title: "Entities merged", description: "Auto-suggested merge completed successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Merge failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const visibleSuggestions = (suggestionsData?.suggestions || []).filter((s) => !dismissed.has(s.id));
+
+  const getCategoryIcon = (cat: string) => {
+    switch (cat) {
+      case "fuzzy_name":
+        return <Search className="h-3 w-3" />;
+      case "shared_attribute":
+        return <Link2 className="h-3 w-3" />;
+      case "temporal_correlation":
+        return <Clock className="h-3 w-3" />;
+      case "alias_match":
+        return <Tag className="h-3 w-3" />;
+      default:
+        return <Lightbulb className="h-3 w-3" />;
+    }
+  };
+
+  const getConfidenceColor = (c: number) => {
+    if (c >= 90) return "text-green-600 dark:text-green-400";
+    if (c >= 70) return "text-amber-600 dark:text-amber-400";
+    return "text-orange-600 dark:text-orange-400";
+  };
+
+  return (
+    <Card data-testid="merge-suggestions-panel">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+          Auto-Suggested Merges ({visibleSuggestions.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : visibleSuggestions.length > 0 ? (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {visibleSuggestions.map((s) => (
+              <div key={s.id} className="p-2.5 rounded-md border border-amber-500/20 bg-amber-500/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    {getCategoryIcon(s.category)}
+                    <span className="uppercase tracking-wider text-muted-foreground">
+                      {s.category.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  <div className={`text-xs font-bold ${getConfidenceColor(s.confidence)}`}>{s.confidence}%</div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 p-1.5 rounded bg-background/50 text-xs">
+                    <div className="flex items-center gap-1">
+                      <EntityTypeIcon type={s.entity1.type} className="h-3 w-3 shrink-0" />
+                      <span className="font-mono truncate">{s.entity1.displayName || s.entity1.value}</span>
+                    </div>
+                    <span className="text-[9px] text-muted-foreground">{s.entity1.alertCount} alerts</span>
+                  </div>
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 p-1.5 rounded bg-background/50 text-xs">
+                    <div className="flex items-center gap-1">
+                      <EntityTypeIcon type={s.entity2.type} className="h-3 w-3 shrink-0" />
+                      <span className="font-mono truncate">{s.entity2.displayName || s.entity2.value}</span>
+                    </div>
+                    <span className="text-[9px] text-muted-foreground">{s.entity2.alertCount} alerts</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1">
+                  {s.reasons.map((r, i) => (
+                    <Badge key={i} variant="secondary" className="text-[8px]">
+                      {r}
+                    </Badge>
+                  ))}
+                </div>
+
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    className="h-6 text-[10px] flex-1"
+                    onClick={() => {
+                      // Pick the entity with more alerts as target
+                      const tgt = s.entity1.alertCount >= s.entity2.alertCount ? s.entity1 : s.entity2;
+                      const src = tgt.id === s.entity1.id ? s.entity2 : s.entity1;
+                      if (onMerge) {
+                        onMerge(src.id, tgt.id);
+                      } else {
+                        mergeMutation.mutate({ targetId: tgt.id, sourceId: src.id });
+                      }
+                    }}
+                    disabled={mergeMutation.isPending}
+                  >
+                    {mergeMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <>
+                        <Merge className="h-3 w-3 mr-1" />
+                        Merge
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px]"
+                    onClick={() =>
+                      setDismissed((prev) => {
+                        const next = new Set(Array.from(prev));
+                        next.add(s.id);
+                        return next;
+                      })
+                    }
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground text-center py-4">
+            No merge suggestions found. Entities with similar values or shared alerts will appear here.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1566,7 +2074,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               )}
             </TabsContent>
 
-            {/* 13.5: Merge / Dedup tab */}
+            {/* 14.x: Enhanced Merge / Alias / History tab */}
             <TabsContent value="merge" className="mt-2 space-y-3">
               <Button
                 variant="outline"
@@ -1579,6 +2087,8 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
                 Merge with Another Entity
               </Button>
               <EntityAliasManager entityId={entityId} />
+              <MergeHistoryPanel entityId={entityId} />
+              <MergeSuggestionsPanel />
             </TabsContent>
           </Tabs>
         </CardContent>

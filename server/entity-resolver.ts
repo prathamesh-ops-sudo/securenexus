@@ -2,8 +2,11 @@ import { db } from "./db";
 import {
   entities,
   entityAliases,
+  entityMergeHistory,
   alertEntities,
   alerts,
+  incidents,
+  attackPaths,
   type Alert,
   type Entity,
   type EntityAlias,
@@ -319,41 +322,80 @@ export async function addEntityAlias(
   return alias;
 }
 
-export async function mergeEntities(targetId: string, sourceId: string): Promise<Entity> {
+export async function mergeEntities(targetId: string, sourceId: string, mergedBy?: string): Promise<Entity> {
   return await db.transaction(async (tx) => {
+    // Snapshot both entities before merge for undo capability (14.2)
+    const [sourceEntity] = await tx.select().from(entities).where(eq(entities.id, sourceId)).limit(1);
+    const [targetEntity] = await tx.select().from(entities).where(eq(entities.id, targetId)).limit(1);
+
+    if (!sourceEntity) throw new Error("Source entity not found");
+    if (!targetEntity) throw new Error("Target entity not found");
+
+    // Record which alert links and aliases will be moved
+    const movedAlertLinks = await tx
+      .select({ alertId: alertEntities.alertId })
+      .from(alertEntities)
+      .where(eq(alertEntities.entityId, sourceId));
+    const movedAliasRows = await tx
+      .select({ id: entityAliases.id })
+      .from(entityAliases)
+      .where(eq(entityAliases.entityId, sourceId));
+
+    // 14.4: Cascading merge — move alert_entities references
     await tx.update(alertEntities).set({ entityId: targetId }).where(eq(alertEntities.entityId, sourceId));
 
+    // 14.4: Cascading merge — move aliases
     await tx.update(entityAliases).set({ entityId: targetId }).where(eq(entityAliases.entityId, sourceId));
 
-    const [sourceEntity] = await tx.select().from(entities).where(eq(entities.id, sourceId)).limit(1);
-    if (sourceEntity) {
-      const existingAlias = await tx
-        .select()
-        .from(entityAliases)
-        .where(
-          and(eq(entityAliases.entityId, targetId), eq(entityAliases.aliasValue, sourceEntity.value.toLowerCase())),
-        )
-        .limit(1);
-      if (existingAlias.length === 0) {
-        await tx.insert(entityAliases).values({
-          entityId: targetId,
-          aliasType: sourceEntity.type,
-          aliasValue: sourceEntity.value.toLowerCase(),
-          source: "merge",
-        });
-      }
+    // 14.4: Cascading merge — update attackPaths entityIds arrays
+    const allPaths = await tx
+      .select()
+      .from(attackPaths)
+      .where(sql`${attackPaths.entityIds} @> ARRAY[${sourceId}]::text[]`);
+    for (const path of allPaths) {
+      const updatedIds = ((path.entityIds || []) as string[]).map((id) => (id === sourceId ? targetId : id));
+      await tx.update(attackPaths).set({ entityIds: updatedIds }).where(eq(attackPaths.id, path.id));
     }
 
+    // Add source entity's value as alias on target
+    const existingAlias = await tx
+      .select()
+      .from(entityAliases)
+      .where(and(eq(entityAliases.entityId, targetId), eq(entityAliases.aliasValue, sourceEntity.value.toLowerCase())))
+      .limit(1);
+    if (existingAlias.length === 0) {
+      await tx.insert(entityAliases).values({
+        entityId: targetId,
+        aliasType: sourceEntity.type,
+        aliasValue: sourceEntity.value.toLowerCase(),
+        source: "merge",
+      });
+    }
+
+    // Update target entity stats
     const [updated] = await tx
       .update(entities)
       .set({
         alertCount: sql`(SELECT COUNT(DISTINCT alert_id) FROM alert_entities WHERE entity_id = ${targetId})`,
-        riskScore: sql`GREATEST(${entities.riskScore}, COALESCE((SELECT risk_score FROM entities WHERE id = ${sourceId}), 0))`,
-        lastSeenAt: sql`GREATEST(${entities.lastSeenAt}, COALESCE((SELECT last_seen_at FROM entities WHERE id = ${sourceId}), NOW()))`,
+        riskScore: sql`GREATEST(${entities.riskScore}, ${sourceEntity.riskScore || 0})`,
+        lastSeenAt: sql`GREATEST(${entities.lastSeenAt}, ${sourceEntity.lastSeenAt || new Date()})`,
       })
       .where(eq(entities.id, targetId))
       .returning();
 
+    // 14.2: Log merge history for undo
+    await tx.insert(entityMergeHistory).values({
+      orgId: targetEntity.orgId,
+      targetEntityId: targetId,
+      sourceEntityId: sourceId,
+      sourceEntitySnapshot: sourceEntity as unknown as Record<string, unknown>,
+      targetEntitySnapshot: targetEntity as unknown as Record<string, unknown>,
+      movedAlertIds: movedAlertLinks.map((l) => l.alertId),
+      movedAliasIds: movedAliasRows.map((a) => a.id),
+      mergedBy: mergedBy || null,
+    });
+
+    // Delete source entity
     await tx.delete(entities).where(eq(entities.id, sourceId));
 
     return updated;

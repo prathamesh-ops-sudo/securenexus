@@ -11,9 +11,10 @@ import {
   incidents,
   attackPaths,
   entityAliases,
+  entityMergeHistory,
 } from "@shared/schema";
 import { eq, and, sql, inArray, desc, ilike, or } from "drizzle-orm";
-import { getEntityGraphWithEdges } from "../entity-resolver";
+import { getEntityGraphWithEdges, mergeEntities, addEntityAlias } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 
 const log = logger.child("entity-graph-advanced");
@@ -1539,6 +1540,730 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
       } catch (error) {
         log.error("UEBA overlay error", { error: String(error) });
         res.status(500).json({ message: "Failed to fetch UEBA overlay" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 14.1: Merge preview — side-by-side comparison
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.post(
+    "/api/entities/merge-preview",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { sourceId, targetId } = req.body;
+        if (!sourceId || !targetId) return res.status(400).json({ message: "sourceId and targetId required" });
+
+        const [sourceEntity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, sourceId), eq(entities.orgId, orgId)));
+        const [targetEntity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, targetId), eq(entities.orgId, orgId)));
+
+        if (!sourceEntity) return res.status(404).json({ message: "Source entity not found" });
+        if (!targetEntity) return res.status(404).json({ message: "Target entity not found" });
+
+        // Get alert counts for each
+        const sourceAlertLinks = await db
+          .select({ alertId: alertEntities.alertId })
+          .from(alertEntities)
+          .where(eq(alertEntities.entityId, sourceId));
+        const targetAlertLinks = await db
+          .select({ alertId: alertEntities.alertId })
+          .from(alertEntities)
+          .where(eq(alertEntities.entityId, targetId));
+
+        // Get aliases for each
+        const sourceAliases = await db.select().from(entityAliases).where(eq(entityAliases.entityId, sourceId));
+        const targetAliases = await db.select().from(entityAliases).where(eq(entityAliases.entityId, targetId));
+
+        // Compute field-level conflicts
+        const fields = ["displayName", "type", "value", "riskScore", "metadata", "firstSeenAt", "lastSeenAt"] as const;
+
+        const comparison: {
+          field: string;
+          sourceValue: unknown;
+          targetValue: unknown;
+          hasConflict: boolean;
+          suggestedResolution: "source" | "target" | "merge";
+        }[] = [];
+
+        for (const field of fields) {
+          const sv = sourceEntity[field];
+          const tv = targetEntity[field];
+          const svStr = JSON.stringify(sv);
+          const tvStr = JSON.stringify(tv);
+          const hasConflict = svStr !== tvStr;
+
+          let suggestedResolution: "source" | "target" | "merge" = "target";
+          if (field === "riskScore") {
+            suggestedResolution = (sourceEntity.riskScore || 0) > (targetEntity.riskScore || 0) ? "source" : "target";
+          } else if (field === "firstSeenAt") {
+            suggestedResolution =
+              new Date(sourceEntity.firstSeenAt || 0) < new Date(targetEntity.firstSeenAt || 0) ? "source" : "target";
+          } else if (field === "lastSeenAt") {
+            suggestedResolution =
+              new Date(sourceEntity.lastSeenAt || 0) > new Date(targetEntity.lastSeenAt || 0) ? "source" : "target";
+          } else if (field === "metadata") {
+            suggestedResolution = "merge";
+          }
+
+          comparison.push({
+            field,
+            sourceValue: sv,
+            targetValue: tv,
+            hasConflict,
+            suggestedResolution,
+          });
+        }
+
+        // Shared alerts (overlap)
+        const sourceAlertIds = new Set(sourceAlertLinks.map((l) => l.alertId));
+        const sharedAlertCount = targetAlertLinks.filter((l) => sourceAlertIds.has(l.alertId)).length;
+
+        res.json({
+          source: {
+            ...sourceEntity,
+            alertCount: sourceAlertLinks.length,
+            aliasCount: sourceAliases.length,
+            aliases: sourceAliases.map((a) => ({ type: a.aliasType, value: a.aliasValue })),
+          },
+          target: {
+            ...targetEntity,
+            alertCount: targetAlertLinks.length,
+            aliasCount: targetAliases.length,
+            aliases: targetAliases.map((a) => ({ type: a.aliasType, value: a.aliasValue })),
+          },
+          comparison,
+          impact: {
+            totalAlertsAfterMerge: sourceAlertLinks.length + targetAlertLinks.length - sharedAlertCount,
+            totalAliasesAfterMerge: sourceAliases.length + targetAliases.length + 1,
+            sharedAlertCount,
+          },
+        });
+      } catch (error) {
+        log.error("Merge preview error", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate merge preview" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 14.4: Cascading merge with field selection (enhanced merge endpoint)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.post(
+    "/api/entities/merge-with-preview",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { sourceId, targetId, fieldOverrides } = req.body;
+        if (!sourceId || !targetId) return res.status(400).json({ message: "sourceId and targetId required" });
+
+        // Verify both belong to this org
+        const [srcCheck] = await db
+          .select({ id: entities.id })
+          .from(entities)
+          .where(and(eq(entities.id, sourceId), eq(entities.orgId, orgId)));
+        const [tgtCheck] = await db
+          .select({ id: entities.id })
+          .from(entities)
+          .where(and(eq(entities.id, targetId), eq(entities.orgId, orgId)));
+        if (!srcCheck) return res.status(404).json({ message: "Source entity not found in this org" });
+        if (!tgtCheck) return res.status(404).json({ message: "Target entity not found in this org" });
+
+        const userId = (req as any).user?.id || null;
+        const merged = await mergeEntities(targetId, sourceId, userId);
+
+        // Apply field overrides if user chose specific source values
+        if (fieldOverrides && typeof fieldOverrides === "object") {
+          const allowedOverrides: Record<string, boolean> = {
+            displayName: true,
+            riskScore: true,
+            metadata: true,
+          };
+          const updates: Record<string, unknown> = {};
+          for (const [field, value] of Object.entries(fieldOverrides)) {
+            if (allowedOverrides[field]) {
+              updates[field] = value;
+            }
+          }
+          if (Object.keys(updates).length > 0) {
+            await db.update(entities).set(updates).where(eq(entities.id, targetId));
+          }
+        }
+
+        broadcastEvent({
+          type: "entity:merged" as any,
+          orgId,
+          data: { targetId, sourceId, mergedEntityId: merged.id },
+        });
+
+        res.json({
+          merged,
+          cascadeResults: {
+            alertsUpdated: true,
+            aliasesUpdated: true,
+            attackPathsUpdated: true,
+          },
+        });
+      } catch (error) {
+        log.error("Merge with preview error", { error: String(error) });
+        res.status(500).json({ message: "Failed to merge entities" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 14.2: Merge history and undo
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/merge-history",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = req.query.entityId as string | undefined;
+
+        let history;
+        if (entityId) {
+          history = await db
+            .select()
+            .from(entityMergeHistory)
+            .where(
+              and(
+                eq(entityMergeHistory.orgId, orgId),
+                or(eq(entityMergeHistory.targetEntityId, entityId), eq(entityMergeHistory.sourceEntityId, entityId)),
+              ),
+            )
+            .orderBy(desc(entityMergeHistory.createdAt))
+            .limit(100);
+        } else {
+          history = await db
+            .select()
+            .from(entityMergeHistory)
+            .where(eq(entityMergeHistory.orgId, orgId))
+            .orderBy(desc(entityMergeHistory.createdAt))
+            .limit(100);
+        }
+
+        res.json({ history, total: history.length });
+      } catch (error) {
+        log.error("Merge history error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch merge history" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/entities/merge-undo/:mergeId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const mergeId = p(req.params.mergeId);
+        const userId = (req as any).user?.id || null;
+
+        const [mergeRecord] = await db
+          .select()
+          .from(entityMergeHistory)
+          .where(and(eq(entityMergeHistory.id, mergeId), eq(entityMergeHistory.orgId, orgId)));
+
+        if (!mergeRecord) return res.status(404).json({ message: "Merge record not found" });
+        if (mergeRecord.undone) return res.status(400).json({ message: "This merge has already been undone" });
+
+        const sourceSnapshot = mergeRecord.sourceEntitySnapshot as Record<string, unknown>;
+        const targetEntityId = mergeRecord.targetEntityId;
+        const sourceEntityId = mergeRecord.sourceEntityId;
+
+        await db.transaction(async (tx) => {
+          // Re-create the source entity from snapshot
+          await tx.insert(entities).values({
+            id: sourceEntityId,
+            orgId: (sourceSnapshot.orgId as string) || orgId,
+            type: sourceSnapshot.type as string,
+            value: sourceSnapshot.value as string,
+            displayName: (sourceSnapshot.displayName as string) || null,
+            metadata: (sourceSnapshot.metadata as Record<string, unknown>) || {},
+            riskScore: (sourceSnapshot.riskScore as number) || 0,
+            alertCount: 0,
+            firstSeenAt: sourceSnapshot.firstSeenAt ? new Date(sourceSnapshot.firstSeenAt as string) : new Date(),
+            lastSeenAt: sourceSnapshot.lastSeenAt ? new Date(sourceSnapshot.lastSeenAt as string) : new Date(),
+          });
+
+          // Move back the alert links that were originally on the source entity
+          const movedAlertIds = (mergeRecord.movedAlertIds || []) as string[];
+          if (movedAlertIds.length > 0) {
+            await tx
+              .update(alertEntities)
+              .set({ entityId: sourceEntityId })
+              .where(and(eq(alertEntities.entityId, targetEntityId), inArray(alertEntities.alertId, movedAlertIds)));
+          }
+
+          // Move back the aliases that were originally on the source entity
+          const movedAliasIds = (mergeRecord.movedAliasIds || []) as string[];
+          if (movedAliasIds.length > 0) {
+            await tx
+              .update(entityAliases)
+              .set({ entityId: sourceEntityId })
+              .where(inArray(entityAliases.id, movedAliasIds));
+          }
+
+          // Remove the alias that was auto-created for the source entity's value
+          await tx
+            .delete(entityAliases)
+            .where(
+              and(
+                eq(entityAliases.entityId, targetEntityId),
+                eq(entityAliases.aliasValue, (sourceSnapshot.value as string).toLowerCase()),
+                eq(entityAliases.source, "merge"),
+              ),
+            );
+
+          // Update alert counts for both entities
+          await tx
+            .update(entities)
+            .set({
+              alertCount: sql`(SELECT COUNT(DISTINCT alert_id) FROM alert_entities WHERE entity_id = ${targetEntityId})`,
+            })
+            .where(eq(entities.id, targetEntityId));
+
+          await tx
+            .update(entities)
+            .set({
+              alertCount: sql`(SELECT COUNT(DISTINCT alert_id) FROM alert_entities WHERE entity_id = ${sourceEntityId})`,
+            })
+            .where(eq(entities.id, sourceEntityId));
+
+          // Mark the merge as undone
+          await tx
+            .update(entityMergeHistory)
+            .set({ undone: true, undoneAt: new Date(), undoneBy: userId })
+            .where(eq(entityMergeHistory.id, mergeId));
+        });
+
+        broadcastEvent({
+          type: "entity:merge-undone" as any,
+          orgId,
+          data: { mergeId, targetEntityId, sourceEntityId },
+        });
+
+        res.json({
+          message: "Merge successfully undone",
+          restoredEntityId: sourceEntityId,
+          targetEntityId,
+        });
+      } catch (error) {
+        log.error("Merge undo error", { error: String(error) });
+        res.status(500).json({ message: "Failed to undo merge" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 14.3: Auto-suggested merges with confidence scores
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/merge-suggestions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const minConfidence = parseInt(req.query.minConfidence as string, 10) || 50;
+        const allEntities = await db
+          .select()
+          .from(entities)
+          .where(eq(entities.orgId, orgId))
+          .orderBy(desc(entities.alertCount))
+          .limit(500);
+
+        const suggestions: {
+          id: string;
+          entity1: { id: string; type: string; value: string; displayName: string | null; alertCount: number };
+          entity2: { id: string; type: string; value: string; displayName: string | null; alertCount: number };
+          reasons: string[];
+          confidence: number;
+          category: "fuzzy_name" | "shared_attribute" | "temporal_correlation" | "alias_match";
+        }[] = [];
+
+        // Group by type for comparison
+        const byType: Record<string, typeof allEntities> = {};
+        for (const e of allEntities) {
+          if (!byType[e.type]) byType[e.type] = [];
+          byType[e.type].push(e);
+        }
+
+        // Get all alert entity links for temporal correlation
+        const entityIds = allEntities.map((e) => e.id);
+        const allAlertLinks =
+          entityIds.length > 0
+            ? await db
+                .select({
+                  entityId: alertEntities.entityId,
+                  alertId: alertEntities.alertId,
+                })
+                .from(alertEntities)
+                .where(inArray(alertEntities.entityId, entityIds))
+            : [];
+
+        // Build entity-to-alerts map
+        const entityAlertMap = new Map<string, Set<string>>();
+        for (const link of allAlertLinks) {
+          const set = entityAlertMap.get(link.entityId) || new Set();
+          set.add(link.alertId);
+          entityAlertMap.set(link.entityId, set);
+        }
+
+        let suggestionCounter = 0;
+
+        for (const [, typeEntities] of Object.entries(byType)) {
+          for (let i = 0; i < typeEntities.length && i < 150; i++) {
+            for (let j = i + 1; j < typeEntities.length && j < 150; j++) {
+              const e1 = typeEntities[i];
+              const e2 = typeEntities[j];
+
+              const reasons: string[] = [];
+              let confidence = 0;
+              let category: "fuzzy_name" | "shared_attribute" | "temporal_correlation" | "alias_match" = "fuzzy_name";
+
+              const v1 = e1.value.toLowerCase().trim();
+              const v2 = e2.value.toLowerCase().trim();
+
+              // Fuzzy name matching — Levenshtein-like comparison
+              if (v1 === v2) {
+                reasons.push("Identical values after normalization");
+                confidence = Math.max(confidence, 95);
+              } else {
+                // Simple character-level similarity
+                const maxLen = Math.max(v1.length, v2.length);
+                if (maxLen > 0 && maxLen < 100) {
+                  let matches = 0;
+                  const minLen = Math.min(v1.length, v2.length);
+                  for (let k = 0; k < minLen; k++) {
+                    if (v1[k] === v2[k]) matches++;
+                  }
+                  const similarity = matches / maxLen;
+                  if (similarity >= 0.8) {
+                    reasons.push(`High character similarity (${Math.round(similarity * 100)}%)`);
+                    confidence = Math.max(confidence, Math.round(similarity * 90));
+                    category = "fuzzy_name";
+                  }
+                }
+
+                // Separator-normalized comparison
+                const norm1 = v1.replace(/[._\-@]/g, "");
+                const norm2 = v2.replace(/[._\-@]/g, "");
+                if (norm1 === norm2 && norm1.length > 2) {
+                  reasons.push("Same value after removing separators");
+                  confidence = Math.max(confidence, 80);
+                  category = "fuzzy_name";
+                }
+
+                // Substring match
+                if (v1.length > 3 && v2.length > 3 && (v1.includes(v2) || v2.includes(v1))) {
+                  reasons.push("One value is a substring of the other");
+                  confidence = Math.max(confidence, 60);
+                  category = "fuzzy_name";
+                }
+
+                // Domain-specific: strip www., trailing dot
+                if (e1.type === "domain") {
+                  const strip = (d: string) => d.replace(/^www\./, "").replace(/\.$/, "");
+                  if (strip(v1) === strip(v2)) {
+                    reasons.push("Same domain after stripping www prefix");
+                    confidence = Math.max(confidence, 90);
+                    category = "shared_attribute";
+                  }
+                }
+
+                // IP-specific: leading zeros, IPv4-mapped IPv6
+                if (e1.type === "ip") {
+                  const stripZeros = (ip: string) => ip.replace(/\b0+(\d)/g, "$1");
+                  if (stripZeros(v1) === stripZeros(v2)) {
+                    reasons.push("Same IP after removing leading zeros");
+                    confidence = Math.max(confidence, 90);
+                    category = "shared_attribute";
+                  }
+                  if (v1.replace("::ffff:", "") === v2 || v2.replace("::ffff:", "") === v1) {
+                    reasons.push("IPv4-mapped IPv6 match");
+                    confidence = Math.max(confidence, 85);
+                    category = "shared_attribute";
+                  }
+                  // Same subnet (/24)
+                  const subnet1 = v1.split(".").slice(0, 3).join(".");
+                  const subnet2 = v2.split(".").slice(0, 3).join(".");
+                  if (subnet1 === subnet2 && subnet1.length > 4) {
+                    reasons.push("Same /24 subnet");
+                    confidence = Math.max(confidence, 40);
+                    category = "shared_attribute";
+                  }
+                }
+
+                // Email-specific: same username, different domain
+                if (e1.type === "email") {
+                  const [user1] = v1.split("@");
+                  const [user2] = v2.split("@");
+                  if (user1 === user2 && user1.length > 2) {
+                    reasons.push("Same email username, different domain");
+                    confidence = Math.max(confidence, 75);
+                    category = "alias_match";
+                  }
+                }
+              }
+
+              // DisplayName match with different values
+              if (
+                e1.displayName &&
+                e2.displayName &&
+                e1.displayName.toLowerCase() === e2.displayName.toLowerCase() &&
+                v1 !== v2
+              ) {
+                reasons.push("Same display name, different values");
+                confidence = Math.max(confidence, 65);
+                category = "shared_attribute";
+              }
+
+              // Temporal correlation — shared alerts
+              const alerts1 = entityAlertMap.get(e1.id);
+              const alerts2 = entityAlertMap.get(e2.id);
+              if (alerts1 && alerts2 && alerts1.size > 0 && alerts2.size > 0) {
+                let sharedCount = 0;
+                for (const a of Array.from(alerts1)) {
+                  if (alerts2.has(a)) sharedCount++;
+                }
+                if (sharedCount > 0) {
+                  const overlapRatio = sharedCount / Math.min(alerts1.size, alerts2.size);
+                  if (overlapRatio >= 0.5) {
+                    reasons.push(
+                      `High alert overlap (${sharedCount} shared, ${Math.round(overlapRatio * 100)}% overlap)`,
+                    );
+                    confidence = Math.max(confidence, Math.round(60 + overlapRatio * 30));
+                    category = "temporal_correlation";
+                  } else if (sharedCount >= 2) {
+                    reasons.push(`${sharedCount} shared alerts`);
+                    confidence = Math.max(confidence, 50);
+                    category = "temporal_correlation";
+                  }
+                }
+              }
+
+              if (reasons.length > 0 && confidence >= minConfidence) {
+                suggestionCounter++;
+                suggestions.push({
+                  id: `suggestion-${suggestionCounter}`,
+                  entity1: {
+                    id: e1.id,
+                    type: e1.type,
+                    value: e1.value,
+                    displayName: e1.displayName,
+                    alertCount: e1.alertCount || 0,
+                  },
+                  entity2: {
+                    id: e2.id,
+                    type: e2.type,
+                    value: e2.value,
+                    displayName: e2.displayName,
+                    alertCount: e2.alertCount || 0,
+                  },
+                  reasons,
+                  confidence,
+                  category,
+                });
+              }
+            }
+          }
+        }
+
+        // Sort by confidence descending
+        suggestions.sort((a, b) => b.confidence - a.confidence);
+
+        res.json({
+          suggestions: suggestions.slice(0, 100),
+          totalFound: suggestions.length,
+          minConfidenceUsed: minConfidence,
+        });
+      } catch (error) {
+        log.error("Merge suggestions error", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate merge suggestions" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 14.5: Alias management — bulk add, delete, search by alias
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.post(
+    "/api/entities/:id/aliases/bulk",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = p(req.params.id);
+
+        // Verify entity belongs to this org
+        const [entity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, entityId), eq(entities.orgId, orgId)));
+        if (!entity) return res.status(404).json({ message: "Entity not found" });
+
+        const { aliases } = req.body;
+        if (!Array.isArray(aliases) || aliases.length === 0) {
+          return res.status(400).json({ message: "aliases array required" });
+        }
+
+        const results: { aliasValue: string; status: "created" | "exists" | "error" }[] = [];
+        for (const alias of aliases.slice(0, 50)) {
+          try {
+            if (!alias.aliasType || !alias.aliasValue) {
+              results.push({ aliasValue: alias.aliasValue || "unknown", status: "error" });
+              continue;
+            }
+            const created = await addEntityAlias(entityId, alias.aliasType, alias.aliasValue, alias.source || "manual");
+            const isNew = created.createdAt && new Date(created.createdAt).getTime() > Date.now() - 5000;
+            results.push({ aliasValue: alias.aliasValue, status: isNew ? "created" : "exists" });
+          } catch {
+            results.push({ aliasValue: alias.aliasValue || "unknown", status: "error" });
+          }
+        }
+
+        res.json({
+          entityId,
+          results,
+          created: results.filter((r) => r.status === "created").length,
+          existing: results.filter((r) => r.status === "exists").length,
+          errors: results.filter((r) => r.status === "error").length,
+        });
+      } catch (error) {
+        log.error("Bulk alias add error", { error: String(error) });
+        res.status(500).json({ message: "Failed to bulk add aliases" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/entities/:entityId/aliases/:aliasId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = p(req.params.entityId);
+        const aliasId = p(req.params.aliasId);
+
+        // Verify entity belongs to this org
+        const [entity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, entityId), eq(entities.orgId, orgId)));
+        if (!entity) return res.status(404).json({ message: "Entity not found" });
+
+        // Verify alias belongs to this entity
+        const [alias] = await db
+          .select()
+          .from(entityAliases)
+          .where(and(eq(entityAliases.id, aliasId), eq(entityAliases.entityId, entityId)));
+        if (!alias) return res.status(404).json({ message: "Alias not found" });
+
+        await db.delete(entityAliases).where(eq(entityAliases.id, aliasId));
+        res.json({ message: "Alias deleted", aliasId });
+      } catch (error) {
+        log.error("Delete alias error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete alias" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/entities/resolve-alias",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const aliasValue = ((req.query.value as string) || "").toLowerCase().trim();
+        if (!aliasValue) return res.status(400).json({ message: "value query parameter required" });
+
+        // Find entities matching this alias
+        const matchingAliases = await db
+          .select({
+            aliasId: entityAliases.id,
+            aliasType: entityAliases.aliasType,
+            aliasValue: entityAliases.aliasValue,
+            entityId: entities.id,
+            entityType: entities.type,
+            entityValue: entities.value,
+            entityDisplayName: entities.displayName,
+            entityRiskScore: entities.riskScore,
+          })
+          .from(entityAliases)
+          .innerJoin(entities, eq(entityAliases.entityId, entities.id))
+          .where(
+            and(
+              eq(entities.orgId, orgId),
+              or(eq(entityAliases.aliasValue, aliasValue), ilike(entityAliases.aliasValue, `%${aliasValue}%`)),
+            ),
+          )
+          .limit(20);
+
+        // Also check direct entity value match
+        const directMatches = await db
+          .select()
+          .from(entities)
+          .where(
+            and(
+              eq(entities.orgId, orgId),
+              or(eq(entities.value, aliasValue), ilike(entities.value, `%${aliasValue}%`)),
+            ),
+          )
+          .limit(10);
+
+        res.json({
+          aliasMatches: matchingAliases,
+          directMatches: directMatches.map((e) => ({
+            entityId: e.id,
+            entityType: e.type,
+            entityValue: e.value,
+            entityDisplayName: e.displayName,
+            entityRiskScore: e.riskScore,
+          })),
+          totalResults: matchingAliases.length + directMatches.length,
+        });
+      } catch (error) {
+        log.error("Resolve alias error", { error: String(error) });
+        res.status(500).json({ message: "Failed to resolve alias" });
       }
     },
   );

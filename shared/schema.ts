@@ -762,6 +762,32 @@ export const entityAliases = pgTable(
   ],
 );
 
+export const entityMergeHistory = pgTable(
+  "entity_merge_history",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    targetEntityId: varchar("target_entity_id").notNull(),
+    sourceEntityId: varchar("source_entity_id").notNull(),
+    sourceEntitySnapshot: jsonb("source_entity_snapshot").notNull(),
+    targetEntitySnapshot: jsonb("target_entity_snapshot").notNull(),
+    movedAlertIds: text("moved_alert_ids").array(),
+    movedAliasIds: text("moved_alias_ids").array(),
+    mergedBy: varchar("merged_by"),
+    undone: boolean("undone").default(false),
+    undoneAt: timestamp("undone_at"),
+    undoneBy: varchar("undone_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_entity_merge_history_org").on(table.orgId),
+    index("idx_entity_merge_history_target").on(table.targetEntityId),
+    index("idx_entity_merge_history_source").on(table.sourceEntityId),
+  ],
+);
+
 export const alertEntities = pgTable(
   "alert_entities",
   {
@@ -1950,6 +1976,13 @@ export const insertEntitySchema = createInsertSchema(entities).omit({
   lastSeenAt: true,
 });
 export const insertEntityAliasSchema = createInsertSchema(entityAliases).omit({ id: true, createdAt: true });
+export const insertEntityMergeHistorySchema = createInsertSchema(entityMergeHistory).omit({
+  id: true,
+  createdAt: true,
+  undone: true,
+  undoneAt: true,
+  undoneBy: true,
+});
 export const insertAlertEntitySchema = createInsertSchema(alertEntities).omit({ id: true, createdAt: true });
 export const insertCorrelationClusterSchema = createInsertSchema(correlationClusters).omit({
   id: true,
@@ -2144,6 +2177,8 @@ export type Entity = typeof entities.$inferSelect;
 export type InsertEntity = z.infer<typeof insertEntitySchema>;
 export type EntityAlias = typeof entityAliases.$inferSelect;
 export type InsertEntityAlias = z.infer<typeof insertEntityAliasSchema>;
+export type EntityMergeHistory = typeof entityMergeHistory.$inferSelect;
+export type InsertEntityMergeHistory = z.infer<typeof insertEntityMergeHistorySchema>;
 export type AlertEntity = typeof alertEntities.$inferSelect;
 export type InsertAlertEntity = z.infer<typeof insertAlertEntitySchema>;
 export type CorrelationCluster = typeof correlationClusters.$inferSelect;
