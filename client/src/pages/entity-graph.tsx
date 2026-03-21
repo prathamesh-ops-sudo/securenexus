@@ -975,50 +975,145 @@ function EntityMergeDialog({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Entity Detail Panel (unchanged)
+// 13.1: Rich Entity Profile Page — activity timeline, risk factors, pivots
+// 13.3: Risk scoring visualization with factor breakdown
+// 13.6: Entity → Alert/Incident pivot
+// 13.7: Entity → Threat Hunting pivot
 // ═══════════════════════════════════════════════════════════════════════════════
+
+interface EntityProfile {
+  entity: {
+    id: string;
+    type: string;
+    value: string;
+    displayName: string | null;
+    riskScore: number;
+    alertCount: number;
+    metadata: unknown;
+    firstSeenAt: string | null;
+    lastSeenAt: string | null;
+    createdAt: string | null;
+  };
+  aliases: { id: string; aliasType: string; aliasValue: string; source: string | null }[];
+  activityTimeline: { date: string; alertCount: number; maxSeverity: string }[];
+  alertBreakdown: { byStatus: Record<string, number>; bySeverity: Record<string, number>; total: number };
+  associatedIncidents: { id: string; title: string; severity: string; status: string; createdAt: string | null }[];
+  associatedAttackPaths: { id: string; name: string; severity: string; status: string }[];
+  peerComparison: { rank: number; totalPeers: number; topPeers: { id: string; value: string; riskScore: number }[] };
+}
+
+interface RiskScoreDetail {
+  compositeScore: number;
+  riskLevel: string;
+  factors: {
+    alertSeverity: { score: number; weight: number; breakdown: Record<string, number> };
+    uebaAnomaly: { score: number; weight: number; anomalyCount: number };
+    exposure: { score: number; weight: number; connectionCount: number };
+    privilege: { score: number; weight: number };
+    accessPattern: { score: number; weight: number; daysSinceLastSeen: number; activeSpanDays: number };
+  };
+  peerComparison: { percentile: number; totalPeers: number; avgPeerRisk: number };
+  totalAlerts: number;
+}
+
+interface PivotData {
+  alerts: {
+    id: string;
+    title: string;
+    severity: string;
+    status: string;
+    source: string | null;
+    createdAt: string | null;
+    incidentId: string | null;
+  }[];
+  incidents: {
+    id: string;
+    title: string;
+    severity: string;
+    status: string;
+    createdAt: string | null;
+    alertCount: number;
+  }[];
+  summary: {
+    totalAlerts: number;
+    totalIncidents: number;
+    openAlerts: number;
+    criticalAlerts: number;
+    activeIncidents: number;
+  };
+}
+
+interface HuntQueryData {
+  huntQueries: { name: string; query: string; description: string; dataSource: string }[];
+  graphQuery: string;
+  huntUrl: string;
+}
 
 function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes: GraphNode[] }) {
   const { toast } = useToast();
   const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [detailTab, setDetailTab] = useState<string>("profile");
 
-  const {
-    data: entity,
-    isLoading: entityLoading,
-    isError: _entityError,
-    refetch: _refetchEntity,
-  } = useQuery<Entity>({
-    queryKey: ["/api/entities", entityId],
+  // 13.1: Rich entity profile
+  const { data: profile, isLoading: profileLoading } = useQuery<EntityProfile>({
+    queryKey: ["/api/entities", entityId, "profile"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/entities/${entityId}/profile`);
+      return res.json();
+    },
     enabled: !!entityId,
   });
 
-  const {
-    data: relationships,
-    isLoading: relLoading,
-    isError: _relError,
-    refetch: _refetchRelationships,
-  } = useQuery<EntityRelationship[]>({
+  // 13.3: Dynamic risk scoring
+  const { data: riskDetail } = useQuery<RiskScoreDetail>({
+    queryKey: ["/api/entities", entityId, "risk-score"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/entities/${entityId}/risk-score`);
+      return res.json();
+    },
+    enabled: !!entityId && detailTab === "risk",
+  });
+
+  // 13.6: Alert/Incident pivot
+  const { data: pivotData } = useQuery<PivotData>({
+    queryKey: ["/api/entities", entityId, "pivot"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/entities/${entityId}/pivot`);
+      return res.json();
+    },
+    enabled: !!entityId && detailTab === "pivot",
+  });
+
+  // 13.7: Threat hunt queries
+  const { data: huntData } = useQuery<HuntQueryData>({
+    queryKey: ["/api/entities", entityId, "hunt-query"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/entities/${entityId}/hunt-query`);
+      return res.json();
+    },
+    enabled: !!entityId && detailTab === "hunt",
+  });
+
+  // Existing queries
+  const { data: relationships, isLoading: relLoading } = useQuery<EntityRelationship[]>({
     queryKey: ["/api/entities", entityId, "relationships"],
     enabled: !!entityId,
   });
 
-  const { data: entityAlerts } = useQuery<{ id: string; title: string; severity: string }[]>({
-    queryKey: ["/api/entities", entityId, "alerts"],
-    enabled: !!entityId,
-  });
-
-  if (entityLoading || relLoading) {
+  if (profileLoading || relLoading) {
     return (
       <Card>
         <CardContent className="p-4 space-y-3">
           <Skeleton className="h-6 w-48" />
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-40 w-full" />
         </CardContent>
       </Card>
     );
   }
 
+  const entity = profile?.entity;
   if (!entity) return null;
 
   const config = ENTITY_TYPE_CONFIG[entity.type] || ENTITY_TYPE_CONFIG.ip;
@@ -1026,6 +1121,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
 
   return (
     <div className="space-y-3">
+      {/* Entity header card */}
       <Card data-testid="entity-detail-panel">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-3">
@@ -1050,12 +1146,12 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               </div>
             </div>
             <div className="p-2.5 rounded-md border bg-muted/30">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Alert Count</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Alerts</p>
               <p className="text-lg font-bold mt-1">{entity.alertCount || 0}</p>
             </div>
           </div>
           <div className="space-y-1.5">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Timeline</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Dates</p>
             <div className="text-xs space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">First Seen</span>
@@ -1073,71 +1169,420 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               <p className="text-xs font-mono break-all bg-muted/30 p-2 rounded-md">{entity.value}</p>
             </div>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full text-xs"
-            onClick={() => setShowMergeDialog(true)}
-            data-testid="button-open-merge"
-          >
-            <Merge className="h-3.5 w-3.5 mr-1.5" />
-            Merge with Another Entity
-          </Button>
+          {/* Peer comparison */}
+          {profile?.peerComparison && profile.peerComparison.totalPeers > 1 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Peer Rank</p>
+              <p className="text-xs">
+                #{profile.peerComparison.rank} of {profile.peerComparison.totalPeers} {config.label}s by risk
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <EntityAliasManager entityId={entityId} />
+      {/* Tabbed detail sections */}
+      <Card>
+        <CardContent className="p-2">
+          <Tabs value={detailTab} onValueChange={setDetailTab}>
+            <TabsList className="w-full grid grid-cols-5 h-8">
+              <TabsTrigger value="profile" className="text-[10px] px-1">
+                Profile
+              </TabsTrigger>
+              <TabsTrigger value="risk" className="text-[10px] px-1">
+                Risk
+              </TabsTrigger>
+              <TabsTrigger value="pivot" className="text-[10px] px-1">
+                Pivot
+              </TabsTrigger>
+              <TabsTrigger value="hunt" className="text-[10px] px-1">
+                Hunt
+              </TabsTrigger>
+              <TabsTrigger value="merge" className="text-[10px] px-1">
+                Merge
+              </TabsTrigger>
+            </TabsList>
 
-      {relationships && relationships.length > 0 && (
-        <Card data-testid="entity-relationships-panel">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Relationships ({relationships.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
-              {relationships.slice(0, 20).map((rel) => (
-                <div
-                  key={rel.relatedEntityId}
-                  className="flex items-center gap-2 text-xs p-2 rounded-md bg-muted/20 hover-elevate"
-                  data-testid={`relationship-${rel.relatedEntityId}`}
-                >
-                  <EntityTypeIcon type={rel.relatedEntityType} className="h-3.5 w-3.5 shrink-0" />
-                  <span className="font-mono truncate flex-1">{rel.relatedEntityValue}</span>
-                  <Badge variant="outline" className="text-[9px] shrink-0">
-                    {RELATIONSHIP_LABELS[rel.relationship] || rel.relationship}
-                  </Badge>
-                  <span className="text-muted-foreground shrink-0">{rel.sharedAlertCount}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {entityAlerts && entityAlerts.length > 0 && (
-        <Card data-testid="entity-alerts-panel">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Linked Alerts ({entityAlerts.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {entityAlerts.slice(0, 10).map((alert) => (
-                <Link key={alert.id} href={`/alerts/${alert.id}`}>
-                  <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-muted/20 hover-elevate cursor-pointer">
-                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="truncate flex-1">{alert.title}</span>
-                    <span
-                      className={`text-[9px] font-medium uppercase ${alert.severity === "critical" ? "text-red-400" : alert.severity === "high" ? "text-orange-400" : alert.severity === "medium" ? "text-yellow-400" : "text-emerald-400"}`}
-                    >
-                      {alert.severity}
-                    </span>
+            {/* 13.1: Profile tab — timeline, aliases, relationships, incidents */}
+            <TabsContent value="profile" className="mt-2 space-y-3">
+              {/* Activity timeline mini-chart */}
+              {profile?.activityTimeline && profile.activityTimeline.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Activity Timeline</p>
+                  <div className="flex items-end gap-px h-12">
+                    {profile.activityTimeline.slice(-30).map((day, i) => {
+                      const maxCount = Math.max(...profile.activityTimeline.slice(-30).map((d) => d.alertCount), 1);
+                      const height = Math.max((day.alertCount / maxCount) * 100, 5);
+                      const sevColor =
+                        day.maxSeverity === "critical"
+                          ? "bg-red-500"
+                          : day.maxSeverity === "high"
+                            ? "bg-orange-500"
+                            : day.maxSeverity === "medium"
+                              ? "bg-yellow-500"
+                              : "bg-emerald-500";
+                      return (
+                        <TooltipProvider key={i}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={`flex-1 min-w-[3px] rounded-t-sm ${sevColor} opacity-70 hover:opacity-100`}
+                                style={{ height: `${height}%` }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-[10px]">
+                                {day.date}: {day.alertCount} alerts ({day.maxSeverity})
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
                   </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                </div>
+              )}
+
+              {/* Alert breakdown by severity */}
+              {profile?.alertBreakdown && profile.alertBreakdown.total > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Alert Breakdown</p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(["critical", "high", "medium", "low"] as const).map((sev) => (
+                      <div key={sev} className="text-center p-1.5 rounded-md bg-muted/20">
+                        <p
+                          className={`text-sm font-bold ${sev === "critical" ? "text-red-400" : sev === "high" ? "text-orange-400" : sev === "medium" ? "text-yellow-400" : "text-emerald-400"}`}
+                        >
+                          {profile.alertBreakdown.bySeverity[sev] || 0}
+                        </p>
+                        <p className="text-[8px] text-muted-foreground capitalize">{sev}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Aliases */}
+              {profile?.aliases && profile.aliases.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    Aliases ({profile.aliases.length})
+                  </p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {profile.aliases.map((a) => (
+                      <div key={a.id} className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/20">
+                        <Tag className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="font-mono truncate">{a.aliasValue}</span>
+                        <Badge variant="outline" className="text-[8px] ml-auto shrink-0">
+                          {a.aliasType}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Relationships */}
+              {relationships && relationships.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    Relationships ({relationships.length})
+                  </p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {relationships.slice(0, 15).map((rel) => (
+                      <div
+                        key={rel.relatedEntityId}
+                        className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/20"
+                      >
+                        <EntityTypeIcon type={rel.relatedEntityType} className="h-3 w-3 shrink-0" />
+                        <span className="font-mono truncate flex-1">{rel.relatedEntityValue}</span>
+                        <Badge variant="outline" className="text-[8px] shrink-0">
+                          {RELATIONSHIP_LABELS[rel.relationship] || rel.relationship}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Associated incidents */}
+              {profile?.associatedIncidents && profile.associatedIncidents.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    Incidents ({profile.associatedIncidents.length})
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {profile.associatedIncidents.slice(0, 8).map((inc) => (
+                      <Link key={inc.id} href={`/incidents/${inc.id}`}>
+                        <div className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/20 hover-elevate cursor-pointer">
+                          <Crosshair className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <span className="truncate flex-1">{inc.title}</span>
+                          <Badge
+                            variant="outline"
+                            className={`text-[8px] shrink-0 ${inc.severity === "critical" ? "border-red-500/30 text-red-400" : inc.severity === "high" ? "border-orange-500/30 text-orange-400" : ""}`}
+                          >
+                            {inc.severity}
+                          </Badge>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* 13.3: Risk scoring visualization */}
+            <TabsContent value="risk" className="mt-2 space-y-3">
+              {riskDetail ? (
+                <>
+                  <div className={`p-3 rounded-md border ${getRiskBgColor(riskDetail.compositeScore)}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground uppercase">Composite Score</p>
+                        <p className={`text-2xl font-bold ${getRiskColor(riskDetail.compositeScore)}`}>
+                          {(riskDetail.compositeScore * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <Badge variant="outline" className={`${getRiskBgColor(riskDetail.compositeScore)}`}>
+                        {riskDetail.riskLevel}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Factor breakdown */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Risk Factors</p>
+                    {(
+                      [
+                        { key: "alertSeverity", label: "Alert Severity", icon: AlertTriangle },
+                        { key: "uebaAnomaly", label: "UEBA Anomaly", icon: Brain },
+                        { key: "exposure", label: "Exposure Level", icon: Globe },
+                        { key: "privilege", label: "Privilege Level", icon: Shield },
+                        { key: "accessPattern", label: "Access Pattern", icon: Activity },
+                      ] as const
+                    ).map(({ key, label, icon: Icon }) => {
+                      const factor = riskDetail.factors[key];
+                      return (
+                        <div key={key} className="space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <Icon className="h-3 w-3 text-muted-foreground" />
+                              <span>{label}</span>
+                            </div>
+                            <span className={getRiskColor(factor.score)}>
+                              {(factor.score * 100).toFixed(0)}%{" "}
+                              <span className="text-muted-foreground text-[9px]">
+                                ({(factor.weight * 100).toFixed(0)}% weight)
+                              </span>
+                            </span>
+                          </div>
+                          <Progress value={factor.score * 100} className="h-1" />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Peer comparison */}
+                  {riskDetail.peerComparison && (
+                    <div className="p-2.5 rounded-md bg-muted/20 space-y-1">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Peer Comparison</p>
+                      <p className="text-xs">
+                        <span className="font-semibold">{riskDetail.peerComparison.percentile}th</span> percentile among{" "}
+                        {riskDetail.peerComparison.totalPeers} peers
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Avg peer risk: {(riskDetail.peerComparison.avgPeerRisk * 100).toFixed(0)}%
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Alert severity breakdown */}
+                  {riskDetail.factors.alertSeverity.breakdown && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Alert Severity Mix</p>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(["critical", "high", "medium", "low"] as const).map((sev) => (
+                          <div key={sev} className="text-center p-1 rounded bg-muted/20">
+                            <p
+                              className={`text-xs font-bold ${sev === "critical" ? "text-red-400" : sev === "high" ? "text-orange-400" : sev === "medium" ? "text-yellow-400" : "text-emerald-400"}`}
+                            >
+                              {riskDetail.factors.alertSeverity.breakdown[sev] || 0}
+                            </p>
+                            <p className="text-[7px] text-muted-foreground capitalize">{sev}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              )}
+            </TabsContent>
+
+            {/* 13.6: Entity → Alert/Incident pivot */}
+            <TabsContent value="pivot" className="mt-2 space-y-3">
+              {pivotData ? (
+                <>
+                  {/* Summary stats */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="text-center p-2 rounded-md bg-muted/20">
+                      <p className="text-sm font-bold">{pivotData.summary.totalAlerts}</p>
+                      <p className="text-[8px] text-muted-foreground">Total Alerts</p>
+                    </div>
+                    <div className="text-center p-2 rounded-md bg-muted/20">
+                      <p className="text-sm font-bold text-red-400">{pivotData.summary.criticalAlerts}</p>
+                      <p className="text-[8px] text-muted-foreground">Critical</p>
+                    </div>
+                    <div className="text-center p-2 rounded-md bg-muted/20">
+                      <p className="text-sm font-bold">{pivotData.summary.totalIncidents}</p>
+                      <p className="text-[8px] text-muted-foreground">Incidents</p>
+                    </div>
+                  </div>
+
+                  {/* Open alerts */}
+                  {pivotData.alerts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        Alerts ({pivotData.alerts.length})
+                      </p>
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {pivotData.alerts.slice(0, 15).map((alert) => (
+                          <Link key={alert.id} href={`/alerts`}>
+                            <div className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/20 hover-elevate cursor-pointer">
+                              <AlertTriangle
+                                className={`h-3 w-3 shrink-0 ${alert.severity === "critical" ? "text-red-400" : alert.severity === "high" ? "text-orange-400" : "text-muted-foreground"}`}
+                              />
+                              <span className="truncate flex-1">{alert.title}</span>
+                              <Badge
+                                variant="outline"
+                                className={`text-[8px] shrink-0 ${alert.status === "open" || alert.status === "new" ? "border-red-500/30" : ""}`}
+                              >
+                                {alert.status}
+                              </Badge>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Linked incidents */}
+                  {pivotData.incidents.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        Incidents ({pivotData.incidents.length})
+                      </p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {pivotData.incidents.map((inc) => (
+                          <Link key={inc.id} href={`/incidents/${inc.id}`}>
+                            <div className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/20 hover-elevate cursor-pointer">
+                              <Crosshair className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="truncate flex-1">{inc.title}</span>
+                              <span className="text-[9px] text-muted-foreground shrink-0">{inc.alertCount} alerts</span>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {pivotData.alerts.length === 0 && pivotData.incidents.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      No alerts or incidents linked to this entity.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              )}
+            </TabsContent>
+
+            {/* 13.7: Entity → Threat Hunting pivot */}
+            <TabsContent value="hunt" className="mt-2 space-y-3">
+              {huntData ? (
+                <>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Pre-built Hunt Queries</p>
+                    <div className="space-y-1.5">
+                      {huntData.huntQueries.map((q, i) => (
+                        <div key={i} className="p-2 rounded-md bg-muted/20 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium">{q.name}</p>
+                            <Badge variant="outline" className="text-[8px]">
+                              {q.dataSource}
+                            </Badge>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">{q.description}</p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <code className="text-[9px] font-mono bg-background/50 p-1 rounded flex-1 overflow-x-auto max-h-12 break-all">
+                              {q.query}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={() => {
+                                navigator.clipboard.writeText(q.query);
+                                toast({ title: "Query copied", description: q.name });
+                              }}
+                            >
+                              <Code2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Graph query */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Graph Query</p>
+                    <div className="p-2 rounded-md bg-muted/20">
+                      <code className="text-xs font-mono">{huntData.graphQuery}</code>
+                    </div>
+                  </div>
+
+                  {/* Link to threat hunting page */}
+                  <Link href={huntData.huntUrl}>
+                    <Button variant="outline" size="sm" className="w-full text-xs">
+                      <Crosshair className="h-3.5 w-3.5 mr-1.5" />
+                      Open in Threat Hunting Workbench
+                    </Button>
+                  </Link>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              )}
+            </TabsContent>
+
+            {/* 13.5: Merge / Dedup tab */}
+            <TabsContent value="merge" className="mt-2 space-y-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => setShowMergeDialog(true)}
+                data-testid="button-open-merge"
+              >
+                <Merge className="h-3.5 w-3.5 mr-1.5" />
+                Merge with Another Entity
+              </Button>
+              <EntityAliasManager entityId={entityId} />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       <EntityMergeDialog
         open={showMergeDialog}
@@ -2098,6 +2543,121 @@ function GraphQueryPanel() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 13.2: Type-Ahead Entity Search
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface TypeaheadSuggestion {
+  id: string;
+  type: string;
+  value: string;
+  displayName: string | null;
+  riskScore: number;
+}
+
+function TypeAheadSearch({
+  value,
+  onChange,
+  onSelectEntity,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSelectEntity: (id: string) => void;
+}) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [localQuery, setLocalQuery] = useState(value);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { data: suggestions } = useQuery<{
+    suggestions: TypeaheadSuggestion[];
+    groupedByType: Record<string, TypeaheadSuggestion[]>;
+    totalMatched: number;
+  }>({
+    queryKey: ["/api/entities/search/typeahead", localQuery],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/entities/search/typeahead?q=${encodeURIComponent(localQuery)}`);
+      return res.json();
+    },
+    enabled: localQuery.length >= 2,
+    staleTime: 5000,
+  });
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleInputChange = (val: string) => {
+    setLocalQuery(val);
+    onChange(val);
+    setShowDropdown(val.length >= 2);
+  };
+
+  const handleSelect = (entity: TypeaheadSuggestion) => {
+    onSelectEntity(entity.id);
+    setLocalQuery(entity.displayName || entity.value);
+    onChange(entity.displayName || entity.value);
+    setShowDropdown(false);
+  };
+
+  const groupedTypes = suggestions?.groupedByType ? Object.keys(suggestions.groupedByType) : [];
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+      <Input
+        placeholder="Search entities (type-ahead)..."
+        value={localQuery}
+        onChange={(e) => handleInputChange(e.target.value)}
+        onFocus={() => localQuery.length >= 2 && setShowDropdown(true)}
+        className="pl-8 h-9"
+        data-testid="input-entity-search"
+      />
+      {showDropdown && suggestions && suggestions.suggestions.length > 0 && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border rounded-md shadow-lg max-h-72 overflow-y-auto">
+          {groupedTypes.map((type) => {
+            const items = suggestions.groupedByType[type] || [];
+            const config = ENTITY_TYPE_CONFIG[type];
+            return (
+              <div key={type}>
+                <div className="px-3 py-1.5 text-[10px] text-muted-foreground uppercase tracking-wider bg-muted/30 sticky top-0">
+                  {config?.label || type} ({items.length})
+                </div>
+                {items.map((item) => (
+                  <button
+                    key={item.id}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/50 text-left"
+                    onClick={() => handleSelect(item)}
+                  >
+                    <EntityTypeIcon type={item.type} className="h-3.5 w-3.5 shrink-0" />
+                    <span className="font-mono truncate flex-1">{item.displayName || item.value}</span>
+                    <span className={`text-[9px] font-medium ${getRiskColor(item.riskScore || 0)}`}>
+                      {((item.riskScore || 0) * 100).toFixed(0)}%
+                    </span>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+          <div className="px-3 py-1.5 text-[10px] text-muted-foreground text-center border-t">
+            {suggestions.totalMatched} results
+          </div>
+        </div>
+      )}
+      {showDropdown && localQuery.length >= 2 && suggestions && suggestions.suggestions.length === 0 && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border rounded-md shadow-lg p-3 text-xs text-muted-foreground text-center">
+          No entities found matching &quot;{localQuery}&quot;
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 11.8: Create Incident from Graph Dialog
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2531,17 +3091,10 @@ export default function EntityGraphPage() {
 
       {graph && <EntityGraphStats graph={graph} />}
 
-      {/* Search and filters */}
+      {/* 13.2: Search with type-ahead and filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search entities..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-9"
-            data-testid="input-entity-search"
-          />
+        <div className="flex-1 min-w-[200px] max-w-sm">
+          <TypeAheadSearch value={search} onChange={setSearch} onSelectEntity={handleSelectEntity} />
         </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-36 h-9" data-testid="select-type-filter">

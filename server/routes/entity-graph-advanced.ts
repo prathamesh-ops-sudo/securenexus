@@ -3,8 +3,16 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { getOrgId, logger, p, storage } from "./shared";
 import { db } from "../db";
-import { entities, alertEntities, alerts, uebaEntityScores } from "@shared/schema";
-import { eq, and, sql, inArray, desc } from "drizzle-orm";
+import {
+  entities,
+  alertEntities,
+  alerts,
+  uebaEntityScores,
+  incidents,
+  attackPaths,
+  entityAliases,
+} from "@shared/schema";
+import { eq, and, sql, inArray, desc, ilike, or } from "drizzle-orm";
 import { getEntityGraphWithEdges } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 
@@ -645,6 +653,827 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
       } catch (error) {
         log.error("Create incident from graph error", { error: String(error) });
         res.status(500).json({ message: "Failed to create incident from graph" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 13.2: Entity search with type-ahead
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/search/typeahead",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const q = String(req.query.q || "").trim();
+        if (!q || q.length < 2) {
+          return res.json({ suggestions: [], recentSearches: [] });
+        }
+
+        const pattern = `%${q}%`;
+        const matches = await db
+          .select({
+            id: entities.id,
+            type: entities.type,
+            value: entities.value,
+            displayName: entities.displayName,
+            riskScore: entities.riskScore,
+            alertCount: entities.alertCount,
+            lastSeenAt: entities.lastSeenAt,
+          })
+          .from(entities)
+          .where(
+            and(eq(entities.orgId, orgId), or(ilike(entities.value, pattern), ilike(entities.displayName, pattern))),
+          )
+          .orderBy(desc(entities.riskScore))
+          .limit(15);
+
+        // Group by type for categorized results
+        const byType: Record<string, typeof matches> = {};
+        for (const m of matches) {
+          if (!byType[m.type]) byType[m.type] = [];
+          byType[m.type].push(m);
+        }
+
+        res.json({
+          suggestions: matches.map((m) => ({
+            id: m.id,
+            type: m.type,
+            value: m.value,
+            displayName: m.displayName,
+            riskScore: m.riskScore || 0,
+            alertCount: m.alertCount || 0,
+            lastSeenAt: m.lastSeenAt,
+          })),
+          groupedByType: byType,
+          totalMatched: matches.length,
+        });
+      } catch (error) {
+        log.error("Typeahead search error", { error: String(error) });
+        res.status(500).json({ message: "Failed to search entities" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 13.3: Entity risk scoring (dynamic, multi-factor)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/:id/risk-score",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = p(req.params.id);
+
+        const [entity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, entityId), eq(entities.orgId, orgId)));
+
+        if (!entity) return res.status(404).json({ message: "Entity not found" });
+
+        // Factor 1: Alert severity (0.30 weight)
+        const entityAlertLinks = await db
+          .select({ alertId: alertEntities.alertId })
+          .from(alertEntities)
+          .where(eq(alertEntities.entityId, entityId));
+
+        const alertIds = entityAlertLinks.map((l) => l.alertId);
+        let alertSeverityScore = 0;
+        const severityBreakdown: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+
+        if (alertIds.length > 0) {
+          const entityAlerts = await db
+            .select({ severity: alerts.severity })
+            .from(alerts)
+            .where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds.slice(0, 200))));
+
+          for (const a of entityAlerts) {
+            const sev = (a.severity || "low").toLowerCase();
+            severityBreakdown[sev] = (severityBreakdown[sev] || 0) + 1;
+            if (sev === "critical") alertSeverityScore += 1.0;
+            else if (sev === "high") alertSeverityScore += 0.75;
+            else if (sev === "medium") alertSeverityScore += 0.4;
+            else alertSeverityScore += 0.1;
+          }
+          alertSeverityScore = Math.min(alertSeverityScore / Math.max(entityAlerts.length, 1), 1.0);
+        }
+
+        // Factor 2: UEBA anomaly score (0.25 weight)
+        let uebaScore = 0;
+        const [uebaRecord] = await db
+          .select()
+          .from(uebaEntityScores)
+          .where(
+            and(
+              eq(uebaEntityScores.orgId, orgId),
+              eq(uebaEntityScores.entityId, entity.value),
+              eq(uebaEntityScores.entityType, entity.type),
+            ),
+          )
+          .limit(1);
+
+        if (uebaRecord) {
+          uebaScore = (uebaRecord.riskScore || 0) / 100;
+        }
+
+        // Factor 3: Exposure level (0.15 weight) — based on connections count
+        const graph = await getEntityGraphWithEdges(orgId, 200);
+        const entityNode = graph.nodes.find((n) => n.id === entityId);
+        const connectionCount = entityNode?.connections || 0;
+        const exposureScore = Math.min(connectionCount / 20, 1.0);
+
+        // Factor 4: Privilege level (0.15 weight) — inferred from entity type and metadata
+        let privilegeScore = 0;
+        const meta = (entity.metadata || {}) as Record<string, any>;
+        if (entity.type === "user") {
+          if (meta.isAdmin || meta.privileged || meta.role === "admin") privilegeScore = 1.0;
+          else if (meta.role === "manager" || meta.department === "IT") privilegeScore = 0.6;
+          else privilegeScore = 0.2;
+        } else if (entity.type === "host" || entity.type === "ip") {
+          if (meta.isServer || meta.isCritical || meta.classification === "critical") privilegeScore = 0.9;
+          else if (meta.isInternal) privilegeScore = 0.4;
+          else privilegeScore = 0.3;
+        } else {
+          privilegeScore = 0.2;
+        }
+
+        // Factor 5: Access patterns / recency (0.15 weight)
+        const now = Date.now();
+        const lastSeen = entity.lastSeenAt ? new Date(entity.lastSeenAt).getTime() : 0;
+        const firstSeen = entity.firstSeenAt ? new Date(entity.firstSeenAt).getTime() : now;
+        const daysSinceLastSeen = lastSeen > 0 ? (now - lastSeen) / (24 * 60 * 60 * 1000) : 999;
+        const activeSpanDays = (now - firstSeen) / (24 * 60 * 60 * 1000);
+        let accessPatternScore = 0;
+        if (daysSinceLastSeen < 1) accessPatternScore = 1.0;
+        else if (daysSinceLastSeen < 7) accessPatternScore = 0.7;
+        else if (daysSinceLastSeen < 30) accessPatternScore = 0.4;
+        else accessPatternScore = 0.1;
+
+        // Weighted composite score
+        const weights = {
+          alertSeverity: 0.3,
+          uebaAnomaly: 0.25,
+          exposure: 0.15,
+          privilege: 0.15,
+          accessPattern: 0.15,
+        };
+
+        const compositeScore =
+          alertSeverityScore * weights.alertSeverity +
+          uebaScore * weights.uebaAnomaly +
+          exposureScore * weights.exposure +
+          privilegeScore * weights.privilege +
+          accessPatternScore * weights.accessPattern;
+
+        const riskLevel =
+          compositeScore >= 0.8
+            ? "critical"
+            : compositeScore >= 0.6
+              ? "high"
+              : compositeScore >= 0.4
+                ? "medium"
+                : "low";
+
+        // Peer comparison — same-type entities
+        const peerEntities = await db
+          .select({ id: entities.id, riskScore: entities.riskScore })
+          .from(entities)
+          .where(and(eq(entities.orgId, orgId), eq(entities.type, entity.type)))
+          .limit(200);
+
+        const peerScores = peerEntities.map((pe) => pe.riskScore || 0).sort((a, b) => a - b);
+        const percentile =
+          peerScores.length > 0
+            ? Math.round((peerScores.filter((s) => s <= compositeScore).length / peerScores.length) * 100)
+            : 50;
+
+        res.json({
+          entityId: entity.id,
+          entityType: entity.type,
+          entityValue: entity.value,
+          compositeScore: Math.round(compositeScore * 100) / 100,
+          riskLevel,
+          factors: {
+            alertSeverity: {
+              score: Math.round(alertSeverityScore * 100) / 100,
+              weight: weights.alertSeverity,
+              breakdown: severityBreakdown,
+            },
+            uebaAnomaly: {
+              score: Math.round(uebaScore * 100) / 100,
+              weight: weights.uebaAnomaly,
+              anomalyCount: uebaRecord?.anomalyCount || 0,
+            },
+            exposure: { score: Math.round(exposureScore * 100) / 100, weight: weights.exposure, connectionCount },
+            privilege: { score: Math.round(privilegeScore * 100) / 100, weight: weights.privilege },
+            accessPattern: {
+              score: Math.round(accessPatternScore * 100) / 100,
+              weight: weights.accessPattern,
+              daysSinceLastSeen: Math.round(daysSinceLastSeen),
+              activeSpanDays: Math.round(activeSpanDays),
+            },
+          },
+          peerComparison: {
+            percentile,
+            totalPeers: peerScores.length,
+            avgPeerRisk:
+              peerScores.length > 0
+                ? Math.round((peerScores.reduce((a, b) => a + b, 0) / peerScores.length) * 100) / 100
+                : 0,
+          },
+          firstSeenAt: entity.firstSeenAt,
+          lastSeenAt: entity.lastSeenAt,
+          totalAlerts: alertIds.length,
+        });
+      } catch (error) {
+        log.error("Entity risk scoring error", { error: String(error) });
+        res.status(500).json({ message: "Failed to compute entity risk score" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 13.5: Entity deduplication suggestions
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/dedup-suggestions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const allEntities = await db.select().from(entities).where(eq(entities.orgId, orgId)).limit(500);
+
+        const suggestions: {
+          entity1: { id: string; type: string; value: string; displayName: string | null };
+          entity2: { id: string; type: string; value: string; displayName: string | null };
+          reason: string;
+          confidence: number;
+        }[] = [];
+
+        // Check for duplicate patterns within the same type
+        const byType: Record<string, typeof allEntities> = {};
+        for (const e of allEntities) {
+          if (!byType[e.type]) byType[e.type] = [];
+          byType[e.type].push(e);
+        }
+
+        for (const [, typeEntities] of Object.entries(byType)) {
+          for (let i = 0; i < typeEntities.length && i < 100; i++) {
+            for (let j = i + 1; j < typeEntities.length && j < 100; j++) {
+              const e1 = typeEntities[i];
+              const e2 = typeEntities[j];
+
+              let reason = "";
+              let confidence = 0;
+
+              const v1 = e1.value.toLowerCase().trim();
+              const v2 = e2.value.toLowerCase().trim();
+
+              // Exact match after normalization
+              if (v1 === v2) {
+                reason = "Identical values after normalization";
+                confidence = 95;
+              }
+              // Email domain variations (john@company.com vs john@company.co.uk)
+              else if (e1.type === "email" && e2.type === "email") {
+                const [user1] = v1.split("@");
+                const [user2] = v2.split("@");
+                if (user1 === user2) {
+                  reason = "Same email username, different domain";
+                  confidence = 75;
+                }
+              }
+              // User format variations (john.doe vs jdoe vs john_doe)
+              else if (e1.type === "user") {
+                const norm1 = v1.replace(/[._-]/g, "");
+                const norm2 = v2.replace(/[._-]/g, "");
+                if (norm1 === norm2) {
+                  reason = "Same username after removing separators";
+                  confidence = 80;
+                } else if (v1.includes(v2) || v2.includes(v1)) {
+                  reason = "One value is a substring of the other";
+                  confidence = 60;
+                }
+              }
+              // IP notation variations (leading zeros, IPv4-mapped IPv6)
+              else if (e1.type === "ip") {
+                const stripLeadingZeros = (ip: string) => ip.replace(/\b0+(\d)/g, "$1");
+                if (stripLeadingZeros(v1) === stripLeadingZeros(v2)) {
+                  reason = "Same IP after removing leading zeros";
+                  confidence = 90;
+                }
+                // IPv4-mapped IPv6 (::ffff:192.168.1.1 vs 192.168.1.1)
+                else if (v1.replace("::ffff:", "") === v2 || v2.replace("::ffff:", "") === v1) {
+                  reason = "IPv4-mapped IPv6 match";
+                  confidence = 85;
+                }
+              }
+              // Domain variations (www.example.com vs example.com)
+              else if (e1.type === "domain") {
+                const strip = (d: string) => d.replace(/^www\./, "").replace(/\.$/, "");
+                if (strip(v1) === strip(v2)) {
+                  reason = "Same domain after stripping www prefix";
+                  confidence = 90;
+                }
+              }
+              // DisplayName match with different values
+              else if (
+                e1.displayName &&
+                e2.displayName &&
+                e1.displayName.toLowerCase() === e2.displayName.toLowerCase() &&
+                v1 !== v2
+              ) {
+                reason = "Same display name, different values";
+                confidence = 65;
+              }
+
+              if (reason && confidence >= 60) {
+                suggestions.push({
+                  entity1: { id: e1.id, type: e1.type, value: e1.value, displayName: e1.displayName },
+                  entity2: { id: e2.id, type: e2.type, value: e2.value, displayName: e2.displayName },
+                  reason,
+                  confidence,
+                });
+              }
+            }
+          }
+        }
+
+        // Sort by confidence descending
+        suggestions.sort((a, b) => b.confidence - a.confidence);
+
+        res.json({
+          suggestions: suggestions.slice(0, 50),
+          totalFound: suggestions.length,
+        });
+      } catch (error) {
+        log.error("Dedup suggestions error", { error: String(error) });
+        res.status(500).json({ message: "Failed to find dedup suggestions" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 13.1: Entity profile — rich detail page data
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/:id/profile",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = p(req.params.id);
+
+        const [entity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, entityId), eq(entities.orgId, orgId)));
+
+        if (!entity) return res.status(404).json({ message: "Entity not found" });
+
+        // Get all alerts for this entity with timeline info
+        const entityAlertLinks = await db
+          .select({ alertId: alertEntities.alertId })
+          .from(alertEntities)
+          .where(eq(alertEntities.entityId, entityId));
+
+        const alertIds = entityAlertLinks.map((l) => l.alertId);
+        let activityTimeline: { date: string; alertCount: number; maxSeverity: string }[] = [];
+        const alertsByStatus: Record<string, number> = {};
+        const alertsBySeverity: Record<string, number> = {};
+
+        if (alertIds.length > 0) {
+          const entityAlerts = await db
+            .select()
+            .from(alerts)
+            .where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds.slice(0, 500))))
+            .orderBy(desc(alerts.createdAt));
+
+          // Build activity timeline (daily buckets)
+          const dailyMap = new Map<string, { count: number; maxSev: string }>();
+          const sevOrder: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+          for (const a of entityAlerts) {
+            const day = a.createdAt ? new Date(a.createdAt).toISOString().slice(0, 10) : "unknown";
+            const sev = (a.severity || "low").toLowerCase();
+            const existing = dailyMap.get(day) || { count: 0, maxSev: "low" };
+            existing.count++;
+            if ((sevOrder[sev] || 0) > (sevOrder[existing.maxSev] || 0)) existing.maxSev = sev;
+            dailyMap.set(day, existing);
+
+            // Status breakdown
+            const status = a.status || "open";
+            alertsByStatus[status] = (alertsByStatus[status] || 0) + 1;
+            alertsBySeverity[sev] = (alertsBySeverity[sev] || 0) + 1;
+          }
+
+          activityTimeline = Array.from(dailyMap.entries())
+            .map(([date, data]) => ({ date, alertCount: data.count, maxSeverity: data.maxSev }))
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .slice(-90); // Last 90 days
+        }
+
+        // Get aliases
+        const aliases = await db.select().from(entityAliases).where(eq(entityAliases.entityId, entityId));
+
+        // Get associated incidents
+        let associatedIncidents: {
+          id: string;
+          title: string;
+          severity: string;
+          status: string;
+          createdAt: Date | null;
+        }[] = [];
+        if (alertIds.length > 0) {
+          const incidentAlerts = await db
+            .select({ incidentId: alerts.incidentId })
+            .from(alerts)
+            .where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds.slice(0, 200))))
+            .limit(200);
+
+          const incidentIds = Array.from(new Set(incidentAlerts.map((a) => a.incidentId).filter(Boolean) as string[]));
+
+          if (incidentIds.length > 0) {
+            associatedIncidents = await db
+              .select({
+                id: incidents.id,
+                title: incidents.title,
+                severity: incidents.severity,
+                status: incidents.status,
+                createdAt: incidents.createdAt,
+              })
+              .from(incidents)
+              .where(and(eq(incidents.orgId, orgId), inArray(incidents.id, incidentIds.slice(0, 50))));
+          }
+        }
+
+        // Get associated attack paths
+        const orgAttackPaths = await db.select().from(attackPaths).where(eq(attackPaths.orgId, orgId)).limit(100);
+
+        const relatedPaths = orgAttackPaths.filter((ap) => {
+          const nodes = (ap.nodes || []) as Array<{ data?: { id?: string; value?: string } }>;
+          return nodes.some((n) => n.data?.id === entityId || n.data?.value === entity.value);
+        });
+
+        // Peer comparison
+        const peerEntities = await db
+          .select({ id: entities.id, value: entities.value, riskScore: entities.riskScore })
+          .from(entities)
+          .where(and(eq(entities.orgId, orgId), eq(entities.type, entity.type)))
+          .orderBy(desc(entities.riskScore))
+          .limit(50);
+
+        const entityRank = peerEntities.findIndex((pe) => pe.id === entityId) + 1;
+
+        res.json({
+          entity: {
+            id: entity.id,
+            type: entity.type,
+            value: entity.value,
+            displayName: entity.displayName,
+            riskScore: entity.riskScore || 0,
+            alertCount: entity.alertCount || 0,
+            metadata: entity.metadata,
+            firstSeenAt: entity.firstSeenAt,
+            lastSeenAt: entity.lastSeenAt,
+            createdAt: entity.createdAt,
+          },
+          aliases: aliases.map((a) => ({
+            id: a.id,
+            aliasType: a.aliasType,
+            aliasValue: a.aliasValue,
+            source: a.source,
+          })),
+          activityTimeline,
+          alertBreakdown: { byStatus: alertsByStatus, bySeverity: alertsBySeverity, total: alertIds.length },
+          associatedIncidents,
+          associatedAttackPaths: relatedPaths.map((ap) => ({
+            id: ap.id,
+            name: ap.campaignId || ap.clusterId || ap.id,
+            severity:
+              ap.confidence >= 0.8
+                ? "critical"
+                : ap.confidence >= 0.6
+                  ? "high"
+                  : ap.confidence >= 0.4
+                    ? "medium"
+                    : "low",
+            status: ap.lastAlertAt ? "active" : "historical",
+          })),
+          peerComparison: {
+            rank: entityRank,
+            totalPeers: peerEntities.length,
+            topPeers: peerEntities.slice(0, 5).map((pe) => ({
+              id: pe.id,
+              value: pe.value,
+              riskScore: pe.riskScore || 0,
+            })),
+          },
+        });
+      } catch (error) {
+        log.error("Entity profile error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch entity profile" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 13.6: Entity → Alert/Incident pivot
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/:id/pivot",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = p(req.params.id);
+
+        const [entity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, entityId), eq(entities.orgId, orgId)));
+
+        if (!entity) return res.status(404).json({ message: "Entity not found" });
+
+        // Get all alerts linked to this entity
+        const entityAlertLinks = await db
+          .select({ alertId: alertEntities.alertId })
+          .from(alertEntities)
+          .where(eq(alertEntities.entityId, entityId));
+
+        const alertIds = entityAlertLinks.map((l) => l.alertId);
+
+        let pivotAlerts: {
+          id: string;
+          title: string;
+          severity: string;
+          status: string;
+          source: string | null;
+          createdAt: Date | null;
+          incidentId: string | null;
+        }[] = [];
+
+        if (alertIds.length > 0) {
+          pivotAlerts = await db
+            .select({
+              id: alerts.id,
+              title: alerts.title,
+              severity: alerts.severity,
+              status: alerts.status,
+              source: alerts.source,
+              createdAt: alerts.createdAt,
+              incidentId: alerts.incidentId,
+            })
+            .from(alerts)
+            .where(and(eq(alerts.orgId, orgId), inArray(alerts.id, alertIds.slice(0, 200))))
+            .orderBy(desc(alerts.createdAt));
+        }
+
+        // Get unique incidents from alerts
+        const incidentIds = Array.from(new Set(pivotAlerts.map((a) => a.incidentId).filter(Boolean) as string[]));
+
+        let pivotIncidents: {
+          id: string;
+          title: string;
+          severity: string;
+          status: string;
+          createdAt: Date | null;
+          alertCount: number;
+        }[] = [];
+
+        if (incidentIds.length > 0) {
+          const incidentRows = await db
+            .select({
+              id: incidents.id,
+              title: incidents.title,
+              severity: incidents.severity,
+              status: incidents.status,
+              createdAt: incidents.createdAt,
+            })
+            .from(incidents)
+            .where(and(eq(incidents.orgId, orgId), inArray(incidents.id, incidentIds.slice(0, 50))));
+
+          pivotIncidents = incidentRows.map((inc) => ({
+            ...inc,
+            alertCount: pivotAlerts.filter((a) => a.incidentId === inc.id).length,
+          }));
+        }
+
+        res.json({
+          entityId: entity.id,
+          entityType: entity.type,
+          entityValue: entity.value,
+          alerts: pivotAlerts,
+          incidents: pivotIncidents,
+          summary: {
+            totalAlerts: pivotAlerts.length,
+            totalIncidents: pivotIncidents.length,
+            openAlerts: pivotAlerts.filter((a) => a.status === "open" || a.status === "new").length,
+            criticalAlerts: pivotAlerts.filter((a) => a.severity === "critical").length,
+            activeIncidents: pivotIncidents.filter((i) => i.status === "open" || i.status === "investigating").length,
+          },
+        });
+      } catch (error) {
+        log.error("Entity pivot error", { error: String(error) });
+        res.status(500).json({ message: "Failed to get entity pivot data" });
+      }
+    },
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 13.7: Entity → Threat Hunting pivot (pre-populated query)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get(
+    "/api/entities/:id/hunt-query",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const entityId = p(req.params.id);
+
+        const [entity] = await db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.id, entityId), eq(entities.orgId, orgId)));
+
+        if (!entity) return res.status(404).json({ message: "Entity not found" });
+
+        // Build hunting queries based on entity type
+        const queries: { name: string; query: string; description: string; dataSource: string }[] = [];
+
+        switch (entity.type) {
+          case "user":
+            queries.push(
+              {
+                name: "All user activity",
+                query: `SELECT * FROM logs WHERE user = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
+                description: `Find all activity for user ${entity.value}`,
+                dataSource: "auth_logs",
+              },
+              {
+                name: "Failed logins",
+                query: `SELECT * FROM auth_logs WHERE user = '${entity.value}' AND action = 'login_failed' ORDER BY timestamp DESC`,
+                description: "Find failed authentication attempts",
+                dataSource: "auth_logs",
+              },
+              {
+                name: "Privilege escalation",
+                query: `SELECT * FROM logs WHERE user = '${entity.value}' AND (action LIKE '%admin%' OR action LIKE '%privilege%' OR action LIKE '%sudo%')`,
+                description: "Detect privilege escalation attempts",
+                dataSource: "all_logs",
+              },
+              {
+                name: "Off-hours activity",
+                query: `SELECT * FROM logs WHERE user = '${entity.value}' AND (EXTRACT(HOUR FROM timestamp) < 6 OR EXTRACT(HOUR FROM timestamp) > 22)`,
+                description: "Find activity outside business hours",
+                dataSource: "all_logs",
+              },
+            );
+            break;
+          case "ip":
+            queries.push(
+              {
+                name: "All connections",
+                query: `SELECT * FROM network_logs WHERE src_ip = '${entity.value}' OR dst_ip = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
+                description: `All network connections involving ${entity.value}`,
+                dataSource: "network_logs",
+              },
+              {
+                name: "Port scanning",
+                query: `SELECT dst_port, COUNT(*) as cnt FROM network_logs WHERE src_ip = '${entity.value}' GROUP BY dst_port HAVING cnt > 10 ORDER BY cnt DESC`,
+                description: "Detect port scanning behavior",
+                dataSource: "network_logs",
+              },
+              {
+                name: "Data exfiltration",
+                query: `SELECT * FROM network_logs WHERE src_ip = '${entity.value}' AND bytes_out > 10000000 ORDER BY bytes_out DESC`,
+                description: "Find large data transfers",
+                dataSource: "network_logs",
+              },
+              {
+                name: "C2 beaconing",
+                query: `SELECT dst_ip, COUNT(*) as cnt, AVG(EXTRACT(EPOCH FROM timestamp - LAG(timestamp) OVER(ORDER BY timestamp))) as avg_interval FROM network_logs WHERE src_ip = '${entity.value}' GROUP BY dst_ip HAVING cnt > 50`,
+                description: "Detect regular beaconing patterns",
+                dataSource: "network_logs",
+              },
+            );
+            break;
+          case "domain":
+            queries.push(
+              {
+                name: "DNS lookups",
+                query: `SELECT * FROM dns_logs WHERE query_name = '${entity.value}' OR query_name LIKE '%.${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
+                description: `All DNS queries for ${entity.value}`,
+                dataSource: "dns_logs",
+              },
+              {
+                name: "HTTP requests",
+                query: `SELECT * FROM proxy_logs WHERE host = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
+                description: "All HTTP/HTTPS traffic to this domain",
+                dataSource: "proxy_logs",
+              },
+              {
+                name: "Subdomain enumeration",
+                query: `SELECT DISTINCT query_name FROM dns_logs WHERE query_name LIKE '%.${entity.value}' ORDER BY query_name`,
+                description: "List all observed subdomains",
+                dataSource: "dns_logs",
+              },
+            );
+            break;
+          case "file_hash":
+            queries.push(
+              {
+                name: "File executions",
+                query: `SELECT * FROM process_logs WHERE file_hash = '${entity.value}' ORDER BY timestamp DESC`,
+                description: `All executions of file with hash ${entity.value.slice(0, 16)}...`,
+                dataSource: "endpoint_logs",
+              },
+              {
+                name: "File downloads",
+                query: `SELECT * FROM proxy_logs WHERE response_hash = '${entity.value}' ORDER BY timestamp DESC`,
+                description: "Find where this file was downloaded from",
+                dataSource: "proxy_logs",
+              },
+              {
+                name: "Lateral movement",
+                query: `SELECT DISTINCT hostname FROM process_logs WHERE file_hash = '${entity.value}'`,
+                description: "Find all hosts where this file appeared",
+                dataSource: "endpoint_logs",
+              },
+            );
+            break;
+          case "host":
+            queries.push(
+              {
+                name: "All host activity",
+                query: `SELECT * FROM logs WHERE hostname = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
+                description: `All activity on host ${entity.value}`,
+                dataSource: "all_logs",
+              },
+              {
+                name: "Process creation",
+                query: `SELECT * FROM process_logs WHERE hostname = '${entity.value}' AND event_type = 'process_create' ORDER BY timestamp DESC LIMIT 500`,
+                description: "Recent process creation events",
+                dataSource: "endpoint_logs",
+              },
+              {
+                name: "Network connections",
+                query: `SELECT * FROM network_logs WHERE hostname = '${entity.value}' ORDER BY timestamp DESC LIMIT 500`,
+                description: "Network connections from this host",
+                dataSource: "network_logs",
+              },
+            );
+            break;
+          default:
+            queries.push({
+              name: "Search all sources",
+              query: `SELECT * FROM logs WHERE value = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
+              description: `Search for ${entity.value} across all data sources`,
+              dataSource: "all_logs",
+            });
+        }
+
+        // Also build a graph query
+        const graphQuery = `FIND ${entity.type.charAt(0).toUpperCase() + entity.type.slice(1)} WHERE value CONTAINS "${entity.value}"`;
+
+        res.json({
+          entityId: entity.id,
+          entityType: entity.type,
+          entityValue: entity.value,
+          huntQueries: queries,
+          graphQuery,
+          huntUrl: `/threat-hunting?entity=${encodeURIComponent(entity.value)}&type=${entity.type}`,
+        });
+      } catch (error) {
+        log.error("Entity hunt query error", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate hunt queries" });
       }
     },
   );
