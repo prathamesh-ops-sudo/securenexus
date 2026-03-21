@@ -108,6 +108,7 @@ import { registerDnsSecurityRoutes } from "./dns-security";
 import { registerEmailSecurityRoutes } from "./email-security";
 import { registerOsintRoutes } from "./osint";
 import { registerRSSIntelligenceRoutes } from "./rss-intelligence";
+import { registerMitreAttackRoutes } from "./mitre-attack";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -220,4 +221,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerEmailSecurityRoutes(app);
   registerOsintRoutes(app);
   registerRSSIntelligenceRoutes(app);
+  registerMitreAttackRoutes(app);
 }
