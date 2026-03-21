@@ -107,6 +107,7 @@ import { registerSecurityMetricsRoutes } from "./security-metrics";
 import { registerDnsSecurityRoutes } from "./dns-security";
 import { registerEmailSecurityRoutes } from "./email-security";
 import { registerEntityGraphAdvancedRoutes } from "./entity-graph-advanced";
+import { registerAttackPathAdvancedRoutes } from "./attack-path-advanced";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -218,4 +219,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerDnsSecurityRoutes(app);
   registerEmailSecurityRoutes(app);
   registerEntityGraphAdvancedRoutes(app);
+  registerAttackPathAdvancedRoutes(app);
 }
