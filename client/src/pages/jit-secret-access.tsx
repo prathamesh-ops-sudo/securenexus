@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Shield,
   ShieldCheck,
@@ -29,6 +30,15 @@ import {
   Server,
   Fingerprint,
   FileKey,
+  Plus,
+  AlertCircle,
+  BarChart3,
+  Video,
+  GitBranch,
+  Clock,
+  TrendingUp,
+  Users,
+  Activity,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +46,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface JitStats {
   totalSecrets: number;
@@ -53,10 +68,22 @@ interface JitStats {
 }
 
 const CLASSIFICATION_CONFIG: Record<string, { color: string; label: string }> = {
-  critical: { color: "bg-red-500/20 text-red-400 border-red-500/30", label: "Critical" },
-  high: { color: "bg-orange-500/20 text-orange-400 border-orange-500/30", label: "High" },
-  medium: { color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", label: "Medium" },
-  low: { color: "bg-green-500/20 text-green-400 border-green-500/30", label: "Low" },
+  critical: {
+    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: "Critical",
+  },
+  high: {
+    color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    label: "High",
+  },
+  medium: {
+    color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    label: "Medium",
+  },
+  low: {
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    label: "Low",
+  },
 };
 
 const SECRET_TYPE_ICONS: Record<string, typeof Key> = {
@@ -71,27 +98,72 @@ const SECRET_TYPE_ICONS: Record<string, typeof Key> = {
 };
 
 const REQUEST_STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  pending: { color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", label: "Pending" },
-  approved: { color: "bg-blue-500/20 text-blue-400 border-blue-500/30", label: "Approved" },
-  denied: { color: "bg-red-500/20 text-red-400 border-red-500/30", label: "Denied" },
-  active: { color: "bg-green-500/20 text-green-400 border-green-500/30", label: "Active" },
-  released: { color: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Released" },
-  expired: { color: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Expired" },
-  revoked: { color: "bg-red-500/20 text-red-400 border-red-500/30", label: "Revoked" },
+  pending: {
+    color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    label: "Pending",
+  },
+  approved: {
+    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    label: "Approved",
+  },
+  denied: {
+    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: "Denied",
+  },
+  active: {
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    label: "Active",
+  },
+  released: {
+    color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+    label: "Released",
+  },
+  expired: {
+    color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+    label: "Expired",
+  },
+  revoked: {
+    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: "Revoked",
+  },
 };
 
 const SHARE_STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  active: { color: "bg-green-500/20 text-green-400 border-green-500/30", label: "Active" },
-  consumed: { color: "bg-blue-500/20 text-blue-400 border-blue-500/30", label: "Consumed" },
-  expired: { color: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Expired" },
-  revoked: { color: "bg-red-500/20 text-red-400 border-red-500/30", label: "Revoked" },
+  active: {
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    label: "Active",
+  },
+  consumed: {
+    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    label: "Consumed",
+  },
+  expired: {
+    color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+    label: "Expired",
+  },
+  revoked: {
+    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: "Revoked",
+  },
 };
 
 const BREAK_GLASS_STATUS: Record<string, { color: string; label: string }> = {
-  active: { color: "bg-red-500/20 text-red-400 border-red-500/30", label: "Active" },
-  expired: { color: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Expired" },
-  reviewed: { color: "bg-green-500/20 text-green-400 border-green-500/30", label: "Reviewed" },
-  revoked: { color: "bg-orange-500/20 text-orange-400 border-orange-500/30", label: "Revoked" },
+  active: {
+    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: "Active",
+  },
+  expired: {
+    color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+    label: "Expired",
+  },
+  reviewed: {
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    label: "Reviewed",
+  },
+  revoked: {
+    color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    label: "Revoked",
+  },
 };
 
 interface StatCardProps {
@@ -104,7 +176,7 @@ interface StatCardProps {
 
 function StatCard({ title, value, icon: Icon, color, subtitle }: StatCardProps) {
   return (
-    <Card className="glass-card border-border/30">
+    <Card className="border-border/30">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
@@ -120,6 +192,581 @@ function StatCard({ title, value, icon: Icon, color, subtitle }: StatCardProps) 
     </Card>
   );
 }
+
+// ─── 28.1 Access Request Form with Justification ──────────────────────────
+
+interface TargetSystem {
+  id: string;
+  name: string;
+  type: string;
+  classification: string;
+  environment: string;
+  service: string;
+  owner: string;
+  approvalChain: string[];
+  availableRoles: string[];
+  maxDurationMinutes: number;
+}
+
+function AccessRequestFormTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedSystem, setSelectedSystem] = useState("");
+  const [selectedRole, setSelectedRole] = useState("read");
+  const [duration, setDuration] = useState("30");
+  const [justification, setJustification] = useState("");
+
+  const { data: targetSystems, isLoading: systemsLoading } = useQuery<TargetSystem[]>({
+    queryKey: ["/api/jit-secrets/target-systems"],
+  });
+
+  const systemList = Array.isArray(targetSystems) ? targetSystems : [];
+  const selected = systemList.find((s) => s.id === selectedSystem);
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/jit-secrets/access-requests", {
+        secretId: selectedSystem,
+        requesterId: "current-user",
+        requesterName: "Current User",
+        reason: justification,
+        durationMinutes: parseInt(duration, 10),
+        approverRole: selected?.approvalChain[0] || "owner",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Access request submitted", description: "Awaiting approval" });
+      queryClient.invalidateQueries({ queryKey: ["/api/jit-secrets/access-requests"] });
+      setSelectedSystem("");
+      setJustification("");
+      setDuration("30");
+    },
+    onError: () => {
+      toast({ title: "Failed to submit request", variant: "destructive" });
+    },
+  });
+
+  const canSubmit = selectedSystem && justification.length >= 10 && parseInt(duration, 10) > 0;
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-border/30">
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Plus className="h-4 w-4 text-primary" />
+            New Access Request
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 pt-0 space-y-4">
+          {/* Target System */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Target System / Secret</label>
+            {systemsLoading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : (
+              <Select value={selectedSystem} onValueChange={setSelectedSystem}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Select a target system..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {systemList.map((sys) => (
+                    <SelectItem key={sys.id} value={sys.id}>
+                      <span className="flex items-center gap-2">
+                        {sys.name}
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1 ${CLASSIFICATION_CONFIG[sys.classification]?.color || ""}`}
+                        >
+                          {sys.classification}
+                        </Badge>
+                        <span className="text-muted-foreground text-[10px]">{sys.environment}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* System details */}
+          {selected && (
+            <Card className="border-border/20 bg-muted/10">
+              <CardContent className="p-3 space-y-2">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Type</span>
+                    <p className="font-medium">{selected.type.replace(/_/g, " ")}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Environment</span>
+                    <p className="font-medium">{selected.environment}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Service</span>
+                    <p className="font-medium">{selected.service}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Owner</span>
+                    <p className="font-medium">{selected.owner}</p>
+                  </div>
+                </div>
+                <div className="pt-1 border-t border-border/20">
+                  <span className="text-[10px] text-muted-foreground">Approval chain: </span>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    {selected.approvalChain.map((role: string, idx: number) => (
+                      <span key={role} className="flex items-center gap-1">
+                        {idx > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                        <Badge variant="outline" className="text-[10px] px-1.5">
+                          {role}
+                        </Badge>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Max duration: {selected.maxDurationMinutes} minutes</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Role & Duration */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Required Role</label>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(selected?.availableRoles || ["read", "write", "admin"]).map((role: string) => (
+                    <SelectItem key={role} value={role}>
+                      {role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Duration (minutes)</label>
+              <Select value={duration} onValueChange={setDuration}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="15">15 min</SelectItem>
+                  <SelectItem value="30">30 min</SelectItem>
+                  <SelectItem value="60">1 hour</SelectItem>
+                  <SelectItem value="120">2 hours</SelectItem>
+                  <SelectItem value="240">4 hours</SelectItem>
+                  <SelectItem value="480">8 hours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Business Justification */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Business Justification (min 10 chars)</label>
+            <Textarea
+              placeholder="Describe why you need access, what you plan to do, and expected outcome..."
+              value={justification}
+              onChange={(e) => setJustification(e.target.value)}
+              className="min-h-[80px] text-sm"
+            />
+            <p className="text-[10px] text-muted-foreground text-right">{justification.length} / 10 min characters</p>
+          </div>
+
+          <Button
+            className="w-full"
+            disabled={!canSubmit || submitMutation.isPending}
+            onClick={() => submitMutation.mutate()}
+          >
+            {submitMutation.isPending ? (
+              <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Send className="h-4 w-4 mr-2" />
+            )}
+            Submit Access Request
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── 28.2 Active Session Monitoring ────────────────────────────────────────
+
+interface ActiveSession {
+  sessionId: string;
+  secretName: string;
+  user: string;
+  permissions: string;
+  approvedBy: string | null;
+  startedAt: string;
+  expiresAt: string | null;
+  timeRemainingMinutes: number;
+  durationMinutes: number;
+  progressPercent: number;
+  isExpiringSoon: boolean;
+  reason: string;
+}
+
+interface ActiveSessionsResponse {
+  sessions: ActiveSession[];
+  totalActive: number;
+  expiringSoon: number;
+}
+
+function ActiveSessionsTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery<ActiveSessionsResponse>({
+    queryKey: ["/api/jit-secrets/active-sessions"],
+    refetchInterval: 15000,
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const res = await apiRequest("POST", `/api/jit-secrets/active-sessions/${id}/revoke`, {
+        revokerName: "Current User",
+        reason,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Session revoked" });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/jit-secrets/active-sessions"],
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to revoke session", variant: "destructive" });
+    },
+  });
+
+  const sessions = data?.sessions || [];
+
+  return (
+    <div className="space-y-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="border-border/30">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-green-500/10">
+              <Activity className="h-4 w-4 text-green-400" />
+            </div>
+            <div>
+              <p className="text-xl font-bold">{data?.totalActive ?? 0}</p>
+              <p className="text-[11px] text-muted-foreground">Active Sessions</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/30">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-orange-500/10">
+              <AlertCircle className="h-4 w-4 text-orange-400" />
+            </div>
+            <div>
+              <p className="text-xl font-bold text-orange-400">{data?.expiringSoon ?? 0}</p>
+              <p className="text-[11px] text-muted-foreground">Expiring Soon (&lt;10min)</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Session list */}
+      <Card className="border-border/30">
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Eye className="h-4 w-4 text-primary" />
+            Live Session Monitor
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={`session-sk-${i}`} className="h-20" />
+              ))}
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No active JIT sessions</p>
+              <p className="text-xs mt-1">All privileged access windows are closed</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sessions.map((session) => (
+                <Card
+                  key={session.sessionId}
+                  className={`border-border/30 ${session.isExpiringSoon ? "border-l-2 border-l-orange-500" : ""}`}
+                >
+                  <CardContent className="p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{session.user}</span>
+                          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm font-medium">{session.secretName}</span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 bg-green-500/20 text-green-400 border-green-500/30"
+                          >
+                            {session.permissions}
+                          </Badge>
+                          {session.isExpiringSoon && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-1.5 bg-orange-500/20 text-orange-400 border-orange-500/30 animate-pulse"
+                            >
+                              Expiring Soon
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                          <span>Approved by: {session.approvedBy || "N/A"}</span>
+                          <span>Started: {new Date(session.startedAt).toLocaleTimeString()}</span>
+                          <span className="font-medium text-foreground">
+                            {session.timeRemainingMinutes}min remaining
+                          </span>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-muted/30 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                session.progressPercent > 80
+                                  ? "bg-orange-500"
+                                  : session.progressPercent > 60
+                                    ? "bg-yellow-500"
+                                    : "bg-green-500"
+                              }`}
+                              style={{
+                                width: `${session.progressPercent}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {session.progressPercent}%
+                          </span>
+                        </div>
+                      </div>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                              onClick={() =>
+                                revokeMutation.mutate({
+                                  id: session.sessionId,
+                                  reason: "Emergency revocation by admin",
+                                })
+                              }
+                              disabled={revokeMutation.isPending}
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1" />
+                              Revoke
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Emergency session revocation</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── 28.3 Access Request Analytics ─────────────────────────────────────────
+
+interface AccessAnalytics {
+  period: string;
+  totalRequests: number;
+  approved: number;
+  denied: number;
+  pending: number;
+  approvalRate: number;
+  avgDurationMinutes: number;
+  topRequesters: Array<{ user: string; count: number }>;
+  topSystems: Array<{ system: string; count: number }>;
+  unusualPatterns: Array<{
+    user: string;
+    requestCount: number;
+    avgForOrg: number;
+    anomalyRatio: number;
+    flag: string;
+  }>;
+}
+
+function AccessAnalyticsTab() {
+  const { data, isLoading } = useQuery<AccessAnalytics>({
+    queryKey: ["/api/jit-secrets/access-analytics"],
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={`analytics-sk-${i}`} className="h-32" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+        <p>No analytics data available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard
+          title="Total Requests (30d)"
+          value={data.totalRequests}
+          icon={ClipboardList}
+          color="bg-primary/10 text-primary"
+        />
+        <StatCard
+          title="Approval Rate"
+          value={`${data.approvalRate}%`}
+          icon={CheckCircle2}
+          color="bg-green-500/10 text-green-400"
+        />
+        <StatCard
+          title="Avg Duration"
+          value={`${data.avgDurationMinutes}m`}
+          icon={Clock}
+          color="bg-blue-500/10 text-blue-400"
+        />
+        <StatCard title="Denied" value={data.denied} icon={XCircle} color="bg-red-500/10 text-red-400" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Top Requesters */}
+        <Card className="border-border/30">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              Top Requesters (30d)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            {data.topRequesters.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No data</p>
+            ) : (
+              <div className="space-y-2">
+                {data.topRequesters.map((r, idx) => (
+                  <div key={r.user} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-muted-foreground w-4">{idx + 1}.</span>
+                      <span className="text-sm">{r.user}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 bg-muted/30 rounded-full overflow-hidden w-24">
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{
+                            width: `${Math.min(100, (r.count / Math.max(1, data.topRequesters[0]?.count || 1)) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-mono tabular-nums">{r.count}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top Systems */}
+        <Card className="border-border/30">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Server className="h-4 w-4 text-primary" />
+              Most Requested Systems (30d)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            {data.topSystems.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No data</p>
+            ) : (
+              <div className="space-y-2">
+                {data.topSystems.map((s, idx) => (
+                  <div key={s.system} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-muted-foreground w-4">{idx + 1}.</span>
+                      <span className="text-sm truncate max-w-[180px]">{s.system}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 bg-muted/30 rounded-full overflow-hidden w-24">
+                        <div
+                          className="h-full bg-cyan-500 rounded-full"
+                          style={{
+                            width: `${Math.min(100, (s.count / Math.max(1, data.topSystems[0]?.count || 1)) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-mono tabular-nums">{s.count}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Unusual Patterns */}
+      {data.unusualPatterns.length > 0 && (
+        <Card className="border-border/30 border-l-2 border-l-orange-500">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <TriangleAlert className="h-4 w-4 text-orange-400" />
+              Unusual Access Patterns
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0 space-y-2">
+            {data.unusualPatterns.map((pattern) => (
+              <div
+                key={pattern.user}
+                className="flex items-center justify-between p-2 rounded-md bg-orange-500/5 border border-orange-500/20"
+              >
+                <div>
+                  <span className="text-sm font-medium">{pattern.user}</span>
+                  <p className="text-xs text-muted-foreground">
+                    {pattern.requestCount} requests vs org avg {pattern.avgForOrg} ({pattern.anomalyRatio}x normal)
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-[10px] bg-orange-500/20 text-orange-400 border-orange-500/30">
+                  {pattern.flag.replace("_", " ")}
+                </Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Existing Card Components (unchanged) ──────────────────────────────────
 
 interface SecretCardProps {
   secret: {
@@ -145,7 +792,7 @@ function SecretCard({ secret }: SecretCardProps) {
   const TypeIcon = SECRET_TYPE_ICONS[secret.secretType] || Key;
 
   return (
-    <Card className="glass-card border-border/30 hover:border-border/50 transition-colors">
+    <Card className="border-border/30 hover:border-border/50 transition-colors">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -233,7 +880,7 @@ function AccessRequestRow({ request }: AccessRequestRowProps) {
   const statusCfg = REQUEST_STATUS_CONFIG[request.status] || REQUEST_STATUS_CONFIG.pending;
 
   return (
-    <Card className="glass-card border-border/30">
+    <Card className="border-border/30">
       <CardContent className="p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -329,7 +976,7 @@ function ShareCard({ share }: ShareCardProps) {
   const statusCfg = SHARE_STATUS_CONFIG[share.status] || SHARE_STATUS_CONFIG.active;
 
   return (
-    <Card className="glass-card border-border/30">
+    <Card className="border-border/30">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -387,7 +1034,7 @@ interface TransferCardProps {
 
 function TransferCard({ transfer }: TransferCardProps) {
   return (
-    <Card className="glass-card border-border/30">
+    <Card className="border-border/30">
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <div
@@ -453,9 +1100,7 @@ function BreakGlassCard({ entry }: BreakGlassCardProps) {
   const statusCfg = BREAK_GLASS_STATUS[entry.status] || BREAK_GLASS_STATUS.active;
 
   return (
-    <Card
-      className={`glass-card border-border/30 ${entry.retroactiveReviewRequired ? "border-l-2 border-l-red-500" : ""}`}
-    >
+    <Card className={`border-border/30 ${entry.retroactiveReviewRequired ? "border-l-2 border-l-red-500" : ""}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1">
@@ -550,6 +1195,7 @@ function AuditEntryRow({ entry }: AuditEntryRowProps) {
     ownership_transferred: "text-blue-400",
     secret_registered: "text-primary",
     rotation_prompted: "text-yellow-400",
+    session_revoked: "text-red-400",
   };
 
   return (
@@ -570,8 +1216,10 @@ function AuditEntryRow({ entry }: AuditEntryRowProps) {
   );
 }
 
+// ─── Main Page Component ───────────────────────────────────────────────────
+
 export default function JitSecretAccessPage() {
-  const [activeTab, setActiveTab] = useState("secrets");
+  const [activeTab, setActiveTab] = useState("request");
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data: secrets, isLoading: secretsLoading } = useQuery<SecretCardProps["secret"][]>({
@@ -627,8 +1275,11 @@ export default function JitSecretAccessPage() {
   );
 
   const tabs = [
+    { id: "request", label: "Request Access", icon: Plus },
+    { id: "sessions", label: "Active Sessions", icon: Activity },
     { id: "secrets", label: "Secrets", count: secretList.length },
-    { id: "requests", label: "Access Requests", count: requestList.length },
+    { id: "requests", label: "History", count: requestList.length },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "shares", label: "Shares", count: shareList.length },
     { id: "ownership", label: "Ownership", count: transferList.length },
     { id: "break-glass", label: "Break-Glass", count: breakGlassList.length },
@@ -644,7 +1295,7 @@ export default function JitSecretAccessPage() {
             JIT Secret Access
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Just-in-time access controls, ephemeral tokens, one-time shares, and forced ownership reclaim
+            Just-in-time privileged access, session monitoring, analytics, and audit
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -706,19 +1357,40 @@ export default function JitSecretAccessPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-muted/30 border border-border/30">
+        <TabsList className="bg-muted/30 border border-border/30 flex-wrap h-auto gap-0.5 p-1">
           {tabs.map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id} className="text-xs data-[state=active]:bg-primary/20">
-              {tab.label}
-              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0 h-4 min-w-[18px]">
-                {tab.count}
-              </Badge>
+              {"icon" in tab && tab.icon ? (
+                <>
+                  <tab.icon className="h-3 w-3 mr-1" />
+                  {tab.label}
+                </>
+              ) : (
+                <>
+                  {tab.label}
+                  {"count" in tab && (
+                    <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0 h-4 min-w-[18px]">
+                      {tab.count}
+                    </Badge>
+                  )}
+                </>
+              )}
             </TabsTrigger>
           ))}
         </TabsList>
 
+        {/* 28.1 Access Request Form */}
+        <TabsContent value="request" className="mt-4">
+          <AccessRequestFormTab />
+        </TabsContent>
+
+        {/* 28.2 Active Sessions */}
+        <TabsContent value="sessions" className="mt-4">
+          <ActiveSessionsTab />
+        </TabsContent>
+
         <TabsContent value="secrets" className="mt-4 space-y-3">
-          <Card className="glass-card border-border/30">
+          <Card className="border-border/30">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Key className="h-4 w-4 text-primary" />
@@ -743,7 +1415,7 @@ export default function JitSecretAccessPage() {
         </TabsContent>
 
         <TabsContent value="requests" className="mt-4 space-y-3">
-          <Card className="glass-card border-border/30">
+          <Card className="border-border/30">
             <CardHeader className="py-3 px-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -784,8 +1456,13 @@ export default function JitSecretAccessPage() {
           </Card>
         </TabsContent>
 
+        {/* 28.3 Analytics */}
+        <TabsContent value="analytics" className="mt-4">
+          <AccessAnalyticsTab />
+        </TabsContent>
+
         <TabsContent value="shares" className="mt-4 space-y-3">
-          <Card className="glass-card border-border/30">
+          <Card className="border-border/30">
             <CardHeader className="py-3 px-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -813,7 +1490,7 @@ export default function JitSecretAccessPage() {
         </TabsContent>
 
         <TabsContent value="ownership" className="mt-4 space-y-3">
-          <Card className="glass-card border-border/30">
+          <Card className="border-border/30">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm flex items-center gap-2">
                 <ArrowRightLeft className="h-4 w-4 text-primary" />
@@ -838,7 +1515,7 @@ export default function JitSecretAccessPage() {
         </TabsContent>
 
         <TabsContent value="break-glass" className="mt-4 space-y-3">
-          <Card className="glass-card border-border/30">
+          <Card className="border-border/30">
             <CardHeader className="py-3 px-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -883,7 +1560,7 @@ export default function JitSecretAccessPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="mt-4 space-y-3">
-          <Card className="glass-card border-border/30">
+          <Card className="border-border/30">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm flex items-center gap-2">
                 <ClipboardList className="h-4 w-4 text-primary" />
