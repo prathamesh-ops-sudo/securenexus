@@ -1350,4 +1350,417 @@ export function registerPlaybooksRoutes(app: Express): void {
       }
     },
   );
+
+  // ─── 20.2 Playbook Execution Monitoring Dashboard ───────────────────────────
+
+  app.get(
+    "/api/playbook-executions/dashboard",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const allExecs = await storage.getPlaybookExecutions(undefined, 200);
+        // Filter to org's playbooks
+        const orgPlaybooks = await storage.getPlaybooks(orgId);
+        const orgPbIds = new Set(orgPlaybooks.map((p: any) => p.id));
+        const orgExecs = allExecs.filter((e: any) => orgPbIds.has(e.playbookId));
+
+        const running = orgExecs.filter((e: any) => e.status === "running");
+        const awaitingApproval = orgExecs.filter((e: any) => e.status === "awaiting_approval");
+        const failed = orgExecs.filter((e: any) => e.status === "failed");
+        const completed = orgExecs.filter((e: any) => e.status === "completed");
+        const recent = orgExecs.slice(0, 20);
+
+        // Compute stats
+        const avgExecutionTime =
+          completed.length > 0
+            ? Math.round(
+                completed.reduce((sum: number, e: any) => sum + (e.executionTimeMs || 0), 0) / completed.length,
+              )
+            : 0;
+        const successRate = orgExecs.length > 0 ? Math.round((completed.length / orgExecs.length) * 100) : 0;
+
+        // Build per-playbook stats
+        const perPlaybook: Record<string, any> = {};
+        for (const exec of orgExecs) {
+          const pbId = exec.playbookId;
+          if (!perPlaybook[pbId]) {
+            const pb = orgPlaybooks.find((p: any) => p.id === pbId);
+            perPlaybook[pbId] = {
+              playbookId: pbId,
+              playbookName: pb?.name || "Unknown",
+              totalExecutions: 0,
+              completed: 0,
+              failed: 0,
+              running: 0,
+              awaitingApproval: 0,
+              avgTimeMs: 0,
+              totalTimeMs: 0,
+            };
+          }
+          perPlaybook[pbId].totalExecutions++;
+          if (exec.status === "completed") {
+            perPlaybook[pbId].completed++;
+            perPlaybook[pbId].totalTimeMs += exec.executionTimeMs || 0;
+          }
+          if (exec.status === "failed") perPlaybook[pbId].failed++;
+          if (exec.status === "running") perPlaybook[pbId].running++;
+          if (exec.status === "awaiting_approval") perPlaybook[pbId].awaitingApproval++;
+        }
+        for (const stats of Object.values(perPlaybook)) {
+          (stats as any).avgTimeMs =
+            (stats as any).completed > 0 ? Math.round((stats as any).totalTimeMs / (stats as any).completed) : 0;
+        }
+
+        res.json({
+          summary: {
+            total: orgExecs.length,
+            running: running.length,
+            awaitingApproval: awaitingApproval.length,
+            failed: failed.length,
+            completed: completed.length,
+            avgExecutionTimeMs: avgExecutionTime,
+            successRate,
+          },
+          activeExecutions: [...running, ...awaitingApproval].map((e: any) => ({
+            id: e.id,
+            playbookId: e.playbookId,
+            playbookName: orgPlaybooks.find((p: any) => p.id === e.playbookId)?.name || "Unknown",
+            status: e.status,
+            triggeredBy: e.triggeredBy,
+            triggerEvent: e.triggerEvent,
+            startedAt: e.createdAt,
+            executionTimeMs: e.executionTimeMs,
+            currentStep: e.pausedAtNodeId || null,
+            actionsExecuted: Array.isArray(e.actionsExecuted) ? e.actionsExecuted.length : 0,
+            dryRun: e.dryRun || false,
+          })),
+          recentExecutions: recent.map((e: any) => ({
+            id: e.id,
+            playbookId: e.playbookId,
+            playbookName: orgPlaybooks.find((p: any) => p.id === e.playbookId)?.name || "Unknown",
+            status: e.status,
+            triggeredBy: e.triggeredBy,
+            triggerEvent: e.triggerEvent,
+            startedAt: e.createdAt,
+            executionTimeMs: e.executionTimeMs,
+            dryRun: e.dryRun || false,
+            actionsCount: Array.isArray(e.actionsExecuted) ? e.actionsExecuted.length : 0,
+          })),
+          perPlaybook: Object.values(perPlaybook),
+          failedExecutions: failed.slice(0, 10).map((e: any) => ({
+            id: e.id,
+            playbookId: e.playbookId,
+            playbookName: orgPlaybooks.find((p: any) => p.id === e.playbookId)?.name || "Unknown",
+            triggeredBy: e.triggeredBy,
+            failedAt: e.updatedAt || e.createdAt,
+            error: (e.result as any)?.error || "Unknown error",
+          })),
+        });
+      } catch (error) {
+        logger.child("routes").error("Execution dashboard error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch execution dashboard" });
+      }
+    },
+  );
+
+  // ─── 20.3 Playbook Version Diffing ──────────────────────────────────────────
+
+  app.get(
+    "/api/playbook-versions/:id1/diff/:id2",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id1"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const v1 = await storage.getPlaybookVersion(p(req.params.id1));
+        const v2 = await storage.getPlaybookVersion(p(req.params.id2));
+
+        if (!v1 || !v2) {
+          return res.status(404).json({ message: "One or both versions not found" });
+        }
+
+        // Ensure both belong to same playbook and same org
+        if (v1.playbookId !== v2.playbookId) {
+          return res.status(400).json({ message: "Versions must belong to the same playbook" });
+        }
+        const pb = await storage.getPlaybook(v1.playbookId);
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        // Compare version data using actions/conditions fields
+        const snap1: Record<string, unknown> = { actions: v1.actions, conditions: v1.conditions, status: v1.status };
+        const snap2: Record<string, unknown> = { actions: v2.actions, conditions: v2.conditions, status: v2.status };
+
+        const changes: any[] = [];
+
+        // Compare basic fields
+        const fields = ["name", "description", "trigger", "status", "conditions"];
+        for (const field of fields) {
+          if (JSON.stringify(snap1[field]) !== JSON.stringify(snap2[field])) {
+            changes.push({
+              field,
+              type: "modified",
+              oldValue: snap1[field],
+              newValue: snap2[field],
+            });
+          }
+        }
+
+        // Compare actions/nodes
+        const nodes1 = extractNodes(snap1.actions);
+        const nodes2 = extractNodes(snap2.actions);
+
+        const nodeIds1 = new Set(nodes1.map((n: any) => n.id));
+        const nodeIds2 = new Set(nodes2.map((n: any) => n.id));
+
+        for (const node of nodes2) {
+          if (!nodeIds1.has(node.id)) {
+            changes.push({ field: "steps", type: "added", newValue: node });
+          }
+        }
+
+        for (const node of nodes1) {
+          if (!nodeIds2.has(node.id)) {
+            changes.push({ field: "steps", type: "removed", oldValue: node });
+          }
+        }
+
+        for (const node2 of nodes2) {
+          const node1 = nodes1.find((n: any) => n.id === node2.id);
+          if (node1 && JSON.stringify(node1) !== JSON.stringify(node2)) {
+            changes.push({
+              field: "steps",
+              type: "modified",
+              nodeId: node2.id,
+              oldValue: node1,
+              newValue: node2,
+            });
+          }
+        }
+
+        res.json({
+          playbookId: v1.playbookId,
+          playbookName: pb.name,
+          version1: {
+            id: v1.id,
+            version: v1.version,
+            changeDescription: v1.changeDescription,
+            createdAt: v1.createdAt,
+          },
+          version2: {
+            id: v2.id,
+            version: v2.version,
+            changeDescription: v2.changeDescription,
+            createdAt: v2.createdAt,
+          },
+          changes,
+          summary: {
+            totalChanges: changes.length,
+            added: changes.filter((c) => c.type === "added").length,
+            removed: changes.filter((c) => c.type === "removed").length,
+            modified: changes.filter((c) => c.type === "modified").length,
+          },
+        });
+      } catch (error) {
+        logger.child("routes").error("Version diff error", { error: String(error) });
+        res.status(500).json({ message: "Failed to diff versions" });
+      }
+    },
+  );
+
+  // ─── 20.4 Playbook Dry-Run / Simulation Mode (enhanced) ────────────────────
+
+  app.post(
+    "/api/playbooks/:id/simulate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const { parameters, scenarioName } = req.body;
+
+        const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+        const simulatedActions: any[] = [];
+        const startTime = Date.now();
+
+        const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
+
+        if (isGraphFormat) {
+          const graph = actionsArr[0] as any;
+          const nodes = graph.nodes || [];
+          const edges = graph.edges || [];
+          const adjacency: Record<string, string[]> = {};
+          for (const edge of edges) {
+            if (!adjacency[edge.source]) adjacency[edge.source] = [];
+            adjacency[edge.source].push(edge.target);
+          }
+          const targetNodes = new Set(edges.map((e: any) => e.target));
+          const startNodes = nodes.filter((n: any) => !targetNodes.has(n.id) || n.type === "trigger");
+          const visited = new Set<string>();
+          const queue = startNodes.map((n: any) => n.id);
+          let stepNum = 0;
+
+          while (queue.length > 0 && stepNum < 50) {
+            const nodeId = queue.shift()!;
+            if (visited.has(nodeId)) continue;
+            visited.add(nodeId);
+            const node = nodes.find((n: any) => n.id === nodeId);
+            if (!node) continue;
+            stepNum++;
+
+            const simResult: any = {
+              step: stepNum,
+              nodeId: node.id,
+              nodeType: node.type,
+              label: node.data?.label || node.type,
+              actionType: node.data?.actionType || node.type,
+              status: "simulated",
+              wouldExecute: node.type === "action",
+              wouldBlock: node.type === "approval",
+              estimatedDurationMs: Math.floor(Math.random() * 5000) + 500,
+              timestamp: new Date(startTime + stepNum * 1000).toISOString(),
+              impact: [],
+            };
+
+            // Estimate impact
+            if (node.type === "action") {
+              const actionType = node.data?.actionType || "";
+              if (
+                [
+                  "isolate_host",
+                  "block_ip",
+                  "block_domain",
+                  "disable_user",
+                  "kill_process",
+                  "quarantine_file",
+                ].includes(actionType)
+              ) {
+                simResult.impact.push({
+                  type: "destructive",
+                  description: `Would perform: ${node.data?.label}`,
+                  reversible: true,
+                });
+                simResult.riskLevel = "high";
+              } else if (["notify_slack", "notify_teams", "notify_email", "notify_webhook"].includes(actionType)) {
+                simResult.impact.push({
+                  type: "notification",
+                  description: `Would send notification: ${node.data?.label}`,
+                  reversible: false,
+                });
+                simResult.riskLevel = "low";
+              } else {
+                simResult.impact.push({
+                  type: "informational",
+                  description: `Would execute: ${node.data?.label}`,
+                  reversible: true,
+                });
+                simResult.riskLevel = "medium";
+              }
+            }
+
+            simulatedActions.push(simResult);
+            const children = adjacency[nodeId] || [];
+            for (const child of children) {
+              queue.push(child);
+            }
+          }
+        } else {
+          let stepNum = 0;
+          for (const action of actionsArr) {
+            stepNum++;
+            const actionObj = action as any;
+            const actionType = actionObj.type || actionObj.actionType || "unknown";
+            simulatedActions.push({
+              step: stepNum,
+              actionType,
+              label: actionObj.label || actionType,
+              status: "simulated",
+              wouldExecute: true,
+              estimatedDurationMs: Math.floor(Math.random() * 5000) + 500,
+              timestamp: new Date(startTime + stepNum * 1000).toISOString(),
+              riskLevel: "medium",
+              impact: [{ type: "informational", description: `Would execute: ${actionType}` }],
+            });
+          }
+        }
+
+        const totalDuration = simulatedActions.reduce((sum: number, a: any) => sum + (a.estimatedDurationMs || 0), 0);
+        const highRiskSteps = simulatedActions.filter((a: any) => a.riskLevel === "high");
+        const approvalGates = simulatedActions.filter((a: any) => a.wouldBlock);
+
+        const simulation = await storage.createPlaybookSimulation({
+          playbookId: pb.id,
+          orgId,
+          simulatedActions: simulatedActions as any,
+          impactAnalysis: {
+            totalSteps: simulatedActions.length,
+            estimatedDurationMs: totalDuration,
+            highRiskSteps: highRiskSteps.length,
+            approvalGates: approvalGates.length,
+            scenarioName: scenarioName || "Manual simulation",
+          } as any,
+          predictedOutcome: `${simulatedActions.length} steps, ${highRiskSteps.length} high-risk`,
+          status: "completed",
+          simulatedBy: user?.id,
+          simulatedByName: userName,
+          durationMs: Date.now() - startTime,
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName,
+          action: "playbook_simulated",
+          resourceType: "playbook",
+          resourceId: pb.id,
+          details: { simulationId: simulation.id, stepsCount: simulatedActions.length, scenarioName },
+        });
+
+        res.json({
+          simulationId: simulation.id,
+          playbookName: pb.name,
+          steps: simulatedActions,
+          summary: {
+            totalSteps: simulatedActions.length,
+            estimatedDurationMs: totalDuration,
+            highRiskSteps: highRiskSteps.length,
+            approvalGates: approvalGates.length,
+            destructiveActions: simulatedActions.filter((a: any) =>
+              a.impact?.some((i: any) => i.type === "destructive"),
+            ).length,
+          },
+        });
+      } catch (error) {
+        logger.child("routes").error("Playbook simulation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to simulate playbook" });
+      }
+    },
+  );
+}
+
+function extractNodes(actions: unknown): any[] {
+  if (!Array.isArray(actions) || actions.length === 0) return [];
+  const first = actions[0] as any;
+  if (first && typeof first === "object" && "nodes" in first) {
+    return first.nodes || [];
+  }
+  return actions;
 }

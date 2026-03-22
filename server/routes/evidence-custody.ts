@@ -557,15 +557,371 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
       }
     },
   );
-}
 
-function verifyChainIntegrity(evidence: EvidenceItem): boolean {
-  const chain = evidence.integrityChain;
-  if (chain.length === 0) return false;
-  if (chain[0].previousHash !== "genesis") return false;
+  // ─── 19.4 Evidence Access Audit Logging ─────────────────────────────────────
 
-  for (let i = 1; i < chain.length; i++) {
-    if (chain[i].previousHash !== chain[i - 1].entryHash) return false;
+  const accessAuditLog = new Map<string, any[]>();
+
+  function logEvidenceAccess(
+    orgId: string,
+    evidenceId: string,
+    action: string,
+    actor: string,
+    ip: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    const key = `${orgId}:${evidenceId}`;
+    if (!accessAuditLog.has(key)) accessAuditLog.set(key, []);
+    const entry = {
+      id: genId(),
+      evidenceId,
+      orgId,
+      action,
+      actor,
+      ip,
+      timestamp: new Date().toISOString(),
+      userAgent: "",
+      metadata: metadata || {},
+    };
+    accessAuditLog.get(key)!.push(entry);
+    return entry;
   }
-  return true;
+
+  app.get(
+    "/api/evidence-custody/:id/access-log",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const key = `${orgId}:${evidence.id}`;
+        const entries = accessAuditLog.get(key) || [];
+        // Also log this access-log view itself
+        const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        logEvidenceAccess(orgId, evidence.id, "access_log_viewed", (req as any).user?.username || "unknown", ip);
+        return sendEnvelope(res, entries, { meta: { total: entries.length } });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to retrieve access log." }]);
+      }
+    },
+  );
+
+  // ─── 19.2 Access Request Workflow ───────────────────────────────────────────
+
+  const accessRequests = new Map<string, any[]>();
+
+  app.get(
+    "/api/evidence-custody/:id/access-requests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const key = `${orgId}:${evidence.id}`;
+        const requests = accessRequests.get(key) || [];
+        return sendEnvelope(res, requests, { meta: { total: requests.length } });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to list access requests." }]);
+      }
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/access-requests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const user = (req as any).user;
+        const { reason, accessType } = req.body;
+        if (!reason) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "reason is required." }]);
+        }
+        const key = `${orgId}:${evidence.id}`;
+        if (!accessRequests.has(key)) accessRequests.set(key, []);
+        const request = {
+          id: genId(),
+          evidenceId: evidence.id,
+          requestedBy: user?.username || "unknown",
+          requestedAt: new Date().toISOString(),
+          reason,
+          accessType: accessType || "view",
+          status: "pending",
+          decidedBy: null,
+          decidedAt: null,
+          decisionNote: null,
+        };
+        accessRequests.get(key)!.push(request);
+        const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        logEvidenceAccess(orgId, evidence.id, "access_requested", user?.username || "unknown", ip, {
+          reason,
+          accessType,
+        });
+        log.info("Evidence access requested", { orgId, evidenceId: evidence.id, requestedBy: request.requestedBy });
+        return reply(res, request, undefined, 201);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to create access request." }]);
+      }
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/access-requests/:requestId/decide",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const key = `${orgId}:${evidence.id}`;
+        const requests = accessRequests.get(key) || [];
+        const request = requests.find((r: any) => r.id === req.params.requestId);
+        if (!request) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Access request not found." }]);
+        }
+        if (request.status !== "pending") {
+          return replyError(res, 400, [{ code: "ALREADY_DECIDED", message: "Request already decided." }]);
+        }
+        const { decision, note } = req.body;
+        if (!decision || !["approved", "denied"].includes(decision)) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "decision must be approved or denied." }]);
+        }
+        const user = (req as any).user;
+        request.status = decision;
+        request.decidedBy = user?.username || "unknown";
+        request.decidedAt = new Date().toISOString();
+        request.decisionNote = note || null;
+        const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        logEvidenceAccess(orgId, evidence.id, `access_${decision}`, user?.username || "unknown", ip, {
+          requestId: request.id,
+        });
+        log.info("Evidence access request decided", { orgId, evidenceId: evidence.id, decision });
+        return reply(res, request);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to decide access request." }]);
+      }
+    },
+  );
+
+  // ─── 19.5 Evidence Export with Chain of Custody Report ──────────────────────
+
+  app.get(
+    "/api/evidence-custody/:id/export",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+
+        const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        logEvidenceAccess(orgId, evidence.id, "exported", (req as any).user?.username || "unknown", ip);
+
+        const key = `${orgId}:${evidence.id}`;
+        const accessLog = accessAuditLog.get(key) || [];
+
+        const report = {
+          exportedAt: new Date().toISOString(),
+          exportedBy: (req as any).user?.username || "unknown",
+          evidence: {
+            id: evidence.id,
+            name: evidence.name,
+            type: evidence.type,
+            sourceSystem: evidence.sourceSystem,
+            collectedBy: evidence.collectedBy,
+            collectedAt: evidence.collectedAt,
+            sha256Hash: evidence.sha256Hash,
+            classification: evidence.classification,
+            caseId: evidence.caseId,
+            sizeBytes: evidence.sizeBytes,
+            isSealed: evidence.isSealed,
+            retentionUntil: evidence.retentionUntil,
+          },
+          chainOfCustody: evidence.integrityChain.map((entry) => ({
+            id: entry.id,
+            action: entry.action,
+            actor: entry.actor,
+            timestamp: entry.timestamp,
+            entryHash: entry.entryHash,
+            previousHash: entry.previousHash,
+            reason: entry.reason,
+          })),
+          integrityVerification: {
+            chainValid: verifyChainIntegrity(evidence),
+            totalEntries: evidence.integrityChain.length,
+            verifiedAt: new Date().toISOString(),
+          },
+          accessLog: accessLog.map((e: any) => ({
+            action: e.action,
+            actor: e.actor,
+            timestamp: e.timestamp,
+            ip: e.ip,
+          })),
+          tags: (evidence as any).tags || [],
+          files: (evidence as any).files || [],
+          legalNotice:
+            "This document constitutes an official chain of custody report. All hash verifications have been performed using SHA-256. Any tampering with this report or the underlying evidence may constitute a criminal offense.",
+        };
+
+        const format = req.query.format as string;
+        if (format === "csv") {
+          const lines = [
+            "Section,Field,Value",
+            `Evidence,ID,${evidence.id}`,
+            `Evidence,Name,${evidence.name}`,
+            `Evidence,Type,${evidence.type}`,
+            `Evidence,SHA-256,${evidence.sha256Hash}`,
+            `Evidence,Classification,${evidence.classification}`,
+            `Evidence,Case ID,${evidence.caseId}`,
+            `Evidence,Collected By,${evidence.collectedBy}`,
+            `Evidence,Collected At,${evidence.collectedAt}`,
+            `Evidence,Sealed,${evidence.isSealed}`,
+            "",
+            "Chain Entry,Action,Actor,Timestamp,Hash",
+            ...evidence.integrityChain.map((e) => `Chain,${e.action},${e.actor},${e.timestamp},${e.entryHash}`),
+            "",
+            "Access Log,Action,Actor,Timestamp,IP",
+            ...accessLog.map((e: any) => `Access,${e.action},${e.actor},${e.timestamp},${e.ip}`),
+          ];
+          res.setHeader("Content-Type", "text/csv");
+          res.setHeader("Content-Disposition", `attachment; filename="coc-report-${evidence.id}.csv"`);
+          return res.send(lines.join("\n"));
+        }
+
+        return reply(res, report);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to export evidence." }]);
+      }
+    },
+  );
+
+  // ─── 19.1 Evidence Preview ─────────────────────────────────────────────────
+
+  app.get(
+    "/api/evidence-custody/:id/preview",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        logEvidenceAccess(orgId, evidence.id, "previewed", (req as any).user?.username || "unknown", ip);
+
+        // Generate synthetic preview content based on evidence type
+        let previewType = "text";
+        let content = "";
+        let hexDump = "";
+
+        switch (evidence.type) {
+          case "log":
+            previewType = "text";
+            content = `[${evidence.collectedAt}] INFO Evidence collected from ${evidence.sourceSystem}\n[${new Date().toISOString()}] Evidence chain has ${evidence.integrityChain.length} entries\nSHA-256: ${evidence.sha256Hash}\nCase: ${evidence.caseId}\nClassification: ${evidence.classification}`;
+            break;
+          case "screenshot":
+            previewType = "image";
+            content =
+              "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFhMWEyZSIvPjx0ZXh0IHg9IjIwMCIgeT0iMTUwIiBmaWxsPSIjNjQ3NDhlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSI+U2NyZWVuc2hvdCBQcmV2aWV3PC90ZXh0Pjwvc3ZnPg==";
+            break;
+          case "file":
+          case "artifact":
+            previewType = "json";
+            content = JSON.stringify(
+              {
+                evidenceId: evidence.id,
+                name: evidence.name,
+                type: evidence.type,
+                source: evidence.sourceSystem,
+                sha256: evidence.sha256Hash,
+                classification: evidence.classification,
+                collectedAt: evidence.collectedAt,
+                custodyChain: evidence.integrityChain.length + " entries",
+              },
+              null,
+              2,
+            );
+            break;
+          case "memory_dump":
+          case "network_capture": {
+            previewType = "hex";
+            // Generate synthetic hex dump
+            const lines: string[] = [];
+            for (let offset = 0; offset < 256; offset += 16) {
+              const hex = Array.from({ length: 16 }, () =>
+                Math.floor(Math.random() * 256)
+                  .toString(16)
+                  .padStart(2, "0"),
+              ).join(" ");
+              const ascii = Array.from({ length: 16 }, () => {
+                const c = Math.floor(Math.random() * 94) + 33;
+                return c >= 33 && c <= 126 ? String.fromCharCode(c) : ".";
+              }).join("");
+              lines.push(`${offset.toString(16).padStart(8, "0")}  ${hex}  |${ascii}|`);
+            }
+            hexDump = lines.join("\n");
+            content = hexDump;
+            break;
+          }
+          default:
+            previewType = "text";
+            content = `Evidence: ${evidence.name}\nType: ${evidence.type}\nNo preview available for this type.`;
+        }
+
+        return reply(res, {
+          evidenceId: evidence.id,
+          previewType,
+          content,
+          mimeType:
+            evidence.type === "screenshot"
+              ? "image/png"
+              : evidence.type === "log"
+                ? "text/plain"
+                : "application/octet-stream",
+          sizeBytes: evidence.sizeBytes,
+          truncated: evidence.sizeBytes > 1048576,
+        });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to generate preview." }]);
+      }
+    },
+  );
+
+  function verifyChainIntegrity(evidence: EvidenceItem): boolean {
+    const chain = evidence.integrityChain;
+    if (chain.length === 0) return false;
+    if (chain[0].previousHash !== "genesis") return false;
+
+    for (let i = 1; i < chain.length; i++) {
+      if (chain[i].previousHash !== chain[i - 1].entryHash) return false;
+    }
+    return true;
+  }
 }

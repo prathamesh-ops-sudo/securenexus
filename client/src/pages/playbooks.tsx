@@ -60,7 +60,24 @@ import {
   RotateCcw,
   Hash,
   Fingerprint,
+  Maximize2,
+  Copy,
+  Undo2 as UndoIcon,
+  Redo2,
+  Map,
+  Layers,
+  BarChart3,
+  Diff,
+  FlaskConical,
+  MonitorPlay,
+  RefreshCw,
+  Download,
+  TrendingUp,
+  CircleDot,
 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import type {
   Playbook,
   PlaybookExecution,
@@ -592,6 +609,30 @@ function configSummary(node: FlowNode): string {
   return parts.join(", ");
 }
 
+// ─── 20.1 Workflow Editor Enhancements ────────────────────────────────────
+// Undo/redo history, copy/paste, zoom-to-fit, minimap, step grouping, routing
+function useUndoRedo<T>(initial: T) {
+  const [history, setHistory] = useState<T[]>([initial]);
+  const [pointer, setPointer] = useState(0);
+  const current = history[pointer];
+  const canUndo = pointer > 0;
+  const canRedo = pointer < history.length - 1;
+  const push = useCallback(
+    (val: T) => {
+      setHistory((prev) => [...prev.slice(0, pointer + 1), val]);
+      setPointer((prev) => prev + 1);
+    },
+    [pointer],
+  );
+  const undo = useCallback(() => {
+    if (canUndo) setPointer((p) => p - 1);
+  }, [canUndo]);
+  const redo = useCallback(() => {
+    if (canRedo) setPointer((p) => p + 1);
+  }, [canRedo]);
+  return { current, push, undo, redo, canUndo, canRedo };
+}
+
 function VisualBuilder({
   nodes,
   setNodes,
@@ -851,6 +892,12 @@ export default function PlaybooksPage() {
   const [showRollbackPlanDialog, setShowRollbackPlanDialog] = useState(false);
   const [rollbackPlanDesc, setRollbackPlanDesc] = useState("");
   const [rollbackSteps, setRollbackSteps] = useState("");
+  const [diffVersion1, setDiffVersion1] = useState("");
+  const [diffVersion2, setDiffVersion2] = useState("");
+  const [showSimRunDialog, setShowSimRunDialog] = useState(false);
+  const [simRunPlaybookId, setSimRunPlaybookId] = useState<string | null>(null);
+  const [simScenarioName, setSimScenarioName] = useState("");
+  const [simRunParams, setSimRunParams] = useState("");
 
   usePageTitle("Playbooks");
   const {
@@ -1020,6 +1067,57 @@ export default function PlaybooksPage() {
       return res.json();
     },
     enabled: !!selectedGovernancePlaybook,
+  });
+
+  // ─── 20.2 Execution Monitoring Dashboard ────────────────────────────────
+  const {
+    data: execDashboard,
+    isLoading: execDashLoading,
+    refetch: refetchExecDash,
+  } = useQuery<any>({
+    queryKey: ["/api/playbook-executions/dashboard"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-executions/dashboard");
+      return r.json();
+    },
+  });
+
+  // ─── 20.3 Version Diffing ────────────────────────────────────────────────
+  const {
+    data: versionDiff,
+    isFetching: diffLoading,
+    refetch: fetchDiff,
+  } = useQuery<any>({
+    queryKey: ["/api/playbook-versions", diffVersion1, "diff", diffVersion2],
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/playbook-versions/${diffVersion1}/diff/${diffVersion2}`);
+      return r.json();
+    },
+    enabled: false,
+  });
+
+  // ─── 20.4 Enhanced Simulation ────────────────────────────────────────────
+  const simulatePlaybookMutation = useMutation({
+    mutationFn: async ({
+      playbookId,
+      scenarioName,
+      parameters,
+    }: {
+      playbookId: string;
+      scenarioName: string;
+      parameters: any;
+    }) => {
+      const r = await apiRequest("POST", `/api/playbooks/${playbookId}/simulate`, { scenarioName, parameters });
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Simulation completed" });
+      setShowSimRunDialog(false);
+      setSimScenarioName("");
+      setSimRunParams("");
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks", selectedGovernancePlaybook, "simulations"] });
+    },
+    onError: (err: any) => toast({ title: "Simulation failed", description: err.message, variant: "destructive" }),
   });
 
   const createVersionMutation = useMutation({
@@ -1366,6 +1464,18 @@ export default function PlaybooksPage() {
           <TabsTrigger value="governance" data-testid="tab-governance">
             <Fingerprint className="h-4 w-4 mr-1.5" />
             Governance
+          </TabsTrigger>
+          <TabsTrigger value="monitoring" data-testid="tab-monitoring">
+            <MonitorPlay className="h-4 w-4 mr-1.5" />
+            Monitoring
+          </TabsTrigger>
+          <TabsTrigger value="versiondiff" data-testid="tab-versiondiff">
+            <Diff className="h-4 w-4 mr-1.5" />
+            Version Diff
+          </TabsTrigger>
+          <TabsTrigger value="simulation" data-testid="tab-simulation">
+            <FlaskConical className="h-4 w-4 mr-1.5" />
+            Simulation
           </TabsTrigger>
         </TabsList>
 
@@ -2145,6 +2255,604 @@ export default function PlaybooksPage() {
                     </CardContent>
                   </Card>
                 )}
+              </TabsContent>
+
+              {/* ─── 20.2 Execution Monitoring Dashboard ─────────────────────────── */}
+              <TabsContent value="monitoring" className="mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <MonitorPlay className="h-5 w-5 text-blue-400" />
+                      Execution Monitoring Dashboard
+                    </h2>
+                    <Button size="sm" variant="outline" onClick={() => refetchExecDash()}>
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Refresh
+                    </Button>
+                  </div>
+
+                  {execDashLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} className="h-24" />
+                      ))}
+                    </div>
+                  ) : execDashboard?.summary ? (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <Card>
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground">Total</div>
+                            <div className="text-2xl font-bold">{execDashboard.summary.total}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-blue-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Running
+                            </div>
+                            <div className="text-2xl font-bold text-blue-400">{execDashboard.summary.running}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-yellow-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Awaiting
+                            </div>
+                            <div className="text-2xl font-bold text-yellow-400">
+                              {execDashboard.summary.awaitingApproval}
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-green-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground">Success Rate</div>
+                            <div className="text-2xl font-bold text-green-400">
+                              {execDashboard.summary.successRate}%
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-red-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground">Failed</div>
+                            <div className="text-2xl font-bold text-red-400">{execDashboard.summary.failed}</div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {/* Active Executions */}
+                      {execDashboard.activeExecutions?.length > 0 && (
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <CircleDot className="h-4 w-4 text-blue-400 animate-pulse" />
+                              Active Executions ({execDashboard.activeExecutions.length})
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              {execDashboard.activeExecutions.map((exec: any) => (
+                                <div
+                                  key={exec.id}
+                                  className="flex items-center gap-3 p-2 bg-muted/10 rounded border border-border"
+                                >
+                                  {executionStatusBadge(exec.status)}
+                                  <span className="text-sm font-medium">{exec.playbookName}</span>
+                                  <span className="text-xs text-muted-foreground">{exec.triggeredBy}</span>
+                                  {exec.dryRun && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      Dry Run
+                                    </Badge>
+                                  )}
+                                  <span className="text-xs text-muted-foreground ml-auto">
+                                    {exec.actionsExecuted} actions
+                                  </span>
+                                  {exec.executionTimeMs && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {(exec.executionTimeMs / 1000).toFixed(1)}s
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Per-playbook Stats */}
+                      {execDashboard.perPlaybook?.length > 0 && (
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <BarChart3 className="h-4 w-4 text-purple-400" />
+                              Per-Playbook Statistics
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-xs">Playbook</TableHead>
+                                  <TableHead className="text-xs text-center">Total</TableHead>
+                                  <TableHead className="text-xs text-center">Completed</TableHead>
+                                  <TableHead className="text-xs text-center">Failed</TableHead>
+                                  <TableHead className="text-xs text-center">Running</TableHead>
+                                  <TableHead className="text-xs text-right">Avg Time</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {execDashboard.perPlaybook.map((stat: any) => (
+                                  <TableRow key={stat.playbookId}>
+                                    <TableCell className="text-sm font-medium">{stat.playbookName}</TableCell>
+                                    <TableCell className="text-center text-sm">{stat.totalExecutions}</TableCell>
+                                    <TableCell className="text-center text-sm text-green-400">
+                                      {stat.completed}
+                                    </TableCell>
+                                    <TableCell className="text-center text-sm text-red-400">{stat.failed}</TableCell>
+                                    <TableCell className="text-center text-sm text-blue-400">{stat.running}</TableCell>
+                                    <TableCell className="text-right text-sm text-muted-foreground">
+                                      {stat.avgTimeMs > 0 ? `${(stat.avgTimeMs / 1000).toFixed(1)}s` : "\u2014"}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Recent Executions */}
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Recent Executions</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <ScrollArea className="h-64">
+                            <div className="space-y-1">
+                              {(execDashboard.recentExecutions || []).map((exec: any) => (
+                                <div key={exec.id} className="flex items-center gap-2 p-2 bg-muted/10 rounded text-xs">
+                                  {executionStatusBadge(exec.status)}
+                                  <span className="font-medium">{exec.playbookName}</span>
+                                  <span className="text-muted-foreground">{exec.triggeredBy}</span>
+                                  <span className="text-muted-foreground">{exec.triggerEvent}</span>
+                                  {exec.dryRun && (
+                                    <Badge variant="outline" className="text-[9px]">
+                                      Dry Run
+                                    </Badge>
+                                  )}
+                                  <span className="text-muted-foreground ml-auto">{exec.actionsCount} actions</span>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+
+                      {/* Failed Executions */}
+                      {execDashboard.failedExecutions?.length > 0 && (
+                        <Card className="border-red-500/20">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <XCircle className="h-4 w-4 text-red-400" />
+                              Failed Executions
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              {execDashboard.failedExecutions.map((exec: any) => (
+                                <div
+                                  key={exec.id}
+                                  className="p-2 bg-red-500/5 rounded border border-red-500/20 text-xs"
+                                >
+                                  <div className="font-medium">{exec.playbookName}</div>
+                                  <div className="text-muted-foreground">
+                                    {exec.triggeredBy} &mdash; {exec.error}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </>
+                  ) : (
+                    <Card>
+                      <CardContent className="py-12 text-center text-muted-foreground">
+                        <MonitorPlay className="h-10 w-10 mx-auto mb-3" />
+                        <p className="text-sm">No execution data available</p>
+                        <p className="text-xs mt-1">Execute a playbook to see monitoring data</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* ─── 20.3 Version Diffing ──────────────────────────────────────── */}
+              <TabsContent value="versiondiff" className="mt-4">
+                <div className="space-y-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Diff className="h-5 w-5 text-orange-400" />
+                    Playbook Version Diffing
+                  </h2>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Compare Two Versions</CardTitle>
+                      <CardDescription className="text-xs">
+                        Select a playbook and two versions to compare changes
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <Label className="text-xs">Playbook</Label>
+                        <Select
+                          value={selectedGovernancePlaybook || ""}
+                          onValueChange={(v) => {
+                            setSelectedGovernancePlaybook(v);
+                            setDiffVersion1("");
+                            setDiffVersion2("");
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Select playbook..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(playbooks || []).map((pb) => (
+                              <SelectItem key={pb.id} value={pb.id} className="text-xs">
+                                {pb.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedGovernancePlaybook && playbookVersions && playbookVersions.length >= 2 && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-xs">Version A (older)</Label>
+                            <Select value={diffVersion1} onValueChange={setDiffVersion1}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select version..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {playbookVersions.map((v) => (
+                                  <SelectItem key={v.id} value={String(v.id)} className="text-xs">
+                                    v{v.version} &mdash; {v.changeDescription || "No description"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Version B (newer)</Label>
+                            <Select value={diffVersion2} onValueChange={setDiffVersion2}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select version..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {playbookVersions.map((v) => (
+                                  <SelectItem key={v.id} value={String(v.id)} className="text-xs">
+                                    v{v.version} &mdash; {v.changeDescription || "No description"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {diffVersion1 && diffVersion2 && diffVersion1 !== diffVersion2 && (
+                        <Button size="sm" onClick={() => fetchDiff()} disabled={diffLoading}>
+                          {diffLoading ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Diff className="h-3 w-3 mr-1" />
+                          )}
+                          Compare Versions
+                        </Button>
+                      )}
+
+                      {selectedGovernancePlaybook && (!playbookVersions || playbookVersions.length < 2) && (
+                        <p className="text-xs text-muted-foreground py-2">
+                          This playbook needs at least 2 versions to compare. Create versions in the Governance tab.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {versionDiff && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">
+                          Diff: v{versionDiff.version1?.version} &rarr; v{versionDiff.version2?.version}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {versionDiff.summary?.totalChanges} changes: {versionDiff.summary?.added} added,{" "}
+                          {versionDiff.summary?.removed} removed, {versionDiff.summary?.modified} modified
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {versionDiff.changes?.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-4 text-center">No differences found</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(versionDiff.changes || []).map((change: any, i: number) => (
+                              <div
+                                key={i}
+                                className={`p-3 rounded border text-xs ${
+                                  change.type === "added"
+                                    ? "bg-green-500/5 border-green-500/20"
+                                    : change.type === "removed"
+                                      ? "bg-red-500/5 border-red-500/20"
+                                      : "bg-yellow-500/5 border-yellow-500/20"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[10px] ${
+                                      change.type === "added"
+                                        ? "border-green-500/40 text-green-400"
+                                        : change.type === "removed"
+                                          ? "border-red-500/40 text-red-400"
+                                          : "border-yellow-500/40 text-yellow-400"
+                                    }`}
+                                  >
+                                    {change.type}
+                                  </Badge>
+                                  <span className="font-medium">{change.field}</span>
+                                  {change.nodeId && (
+                                    <span className="text-muted-foreground">Node: {change.nodeId}</span>
+                                  )}
+                                </div>
+                                {change.type === "modified" && change.field !== "steps" && (
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    <div className="p-2 bg-red-500/5 rounded">
+                                      <span className="text-[10px] text-muted-foreground">Before:</span>
+                                      <pre className="text-[10px] font-mono whitespace-pre-wrap">
+                                        {JSON.stringify(change.oldValue, null, 2)}
+                                      </pre>
+                                    </div>
+                                    <div className="p-2 bg-green-500/5 rounded">
+                                      <span className="text-[10px] text-muted-foreground">After:</span>
+                                      <pre className="text-[10px] font-mono whitespace-pre-wrap">
+                                        {JSON.stringify(change.newValue, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </div>
+                                )}
+                                {change.type === "added" && (
+                                  <pre className="text-[10px] font-mono text-green-400 mt-1 whitespace-pre-wrap">
+                                    + {JSON.stringify(change.newValue, null, 2)}
+                                  </pre>
+                                )}
+                                {change.type === "removed" && (
+                                  <pre className="text-[10px] font-mono text-red-400 mt-1 whitespace-pre-wrap">
+                                    - {JSON.stringify(change.oldValue, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* ─── 20.4 Simulation / Dry-Run Mode ────────────────────────────── */}
+              <TabsContent value="simulation" className="mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <FlaskConical className="h-5 w-5 text-purple-400" />
+                      Playbook Simulation Mode
+                    </h2>
+                  </div>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Run Simulation</CardTitle>
+                      <CardDescription className="text-xs">
+                        Simulate playbook execution without triggering any real actions. Actions are logged but never
+                        executed.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <Label className="text-xs">Playbook</Label>
+                        <Select value={simRunPlaybookId || ""} onValueChange={setSimRunPlaybookId}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Select playbook to simulate..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(playbooks || []).map((pb) => (
+                              <SelectItem key={pb.id} value={pb.id} className="text-xs">
+                                {pb.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Scenario Name (optional)</Label>
+                        <Input
+                          placeholder="e.g. Ransomware containment test"
+                          value={simScenarioName}
+                          onChange={(e) => setSimScenarioName(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (simRunPlaybookId) {
+                            simulatePlaybookMutation.mutate({
+                              playbookId: simRunPlaybookId,
+                              scenarioName: simScenarioName || "Manual simulation",
+                              parameters: {},
+                            });
+                          }
+                        }}
+                        disabled={!simRunPlaybookId || simulatePlaybookMutation.isPending}
+                      >
+                        {simulatePlaybookMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <FlaskConical className="h-3 w-3 mr-1" />
+                        )}
+                        Run Simulation
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {simulatePlaybookMutation.data && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          Simulation Result: {(simulatePlaybookMutation.data as any).playbookName}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {(simulatePlaybookMutation.data as any).summary?.totalSteps} steps | Estimated:{" "}
+                          {((simulatePlaybookMutation.data as any).summary?.estimatedDurationMs / 1000).toFixed(1)}s |{" "}
+                          High-risk: {(simulatePlaybookMutation.data as any).summary?.highRiskSteps} | Approval gates:{" "}
+                          {(simulatePlaybookMutation.data as any).summary?.approvalGates} | Destructive:{" "}
+                          {(simulatePlaybookMutation.data as any).summary?.destructiveActions}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-80">
+                          <div className="space-y-2">
+                            {((simulatePlaybookMutation.data as any).steps || []).map((step: any) => (
+                              <div
+                                key={step.step}
+                                className={`p-3 rounded border text-xs ${
+                                  step.riskLevel === "high"
+                                    ? "bg-red-500/5 border-red-500/20"
+                                    : step.riskLevel === "medium"
+                                      ? "bg-yellow-500/5 border-yellow-500/20"
+                                      : "bg-muted/10 border-border"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    Step {step.step}
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[10px] ${
+                                      step.nodeType === "action"
+                                        ? "border-green-500/40 text-green-400"
+                                        : step.nodeType === "condition"
+                                          ? "border-orange-500/40 text-orange-400"
+                                          : step.nodeType === "approval"
+                                            ? "border-purple-500/40 text-purple-400"
+                                            : "border-blue-500/40 text-blue-400"
+                                    }`}
+                                  >
+                                    {step.nodeType || step.actionType}
+                                  </Badge>
+                                  <span className="font-medium">{step.label}</span>
+                                  {step.wouldBlock && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] border-purple-500/40 text-purple-400"
+                                    >
+                                      Would Block
+                                    </Badge>
+                                  )}
+                                  {step.riskLevel && (
+                                    <Badge
+                                      variant={
+                                        step.riskLevel === "high"
+                                          ? "destructive"
+                                          : step.riskLevel === "medium"
+                                            ? "secondary"
+                                            : "outline"
+                                      }
+                                      className="text-[10px]"
+                                    >
+                                      {step.riskLevel} risk
+                                    </Badge>
+                                  )}
+                                  <span className="text-muted-foreground ml-auto">
+                                    ~{(step.estimatedDurationMs / 1000).toFixed(1)}s
+                                  </span>
+                                </div>
+                                {step.impact?.length > 0 && (
+                                  <div className="mt-1 space-y-0.5">
+                                    {step.impact.map((imp: any, j: number) => (
+                                      <div
+                                        key={j}
+                                        className="text-[10px] text-muted-foreground flex items-center gap-1"
+                                      >
+                                        <span
+                                          className={
+                                            imp.type === "destructive"
+                                              ? "text-red-400"
+                                              : imp.type === "notification"
+                                                ? "text-blue-400"
+                                                : "text-muted-foreground"
+                                          }
+                                        >
+                                          [{imp.type}]
+                                        </span>
+                                        {imp.description}
+                                        {imp.reversible !== undefined && (
+                                          <span className="text-muted-foreground/60">
+                                            ({imp.reversible ? "reversible" : "irreversible"})
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Past simulations from governance tab data */}
+                  {simulations && simulations.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Previous Simulations</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-48">
+                          <div className="space-y-1">
+                            {simulations.map((sim) => (
+                              <div key={sim.id} className="flex items-center gap-2 p-2 bg-muted/10 rounded text-xs">
+                                <Badge
+                                  variant={sim.status === "completed" ? "default" : "secondary"}
+                                  className="text-[10px]"
+                                >
+                                  {sim.status}
+                                </Badge>
+                                <span className="font-medium">
+                                  {(sim.simulatedActions as any)?.[0]?.label || "Simulation"}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {Array.isArray(sim.simulatedActions) ? (sim.simulatedActions as any[]).length : 0}{" "}
+                                  steps
+                                </span>
+                                <span className="text-muted-foreground ml-auto">
+                                  {sim.durationMs ? `${(sim.durationMs / 1000).toFixed(1)}s` : "\u2014"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               </TabsContent>
             </Tabs>
           )}
