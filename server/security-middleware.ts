@@ -104,10 +104,10 @@ function cspNonceMiddleware(req: Request, res: Response, next: NextFunction): vo
 function configureHelmet() {
   const isDev = !PRODUCTION_ENVS.has(config.nodeEnv);
 
-  // In dev mode Vite injects styles/scripts via inline tags.
-  // CSP Level 2+ ignores 'unsafe-inline' when a nonce source is also
-  // present, so we must use EITHER nonce (prod) OR unsafe-inline (dev).
-  const cspNonce = ((_req: Request, res: Response) => `'nonce-${res.locals.cspNonce}'`) as unknown as string;
+  // In dev mode, Vite injects styles and scripts via inline tags.
+  // CSP Level 2+ ignores 'unsafe-inline' when a nonce source is present,
+  // so we must exclude the nonce and use only 'unsafe-inline' in dev.
+  const nonceFn = ((_req: Request, res: Response) => `'nonce-${res.locals.cspNonce}'`) as unknown as string;
 
   return helmet({
     contentSecurityPolicy: {
@@ -115,11 +115,11 @@ function configureHelmet() {
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
-          ...(isDev ? ["'unsafe-inline'"] : [cspNonce]),
+          ...(isDev ? ["'unsafe-inline'"] : [nonceFn]),
           "https://www.googletagmanager.com",
           "https://www.google-analytics.com",
         ],
-        styleSrc: ["'self'", ...(isDev ? ["'unsafe-inline'"] : [cspNonce]), "https://fonts.googleapis.com"],
+        styleSrc: ["'self'", ...(isDev ? ["'unsafe-inline'"] : [nonceFn]), "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: [
