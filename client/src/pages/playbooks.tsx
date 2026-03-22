@@ -1227,6 +1227,129 @@ export default function PlaybooksPage() {
     onError: (err: any) => toast({ title: "Execution failed", description: err.message, variant: "destructive" }),
   });
 
+  // ─── 20.7 Execution Analytics ──────────────────────────────────────────────
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery<any>({
+    queryKey: ["/api/playbook-analytics"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-analytics");
+      return r.json();
+    },
+  });
+
+  // ─── 20.8 All Response Action Types ──────────────────────────────────────────
+  const { data: actionTypesData } = useQuery<any>({
+    queryKey: ["/api/playbook-action-types"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-action-types");
+      return r.json();
+    },
+  });
+
+  // ─── 20.9 Notification Config ───────────────────────────────────────────────
+  const [selectedNotifPlaybookId, setSelectedNotifPlaybookId] = useState<string | null>(null);
+  const [notifChannel, setNotifChannel] = useState("email");
+  const [notifSubject, setNotifSubject] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [notifRecipients, setNotifRecipients] = useState("");
+
+  const { data: notifConfig, refetch: refetchNotifConfig } = useQuery<any>({
+    queryKey: ["/api/playbooks", selectedNotifPlaybookId, "notification-config"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/playbooks/${selectedNotifPlaybookId}/notification-config`);
+      return r.json();
+    },
+    enabled: !!selectedNotifPlaybookId,
+  });
+
+  const createNotifTemplateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await apiRequest("POST", `/api/playbooks/${selectedNotifPlaybookId}/notification-templates`, data);
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchNotifConfig();
+      setNotifSubject("");
+      setNotifBody("");
+      setNotifRecipients("");
+      toast({ title: "Notification template created" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteNotifTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      await apiRequest("DELETE", `/api/playbooks/${selectedNotifPlaybookId}/notification-templates/${templateId}`);
+    },
+    onSuccess: () => {
+      refetchNotifConfig();
+      toast({ title: "Template deleted" });
+    },
+  });
+
+  // ─── 20.10 Change Management ───────────────────────────────────────────────
+  const [changePlaybookId, setChangePlaybookId] = useState("");
+  const [changeType, setChangeType] = useState("firewall_rule");
+  const [changeSummary, setChangeSummary] = useState("");
+  const [changeDesc, setChangeDesc] = useState("");
+
+  const { data: changeTickets, refetch: refetchChangeTickets } = useQuery<any>({
+    queryKey: ["/api/playbook-change-tickets"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-change-tickets");
+      return r.json();
+    },
+  });
+
+  const createChangeTicketMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await apiRequest("POST", "/api/playbook-change-tickets", data);
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      setChangeSummary("");
+      setChangeDesc("");
+      toast({ title: "Change ticket created" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const approveChangeTicketMutation = useMutation({
+    mutationFn: async ({ ticketId, decision, note }: { ticketId: string; decision: string; note?: string }) => {
+      const r = await apiRequest("POST", `/api/playbook-change-tickets/${ticketId}/approve`, { decision, note });
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      toast({ title: "Decision recorded" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const implementChangeTicketMutation = useMutation({
+    mutationFn: async (ticketId: string) => {
+      const r = await apiRequest("POST", `/api/playbook-change-tickets/${ticketId}/implement`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      toast({ title: "Change implemented" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const closeChangeTicketMutation = useMutation({
+    mutationFn: async (ticketId: string) => {
+      const r = await apiRequest("POST", `/api/playbook-change-tickets/${ticketId}/close`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      toast({ title: "Ticket closed" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
   const proposePlaybookMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ai/playbook-authoring/propose", {
@@ -1476,6 +1599,18 @@ export default function PlaybooksPage() {
           <TabsTrigger value="simulation" data-testid="tab-simulation">
             <FlaskConical className="h-4 w-4 mr-1.5" />
             Simulation
+          </TabsTrigger>
+          <TabsTrigger value="analytics" data-testid="tab-analytics">
+            <BarChart3 className="h-4 w-4 mr-1.5" />
+            Analytics
+          </TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-notifications">
+            <Bell className="h-4 w-4 mr-1.5" />
+            Notifications
+          </TabsTrigger>
+          <TabsTrigger value="changes" data-testid="tab-changes">
+            <Ticket className="h-4 w-4 mr-1.5" />
+            Changes
           </TabsTrigger>
         </TabsList>
 
@@ -2856,6 +2991,593 @@ export default function PlaybooksPage() {
               </TabsContent>
             </Tabs>
           )}
+        </TabsContent>
+
+        {/* ─── 20.7 Analytics Tab ──────────────────────────────────────────── */}
+        <TabsContent value="analytics" className="mt-4 space-y-4" data-testid="tab-content-analytics">
+          {analyticsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i}>
+                  <CardContent className="p-5">
+                    <Skeleton className="h-8 w-16 mb-2" />
+                    <Skeleton className="h-4 w-24" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : analyticsData ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.overview?.successRate ?? 0}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      {analyticsData.overview?.completedExecutions ?? 0} completed
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Failure Rate</CardTitle>
+                    <XCircle className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.overview?.failureRate ?? 0}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      {analyticsData.overview?.failedExecutions ?? 0} failed
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Avg Execution Time</CardTitle>
+                    <Timer className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {analyticsData.overview?.avgExecutionTimeMs
+                        ? `${(analyticsData.overview.avgExecutionTimeMs / 1000).toFixed(1)}s`
+                        : "—"}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {analyticsData.overview?.totalExecutions ?? 0} total runs
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Playbooks</CardTitle>
+                    <Workflow className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.overview?.activePlaybooks ?? 0}</div>
+                    <p className="text-xs text-muted-foreground">
+                      of {analyticsData.overview?.totalPlaybooks ?? 0} total
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Most Triggered Playbooks</CardTitle>
+                    <CardDescription className="text-xs">Top playbooks by execution count</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-56">
+                      <div className="space-y-2">
+                        {(analyticsData.mostTriggered || []).map((pb: any) => (
+                          <div
+                            key={pb.playbookId}
+                            className="flex items-center justify-between p-2 bg-muted/10 rounded text-xs"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{pb.playbookName}</div>
+                              <div className="text-muted-foreground">{pb.totalExecutions} executions</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default" className="text-[10px]">
+                                {pb.successRate}% success
+                              </Badge>
+                              <span className="text-muted-foreground">
+                                {pb.avgTimeMs ? `${(pb.avgTimeMs / 1000).toFixed(1)}s avg` : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {!(analyticsData.mostTriggered || []).length && (
+                          <p className="text-xs text-muted-foreground text-center py-4">No execution data yet</p>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">High Failure Steps</CardTitle>
+                    <CardDescription className="text-xs">Steps with the highest failure rates</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-56">
+                      <div className="space-y-2">
+                        {(analyticsData.highFailureSteps || []).map((step: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-2 bg-muted/10 rounded text-xs">
+                            <div className="font-medium font-mono">{step.stepId}</div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="destructive" className="text-[10px]">
+                                {step.failureRate}% fail
+                              </Badge>
+                              <span className="text-muted-foreground">
+                                {step.failures}/{step.total} runs
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {!(analyticsData.highFailureSteps || []).length && (
+                          <p className="text-xs text-muted-foreground text-center py-4">No failure data</p>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 20.8 Available Response Action Types */}
+              {actionTypesData && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Available Response Action Types</CardTitle>
+                    <CardDescription className="text-xs">
+                      {actionTypesData.totalCount} action types across {actionTypesData.categories?.length} categories
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {(actionTypesData.categories || []).map((cat: string) => (
+                        <div key={cat} className="space-y-1.5">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            {cat}
+                          </div>
+                          {(actionTypesData.byCategory?.[cat] || []).map((action: any) => (
+                            <div
+                              key={action.actionType}
+                              className="flex items-center gap-2 p-1.5 bg-muted/10 rounded text-xs"
+                            >
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] no-default-hover-elevate no-default-active-elevate ${
+                                  action.risk === "high"
+                                    ? "border-red-500/40 text-red-400"
+                                    : action.risk === "medium"
+                                      ? "border-orange-500/40 text-orange-400"
+                                      : "border-green-500/40 text-green-400"
+                                }`}
+                              >
+                                {action.risk}
+                              </Badge>
+                              <span className="font-medium">{action.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Execution Time Trend */}
+              {analyticsData.executionTimeTrend && analyticsData.executionTimeTrend.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Execution Time Trend</CardTitle>
+                    <CardDescription className="text-xs">
+                      Last {analyticsData.executionTimeTrend.length} completed executions
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-end gap-1 h-24">
+                      {analyticsData.executionTimeTrend.map((t: any, idx: number) => {
+                        const maxTime = Math.max(
+                          ...analyticsData.executionTimeTrend.map((x: any) => x.executionTimeMs || 1),
+                        );
+                        const height = Math.max(4, (t.executionTimeMs / maxTime) * 80);
+                        return (
+                          <div
+                            key={idx}
+                            className="bg-primary/60 rounded-t flex-1 min-w-[4px]"
+                            style={{ height: `${height}px` }}
+                            title={`${(t.executionTimeMs / 1000).toFixed(1)}s`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <BarChart3 className="h-8 w-8 mb-2" />
+                <p className="text-sm">No analytics data available</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ─── 20.9 Notifications Tab ──────────────────────────────────────── */}
+        <TabsContent value="notifications" className="mt-4 space-y-4" data-testid="tab-content-notifications">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Notification Channel Templates</CardTitle>
+              <CardDescription className="text-xs">
+                Configure notification templates for playbook steps — supports email, Slack, Teams, PagerDuty, and
+                webhook
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Select Playbook</Label>
+                  <Select value={selectedNotifPlaybookId || ""} onValueChange={(v) => setSelectedNotifPlaybookId(v)}>
+                    <SelectTrigger data-testid="select-notif-playbook">
+                      <SelectValue placeholder="Choose a playbook..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(playbooks || []).map((pb) => (
+                        <SelectItem key={pb.id} value={String(pb.id)}>
+                          {pb.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedNotifPlaybookId && (
+                  <>
+                    <Separator />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Channel</Label>
+                        <Select value={notifChannel} onValueChange={setNotifChannel}>
+                          <SelectTrigger data-testid="select-notif-channel">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="slack">Slack</SelectItem>
+                            <SelectItem value="teams">Microsoft Teams</SelectItem>
+                            <SelectItem value="pagerduty">PagerDuty</SelectItem>
+                            <SelectItem value="webhook">Webhook</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Subject / Title</Label>
+                        <Input
+                          placeholder="Alert: {{severity}} incident detected"
+                          value={notifSubject}
+                          onChange={(e) => setNotifSubject(e.target.value)}
+                          data-testid="input-notif-subject"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Body Template</Label>
+                      <Textarea
+                        placeholder="Incident {{incident_id}} — {{title}} (Severity: {{severity}}) triggered at {{timestamp}}"
+                        value={notifBody}
+                        onChange={(e) => setNotifBody(e.target.value)}
+                        className="resize-none text-xs"
+                        rows={3}
+                        data-testid="input-notif-body"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Recipients / Channel / Webhook URL</Label>
+                      <Input
+                        placeholder={
+                          notifChannel === "email"
+                            ? "user@example.com"
+                            : notifChannel === "webhook"
+                              ? "https://..."
+                              : "#channel"
+                        }
+                        value={notifRecipients}
+                        onChange={(e) => setNotifRecipients(e.target.value)}
+                        data-testid="input-notif-recipients"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (!notifBody.trim()) return;
+                          createNotifTemplateMutation.mutate({
+                            channel: notifChannel,
+                            subject: notifSubject || null,
+                            body: notifBody,
+                            recipients: notifRecipients || null,
+                            webhookUrl: notifChannel === "webhook" ? notifRecipients : null,
+                          });
+                        }}
+                        disabled={!notifBody.trim() || createNotifTemplateMutation.isPending}
+                        data-testid="button-create-notif-template"
+                      >
+                        {createNotifTemplateMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        Create Template
+                      </Button>
+                    </div>
+
+                    {/* Available Variables */}
+                    {notifConfig?.availableChannels && (
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium">Available variables: </span>
+                        {notifConfig.availableChannels
+                          .find((c: any) => c.channel === notifChannel)
+                          ?.variables?.join(", ") || "—"}
+                      </div>
+                    )}
+
+                    {/* Existing Templates */}
+                    {notifConfig?.templates && notifConfig.templates.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Existing Templates
+                        </h4>
+                        {notifConfig.templates.map((t: any) => (
+                          <div
+                            key={t.id}
+                            className="flex items-start justify-between p-2.5 bg-muted/10 rounded text-xs gap-2"
+                          >
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                                >
+                                  {t.channel}
+                                </Badge>
+                                {t.subject && <span className="font-medium truncate">{t.subject}</span>}
+                              </div>
+                              <p className="text-muted-foreground truncate">{t.body}</p>
+                              <p className="text-muted-foreground/60">
+                                by {t.createdBy} • {t.createdAt ? formatDateShort(new Date(t.createdAt)) : "—"}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => deleteNotifTemplateMutation.mutate(t.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ─── 20.10 Change Management Tab ─────────────────────────────────── */}
+        <TabsContent value="changes" className="mt-4 space-y-4" data-testid="tab-content-changes">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Create Change Ticket</CardTitle>
+              <CardDescription className="text-xs">
+                Track infrastructure changes made by playbook executions
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Playbook</Label>
+                  <Select value={changePlaybookId} onValueChange={setChangePlaybookId}>
+                    <SelectTrigger data-testid="select-change-playbook">
+                      <SelectValue placeholder="Select playbook..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(playbooks || []).map((pb) => (
+                        <SelectItem key={pb.id} value={String(pb.id)}>
+                          {pb.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Change Type</Label>
+                  <Select value={changeType} onValueChange={setChangeType}>
+                    <SelectTrigger data-testid="select-change-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="firewall_rule">Firewall Rule</SelectItem>
+                      <SelectItem value="account_disable">Account Disable</SelectItem>
+                      <SelectItem value="network_block">Network Block</SelectItem>
+                      <SelectItem value="endpoint_isolation">Endpoint Isolation</SelectItem>
+                      <SelectItem value="detection_update">Detection Update</SelectItem>
+                      <SelectItem value="configuration_change">Configuration Change</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Summary</Label>
+                  <Input
+                    placeholder="Brief summary of the change..."
+                    value={changeSummary}
+                    onChange={(e) => setChangeSummary(e.target.value)}
+                    data-testid="input-change-summary"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Description (optional)</Label>
+                <Textarea
+                  placeholder="Detailed description of the change and its impact..."
+                  value={changeDesc}
+                  onChange={(e) => setChangeDesc(e.target.value)}
+                  className="resize-none text-xs"
+                  rows={2}
+                  data-testid="input-change-desc"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (!changePlaybookId || !changeSummary.trim()) return;
+                  createChangeTicketMutation.mutate({
+                    playbookId: Number(changePlaybookId),
+                    changeType,
+                    summary: changeSummary,
+                    description: changeDesc || null,
+                  });
+                }}
+                disabled={!changePlaybookId || !changeSummary.trim() || createChangeTicketMutation.isPending}
+                data-testid="button-create-change-ticket"
+              >
+                {createChangeTicketMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Ticket className="h-4 w-4 mr-2" />
+                )}
+                Create Change Ticket
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Change Tickets</CardTitle>
+              <CardDescription className="text-xs">{changeTickets?.total ?? 0} tickets tracked</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-80">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">ID</TableHead>
+                      <TableHead className="text-xs">Playbook</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Summary</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs">Requested</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(changeTickets?.tickets || []).map((ticket: any) => (
+                      <TableRow key={ticket.id}>
+                        <TableCell className="text-xs font-mono">{ticket.id}</TableCell>
+                        <TableCell className="text-xs">{ticket.playbookName}</TableCell>
+                        <TableCell className="text-xs">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                          >
+                            {ticket.changeType?.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs max-w-[200px] truncate">{ticket.summary}</TableCell>
+                        <TableCell className="text-xs">
+                          <Badge
+                            variant={
+                              ticket.status === "approved" || ticket.status === "implemented"
+                                ? "default"
+                                : ticket.status === "rejected"
+                                  ? "destructive"
+                                  : ticket.status === "closed"
+                                    ? "outline"
+                                    : "secondary"
+                            }
+                            className="text-[10px]"
+                          >
+                            {ticket.status?.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {ticket.requestedBy}
+                          <br />
+                          {ticket.requestedAt ? formatDateShort(new Date(ticket.requestedAt)) : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1">
+                            {ticket.status === "pending_approval" && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px]"
+                                  onClick={() =>
+                                    approveChangeTicketMutation.mutate({ ticketId: ticket.id, decision: "approved" })
+                                  }
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px]"
+                                  onClick={() =>
+                                    approveChangeTicketMutation.mutate({ ticketId: ticket.id, decision: "rejected" })
+                                  }
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            {ticket.status === "approved" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px]"
+                                onClick={() => implementChangeTicketMutation.mutate(ticket.id)}
+                              >
+                                Implement
+                              </Button>
+                            )}
+                            {(ticket.status === "implemented" || ticket.status === "approved") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-[10px]"
+                                onClick={() => closeChangeTicketMutation.mutate(ticket.id)}
+                              >
+                                Close
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!(changeTickets?.tickets || []).length && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
+                          No change tickets yet. Create one above to track infrastructure changes.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

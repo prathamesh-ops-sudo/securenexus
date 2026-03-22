@@ -1754,6 +1754,1118 @@ export function registerPlaybooksRoutes(app: Express): void {
       }
     },
   );
+
+  // ─── 20.5 Playbook Step Timeout Handling ────────────────────────────────────
+
+  const stepTimeoutDefaults: Record<string, number> = {
+    action: 30000,
+    condition: 5000,
+    approval: 0, // approvals don't timeout by default
+    trigger: 5000,
+    notification: 10000,
+  };
+
+  const FALLBACK_ACTIONS = ["skip", "retry", "abort", "notify"] as const;
+
+  app.get(
+    "/api/playbooks/:id/step-timeouts",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+        const nodes = extractNodes(actionsArr);
+        const stepConfigs = nodes.map((node: any) => {
+          const config = node.data?.config || {};
+          return {
+            nodeId: node.id,
+            label: node.data?.label || node.type,
+            type: node.type,
+            timeoutMs: config.timeoutMs ?? stepTimeoutDefaults[node.type] ?? 30000,
+            fallbackAction: config.fallbackAction || "skip",
+            maxRetries: config.maxRetries ?? 0,
+            retryBackoffMs: config.retryBackoffMs ?? 1000,
+          };
+        });
+
+        res.json({
+          playbookId: pb.id,
+          playbookName: pb.name,
+          defaults: stepTimeoutDefaults,
+          availableFallbacks: FALLBACK_ACTIONS,
+          steps: stepConfigs,
+        });
+      } catch (error) {
+        logger.child("routes").error("Step timeouts error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch step timeouts" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/playbooks/:id/step-timeouts",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const { steps } = req.body;
+        if (!Array.isArray(steps)) {
+          return res.status(400).json({ message: "steps must be an array of {nodeId, timeoutMs, fallbackAction}" });
+        }
+
+        const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+        const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
+
+        if (isGraphFormat) {
+          const graph = { ...(actionsArr[0] as any) };
+          const nodes = [...(graph.nodes || [])];
+          for (const stepUpdate of steps) {
+            const idx = nodes.findIndex((n: any) => n.id === stepUpdate.nodeId);
+            if (idx >= 0) {
+              const node = { ...nodes[idx] };
+              const data = { ...node.data, config: { ...(node.data?.config || {}) } };
+              if (typeof stepUpdate.timeoutMs === "number") data.config.timeoutMs = stepUpdate.timeoutMs;
+              if (stepUpdate.fallbackAction && FALLBACK_ACTIONS.includes(stepUpdate.fallbackAction)) {
+                data.config.fallbackAction = stepUpdate.fallbackAction;
+              }
+              if (typeof stepUpdate.maxRetries === "number") data.config.maxRetries = stepUpdate.maxRetries;
+              if (typeof stepUpdate.retryBackoffMs === "number") data.config.retryBackoffMs = stepUpdate.retryBackoffMs;
+              node.data = data;
+              nodes[idx] = node;
+            }
+          }
+          graph.nodes = nodes;
+          await storage.updatePlaybook(pb.id, { actions: [graph] } as any);
+        }
+
+        const user = (req as any).user;
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+          action: "playbook_step_timeouts_updated",
+          resourceType: "playbook",
+          resourceId: pb.id,
+          details: { stepsUpdated: steps.length },
+        });
+
+        res.json({ success: true, stepsUpdated: steps.length });
+      } catch (error) {
+        logger.child("routes").error("Step timeouts update error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update step timeouts" });
+      }
+    },
+  );
+
+  // ─── 20.6 Playbook Execution Retry with Backoff ─────────────────────────────
+
+  const retryRegistry = new Map<string, { retries: number; maxRetries: number; backoffMs: number; stepId: string }>();
+
+  app.post(
+    "/api/playbook-executions/:id/retry-step",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const execution = await storage.getPlaybookExecution(p(req.params.id));
+        if (!execution) {
+          return res.status(404).json({ message: "Execution not found" });
+        }
+        const pb = await storage.getPlaybook(execution.playbookId);
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const { stepId, maxRetries, backoffMs } = req.body;
+        if (!stepId) {
+          return res.status(400).json({ message: "stepId is required" });
+        }
+
+        const retryMax = typeof maxRetries === "number" ? Math.min(maxRetries, 10) : 3;
+        const backoff = typeof backoffMs === "number" ? Math.min(backoffMs, 30000) : 1000;
+        const key = `${execution.id}:${stepId}`;
+
+        let entry = retryRegistry.get(key);
+        if (!entry) {
+          entry = { retries: 0, maxRetries: retryMax, backoffMs: backoff, stepId };
+          retryRegistry.set(key, entry);
+        }
+
+        if (entry.retries >= entry.maxRetries) {
+          return res.status(400).json({
+            message: `Max retries (${entry.maxRetries}) exhausted for step ${stepId}`,
+            retries: entry.retries,
+            maxRetries: entry.maxRetries,
+          });
+        }
+
+        entry.retries++;
+        const delay = entry.backoffMs * Math.pow(2, entry.retries - 1);
+
+        // Find the failed action and re-dispatch after delay
+        const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+        const nodes = extractNodes(actionsArr);
+        const node = nodes.find((n: any) => n.id === stepId);
+
+        if (!node) {
+          return res.status(404).json({ message: `Step ${stepId} not found in playbook` });
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const context: ActionContext = {
+          orgId,
+          incidentId: execution.resourceId || undefined,
+          userId: user?.id,
+          userName,
+          storage,
+        };
+
+        // Simulate backoff delay (capped at 5s for API response)
+        const actualDelay = Math.min(delay, 5000);
+        await new Promise((resolve) => setTimeout(resolve, actualDelay));
+
+        const actionType = node.data?.actionType || node.type;
+        const config = node.data?.config || {};
+        const result = await dispatchAction(actionType, config, context);
+
+        // Update execution's actionsExecuted with retry result
+        const existingActions = Array.isArray(execution.actionsExecuted)
+          ? [...(execution.actionsExecuted as any[])]
+          : [];
+        existingActions.push({
+          ...result,
+          nodeId: stepId,
+          retryAttempt: entry.retries,
+          retryDelay: delay,
+        });
+
+        const newStatus =
+          result.status === "completed" || result.status === "approved" ? "completed" : execution.status;
+        await storage.updatePlaybookExecution(execution.id, {
+          actionsExecuted: existingActions,
+          status: newStatus,
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName,
+          action: "playbook_step_retried",
+          resourceType: "playbook_execution",
+          resourceId: execution.id,
+          details: {
+            stepId,
+            retryAttempt: entry.retries,
+            maxRetries: entry.maxRetries,
+            backoffDelay: delay,
+            result: result.status,
+          },
+        });
+
+        res.json({
+          stepId,
+          retryAttempt: entry.retries,
+          maxRetries: entry.maxRetries,
+          nextBackoffMs: entry.backoffMs * Math.pow(2, entry.retries),
+          result,
+          executionStatus: newStatus,
+        });
+      } catch (error) {
+        logger.child("routes").error("Step retry error", { error: String(error) });
+        res.status(500).json({ message: "Failed to retry step" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/playbook-executions/:id/retry-status",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const execution = await storage.getPlaybookExecution(p(req.params.id));
+        if (!execution) {
+          return res.status(404).json({ message: "Execution not found" });
+        }
+        const pb = await storage.getPlaybook(execution.playbookId);
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const retries: any[] = [];
+        for (const [key, entry] of Array.from(retryRegistry.entries())) {
+          if (key.startsWith(`${execution.id}:`)) {
+            retries.push({
+              stepId: entry.stepId,
+              retries: entry.retries,
+              maxRetries: entry.maxRetries,
+              backoffMs: entry.backoffMs,
+              nextBackoffMs: entry.backoffMs * Math.pow(2, entry.retries),
+              exhausted: entry.retries >= entry.maxRetries,
+            });
+          }
+        }
+
+        res.json({ executionId: execution.id, retries });
+      } catch (error) {
+        logger.child("routes").error("Retry status error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch retry status" });
+      }
+    },
+  );
+
+  // ─── 20.7 Playbook Execution Analytics ──────────────────────────────────────
+
+  app.get(
+    "/api/playbook-analytics",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const allPlaybooks = await storage.getPlaybooks(orgId);
+        const allExecs = await storage.getPlaybookExecutions(undefined, 500);
+        const orgPbIds = new Set(allPlaybooks.map((p: any) => p.id));
+        const orgExecs = allExecs.filter((e: any) => orgPbIds.has(e.playbookId));
+
+        // Overall metrics
+        const completed = orgExecs.filter((e: any) => e.status === "completed");
+        const failed = orgExecs.filter((e: any) => e.status === "failed");
+        const totalExecutionTime = completed.reduce((sum: number, e: any) => sum + (e.executionTimeMs || 0), 0);
+        const avgExecutionTimeMs = completed.length > 0 ? Math.round(totalExecutionTime / completed.length) : 0;
+        const successRate = orgExecs.length > 0 ? Math.round((completed.length / orgExecs.length) * 100) : 0;
+        const failureRate = orgExecs.length > 0 ? Math.round((failed.length / orgExecs.length) * 100) : 0;
+
+        // Per-playbook analytics
+        const perPlaybook: Record<string, any> = {};
+        for (const exec of orgExecs) {
+          const pbId = exec.playbookId;
+          if (!perPlaybook[pbId]) {
+            const pb = allPlaybooks.find((p: any) => p.id === pbId);
+            perPlaybook[pbId] = {
+              playbookId: pbId,
+              playbookName: pb?.name || "Unknown",
+              totalExecutions: 0,
+              completed: 0,
+              failed: 0,
+              running: 0,
+              totalTimeMs: 0,
+              avgTimeMs: 0,
+              minTimeMs: Infinity,
+              maxTimeMs: 0,
+              lastTriggeredAt: null,
+              triggerCount: pb?.triggerCount || 0,
+              failedSteps: {} as Record<string, number>,
+            };
+          }
+          const entry = perPlaybook[pbId];
+          entry.totalExecutions++;
+          if (exec.status === "completed") {
+            entry.completed++;
+            const t = exec.executionTimeMs || 0;
+            entry.totalTimeMs += t;
+            if (t < entry.minTimeMs) entry.minTimeMs = t;
+            if (t > entry.maxTimeMs) entry.maxTimeMs = t;
+          }
+          if (exec.status === "failed") entry.failed++;
+          if (exec.status === "running") entry.running++;
+          const execDate = exec.createdAt ? new Date(String(exec.createdAt)).toISOString() : null;
+          if (!entry.lastTriggeredAt || (execDate && execDate > entry.lastTriggeredAt)) {
+            entry.lastTriggeredAt = execDate;
+          }
+
+          // Track failed steps
+          if (Array.isArray(exec.actionsExecuted)) {
+            for (const action of exec.actionsExecuted as any[]) {
+              if (action.status === "failed") {
+                const stepKey = action.nodeId || action.actionType || "unknown";
+                entry.failedSteps[stepKey] = (entry.failedSteps[stepKey] || 0) + 1;
+              }
+            }
+          }
+        }
+
+        // Finalize per-playbook stats
+        const playbookStats = Object.values(perPlaybook).map((entry: any) => {
+          entry.avgTimeMs = entry.completed > 0 ? Math.round(entry.totalTimeMs / entry.completed) : 0;
+          if (entry.minTimeMs === Infinity) entry.minTimeMs = 0;
+          entry.successRate =
+            entry.totalExecutions > 0 ? Math.round((entry.completed / entry.totalExecutions) * 100) : 0;
+          entry.failureRate = entry.totalExecutions > 0 ? Math.round((entry.failed / entry.totalExecutions) * 100) : 0;
+          // Convert failedSteps map to sorted array
+          entry.topFailedSteps = Object.entries(entry.failedSteps)
+            .map(([stepId, count]) => ({ stepId, failures: count }))
+            .sort((a: any, b: any) => b.failures - a.failures)
+            .slice(0, 5);
+          delete entry.failedSteps;
+          delete entry.totalTimeMs;
+          return entry;
+        });
+
+        // Most commonly triggered playbooks
+        const mostTriggered = [...playbookStats]
+          .sort((a: any, b: any) => b.totalExecutions - a.totalExecutions)
+          .slice(0, 10);
+
+        // Steps with highest failure rates across all executions
+        const stepFailures: Record<string, { stepId: string; failures: number; total: number }> = {};
+        for (const exec of orgExecs) {
+          if (Array.isArray(exec.actionsExecuted)) {
+            for (const action of exec.actionsExecuted as any[]) {
+              const stepKey = action.nodeId || action.actionType || "unknown";
+              if (!stepFailures[stepKey]) {
+                stepFailures[stepKey] = { stepId: stepKey, failures: 0, total: 0 };
+              }
+              stepFailures[stepKey].total++;
+              if (action.status === "failed") stepFailures[stepKey].failures++;
+            }
+          }
+        }
+        const highFailureSteps = Object.values(stepFailures)
+          .filter((s) => s.total >= 2)
+          .map((s) => ({ ...s, failureRate: Math.round((s.failures / s.total) * 100) }))
+          .sort((a, b) => b.failureRate - a.failureRate)
+          .slice(0, 10);
+
+        // Execution time trend (last 30 executions)
+        const recentCompleted = completed
+          .sort(
+            (a: any, b: any) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime(),
+          )
+          .slice(0, 30);
+        const timeTrend = recentCompleted.map((e: any) => ({
+          executionId: e.id,
+          playbookId: e.playbookId,
+          executionTimeMs: e.executionTimeMs || 0,
+          completedAt: e.updatedAt || e.createdAt,
+        }));
+
+        res.json({
+          overview: {
+            totalPlaybooks: allPlaybooks.length,
+            activePlaybooks: allPlaybooks.filter((p: any) => p.status === "active").length,
+            totalExecutions: orgExecs.length,
+            completedExecutions: completed.length,
+            failedExecutions: failed.length,
+            avgExecutionTimeMs,
+            successRate,
+            failureRate,
+          },
+          mostTriggered,
+          playbookStats,
+          highFailureSteps,
+          executionTimeTrend: timeTrend,
+        });
+      } catch (error) {
+        logger.child("routes").error("Playbook analytics error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch playbook analytics" });
+      }
+    },
+  );
+
+  // ─── 20.8 Playbook → All Response Action Types ─────────────────────────────
+
+  const ALL_RESPONSE_ACTION_TYPES = [
+    {
+      actionType: "isolate_host",
+      label: "Isolate Endpoint",
+      category: "endpoint",
+      risk: "high",
+      description: "Isolate a host from the network to contain a threat",
+    },
+    {
+      actionType: "block_ip",
+      label: "Block IP Address",
+      category: "network",
+      risk: "medium",
+      description: "Block an IP address at the firewall or proxy",
+    },
+    {
+      actionType: "block_domain",
+      label: "Block Domain",
+      category: "network",
+      risk: "medium",
+      description: "Block a domain via DNS sinkhole or proxy",
+    },
+    {
+      actionType: "disable_user",
+      label: "Disable User Account",
+      category: "identity",
+      risk: "high",
+      description: "Disable a user account to prevent unauthorized access",
+    },
+    {
+      actionType: "quarantine_file",
+      label: "Quarantine File",
+      category: "endpoint",
+      risk: "medium",
+      description: "Quarantine a suspicious file on the endpoint",
+    },
+    {
+      actionType: "kill_process",
+      label: "Kill Process",
+      category: "endpoint",
+      risk: "medium",
+      description: "Terminate a running process on an endpoint",
+    },
+    {
+      actionType: "quarantine_email",
+      label: "Quarantine Email",
+      category: "email",
+      risk: "low",
+      description: "Move a suspicious email to quarantine",
+    },
+    {
+      actionType: "create_firewall_rule",
+      label: "Create Firewall Rule",
+      category: "network",
+      risk: "high",
+      description: "Create a new firewall rule to block traffic",
+    },
+    {
+      actionType: "update_detection_rule",
+      label: "Update Detection Rule",
+      category: "detection",
+      risk: "low",
+      description: "Update or create a detection rule based on findings",
+    },
+    {
+      actionType: "auto_triage",
+      label: "Auto Triage",
+      category: "workflow",
+      risk: "low",
+      description: "Automatically triage and categorize the alert or incident",
+    },
+    {
+      actionType: "assign_analyst",
+      label: "Assign Analyst",
+      category: "workflow",
+      risk: "low",
+      description: "Assign an analyst to investigate",
+    },
+    {
+      actionType: "change_status",
+      label: "Change Status",
+      category: "workflow",
+      risk: "low",
+      description: "Change the status of an incident or alert",
+    },
+    {
+      actionType: "add_tag",
+      label: "Add Tag",
+      category: "workflow",
+      risk: "low",
+      description: "Add a tag to the resource for categorization",
+    },
+    {
+      actionType: "escalate",
+      label: "Escalate",
+      category: "workflow",
+      risk: "low",
+      description: "Escalate to a higher tier analyst or manager",
+    },
+    {
+      actionType: "create_jira_ticket",
+      label: "Create Jira Ticket",
+      category: "ticketing",
+      risk: "low",
+      description: "Create a Jira issue for tracking",
+    },
+    {
+      actionType: "create_servicenow_ticket",
+      label: "Create ServiceNow Ticket",
+      category: "ticketing",
+      risk: "low",
+      description: "Create a ServiceNow incident or change request",
+    },
+    {
+      actionType: "notify_slack",
+      label: "Notify Slack",
+      category: "notification",
+      risk: "low",
+      description: "Send a notification to a Slack channel",
+    },
+    {
+      actionType: "notify_teams",
+      label: "Notify Teams",
+      category: "notification",
+      risk: "low",
+      description: "Send a notification to a Microsoft Teams channel",
+    },
+    {
+      actionType: "notify_email",
+      label: "Notify Email",
+      category: "notification",
+      risk: "low",
+      description: "Send an email notification",
+    },
+    {
+      actionType: "notify_pagerduty",
+      label: "Notify PagerDuty",
+      category: "notification",
+      risk: "low",
+      description: "Create a PagerDuty incident",
+    },
+    {
+      actionType: "notify_webhook",
+      label: "Notify Webhook",
+      category: "notification",
+      risk: "low",
+      description: "Send a webhook notification to an external URL",
+    },
+  ];
+
+  app.get(
+    "/api/playbook-action-types",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (_req: Request, res: Response) => {
+      try {
+        const categories = Array.from(new Set(ALL_RESPONSE_ACTION_TYPES.map((a) => a.category)));
+        const byCategory: Record<string, any[]> = {};
+        for (const cat of categories) {
+          byCategory[cat] = ALL_RESPONSE_ACTION_TYPES.filter((a) => a.category === cat);
+        }
+        res.json({
+          actionTypes: ALL_RESPONSE_ACTION_TYPES,
+          categories,
+          byCategory,
+          totalCount: ALL_RESPONSE_ACTION_TYPES.length,
+        });
+      } catch (error) {
+        logger.child("routes").error("Action types error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch action types" });
+      }
+    },
+  );
+
+  // ─── 20.9 Playbook → Notification Channels ─────────────────────────────────
+
+  const notificationTemplateStore = new Map<string, any[]>();
+
+  app.get(
+    "/api/playbooks/:id/notification-config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const key = `${orgId}:${pb.id}`;
+        const templates = notificationTemplateStore.get(key) || [];
+
+        const channels = [
+          {
+            channel: "email",
+            label: "Email",
+            variables: ["{{incident_id}}", "{{severity}}", "{{title}}", "{{analyst}}", "{{timestamp}}", "{{url}}"],
+          },
+          {
+            channel: "slack",
+            label: "Slack",
+            variables: ["{{incident_id}}", "{{severity}}", "{{title}}", "{{channel}}", "{{timestamp}}"],
+          },
+          {
+            channel: "teams",
+            label: "Microsoft Teams",
+            variables: ["{{incident_id}}", "{{severity}}", "{{title}}", "{{timestamp}}"],
+          },
+          {
+            channel: "pagerduty",
+            label: "PagerDuty",
+            variables: ["{{incident_id}}", "{{severity}}", "{{title}}", "{{urgency}}"],
+          },
+          {
+            channel: "webhook",
+            label: "Webhook",
+            variables: ["{{incident_id}}", "{{severity}}", "{{title}}", "{{payload}}"],
+          },
+        ];
+
+        res.json({
+          playbookId: pb.id,
+          playbookName: pb.name,
+          availableChannels: channels,
+          templates,
+        });
+      } catch (error) {
+        logger.child("routes").error("Notification config error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch notification config" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbooks/:id/notification-templates",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const { channel, subject, body, recipients, webhookUrl, urgency } = req.body;
+        if (!channel || !body) {
+          return res.status(400).json({ message: "channel and body are required" });
+        }
+
+        const validChannels = ["email", "slack", "teams", "pagerduty", "webhook"];
+        if (!validChannels.includes(channel)) {
+          return res.status(400).json({ message: `Invalid channel. Must be one of: ${validChannels.join(", ")}` });
+        }
+
+        const key = `${orgId}:${pb.id}`;
+        if (!notificationTemplateStore.has(key)) notificationTemplateStore.set(key, []);
+
+        const template = {
+          id: `tmpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          channel,
+          subject: subject || null,
+          body,
+          recipients: recipients || null,
+          webhookUrl: webhookUrl || null,
+          urgency: urgency || "high",
+          createdAt: new Date().toISOString(),
+          createdBy: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+        };
+
+        notificationTemplateStore.get(key)!.push(template);
+
+        await storage.createAuditLog({
+          orgId,
+          userId: (req as any).user?.id,
+          userName: template.createdBy,
+          action: "playbook_notification_template_created",
+          resourceType: "playbook",
+          resourceId: pb.id,
+          details: { templateId: template.id, channel },
+        });
+
+        res.status(201).json(template);
+      } catch (error) {
+        logger.child("routes").error("Notification template error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create notification template" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/playbooks/:id/notification-templates/:templateId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const key = `${orgId}:${pb.id}`;
+        const templates = notificationTemplateStore.get(key) || [];
+        const idx = templates.findIndex((t: any) => t.id === req.params.templateId);
+        if (idx < 0) {
+          return res.status(404).json({ message: "Template not found" });
+        }
+
+        templates.splice(idx, 1);
+        res.json({ success: true });
+      } catch (error) {
+        logger.child("routes").error("Notification template delete error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete notification template" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbooks/:id/send-notification",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const pb = await storage.getPlaybook(p(req.params.id));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const { templateId, variables } = req.body;
+        const key = `${orgId}:${pb.id}`;
+        const templates = notificationTemplateStore.get(key) || [];
+        const template = templates.find((t: any) => t.id === templateId);
+
+        if (!template) {
+          return res.status(404).json({ message: "Template not found" });
+        }
+
+        // Perform variable substitution
+        let resolvedBody = template.body;
+        let resolvedSubject = template.subject || "";
+        const vars = variables || {};
+        for (const [varName, varValue] of Object.entries(vars)) {
+          const placeholder = `{{${varName}}}`;
+          resolvedBody = resolvedBody.replace(new RegExp(placeholder.replace(/[{}]/g, "\\$&"), "g"), String(varValue));
+          resolvedSubject = resolvedSubject.replace(
+            new RegExp(placeholder.replace(/[{}]/g, "\\$&"), "g"),
+            String(varValue),
+          );
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const context: ActionContext = {
+          orgId,
+          userId: user?.id,
+          userName,
+          storage,
+        };
+
+        const actionType = `notify_${template.channel}`;
+        const config: Record<string, string> = {
+          message: resolvedBody,
+          subject: resolvedSubject,
+        };
+        if (template.recipients) config.recipient = template.recipients;
+        if (template.webhookUrl) config.webhookUrl = template.webhookUrl;
+        if (template.urgency) config.urgency = template.urgency;
+
+        const result = await dispatchAction(actionType, config, context);
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName,
+          action: "playbook_notification_sent",
+          resourceType: "playbook",
+          resourceId: pb.id,
+          details: { templateId, channel: template.channel, result: result.status },
+        });
+
+        res.json({ templateId, channel: template.channel, result, resolvedBody, resolvedSubject });
+      } catch (error) {
+        logger.child("routes").error("Send notification error", { error: String(error) });
+        res.status(500).json({ message: "Failed to send notification" });
+      }
+    },
+  );
+
+  // ─── 20.10 Playbook → Change Management Integration ────────────────────────
+
+  const changeTicketStore = new Map<string, any[]>();
+
+  app.get(
+    "/api/playbook-change-tickets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const key = `org:${orgId}`;
+        const tickets = changeTicketStore.get(key) || [];
+        const { playbookId, status } = req.query;
+        let filtered = tickets;
+        if (playbookId) filtered = filtered.filter((t: any) => t.playbookId === playbookId);
+        if (status) filtered = filtered.filter((t: any) => t.status === status);
+        res.json({ tickets: filtered, total: filtered.length });
+      } catch (error) {
+        logger.child("routes").error("Change tickets error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch change tickets" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbook-change-tickets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          playbookId,
+          executionId,
+          changeType,
+          summary,
+          description,
+          impactAssessment,
+          rollbackPlan,
+          requiresApproval,
+        } = req.body;
+
+        if (!playbookId || !changeType || !summary) {
+          return res.status(400).json({ message: "playbookId, changeType, and summary are required" });
+        }
+
+        const pb = await storage.getPlaybook(p(playbookId));
+        if (!pb || pb.orgId !== orgId) {
+          return res.status(404).json({ message: "Playbook not found" });
+        }
+
+        const validChangeTypes = [
+          "firewall_rule",
+          "account_disable",
+          "network_block",
+          "endpoint_isolation",
+          "detection_update",
+          "configuration_change",
+        ];
+        if (!validChangeTypes.includes(changeType)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid changeType. Must be one of: ${validChangeTypes.join(", ")}` });
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+
+        const ticket = {
+          id: `CHG-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          orgId,
+          playbookId,
+          playbookName: pb.name,
+          executionId: executionId || null,
+          changeType,
+          summary,
+          description: description || null,
+          impactAssessment: impactAssessment || "Low impact — automated security response",
+          rollbackPlan: rollbackPlan || "Revert via playbook rollback mechanism",
+          requiresApproval: requiresApproval !== false,
+          status: requiresApproval !== false ? "pending_approval" : "approved",
+          requestedBy: userName,
+          requestedAt: new Date().toISOString(),
+          approvedBy: requiresApproval !== false ? null : "auto-approved",
+          approvedAt: requiresApproval !== false ? null : new Date().toISOString(),
+          implementedAt: null,
+          closedAt: null,
+          changeLog: [
+            {
+              action: "created",
+              actor: userName,
+              timestamp: new Date().toISOString(),
+              details: { changeType, summary },
+            },
+          ],
+        };
+
+        const key = `org:${orgId}`;
+        if (!changeTicketStore.has(key)) changeTicketStore.set(key, []);
+        changeTicketStore.get(key)!.push(ticket);
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName,
+          action: "change_ticket_created",
+          resourceType: "change_ticket",
+          resourceId: ticket.id,
+          details: { playbookId, changeType, summary, requiresApproval: ticket.requiresApproval },
+        });
+
+        res.status(201).json(ticket);
+      } catch (error) {
+        logger.child("routes").error("Change ticket create error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create change ticket" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbook-change-tickets/:ticketId/approve",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const key = `org:${orgId}`;
+        const tickets = changeTicketStore.get(key) || [];
+        const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
+
+        if (!ticket) {
+          return res.status(404).json({ message: "Change ticket not found" });
+        }
+        if (ticket.status !== "pending_approval") {
+          return res.status(400).json({ message: `Ticket is already ${ticket.status}` });
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin";
+        const { decision, note } = req.body;
+
+        if (!decision || !["approved", "rejected"].includes(decision)) {
+          return res.status(400).json({ message: "decision must be 'approved' or 'rejected'" });
+        }
+
+        ticket.status = decision;
+        ticket.approvedBy = userName;
+        ticket.approvedAt = new Date().toISOString();
+        ticket.changeLog.push({
+          action: decision,
+          actor: userName,
+          timestamp: new Date().toISOString(),
+          details: { note: note || null },
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName,
+          action: `change_ticket_${decision}`,
+          resourceType: "change_ticket",
+          resourceId: ticket.id,
+          details: { decision, note },
+        });
+
+        res.json(ticket);
+      } catch (error) {
+        logger.child("routes").error("Change ticket approve error", { error: String(error) });
+        res.status(500).json({ message: "Failed to approve change ticket" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbook-change-tickets/:ticketId/implement",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const key = `org:${orgId}`;
+        const tickets = changeTicketStore.get(key) || [];
+        const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
+
+        if (!ticket) {
+          return res.status(404).json({ message: "Change ticket not found" });
+        }
+        if (ticket.status !== "approved") {
+          return res.status(400).json({ message: "Ticket must be approved before implementation" });
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+
+        ticket.status = "implemented";
+        ticket.implementedAt = new Date().toISOString();
+        ticket.changeLog.push({
+          action: "implemented",
+          actor: userName,
+          timestamp: new Date().toISOString(),
+          details: req.body.notes ? { notes: req.body.notes } : {},
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId: user?.id,
+          userName,
+          action: "change_ticket_implemented",
+          resourceType: "change_ticket",
+          resourceId: ticket.id,
+        });
+
+        res.json(ticket);
+      } catch (error) {
+        logger.child("routes").error("Change ticket implement error", { error: String(error) });
+        res.status(500).json({ message: "Failed to implement change ticket" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/playbook-change-tickets/:ticketId/close",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const key = `org:${orgId}`;
+        const tickets = changeTicketStore.get(key) || [];
+        const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
+
+        if (!ticket) {
+          return res.status(404).json({ message: "Change ticket not found" });
+        }
+
+        const user = (req as any).user;
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+
+        ticket.status = "closed";
+        ticket.closedAt = new Date().toISOString();
+        ticket.changeLog.push({
+          action: "closed",
+          actor: userName,
+          timestamp: new Date().toISOString(),
+          details: req.body.resolution ? { resolution: req.body.resolution } : {},
+        });
+
+        res.json(ticket);
+      } catch (error) {
+        logger.child("routes").error("Change ticket close error", { error: String(error) });
+        res.status(500).json({ message: "Failed to close change ticket" });
+      }
+    },
+  );
 }
 
 function extractNodes(actions: unknown): any[] {
