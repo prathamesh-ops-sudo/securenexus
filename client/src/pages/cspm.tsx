@@ -37,7 +37,21 @@ import {
   ShieldAlert,
   Target,
   ArrowRight,
+  FolderTree,
+  BarChart3,
+  CalendarClock,
+  ShieldCheck,
+  History,
+  Link2,
+  ChevronRight,
+  ChevronDown,
+  Timer,
+  Globe,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { SiAmazonwebservices, SiGooglecloud } from "react-icons/si";
 
 interface PolicyCheck {
@@ -1974,7 +1988,996 @@ function RemediationTab() {
   );
 }
 
+// ─── 25.1 Resource Tree View ───
+function ResourceTreeTab() {
+  const { data: treeData, isPending } = useQuery<any>({
+    queryKey: ["/api/cspm/resources/tree"],
+  });
+
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+
+  function toggleNode(nodeId: string) {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }
+
+  function renderTreeNode(node: any, depth: number = 0) {
+    const nodeId = `${node.type}-${node.id}`;
+    const isExpanded = expandedNodes.has(nodeId);
+    const hasChildren = node.children && node.children.length > 0;
+    return (
+      <div key={nodeId}>
+        <div
+          className={`flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-muted/50 transition-colors ${depth === 0 ? "font-medium" : ""}`}
+          style={{ paddingLeft: `${depth * 20 + 8}px` }}
+          onClick={() => hasChildren && toggleNode(nodeId)}
+        >
+          {hasChildren ? (
+            isExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            )
+          ) : (
+            <div className="w-3.5 flex-shrink-0" />
+          )}
+          <span className="text-sm truncate">{node.name}</span>
+          <Badge variant="outline" className="text-[9px] ml-auto no-default-hover-elevate no-default-active-elevate">
+            {node.type}
+          </Badge>
+          {node.count > 0 && (
+            <Badge variant="secondary" className="text-[9px]">
+              {node.count}
+            </Badge>
+          )}
+        </div>
+        {isExpanded && hasChildren && node.children.map((child: any) => renderTreeNode(child, depth + 1))}
+      </div>
+    );
+  }
+
+  if (isPending)
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+
+  return (
+    <div className="space-y-4" data-testid="section-resource-tree">
+      <div className="flex items-center gap-2">
+        <FolderTree className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Cloud Resource Inventory</h2>
+      </div>
+      {treeData?.tree && treeData.tree.length > 0 ? (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-muted-foreground">Total Resources: {treeData.totalResources}</span>
+              <span className="text-xs text-muted-foreground">Providers: {treeData.totalAccounts}</span>
+            </div>
+            <ScrollArea className="max-h-[500px]">{treeData.tree.map((node: any) => renderTreeNode(node))}</ScrollArea>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <FolderTree className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No cloud resources found</p>
+            <p className="text-xs text-muted-foreground mt-1">Run a scan to discover cloud resources</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── 25.2 Compliance Posture Tab ───
+function CompliancePostureTab() {
+  const { data: accounts } = useQuery<any[]>({ queryKey: ["/api/cspm/accounts"] });
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const { data: complianceData, isPending } = useQuery<any>({
+    queryKey: ["/api/cspm/compliance", selectedAccountId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/cspm/compliance/${selectedAccountId}`);
+      return res.json();
+    },
+    enabled: !!selectedAccountId,
+  });
+
+  return (
+    <div className="space-y-4" data-testid="section-compliance-posture">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Compliance Posture</h2>
+        </div>
+        <Select value={selectedAccountId || ""} onValueChange={setSelectedAccountId}>
+          <SelectTrigger className="w-[250px]">
+            <SelectValue placeholder="Select account..." />
+          </SelectTrigger>
+          <SelectContent>
+            {(accounts || []).map((a: any) => (
+              <SelectItem key={a.id} value={a.id.toString()}>
+                {a.displayName || a.accountId}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {!selectedAccountId ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <ShieldCheck className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">
+              Select a cloud account to view compliance posture
+            </p>
+          </CardContent>
+        </Card>
+      ) : isPending ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-32 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : complianceData ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(complianceData.frameworks || []).map((fw: any) => (
+              <Card key={fw.frameworkId}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">{fw.frameworkName}</p>
+                    <Badge
+                      variant={fw.overallScore >= 80 ? "default" : fw.overallScore >= 50 ? "outline" : "destructive"}
+                      className="no-default-hover-elevate no-default-active-elevate"
+                    >
+                      {fw.overallScore}%
+                    </Badge>
+                  </div>
+                  <Progress value={fw.overallScore} className="h-2" />
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Passing:</span>{" "}
+                      <span className="font-medium text-green-500">{fw.passingControls}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Failing:</span>{" "}
+                      <span className="font-medium text-red-500">{fw.failingControls}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total:</span>{" "}
+                      <span className="font-medium">{fw.totalControls}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Findings:</span>{" "}
+                      <span className="font-medium">{fw.totalFindings}</span>
+                    </div>
+                  </div>
+                  {fw.categories && fw.categories.length > 0 && (
+                    <div className="space-y-1.5 pt-1 border-t">
+                      {fw.categories.slice(0, 4).map((cat: any) => (
+                        <div key={cat.category} className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground truncate max-w-[60%]">{cat.category}</span>
+                          <div className="flex items-center gap-1.5">
+                            <Progress value={cat.score} className="h-1 w-12" />
+                            <span className="font-medium w-8 text-right">{cat.score}%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {complianceData.frameworks?.length > 0 && complianceData.frameworks[0].controls && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="text-sm font-semibold mb-3">
+                  Control Details — {complianceData.frameworks[0].frameworkName}
+                </h3>
+                <ScrollArea className="max-h-[300px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Control</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Severity</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Findings</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {complianceData.frameworks[0].controls.map((ctrl: any) => (
+                        <TableRow key={ctrl.controlId}>
+                          <TableCell className="text-xs font-medium">{ctrl.controlName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{ctrl.category}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${severityStyle(ctrl.severity)}`}
+                            >
+                              {ctrl.severity}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {ctrl.status === "pass" ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-red-500" />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs">{ctrl.findingCount}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── 25.3 Drift Detail Tab ───
+function DriftDetailTab() {
+  const { data: accounts } = useQuery<any[]>({ queryKey: ["/api/cspm/accounts"] });
+  const [resourceId, setResourceId] = useState("");
+  const {
+    data: driftDetail,
+    isPending,
+    refetch,
+  } = useQuery<any>({
+    queryKey: ["/api/cspm/drift", resourceId, "detail"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/cspm/drift/${encodeURIComponent(resourceId)}/detail`);
+      return res.json();
+    },
+    enabled: false,
+  });
+
+  return (
+    <div className="space-y-4" data-testid="section-drift-detail">
+      <div className="flex items-center gap-2">
+        <GitCompare className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Drift Detection Detail</h2>
+      </div>
+      <div className="flex gap-2">
+        <Input
+          placeholder="Resource ID..."
+          value={resourceId}
+          onChange={(e) => setResourceId(e.target.value)}
+          className="max-w-md"
+        />
+        <Button onClick={() => refetch()} disabled={!resourceId.trim() || isPending}>
+          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4 mr-1" />}
+          Inspect
+        </Button>
+      </div>
+
+      {driftDetail && (
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={driftDetail.driftDetected ? "destructive" : "default"}
+                className="no-default-hover-elevate no-default-active-elevate"
+              >
+                {driftDetail.driftDetected ? "Drift Detected" : "No Drift"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">{driftDetail.totalEvents} events</span>
+            </div>
+
+            {driftDetail.timeline && driftDetail.timeline.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold">Drift Timeline</h3>
+                {driftDetail.timeline.map((event: any, idx: number) => (
+                  <div key={idx} className="border rounded-md p-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono text-muted-foreground">{event.eventId}</span>
+                      <span className="text-muted-foreground">{formatTimestamp(event.detectedAt)}</span>
+                    </div>
+                    {event.fieldChanges && event.fieldChanges.length > 0 && (
+                      <div className="space-y-1">
+                        {event.fieldChanges.map((fc: any, fi: number) => (
+                          <div
+                            key={fi}
+                            className={`flex items-center gap-3 text-xs p-1.5 rounded ${fc.changed ? "bg-red-500/5 border border-red-500/20" : "bg-muted/30"}`}
+                          >
+                            <span className="font-medium min-w-[100px]">{fc.field}</span>
+                            <span className="text-muted-foreground">
+                              expected: <span className="font-mono">{fc.expected}</span>
+                            </span>
+                            <ArrowRight className="h-3 w-3 flex-shrink-0" />
+                            <span className={fc.changed ? "text-red-500 font-medium" : "text-green-500"}>
+                              actual: <span className="font-mono">{fc.actual}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── 25.4 Multi-Cloud Dashboard Tab ───
+function MultiCloudDashboardTab() {
+  const { data: dashboard, isPending } = useQuery<any>({
+    queryKey: ["/api/cspm/multi-cloud/dashboard"],
+  });
+
+  if (isPending)
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-32 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+
+  return (
+    <div className="space-y-4" data-testid="section-multi-cloud">
+      <div className="flex items-center gap-2">
+        <Globe className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Multi-Cloud Dashboard</h2>
+      </div>
+
+      {dashboard ? (
+        <>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                    Overall Security Score
+                  </p>
+                  <p className="text-4xl font-bold mt-1">
+                    {dashboard.overallScore}
+                    <span className="text-lg text-muted-foreground">/100</span>
+                  </p>
+                </div>
+                <div className="text-right text-xs text-muted-foreground space-y-1">
+                  <p>Total Accounts: {dashboard.totalAccounts}</p>
+                  <p>Total Findings: {dashboard.totalFindings}</p>
+                </div>
+              </div>
+              <Progress value={dashboard.overallScore} className="h-3 mt-3" />
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(dashboard.providers || []).map((prov: any) => {
+              const ProvIcon = PROVIDER_ICONS[prov.provider] || Cloud;
+              return (
+                <Card key={prov.provider}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ProvIcon className="h-5 w-5 text-muted-foreground" />
+                        <p className="text-sm font-semibold">{PROVIDER_LABELS[prov.provider] || prov.provider}</p>
+                      </div>
+                      <Badge
+                        variant={prov.score >= 80 ? "default" : prov.score >= 50 ? "outline" : "destructive"}
+                        className="no-default-hover-elevate no-default-active-elevate"
+                      >
+                        {prov.score}/100
+                      </Badge>
+                    </div>
+                    <Progress value={prov.score} className="h-2" />
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Accounts:</span>{" "}
+                        <span className="font-medium">{prov.accountCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Findings:</span>{" "}
+                        <span className="font-medium">{prov.findingCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-red-500">Critical:</span>{" "}
+                        <span className="font-medium">{prov.criticalCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-orange-500">High:</span>{" "}
+                        <span className="font-medium">{prov.highCount}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Globe className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No multi-cloud data available</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── 25.5 Scanning Schedules Tab ───
+function ScanningSchedulesTab() {
+  const { toast } = useToast();
+  const {
+    data: schedules,
+    isPending,
+    refetch,
+  } = useQuery<any[]>({
+    queryKey: ["/api/cspm/scanning-schedules"],
+  });
+  const { data: accounts } = useQuery<any[]>({ queryKey: ["/api/cspm/accounts"] });
+  const [schedAccountId, setSchedAccountId] = useState("");
+  const [schedInterval, setSchedInterval] = useState("daily");
+
+  const createScheduleMutation = useMutation({
+    mutationFn: async (body: any) => {
+      const res = await apiRequest("POST", "/api/cspm/scanning-schedules", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/scanning-schedules"] });
+      toast({ title: "Schedule created" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/cspm/scanning-schedules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/scanning-schedules"] });
+      toast({ title: "Schedule removed" });
+    },
+  });
+
+  const toggleScheduleMutation = useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      await apiRequest("PATCH", `/api/cspm/scanning-schedules/${id}`, { enabled });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/scanning-schedules"] });
+    },
+  });
+
+  return (
+    <div className="space-y-4" data-testid="section-scan-schedules">
+      <div className="flex items-center gap-2">
+        <CalendarClock className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Scanning Schedules</h2>
+      </div>
+
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex gap-2 flex-wrap">
+            <Select value={schedAccountId} onValueChange={setSchedAccountId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Account..." />
+              </SelectTrigger>
+              <SelectContent>
+                {(accounts || []).map((a: any) => (
+                  <SelectItem key={a.id} value={a.id.toString()}>
+                    {a.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={schedInterval} onValueChange={setSchedInterval}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hourly">Hourly</SelectItem>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={() => createScheduleMutation.mutate({ accountId: schedAccountId, interval: schedInterval })}
+              disabled={!schedAccountId || createScheduleMutation.isPending}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Schedule
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isPending ? (
+        <div className="space-y-2">
+          {[1, 2].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-16 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (schedules || []).length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <CalendarClock className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No scanning schedules configured</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {(schedules || []).map((sched: any) => (
+            <Card key={sched.id}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">Account: {sched.accountId}</span>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                      >
+                        {sched.interval}
+                      </Badge>
+                      <Badge variant={sched.enabled ? "default" : "secondary"} className="text-[10px]">
+                        {sched.enabled ? "Active" : "Paused"}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-4 text-xs text-muted-foreground">
+                      {sched.lastScanAt && <span>Last: {formatTimestamp(sched.lastScanAt)}</span>}
+                      {sched.nextScanAt && <span>Next: {formatTimestamp(sched.nextScanAt)}</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => toggleScheduleMutation.mutate({ id: sched.id, enabled: !sched.enabled })}
+                    >
+                      {sched.enabled ? "Pause" : "Enable"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => deleteScheduleMutation.mutate(sched.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 25.6 Remediation Safety Controls Tab ───
+function RemediationSafetyTab() {
+  const { toast } = useToast();
+  const {
+    data: safetyRecords,
+    isPending,
+    refetch,
+  } = useQuery<any>({
+    queryKey: ["/api/cspm/remediation/safety-records"],
+  });
+  const [dryRunFindingId, setDryRunFindingId] = useState("");
+
+  const dryRunMutation = useMutation({
+    mutationFn: async (findingId: string) => {
+      const res = await apiRequest("POST", "/api/cspm/remediation/dry-run", { findingId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/remediation/safety-records"] });
+      toast({ title: "Dry run completed" });
+    },
+    onError: (err: Error) => toast({ title: "Dry run failed", description: err.message, variant: "destructive" }),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/cspm/remediation/${id}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/remediation/safety-records"] });
+      toast({ title: "Remediation approved" });
+    },
+  });
+
+  const executeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/cspm/remediation/${id}/execute`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/remediation/safety-records"] });
+      toast({ title: "Remediation executed" });
+    },
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/cspm/remediation/${id}/rollback`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cspm/remediation/safety-records"] });
+      toast({ title: "Rollback completed" });
+    },
+  });
+
+  return (
+    <div className="space-y-4" data-testid="section-remediation-safety">
+      <div className="flex items-center gap-2">
+        <ShieldAlert className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Auto-Remediation Safety Controls</h2>
+      </div>
+
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Finding ID for dry run..."
+              value={dryRunFindingId}
+              onChange={(e) => setDryRunFindingId(e.target.value)}
+              className="max-w-sm"
+            />
+            <Button
+              onClick={() => dryRunMutation.mutate(dryRunFindingId)}
+              disabled={!dryRunFindingId.trim() || dryRunMutation.isPending}
+            >
+              {dryRunMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Eye className="h-4 w-4 mr-1" />
+              )}
+              Dry Run
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isPending ? (
+        <div className="space-y-2">
+          {[1, 2].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-20 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {(safetyRecords?.records || []).map((rec: any) => (
+            <Card key={rec.id}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium font-mono">{rec.id}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] no-default-hover-elevate no-default-active-elevate ${rec.mode === "executed" ? "bg-green-500/10 text-green-500" : rec.mode === "rolled_back" ? "bg-red-500/10 text-red-500" : ""}`}
+                      >
+                        {rec.mode}
+                      </Badge>
+                      {rec.dryRunResult?.riskLevel && (
+                        <Badge
+                          variant={rec.dryRunResult.riskLevel === "high" ? "destructive" : "outline"}
+                          className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                        >
+                          {rec.dryRunResult.riskLevel} risk
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Finding: {rec.findingId}</p>
+                    {rec.dryRunResult && (
+                      <div className="text-xs text-muted-foreground">
+                        {rec.dryRunResult.affectedResources} resources · ~{rec.dryRunResult.estimatedDuration} ·{" "}
+                        {rec.dryRunResult.requiresDowntime ? "Downtime required" : "No downtime"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    {rec.mode === "pending_approval" && (
+                      <Button size="sm" variant="default" onClick={() => approveMutation.mutate(rec.id)}>
+                        Approve
+                      </Button>
+                    )}
+                    {rec.mode === "approved" && (
+                      <Button size="sm" variant="default" onClick={() => executeMutation.mutate(rec.id)}>
+                        Execute
+                      </Button>
+                    )}
+                    {rec.rollbackAvailable && (
+                      <Button size="sm" variant="outline" onClick={() => rollbackMutation.mutate(rec.id)}>
+                        Rollback
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 25.7 Resource Change Tracking Tab ───
+function ChangeTrackingTab() {
+  const [changeResourceId, setChangeResourceId] = useState("");
+  const {
+    data: changeData,
+    isPending,
+    refetch,
+  } = useQuery<any>({
+    queryKey: ["/api/cspm/resource-changes", changeResourceId],
+    queryFn: async () => {
+      const url = changeResourceId
+        ? `/api/cspm/resource-changes?resourceId=${encodeURIComponent(changeResourceId)}`
+        : "/api/cspm/resource-changes";
+      const res = await apiRequest("GET", url);
+      return res.json();
+    },
+  });
+
+  return (
+    <div className="space-y-4" data-testid="section-change-tracking">
+      <div className="flex items-center gap-2">
+        <History className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Resource Change Tracking</h2>
+      </div>
+
+      <div className="flex gap-2">
+        <Input
+          placeholder="Filter by resource ID..."
+          value={changeResourceId}
+          onChange={(e) => setChangeResourceId(e.target.value)}
+          className="max-w-md"
+        />
+        <Button variant="outline" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {changeData && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xs text-muted-foreground">Total Changes</p>
+                <p className="text-xl font-bold">{changeData.totalChanges}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xs text-muted-foreground">Unexpected</p>
+                <p className="text-xl font-bold text-red-500">{changeData.unexpectedChanges}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xs text-muted-foreground">Expected</p>
+                <p className="text-xl font-bold text-green-500">{changeData.expectedChanges}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xs text-muted-foreground">Alerts</p>
+                <p className="text-xl font-bold text-amber-500">{changeData.alertsTriggered}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-2">
+            {(changeData.changes || []).map((change: any, idx: number) => (
+              <Card key={idx}>
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      {change.isUnexpected ? (
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      )}
+                      <span className="text-sm font-medium">{change.resourceId}</span>
+                      <Badge
+                        variant={change.isUnexpected ? "destructive" : "outline"}
+                        className="text-[9px] no-default-hover-elevate no-default-active-elevate"
+                      >
+                        {change.changeType}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{change.changedFieldCount} fields changed</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${severityStyle(change.severity)}`}
+                      >
+                        {change.severity}
+                      </Badge>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{change.summary}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── 25.8-25.10 Integration Tabs ───
+function IntegrationsTab() {
+  const { data: attackPathData, isPending: apLoading } = useQuery<any>({
+    queryKey: ["/api/cspm/integrations/attack-paths"],
+  });
+  const { data: complianceData, isPending: compLoading } = useQuery<any>({
+    queryKey: ["/api/cspm/integrations/compliance-mapping"],
+  });
+  const { data: incidentData, isPending: incLoading } = useQuery<any>({
+    queryKey: ["/api/cspm/integrations/incidents"],
+  });
+
+  return (
+    <div className="space-y-4" data-testid="section-integrations">
+      <div className="flex items-center gap-2">
+        <Link2 className="h-5 w-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">CSPM Integrations</h2>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* 25.8 Attack Path */}
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Route className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-semibold">Attack Path Analysis</p>
+            </div>
+            {apLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : attackPathData ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Correlations:</span>{" "}
+                    <span className="font-medium">{attackPathData.totalCorrelations}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">High-Risk Findings:</span>{" "}
+                    <span className="font-medium">{attackPathData.highRiskFindings}</span>
+                  </div>
+                </div>
+                {(attackPathData.correlations || []).slice(0, 3).map((corr: any, idx: number) => (
+                  <div key={idx} className="text-xs border rounded p-2">
+                    <span className="font-mono">{corr.findingId}</span>
+                    <span className="text-muted-foreground"> → {corr.relatedAttackPaths} attack paths</span>
+                    <Badge
+                      variant="outline"
+                      className="ml-1 text-[9px] no-default-hover-elevate no-default-active-elevate"
+                    >
+                      {corr.riskMultiplier}x risk
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No data</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 25.9 Compliance Mapping */}
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-semibold">Compliance Mapping</p>
+            </div>
+            {compLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : complianceData ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Total Findings Mapped: {complianceData.totalFindingsMapped}
+                </p>
+                {(complianceData.frameworkMapping || []).map((fw: any, idx: number) => (
+                  <div key={idx} className="text-xs border rounded p-2 flex justify-between">
+                    <span className="font-medium">{fw.frameworkName}</span>
+                    <div className="flex gap-2 text-muted-foreground">
+                      <span>{fw.controlsMapped} controls</span>
+                      <span>{fw.findingsCount} findings</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No data</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 25.10 Incident Correlation */}
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-semibold">Incident Correlation</p>
+            </div>
+            {incLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : incidentData ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Correlations:</span>{" "}
+                    <span className="font-medium">{incidentData.totalCorrelations}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Create Incident:</span>{" "}
+                    <span className="font-medium">{incidentData.suggestedIncidents}</span>
+                  </div>
+                </div>
+                {(incidentData.correlations || []).slice(0, 3).map((corr: any, idx: number) => (
+                  <div key={idx} className="text-xs border rounded p-2">
+                    <span className="font-mono">{corr.findingId}</span>
+                    <span className="text-muted-foreground"> → {corr.relatedIncidentCount} incidents</span>
+                    {corr.shouldCreateIncident && (
+                      <Badge variant="destructive" className="ml-1 text-[9px]">
+                        Create
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No data</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 export default function CSPMPage() {
+  usePageTitle("Cloud Security Posture");
   const [activeTab, setActiveTab] = useState("accounts");
 
   return (
@@ -2023,6 +3026,38 @@ export default function CSPMPage() {
             <Wrench className="h-4 w-4 mr-1.5" />
             Remediation
           </TabsTrigger>
+          <TabsTrigger value="resource-tree" data-testid="tab-resource-tree">
+            <FolderTree className="h-4 w-4 mr-1.5" />
+            Resources
+          </TabsTrigger>
+          <TabsTrigger value="compliance-posture" data-testid="tab-compliance-posture">
+            <ShieldCheck className="h-4 w-4 mr-1.5" />
+            Compliance
+          </TabsTrigger>
+          <TabsTrigger value="drift-detail" data-testid="tab-drift-detail">
+            <GitCompare className="h-4 w-4 mr-1.5" />
+            Drift Detail
+          </TabsTrigger>
+          <TabsTrigger value="multi-cloud" data-testid="tab-multi-cloud">
+            <Globe className="h-4 w-4 mr-1.5" />
+            Multi-Cloud
+          </TabsTrigger>
+          <TabsTrigger value="schedules" data-testid="tab-schedules">
+            <CalendarClock className="h-4 w-4 mr-1.5" />
+            Schedules
+          </TabsTrigger>
+          <TabsTrigger value="safety" data-testid="tab-safety">
+            <ShieldAlert className="h-4 w-4 mr-1.5" />
+            Safety
+          </TabsTrigger>
+          <TabsTrigger value="changes" data-testid="tab-changes">
+            <History className="h-4 w-4 mr-1.5" />
+            Changes
+          </TabsTrigger>
+          <TabsTrigger value="integrations" data-testid="tab-integrations">
+            <Link2 className="h-4 w-4 mr-1.5" />
+            Integrations
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts" className="mt-3">
@@ -2055,6 +3090,38 @@ export default function CSPMPage() {
 
         <TabsContent value="remediation" className="mt-3">
           <RemediationTab />
+        </TabsContent>
+
+        <TabsContent value="resource-tree" className="mt-3">
+          <ResourceTreeTab />
+        </TabsContent>
+
+        <TabsContent value="compliance-posture" className="mt-3">
+          <CompliancePostureTab />
+        </TabsContent>
+
+        <TabsContent value="drift-detail" className="mt-3">
+          <DriftDetailTab />
+        </TabsContent>
+
+        <TabsContent value="multi-cloud" className="mt-3">
+          <MultiCloudDashboardTab />
+        </TabsContent>
+
+        <TabsContent value="schedules" className="mt-3">
+          <ScanningSchedulesTab />
+        </TabsContent>
+
+        <TabsContent value="safety" className="mt-3">
+          <RemediationSafetyTab />
+        </TabsContent>
+
+        <TabsContent value="changes" className="mt-3">
+          <ChangeTrackingTab />
+        </TabsContent>
+
+        <TabsContent value="integrations" className="mt-3">
+          <IntegrationsTab />
         </TabsContent>
       </Tabs>
     </div>

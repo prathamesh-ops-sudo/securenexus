@@ -74,6 +74,13 @@ import {
   Download,
   TrendingUp,
   CircleDot,
+  Pause,
+  SkipForward,
+  FileText,
+  Bot,
+  ListChecks,
+  Printer,
+  PieChart,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -898,6 +905,10 @@ export default function PlaybooksPage() {
   const [simRunPlaybookId, setSimRunPlaybookId] = useState<string | null>(null);
   const [simScenarioName, setSimScenarioName] = useState("");
   const [simRunParams, setSimRunParams] = useState("");
+  const [trackingPlaybookId, setTrackingPlaybookId] = useState<string | null>(null);
+  const [activeTrackingId, setActiveTrackingId] = useState<string | null>(null);
+  const [automationSuggestionId, setAutomationSuggestionId] = useState<string | null>(null);
+  const [showAutomationDialog, setShowAutomationDialog] = useState(false);
 
   usePageTitle("Playbooks");
   const {
@@ -1367,6 +1378,72 @@ export default function PlaybooksPage() {
     },
   });
 
+  // ─── 24.1-24.5 Runbook Tracking, Analytics, Automation ───
+  const startTrackingMutation = useMutation({
+    mutationFn: async (playbookId: string) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/execution-tracking/start`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setActiveTrackingId(data.executionId);
+      setTrackingPlaybookId(data.playbookId?.toString());
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks/runbook-analytics"] });
+      toast({ title: "Tracking started", description: `Tracking ${data.totalSteps} steps` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to start tracking", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const stepActionMutation = useMutation({
+    mutationFn: async ({ playbookId, executionId, action, stepIndex, notes }: any) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/playbooks/${playbookId}/execution-tracking/${executionId}/step-action`,
+        {
+          action,
+          stepIndex,
+          notes,
+        },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      if (trackingPlaybookId && activeTrackingId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/playbooks", trackingPlaybookId, "execution-tracking"] });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Step action failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: trackingData, refetch: refetchTracking } = useQuery<any>({
+    queryKey: ["/api/playbooks", trackingPlaybookId, "execution-tracking", activeTrackingId],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/playbooks/${trackingPlaybookId}/execution-tracking?executionId=${activeTrackingId}`,
+      );
+      return res.json();
+    },
+    enabled: !!trackingPlaybookId && !!activeTrackingId,
+    refetchInterval: 5000,
+  });
+
+  const { data: runbookAnalytics, isLoading: runbookAnalyticsLoading } = useQuery<any>({
+    queryKey: ["/api/playbooks/runbook-analytics"],
+  });
+
+  const { data: automationSuggestions } = useQuery<any>({
+    queryKey: ["/api/playbooks", automationSuggestionId, "suggest-automation"],
+    queryFn: async () => {
+      const res = await apiRequest("POST", `/api/playbooks/${automationSuggestionId}/suggest-automation`);
+      return res.json();
+    },
+    enabled: !!automationSuggestionId,
+  });
+
   function closeDialog() {
     setShowDialog(false);
     setEditingPlaybook(null);
@@ -1611,6 +1688,14 @@ export default function PlaybooksPage() {
           <TabsTrigger value="changes" data-testid="tab-changes">
             <Ticket className="h-4 w-4 mr-1.5" />
             Changes
+          </TabsTrigger>
+          <TabsTrigger value="tracking" data-testid="tab-tracking">
+            <ListChecks className="h-4 w-4 mr-1.5" />
+            Tracking
+          </TabsTrigger>
+          <TabsTrigger value="runbook-analytics" data-testid="tab-runbook-analytics">
+            <PieChart className="h-4 w-4 mr-1.5" />
+            Runbook Analytics
           </TabsTrigger>
         </TabsList>
 
@@ -3579,7 +3664,456 @@ export default function PlaybooksPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        {/* ─── 24.1/24.2 Execution Tracking Tab ─── */}
+        <TabsContent value="tracking" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold">Runbook Execution Tracking</h2>
+            </div>
+          </div>
+
+          {!activeTrackingId ? (
+            <Card>
+              <CardContent className="p-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Select a playbook to start tracking execution progress step-by-step.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {(playbooks || []).map((pb: any) => (
+                    <Card
+                      key={pb.id}
+                      className="cursor-pointer hover:border-primary/40 transition-colors"
+                      onClick={() => startTrackingMutation.mutate(pb.id.toString())}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate">{pb.name}</p>
+                            <p className="text-xs text-muted-foreground">{pb.trigger || "manual"}</p>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`/api/playbooks/${pb.id}/export-pdf`, "_blank");
+                              }}
+                            >
+                              <Printer className="h-3 w-3 mr-1" />
+                              PDF
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAutomationSuggestionId(pb.id.toString());
+                                setShowAutomationDialog(true);
+                              }}
+                            >
+                              <Bot className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-semibold">
+                      Execution: <span className="font-mono text-xs">{activeTrackingId}</span>
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge
+                        variant={
+                          trackingData?.status === "running"
+                            ? "default"
+                            : trackingData?.status === "paused"
+                              ? "outline"
+                              : "secondary"
+                        }
+                      >
+                        {trackingData?.status || "loading"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {trackingData?.progressPercent ?? 0}% complete
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setActiveTrackingId(null);
+                        setTrackingPlaybookId(null);
+                      }}
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Close
+                    </Button>
+                  </div>
+                </div>
+
+                <Progress value={trackingData?.progressPercent ?? 0} className="h-2" />
+
+                <div className="space-y-2">
+                  {(trackingData?.steps || []).map((step: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`border rounded-md p-3 ${step.status === "in_progress" ? "border-primary/50 bg-primary/5" : step.status === "completed" ? "border-green-500/30 bg-green-500/5" : step.status === "skipped" ? "border-muted bg-muted/30" : step.status === "paused" ? "border-yellow-500/30 bg-yellow-500/5" : ""}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          {step.status === "completed" ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : step.status === "in_progress" ? (
+                            <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                          ) : step.status === "skipped" ? (
+                            <SkipForward className="h-4 w-4 text-muted-foreground" />
+                          ) : step.status === "paused" ? (
+                            <Pause className="h-4 w-4 text-yellow-500" />
+                          ) : (
+                            <CircleDot className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span className="text-sm font-medium">
+                            Step {idx + 1}: {step.label}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                          >
+                            {step.type}
+                          </Badge>
+                        </div>
+                        {step.status === "in_progress" && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() =>
+                                stepActionMutation.mutate({
+                                  playbookId: trackingPlaybookId,
+                                  executionId: activeTrackingId,
+                                  action: "complete",
+                                  stepIndex: idx,
+                                })
+                              }
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Complete
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                stepActionMutation.mutate({
+                                  playbookId: trackingPlaybookId,
+                                  executionId: activeTrackingId,
+                                  action: "skip",
+                                  stepIndex: idx,
+                                })
+                              }
+                            >
+                              <SkipForward className="h-3 w-3 mr-1" />
+                              Skip
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                stepActionMutation.mutate({
+                                  playbookId: trackingPlaybookId,
+                                  executionId: activeTrackingId,
+                                  action: "pause",
+                                  stepIndex: idx,
+                                })
+                              }
+                            >
+                              <Pause className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        {step.status === "paused" && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() =>
+                              stepActionMutation.mutate({
+                                playbookId: trackingPlaybookId,
+                                executionId: activeTrackingId,
+                                action: "resume",
+                                stepIndex: idx,
+                              })
+                            }
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Resume
+                          </Button>
+                        )}
+                      </div>
+                      {step.timeSpentMs > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Time spent: {Math.round(step.timeSpentMs / 1000)}s
+                        </p>
+                      )}
+                      {step.notes && <p className="text-xs text-muted-foreground mt-1 italic">Notes: {step.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ─── 24.4 Runbook Analytics Tab ─── */}
+        <TabsContent value="runbook-analytics" className="mt-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <PieChart className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Runbook Analytics</h2>
+          </div>
+
+          {runbookAnalyticsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <Skeleton className="h-16 w-full" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : runbookAnalytics ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Total Runbooks
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.totalRunbooks}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Total Executions
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.totalExecutions}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Completion Rate
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.overallCompletionRate}%</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Avg Completion Time
+                    </p>
+                    <p className="text-2xl font-bold mt-1">
+                      {runbookAnalytics.avgCompletionTimeMs > 0
+                        ? `${Math.round(runbookAnalytics.avgCompletionTimeMs / 1000)}s`
+                        : "N/A"}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {runbookAnalytics.mostSkippedSteps?.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Most Skipped Steps</h3>
+                    <div className="space-y-2">
+                      {runbookAnalytics.mostSkippedSteps.map((step: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{step.label}</span>
+                          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate">
+                            {step.count} skips
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {runbookAnalytics.longestSteps?.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Longest Duration Steps</h3>
+                    <div className="space-y-2">
+                      {runbookAnalytics.longestSteps.map((step: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{step.label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{step.totalRuns} runs</span>
+                            <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate">
+                              avg {Math.round(step.avgDurationMs / 1000)}s
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {runbookAnalytics.perRunbook?.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Per-Runbook Statistics</h3>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Runbook</TableHead>
+                          <TableHead>Executions</TableHead>
+                          <TableHead>Completed</TableHead>
+                          <TableHead>Failed</TableHead>
+                          <TableHead>Completion Rate</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {runbookAnalytics.perRunbook.map((stat: any) => (
+                          <TableRow key={stat.playbookId}>
+                            <TableCell className="font-medium">{stat.playbookName}</TableCell>
+                            <TableCell>{stat.totalExecutions}</TableCell>
+                            <TableCell>{stat.completedExecutions}</TableCell>
+                            <TableCell>{stat.failedExecutions}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Progress value={stat.completionRate} className="h-1.5 w-16" />
+                                <span className="text-xs">{stat.completionRate}%</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <PieChart className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">No analytics data available</p>
+                <p className="text-xs text-muted-foreground mt-1">Execute runbooks to start collecting analytics</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* ─── 24.5 Automation Suggestion Dialog ─── */}
+      <Dialog open={showAutomationDialog} onOpenChange={setShowAutomationDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5" />
+              Automation Suggestions
+            </DialogTitle>
+            <DialogDescription>
+              Analysis of which runbook steps can be converted to automated playbook actions.
+            </DialogDescription>
+          </DialogHeader>
+          {automationSuggestions ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <Card>
+                  <CardContent className="p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Total Steps</p>
+                    <p className="text-xl font-bold">{automationSuggestions.totalSteps}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Automatable</p>
+                    <p className="text-xl font-bold text-green-500">{automationSuggestions.automatableSteps}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Coverage</p>
+                    <p className="text-xl font-bold">{automationSuggestions.automationCoverage}%</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <ScrollArea className="max-h-[300px]">
+                <div className="space-y-2">
+                  {(automationSuggestions.suggestions || []).map((s: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`border rounded-md p-3 ${s.convertible ? "border-green-500/30" : "border-muted"}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            Step {s.stepIndex + 1}: {s.label}
+                          </span>
+                          {s.convertible ? (
+                            <Badge variant="default" className="text-[10px]">
+                              Automatable
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                            >
+                              Manual
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          Confidence: {Math.round(s.automationConfidence * 100)}%
+                        </span>
+                      </div>
+                      {s.suggestedIntegration && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Integration: <span className="font-medium text-foreground">{s.suggestedIntegration}</span> —{" "}
+                          {s.integrationDescription}
+                        </p>
+                      )}
+                      {s.manualReason && <p className="text-xs text-muted-foreground mt-1">{s.manualReason}</p>}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+
+              {automationSuggestions.recommendedIntegrations?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">Recommended Integrations</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {automationSuggestions.recommendedIntegrations.map((int: string, idx: number) => (
+                      <Badge key={idx} variant="secondary" className="text-xs">
+                        {int}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
         <DialogContent className="max-w-md">
