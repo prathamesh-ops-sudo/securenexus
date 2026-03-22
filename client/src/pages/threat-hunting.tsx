@@ -49,8 +49,31 @@ import {
   FileWarning,
   Link2,
   Plug,
+  Notebook,
+  Users,
+  Zap,
+  Database,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Eye,
+  Send,
+  ThumbsUp,
+  Globe,
+  FileText,
+  Layers,
+  Timer,
+  Hash,
+  MessageSquare,
+  StopCircle,
+  ChevronDown,
+  ChevronRight,
+  Copy,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Progress } from "@/components/ui/progress";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -157,6 +180,103 @@ interface MitreCoverage {
     huntNames: string[];
     lastRun: string | null;
   };
+}
+
+// ─── 16.x New Types ─────────────────────────────────────────────────────────
+
+interface NotebookStep {
+  id: string;
+  title: string;
+  queryType: string;
+  queryText: string;
+  notes: string;
+  resultSummary: string | null;
+  eventCount: number | null;
+  lastExecutedAt: string | null;
+  outputVariables: Record<string, unknown>;
+}
+
+interface HuntNotebook {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  steps: NotebookStep[];
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CollaborationSession {
+  id: string;
+  orgId: string;
+  huntId: string | null;
+  sessionName: string;
+  participants: { userId: string; name: string; color: string; joinedAt: string }[];
+  sharedResults: Record<string, unknown>[];
+  chatMessages: { userId: string; name: string; message: string; timestamp: string }[];
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+interface ExecutionPlan {
+  queryType: string;
+  dataSources: string[];
+  estimatedRows: number;
+  estimatedTimeMs: number;
+  optimizations: string[];
+  warnings: string[];
+  steps: { phase: string; description: string; estimatedMs: number }[];
+}
+
+interface CacheEntry {
+  id: string;
+  queryHash: string;
+  queryType: string;
+  queryText: string;
+  resultJson: Record<string, unknown>;
+  eventCount: number;
+  executionDurationMs: number | null;
+  ttlSeconds: number;
+  hitCount: number;
+  cachedAt: string;
+  expiresAt: string;
+  isExpired: boolean;
+}
+
+interface DriftEntry {
+  drift: {
+    id: string;
+    scheduleId: string;
+    huntId: string;
+    previousEventCount: number;
+    currentEventCount: number;
+    driftPercentage: number;
+    driftDirection: string;
+    isSignificant: boolean;
+    detectedAt: string;
+    acknowledged: boolean;
+  };
+  huntName: string | null;
+}
+
+interface CommunityShare {
+  id: string;
+  orgId: string;
+  huntId: string;
+  title: string;
+  description: string | null;
+  queryType: string;
+  queryText: string;
+  category: string | null;
+  mitreTechniques: string[];
+  tags: string[];
+  anonymizedStats: { detectionRate: number; avgExecutionMs: number; totalRuns: number };
+  upvotes: number;
+  downloads: number;
+  sharedBy: string | null;
+  sharedAt: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -453,11 +573,11 @@ LIMIT 100`,
               </div>
               <div>
                 <Label>Query</Label>
-                <Textarea
+                <SyntaxHighlightedEditor
                   value={queryText}
-                  onChange={(e) => setQueryText(e.target.value)}
+                  onChange={setQueryText}
+                  queryType={queryType}
                   placeholder={placeholders[queryType] || ""}
-                  className="font-mono text-xs min-h-48"
                 />
               </div>
             </div>
@@ -652,6 +772,15 @@ function HuntDetailView({ hunt }: { hunt: ThreatHunt }) {
         </pre>
       </div>
 
+      {/* 16.5 Execution Plan */}
+      <ExecutionPlanPanel huntId={hunt.id} />
+
+      {/* 16.8 & 16.9 Action Buttons */}
+      <div className="flex items-center gap-2">
+        <EscalateHuntButton huntId={hunt.id} huntName={hunt.name} />
+        <ConvertToRuleButton huntId={hunt.id} huntName={hunt.name} />
+      </div>
+
       {results.length > 0 && (
         <div>
           <Label className="text-xs text-muted-foreground">Recent Results</Label>
@@ -672,6 +801,10 @@ function HuntDetailView({ hunt }: { hunt: ThreatHunt }) {
                 </div>
               </div>
             ))}
+          </div>
+          {/* 16.2 Result Visualization */}
+          <div className="mt-3">
+            <ResultVisualizationPanel results={results} />
           </div>
         </div>
       )}
@@ -1207,7 +1340,10 @@ function HuntResultsTab() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* 16.2 Result Visualization Panel */}
+          <ResultVisualizationPanel results={results} />
+
           {results.map((r) => (
             <Card key={r.id}>
               <CardContent className="py-3 px-4">
@@ -1876,6 +2012,1756 @@ function MitreNavigatorTab() {
   );
 }
 
+// ─── 16.1 Enhanced Query Editor with Syntax Highlighting ────────────────────
+// (Integrated into QueryBuilderTab — adds line numbers, keyword highlighting,
+//  auto-complete suggestions panel, and error marker display)
+
+function SyntaxHighlightedEditor({
+  value,
+  onChange,
+  queryType,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  queryType: string;
+  placeholder?: string;
+}) {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [cursorWord, setCursorWord] = useState("");
+
+  const KEYWORDS: Record<string, string[]> = {
+    sigma: [
+      "title",
+      "description",
+      "logsource",
+      "category",
+      "product",
+      "detection",
+      "selection",
+      "condition",
+      "level",
+      "status",
+      "fields",
+      "falsepositives",
+    ],
+    yara: [
+      "rule",
+      "strings",
+      "condition",
+      "meta",
+      "nocase",
+      "wide",
+      "ascii",
+      "fullword",
+      "any",
+      "all",
+      "of",
+      "them",
+      "filesize",
+      "entrypoint",
+    ],
+    kql: [
+      "where",
+      "project",
+      "extend",
+      "summarize",
+      "count",
+      "sort",
+      "by",
+      "top",
+      "render",
+      "join",
+      "union",
+      "let",
+      "contains",
+      "has",
+      "startswith",
+      "endswith",
+      "matches",
+      "regex",
+    ],
+    sql: [
+      "SELECT",
+      "FROM",
+      "WHERE",
+      "AND",
+      "OR",
+      "NOT",
+      "IN",
+      "LIKE",
+      "ORDER",
+      "BY",
+      "GROUP",
+      "HAVING",
+      "LIMIT",
+      "OFFSET",
+      "JOIN",
+      "LEFT",
+      "RIGHT",
+      "INNER",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "COUNT",
+      "SUM",
+      "AVG",
+      "MAX",
+      "MIN",
+      "DISTINCT",
+      "AS",
+      "ON",
+      "DESC",
+      "ASC",
+    ],
+    custom: [],
+  };
+
+  const keywords = KEYWORDS[queryType] || [];
+  const lines = value.split("\n");
+
+  const filteredSuggestions =
+    cursorWord.length >= 1
+      ? keywords.filter((k) => k.toLowerCase().startsWith(cursorWord.toLowerCase())).slice(0, 8)
+      : [];
+
+  function highlightLine(line: string): string {
+    // Simple keyword detection for display purposes
+    let highlighted = line;
+    for (const kw of keywords) {
+      const regex = new RegExp(`\\b(${kw})\\b`, "gi");
+      highlighted = highlighted.replace(regex, `**$1**`);
+    }
+    return highlighted;
+  }
+
+  const errors: { line: number; message: string }[] = [];
+  // Basic error detection
+  if (queryType === "sigma" && value.trim() && !value.includes("detection") && !value.includes("condition")) {
+    errors.push({ line: 1, message: "Sigma rules should include a 'detection' section" });
+  }
+  if (queryType === "yara" && value.trim() && !value.includes("condition")) {
+    errors.push({ line: 1, message: "YARA rules must include a 'condition' block" });
+  }
+  if (
+    queryType === "sql" &&
+    value.trim() &&
+    !value.toUpperCase().includes("SELECT") &&
+    !value.toUpperCase().includes("INSERT")
+  ) {
+    errors.push({ line: 1, message: "SQL query should start with SELECT, INSERT, UPDATE, or DELETE" });
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex border rounded-md bg-muted/20 overflow-hidden">
+        {/* Line numbers gutter */}
+        <div className="flex-shrink-0 w-10 bg-muted/40 border-r text-right py-2 select-none">
+          {lines.map((_, i) => (
+            <div
+              key={i}
+              className={`px-1.5 text-[10px] font-mono leading-5 ${
+                errors.some((e) => e.line === i + 1) ? "text-red-400 font-bold" : "text-muted-foreground"
+              }`}
+            >
+              {i + 1}
+            </div>
+          ))}
+        </div>
+        {/* Editor area */}
+        <div className="flex-1 relative">
+          <textarea
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              // Track cursor word for autocomplete
+              const text = e.target.value;
+              const pos = e.target.selectionStart;
+              const before = text.substring(0, pos);
+              const match = before.match(/[a-zA-Z_]+$/);
+              setCursorWord(match ? match[0] : "");
+              setShowSuggestions(!!match && match[0].length >= 1);
+            }}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            onFocus={() => cursorWord.length >= 1 && setShowSuggestions(true)}
+            placeholder={placeholder}
+            className="w-full min-h-48 p-2 font-mono text-xs leading-5 bg-transparent resize-y focus:outline-none"
+            spellCheck={false}
+          />
+        </div>
+      </div>
+
+      {/* Autocomplete suggestions */}
+      {showSuggestions && filteredSuggestions.length > 0 && (
+        <div className="absolute z-50 top-full left-10 mt-1 bg-popover border rounded-md shadow-lg max-w-xs">
+          {filteredSuggestions.map((s) => (
+            <button
+              key={s}
+              className="block w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-muted/50 transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const suffix = s.substring(cursorWord.length);
+                onChange(value + suffix + " ");
+                setShowSuggestions(false);
+              }}
+            >
+              <Code className="h-3 w-3 inline mr-1.5 text-cyan-400" />
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Error markers */}
+      {errors.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {errors.map((e, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-[10px] text-red-400">
+              <XCircle className="h-3 w-3" />
+              <span>
+                Line {e.line}: {e.message}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Language indicator */}
+      <div className="absolute top-1 right-2 text-[9px] font-mono text-muted-foreground/50 uppercase">{queryType}</div>
+    </div>
+  );
+}
+
+// ─── 16.3 Hunt Notebook Tab ─────────────────────────────────────────────────
+
+function NotebookTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [selectedNotebook, setSelectedNotebook] = useState<HuntNotebook | null>(null);
+  const [newStepTitle, setNewStepTitle] = useState("");
+  const [newStepQueryType, setNewStepQueryType] = useState("sigma");
+  const [newStepQuery, setNewStepQuery] = useState("");
+  const [newStepNotes, setNewStepNotes] = useState("");
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+
+  const { data: notebooksData, isLoading } = useQuery<{ notebooks: HuntNotebook[] }>({
+    queryKey: ["/api/threat-hunting/notebooks"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiRequest("POST", "/api/threat-hunting/notebooks", data).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/notebooks"] });
+      toast({ title: "Notebook created" });
+      setCreateOpen(false);
+      setName("");
+      setDescription("");
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      apiRequest("PUT", `/api/threat-hunting/notebooks/${id}`, data).then((r) => r.json()),
+    onSuccess: (resp: { notebook: HuntNotebook }) => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/notebooks"] });
+      setSelectedNotebook(resp.notebook);
+      toast({ title: "Notebook updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const executeStepMutation = useMutation({
+    mutationFn: ({
+      notebookId,
+      stepIndex,
+      queryType,
+      queryText,
+    }: {
+      notebookId: string;
+      stepIndex: number;
+      queryType: string;
+      queryText: string;
+    }) =>
+      apiRequest("POST", `/api/threat-hunting/notebooks/${notebookId}/execute-step`, {
+        stepIndex,
+        queryType,
+        queryText,
+      }).then((r) => r.json()),
+    onSuccess: (data: { result: { eventCount: number; executionDurationMs: number }; stepIndex: number }) => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/notebooks"] });
+      toast({
+        title: `Step executed: ${data.result.eventCount} events in ${formatDuration(data.result.executionDurationMs)}`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Execution failed", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/threat-hunting/notebooks/${id}`).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/notebooks"] });
+      setSelectedNotebook(null);
+      toast({ title: "Notebook deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const notebooks = notebooksData?.notebooks || [];
+
+  function addStep() {
+    if (!selectedNotebook || !newStepTitle) return;
+    const steps = [
+      ...selectedNotebook.steps,
+      {
+        id: crypto.randomUUID(),
+        title: newStepTitle,
+        queryType: newStepQueryType,
+        queryText: newStepQuery,
+        notes: newStepNotes,
+        resultSummary: null,
+        eventCount: null,
+        lastExecutedAt: null,
+        outputVariables: {},
+      },
+    ];
+    updateMutation.mutate({ id: selectedNotebook.id, data: { steps } });
+    setNewStepTitle("");
+    setNewStepQuery("");
+    setNewStepNotes("");
+  }
+
+  function toggleStep(idx: number) {
+    const next = new Set(expandedSteps);
+    if (next.has(idx)) next.delete(idx);
+    else next.add(idx);
+    setExpandedSteps(next);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Hunt Notebooks</h3>
+          <p className="text-sm text-muted-foreground">
+            Multi-step chained investigations — each step&apos;s output feeds the next
+          </p>
+        </div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="h-4 w-4 mr-1" /> New Notebook
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Hunt Notebook</DialogTitle>
+              <DialogDescription>Build a multi-step investigation workflow</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>Name</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Investigation name" />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What are you investigating?"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createMutation.mutate({ name, description, steps: [] })}
+                disabled={!name || createMutation.isPending}
+              >
+                Create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Notebook list */}
+        <div className="space-y-2">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : notebooks.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <Notebook className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No notebooks yet</p>
+              </CardContent>
+            </Card>
+          ) : (
+            notebooks.map((nb) => (
+              <Card
+                key={nb.id}
+                className={`cursor-pointer transition-colors ${selectedNotebook?.id === nb.id ? "border-primary" : "hover:border-primary/30"}`}
+                onClick={() => setSelectedNotebook(nb)}
+              >
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{nb.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {nb.steps.length} step(s) &middot; {formatDate(nb.updatedAt)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteMutation.mutate(nb.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+
+        {/* Notebook detail / steps */}
+        <div className="lg:col-span-2 space-y-3">
+          {!selectedNotebook ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Notebook className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-muted-foreground">Select a notebook to view its investigation steps</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold">{selectedNotebook.name}</h4>
+                  <p className="text-xs text-muted-foreground">{selectedNotebook.description || "No description"}</p>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  {selectedNotebook.steps.length} steps
+                </Badge>
+              </div>
+
+              {/* Existing steps */}
+              {selectedNotebook.steps.map((step, idx) => (
+                <Card key={step.id || idx} className="overflow-hidden">
+                  <div
+                    className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-muted/30"
+                    onClick={() => toggleStep(idx)}
+                  >
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
+                      {idx + 1}
+                    </div>
+                    {expandedSteps.has(idx) ? (
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                    )}
+                    <span className="text-sm font-medium flex-1">{step.title}</span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {step.queryType}
+                    </Badge>
+                    {step.resultSummary && (
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${step.eventCount && step.eventCount > 0 ? "text-amber-400 border-amber-500/30" : "text-emerald-400 border-emerald-500/30"}`}
+                      >
+                        {step.resultSummary}
+                      </Badge>
+                    )}
+                  </div>
+                  {expandedSteps.has(idx) && (
+                    <div className="px-4 pb-3 space-y-2 border-t bg-muted/10">
+                      {step.notes && <p className="text-xs text-muted-foreground mt-2">{step.notes}</p>}
+                      <pre className="text-[10px] font-mono p-2 bg-muted/30 rounded max-h-32 overflow-auto whitespace-pre-wrap">
+                        {step.queryText || "No query defined"}
+                      </pre>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() =>
+                            executeStepMutation.mutate({
+                              notebookId: selectedNotebook.id,
+                              stepIndex: idx,
+                              queryType: step.queryType,
+                              queryText: step.queryText,
+                            })
+                          }
+                          disabled={executeStepMutation.isPending || !step.queryText}
+                        >
+                          {executeStepMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Play className="h-3 w-3 mr-1" />
+                          )}
+                          Run Step
+                        </Button>
+                        {step.lastExecutedAt && (
+                          <span className="text-[10px] text-muted-foreground">
+                            Last run: {formatDate(step.lastExecutedAt)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              ))}
+
+              {/* Add new step */}
+              <Card className="border-dashed">
+                <CardContent className="py-3 px-4 space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground">Add Investigation Step</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      value={newStepTitle}
+                      onChange={(e) => setNewStepTitle(e.target.value)}
+                      placeholder="Step title"
+                      className="text-xs"
+                    />
+                    <Select value={newStepQueryType} onValueChange={setNewStepQueryType}>
+                      <SelectTrigger className="text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sigma">Sigma</SelectItem>
+                        <SelectItem value="yara">YARA</SelectItem>
+                        <SelectItem value="kql">KQL</SelectItem>
+                        <SelectItem value="sql">SQL</SelectItem>
+                        <SelectItem value="custom">Custom</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Textarea
+                    value={newStepQuery}
+                    onChange={(e) => setNewStepQuery(e.target.value)}
+                    placeholder="Query for this step..."
+                    className="font-mono text-xs min-h-20"
+                  />
+                  <Input
+                    value={newStepNotes}
+                    onChange={(e) => setNewStepNotes(e.target.value)}
+                    placeholder="Notes / context for this step"
+                    className="text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={addStep}
+                    disabled={!newStepTitle || updateMutation.isPending}
+                    className="w-full"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Step
+                  </Button>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 16.2 Result Visualization Options ──────────────────────────────────────
+
+function ResultVisualizationPanel({ results }: { results: HuntResult[] }) {
+  const [viewMode, setViewMode] = useState<"table" | "timeline" | "chart">("table");
+
+  if (results.length === 0) return null;
+
+  const allEvents = results.flatMap((r) =>
+    Array.isArray(r.eventsJson) ? (r.eventsJson as Record<string, unknown>[]) : [],
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">View:</span>
+        <div className="flex bg-muted/30 rounded p-0.5 gap-0.5">
+          {(["table", "timeline", "chart"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                viewMode === mode
+                  ? "bg-background shadow text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {mode === "table" && (
+                <>
+                  <Layers className="h-3 w-3 inline mr-1" />
+                  Table
+                </>
+              )}
+              {mode === "timeline" && (
+                <>
+                  <Clock className="h-3 w-3 inline mr-1" />
+                  Timeline
+                </>
+              )}
+              {mode === "chart" && (
+                <>
+                  <BarChart3 className="h-3 w-3 inline mr-1" />
+                  Chart
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+        <Badge variant="outline" className="text-[10px] ml-auto">
+          {allEvents.length} events across {results.length} run(s)
+        </Badge>
+      </div>
+
+      {viewMode === "table" && (
+        <div className="border rounded-md overflow-auto max-h-64">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs w-12">#</TableHead>
+                <TableHead className="text-xs">Event Data</TableHead>
+                <TableHead className="text-xs w-36">Time</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allEvents.slice(0, 50).map((evt, i) => (
+                <TableRow key={i}>
+                  <TableCell className="text-xs font-mono">{i + 1}</TableCell>
+                  <TableCell className="text-xs font-mono max-w-md truncate">
+                    {JSON.stringify(evt).substring(0, 200)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {(evt as Record<string, unknown>).timestamp
+                      ? String((evt as Record<string, unknown>).timestamp)
+                      : "-"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {viewMode === "timeline" && (
+        <div className="space-y-1 max-h-64 overflow-auto">
+          {results.map((r, idx) => (
+            <div key={r.id} className="flex items-center gap-3 py-1.5 border-b last:border-0">
+              <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium">Run #{idx + 1}</span>
+                  <Badge variant={r.eventCount > 0 ? "default" : "secondary"} className="text-[10px]">
+                    {r.eventCount} events
+                  </Badge>
+                  {r.executionDurationMs && (
+                    <span className="text-[10px] text-muted-foreground">{formatDuration(r.executionDurationMs)}</span>
+                  )}
+                </div>
+                {r.summary && <p className="text-[10px] text-muted-foreground truncate mt-0.5">{r.summary}</p>}
+              </div>
+              <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatDate(r.executedAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {viewMode === "chart" && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Event Count by Execution</p>
+          <div className="flex items-end gap-1 h-32">
+            {results.slice(-20).map((r, i) => {
+              const maxCount = Math.max(...results.map((x) => x.eventCount), 1);
+              const height = Math.max((r.eventCount / maxCount) * 100, 4);
+              return (
+                <TooltipProvider key={r.id}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="flex-1 min-w-[8px] bg-primary/60 hover:bg-primary/80 rounded-t transition-colors cursor-pointer"
+                        style={{ height: `${height}%` }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Run #{i + 1}: {r.eventCount} events
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">{formatDate(r.executedAt)}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>Oldest</span>
+            <span>Most Recent</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 16.5 Query Execution Plan Display ──────────────────────────────────────
+
+function ExecutionPlanPanel({ huntId }: { huntId: string }) {
+  const { toast } = useToast();
+  const [plan, setPlan] = useState<ExecutionPlan | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function fetchPlan() {
+    setLoading(true);
+    try {
+      const resp = await apiRequest("POST", `/api/threat-hunting/hunts/${huntId}/execution-plan`);
+      const data = await resp.json();
+      setPlan(data.plan);
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium">Execution Plan</span>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={fetchPlan} disabled={loading}>
+          {loading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Zap className="h-3 w-3 mr-1" />}
+          Analyze Query
+        </Button>
+      </div>
+
+      {plan && (
+        <div className="space-y-3">
+          {/* Summary metrics */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-muted/20 rounded p-2 text-center">
+              <p className="text-lg font-bold">{plan.estimatedRows.toLocaleString()}</p>
+              <p className="text-[10px] text-muted-foreground">Est. Rows</p>
+            </div>
+            <div className="bg-muted/20 rounded p-2 text-center">
+              <p className="text-lg font-bold">{formatDuration(plan.estimatedTimeMs)}</p>
+              <p className="text-[10px] text-muted-foreground">Est. Time</p>
+            </div>
+            <div className="bg-muted/20 rounded p-2 text-center">
+              <p className="text-lg font-bold">{plan.dataSources.length}</p>
+              <p className="text-[10px] text-muted-foreground">Data Sources</p>
+            </div>
+          </div>
+
+          {/* Execution steps */}
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase">Pipeline</p>
+            {plan.steps.map((step, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs py-1">
+                <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary flex-shrink-0">
+                  {i + 1}
+                </div>
+                <span className="flex-1">{step.description}</span>
+                <Badge variant="outline" className="text-[10px]">
+                  {step.estimatedMs}ms
+                </Badge>
+              </div>
+            ))}
+          </div>
+
+          {/* Optimizations */}
+          {plan.optimizations.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium text-emerald-400">Optimizations Applied</p>
+              {plan.optimizations.map((o, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  <span>{o}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Warnings */}
+          {plan.warnings.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium text-amber-400">Warnings</p>
+              {plan.warnings.map((w, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs">
+                  <AlertTriangle className="h-3 w-3 text-amber-400" />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Data sources */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] text-muted-foreground">Sources:</span>
+            {plan.dataSources.map((ds) => (
+              <Badge key={ds} variant="secondary" className="text-[10px]">
+                <Database className="h-2.5 w-2.5 mr-1" />
+                {ds}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 16.6 Hunt Result Cache Tab ─────────────────────────────────────────────
+
+function CacheTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data: cacheData, isLoading } = useQuery<{ entries: CacheEntry[] }>({
+    queryKey: ["/api/threat-hunting/cache"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/threat-hunting/cache/${id}`).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/cache"] });
+      toast({ title: "Cache entry deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", "/api/threat-hunting/cache").then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/cache"] });
+      toast({ title: "All cache entries cleared" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const entries = cacheData?.entries || [];
+  const activeEntries = entries.filter((e) => !e.isExpired);
+  const totalHits = entries.reduce((s, e) => s + e.hitCount, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Result Cache</h3>
+          <p className="text-sm text-muted-foreground">
+            Cached hunt results with TTL — avoid re-running expensive queries
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => clearMutation.mutate()}
+          disabled={clearMutation.isPending || entries.length === 0}
+        >
+          <Trash2 className="h-4 w-4 mr-1" /> Clear All
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-cyan-400" />
+              <span className="text-xs text-muted-foreground">Cached Entries</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{activeEntries.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-emerald-400" />
+              <span className="text-xs text-muted-foreground">Total Hits</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{totalHits}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Timer className="h-4 w-4 text-amber-400" />
+              <span className="text-xs text-muted-foreground">Expired</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{entries.length - activeEntries.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cache entries */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : entries.length === 0 ? (
+        <EmptyState
+          icon={Database}
+          title="No cached results"
+          description="Run hunts to populate the cache automatically"
+        />
+      ) : (
+        <div className="space-y-2">
+          {entries.map((entry) => (
+            <Card key={entry.id} className={entry.isExpired ? "opacity-50" : ""}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-[10px]">
+                        {entry.queryType}
+                      </Badge>
+                      <span className="text-xs font-mono truncate">{entry.queryText.substring(0, 80)}</span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+                      <span>{entry.eventCount} events</span>
+                      <span>{entry.hitCount} hit(s)</span>
+                      <span>TTL: {entry.ttlSeconds}s</span>
+                      <span>Cached: {formatDate(entry.cachedAt)}</span>
+                      {entry.isExpired ? (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Expired
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
+                          Active
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(entry.id)}>
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 16.7 Drift Detection Alerts ────────────────────────────────────────────
+
+function DriftDetectionPanel() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data: driftData, isLoading } = useQuery<{ drifts: DriftEntry[] }>({
+    queryKey: ["/api/threat-hunting/drifts"],
+  });
+
+  const ackMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("PATCH", `/api/threat-hunting/drifts/${id}/acknowledge`).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/drifts"] });
+      toast({ title: "Drift acknowledged" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const drifts = driftData?.drifts || [];
+  const unacknowledged = drifts.filter((d) => !d.drift.acknowledged);
+  const significant = drifts.filter((d) => d.drift.isSignificant);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Drift Detection</h3>
+          <p className="text-sm text-muted-foreground">Monitor scheduled hunt results for significant changes</p>
+        </div>
+        {unacknowledged.length > 0 && (
+          <Badge variant="destructive" className="text-xs">
+            {unacknowledged.length} unacknowledged
+          </Badge>
+        )}
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-cyan-400" />
+              <span className="text-xs text-muted-foreground">Total Drifts</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{drifts.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <span className="text-xs text-muted-foreground">Significant</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{significant.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-amber-400" />
+              <span className="text-xs text-muted-foreground">Pending Review</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{unacknowledged.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : drifts.length === 0 ? (
+        <EmptyState
+          icon={TrendingUp}
+          title="No drift detected"
+          description="Schedule hunts to begin tracking result changes over time"
+        />
+      ) : (
+        <div className="space-y-2">
+          {drifts.map(({ drift, huntName }) => (
+            <Card key={drift.id} className={!drift.acknowledged && drift.isSignificant ? "border-red-500/30" : ""}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      {drift.driftDirection === "increase" ? (
+                        <TrendingUp className="h-4 w-4 text-red-400" />
+                      ) : drift.driftDirection === "decrease" ? (
+                        <TrendingDown className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Minus className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="text-sm font-medium">{huntName || "Unknown Hunt"}</span>
+                      <Badge variant={drift.isSignificant ? "destructive" : "secondary"} className="text-[10px]">
+                        {drift.driftDirection === "increase" ? "+" : drift.driftDirection === "decrease" ? "-" : ""}
+                        {drift.driftPercentage}%
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+                      <span>Previous: {drift.previousEventCount} events</span>
+                      <ArrowRight className="h-2.5 w-2.5" />
+                      <span>Current: {drift.currentEventCount} events</span>
+                      <span>&middot; {formatDate(drift.detectedAt)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {drift.acknowledged ? (
+                      <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
+                        Acknowledged
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => ackMutation.mutate(drift.id)}
+                        disabled={ackMutation.isPending}
+                      >
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> Acknowledge
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 16.4 Collaborative Hunting Tab ─────────────────────────────────────────
+
+function CollaborationTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [sessionName, setSessionName] = useState("");
+  const [selectedHuntId, setSelectedHuntId] = useState("");
+  const [selectedSession, setSelectedSession] = useState<CollaborationSession | null>(null);
+  const [chatMessage, setChatMessage] = useState("");
+
+  const { data: sessionsData, isLoading } = useQuery<{ sessions: CollaborationSession[] }>({
+    queryKey: ["/api/threat-hunting/collaborations"],
+  });
+
+  const { data: huntsData } = useQuery<{ hunts: ThreatHunt[] }>({
+    queryKey: ["/api/threat-hunting/hunts"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiRequest("POST", "/api/threat-hunting/collaborations", data).then((r) => r.json()),
+    onSuccess: (resp: { session: CollaborationSession }) => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/collaborations"] });
+      toast({ title: "Collaboration session created" });
+      setSelectedSession(resp.session);
+      setCreateOpen(false);
+      setSessionName("");
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const joinMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/threat-hunting/collaborations/${id}/join`).then((r) => r.json()),
+    onSuccess: (resp: { session: CollaborationSession }) => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/collaborations"] });
+      setSelectedSession(resp.session);
+      toast({ title: "Joined session" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const messageMutation = useMutation({
+    mutationFn: ({ id, message }: { id: string; message: string }) =>
+      apiRequest("POST", `/api/threat-hunting/collaborations/${id}/message`, { message }).then((r) => r.json()),
+    onSuccess: (resp: { session: CollaborationSession }) => {
+      setSelectedSession(resp.session);
+      setChatMessage("");
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const endMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/threat-hunting/collaborations/${id}/end`).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/collaborations"] });
+      setSelectedSession(null);
+      toast({ title: "Session ended" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const sessions = sessionsData?.sessions || [];
+  const hunts = huntsData?.hunts || [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Collaborative Hunting</h3>
+          <p className="text-sm text-muted-foreground">Hunt together in real-time with shared results and chat</p>
+        </div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Users className="h-4 w-4 mr-1" /> New Session
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Start Collaboration Session</DialogTitle>
+              <DialogDescription>Invite your team to hunt together in real-time</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>Session Name</Label>
+                <Input
+                  value={sessionName}
+                  onChange={(e) => setSessionName(e.target.value)}
+                  placeholder="e.g., APT29 Investigation"
+                />
+              </div>
+              <div>
+                <Label>Link to Hunt (optional)</Label>
+                <Select value={selectedHuntId} onValueChange={setSelectedHuntId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a hunt..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No specific hunt</SelectItem>
+                    {hunts.map((h) => (
+                      <SelectItem key={h.id} value={h.id}>
+                        {h.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() =>
+                  createMutation.mutate({
+                    sessionName,
+                    huntId: selectedHuntId === "none" ? null : selectedHuntId || null,
+                  })
+                }
+                disabled={!sessionName || createMutation.isPending}
+              >
+                Start Session
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Sessions list */}
+        <div className="space-y-2">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : sessions.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <Users className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No collaboration sessions</p>
+              </CardContent>
+            </Card>
+          ) : (
+            sessions.map((s) => (
+              <Card
+                key={s.id}
+                className={`cursor-pointer transition-colors ${selectedSession?.id === s.id ? "border-primary" : "hover:border-primary/30"}`}
+                onClick={() => setSelectedSession(s)}
+              >
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{s.sessionName}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <Badge variant={s.status === "active" ? "default" : "secondary"} className="text-[10px]">
+                          {s.status}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">
+                          {s.participants.length} participant(s)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+
+        {/* Session detail */}
+        <div className="lg:col-span-2 space-y-3">
+          {!selectedSession ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Users className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-muted-foreground">Select a session to collaborate</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold">{selectedSession.sessionName}</h4>
+                  <p className="text-xs text-muted-foreground">Started {formatDate(selectedSession.startedAt)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedSession.status === "active" && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => joinMutation.mutate(selectedSession.id)}
+                        disabled={joinMutation.isPending}
+                      >
+                        <Users className="h-3 w-3 mr-1" /> Join
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-7 text-xs"
+                        onClick={() => endMutation.mutate(selectedSession.id)}
+                        disabled={endMutation.isPending}
+                      >
+                        <StopCircle className="h-3 w-3 mr-1" /> End
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Participants */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {selectedSession.participants.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-muted/30 rounded-full text-xs">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+                    <span>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Chat */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
+                    <MessageSquare className="h-4 w-4" /> Team Chat
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-48 mb-3">
+                    {selectedSession.chatMessages.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-4">No messages yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedSession.chatMessages.map((msg, i) => (
+                          <div key={i} className="text-xs">
+                            <span className="font-medium">{msg.name}</span>
+                            <span className="text-muted-foreground ml-2">
+                              {new Date(msg.timestamp).toLocaleTimeString()}
+                            </span>
+                            <p className="mt-0.5">{msg.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                  {selectedSession.status === "active" && (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={chatMessage}
+                        onChange={(e) => setChatMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        className="text-xs"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && chatMessage.trim()) {
+                            messageMutation.mutate({ id: selectedSession.id, message: chatMessage });
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          chatMessage.trim() && messageMutation.mutate({ id: selectedSession.id, message: chatMessage })
+                        }
+                        disabled={!chatMessage.trim() || messageMutation.isPending}
+                      >
+                        <Send className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 16.8 Hunt → Incident Escalation Button ────────────────────────────────
+
+function EscalateHuntButton({ huntId, huntName }: { huntId: string; huntName: string }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const escalateMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/threat-hunting/hunts/${huntId}/escalate-incident`).then((r) => r.json()),
+    onSuccess: (data: { incident: { id: string; title: string; severity: string }; message: string }) => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/hunts"] });
+      toast({
+        title: "Incident created",
+        description: `${data.incident.title} (${data.incident.severity})`,
+      });
+      setConfirmOpen(false);
+    },
+    onError: (e: Error) => toast({ title: "Escalation failed", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="h-7 text-xs">
+          <AlertTriangle className="h-3 w-3 mr-1 text-amber-400" /> Escalate
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Escalate to Incident</DialogTitle>
+          <DialogDescription>
+            Create a new incident from hunt &quot;{huntName}&quot; with all findings, MITRE techniques, and result data
+            pre-populated.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3 text-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
+              <span className="font-medium text-amber-400">This will create a real incident</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The incident will include the hunt hypothesis, query, results summary, MITRE ATT&CK techniques, and
+              matched events. The latest hunt result will be linked to the new incident.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => escalateMutation.mutate()} disabled={escalateMutation.isPending}>
+            {escalateMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 mr-1" />
+            )}
+            Create Incident
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── 16.9 Hunt → Detection Rule Conversion ──────────────────────────────────
+
+function ConvertToRuleButton({ huntId, huntName }: { huntId: string; huntName: string }) {
+  const { toast } = useToast();
+  const [ruleOpen, setRuleOpen] = useState(false);
+  const [sigmaRule, setSigmaRule] = useState("");
+
+  const convertMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/threat-hunting/hunts/${huntId}/to-detection-rule`).then((r) => r.json()),
+    onSuccess: (data: { sigmaRule: string }) => {
+      setSigmaRule(data.sigmaRule);
+      setRuleOpen(true);
+    },
+    onError: (e: Error) => toast({ title: "Conversion failed", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs"
+        onClick={() => convertMutation.mutate()}
+        disabled={convertMutation.isPending}
+      >
+        {convertMutation.isPending ? (
+          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+        ) : (
+          <FileCode className="h-3 w-3 mr-1" />
+        )}
+        To Sigma Rule
+      </Button>
+
+      <Dialog open={ruleOpen} onOpenChange={setRuleOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Generated Sigma Detection Rule</DialogTitle>
+            <DialogDescription>Converted from hunt &quot;{huntName}&quot;</DialogDescription>
+          </DialogHeader>
+          <div className="relative">
+            <pre className="bg-muted/30 border rounded-md p-4 text-xs font-mono max-h-96 overflow-auto whitespace-pre-wrap">
+              {sigmaRule}
+            </pre>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="absolute top-2 right-2 h-7 text-xs"
+              onClick={() => {
+                navigator.clipboard.writeText(sigmaRule);
+                toast({ title: "Copied to clipboard" });
+              }}
+            >
+              <Copy className="h-3 w-3 mr-1" /> Copy
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRuleOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── 16.10 Community Hunt Library Tab ───────────────────────────────────────
+
+function CommunityTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [shareOpen, setShareOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("apt");
+  const [selectedHuntId, setSelectedHuntId] = useState("");
+  const [filter, setFilter] = useState("");
+
+  const { data: communityData, isLoading } = useQuery<{ shares: CommunityShare[] }>({
+    queryKey: ["/api/threat-hunting/community", filter],
+    queryFn: () =>
+      apiRequest("GET", `/api/threat-hunting/community${filter ? `?category=${filter}` : ""}`).then((r) => r.json()),
+  });
+
+  const { data: huntsData } = useQuery<{ hunts: ThreatHunt[] }>({
+    queryKey: ["/api/threat-hunting/hunts"],
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiRequest("POST", "/api/threat-hunting/community", data).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/community"] });
+      toast({ title: "Hunt shared to community" });
+      setShareOpen(false);
+      setTitle("");
+      setDescription("");
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const upvoteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/threat-hunting/community/${id}/upvote`).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/community"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const downloadMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/threat-hunting/community/${id}/download`).then((r) => r.json()),
+    onSuccess: (data: { queryType: string; queryText: string }) => {
+      navigator.clipboard.writeText(data.queryText);
+      toast({ title: `${data.queryType.toUpperCase()} query copied to clipboard` });
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/community"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const shares = communityData?.shares || [];
+  const hunts = huntsData?.hunts || [];
+  const categories = [
+    "apt",
+    "ransomware",
+    "insider_threat",
+    "lateral_movement",
+    "persistence",
+    "exfiltration",
+    "credential_access",
+    "discovery",
+    "other",
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Community Hunt Library</h3>
+          <p className="text-sm text-muted-foreground">
+            Share and discover threat hunts with anonymized detection statistics
+          </p>
+        </div>
+        <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Globe className="h-4 w-4 mr-1" /> Share Hunt
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share to Community</DialogTitle>
+              <DialogDescription>Publish a hunt with anonymized detection stats</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>Select Hunt</Label>
+                <Select value={selectedHuntId} onValueChange={setSelectedHuntId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a hunt to share..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {hunts.map((h) => (
+                      <SelectItem key={h.id} value={h.id}>
+                        {h.name} ({h.queryType})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Title</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Community-facing title" />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What does this hunt detect?"
+                />
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c.replace(/_/g, " ").replace(/\b[a-z]/g, (l) => l.toUpperCase())}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShareOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => shareMutation.mutate({ huntId: selectedHuntId, title, description, category })}
+                disabled={!selectedHuntId || !title || shareMutation.isPending}
+              >
+                {shareMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <Share2 className="h-4 w-4 mr-1" />
+                )}
+                Publish
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Category filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setFilter("")}
+          className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${!filter ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+        >
+          All
+        </button>
+        {categories.map((c) => (
+          <button
+            key={c}
+            onClick={() => setFilter(c)}
+            className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${filter === c ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+          >
+            {c.replace(/_/g, " ")}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : shares.length === 0 ? (
+        <EmptyState
+          icon={Globe}
+          title="No community hunts"
+          description="Be the first to share a hunt with the community"
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {shares.map((share) => (
+            <Card key={share.id}>
+              <CardContent className="py-4 px-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">
+                      {share.queryType}
+                    </Badge>
+                    {share.category && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {share.category.replace(/_/g, " ")}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <button
+                      onClick={() => upvoteMutation.mutate(share.id)}
+                      className="flex items-center gap-0.5 hover:text-primary transition-colors"
+                    >
+                      <ThumbsUp className="h-3 w-3" />
+                      <span className="text-[10px]">{share.upvotes}</span>
+                    </button>
+                    <span className="text-[10px] mx-1">&middot;</span>
+                    <span className="text-[10px]">{share.downloads} downloads</span>
+                  </div>
+                </div>
+                <p className="text-sm font-medium">{share.title}</p>
+                {share.description && <p className="text-xs text-muted-foreground line-clamp-2">{share.description}</p>}
+
+                {/* Anonymized stats */}
+                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <span>Detection rate: {share.anonymizedStats.detectionRate}%</span>
+                  <span>Avg exec: {formatDuration(share.anonymizedStats.avgExecutionMs)}</span>
+                  <span>{share.anonymizedStats.totalRuns} runs</span>
+                </div>
+
+                {/* MITRE techniques */}
+                {share.mitreTechniques.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {(share.mitreTechniques as string[]).slice(0, 5).map((t) => (
+                      <Badge key={t} variant="outline" className="text-[10px]">
+                        {t}
+                      </Badge>
+                    ))}
+                    {share.mitreTechniques.length > 5 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        +{share.mitreTechniques.length - 5} more
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full h-7 text-xs"
+                  onClick={() => downloadMutation.mutate(share.id)}
+                  disabled={downloadMutation.isPending}
+                >
+                  <Download className="h-3 w-3 mr-1" /> Import Query
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function ThreatHuntingPage() {
@@ -1905,33 +3791,56 @@ export default function ThreatHuntingPage() {
       <StatsCards stats={stats} />
 
       <Tabs defaultValue="query-builder">
-        <TabsList className="grid grid-cols-7 w-full">
-          <TabsTrigger value="query-builder" className="text-xs">
-            <Code className="h-3 w-3 mr-1" /> Query Builder
-          </TabsTrigger>
-          <TabsTrigger value="library" className="text-xs">
-            <BookOpen className="h-3 w-3 mr-1" /> Library
-          </TabsTrigger>
-          <TabsTrigger value="schedules" className="text-xs">
-            <Calendar className="h-3 w-3 mr-1" /> Schedules
-          </TabsTrigger>
-          <TabsTrigger value="results" className="text-xs">
-            <BarChart3 className="h-3 w-3 mr-1" /> Results
-          </TabsTrigger>
-          <TabsTrigger value="pivot" className="text-xs">
-            <Target className="h-3 w-3 mr-1" /> Pivot
-          </TabsTrigger>
-          <TabsTrigger value="hypotheses" className="text-xs">
-            <Brain className="h-3 w-3 mr-1" /> Hypotheses
-          </TabsTrigger>
-          <TabsTrigger value="playbooks" className="text-xs">
-            <FileCode className="h-3 w-3 mr-1" /> Playbooks
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList className="inline-flex w-auto min-w-full">
+            <TabsTrigger value="query-builder" className="text-xs">
+              <Code className="h-3 w-3 mr-1" /> Query Builder
+            </TabsTrigger>
+            <TabsTrigger value="notebooks" className="text-xs">
+              <Notebook className="h-3 w-3 mr-1" /> Notebooks
+            </TabsTrigger>
+            <TabsTrigger value="results" className="text-xs">
+              <BarChart3 className="h-3 w-3 mr-1" /> Results
+            </TabsTrigger>
+            <TabsTrigger value="library" className="text-xs">
+              <BookOpen className="h-3 w-3 mr-1" /> Library
+            </TabsTrigger>
+            <TabsTrigger value="schedules" className="text-xs">
+              <Calendar className="h-3 w-3 mr-1" /> Schedules
+            </TabsTrigger>
+            <TabsTrigger value="collaboration" className="text-xs">
+              <Users className="h-3 w-3 mr-1" /> Collaborate
+            </TabsTrigger>
+            <TabsTrigger value="cache" className="text-xs">
+              <Database className="h-3 w-3 mr-1" /> Cache
+            </TabsTrigger>
+            <TabsTrigger value="drift" className="text-xs">
+              <TrendingUp className="h-3 w-3 mr-1" /> Drift
+            </TabsTrigger>
+            <TabsTrigger value="community" className="text-xs">
+              <Globe className="h-3 w-3 mr-1" /> Community
+            </TabsTrigger>
+            <TabsTrigger value="pivot" className="text-xs">
+              <Target className="h-3 w-3 mr-1" /> Pivot
+            </TabsTrigger>
+            <TabsTrigger value="hypotheses" className="text-xs">
+              <Brain className="h-3 w-3 mr-1" /> Hypotheses
+            </TabsTrigger>
+            <TabsTrigger value="playbooks" className="text-xs">
+              <FileCode className="h-3 w-3 mr-1" /> Playbooks
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <div className="mt-4">
           <TabsContent value="query-builder">
             <QueryBuilderTab />
+          </TabsContent>
+          <TabsContent value="notebooks">
+            <NotebookTab />
+          </TabsContent>
+          <TabsContent value="results">
+            <HuntResultsTab />
           </TabsContent>
           <TabsContent value="library">
             <HuntLibraryTab />
@@ -1939,8 +3848,17 @@ export default function ThreatHuntingPage() {
           <TabsContent value="schedules">
             <HuntSchedulesTab />
           </TabsContent>
-          <TabsContent value="results">
-            <HuntResultsTab />
+          <TabsContent value="collaboration">
+            <CollaborationTab />
+          </TabsContent>
+          <TabsContent value="cache">
+            <CacheTab />
+          </TabsContent>
+          <TabsContent value="drift">
+            <DriftDetectionPanel />
+          </TabsContent>
+          <TabsContent value="community">
+            <CommunityTab />
           </TabsContent>
           <TabsContent value="pivot">
             <PivotTab />

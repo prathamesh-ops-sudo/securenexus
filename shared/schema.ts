@@ -8114,6 +8114,134 @@ export type InsertHuntSchedule = typeof huntSchedules.$inferInsert;
 export type HuntPlaybook = typeof huntPlaybooks.$inferSelect;
 export type InsertHuntPlaybook = typeof huntPlaybooks.$inferInsert;
 
+// ─── Threat Hunting Notebooks (16.3) ────────────────────────────────────────
+export const huntNotebooks = pgTable(
+  "hunt_notebooks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    steps: jsonb("steps").default([]), // array of { id, title, queryType, queryText, notes, resultSummary, outputVariables }
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_notebooks_org").on(table.orgId)],
+);
+
+export const huntNotebooksRelations = relations(huntNotebooks, ({ one }) => ({
+  organization: one(organizations, { fields: [huntNotebooks.orgId], references: [organizations.id] }),
+}));
+
+export type HuntNotebook = typeof huntNotebooks.$inferSelect;
+export type InsertHuntNotebook = typeof huntNotebooks.$inferInsert;
+
+// ─── Hunt Result Cache (16.6) ───────────────────────────────────────────────
+export const huntCache = pgTable(
+  "hunt_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    queryHash: text("query_hash").notNull(),
+    queryType: text("query_type").notNull(),
+    queryText: text("query_text").notNull(),
+    resultJson: jsonb("result_json").default({}),
+    eventCount: integer("event_count").notNull().default(0),
+    executionDurationMs: integer("execution_duration_ms"),
+    ttlSeconds: integer("ttl_seconds").notNull().default(3600),
+    hitCount: integer("hit_count").notNull().default(0),
+    cachedAt: timestamp("cached_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => [index("idx_th_cache_org").on(table.orgId), index("idx_th_cache_hash").on(table.queryHash)],
+);
+
+export type HuntCacheEntry = typeof huntCache.$inferSelect;
+export type InsertHuntCacheEntry = typeof huntCache.$inferInsert;
+
+// ─── Hunt Collaboration Sessions (16.4) ─────────────────────────────────────
+export const huntCollaborations = pgTable(
+  "hunt_collaborations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id").references(() => threatHunts.id, { onDelete: "cascade" }),
+    sessionName: text("session_name").notNull(),
+    participants: jsonb("participants").default([]), // array of { userId, name, color, cursorPosition, joinedAt }
+    sharedResults: jsonb("shared_results").default([]),
+    chatMessages: jsonb("chat_messages").default([]), // array of { userId, name, message, timestamp }
+    status: text("status").notNull().default("active"), // active | ended
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    endedAt: timestamp("ended_at"),
+  },
+  (table) => [index("idx_th_collab_org").on(table.orgId), index("idx_th_collab_hunt").on(table.huntId)],
+);
+
+export const huntCollaborationsRelations = relations(huntCollaborations, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntCollaborations.huntId], references: [threatHunts.id] }),
+}));
+
+export type HuntCollaboration = typeof huntCollaborations.$inferSelect;
+export type InsertHuntCollaboration = typeof huntCollaborations.$inferInsert;
+
+// ─── Hunt Schedule Drift Detection (16.7) ───────────────────────────────────
+export const huntScheduleDrifts = pgTable(
+  "hunt_schedule_drifts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    scheduleId: uuid("schedule_id").references(() => huntSchedules.id, { onDelete: "cascade" }),
+    huntId: uuid("hunt_id").references(() => threatHunts.id, { onDelete: "cascade" }),
+    previousEventCount: integer("previous_event_count").notNull(),
+    currentEventCount: integer("current_event_count").notNull(),
+    driftPercentage: integer("drift_percentage").notNull(), // percentage change
+    driftDirection: text("drift_direction").notNull(), // increase | decrease | stable
+    isSignificant: boolean("is_significant").notNull().default(false),
+    detectedAt: timestamp("detected_at").defaultNow().notNull(),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+  },
+  (table) => [index("idx_th_drift_org").on(table.orgId), index("idx_th_drift_schedule").on(table.scheduleId)],
+);
+
+export const huntScheduleDriftsRelations = relations(huntScheduleDrifts, ({ one }) => ({
+  schedule: one(huntSchedules, { fields: [huntScheduleDrifts.scheduleId], references: [huntSchedules.id] }),
+  hunt: one(threatHunts, { fields: [huntScheduleDrifts.huntId], references: [threatHunts.id] }),
+}));
+
+export type HuntScheduleDrift = typeof huntScheduleDrifts.$inferSelect;
+export type InsertHuntScheduleDrift = typeof huntScheduleDrifts.$inferInsert;
+
+// ─── Community Hunt Shares (16.10) ──────────────────────────────────────────
+export const communityHuntShares = pgTable(
+  "community_hunt_shares",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id").references(() => threatHunts.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    queryType: text("query_type").notNull(),
+    queryText: text("query_text").notNull(),
+    category: text("category"),
+    mitreTechniques: jsonb("mitre_techniques").default([]),
+    tags: jsonb("tags").default([]),
+    anonymizedStats: jsonb("anonymized_stats").default({}), // { detectionRate, avgExecutionMs, totalRuns }
+    upvotes: integer("upvotes").notNull().default(0),
+    downloads: integer("downloads").notNull().default(0),
+    sharedBy: text("shared_by"),
+    sharedAt: timestamp("shared_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_community_org").on(table.orgId), index("idx_th_community_category").on(table.category)],
+);
+
+export const communityHuntSharesRelations = relations(communityHuntShares, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [communityHuntShares.huntId], references: [threatHunts.id] }),
+}));
+
+export type CommunityHuntShare = typeof communityHuntShares.$inferSelect;
+export type InsertCommunityHuntShare = typeof communityHuntShares.$inferInsert;
+
 // ============================
 // Security Data Lake
 // ============================
