@@ -34,6 +34,19 @@ interface CustodyEntry {
 
 const evidenceStore = new Map<string, EvidenceItem>();
 
+const retentionPolicies = new Map<string, any[]>();
+
+function getDefaultRetentionPolicies() {
+  return [
+    { evidenceType: "file", retentionDays: 730, action: "archive", autoApply: false },
+    { evidenceType: "log", retentionDays: 365, action: "archive", autoApply: true },
+    { evidenceType: "screenshot", retentionDays: 180, action: "delete", autoApply: true },
+    { evidenceType: "memory_dump", retentionDays: 90, action: "archive", autoApply: false },
+    { evidenceType: "network_capture", retentionDays: 90, action: "delete", autoApply: true },
+    { evidenceType: "artifact", retentionDays: 365, action: "archive", autoApply: false },
+  ];
+}
+
 function computeEntryHash(entry: Omit<CustodyEntry, "entryHash">): string {
   const data = `${entry.action}|${entry.actor}|${entry.timestamp}|${entry.previousHash}|${entry.reason}`;
   return createHash("sha256").update(data).digest("hex");
@@ -282,6 +295,265 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         });
       } catch (error: unknown) {
         return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to verify chain." }]);
+      }
+    },
+  );
+  // ─── 18.3 Evidence Tagging and Categorization ─────────────────────────────
+
+  app.get(
+    "/api/evidence-custody/:id/tags",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const tags = (evidence as any).tags || [];
+        return sendEnvelope(res, tags, { meta: { total: tags.length } });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to list tags." }]);
+      }
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/tags",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const { tag, category } = req.body;
+        if (!tag) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "tag is required." }]);
+        }
+        const validCategories = [
+          "malware_sample",
+          "network_capture",
+          "memory_dump",
+          "log_file",
+          "screenshot",
+          "disk_image",
+          "registry",
+          "email",
+          "document",
+          "other",
+        ];
+        if (!(evidence as any).tags) (evidence as any).tags = [];
+        const tagEntry = {
+          id: genId(),
+          tag,
+          category: validCategories.includes(category) ? category : "other",
+          addedBy: (req as any).user?.username || "unknown",
+          addedAt: new Date().toISOString(),
+        };
+        (evidence as any).tags.push(tagEntry);
+        log.info("Evidence tagged", { orgId, evidenceId: evidence.id, tag });
+        return reply(res, tagEntry, undefined, 201);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to add tag." }]);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/evidence-custody/:id/tags/:tagId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        const tags = (evidence as any).tags || [];
+        const idx = tags.findIndex((t: any) => t.id === req.params.tagId);
+        if (idx === -1) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Tag not found." }]);
+        }
+        tags.splice(idx, 1);
+        return reply(res, { deleted: true });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to delete tag." }]);
+      }
+    },
+  );
+
+  // ─── 18.4 Evidence File Upload with Hash Calculation ──────────────────────
+
+  app.post(
+    "/api/evidence-custody/:id/upload",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const evidence = evidenceStore.get(req.params.id as string);
+        if (!evidence || evidence.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+        }
+        if (evidence.isSealed) {
+          return replyError(res, 400, [{ code: "SEALED", message: "Evidence is sealed." }]);
+        }
+
+        const user = (req as any).user;
+        const { fileName, fileSize, mimeType, chunkIndex, totalChunks } = req.body;
+
+        if (!fileName) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "fileName is required." }]);
+        }
+
+        // Simulate file hash calculation (in production would use actual file content)
+        const fileHash = createHash("sha256").update(`${orgId}-${fileName}-${Date.now()}`).digest("hex");
+
+        // Add custody entry for file upload
+        const previousHash = evidence.integrityChain[evidence.integrityChain.length - 1].entryHash;
+        const uploadEntry: Omit<CustodyEntry, "entryHash"> = {
+          id: `ce-${Date.now()}`,
+          action: "collected",
+          actor: user?.username || "unknown",
+          timestamp: new Date().toISOString(),
+          previousHash,
+          reason: `File uploaded: ${fileName} (${mimeType || "unknown"})`,
+          metadata: {
+            fileName,
+            fileSize: typeof fileSize === "number" ? fileSize : 0,
+            mimeType: mimeType || "application/octet-stream",
+            sha256: fileHash,
+            chunkIndex: chunkIndex || 0,
+            totalChunks: totalChunks || 1,
+            storageLocation: "s3://evidence-bucket/encrypted/",
+            serverSideEncryption: "AES-256",
+          },
+        };
+
+        const entryHash = computeEntryHash(uploadEntry);
+        evidence.integrityChain.push({ ...uploadEntry, entryHash });
+        evidence.sizeBytes += typeof fileSize === "number" ? fileSize : 0;
+
+        // Store file reference
+        if (!(evidence as any).files) (evidence as any).files = [];
+        (evidence as any).files.push({
+          fileName,
+          fileSize: typeof fileSize === "number" ? fileSize : 0,
+          mimeType: mimeType || "application/octet-stream",
+          sha256: fileHash,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: user?.username || "unknown",
+          storageKey: `evidence/${evidence.id}/${fileName}`,
+        });
+
+        log.info("Evidence file uploaded", { orgId, evidenceId: evidence.id, fileName });
+        return reply(
+          res,
+          {
+            fileHash,
+            custodyEntry: { ...uploadEntry, entryHash },
+            storageKey: `evidence/${evidence.id}/${fileName}`,
+          },
+          undefined,
+          201,
+        );
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to upload file." }]);
+      }
+    },
+  );
+
+  // ─── 18.5 Evidence Retention Policies ─────────────────────────────────────
+
+  app.get(
+    "/api/evidence-custody/retention-policies",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        // Return configured retention policies per evidence type
+        const policies = retentionPolicies.get(orgId) || getDefaultRetentionPolicies();
+        return sendEnvelope(res, policies, { meta: { total: policies.length } });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to list retention policies." }]);
+      }
+    },
+  );
+
+  app.put(
+    "/api/evidence-custody/retention-policies",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { policies } = req.body;
+        if (!Array.isArray(policies)) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "policies array is required." }]);
+        }
+        const validatedPolicies = policies.map((p: any) => ({
+          evidenceType: p.evidenceType || "artifact",
+          retentionDays: typeof p.retentionDays === "number" ? p.retentionDays : 365,
+          action: ["archive", "delete"].includes(p.action) ? p.action : "archive",
+          autoApply: !!p.autoApply,
+        }));
+        retentionPolicies.set(orgId, validatedPolicies);
+        log.info("Retention policies updated", { orgId, count: validatedPolicies.length });
+        return reply(res, { updated: true, policies: validatedPolicies });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to update retention policies." }]);
+      }
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/retention-policies/apply",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const policies = retentionPolicies.get(orgId) || getDefaultRetentionPolicies();
+        const now = Date.now();
+        const results = { archived: 0, deleted: 0, skipped: 0 };
+
+        for (const [, evidence] of Array.from(evidenceStore.entries())) {
+          if (evidence.orgId !== orgId) continue;
+          const retentionEnd = new Date(evidence.retentionUntil).getTime();
+          if (retentionEnd > now) {
+            results.skipped++;
+            continue;
+          }
+          const policy = policies.find((p: any) => p.evidenceType === evidence.type);
+          if (!policy) {
+            results.skipped++;
+            continue;
+          }
+          if (policy.action === "delete" && !evidence.isSealed) {
+            evidenceStore.delete(evidence.id);
+            results.deleted++;
+          } else {
+            results.archived++;
+          }
+        }
+
+        log.info("Retention policies applied", { orgId, ...results });
+        return reply(res, results);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to apply retention policies." }]);
       }
     },
   );

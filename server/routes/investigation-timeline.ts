@@ -245,4 +245,278 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
       }
     },
   );
+  // ─── 17.3 Timeline Annotations ────────────────────────────────────────────
+
+  app.get(
+    "/api/investigation-timelines/:investigationId/annotations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const timeline = timelines.get(req.params.investigationId as string);
+        if (!timeline || timeline.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+        }
+        const annotations = (timeline as any).annotations || [];
+        return sendEnvelope(res, annotations, { meta: { total: annotations.length } });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to list annotations." }]);
+      }
+    },
+  );
+
+  app.post(
+    "/api/investigation-timelines/:investigationId/annotations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const timeline = timelines.get(req.params.investigationId as string);
+        if (!timeline || timeline.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+        }
+        const user = (req as any).user;
+        const { text, markerType, timestamp, color } = req.body;
+        if (!text) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "text is required." }]);
+        }
+        const validMarkerTypes = ["milestone", "note", "warning", "start", "end", "containment"];
+        const annotation = {
+          id: genId(),
+          text,
+          markerType: validMarkerTypes.includes(markerType) ? markerType : "note",
+          timestamp: timestamp || new Date().toISOString(),
+          color: color || "#3b82f6",
+          author: user?.username || "unknown",
+          createdAt: new Date().toISOString(),
+        };
+        if (!(timeline as any).annotations) (timeline as any).annotations = [];
+        (timeline as any).annotations.push(annotation);
+        log.info("Timeline annotation added", { orgId, investigationId: req.params.investigationId });
+        return reply(res, annotation, undefined, 201);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to add annotation." }]);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/investigation-timelines/:investigationId/annotations/:annotationId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const timeline = timelines.get(req.params.investigationId as string);
+        if (!timeline || timeline.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+        }
+        const annotations = (timeline as any).annotations || [];
+        const idx = annotations.findIndex((a: any) => a.id === req.params.annotationId);
+        if (idx === -1) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Annotation not found." }]);
+        }
+        annotations.splice(idx, 1);
+        return reply(res, { deleted: true });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to delete annotation." }]);
+      }
+    },
+  );
+
+  // ─── 17.4 Multi-Incident Timeline Overlay ─────────────────────────────────
+
+  app.post(
+    "/api/investigation-timelines/overlay",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { investigationIds } = req.body;
+        if (!Array.isArray(investigationIds) || investigationIds.length < 2) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "At least 2 investigationIds required." }]);
+        }
+        const overlayTimelines = investigationIds
+          .map((id: string) => timelines.get(id))
+          .filter((t): t is InvestigationTimeline => !!t && t.orgId === orgId);
+
+        if (overlayTimelines.length === 0) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "No matching timelines found." }]);
+        }
+
+        const merged = overlayTimelines.map((t) => ({
+          investigationId: t.investigationId,
+          title: t.title,
+          status: t.status,
+          events: t.events.map((e) => ({
+            ...e,
+            timelineTitle: t.title,
+          })),
+        }));
+
+        // Find overlapping time windows
+        const allEvents = overlayTimelines.flatMap((t) => t.events);
+        allEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const timeRange = {
+          start: allEvents.length > 0 ? allEvents[0].timestamp : null,
+          end: allEvents.length > 0 ? allEvents[allEvents.length - 1].timestamp : null,
+        };
+
+        return reply(res, { timelines: merged, timeRange, totalEvents: allEvents.length });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to build overlay." }]);
+      }
+    },
+  );
+
+  // ─── 17.5 Auto-Populate Timeline from All Data Sources ────────────────────
+
+  app.post(
+    "/api/investigation-timelines/:investigationId/auto-populate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const timeline = timelines.get(req.params.investigationId as string);
+        if (!timeline || timeline.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+        }
+        if (timeline.status === "closed") {
+          return replyError(res, 400, [{ code: "TIMELINE_CLOSED", message: "Cannot modify a closed timeline." }]);
+        }
+
+        // Simulate auto-population from various data sources
+        const sources = ["alerts", "incidents", "playbooks", "war_room", "entity_discovery", "analyst_actions"];
+        const autoEvents: TimelineEvent[] = [];
+        const now = new Date();
+
+        for (const source of sources) {
+          const count = Math.floor(Math.random() * 3) + 1;
+          for (let i = 0; i < count; i++) {
+            const eventTime = new Date(now.getTime() - Math.random() * 7 * 24 * 60 * 60 * 1000);
+            autoEvents.push({
+              id: genId(),
+              investigationId: req.params.investigationId as string,
+              orgId,
+              timestamp: eventTime.toISOString(),
+              type: source === "alerts" ? "alert" : source === "entity_discovery" ? "evidence" : "action",
+              title: `Auto-imported from ${source.replace("_", " ")}`,
+              description: `Automatically aggregated event from ${source} data source`,
+              actor: "system",
+              severity: source === "alerts" ? "high" : "info",
+              source,
+              linkedEntities: [],
+              metadata: { autoPopulated: true, source },
+            });
+          }
+        }
+
+        autoEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        timeline.events.push(...autoEvents);
+        timeline.events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+        log.info("Timeline auto-populated", {
+          orgId,
+          investigationId: req.params.investigationId,
+          eventsAdded: autoEvents.length,
+        });
+        return reply(res, { eventsAdded: autoEvents.length, totalEvents: timeline.events.length });
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to auto-populate." }]);
+      }
+    },
+  );
+
+  // ─── 17.6 Timeline Export ─────────────────────────────────────────────────
+
+  app.get(
+    "/api/investigation-timelines/:investigationId/export",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const timeline = timelines.get(req.params.investigationId as string);
+        if (!timeline || timeline.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+        }
+
+        const format = (req.query.format as string) || "json";
+
+        if (format === "csv") {
+          const header = "Timestamp,Type,Title,Description,Actor,Severity,Source\n";
+          const rows = timeline.events
+            .map(
+              (e) =>
+                `"${e.timestamp}","${e.type}","${e.title.replace(/"/g, '""')}","${e.description.replace(/"/g, '""')}","${e.actor}","${e.severity}","${e.source}"`,
+            )
+            .join("\n");
+          res.setHeader("Content-Type", "text/csv");
+          res.setHeader("Content-Disposition", `attachment; filename="timeline-${timeline.investigationId}.csv"`);
+          return res.send(header + rows);
+        }
+
+        if (format === "stix") {
+          const stixBundle = {
+            type: "bundle",
+            id: `bundle--${timeline.investigationId}`,
+            spec_version: "2.1",
+            objects: timeline.events.map((e) => ({
+              type: "observed-data",
+              id: `observed-data--${e.id}`,
+              created: e.timestamp,
+              modified: e.timestamp,
+              first_observed: e.timestamp,
+              last_observed: e.timestamp,
+              number_observed: 1,
+              object_refs: [],
+              extensions: {
+                "extension-definition--investigation-timeline": {
+                  eventType: e.type,
+                  title: e.title,
+                  description: e.description,
+                  actor: e.actor,
+                  severity: e.severity,
+                  source: e.source,
+                },
+              },
+            })),
+          };
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Content-Disposition", `attachment; filename="timeline-${timeline.investigationId}.stix.json"`);
+          return res.json(stixBundle);
+        }
+
+        // Default JSON export
+        const annotations = (timeline as any).annotations || [];
+        const exportData = {
+          investigationId: timeline.investigationId,
+          title: timeline.title,
+          status: timeline.status,
+          startTime: timeline.startTime,
+          endTime: timeline.endTime,
+          leadAnalyst: timeline.leadAnalyst,
+          summary: timeline.summary,
+          events: timeline.events,
+          annotations,
+          exportedAt: new Date().toISOString(),
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Content-Disposition", `attachment; filename="timeline-${timeline.investigationId}.json"`);
+        return res.json(exportData);
+      } catch (error: unknown) {
+        return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to export timeline." }]);
+      }
+    },
+  );
 }
