@@ -28,6 +28,9 @@ import {
   Lock,
   FileWarning,
   Globe,
+  CheckCircle2,
+  XCircle,
+  BarChart3,
 } from "lucide-react";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
@@ -1168,7 +1171,7 @@ export default function EmailSecurityPage() {
         </p>
       </div>
 
-      {/* Dashboard Stats */}
+      {/* 72.1 — Email Threat Dashboard with stats and overview */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <StatCard label="Total Emails" value={isLoading ? "—" : (stats?.totalEmails ?? 0)} icon={Mail} />
         <StatCard label="Suspicious" value={isLoading ? "—" : (stats?.suspiciousEmails ?? 0)} icon={AlertTriangle} />
@@ -1177,6 +1180,130 @@ export default function EmailSecurityPage() {
         <StatCard label="URLs Blocked" value={isLoading ? "—" : (stats?.maliciousUrls ?? 0)} icon={Ban} />
         <StatCard label="Active Policies" value={isLoading ? "—" : (stats?.activePolicies ?? 0)} icon={Lock} />
       </div>
+
+      {/* 72.4 — BEC Detection Pattern Summary */}
+      {stats?.becPatterns && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <UserX className="h-4 w-4" /> BEC Detection Patterns
+            </CardTitle>
+            <CardDescription>Executive impersonation and business email compromise patterns detected</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{stats.becPatterns.executiveImpersonation ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Executive Impersonation</p>
+              </div>
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{stats.becPatterns.paymentRedirect ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Payment Redirect</p>
+              </div>
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{stats.becPatterns.lookalikedomains ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Lookalike Domains</p>
+              </div>
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{stats.becPatterns.vendorCompromise ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Vendor Compromise</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 72.7 — Email Authentication Compliance Dashboard */}
+      {stats?.authCompliance && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4" /> Email Authentication Compliance
+            </CardTitle>
+            <CardDescription>
+              SPF, DKIM, and DMARC pass rates for last 30 days ({stats.authCompliance.totalAnalyzed} emails analyzed)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {["spf", "dkim", "dmarc"].map((protocol) => {
+                const data = stats.authCompliance[protocol] as { pass: number; fail: number; rate: number } | undefined;
+                return (
+                  <div key={protocol} className="text-center p-3 border rounded-lg">
+                    <p className="text-xs font-semibold uppercase mb-1">{protocol}</p>
+                    <p className="text-2xl font-bold">{data?.rate ?? 0}%</p>
+                    <div className="flex justify-center gap-2 mt-1 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-0.5">
+                        <CheckCircle2 className="h-3 w-3 text-green-500" /> {data?.pass ?? 0}
+                      </span>
+                      <span className="flex items-center gap-0.5">
+                        <XCircle className="h-3 w-3 text-red-500" /> {data?.fail ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-xs font-semibold uppercase mb-1">Overall</p>
+                <p className="text-2xl font-bold">{stats.authCompliance.overallCompliance ?? 0}%</p>
+                <Badge
+                  variant={
+                    stats.authCompliance.overallCompliance >= 90
+                      ? "default"
+                      : stats.authCompliance.overallCompliance >= 70
+                        ? "secondary"
+                        : "destructive"
+                  }
+                  className="text-[10px] mt-1"
+                >
+                  {stats.authCompliance.overallCompliance >= 90
+                    ? "Excellent"
+                    : stats.authCompliance.overallCompliance >= 70
+                      ? "Good"
+                      : "Needs Improvement"}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 72.5 — Email Gateway Integration Status */}
+      {stats?.integrationStatus && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Cloud className="h-4 w-4" /> Email Gateway Integrations
+            </CardTitle>
+            <CardDescription>
+              {stats.integrationStatus.totalConfigured} of {stats.integrationStatus.gateways?.length ?? 0} gateways
+              configured
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {stats.integrationStatus.gateways?.map(
+                (gw: { provider: string; label: string; configured: boolean; lastSync: string | null }) => (
+                  <div
+                    key={gw.provider}
+                    className={`p-3 border rounded-lg text-center ${gw.configured ? "border-green-500/30 bg-green-500/5" : "border-border/50"}`}
+                  >
+                    <p className="text-xs font-medium">{gw.label}</p>
+                    <Badge variant={gw.configured ? "default" : "secondary"} className="text-[10px] mt-1">
+                      {gw.configured ? "Connected" : "Not Configured"}
+                    </Badge>
+                    {gw.lastSync && (
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Last sync: {new Date(gw.lastSync).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                ),
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="findings">

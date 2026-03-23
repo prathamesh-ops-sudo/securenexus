@@ -514,23 +514,72 @@ export default function SecurityAssessmentsPage() {
         </div>
       </div>
 
-      {/* Available Frameworks */}
+      {/* 75.1 — Assessment Summary Dashboard */}
+      {list.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <p className="text-2xl font-bold">{list.length}</p>
+              <p className="text-xs text-muted-foreground">Total Assessments</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <p className="text-2xl font-bold">{list.filter((a) => a.status === "completed").length}</p>
+              <p className="text-xs text-muted-foreground">Completed</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <p className="text-2xl font-bold">
+                {list.length > 0 ? Math.round(list.reduce((s, a) => s + a.overallScore, 0) / list.length) : 0}%
+              </p>
+              <p className="text-xs text-muted-foreground">Average Score</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <p className="text-2xl font-bold">{list.reduce((s, a) => s + a.notImplementedControls, 0)}</p>
+              <p className="text-xs text-muted-foreground">Open Gaps</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 75.2 — Framework Templates with control counts */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Available Frameworks
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {(frameworks || []).map((fw) => (
-            <Card key={fw.id} className="hover:shadow-sm transition-shadow">
-              <CardContent className="pt-4">
-                <Badge className={FRAMEWORK_COLORS[fw.id] || ""} variant="outline">
-                  {fw.name}
-                </Badge>
-                <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{fw.description}</p>
-                <p className="text-xs text-muted-foreground mt-1">{fw.controlCount} controls</p>
-              </CardContent>
-            </Card>
-          ))}
+          {(frameworks || []).map((fw) => {
+            const fwAssessments = list.filter((a) => a.framework === fw.id);
+            const latestScore = fwAssessments.length > 0 ? fwAssessments[fwAssessments.length - 1].overallScore : null;
+            return (
+              <Card key={fw.id} className="hover:shadow-sm transition-shadow">
+                <CardContent className="pt-4">
+                  <Badge className={FRAMEWORK_COLORS[fw.id] || ""} variant="outline">
+                    {fw.name}
+                  </Badge>
+                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{fw.description}</p>
+                  <div className="flex items-center justify-between mt-2">
+                    <p className="text-xs text-muted-foreground">{fw.controlCount} controls</p>
+                    {latestScore !== null && (
+                      <Badge
+                        variant={latestScore >= 80 ? "default" : latestScore >= 50 ? "secondary" : "destructive"}
+                        className="text-[10px]"
+                      >
+                        Last: {latestScore}%
+                      </Badge>
+                    )}
+                  </div>
+                  {fwAssessments.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground mt-1">{fwAssessments.length} assessment(s) run</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 

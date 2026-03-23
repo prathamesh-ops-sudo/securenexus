@@ -10,7 +10,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Globe, Shield, AlertTriangle, Search, Plus, Activity, Eye, Ban, Network, Cpu, Zap } from "lucide-react";
+import {
+  Globe,
+  Shield,
+  AlertTriangle,
+  Search,
+  Plus,
+  Activity,
+  Eye,
+  Ban,
+  Network,
+  Cpu,
+  Zap,
+  BarChart3,
+  Clock,
+} from "lucide-react";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
@@ -643,8 +657,9 @@ function AnalysisToolsTab() {
               <Search className="h-4 w-4 mr-1" /> Analyze
             </Button>
           </div>
+          {/* 71.2 — DGA Detection Visualization with confidence, entropy, lexical breakdown */}
           {dgaResult && (
-            <div className="p-3 border rounded-md text-sm space-y-1">
+            <div className="p-3 border rounded-md text-sm space-y-2">
               <div className="flex items-center gap-2">
                 <Badge variant={dgaResult.isDga ? "destructive" : "default"}>
                   {dgaResult.isDga ? "DGA Detected" : "Legitimate"}
@@ -653,8 +668,37 @@ function AnalysisToolsTab() {
                   Confidence: {Math.round(dgaResult.confidence * 100)}%
                 </span>
               </div>
-              <p className="text-xs">Entropy: {dgaResult.entropy}</p>
-              <p className="text-xs text-muted-foreground">Features: {JSON.stringify(dgaResult.features)}</p>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">
+                    {typeof dgaResult.entropy === "number" ? dgaResult.entropy.toFixed(2) : dgaResult.entropy}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Character Entropy</p>
+                </div>
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">{Math.round(dgaResult.confidence * 100)}%</p>
+                  <p className="text-[10px] text-muted-foreground">Confidence Score</p>
+                </div>
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">{domain.length}</p>
+                  <p className="text-[10px] text-muted-foreground">Domain Length</p>
+                </div>
+              </div>
+              {dgaResult.features && Object.keys(dgaResult.features).length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs font-medium mb-1">Lexical Feature Breakdown</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {Object.entries(dgaResult.features).map(([key, val]) => (
+                      <div key={key} className="flex justify-between text-xs py-0.5 px-2 bg-muted/20 rounded">
+                        <span className="text-muted-foreground">{key.replace(/_/g, " ")}</span>
+                        <span className="font-mono">
+                          {typeof val === "number" ? (val as number).toFixed(2) : String(val)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {nrdResult && (
@@ -696,15 +740,43 @@ function AnalysisToolsTab() {
               <Cpu className="h-4 w-4 mr-1" /> Check
             </Button>
           </div>
+          {/* 71.3 — DNS Tunneling Detection Visualization */}
           {tunnelingResult && (
-            <div className="p-3 border rounded-md text-sm space-y-1">
+            <div className="p-3 border rounded-md text-sm space-y-2">
               <Badge variant={tunnelingResult.isTunneling ? "destructive" : "default"}>
                 {tunnelingResult.isTunneling ? "Tunneling Detected" : "No Tunneling"}
               </Badge>
-              <p className="text-xs text-muted-foreground">
-                Confidence: {Math.round(tunnelingResult.confidence * 100)}% | Indicators:{" "}
-                {JSON.stringify(tunnelingResult.indicators)}
-              </p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">{Math.round(tunnelingResult.confidence * 100)}%</p>
+                  <p className="text-[10px] text-muted-foreground">Confidence</p>
+                </div>
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">
+                    {tunnelingResult.indicators && typeof tunnelingResult.indicators === "object"
+                      ? (tunnelingResult.indicators as Record<string, unknown>).estimatedBandwidthKB
+                        ? `${(tunnelingResult.indicators as Record<string, unknown>).estimatedBandwidthKB} KB`
+                        : "—"
+                      : "—"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Est. Exfil Bandwidth</p>
+                </div>
+              </div>
+              {tunnelingResult.indicators && Object.keys(tunnelingResult.indicators).length > 0 && (
+                <div className="mt-1">
+                  <p className="text-xs font-medium mb-1">Detection Indicators</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {Object.entries(tunnelingResult.indicators).map(([key, val]) => (
+                      <div key={key} className="flex justify-between text-xs py-0.5 px-2 bg-muted/20 rounded">
+                        <span className="text-muted-foreground">{key.replace(/_/g, " ")}</span>
+                        <span className="font-mono">
+                          {typeof val === "number" ? (val as number).toFixed(2) : String(val)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -724,14 +796,41 @@ function AnalysisToolsTab() {
             </Button>
           </div>
           {exfilResult && (
-            <div className="p-3 border rounded-md text-sm space-y-1">
+            <div className="p-3 border rounded-md text-sm space-y-2">
               <Badge variant={exfilResult.isExfiltration ? "destructive" : "default"}>
                 {exfilResult.isExfiltration ? "Exfiltration Detected" : "No Exfiltration"}
               </Badge>
-              <p className="text-xs text-muted-foreground">
-                Confidence: {Math.round(exfilResult.confidence * 100)}% | Indicators:{" "}
-                {JSON.stringify(exfilResult.indicators)}
-              </p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">{Math.round(exfilResult.confidence * 100)}%</p>
+                  <p className="text-[10px] text-muted-foreground">Confidence</p>
+                </div>
+                <div className="p-2 bg-muted/30 rounded text-center">
+                  <p className="text-lg font-bold">
+                    {exfilResult.indicators && typeof exfilResult.indicators === "object"
+                      ? (exfilResult.indicators as Record<string, unknown>).uniqueDomains
+                        ? String((exfilResult.indicators as Record<string, unknown>).uniqueDomains)
+                        : "—"
+                      : "—"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Unique Domains</p>
+                </div>
+              </div>
+              {exfilResult.indicators && Object.keys(exfilResult.indicators).length > 0 && (
+                <div className="mt-1">
+                  <p className="text-xs font-medium mb-1">Exfiltration Indicators</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {Object.entries(exfilResult.indicators).map(([key, val]) => (
+                      <div key={key} className="flex justify-between text-xs py-0.5 px-2 bg-muted/20 rounded">
+                        <span className="text-muted-foreground">{key.replace(/_/g, " ")}</span>
+                        <span className="font-mono">
+                          {typeof val === "number" ? (val as number).toFixed(2) : String(val)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -767,6 +866,135 @@ export default function DnsSecurityPage() {
           <StatCard label="Sinkhole Hits" value={stats.sinkholedHits} icon={Shield} />
           <StatCard label="Passive DNS Records" value={stats.passiveDnsRecordCount} icon={Network} />
         </div>
+      )}
+
+      {/* 71.1 — DNS Query Dashboard: top queried domains, NXDomain, query volume */}
+      {stats?.topQueriedDomains && stats.topQueriedDomains.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" /> Top Queried Domains
+              </CardTitle>
+              <CardDescription>Most frequently queried domains in the last 30 days</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {stats.topQueriedDomains.slice(0, 10).map((d: { domain: string; count: number }, i: number) => (
+                  <div
+                    key={d.domain}
+                    className="flex items-center justify-between py-1 border-b border-border/30 last:border-0"
+                  >
+                    <span className="text-sm font-mono truncate flex-1">
+                      {i + 1}. {d.domain}
+                    </span>
+                    <Badge variant="outline" className="text-xs ml-2">
+                      {d.count}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" /> Top NXDomain Responses
+              </CardTitle>
+              <CardDescription>Domains returning NXDOMAIN — may indicate DGA or misconfig</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {stats.topNxdomains && stats.topNxdomains.length > 0 ? (
+                <div className="space-y-2">
+                  {stats.topNxdomains.slice(0, 10).map((d: { domain: string; count: number }, i: number) => (
+                    <div
+                      key={d.domain}
+                      className="flex items-center justify-between py-1 border-b border-border/30 last:border-0"
+                    >
+                      <span className="text-sm font-mono truncate flex-1">
+                        {i + 1}. {d.domain}
+                      </span>
+                      <Badge variant="destructive" className="text-xs ml-2">
+                        {d.count}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No NXDomain responses recorded</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 71.5 — DNS Log Ingestion Status */}
+      {stats?.ingestionStatus && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Network className="h-4 w-4" /> DNS Log Ingestion Sources
+            </CardTitle>
+            <CardDescription>
+              {stats.ingestionStatus.healthy
+                ? `Receiving DNS data — ${stats.ingestionStatus.totalEventsLast24h} events in last 24h`
+                : "No DNS events received in the last 24 hours — check your log sources"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {stats.ingestionStatus.sources?.map(
+                (s: { type: string; label: string; detected: boolean; eventCount: number }) => (
+                  <div
+                    key={s.type}
+                    className={`p-3 border rounded-lg text-center ${s.detected ? "border-green-500/30 bg-green-500/5" : "border-border/50"}`}
+                  >
+                    <p className="text-xs font-medium">{s.label}</p>
+                    <p className={`text-lg font-bold mt-1 ${s.detected ? "text-green-400" : "text-muted-foreground"}`}>
+                      {s.detected ? s.eventCount : "—"}
+                    </p>
+                    <Badge variant={s.detected ? "default" : "secondary"} className="text-[10px] mt-1">
+                      {s.detected ? "Active" : "Not Detected"}
+                    </Badge>
+                  </div>
+                ),
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 71.6 — DNS Policy Enforcement Summary */}
+      {stats?.policyStats && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Ban className="h-4 w-4" /> DNS Policy Enforcement
+            </CardTitle>
+            <CardDescription>Response Policy Zone (RPZ) status and blocked query volume</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.policyStats.blockedQueries30d}</p>
+                <p className="text-xs text-muted-foreground">Blocked Queries (30d)</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.policyStats.activeRpzEntries}</p>
+                <p className="text-xs text-muted-foreground">Active RPZ Entries</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.policyStats.sinkholeHits30d}</p>
+                <p className="text-xs text-muted-foreground">Sinkhole Hits (30d)</p>
+              </div>
+              <div className="text-center">
+                <Badge variant={stats.policyStats.enforcementActive ? "default" : "secondary"} className="text-xs">
+                  {stats.policyStats.enforcementActive ? "Enforcement Active" : "No Active Policies"}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <Tabs defaultValue="findings" className="space-y-4">
