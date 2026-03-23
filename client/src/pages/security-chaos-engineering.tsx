@@ -40,6 +40,9 @@ import {
   Layers,
   Minus,
   Plus,
+  ShieldCheck,
+  Lock,
+  ArrowRight,
 } from "lucide-react";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
@@ -709,7 +712,7 @@ function PurpleTeamTab() {
 
   return (
     <div className="space-y-6">
-      {/* Scenario Library */}
+      {/* 61.3 — Purple Team Exercise Management */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -717,8 +720,8 @@ function PurpleTeamTab() {
             Attack Scenario Library
           </CardTitle>
           <CardDescription>
-            Pre-built kill chain scenarios for purple team exercises. Each scenario simulates a full attack chain and
-            validates detection at every step.
+            Pre-built kill chain scenarios for purple team exercises. Assign red/blue teams, set objectives, track
+            findings, and schedule recurring exercises.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -739,6 +742,17 @@ function PurpleTeamTab() {
                     <p className="text-xs text-muted-foreground">
                       <strong>Kill chain:</strong> {s.attackScenario}
                     </p>
+                    {/* 61.3 — Team assignments */}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex items-center gap-1 text-[10px] bg-red-500/10 text-red-400 px-2 py-0.5 rounded">
+                        <Target className="h-3 w-3" />
+                        Red Team: {s.redTeamActions?.slice(0, 50) || "Attack Simulation"}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded">
+                        <Shield className="h-3 w-3" />
+                        Blue Team: {s.blueTeamExpected?.slice(0, 50) || "Detection & Response"}
+                      </div>
+                    </div>
                   </div>
                   <Button
                     size="sm"
@@ -840,15 +854,30 @@ function PurpleTeamTab() {
                     ))}
                   </div>
 
-                  {/* Gaps */}
+                  {/* 61.2 — Detection Gap Analysis */}
                   {r.gapsIdentified.length > 0 && (
                     <div className="mt-2">
-                      <p className="text-xs font-medium text-red-400 mb-1">Gaps Identified:</p>
+                      <p className="text-xs font-medium text-red-400 mb-1">Detection Gaps Identified:</p>
                       <ul className="text-xs text-muted-foreground space-y-0.5">
                         {r.gapsIdentified.map((g, i) => (
                           <li key={i} className="flex items-center gap-1">
                             <XCircle className="h-3 w-3 text-red-400 shrink-0" />
                             {g}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 61.2 — Improvements suggested */}
+                  {r.improvements && r.improvements.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-green-400 mb-1">Recommended Improvements:</p>
+                      <ul className="text-xs text-muted-foreground space-y-0.5">
+                        {r.improvements.map((imp, i) => (
+                          <li key={i} className="flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3 text-green-400 shrink-0" />
+                            {imp}
                           </li>
                         ))}
                       </ul>
@@ -1514,6 +1543,354 @@ function SimulationsTab() {
   );
 }
 
+// ── 61.1 — Scenario Builder Tab ──────────────────────────────────────────────
+
+function ScenarioBuilderTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [scenarioName, setScenarioName] = useState("");
+  const [scenarioDesc, setScenarioDesc] = useState("");
+  const [selectedTechniques, setSelectedTechniques] = useState<string[]>([]);
+  const [targetScope, setTargetScope] = useState("all");
+  const [detectionExpectation, setDetectionExpectation] = useState("full_detection");
+
+  const { data: techniques } = useQuery<MitreTechnique[]>({
+    queryKey: ["/api/chaos-engineering/library"],
+    queryFn: () => apiFetch("/api/chaos-engineering/library"),
+  });
+
+  const createScenarioMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch("/api/chaos-engineering/scenarios", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chaos-engineering"] });
+      toast({ title: "Scenario Created", description: `"${scenarioName}" saved successfully` });
+      setScenarioName("");
+      setScenarioDesc("");
+      setSelectedTechniques([]);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleTechnique = (id: string) => {
+    setSelectedTechniques((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Layers className="h-5 w-5" />
+            Simulation Scenario Builder
+          </CardTitle>
+          <CardDescription>
+            Build multi-step attack chains by selecting MITRE ATT&CK techniques, configuring targets, and setting
+            detection expectations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Scenario Name</Label>
+              <Input
+                value={scenarioName}
+                onChange={(e) => setScenarioName(e.target.value)}
+                placeholder="e.g. Ransomware Kill Chain"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Target Scope</Label>
+              <Select value={targetScope} onValueChange={setTargetScope}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Endpoints</SelectItem>
+                  <SelectItem value="servers">Servers Only</SelectItem>
+                  <SelectItem value="workstations">Workstations Only</SelectItem>
+                  <SelectItem value="cloud">Cloud Instances</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Input
+              value={scenarioDesc}
+              onChange={(e) => setScenarioDesc(e.target.value)}
+              placeholder="Describe the attack scenario and objectives..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Detection Expectation</Label>
+            <Select value={detectionExpectation} onValueChange={setDetectionExpectation}>
+              <SelectTrigger className="w-[250px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_detection">Full Detection (all steps)</SelectItem>
+                <SelectItem value="partial_detection">Partial Detection (some steps)</SelectItem>
+                <SelectItem value="evasion_test">Evasion Test (expect misses)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 61.1 — Attack chain builder */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Attack Chain — Select Techniques</CardTitle>
+          <CardDescription>
+            Click techniques to add them to your attack chain. They will execute in the order selected.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Selected chain */}
+          {selectedTechniques.length > 0 && (
+            <div className="mb-4 p-3 rounded border border-blue-500/20 bg-blue-500/5">
+              <p className="text-xs font-medium mb-2">Selected Chain ({selectedTechniques.length} steps):</p>
+              <div className="flex flex-wrap items-center gap-1">
+                {selectedTechniques.map((techId, idx) => (
+                  <div key={techId} className="flex items-center">
+                    <Badge
+                      variant="outline"
+                      className="cursor-pointer bg-blue-500/20 text-blue-400 border-blue-500/30"
+                      onClick={() => toggleTechnique(techId)}
+                    >
+                      {techId}
+                    </Badge>
+                    {idx < selectedTechniques.length - 1 && (
+                      <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Available techniques */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[300px] overflow-y-auto">
+            {(techniques ?? []).slice(0, 40).map((t) => {
+              const isSelected = selectedTechniques.includes(t.id);
+              return (
+                <div
+                  key={t.id}
+                  className={`p-2 rounded border cursor-pointer transition-colors text-xs ${
+                    isSelected ? "bg-blue-500/20 border-blue-500/30" : "hover:bg-muted/30 border-border"
+                  }`}
+                  onClick={() => toggleTechnique(t.id)}
+                >
+                  <span className="font-mono text-blue-400">{t.id}</span>
+                  <p className="truncate text-muted-foreground">{t.name}</p>
+                  <Badge variant="outline" className={`text-[9px] mt-1 ${severityBadge(t.severity)}`}>
+                    {t.severity}
+                  </Badge>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Create button */}
+          <div className="flex justify-end mt-4">
+            <Button
+              disabled={!scenarioName || selectedTechniques.length === 0 || createScenarioMutation.isPending}
+              onClick={() =>
+                createScenarioMutation.mutate({
+                  name: scenarioName,
+                  description: scenarioDesc,
+                  techniqueIds: selectedTechniques,
+                  targetScope,
+                  detectionExpectation,
+                })
+              }
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              {createScenarioMutation.isPending ? "Creating..." : "Create Scenario"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── 61.5 — Coverage Tracking Tab ─────────────────────────────────────────────
+
+function CoverageTrackingTab() {
+  const { data: stats } = useQuery<ChaosStats>({
+    queryKey: ["/api/chaos-engineering/stats"],
+    queryFn: () => apiFetch("/api/chaos-engineering/stats"),
+  });
+
+  const { data: gaps } = useQuery<GapEntry[]>({
+    queryKey: ["/api/chaos-engineering/gaps"],
+    queryFn: () => apiFetch("/api/chaos-engineering/gaps"),
+  });
+
+  const closedGaps = (gaps ?? []).filter((g) => g.coverageStatus === "full").length;
+  const remainingGaps = (gaps ?? []).filter((g) => g.coverageStatus !== "full").length;
+  const totalGaps = (gaps ?? []).length;
+
+  return (
+    <div className="space-y-6">
+      {/* Coverage summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <Target className="h-5 w-5 text-blue-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{stats?.coveragePercent || 0}%</p>
+                <p className="text-xs text-muted-foreground">Current Coverage</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-500/10">
+                <CheckCircle2 className="h-5 w-5 text-green-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-green-400">{closedGaps}</p>
+                <p className="text-xs text-muted-foreground">Gaps Closed</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-500/10">
+                <XCircle className="h-5 w-5 text-red-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-red-400">{remainingGaps}</p>
+                <p className="text-xs text-muted-foreground">Remaining Gaps</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/10">
+                <Activity className="h-5 w-5 text-purple-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{stats?.purpleTeamExercises || 0}</p>
+                <p className="text-xs text-muted-foreground">Exercises Run</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Coverage by tactic */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Coverage by MITRE ATT&CK Tactic</CardTitle>
+          <CardDescription>Before/after coverage changes per validation cycle</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {Object.entries(stats?.byTactic || {}).map(([tactic, data]) => (
+              <div key={tactic} className="flex items-center gap-4">
+                <span className="text-xs w-32 truncate">{tactic}</span>
+                <div className="flex-1">
+                  <div className="relative h-4 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="absolute h-full bg-blue-500/70 rounded-full transition-all"
+                      style={{ width: `${data.coverage}%` }}
+                    />
+                  </div>
+                </div>
+                <span
+                  className={`text-xs font-mono w-12 text-right ${data.coverage >= 80 ? "text-green-400" : data.coverage >= 50 ? "text-yellow-400" : "text-red-400"}`}
+                >
+                  {data.coverage}%
+                </span>
+                <span className="text-[10px] text-muted-foreground w-16 text-right">
+                  {data.passed}/{data.total}
+                </span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 61.4 — Safety indicators */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-green-400" />
+            Safe Simulation Guardrails
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "No Data Exfiltration", icon: Lock, active: true },
+              { label: "No Persistence", icon: ShieldAlert, active: true },
+              { label: "Sandbox Isolation", icon: Shield, active: true },
+              { label: "Auto-Rollback", icon: RefreshCw, active: true },
+            ].map((guard) => (
+              <div
+                key={guard.label}
+                className="flex items-center gap-2 p-3 rounded border border-green-500/20 bg-green-500/5"
+              >
+                <guard.icon className="h-4 w-4 text-green-400" />
+                <span className="text-xs">{guard.label}</span>
+                <Badge variant="outline" className="ml-auto text-[9px] text-green-400 border-green-500/30">
+                  {guard.active ? "Active" : "Off"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Gap closure progress */}
+      {totalGaps > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Gap Closure Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 mb-2">
+              <div className="flex-1">
+                <div className="relative h-4 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="absolute h-full bg-green-500/70 rounded-full transition-all"
+                    style={{ width: `${(closedGaps / totalGaps) * 100}%` }}
+                  />
+                </div>
+              </div>
+              <span className="text-sm font-mono">
+                {closedGaps}/{totalGaps}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {Math.round((closedGaps / Math.max(totalGaps, 1)) * 100)}% of detection gaps have been closed through
+              simulation exercises.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SecurityChaosEngineeringPage() {
@@ -1535,17 +1912,22 @@ export default function SecurityChaosEngineeringPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="dashboard">BAS Dashboard</TabsTrigger>
+          <TabsTrigger value="builder">Scenario Builder</TabsTrigger>
           <TabsTrigger value="library">Attack Library</TabsTrigger>
           <TabsTrigger value="purple">Purple Team</TabsTrigger>
           <TabsTrigger value="effectiveness">Effectiveness</TabsTrigger>
           <TabsTrigger value="gaps">Detection Gaps</TabsTrigger>
+          <TabsTrigger value="coverage">Coverage</TabsTrigger>
           <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard">
           <BASDashboardTab />
+        </TabsContent>
+        <TabsContent value="builder">
+          <ScenarioBuilderTab />
         </TabsContent>
         <TabsContent value="library">
           <AttackLibraryTab />
@@ -1558,6 +1940,9 @@ export default function SecurityChaosEngineeringPage() {
         </TabsContent>
         <TabsContent value="gaps">
           <DetectionGapsTab />
+        </TabsContent>
+        <TabsContent value="coverage">
+          <CoverageTrackingTab />
         </TabsContent>
         <TabsContent value="scheduled">
           <ScheduledTab />

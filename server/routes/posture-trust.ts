@@ -977,4 +977,186 @@ export function registerPostureTrustRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to fetch summary" });
     }
   });
+
+  // ==========================================================================
+  // 60.5 — CONTINUOUS POSTURE RECALCULATION (webhook trigger)
+  // ==========================================================================
+
+  app.post("/api/posture-trust/recalculate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { trigger } = req.body as { trigger?: string };
+
+      // Re-generate domain scores based on current state
+      const domainScores = generateDomainScores(orgId);
+      const overallScore = computeOverallScore(domainScores);
+
+      // Fetch previous score for comparison
+      const [prevScore] = await db
+        .select()
+        .from(postureScores)
+        .where(eq(postureScores.orgId, orgId))
+        .orderBy(desc(postureScores.generatedAt))
+        .limit(1);
+
+      const previousOverall = prevScore?.overallScore || 0;
+      const scoreDelta = overallScore - previousOverall;
+
+      // Store new score
+      const [newScore] = await db
+        .insert(postureScores)
+        .values({
+          orgId,
+          overallScore,
+          cspmScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
+          endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
+          incidentScore: domainScores.find((d) => d.domain === "network")?.score || 0,
+          complianceScore: domainScores.find((d) => d.domain === "data")?.score || 0,
+          breakdown: {
+            domainScores: domainScores.map((d) => ({
+              domain: d.domain,
+              score: d.score,
+              weight: d.weight,
+              controlsEvaluated: d.controlsEvaluated,
+              controlsPassed: d.controlsPassed,
+              controlsFailed: d.controlsFailed,
+            })),
+            trigger: trigger || "manual_recalculation",
+          },
+        })
+        .returning();
+
+      // Store sub-scores
+      for (const ds of domainScores) {
+        await db.insert(postureSubScores).values({
+          orgId,
+          postureScoreId: newScore.id,
+          domain: ds.domain,
+          score: ds.score,
+          weight: ds.weight,
+          controlsEvaluated: ds.controlsEvaluated,
+          controlsPassed: ds.controlsPassed,
+          controlsFailed: ds.controlsFailed,
+          findings: ds.findings || [],
+          recommendations: ds.recommendations || [],
+        });
+      }
+
+      res.json({
+        overallScore,
+        previousScore: previousOverall,
+        delta: scoreDelta,
+        trigger: trigger || "manual_recalculation",
+        recalculatedAt: newScore.generatedAt,
+        domainScores: domainScores.map((d) => ({
+          domain: d.domain,
+          score: d.score,
+          weight: d.weight,
+        })),
+      });
+    } catch (error) {
+      log.error("Failed to recalculate posture score", { error: String(error) });
+      res.status(500).json({ message: "Failed to recalculate" });
+    }
+  });
+
+  // ==========================================================================
+  // 60.6 — QUESTIONNAIRE RESPONSE AUTO-POPULATION
+  // ==========================================================================
+
+  app.post(
+    "/api/posture-trust/questionnaires/:id/auto-populate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const qId = String(req.params.id);
+
+        // Verify questionnaire belongs to org
+        const [questionnaire] = await db
+          .select()
+          .from(securityQuestionnaires)
+          .where(and(eq(securityQuestionnaires.id, qId), eq(securityQuestionnaires.orgId, orgId)));
+
+        if (!questionnaire) {
+          return res.status(404).json({ message: "Questionnaire not found" });
+        }
+
+        // Get latest posture data to auto-populate answers
+        const [latestScore] = await db
+          .select()
+          .from(postureScores)
+          .where(eq(postureScores.orgId, orgId))
+          .orderBy(desc(postureScores.generatedAt))
+          .limit(1);
+
+        const subScores = latestScore
+          ? await db
+              .select()
+              .from(postureSubScores)
+              .where(and(eq(postureSubScores.orgId, orgId), eq(postureSubScores.postureScoreId, latestScore.id)))
+          : [];
+
+        // Get existing responses to update
+        const responses = await db
+          .select()
+          .from(questionnaireResponses)
+          .where(eq(questionnaireResponses.questionnaireId, qId as string));
+
+        let autoPopulatedCount = 0;
+
+        for (const response of responses) {
+          if (response.answerSource === "platform" && response.status === "auto_answered") {
+            continue; // Already auto-populated
+          }
+
+          // Try to match response category to sub-score domain
+          const matchedDomain = subScores.find(
+            (s) => s.domain === response.category || response.category?.includes(s.domain),
+          );
+
+          if (matchedDomain) {
+            const confidence = Math.min(Math.round(matchedDomain.score * 0.9 + 10), 100);
+            const autoAnswer = `Based on platform data: ${matchedDomain.domain} domain scores ${matchedDomain.score}/100 with ${matchedDomain.controlsPassed}/${matchedDomain.controlsEvaluated} controls passing. ${matchedDomain.score >= 80 ? "Strong controls in place." : matchedDomain.score >= 60 ? "Moderate controls with room for improvement." : "Controls need strengthening."}`;
+
+            await db
+              .update(questionnaireResponses)
+              .set({
+                answerText: autoAnswer,
+                answerSource: "platform",
+                confidencePercent: confidence,
+                status: "auto_answered",
+              })
+              .where(eq(questionnaireResponses.id, response.id));
+
+            autoPopulatedCount++;
+          }
+        }
+
+        // Update questionnaire answered count
+        const answeredCount =
+          responses.filter((r) => r.status === "auto_answered" || r.status === "reviewed").length + autoPopulatedCount;
+
+        await db
+          .update(securityQuestionnaires)
+          .set({
+            answeredQuestions: Math.min(answeredCount, questionnaire.totalQuestions ?? 0),
+            confidenceScore: latestScore ? Math.round(latestScore.overallScore * 0.85) : 50,
+          })
+          .where(eq(securityQuestionnaires.id, qId as string));
+
+        res.json({
+          autoPopulatedCount,
+          totalResponses: responses.length,
+          overallScore: latestScore?.overallScore || 0,
+          message: `Auto-populated ${autoPopulatedCount} responses from platform data`,
+        });
+      } catch (error) {
+        log.error("Failed to auto-populate questionnaire", { error: String(error) });
+        res.status(500).json({ message: "Failed to auto-populate" });
+      }
+    },
+  );
 }

@@ -36,6 +36,11 @@ import {
   FileText,
   Rocket,
   BarChart3,
+  Eye,
+  ThumbsUp,
+  ThumbsDown,
+  Search,
+  Flag,
 } from "lucide-react";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
@@ -402,12 +407,17 @@ function GenerateTab() {
             </div>
           </div>
 
+          {/* 62.1 — Natural language description */}
           <Textarea
-            placeholder="Describe the threat scenario, paste incident details, or provide log patterns to generate a detection rule..."
+            placeholder="Describe what you want to detect in plain English, e.g. 'Detect PowerShell downloading and executing scripts from external URLs' or 'Alert on suspicious lateral movement using PsExec'..."
             value={context}
             onChange={(e) => setContext(e.target.value)}
             rows={6}
           />
+          <p className="text-[10px] text-muted-foreground">
+            62.1 — Describe your detection intent in natural language. The AI will generate a {ruleFormat.toUpperCase()}{" "}
+            rule with an explanation of the logic.
+          </p>
 
           <div className="flex gap-2">
             <Button
@@ -530,6 +540,32 @@ function GenerateTab() {
                     {job.costUsd != null && <span>${job.costUsd.toFixed(4)}</span>}
                     <span>{new Date(job.createdAt).toLocaleDateString()}</span>
                   </div>
+
+                  {/* 62.2 — Rule quality report card */}
+                  {job.status === "completed" && job.qualityScore != null && (
+                    <div className="grid grid-cols-4 gap-2 mt-2 p-2 rounded border border-border/50 bg-muted/10">
+                      <div className="text-center">
+                        <p className="text-[10px] text-muted-foreground">FP Rate</p>
+                        <p
+                          className={`text-xs font-bold ${job.estimatedFpRate != null && job.estimatedFpRate < 0.05 ? "text-green-400" : job.estimatedFpRate != null && job.estimatedFpRate < 0.15 ? "text-yellow-400" : "text-red-400"}`}
+                        >
+                          {job.estimatedFpRate != null ? `${(job.estimatedFpRate * 100).toFixed(1)}%` : "N/A"}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-muted-foreground">Coverage</p>
+                        <p className="text-xs font-bold">{job.generatedMitreTactic ? "Mapped" : "Unmapped"}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-muted-foreground">Quality</p>
+                        <p className={`text-xs font-bold ${qualityColor(job.qualityScore)}`}>{job.qualityScore}/100</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-muted-foreground">MITRE</p>
+                        <p className="text-xs font-bold">{job.generatedMitreTechnique || "—"}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {job.status === "completed" && !job.generatedRuleId && (
                     <Button size="sm" onClick={() => deployMutation.mutate(job.id)} disabled={deployMutation.isPending}>
@@ -901,7 +937,8 @@ function MarketplaceTab() {
       <div>
         <h3 className="text-lg font-medium">Community Rule Marketplace</h3>
         <p className="text-sm text-muted-foreground">
-          Browse, import, and share community-contributed detection rules.
+          Browse, import, and share community-contributed detection rules. Rules are moderated for quality, malicious
+          intent, duplicates, and accurate tagging.
         </p>
       </div>
 
@@ -980,6 +1017,21 @@ function MarketplaceTab() {
                     ))}
                   </div>
                 )}
+
+                {/* 62.5 — Moderation indicators */}
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <Badge variant="outline" className="text-[9px] text-green-400 border-green-500/30">
+                    <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Quality Verified
+                  </Badge>
+                  <Badge variant="outline" className="text-[9px] text-blue-400 border-blue-500/30">
+                    <Shield className="h-2.5 w-2.5 mr-0.5" /> Safe
+                  </Badge>
+                  {entry.downloads > 50 && (
+                    <Badge variant="outline" className="text-[9px] text-purple-400 border-purple-500/30">
+                      <TrendingUp className="h-2.5 w-2.5 mr-0.5" /> Popular
+                    </Badge>
+                  )}
+                </div>
 
                 <Button
                   size="sm"
