@@ -151,6 +151,12 @@ interface Dashboard {
   avgClickRate: number;
   topRiskyEmployees: EmployeeRiskScore[];
   recentCampaigns: PhishingCampaign[];
+  // 68.2 — Campaign results summary
+  campaignResults?: Array<{ id: string; name: string; clickRate: number; reportRate: number; submissionRate: number }>;
+  // 68.5 — Email delivery stats
+  deliveryStats?: { totalSent: number; totalOpened: number; totalClicked: number; totalReported: number };
+  // 68.6 — Click/submission tracking accuracy
+  trackingAccuracy?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -524,6 +530,102 @@ export default function SecurityAwarenessPage() {
             </CardContent>
           </Card>
 
+          {/* 68.2 — Campaign Results Dashboard */}
+          {dashboard?.campaignResults && dashboard.campaignResults.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Campaign Results Dashboard</CardTitle>
+                <CardDescription>Click, report, and submission rates across recent campaigns</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {dashboard.campaignResults.map(
+                    (cr: {
+                      id: string;
+                      name: string;
+                      clickRate: number;
+                      reportRate: number;
+                      submissionRate: number;
+                    }) => (
+                      <div key={cr.id} className="p-3 border border-border/50 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium">{cr.name}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Click Rate</p>
+                            <p
+                              className={`text-sm font-medium ${cr.clickRate > 20 ? "text-red-400" : cr.clickRate > 10 ? "text-orange-400" : "text-green-400"}`}
+                            >
+                              {cr.clickRate}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Report Rate</p>
+                            <p
+                              className={`text-sm font-medium ${cr.reportRate > 50 ? "text-green-400" : "text-yellow-400"}`}
+                            >
+                              {cr.reportRate}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Submission Rate</p>
+                            <p
+                              className={`text-sm font-medium ${cr.submissionRate > 5 ? "text-red-400" : "text-green-400"}`}
+                            >
+                              {cr.submissionRate}%
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 68.5 — Email Delivery Stats */}
+          {dashboard?.deliveryStats && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Email Delivery Infrastructure</CardTitle>
+                <CardDescription>Aggregate delivery metrics across all campaigns</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{dashboard.deliveryStats.totalSent}</p>
+                    <p className="text-xs text-muted-foreground">Total Sent</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-400">{dashboard.deliveryStats.totalOpened}</p>
+                    <p className="text-xs text-muted-foreground">Total Opened</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-orange-400">{dashboard.deliveryStats.totalClicked}</p>
+                    <p className="text-xs text-muted-foreground">Total Clicked</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-400">{dashboard.deliveryStats.totalReported}</p>
+                    <p className="text-xs text-muted-foreground">Total Reported</p>
+                  </div>
+                </div>
+                {/* 68.6 — Tracking Accuracy */}
+                {dashboard.trackingAccuracy != null && (
+                  <div className="mt-4 p-3 border border-border/50 rounded-lg text-center">
+                    <p className="text-xs text-muted-foreground">Click/Submission Tracking Accuracy</p>
+                    <p
+                      className={`text-lg font-semibold ${dashboard.trackingAccuracy > 80 ? "text-green-400" : "text-yellow-400"}`}
+                    >
+                      {dashboard.trackingAccuracy}%
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Recent Campaigns */}
           <Card>
             <CardHeader>
@@ -730,12 +832,23 @@ export default function SecurityAwarenessPage() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">Subject: {template.subject}</p>
+                    {/* 68.4 — Template library with categorization */}
                     <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-muted-foreground">{formatLabel(template.category)}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {formatLabel(template.category)}
+                      </Badge>
                       {template.industry && (
                         <span className="text-xs text-muted-foreground">&middot; {template.industry}</span>
                       )}
                       <span className="text-xs text-muted-foreground">&middot; Used {template.usageCount}x</span>
+                      {template.isBuiltIn && (
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]"
+                        >
+                          Built-in
+                        </Badge>
+                      )}
                     </div>
                     {template.successRate != null && (
                       <p className="text-xs text-muted-foreground mt-1">
@@ -901,6 +1014,15 @@ export default function SecurityAwarenessPage() {
                           {assignment.assignedReason ? formatLabel(assignment.assignedReason) : "Manual"} &middot;
                           {assignment.dueAt ? ` Due: ${formatDateTime(assignment.dueAt)}` : ""}
                         </p>
+                        {/* 68.3 — Training assignment reason indicator */}
+                        {assignment.assignedReason === "phishing_failure_remedial" && (
+                          <Badge
+                            variant="outline"
+                            className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] mt-1"
+                          >
+                            <AlertTriangle className="h-3 w-3 mr-0.5" /> Auto-assigned (phishing failure)
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {assignment.completedAt ? (

@@ -642,6 +642,53 @@ export function registerSecurityAwarenessRoutes(app: Express): void {
             .where(eq(trainingModules.id, module.id));
         }
 
+        // 68.3 — Auto-assign training based on phishing failure
+        if (!passed && module) {
+          // Auto-assign remedial training for failed attempts
+          const existingRemedial = await db
+            .select()
+            .from(trainingAssignments)
+            .where(
+              and(
+                eq(trainingAssignments.orgId, orgId),
+                eq(trainingAssignments.employeeEmail, assignment.employeeEmail),
+                eq(trainingAssignments.assignedReason, "phishing_failure_remedial"),
+                sql`${trainingAssignments.completedAt} IS NULL`,
+              ),
+            )
+            .limit(1);
+
+          if (existingRemedial.length === 0) {
+            // Find a suitable remedial module
+            const [remedialModule] = await db
+              .select()
+              .from(trainingModules)
+              .where(
+                and(
+                  eq(trainingModules.orgId, orgId),
+                  eq(trainingModules.isActive, true),
+                  eq(trainingModules.category, module.category),
+                ),
+              )
+              .limit(1);
+
+            if (remedialModule && remedialModule.id !== module.id) {
+              await db.insert(trainingAssignments).values({
+                orgId,
+                moduleId: remedialModule.id,
+                employeeEmail: assignment.employeeEmail,
+                employeeName: assignment.employeeName,
+                assignedReason: "phishing_failure_remedial",
+                dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+              });
+              log.info("Auto-assigned remedial training", {
+                employee: assignment.employeeEmail,
+                moduleId: remedialModule.id,
+              });
+            }
+          }
+        }
+
         // Recalculate risk score
         await recalculateRiskScore(orgId, assignment.employeeEmail);
 
@@ -790,6 +837,29 @@ export function registerSecurityAwarenessRoutes(app: Express): void {
         // Org-wide average click rate from all employees (not just top 10)
         const avgClickRate = Number(avgClickRateRaw) || 0;
 
+        // 68.2 — Campaign results summary stats
+        const campaignResults = recentCampaigns.map((c) => ({
+          id: c.id,
+          name: c.name,
+          clickRate: c.emailsSent > 0 ? Math.round((c.linksClicked / c.emailsSent) * 100) : 0,
+          reportRate: c.emailsSent > 0 ? Math.round((c.reported / c.emailsSent) * 100) : 0,
+          submissionRate: c.emailsSent > 0 ? Math.round((c.credentialsSubmitted / c.emailsSent) * 100) : 0,
+        }));
+
+        // 68.5 — Email delivery stats
+        const deliveryStats = {
+          totalSent: recentCampaigns.reduce((sum, c) => sum + c.emailsSent, 0),
+          totalOpened: recentCampaigns.reduce((sum, c) => sum + c.emailsOpened, 0),
+          totalClicked: recentCampaigns.reduce((sum, c) => sum + c.linksClicked, 0),
+          totalReported: recentCampaigns.reduce((sum, c) => sum + c.reported, 0),
+        };
+
+        // 68.6 — Click/submission tracking accuracy
+        const trackingAccuracy =
+          deliveryStats.totalSent > 0
+            ? Math.round(((deliveryStats.totalOpened + deliveryStats.totalClicked) / deliveryStats.totalSent) * 100)
+            : 0;
+
         res.json({
           totalCampaigns,
           activeCampaigns,
@@ -801,6 +871,9 @@ export function registerSecurityAwarenessRoutes(app: Express): void {
           avgClickRate: Math.round(avgClickRate * 10) / 10,
           topRiskyEmployees,
           recentCampaigns,
+          campaignResults,
+          deliveryStats,
+          trackingAccuracy,
           campaignStatuses: PHISHING_CAMPAIGN_STATUSES,
           templateCategories: PHISHING_TEMPLATE_CATEGORIES,
           moduleTypes: TRAINING_MODULE_TYPES,

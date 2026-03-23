@@ -675,6 +675,60 @@ export function registerQuantumReadinessRoutes(app: Express): void {
             .limit(5),
         ]);
 
+        // 69.1 — Cryptographic inventory dashboard: algorithm breakdown
+        const algorithmBreakdown = await db
+          .select({
+            algorithm: cryptoInventory.algorithm,
+            cnt: count(),
+            vulnerable: sql<number>`count(*) filter (where ${cryptoInventory.isQuantumVulnerable} = true)`,
+          })
+          .from(cryptoInventory)
+          .where(eq(cryptoInventory.orgId, orgId))
+          .groupBy(cryptoInventory.algorithm);
+
+        // 69.4 — Automated discovery: source breakdown
+        const sourceBreakdown = await db
+          .select({
+            source: cryptoInventory.source,
+            cnt: count(),
+          })
+          .from(cryptoInventory)
+          .where(eq(cryptoInventory.orgId, orgId))
+          .groupBy(cryptoInventory.source);
+
+        // 69.5 — PQC algorithm recommendations
+        const pqcRecommendations = algorithmBreakdown
+          .filter((a) => a.vulnerable > 0)
+          .map((a) => ({
+            currentAlgorithm: a.algorithm,
+            vulnerableCount: a.vulnerable,
+            recommendation: a.algorithm.startsWith("RSA")
+              ? "CRYSTALS-Kyber (ML-KEM)"
+              : a.algorithm.startsWith("ECDSA") || a.algorithm.startsWith("Ed25519")
+                ? "CRYSTALS-Dilithium (ML-DSA)"
+                : a.algorithm.startsWith("ECDH")
+                  ? "CRYSTALS-Kyber (ML-KEM)"
+                  : a.algorithm.startsWith("DH")
+                    ? "CRYSTALS-Kyber (ML-KEM)"
+                    : a.algorithm.startsWith("DSA")
+                      ? "CRYSTALS-Dilithium (ML-DSA)"
+                      : "SPHINCS+ (SLH-DSA)",
+          }));
+
+        // 69.2 — Migration roadmap progress
+        const migrationProgress =
+          migrationTaskCount > 0 ? Math.round((completedTaskCount / migrationTaskCount) * 100) : 0;
+
+        // 69.3 — Risk assessment scoring details
+        const riskBreakdown = {
+          criticalAssets: riskScore.criticalRiskCount,
+          highAssets: riskScore.highRiskCount,
+          mediumAssets: riskScore.mediumRiskCount,
+          lowAssets: riskScore.lowRiskCount,
+          weightedScore: riskScore.overallScore,
+          estimatedTimeToMigrate: riskScore.estimatedMigrationMonths,
+        };
+
         res.json({
           riskScore,
           nistCompliance,
@@ -686,8 +740,13 @@ export function registerQuantumReadinessRoutes(app: Express): void {
           migration: {
             totalTasks: migrationTaskCount,
             completedTasks: completedTaskCount,
+            progress: migrationProgress,
           },
           recentScans,
+          algorithmBreakdown,
+          sourceBreakdown,
+          pqcRecommendations,
+          riskBreakdown,
           enums: {
             algorithmTypes: CRYPTO_ALGORITHM_TYPES,
             riskLevels: QUANTUM_RISK_LEVELS,

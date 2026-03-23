@@ -155,7 +155,7 @@ interface DashboardData {
   nistCompliance: NistCompliance;
   agility: AgilityAssessment;
   inventory: { total: number; vulnerable: number };
-  migration: { totalTasks: number; completedTasks: number };
+  migration: { totalTasks: number; completedTasks: number; progress?: number };
   recentScans: Array<{
     id: string;
     scanType: string;
@@ -171,6 +171,21 @@ interface DashboardData {
     assetSources: readonly string[];
     migrationStatuses: readonly string[];
     nistStandards: readonly string[];
+  };
+  // 69.1 — Algorithm breakdown
+  algorithmBreakdown?: Array<{ algorithm: string; cnt: number; vulnerable: number }>;
+  // 69.4 — Source breakdown
+  sourceBreakdown?: Array<{ source: string; cnt: number }>;
+  // 69.5 — PQC recommendations
+  pqcRecommendations?: Array<{ currentAlgorithm: string; vulnerableCount: number; recommendation: string }>;
+  // 69.3 — Risk assessment details
+  riskBreakdown?: {
+    criticalAssets: number;
+    highAssets: number;
+    mediumAssets: number;
+    lowAssets: number;
+    weightedScore: number;
+    estimatedTimeToMigrate: number;
   };
 }
 
@@ -529,7 +544,9 @@ export default function QuantumReadinessPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="inventory">Crypto Inventory</TabsTrigger>
-          <TabsTrigger value="roadmap">Migration Roadmap</TabsTrigger>
+          <TabsTrigger value="roadmap">
+            Migration Roadmap {dashboard?.migration?.progress != null ? `(${dashboard.migration.progress}%)` : ""}
+          </TabsTrigger>
           <TabsTrigger value="tasks">Migration Tasks</TabsTrigger>
           <TabsTrigger value="nist">NIST PQC Compliance</TabsTrigger>
           <TabsTrigger value="agility">Algorithm Agility</TabsTrigger>
@@ -651,6 +668,126 @@ export default function QuantumReadinessPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* 69.1 — Cryptographic Inventory Dashboard: Algorithm Breakdown */}
+          {dashboard?.algorithmBreakdown && dashboard.algorithmBreakdown.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Algorithm Inventory</CardTitle>
+                <CardDescription>
+                  Breakdown of cryptographic algorithms in use across your infrastructure
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {dashboard.algorithmBreakdown.map((a: { algorithm: string; cnt: number; vulnerable: number }) => (
+                    <div key={a.algorithm} className="p-3 border border-border/50 rounded-lg">
+                      <p className="text-sm font-mono font-medium">{a.algorithm}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-muted-foreground">{a.cnt} assets</span>
+                        {a.vulnerable > 0 && (
+                          <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">
+                            {a.vulnerable} vulnerable
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 69.5 — PQC Algorithm Recommendations */}
+          {dashboard?.pqcRecommendations && dashboard.pqcRecommendations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">PQC Migration Recommendations</CardTitle>
+                <CardDescription>Recommended post-quantum replacements for vulnerable algorithms</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {dashboard.pqcRecommendations.map(
+                    (r: { currentAlgorithm: string; vulnerableCount: number; recommendation: string }, i: number) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-mono text-red-400">{r.currentAlgorithm}</span>
+                          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm font-mono text-green-500">{r.recommendation}</span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">
+                          {r.vulnerableCount} assets
+                        </Badge>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 69.4 — Automated Discovery: Source Breakdown */}
+          {dashboard?.sourceBreakdown && dashboard.sourceBreakdown.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Discovery Sources</CardTitle>
+                <CardDescription>How cryptographic assets were discovered across your infrastructure</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {dashboard.sourceBreakdown.map((s: { source: string; cnt: number }) => (
+                    <div key={s.source} className="p-3 border border-border/50 rounded-lg text-center">
+                      <p className="text-lg font-semibold">{s.cnt}</p>
+                      <p className="text-xs text-muted-foreground">{sourceLabel(s.source)}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 69.3 — Risk Assessment Score Details */}
+          {dashboard?.riskBreakdown && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Risk Assessment Details</CardTitle>
+                <CardDescription>Detailed quantum risk scoring breakdown</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Critical Assets</p>
+                    <p className="text-lg font-semibold text-red-500">{dashboard.riskBreakdown.criticalAssets}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">High Risk</p>
+                    <p className="text-lg font-semibold text-orange-500">{dashboard.riskBreakdown.highAssets}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Medium Risk</p>
+                    <p className="text-lg font-semibold text-yellow-500">{dashboard.riskBreakdown.mediumAssets}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Low Risk</p>
+                    <p className="text-lg font-semibold text-blue-500">{dashboard.riskBreakdown.lowAssets}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Weighted Score</p>
+                    <p className={`text-lg font-semibold ${scoreColor(dashboard.riskBreakdown.weightedScore)}`}>
+                      {dashboard.riskBreakdown.weightedScore}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Est. Migration</p>
+                    <p className="text-lg font-semibold">{dashboard.riskBreakdown.estimatedTimeToMigrate} mo</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Algorithm Agility Summary */}
           {agility && (

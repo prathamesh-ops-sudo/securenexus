@@ -479,6 +479,22 @@ export interface PrivacyDashboard {
     startedAt: string;
     completedAt: string | null;
   }>;
+  // 70.1 — Data map visualization: asset type breakdown
+  assetTypeBreakdown: Record<string, number>;
+  // 70.3 — Consent management: purpose breakdown
+  consentPurposeBreakdown: Record<string, number>;
+  // 70.5 — Automated data discovery stats
+  discoveryStats: {
+    lastScanAt: string | null;
+    totalFindings: number;
+    autoClassified: number;
+  };
+  // 70.6 — Data retention enforcement summary
+  retentionSummary: {
+    withRetention: number;
+    withoutRetention: number;
+    expiredRetention: number;
+  };
   enums: {
     classificationLevels: readonly string[];
     piiCategories: readonly string[];
@@ -549,15 +565,36 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
   // Aggregate classification breakdown
   const classificationBreakdown: Record<string, number> = {};
   const jurisdictionBreakdown: Record<string, number> = {};
+  // 70.1 — Data map: asset type breakdown
+  const assetTypeBreakdown: Record<string, number> = {};
   let totalPii = 0;
   let totalPhi = 0;
   let totalPci = 0;
   let riskSum = 0;
+  // 70.6 — Retention tracking
+  let withRetention = 0;
+  let withoutRetention = 0;
+  let expiredRetention = 0;
 
   for (const asset of assets) {
     classificationBreakdown[asset.classification] = (classificationBreakdown[asset.classification] || 0) + 1;
     jurisdictionBreakdown[asset.jurisdiction] = (jurisdictionBreakdown[asset.jurisdiction] || 0) + 1;
+    assetTypeBreakdown[asset.assetType] = (assetTypeBreakdown[asset.assetType] || 0) + 1;
     riskSum += asset.riskScore;
+
+    // 70.6 — Retention policy tracking
+    const retentionPeriod = (asset as Record<string, unknown>).retentionPeriod as string | null | undefined;
+    if (retentionPeriod) {
+      withRetention++;
+      // Check if retention has expired (simple heuristic based on creation date)
+      const createdAt = asset.createdAt ? new Date(asset.createdAt).getTime() : 0;
+      const retentionDays = parseInt(retentionPeriod, 10) || 365;
+      if (createdAt > 0 && Date.now() - createdAt > retentionDays * 24 * 60 * 60 * 1000) {
+        expiredRetention++;
+      }
+    } else {
+      withoutRetention++;
+    }
 
     const cats = (asset.piiCategories as string[]) || [];
     for (const cat of cats) {
@@ -566,6 +603,21 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
       else totalPii++;
     }
   }
+
+  // 70.3 — Consent purpose breakdown
+  const consentRows = await db
+    .select()
+    .from(consentRecords)
+    .where(and(eq(consentRecords.orgId, orgId), eq(consentRecords.granted, true)));
+  const consentPurposeBreakdown: Record<string, number> = {};
+  for (const row of consentRows) {
+    consentPurposeBreakdown[row.purpose] = (consentPurposeBreakdown[row.purpose] || 0) + 1;
+  }
+
+  // 70.5 — Discovery stats
+  const totalFindings = recentScanRows.reduce((sum, s) => sum + s.findingsCount, 0);
+  const lastScan = recentScanRows.length > 0 ? recentScanRows[0] : null;
+  const autoClassified = assets.filter((a) => (a as Record<string, unknown>).discoveredBy === "auto_scan").length;
 
   return {
     totalDataAssets: assets.length,
@@ -588,6 +640,18 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
       startedAt: s.startedAt.toISOString(),
       completedAt: s.completedAt?.toISOString() ?? null,
     })),
+    assetTypeBreakdown,
+    consentPurposeBreakdown,
+    discoveryStats: {
+      lastScanAt: lastScan?.startedAt?.toISOString() ?? null,
+      totalFindings,
+      autoClassified,
+    },
+    retentionSummary: {
+      withRetention,
+      withoutRetention,
+      expiredRetention,
+    },
     enums: {
       classificationLevels: DATA_CLASSIFICATION_LEVELS,
       piiCategories: PII_CATEGORIES,

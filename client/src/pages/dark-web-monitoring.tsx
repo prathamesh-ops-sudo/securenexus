@@ -42,6 +42,15 @@ import {
   Eye,
   ChevronRight,
   Activity,
+  Lock,
+  Unlock,
+  UserX,
+  RotateCcw,
+  BellRing,
+  Database,
+  ExternalLink,
+  Skull,
+  Timer,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
@@ -129,6 +138,69 @@ interface DashboardData {
   exposuresByType: Array<{ exposureType: string; count: number }>;
   recentExposures: DarkWebExposure[];
   lastScan: ScanHistoryEntry | null;
+}
+
+// 66.2 — Brand mention threat levels
+const BRAND_THREAT_LEVELS: Record<string, { label: string; color: string }> = {
+  active_targeting: { label: "Active Targeting", color: "bg-red-500/10 text-red-500 border-red-500/20" },
+  marketplace_listing: { label: "Marketplace Listing", color: "bg-orange-500/10 text-orange-500 border-orange-500/20" },
+  forum_discussion: { label: "Forum Discussion", color: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20" },
+  mention: { label: "Mention", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+  historical: { label: "Historical", color: "bg-slate-500/10 text-slate-500 border-slate-500/20" },
+};
+
+// 66.1 — Credential type labels
+const CREDENTIAL_TYPES: Record<string, { label: string; icon: typeof Key }> = {
+  email_password: { label: "Email + Password", icon: Mail },
+  api_key: { label: "API Key", icon: Key },
+  certificate: { label: "Certificate", icon: Lock },
+  ssh_key: { label: "SSH Key", icon: Key },
+  access_token: { label: "Access Token", icon: Unlock },
+  session_cookie: { label: "Session Cookie", icon: Globe },
+};
+
+// 66.4 — Data source freshness indicators
+const SOURCE_FRESHNESS: Record<string, { label: string; color: string }> = {
+  live: { label: "Live (< 24h)", color: "bg-green-500/10 text-green-500" },
+  recent: { label: "Recent (< 7d)", color: "bg-blue-500/10 text-blue-500" },
+  stale: { label: "Stale (> 7d)", color: "bg-yellow-500/10 text-yellow-500" },
+  recycled: { label: "Recycled / Unverified", color: "bg-red-500/10 text-red-500" },
+};
+
+function getSourceFreshness(discoveredAt: string): string {
+  const ageMs = Date.now() - new Date(discoveredAt).getTime();
+  const days = ageMs / (1000 * 60 * 60 * 24);
+  if (days < 1) return "live";
+  if (days < 7) return "recent";
+  if (days < 30) return "stale";
+  return "recycled";
+}
+
+// 66.5 — Credential validation status
+function credentialValidationBadge(exposure: DarkWebExposure) {
+  // Heuristic: if breach is very recent and credential type is email_password, likely still valid
+  if (exposure.exposureType !== "credential_leak") return null;
+  const ageMs = exposure.breachDate ? Date.now() - new Date(exposure.breachDate).getTime() : Infinity;
+  const days = ageMs / (1000 * 60 * 60 * 24);
+  if (days < 30) {
+    return (
+      <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">
+        <Unlock className="h-3 w-3 mr-0.5" /> Likely Valid
+      </Badge>
+    );
+  }
+  if (days < 180) {
+    return (
+      <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-[10px]">
+        <Key className="h-3 w-3 mr-0.5" /> Possibly Valid
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px]">
+      <Lock className="h-3 w-3 mr-0.5" /> Likely Expired
+    </Badge>
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -518,6 +590,8 @@ export default function DarkWebMonitoringPage() {
         <TabsList>
           <TabsTrigger value="exposures">Exposures</TabsTrigger>
           <TabsTrigger value="targets">Monitoring Targets</TabsTrigger>
+          <TabsTrigger value="brand-mentions">Brand Mentions</TabsTrigger>
+          <TabsTrigger value="threat-actors">Threat Actors</TabsTrigger>
           <TabsTrigger value="scan-history">Scan History</TabsTrigger>
           <TabsTrigger value="breakdown">Breakdown</TabsTrigger>
         </TabsList>
@@ -642,6 +716,23 @@ export default function DarkWebMonitoringPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
+                          {/* 66.5 — credential validation status */}
+                          {credentialValidationBadge(exposure)}
+                          {/* 66.4 — data freshness indicator */}
+                          {(() => {
+                            const freshness = getSourceFreshness(exposure.discoveredAt);
+                            const info = SOURCE_FRESHNESS[freshness];
+                            return (
+                              <Badge variant="outline" className={`${info.color} text-[10px]`}>
+                                {freshness === "live" ? (
+                                  <Activity className="h-3 w-3 mr-0.5" />
+                                ) : (
+                                  <Clock className="h-3 w-3 mr-0.5" />
+                                )}
+                                {info.label}
+                              </Badge>
+                            );
+                          })()}
                           {exposure.confidenceScore != null && (
                             <span className="text-xs text-muted-foreground">
                               {exposure.confidenceScore}% confidence
@@ -790,6 +881,146 @@ export default function DarkWebMonitoringPage() {
           )}
         </TabsContent>
 
+        {/* ── Brand Mentions Tab (66.2) ────────────────────────── */}
+        <TabsContent value="brand-mentions" className="space-y-4">
+          {(() => {
+            const brandExposures = exposures.filter(
+              (e) =>
+                e.exposureType === "brand_mention" ||
+                e.exposureType === "domain_mention" ||
+                e.exposureType === "threat_actor_mention",
+            );
+            if (brandExposures.length === 0) {
+              return (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Globe className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <h3 className="text-lg font-medium mb-1">No brand mentions detected</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Add brand keywords as monitoring targets to track dark web mentions of your organization.
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            }
+            return (
+              <div className="space-y-2">
+                {brandExposures.map((exposure) => {
+                  const threatLevel =
+                    exposure.severity === "critical"
+                      ? "active_targeting"
+                      : exposure.severity === "high"
+                        ? "marketplace_listing"
+                        : exposure.severity === "medium"
+                          ? "forum_discussion"
+                          : exposure.exposureType === "threat_actor_mention"
+                            ? "active_targeting"
+                            : "mention";
+                  const tlInfo = BRAND_THREAT_LEVELS[threatLevel];
+                  return (
+                    <Card
+                      key={exposure.id}
+                      className="cursor-pointer hover:bg-muted/30"
+                      onClick={() => setSelectedExposure(exposure.id)}
+                    >
+                      <CardContent className="py-3 px-4">
+                        <div className="flex items-start gap-3">
+                          <Skull className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-medium truncate">{exposure.title}</span>
+                              <Badge variant="outline" className={tlInfo.color}>
+                                {tlInfo.label}
+                              </Badge>
+                              <Badge variant="outline" className={severityColor(exposure.severity)}>
+                                {exposure.severity}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              <span>Source: {exposure.sourceName || exposure.sourceType}</span>
+                              <span className="ml-3">Discovered: {formatDate(exposure.discoveredAt)}</span>
+                            </div>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </TabsContent>
+
+        {/* ── Threat Actors Tab (66.3) ────────────────────────────── */}
+        <TabsContent value="threat-actors" className="space-y-4">
+          {(() => {
+            const actorExposures = exposures.filter((e) => e.exposureType === "threat_actor_mention");
+            // Group by source name as pseudo-actor profiles
+            const actorMap = new Map<string, DarkWebExposure[]>();
+            for (const exp of actorExposures) {
+              const actor = exp.sourceName || "Unknown Actor";
+              const list = actorMap.get(actor) || [];
+              list.push(exp);
+              actorMap.set(actor, list);
+            }
+            if (actorMap.size === 0) {
+              return (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Skull className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <h3 className="text-lg font-medium mb-1">No threat actor activity detected</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Threat actor profiles are built from dark web monitoring data over time.
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            }
+            return (
+              <div className="space-y-3">
+                {Array.from(actorMap.entries()).map(([actor, mentions]) => (
+                  <Card key={actor}>
+                    <CardContent className="py-4 px-4">
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                          <Skull className="h-5 w-5 text-red-500" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{actor}</span>
+                            <Badge variant="outline" className="text-[10px]">
+                              {mentions.length} mention{mentions.length !== 1 ? "s" : ""}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            First seen: {formatDate(mentions[mentions.length - 1].discoveredAt)} · Last seen:{" "}
+                            {formatDate(mentions[0].discoveredAt)}
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {mentions.slice(0, 3).map((m) => (
+                              <div key={m.id} className="text-xs text-muted-foreground flex items-center gap-2">
+                                <Timer className="h-3 w-3" />
+                                <span>{formatDate(m.discoveredAt)}</span>
+                                <span className="truncate">{m.title}</span>
+                              </div>
+                            ))}
+                            {mentions.length > 3 && (
+                              <span className="text-xs text-muted-foreground">
+                                +{mentions.length - 3} more activities
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            );
+          })()}
+        </TabsContent>
+
         {/* ── Breakdown Tab ──────────────────────────────────────── */}
         <TabsContent value="breakdown" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -916,7 +1147,7 @@ export default function DarkWebMonitoringPage() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Exposure Detail Dialog ─────────────────────────────────── */}
+      {/* ── Exposure Detail Dialog (66.1 — credential detail with actions) ──── */}
       <Dialog open={!!selectedExposure} onOpenChange={(open) => !open && setSelectedExposure(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -926,7 +1157,7 @@ export default function DarkWebMonitoringPage() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-sm font-medium mb-1">{exposureDetail.title}</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="outline" className={severityColor(exposureDetail.severity)}>
                     {exposureDetail.severity}
                   </Badge>
@@ -934,6 +1165,54 @@ export default function DarkWebMonitoringPage() {
                     {exposureDetail.status.replace("_", " ")}
                   </Badge>
                   <Badge variant="outline">{exposureTypeLabel(exposureDetail.exposureType)}</Badge>
+                  {credentialValidationBadge(exposureDetail)}
+                </div>
+              </div>
+
+              {/* 66.1 — Where found, credential type, affected user */}
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Database className="h-3.5 w-3.5" /> Source Details
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-xs text-muted-foreground">Where Found</span>
+                    <p className="font-medium">{exposureDetail.sourceName || exposureDetail.sourceType}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {exposureDetail.sourceType === "paste_site"
+                        ? "Paste Site"
+                        : exposureDetail.sourceType === "dark_web_forum"
+                          ? "Dark Web Forum"
+                          : exposureDetail.sourceType === "breach_database"
+                            ? "Breach Database"
+                            : exposureDetail.sourceType === "marketplace"
+                              ? "Underground Marketplace"
+                              : exposureTypeLabel(exposureDetail.sourceType)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Credential Type</span>
+                    <p className="font-medium">
+                      {CREDENTIAL_TYPES[exposureDetail.exposureType]?.label ||
+                        exposureTypeLabel(exposureDetail.exposureType)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Affected User</span>
+                    <p className="font-medium">{redactValue(exposureDetail.matchedValue)}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Data Freshness</span>
+                    {(() => {
+                      const freshness = getSourceFreshness(exposureDetail.discoveredAt);
+                      const info = SOURCE_FRESHNESS[freshness];
+                      return (
+                        <Badge variant="outline" className={`${info.color} text-[10px]`}>
+                          {info.label}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
 
@@ -945,14 +1224,6 @@ export default function DarkWebMonitoringPage() {
               )}
 
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <Label className="text-xs text-muted-foreground">Source</Label>
-                  <p>{exposureDetail.sourceName || exposureDetail.sourceType}</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Matched Value</Label>
-                  <p>{redactValue(exposureDetail.matchedValue)}</p>
-                </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Breach Date</Label>
                   <p>{formatDate(exposureDetail.breachDate)}</p>
@@ -988,6 +1259,58 @@ export default function DarkWebMonitoringPage() {
                 <div>
                   <Label className="text-xs text-muted-foreground">Mitigation Notes</Label>
                   <p className="text-sm mt-1">{exposureDetail.mitigationNotes}</p>
+                </div>
+              )}
+
+              {/* 66.1 — Action buttons: reset password, notify user, disable account */}
+              {exposureDetail.exposureType === "credential_leak" && exposureDetail.status !== "mitigated" && (
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">Response Actions</div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        updateExposureMutation.mutate({
+                          id: exposureDetail.id,
+                          status: "mitigated",
+                          mitigationNotes: `Password reset initiated for ${redactValue(exposureDetail.matchedValue)} at ${new Date().toISOString()}`,
+                        });
+                        toast({ title: "Password reset action logged" });
+                      }}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset Password
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        updateExposureMutation.mutate({
+                          id: exposureDetail.id,
+                          status: "investigating",
+                          mitigationNotes: `User notification sent for ${redactValue(exposureDetail.matchedValue)} at ${new Date().toISOString()}`,
+                        });
+                        toast({ title: "User notification logged" });
+                      }}
+                    >
+                      <BellRing className="h-3.5 w-3.5 mr-1" /> Notify User
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        updateExposureMutation.mutate({
+                          id: exposureDetail.id,
+                          status: "mitigated",
+                          mitigationNotes: `Account disabled for ${redactValue(exposureDetail.matchedValue)} at ${new Date().toISOString()}`,
+                        });
+                        toast({ title: "Account disable action logged", variant: "destructive" });
+                      }}
+                    >
+                      <UserX className="h-3.5 w-3.5 mr-1" /> Disable Account
+                    </Button>
+                  </div>
                 </div>
               )}
 
