@@ -1911,4 +1911,272 @@ export function registerAgentResponseRoutes(app: Express): void {
       }
     },
   );
+
+  // ==========================================================================
+  // 50.5: COMMAND TIMEOUT — configurable timeouts, alerts, cancellation
+  // ==========================================================================
+
+  app.post(
+    "/api/native/response/actions/:id/cancel",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const actionId = String(req.params.id);
+        const { reason } = req.body as { reason?: string };
+
+        const [action] = await db
+          .select()
+          .from(agentResponseActions)
+          .where(and(eq(agentResponseActions.id, actionId), eq(agentResponseActions.orgId, orgId)))
+          .limit(1);
+
+        if (!action) {
+          res.status(404).json({ message: "Action not found" });
+          return;
+        }
+
+        // Only allow cancellation of pending/approved/executing actions
+        const cancellableStatuses = ["pending_approval", "approved", "executing"];
+        if (!cancellableStatuses.includes(action.status)) {
+          res.status(400).json({
+            message: `Cannot cancel action in '${action.status}' status. Only pending_approval, approved, or executing actions can be cancelled.`,
+          });
+          return;
+        }
+
+        const [updated] = await db
+          .update(agentResponseActions)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            resultOutput: JSON.stringify({
+              cancelled: true,
+              cancelledAt: new Date().toISOString(),
+              cancelledBy: (req.user as Record<string, unknown>)?.id || "unknown",
+              cancelReason: reason || "Manually cancelled by operator",
+            }),
+          })
+          .where(eq(agentResponseActions.id, actionId))
+          .returning();
+
+        log.info("Action cancelled", {
+          actionId,
+          previousStatus: action.status,
+          cancelledBy: (req.user as Record<string, unknown>)?.id,
+          reason,
+        });
+
+        res.json({ action: updated, message: "Action cancelled successfully" });
+      } catch (error) {
+        log.error("Cancel action failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to cancel action" });
+      }
+    },
+  );
+
+  // Check for timed-out actions
+  app.post(
+    "/api/native/response/actions/check-timeouts",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+
+        // Find actions that are executing and have exceeded their timeout
+        const executingActions = await db
+          .select()
+          .from(agentResponseActions)
+          .where(and(eq(agentResponseActions.orgId, orgId), eq(agentResponseActions.status, "executing")));
+
+        let timedOutCount = 0;
+        const timedOutActions: string[] = [];
+
+        for (const action of executingActions) {
+          const timeoutSeconds = (action.timeoutSeconds as number) || 300; // default 5 min
+          const dispatchedTime = action.dispatchedAt || action.createdAt;
+          if (!dispatchedTime) continue;
+
+          const elapsed = (Date.now() - new Date(dispatchedTime).getTime()) / 1000;
+          if (elapsed > timeoutSeconds) {
+            await db
+              .update(agentResponseActions)
+              .set({
+                status: "failed",
+                completedAt: new Date(),
+                resultError: `Timed out after ${Math.round(elapsed)}s (limit: ${timeoutSeconds}s)`,
+              })
+              .where(eq(agentResponseActions.id, action.id));
+            timedOutCount++;
+            timedOutActions.push(action.id);
+          }
+        }
+
+        res.json({
+          checked: executingActions.length,
+          timedOut: timedOutCount,
+          timedOutActionIds: timedOutActions,
+        });
+      } catch (error) {
+        log.error("Timeout check failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to check timeouts" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 50.6: COMMAND AUDIT TRAIL — comprehensive forensic logging
+  // ==========================================================================
+
+  app.get("/api/native/response/audit-trail", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const limit = Math.min(parseInt(String(req.query.limit)) || 50, 200);
+      const offset = parseInt(String(req.query.offset)) || 0;
+      const actionType = req.query.actionType as string | undefined;
+      const status = req.query.status as string | undefined;
+      const sensorId = req.query.sensorId as string | undefined;
+
+      const conditions = [eq(agentResponseActions.orgId, orgId)];
+      if (actionType) conditions.push(eq(agentResponseActions.actionType, actionType));
+      if (status) conditions.push(eq(agentResponseActions.status, status));
+      if (sensorId) conditions.push(eq(agentResponseActions.sensorId, sensorId));
+
+      const actions = await db
+        .select()
+        .from(agentResponseActions)
+        .where(and(...conditions))
+        .orderBy(desc(agentResponseActions.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      // Enrich with sensor info for each action
+      const auditEntries = await Promise.all(
+        actions.map(async (action) => {
+          const [sensor] = await db
+            .select({
+              hostname: nativeSensors.hostname,
+              ipAddress: nativeSensors.ipAddress,
+              platform: nativeSensors.platform,
+            })
+            .from(nativeSensors)
+            .where(eq(nativeSensors.id, action.sensorId))
+            .limit(1);
+
+          const durationMs =
+            action.completedAt && action.dispatchedAt
+              ? new Date(action.completedAt).getTime() - new Date(action.dispatchedAt).getTime()
+              : null;
+
+          return {
+            id: action.id,
+            actionType: action.actionType,
+            status: action.status,
+            riskLevel: action.riskLevel,
+            sensorId: action.sensorId,
+            sensorHostname: sensor?.hostname || "Unknown",
+            sensorIp: sensor?.ipAddress || null,
+            sensorPlatform: sensor?.platform || null,
+            requestedBy: action.requestedByName || action.requestedBy,
+            approvedBy: action.approvedByName || action.approvedBy,
+            reason: action.reason,
+            incidentId: action.incidentId,
+            targetPid: action.targetPid,
+            targetProcessName: action.targetProcessName,
+            targetIp: action.targetIp,
+            targetFilePath: action.targetFilePath,
+            targetUserName: action.targetUserName,
+            targetDomain: action.targetDomain,
+            scriptType: action.scriptType,
+            timeoutSeconds: action.timeoutSeconds,
+            resultOutput: action.resultOutput,
+            resultError: action.resultError,
+            durationMs,
+            createdAt: action.createdAt,
+            dispatchedAt: action.dispatchedAt,
+            completedAt: action.completedAt,
+            approvedAt: action.approvedAt,
+          };
+        }),
+      );
+
+      // Aggregate stats for the audit trail
+      const totalResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agentResponseActions)
+        .where(and(...conditions));
+
+      const statusBreakdown = await db
+        .select({
+          status: agentResponseActions.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(agentResponseActions)
+        .where(eq(agentResponseActions.orgId, orgId))
+        .groupBy(agentResponseActions.status);
+
+      res.json({
+        entries: auditEntries,
+        total: totalResult[0]?.count || 0,
+        offset,
+        limit,
+        statusBreakdown: Object.fromEntries(statusBreakdown.map((s) => [s.status, s.count])),
+      });
+    } catch (error) {
+      log.error("Audit trail query failed", { error: String(error) });
+      res.status(500).json({ message: "Failed to retrieve audit trail" });
+    }
+  });
+
+  // Reject an action (counterpart to approve)
+  app.post(
+    "/api/native/response/actions/:id/reject",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const actionId = String(req.params.id);
+
+        const [action] = await db
+          .select()
+          .from(agentResponseActions)
+          .where(and(eq(agentResponseActions.id, actionId), eq(agentResponseActions.orgId, orgId)))
+          .limit(1);
+
+        if (!action) {
+          res.status(404).json({ message: "Action not found" });
+          return;
+        }
+
+        if (action.status !== "pending_approval") {
+          res.status(400).json({ message: "Only pending_approval actions can be rejected" });
+          return;
+        }
+
+        const [updated] = await db
+          .update(agentResponseActions)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            rejectedBy: String((req.user as Record<string, unknown>)?.id || ""),
+            rejectedAt: new Date(),
+            rejectedReason: String(req.body?.reason || "Rejected by approver"),
+          })
+          .where(eq(agentResponseActions.id, actionId))
+          .returning();
+
+        log.info("Action rejected", { actionId, rejectedBy: (req.user as Record<string, unknown>)?.id });
+        res.json({ action: updated, message: "Action rejected" });
+      } catch (error) {
+        log.error("Reject action failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to reject action" });
+      }
+    },
+  );
 }

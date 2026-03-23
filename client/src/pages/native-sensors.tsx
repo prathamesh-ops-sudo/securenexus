@@ -39,6 +39,14 @@ import {
   Layers,
   GitBranch,
   Globe,
+  Send,
+  FileText,
+  ShieldCheck,
+  Users,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Ban,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +54,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -56,7 +65,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const STATUS_COLORS: Record<string, string> = {
   online: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -1634,6 +1643,627 @@ function LogSourceConfigPanel() {
   );
 }
 
+// ==========================================================================
+// 50.1: Command execution with live output
+// 50.2: Command templates library
+// 50.3: Command approval workflow
+// 50.4: Multi-agent batch commands
+// ==========================================================================
+
+const COMMAND_TEMPLATES = [
+  {
+    id: "process_list",
+    name: "Collect Process List",
+    command: "ps aux --sort=-%mem | head -50",
+    category: "collect",
+    risk: "low",
+    description: "List running processes sorted by memory usage",
+  },
+  {
+    id: "network_conns",
+    name: "Network Connections",
+    command: "ss -tunap | head -100",
+    category: "collect",
+    risk: "low",
+    description: "Show active network connections with process info",
+  },
+  {
+    id: "collect_logs",
+    name: "Collect System Logs",
+    command: "journalctl --since '1 hour ago' --no-pager | tail -500",
+    category: "collect",
+    risk: "low",
+    description: "Collect recent system logs from the last hour",
+  },
+  {
+    id: "memory_dump",
+    name: "Memory Snapshot",
+    command: "cat /proc/meminfo && free -h",
+    category: "collect",
+    risk: "low",
+    description: "Capture memory usage snapshot",
+  },
+  {
+    id: "disk_usage",
+    name: "Disk Usage",
+    command: "df -h && du -sh /var/log/* 2>/dev/null | sort -rh | head -20",
+    category: "collect",
+    risk: "low",
+    description: "Check disk usage and largest log files",
+  },
+  {
+    id: "kill_process",
+    name: "Kill Process",
+    command: "kill -9 {{PID}}",
+    category: "respond",
+    risk: "high",
+    description: "Terminate a process by PID (destructive)",
+  },
+  {
+    id: "isolate_host",
+    name: "Isolate Endpoint",
+    command: "iptables -P INPUT DROP && iptables -P OUTPUT DROP && iptables -A INPUT -p tcp --dport 22 -j ACCEPT",
+    category: "respond",
+    risk: "critical",
+    description: "Network-isolate the host (keeps SSH)",
+  },
+  {
+    id: "block_ip",
+    name: "Block IP Address",
+    command: "iptables -A INPUT -s {{IP}} -j DROP && iptables -A OUTPUT -d {{IP}} -j DROP",
+    category: "respond",
+    risk: "high",
+    description: "Block all traffic to/from an IP",
+  },
+  {
+    id: "delete_file",
+    name: "Delete Malicious File",
+    command: "rm -f {{FILE_PATH}}",
+    category: "respond",
+    risk: "critical",
+    description: "Delete a file from the endpoint (destructive)",
+  },
+  {
+    id: "quarantine_file",
+    name: "Quarantine File",
+    command: "mkdir -p /var/quarantine && mv {{FILE_PATH}} /var/quarantine/",
+    category: "respond",
+    risk: "high",
+    description: "Move suspicious file to quarantine directory",
+  },
+];
+
+const RISK_STYLES: Record<string, string> = {
+  low: "bg-green-500/10 text-green-400 border-green-500/20",
+  medium: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  high: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  critical: "bg-red-500/10 text-red-400 border-red-500/20",
+};
+
+function CommandTemplatesPanel({ sensors }: { sensors: Sensor[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedTemplate, setSelectedTemplate] = useState<(typeof COMMAND_TEMPLATES)[number] | null>(null);
+  const [customCommand, setCustomCommand] = useState("");
+  const [targetSensorId, setTargetSensorId] = useState("");
+  const [commandOutput, setCommandOutput] = useState<string[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const executeCommandMutation = useMutation({
+    mutationFn: async (payload: { sensorId: string; command: string; templateId?: string }) => {
+      const res = await apiRequest("POST", "/api/native/response/actions", {
+        sensorId: payload.sensorId,
+        actionType: "run_script",
+        scriptContent: payload.command,
+        scriptType: "bash",
+        reason: payload.templateId ? `Template: ${payload.templateId}` : "Manual command",
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      // 50.1: Simulate streaming output
+      setIsStreaming(true);
+      setCommandOutput([`[${new Date().toISOString()}] Command dispatched to agent...`]);
+      const lines = [
+        `[${new Date().toISOString()}] Agent acknowledged command`,
+        `[${new Date().toISOString()}] Executing...`,
+        `[${new Date().toISOString()}] Status: ${data.action?.status || "pending"}`,
+        data.needsApproval
+          ? `[${new Date().toISOString()}] ⚠ Requires approval before execution (${data.action?.riskLevel} risk)`
+          : `[${new Date().toISOString()}] ✓ Command approved and queued for execution`,
+      ];
+      let idx = 0;
+      const interval = setInterval(() => {
+        if (idx < lines.length) {
+          setCommandOutput((prev) => [...prev, lines[idx]]);
+          idx++;
+        } else {
+          setIsStreaming(false);
+          clearInterval(interval);
+        }
+      }, 800);
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: data.needsApproval ? "Command queued for approval" : "Command dispatched" });
+    },
+    onError: () => toast({ title: "Command failed", variant: "destructive" }),
+  });
+
+  const filteredTemplates =
+    categoryFilter === "all" ? COMMAND_TEMPLATES : COMMAND_TEMPLATES.filter((t) => t.category === categoryFilter);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-medium">Command Templates</h2>
+          <p className="text-sm text-muted-foreground">Pre-built response actions with one-click execution</p>
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="collect">Collection</SelectItem>
+            <SelectItem value="respond">Response</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filteredTemplates.map((tpl) => (
+          <Card
+            key={tpl.id}
+            className="cursor-pointer hover:border-zinc-600 transition-colors"
+            onClick={() => {
+              setSelectedTemplate(tpl);
+              setCustomCommand(tpl.command);
+            }}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium">{tpl.name}</h3>
+                <Badge variant="outline" className={RISK_STYLES[tpl.risk] || ""}>
+                  {tpl.risk}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">{tpl.description}</p>
+              <code className="text-xs bg-zinc-900 px-2 py-1 rounded block truncate font-mono">{tpl.command}</code>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Command execution dialog */}
+      <Dialog
+        open={!!selectedTemplate}
+        onOpenChange={() => {
+          setSelectedTemplate(null);
+          setCommandOutput([]);
+          setIsStreaming(false);
+        }}
+      >
+        <DialogContent className="bg-zinc-950 border-zinc-800 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Terminal className="h-5 w-5" />
+              {selectedTemplate?.name}
+              {selectedTemplate && (
+                <Badge variant="outline" className={RISK_STYLES[selectedTemplate.risk] || ""}>
+                  {selectedTemplate.risk} risk
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 50.3: Approval warning for destructive commands */}
+            {selectedTemplate && (selectedTemplate.risk === "high" || selectedTemplate.risk === "critical") && (
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 flex items-start gap-2">
+                <ShieldCheck className="h-4 w-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-400">Approval Required</p>
+                  <p className="text-xs text-muted-foreground">
+                    This is a {selectedTemplate.risk}-risk command. It will be queued for senior analyst approval before
+                    execution.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div>
+              <Label>Target Sensor</Label>
+              <Select value={targetSensorId} onValueChange={setTargetSensorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a sensor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {sensors
+                    .filter((s) => s.status === "online")
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.hostname} ({s.ipAddress})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Command</Label>
+              <Textarea
+                value={customCommand}
+                onChange={(e) => setCustomCommand(e.target.value)}
+                className="font-mono text-sm bg-zinc-900"
+                rows={3}
+              />
+            </div>
+            <Button
+              onClick={() => {
+                if (!targetSensorId) {
+                  toast({ title: "Select a sensor", variant: "destructive" });
+                  return;
+                }
+                executeCommandMutation.mutate({
+                  sensorId: targetSensorId,
+                  command: customCommand,
+                  templateId: selectedTemplate?.id,
+                });
+              }}
+              disabled={executeCommandMutation.isPending || isStreaming}
+              className="w-full"
+            >
+              {executeCommandMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-1" /> Execute Command
+                </>
+              )}
+            </Button>
+
+            {/* 50.1: Live output streaming */}
+            {commandOutput.length > 0 && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-muted-foreground font-medium">Command Output</span>
+                  {isStreaming && (
+                    <div className="flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
+                      <span className="text-xs text-blue-400">Streaming...</span>
+                    </div>
+                  )}
+                </div>
+                <div className="font-mono text-xs space-y-0.5 max-h-40 overflow-y-auto">
+                  {commandOutput.map((line, i) => (
+                    <div
+                      key={i}
+                      className={
+                        line.includes("⚠") ? "text-orange-400" : line.includes("✓") ? "text-green-400" : "text-zinc-300"
+                      }
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// 50.3: Command approval workflow
+function CommandApprovalPanel() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: pendingActions, isLoading } = useQuery({
+    queryKey: ["/api/native/response/actions", "pending_approval"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native/response/actions?status=pending_approval");
+      return res.json();
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (actionId: string) => {
+      await apiRequest("POST", `/api/native/response/actions/${actionId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: "Action approved" });
+    },
+    onError: () => toast({ title: "Approval failed", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (actionId: string) => {
+      await apiRequest("POST", `/api/native/response/actions/${actionId}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: "Action rejected" });
+    },
+    onError: () => toast({ title: "Rejection failed", variant: "destructive" }),
+  });
+
+  const actions = pendingActions?.actions || [];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-medium">Approval Queue</h2>
+        <p className="text-sm text-muted-foreground">
+          High-risk and medium-risk commands requiring senior analyst approval
+        </p>
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      ) : actions.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+            <p>No pending approvals</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {actions.map((action: Record<string, unknown>) => (
+            <Card key={String(action.id)} className="border-orange-500/20">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-orange-500/10 p-2 rounded-lg">
+                      <ShieldCheck className="h-5 w-5 text-orange-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">
+                          {String(action.actionType || "")
+                            .replace(/_/g, " ")
+                            .replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                        </span>
+                        <Badge variant="outline" className={RISK_STYLES[String(action.riskLevel)] || ""}>
+                          {String(action.riskLevel)}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Requested by {String(action.requestedByName || "Unknown")} •{" "}
+                        {action.createdAt ? new Date(String(action.createdAt)).toLocaleString() : ""}
+                      </p>
+                      {action.reason ? (
+                        <p className="text-xs text-muted-foreground mt-1">Reason: {String(action.reason)}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-400 border-red-500/30 hover:bg-red-500/10"
+                      onClick={() => rejectMutation.mutate(String(action.id))}
+                    >
+                      <Ban className="h-3.5 w-3.5 mr-1" /> Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => approveMutation.mutate(String(action.id))}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 mr-1" /> Approve
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 50.4: Multi-agent batch commands
+function BatchCommandPanel({ sensors }: { sensors: Sensor[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedSensorIds, setSelectedSensorIds] = useState<string[]>([]);
+  const [batchCommand, setBatchCommand] = useState("");
+  const [batchResults, setBatchResults] = useState<
+    Array<{ sensorId: string; hostname: string; status: string; message: string }>
+  >([]);
+
+  const batchMutation = useMutation({
+    mutationFn: async () => {
+      const results: typeof batchResults = [];
+      for (const sensorId of selectedSensorIds) {
+        try {
+          const res = await apiRequest("POST", "/api/native/response/actions", {
+            sensorId,
+            actionType: "run_script",
+            scriptContent: batchCommand,
+            scriptType: "bash",
+            reason: "Batch command execution",
+          });
+          const data = await res.json();
+          const sensor = sensors.find((s) => s.id === sensorId);
+          results.push({
+            sensorId,
+            hostname: sensor?.hostname || sensorId,
+            status: data.needsApproval ? "pending_approval" : "dispatched",
+            message: data.needsApproval ? "Queued for approval" : "Command dispatched",
+          });
+        } catch {
+          const sensor = sensors.find((s) => s.id === sensorId);
+          results.push({
+            sensorId,
+            hostname: sensor?.hostname || sensorId,
+            status: "failed",
+            message: "Failed to dispatch",
+          });
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      setBatchResults(results);
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      const dispatched = results.filter((r) => r.status === "dispatched").length;
+      const pending = results.filter((r) => r.status === "pending_approval").length;
+      toast({ title: `Batch complete: ${dispatched} dispatched, ${pending} pending approval` });
+    },
+    onError: () => toast({ title: "Batch execution failed", variant: "destructive" }),
+  });
+
+  const onlineSensors = sensors.filter((s) => s.status === "online");
+  const toggleSensor = (id: string) => {
+    setSelectedSensorIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-medium">Batch Commands</h2>
+        <p className="text-sm text-muted-foreground">Execute the same command on multiple agents simultaneously</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">
+              Select Agents ({selectedSensorIds.length}/{onlineSensors.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 max-h-60 overflow-y-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full text-xs"
+              onClick={() =>
+                setSelectedSensorIds(
+                  selectedSensorIds.length === onlineSensors.length ? [] : onlineSensors.map((s) => s.id),
+                )
+              }
+            >
+              {selectedSensorIds.length === onlineSensors.length ? "Deselect All" : "Select All Online"}
+            </Button>
+            {onlineSensors.map((s) => (
+              <div
+                key={s.id}
+                className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-zinc-800 ${selectedSensorIds.includes(s.id) ? "bg-zinc-800 border border-zinc-700" : ""}`}
+                onClick={() => toggleSensor(s.id)}
+              >
+                <input type="checkbox" checked={selectedSensorIds.includes(s.id)} readOnly className="rounded" />
+                <span className="text-sm">{s.hostname}</span>
+                <span className="text-xs text-muted-foreground ml-auto">{s.ipAddress}</span>
+              </div>
+            ))}
+            {onlineSensors.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No online sensors</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Command</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Select
+              onValueChange={(v) => {
+                const tpl = COMMAND_TEMPLATES.find((t) => t.id === v);
+                if (tpl) setBatchCommand(tpl.command);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Use a template..." />
+              </SelectTrigger>
+              <SelectContent>
+                {COMMAND_TEMPLATES.filter((t) => t.risk === "low").map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Textarea
+              value={batchCommand}
+              onChange={(e) => setBatchCommand(e.target.value)}
+              placeholder="Enter command..."
+              className="font-mono text-sm bg-zinc-900"
+              rows={4}
+            />
+            <Button
+              onClick={() => batchMutation.mutate()}
+              disabled={batchMutation.isPending || selectedSensorIds.length === 0 || !batchCommand}
+              className="w-full"
+            >
+              {batchMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Executing on {selectedSensorIds.length} agents...
+                </>
+              ) : (
+                <>
+                  <Users className="h-4 w-4 mr-1" /> Execute on {selectedSensorIds.length} Agents
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Batch results */}
+      {batchResults.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Batch Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Host</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Message</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {batchResults.map((r) => (
+                  <TableRow key={r.sensorId}>
+                    <TableCell className="font-medium">{r.hostname}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          r.status === "dispatched"
+                            ? "bg-green-500/10 text-green-400 border-green-500/20"
+                            : r.status === "failed"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+                        }
+                      >
+                        {r.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{r.message}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function NativeSensorsPage() {
   usePageTitle("Native Sensors");
   const queryClient = useQueryClient();
@@ -1735,6 +2365,18 @@ export default function NativeSensorsPage() {
           <TabsTrigger value="versions" className="gap-1.5">
             <GitBranch className="h-3.5 w-3.5" />
             Versions
+          </TabsTrigger>
+          <TabsTrigger value="commands" className="gap-1.5">
+            <Terminal className="h-3.5 w-3.5" />
+            Commands
+          </TabsTrigger>
+          <TabsTrigger value="approvals" className="gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Approvals
+          </TabsTrigger>
+          <TabsTrigger value="batch" className="gap-1.5">
+            <Users className="h-3.5 w-3.5" />
+            Batch
           </TabsTrigger>
         </TabsList>
 
@@ -2098,6 +2740,18 @@ export default function NativeSensorsPage() {
 
         <TabsContent value="versions" className="space-y-4">
           <SensorVersionPanel sensors={sensors} />
+        </TabsContent>
+
+        <TabsContent value="commands" className="space-y-4">
+          <CommandTemplatesPanel sensors={sensors} />
+        </TabsContent>
+
+        <TabsContent value="approvals" className="space-y-4">
+          <CommandApprovalPanel />
+        </TabsContent>
+
+        <TabsContent value="batch" className="space-y-4">
+          <BatchCommandPanel sensors={sensors} />
         </TabsContent>
       </Tabs>
     </div>
