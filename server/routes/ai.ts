@@ -1226,6 +1226,613 @@ export function registerAiRoutes(app: Express): void {
     }
   });
 
+  // ── 34.1: Prompt A/B Testing Dashboard ──────────────────────────────────────
+  // Store and retrieve A/B test results for prompt versions
+
+  interface PromptABTest {
+    id: string;
+    promptId: string;
+    versionA: number;
+    versionB: number;
+    status: "running" | "completed" | "paused";
+    startedAt: string;
+    completedAt: string | null;
+    sampleSize: number;
+    results: {
+      versionA: { avgQuality: number; avgLatencyMs: number; avgSatisfaction: number; sampleCount: number };
+      versionB: { avgQuality: number; avgLatencyMs: number; avgSatisfaction: number; sampleCount: number };
+    };
+  }
+
+  const abTestStore = new Map<string, PromptABTest[]>();
+
+  app.get("/api/ai/prompts/:id/ab-tests", isAuthenticated, async (req, res) => {
+    try {
+      const promptId = p(req.params.id);
+      const tests = abTestStore.get(promptId) || [];
+      res.json(tests);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch A/B tests" });
+    }
+  });
+
+  app.post(
+    "/api/ai/prompts/:id/ab-tests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const promptId = p(req.params.id);
+        const { versionA, versionB, sampleSize } = req.body;
+        if (!versionA || !versionB || versionA === versionB) {
+          return res.status(400).json({ message: "versionA and versionB must be different valid versions" });
+        }
+        const test: PromptABTest = {
+          id: `abt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          promptId,
+          versionA: Number(versionA),
+          versionB: Number(versionB),
+          status: "running",
+          startedAt: new Date().toISOString(),
+          completedAt: null,
+          sampleSize: Math.min(Math.max(Number(sampleSize) || 100, 10), 10000),
+          results: {
+            versionA: { avgQuality: 0, avgLatencyMs: 0, avgSatisfaction: 0, sampleCount: 0 },
+            versionB: { avgQuality: 0, avgLatencyMs: 0, avgSatisfaction: 0, sampleCount: 0 },
+          },
+        };
+        const existing = abTestStore.get(promptId) || [];
+        existing.push(test);
+        abTestStore.set(promptId, existing);
+        res.status(201).json(test);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create A/B test" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/ai/prompts/:id/ab-tests/:testId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const promptId = p(req.params.id);
+        const testId = p(req.params.testId);
+        const tests = abTestStore.get(promptId) || [];
+        const test = tests.find((t) => t.id === testId);
+        if (!test) return res.status(404).json({ message: "A/B test not found" });
+        const { status } = req.body;
+        if (status && ["running", "completed", "paused"].includes(status)) {
+          test.status = status;
+          if (status === "completed") test.completedAt = new Date().toISOString();
+        }
+        res.json(test);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update A/B test" });
+      }
+    },
+  );
+
+  // ── 34.2: Prompt Variable Documentation ─────────────────────────────────────
+
+  interface PromptVariable {
+    name: string;
+    description: string;
+    required: boolean;
+    exampleValue: string;
+    type: "string" | "number" | "array" | "object" | "boolean";
+  }
+
+  function extractPromptVariables(template: string): PromptVariable[] {
+    const varRegex = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g;
+    const found = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = varRegex.exec(template)) !== null) {
+      found.add(match[1]);
+    }
+
+    const KNOWN_VARS: Record<
+      string,
+      { description: string; required: boolean; example: string; type: PromptVariable["type"] }
+    > = {
+      alert_title: {
+        description: "Title of the alert being analyzed",
+        required: true,
+        example: "Suspicious PowerShell Execution",
+        type: "string",
+      },
+      severity: { description: "Alert severity level", required: true, example: "high", type: "string" },
+      ioc_list: {
+        description: "List of Indicators of Compromise",
+        required: false,
+        example: "192.168.1.100, evil.com, abc123.exe",
+        type: "string",
+      },
+      alert_description: {
+        description: "Detailed description of the alert",
+        required: true,
+        example: "PowerShell process spawned with encoded command...",
+        type: "string",
+      },
+      source_ip: { description: "Source IP address involved", required: false, example: "10.0.0.50", type: "string" },
+      dest_ip: { description: "Destination IP address", required: false, example: "203.0.113.45", type: "string" },
+      alert_source: {
+        description: "Source system that generated the alert",
+        required: false,
+        example: "CrowdStrike",
+        type: "string",
+      },
+      category: { description: "Alert category classification", required: false, example: "malware", type: "string" },
+      mitre_techniques: {
+        description: "MITRE ATT&CK technique IDs",
+        required: false,
+        example: "T1059.001, T1027",
+        type: "string",
+      },
+      timestamp: {
+        description: "Event timestamp in ISO 8601",
+        required: false,
+        example: "2026-03-15T14:30:00Z",
+        type: "string",
+      },
+      context: {
+        description: "Additional investigation context",
+        required: false,
+        example: "Previous alerts from same host...",
+        type: "string",
+      },
+      correlated_alerts: {
+        description: "JSON array of related alert data",
+        required: false,
+        example: '[{"id": "alert-1", "title": "..."}]',
+        type: "array",
+      },
+      user_question: {
+        description: "Analyst's question or investigation query",
+        required: false,
+        example: "What lateral movement indicators exist?",
+        type: "string",
+      },
+      raw_log: {
+        description: "Raw log data for analysis",
+        required: false,
+        example: "Mar 15 14:30:01 server sshd[1234]: Failed password...",
+        type: "string",
+      },
+    };
+
+    return Array.from(found).map((name) => {
+      const known = KNOWN_VARS[name];
+      return {
+        name,
+        description: known?.description || "Template variable",
+        required: known?.required ?? false,
+        exampleValue: known?.example || `example_${name}`,
+        type: known?.type || "string",
+      };
+    });
+  }
+
+  app.get("/api/ai/prompts/:id/variables", isAuthenticated, async (req, res) => {
+    try {
+      const prompts = await getAllRegisteredPrompts();
+      const prompt = prompts.find((pt) => pt.id === p(req.params.id));
+      if (!prompt) return res.status(404).json({ message: "Prompt not found" });
+      const variables = extractPromptVariables(prompt.userTemplate);
+      res.json({ promptId: prompt.id, promptName: prompt.name, variables });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to extract prompt variables" });
+    }
+  });
+
+  // ── 34.3: Prompt Template Categories ────────────────────────────────────────
+
+  const PROMPT_CATEGORIES: Record<string, { label: string; description: string; tiers: string[] }> = {
+    triage: { label: "Triage", description: "Initial alert classification and severity assessment", tiers: ["triage"] },
+    investigation: {
+      label: "Investigation",
+      description: "Deep-dive analysis and threat hunting",
+      tiers: ["narrative", "correlation"],
+    },
+    summarization: {
+      label: "Summarization",
+      description: "Executive summaries and report generation",
+      tiers: ["narrative", "general"],
+    },
+    rule_generation: {
+      label: "Rule Generation",
+      description: "Detection rule and YARA/Sigma authoring",
+      tiers: ["general"],
+    },
+    report_generation: {
+      label: "Report Generation",
+      description: "Compliance and incident reports",
+      tiers: ["general", "narrative"],
+    },
+    health: {
+      label: "Health & Monitoring",
+      description: "System health checks and operational monitoring",
+      tiers: ["health"],
+    },
+  };
+
+  app.get("/api/ai/prompts/categories", isAuthenticated, async (_req, res) => {
+    try {
+      const prompts = await getAllRegisteredPrompts();
+      const categorized: Record<
+        string,
+        { category: string; label: string; description: string; promptCount: number; promptIds: string[] }
+      > = {};
+      for (const [catId, cat] of Object.entries(PROMPT_CATEGORIES)) {
+        const matching = prompts.filter((p2) => cat.tiers.includes(p2.tier) || p2.tags.includes(catId));
+        categorized[catId] = {
+          category: catId,
+          label: cat.label,
+          description: cat.description,
+          promptCount: matching.length,
+          promptIds: matching.map((m) => m.id),
+        };
+      }
+      res.json(categorized);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch prompt categories" });
+    }
+  });
+
+  // ── 34.4: Prompt Quality Scoring ────────────────────────────────────────────
+
+  interface PromptQualityScore {
+    promptId: string;
+    version: number;
+    scores: { relevance: number; accuracy: number; actionability: number; formatCompliance: number; overall: number };
+    evaluatedAt: string;
+    sampleOutput: string;
+  }
+
+  const qualityScoreStore = new Map<string, PromptQualityScore[]>();
+
+  app.get("/api/ai/prompts/:id/quality-scores", isAuthenticated, async (req, res) => {
+    try {
+      const promptId = p(req.params.id);
+      const scores = qualityScoreStore.get(promptId) || [];
+      res.json(scores);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch quality scores" });
+    }
+  });
+
+  app.post(
+    "/api/ai/prompts/:id/quality-scores",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const promptId = p(req.params.id);
+        const { version, relevance, accuracy, actionability, formatCompliance, sampleOutput } = req.body;
+        if (
+          typeof relevance !== "number" ||
+          typeof accuracy !== "number" ||
+          typeof actionability !== "number" ||
+          typeof formatCompliance !== "number"
+        ) {
+          return res
+            .status(400)
+            .json({ message: "relevance, accuracy, actionability, formatCompliance must be numbers (0-100)" });
+        }
+        const clamp = (v: number) => Math.max(0, Math.min(100, v));
+        const r = clamp(relevance);
+        const a = clamp(accuracy);
+        const act = clamp(actionability);
+        const fc = clamp(formatCompliance);
+        const overall = Math.round((r + a + act + fc) / 4);
+        const score: PromptQualityScore = {
+          promptId,
+          version: Number(version) || 1,
+          scores: { relevance: r, accuracy: a, actionability: act, formatCompliance: fc, overall },
+          evaluatedAt: new Date().toISOString(),
+          sampleOutput: String(sampleOutput || "").slice(0, 5000),
+        };
+        const existing = qualityScoreStore.get(promptId) || [];
+        existing.push(score);
+        qualityScoreStore.set(promptId, existing);
+        res.status(201).json(score);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to record quality score" });
+      }
+    },
+  );
+
+  // ── 34.5: Prompt Rollback with Safety Checks ───────────────────────────────
+
+  app.post(
+    "/api/ai/prompts/:id/rollback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const promptId = p(req.params.id);
+        const { targetVersion } = req.body;
+        if (!targetVersion || typeof targetVersion !== "number") {
+          return res.status(400).json({ message: "targetVersion (number) is required" });
+        }
+
+        // Get current prompt
+        const prompts = await getAllRegisteredPrompts();
+        const current = prompts.find((pt) => pt.id === promptId);
+        if (!current) return res.status(404).json({ message: "Prompt not found" });
+
+        // Get target version from history
+        const history = await getPromptVersionHistory(promptId);
+        const target = history.find((h) => h.version === targetVersion);
+        if (!target) return res.status(404).json({ message: `Version ${targetVersion} not found in history` });
+
+        // Safety checks: verify variables are compatible
+        const currentVars = extractPromptVariables(current.userTemplate);
+        const targetVars = extractPromptVariables(target.userTemplate);
+        const currentVarNames = new Set(currentVars.map((v) => v.name));
+        const targetVarNames = new Set(targetVars.map((v) => v.name));
+
+        const newVarsInTarget = Array.from(targetVarNames).filter((v) => !currentVarNames.has(v));
+        const removedVars = Array.from(currentVarNames).filter((v) => !targetVarNames.has(v));
+
+        const warnings: string[] = [];
+        if (newVarsInTarget.length > 0) {
+          warnings.push(`Target version introduces variables not in current: ${newVarsInTarget.join(", ")}`);
+        }
+        if (removedVars.length > 0) {
+          warnings.push(`Rolling back will remove variables: ${removedVars.join(", ")}`);
+        }
+
+        // Check schema compatibility
+        const currentSchema = current.outputSchema ? Object.keys(current.outputSchema) : [];
+        const targetSchema = target.outputSchema ? Object.keys(target.outputSchema) : [];
+        const schemaChanges = currentSchema.filter((k) => !targetSchema.includes(k));
+        if (schemaChanges.length > 0) {
+          warnings.push(`Output schema fields removed in target: ${schemaChanges.join(", ")}`);
+        }
+
+        const safetyResult = {
+          safe: warnings.length === 0,
+          warnings,
+          currentVersion: current.version,
+          targetVersion,
+          variableCompatibility: {
+            current: Array.from(currentVarNames),
+            target: Array.from(targetVarNames),
+            added: newVarsInTarget,
+            removed: removedVars,
+          },
+        };
+
+        // If dry run requested, return safety check result only
+        if (req.query.dryRun === "true") {
+          return res.json({ dryRun: true, ...safetyResult });
+        }
+
+        // Perform rollback by re-registering the target version as a new version
+        const { registerPrompt: regPrompt } = await import("../ai/prompt-registry");
+        await regPrompt({
+          ...target,
+          version: current.version + 1,
+          deprecated: false,
+          deprecatedAt: undefined,
+          supersededBy: undefined,
+        });
+
+        res.json({
+          rolled: true,
+          newVersion: current.version + 1,
+          ...safetyResult,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to rollback prompt" });
+      }
+    },
+  );
+
+  // ── 35.4: Few-shot Example Injection from Feedback ──────────────────────────
+
+  app.get("/api/ai/active-learning/auto-examples", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const domain = req.query.domain as string | undefined;
+      const { getAllFewShotExamples: getFewShot } = await import("../ai/active-learning");
+      const examples = await getFewShot(orgId, domain);
+      const autoInjected = examples.filter((ex) => ex.feedbackId !== null);
+      const manual = examples.filter((ex) => ex.feedbackId === null);
+      res.json({
+        total: examples.length,
+        autoInjected: autoInjected.length,
+        manual: manual.length,
+        examples: autoInjected.slice(0, 50),
+        pipelineStatus: autoInjected.length > 0 ? "active" : "no_examples_yet",
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch auto-injected examples" });
+    }
+  });
+
+  // ── 35.5: Source-Level Suppression Verification ─────────────────────────────
+
+  app.get("/api/ai/active-learning/suppression-status", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { getSourceSignalScores: getScores, getSuppressedSources: getSuppressed } =
+        await import("../ai/active-learning");
+      const scores = await getScores(orgId, 100);
+      const suppressed = await getSuppressed(orgId);
+
+      const highFpSources = scores.filter((s) => s.fpRate > 0.5 && !s.suppressed);
+      const activelySuppressed = suppressed.length;
+      const suppressionCandidates = highFpSources.map((s) => ({
+        source: s.source,
+        category: s.category,
+        fpRate: s.fpRate,
+        totalFeedback: s.totalFeedback,
+        recommendation: s.fpRate > 0.8 ? "strongly_recommend_suppress" : "consider_suppression",
+      }));
+
+      res.json({
+        activelySuppressed,
+        suppressionCandidates,
+        pipelineWorking: activelySuppressed > 0 || suppressionCandidates.length > 0,
+        totalSourcesTracked: scores.length,
+        highFpSourceCount: highFpSources.length,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch suppression status" });
+    }
+  });
+
+  // ── 35.2+35.3: Feedback Analytics + Prompt Improvement Suggestions ──────────
+
+  app.get("/api/ai/feedback/analytics", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const days = Math.min(Math.max(parseInt(req.query.days as string, 10) || 30, 7), 365);
+      const metrics = await storage.getAiFeedbackMetrics(orgId, days);
+
+      const totalFeedback = metrics.reduce((s: number, m: any) => s + m.totalFeedback, 0);
+      const totalPositive = metrics.reduce((s: number, m: any) => s + m.positiveFeedback, 0);
+      const totalNegative = metrics.reduce((s: number, m: any) => s + m.negativeFeedback, 0);
+      const avgRating =
+        totalFeedback > 0
+          ? metrics.reduce((s: number, m: any) => s + m.avgRating * m.totalFeedback, 0) / totalFeedback
+          : 0;
+
+      // Category breakdown from feedback
+      const allFeedback = await storage.getAiFeedback(undefined, undefined);
+      const categoryBreakdown: Record<string, { count: number; avgRating: number; topIssues: string[] }> = {};
+      const correctionReasons: Record<string, number> = {};
+
+      for (const fb of Array.isArray(allFeedback) ? allFeedback : []) {
+        const cat = (fb as any).resourceType || "unknown";
+        if (!categoryBreakdown[cat]) categoryBreakdown[cat] = { count: 0, avgRating: 0, topIssues: [] };
+        categoryBreakdown[cat].count++;
+        categoryBreakdown[cat].avgRating += (fb as any).rating || 0;
+        if ((fb as any).correctionReason) {
+          const reason = String((fb as any).correctionReason).toLowerCase();
+          correctionReasons[reason] = (correctionReasons[reason] || 0) + 1;
+        }
+      }
+      for (const cat of Object.values(categoryBreakdown)) {
+        cat.avgRating = cat.count > 0 ? Math.round((cat.avgRating / cat.count) * 10) / 10 : 0;
+      }
+
+      // Sort correction reasons to find top issues
+      const sortedReasons = Object.entries(correctionReasons)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([reason, count]) => ({ reason, count }));
+
+      // 35.3: Generate prompt improvement suggestions from negative patterns
+      const suggestions: Array<{ category: string; issue: string; suggestedFix: string; confidence: string }> = [];
+      for (const [reason, count] of Object.entries(correctionReasons)) {
+        if (count >= 3) {
+          if (reason.includes("severity") || reason.includes("wrong severity")) {
+            suggestions.push({
+              category: "Severity Classification",
+              issue: `${count} feedback entries report incorrect severity classification`,
+              suggestedFix:
+                "Add explicit severity calibration examples to the triage prompt. Include boundary cases between severity levels.",
+              confidence: count >= 5 ? "high" : "medium",
+            });
+          }
+          if (reason.includes("ioc") || reason.includes("missed") || reason.includes("indicator")) {
+            suggestions.push({
+              category: "IOC Extraction",
+              issue: `${count} feedback entries report missed indicators`,
+              suggestedFix: "Expand the IOC extraction section of the prompt with more indicator types and edge cases.",
+              confidence: count >= 5 ? "high" : "medium",
+            });
+          }
+          if (reason.includes("context") || reason.includes("irrelevant") || reason.includes("hallucin")) {
+            suggestions.push({
+              category: "Context Relevance",
+              issue: `${count} feedback entries report irrelevant or hallucinated context`,
+              suggestedFix:
+                'Tighten the grounding instructions. Add "Only reference data from the provided context" constraints.',
+              confidence: count >= 5 ? "high" : "medium",
+            });
+          }
+          if (reason.includes("format") || reason.includes("json") || reason.includes("schema")) {
+            suggestions.push({
+              category: "Output Format",
+              issue: `${count} feedback entries report format/schema issues`,
+              suggestedFix: "Add stricter JSON schema validation in the prompt and include a concrete output example.",
+              confidence: count >= 5 ? "high" : "medium",
+            });
+          }
+        }
+      }
+
+      res.json({
+        summary: {
+          totalFeedback,
+          totalPositive,
+          totalNegative,
+          avgRating,
+          positiveRate: totalFeedback > 0 ? Math.round((totalPositive / totalFeedback) * 100) : 0,
+        },
+        trends: metrics,
+        categoryBreakdown,
+        topCorrectionReasons: sortedReasons,
+        promptImprovementSuggestions: suggestions,
+        period: `${days} days`,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch feedback analytics" });
+    }
+  });
+
+  // ── 35.1: Inline Feedback on AI Responses ───────────────────────────────────
+
+  app.post("/api/ai/feedback/inline", isAuthenticated, async (req, res) => {
+    try {
+      const { resourceType, resourceId, thumbs, comment, aiOutput } = req.body;
+      if (!resourceType || !thumbs || !["up", "down"].includes(thumbs)) {
+        return res.status(400).json({ message: "resourceType and thumbs (up|down) are required" });
+      }
+      const rating = thumbs === "up" ? 5 : 1;
+      const feedback = await storage.createAiFeedback({
+        userId: (req as any).user?.id,
+        userName: (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Analyst",
+        resourceType: String(resourceType).slice(0, 64),
+        resourceId: resourceId ? String(resourceId).slice(0, 255) : undefined,
+        rating,
+        comment: comment ? String(comment).slice(0, 2000) : undefined,
+        aiOutput,
+      });
+
+      // Active Learning: auto-process inline feedback
+      const orgId = (req as any).user?.orgId;
+      if (orgId && thumbs === "down") {
+        const outcome = "dismissed";
+        recordFeedbackOutcome({
+          orgId,
+          feedbackId: feedback.id,
+          outcome,
+          source: "inline",
+          category: String(resourceType),
+          reason: comment ? String(comment).slice(0, 2000) : undefined,
+        }).catch((err) =>
+          logger.child("active-learning").warn("Failed to record inline feedback outcome", { error: String(err) }),
+        );
+      }
+
+      res.status(201).json(feedback);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to submit inline feedback" });
+    }
+  });
+
   app.post("/api/ai/cache/clear", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
     try {
       clearModelCache();
