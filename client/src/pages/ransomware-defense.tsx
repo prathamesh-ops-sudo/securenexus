@@ -48,6 +48,11 @@ import {
   Eye,
   AlertOctagon,
   Plug,
+  MapPin,
+  Timer,
+  CalendarClock,
+  BarChart3,
+  Gauge,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { TablePageSkeleton } from "@/components/page-skeleton";
@@ -592,17 +597,113 @@ export default function RansomwareDefensePage() {
 
         {/* ── DASHBOARD TAB ────────────────────────────────────────────── */}
         <TabsContent value="dashboard" className="space-y-6">
-          {/* Readiness Score */}
+          {/* 58.1 — Prominent Kill Switch Panel */}
+          <Card
+            className={`border-2 ${
+              killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed"
+                ? "border-red-500/60 bg-red-950/30"
+                : "border-zinc-700 bg-zinc-900/50"
+            }`}
+          >
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`p-4 rounded-full ${
+                      killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed"
+                        ? "bg-red-500/20"
+                        : "bg-zinc-800"
+                    }`}
+                  >
+                    <Power
+                      className={`h-8 w-8 ${
+                        killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed"
+                          ? "text-red-400"
+                          : "text-zinc-400"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-zinc-200">Emergency Kill Switch</h2>
+                    <p className="text-sm text-zinc-400">
+                      {killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed"
+                        ? `ACTIVE — ${killSwitchEvents[0].isolatedCount}/${killSwitchEvents[0].totalSensors} endpoints isolated`
+                        : killSwitchEvents &&
+                            killSwitchEvents.length > 0 &&
+                            killSwitchEvents[0].status === "rolled_back"
+                          ? "Rolled back — all endpoints restored"
+                          : "Ready — not activated"}
+                    </p>
+                    {killSwitchEvents && killSwitchEvents.length > 0 && (
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Last event: {formatDate(killSwitchEvents[0].createdAt)}
+                        {killSwitchEvents[0].reason ? ` — ${killSwitchEvents[0].reason}` : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed" && (
+                    <Button
+                      variant="outline"
+                      className="gap-1 border-zinc-700"
+                      onClick={() => rollbackKillSwitch.mutate(killSwitchEvents[0].id)}
+                      disabled={rollbackKillSwitch.isPending}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Rollback
+                    </Button>
+                  )}
+                  <Button
+                    size="lg"
+                    className="bg-red-600 hover:bg-red-700 text-white gap-2 px-6 py-5 text-base font-bold shadow-lg shadow-red-900/30"
+                    onClick={() => setKillSwitchOpen(true)}
+                  >
+                    <PowerOff className="h-5 w-5" />
+                    ISOLATE ALL
+                  </Button>
+                </div>
+              </div>
+              {/* Recovery procedures quick-links */}
+              {killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed" && (
+                <div className="mt-4 pt-4 border-t border-red-500/20">
+                  <p className="text-xs font-medium text-red-300 mb-2">Recovery Procedures:</p>
+                  <div className="flex gap-2 text-xs">
+                    <Badge
+                      className="bg-zinc-800 text-zinc-300 cursor-pointer hover:bg-zinc-700"
+                      onClick={() => setTab("runbooks")}
+                    >
+                      <BookOpen className="h-3 w-3 mr-1" /> View Runbooks
+                    </Badge>
+                    <Badge
+                      className="bg-zinc-800 text-zinc-300 cursor-pointer hover:bg-zinc-700"
+                      onClick={() => setTab("backups")}
+                    >
+                      <HardDrive className="h-3 w-3 mr-1" /> Check Backups
+                    </Badge>
+                    <Badge
+                      className="bg-zinc-800 text-zinc-300 cursor-pointer hover:bg-zinc-700"
+                      onClick={() => setTab("exercises")}
+                    >
+                      <Users className="h-3 w-3 mr-1" /> Tabletop Exercises
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Readiness Score + 58.4 Recovery Readiness Score */}
           {readiness && (
             <Card className="bg-zinc-900/50 border-zinc-800">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  Ransomware Readiness Score
+                  <Gauge className="h-4 w-4" />
+                  Recovery Readiness Score
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-6 mb-4">
                   <div className="text-center">
                     <div className={`text-5xl font-bold ${gradeColor(readiness.grade)}`}>{readiness.grade}</div>
                     <div className="text-sm text-zinc-400 mt-1">{readiness.score}/100</div>
@@ -620,6 +721,43 @@ export default function RansomwareDefensePage() {
                         ))}
                       </div>
                     )}
+                  </div>
+                </div>
+                {/* 58.4 — Recovery readiness breakdown */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-zinc-800">
+                  <div className="text-center p-2 border border-zinc-800 rounded">
+                    <HardDrive className="h-4 w-4 mx-auto text-blue-400 mb-1" />
+                    <div className="text-lg font-bold text-zinc-200">
+                      {summary?.backupVerifications.passed ?? 0}/{summary?.backupVerifications.total ?? 0}
+                    </div>
+                    <div className="text-xs text-zinc-500">Backup Coverage</div>
+                  </div>
+                  <div className="text-center p-2 border border-zinc-800 rounded">
+                    <RefreshCw className="h-4 w-4 mx-auto text-green-400 mb-1" />
+                    <div className="text-lg font-bold text-zinc-200">
+                      {backups
+                        ? backups.filter((b) => {
+                            if (!b.lastVerifiedAt) return false;
+                            const d = Date.now() - new Date(b.lastVerifiedAt).getTime();
+                            return d < 7 * 24 * 60 * 60 * 1000;
+                          }).length
+                        : 0}
+                    </div>
+                    <div className="text-xs text-zinc-500">Verified (7d)</div>
+                  </div>
+                  <div className="text-center p-2 border border-zinc-800 rounded">
+                    <Clock className="h-4 w-4 mx-auto text-amber-400 mb-1" />
+                    <div className="text-lg font-bold text-zinc-200">
+                      {backups && backups.length > 0
+                        ? `${Math.round(backups.reduce((s, b) => s + (b.rtoHours || 0), 0) / backups.length)}h`
+                        : "—"}
+                    </div>
+                    <div className="text-xs text-zinc-500">Avg RTO</div>
+                  </div>
+                  <div className="text-center p-2 border border-zinc-800 rounded">
+                    <BookOpen className="h-4 w-4 mx-auto text-purple-400 mb-1" />
+                    <div className="text-lg font-bold text-zinc-200">{summary?.recoveryRunbooks.total ?? 0}</div>
+                    <div className="text-xs text-zinc-500">Runbooks Documented</div>
                   </div>
                 </div>
               </CardContent>
@@ -830,6 +968,76 @@ export default function RansomwareDefensePage() {
 
         {/* ── CANARY FILES TAB ─────────────────────────────────────────── */}
         <TabsContent value="canary" className="space-y-6">
+          {/* 58.2 — Canary File Monitoring Map */}
+          {canaryFiles &&
+            canaryFiles.length > 0 &&
+            (() => {
+              const byHost: Record<string, { active: number; triggered: number; latencies: number[] }> = {};
+              for (const f of canaryFiles) {
+                const host = f.deployedToHost || "unassigned";
+                if (!byHost[host]) byHost[host] = { active: 0, triggered: 0, latencies: [] };
+                if (f.status === "active") byHost[host].active++;
+                if (f.status === "triggered") {
+                  byHost[host].triggered++;
+                  if (f.triggeredAt && f.createdAt) {
+                    const latencyMs = new Date(f.triggeredAt).getTime() - new Date(f.createdAt).getTime();
+                    byHost[host].latencies.push(latencyMs);
+                  }
+                }
+              }
+              const totalActive = canaryFiles.filter((f) => f.status === "active").length;
+              const totalTriggered = canaryFiles.filter((f) => f.status === "triggered").length;
+              return (
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      Canary File Location Map
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4 mb-4 text-xs text-zinc-400">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-green-400" /> {totalActive} Active
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-red-400" /> {totalTriggered} Triggered
+                      </span>
+                      <span>{Object.keys(byHost).length} hosts covered</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {Object.entries(byHost)
+                        .sort((a, b) => b[1].triggered - a[1].triggered)
+                        .map(([host, info]) => (
+                          <div
+                            key={host}
+                            className={`border rounded p-3 ${
+                              info.triggered > 0 ? "border-red-500/40 bg-red-950/20" : "border-zinc-800 bg-zinc-900/30"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1 mb-1">
+                              <MapPin className={`h-3 w-3 ${info.triggered > 0 ? "text-red-400" : "text-green-400"}`} />
+                              <span className="text-xs font-medium text-zinc-300 truncate">{host}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <span className="text-green-400">{info.active} active</span>
+                              {info.triggered > 0 && <span className="text-red-400">{info.triggered} triggered</span>}
+                            </div>
+                            {info.latencies.length > 0 && (
+                              <div className="text-xs text-zinc-500 mt-1 flex items-center gap-1">
+                                <Timer className="h-3 w-3" />
+                                Avg detection:{" "}
+                                {Math.round(info.latencies.reduce((a, b) => a + b, 0) / info.latencies.length / 1000)}s
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-zinc-200">Canary Files</h2>
@@ -1083,6 +1291,71 @@ export default function RansomwareDefensePage() {
 
         {/* ── TABLETOP EXERCISES TAB ───────────────────────────────────── */}
         <TabsContent value="exercises" className="space-y-6">
+          {/* 58.3 — Tabletop Exercise Scheduling Summary */}
+          {exercises &&
+            (() => {
+              const completed = exercises.filter((e) => e.status === "completed");
+              const scheduled = exercises.filter((e) => e.scheduledAt && e.status !== "completed");
+              const now = Date.now();
+              const last90d = completed.filter(
+                (e) => e.completedAt && now - new Date(e.completedAt).getTime() < 90 * 24 * 60 * 60 * 1000,
+              ).length;
+              const nextUp = scheduled
+                .filter((e) => e.scheduledAt && new Date(e.scheduledAt).getTime() > now)
+                .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime())[0];
+              const avgScore =
+                completed.length > 0
+                  ? Math.round(completed.reduce((s, e) => s + (e.score || 0), 0) / completed.length)
+                  : null;
+              return (
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                      <CalendarClock className="h-4 w-4" />
+                      Exercise Schedule &amp; Compliance
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      <div className="text-center p-2 border border-zinc-800 rounded">
+                        <div className="text-lg font-bold text-zinc-200">{completed.length}</div>
+                        <div className="text-xs text-zinc-500">Completed</div>
+                      </div>
+                      <div className="text-center p-2 border border-zinc-800 rounded">
+                        <div className={`text-lg font-bold ${last90d >= 1 ? "text-green-400" : "text-red-400"}`}>
+                          {last90d}
+                        </div>
+                        <div className="text-xs text-zinc-500">Last 90 Days</div>
+                      </div>
+                      <div className="text-center p-2 border border-zinc-800 rounded">
+                        <div className="text-lg font-bold text-zinc-200">{scheduled.length}</div>
+                        <div className="text-xs text-zinc-500">Scheduled</div>
+                      </div>
+                      <div className="text-center p-2 border border-zinc-800 rounded">
+                        <div className="text-lg font-bold text-zinc-200">
+                          {avgScore != null ? `${avgScore}/100` : "—"}
+                        </div>
+                        <div className="text-xs text-zinc-500">Avg Score</div>
+                      </div>
+                      <div className="text-center p-2 border border-zinc-800 rounded">
+                        <div className="text-sm font-bold text-zinc-200">
+                          {nextUp ? formatDate(nextUp.scheduledAt) : "None"}
+                        </div>
+                        <div className="text-xs text-zinc-500">Next Exercise</div>
+                      </div>
+                    </div>
+                    {last90d < 1 && (
+                      <p className="text-xs text-amber-400 mt-3 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Most compliance frameworks (NIST, ISO 27001) require quarterly tabletop exercises. Schedule one
+                        now.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-zinc-200">Tabletop Exercises</h2>

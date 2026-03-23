@@ -897,4 +897,361 @@ export function registerCommunityIntelRoutes(app: Express): void {
       }
     },
   );
+
+  // ==========================================================================
+  // 59.4 — ANONYMIZATION VERIFICATION
+  // ==========================================================================
+
+  app.post(
+    "/api/community-intel/anonymize-check",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "read"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { iocValue, iocType, context, tags } = req.body as {
+          iocValue: string;
+          iocType: string;
+          context?: string;
+          tags?: string[];
+        };
+
+        if (!iocValue || !iocType) {
+          return res.status(400).json({ message: "iocValue and iocType are required" });
+        }
+
+        const issues: Array<{
+          field: string;
+          type: string;
+          description: string;
+          severity: string;
+          match?: string;
+        }> = [];
+
+        // Check for internal/private IP addresses in the IOC value
+        const privateIpPatterns = [
+          /\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g,
+          /\b172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b/g,
+          /\b192\.168\.\d{1,3}\.\d{1,3}\b/g,
+          /\bfc[0-9a-f]{2}:/gi, // IPv6 ULA
+          /\bfd[0-9a-f]{2}:/gi,
+        ];
+
+        for (const pattern of privateIpPatterns) {
+          const matches = iocValue.match(pattern);
+          if (matches) {
+            for (const m of matches) {
+              issues.push({
+                field: "iocValue",
+                type: "private_ip",
+                description: `Private/internal IP address detected: ${m}`,
+                severity: "high",
+                match: m,
+              });
+            }
+          }
+        }
+
+        // Check for email addresses that may reveal employee names
+        const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+        const emailMatches: string[] = Array.from(iocValue.match(emailPattern) || []);
+        if (context) {
+          const contextEmailMatches = context.match(emailPattern) || [];
+          emailMatches.push(...contextEmailMatches);
+        }
+        for (const email of emailMatches) {
+          issues.push({
+            field: email === iocValue ? "iocValue" : "context",
+            type: "employee_email",
+            description: `Email address may reveal employee identity: ${email}`,
+            severity: "medium",
+            match: email,
+          });
+        }
+
+        // Check for common person name patterns in context
+        if (context) {
+          // Look for patterns like "reported by John Smith" or "analyst: Jane Doe"
+          const namePatterns = [
+            /(?:reported by|analyst|user|employee|admin|contact)\s*:?\s*([A-Z][a-z]+ [A-Z][a-z]+)/gi,
+          ];
+          for (const pattern of namePatterns) {
+            let m: RegExpExecArray | null;
+            while ((m = pattern.exec(context)) !== null) {
+              issues.push({
+                field: "context",
+                type: "employee_name",
+                description: `Possible employee name detected: "${m[1]}"`,
+                severity: "high",
+                match: m[1],
+              });
+            }
+          }
+        }
+
+        // Check for internal hostnames in context or value
+        const fullText = `${iocValue} ${context || ""} ${(tags || []).join(" ")}`;
+        const internalHostPatterns = [
+          /\b[a-zA-Z]+-(?:srv|dc|app|db|web|mail|vpn|fw|proxy)\d*\b/gi, // corp naming conventions
+          /\b(?:internal|intranet|corp|local)\.[a-zA-Z0-9.-]+\b/gi,
+        ];
+        for (const pattern of internalHostPatterns) {
+          const matches = fullText.match(pattern);
+          if (matches) {
+            for (const m of matches) {
+              issues.push({
+                field: "context",
+                type: "internal_hostname",
+                description: `Internal hostname detected: "${m}"`,
+                severity: "medium",
+                match: m,
+              });
+            }
+          }
+        }
+
+        // Check if org ID appears in any field
+        const orgIdStr = String(orgId);
+        if (iocValue.includes(orgIdStr) || (context && context.includes(orgIdStr))) {
+          issues.push({
+            field: "iocValue",
+            type: "org_identifier",
+            description: "Organization identifier found in IOC data",
+            severity: "critical",
+          });
+        }
+
+        // Build anonymized preview
+        let anonymizedValue = iocValue;
+        let anonymizedContext = context || "";
+        for (const issue of issues) {
+          if (issue.match) {
+            anonymizedValue = anonymizedValue.replace(issue.match, "[REDACTED]");
+            anonymizedContext = anonymizedContext.replace(issue.match, "[REDACTED]");
+          }
+        }
+
+        const isClean = issues.length === 0;
+        const hasCritical = issues.some((i) => i.severity === "critical" || i.severity === "high");
+
+        res.json({
+          isClean,
+          canShare: !hasCritical,
+          issues,
+          issueCount: issues.length,
+          preview: {
+            iocValue: anonymizedValue,
+            iocType,
+            context: anonymizedContext || null,
+            tags: tags || [],
+          },
+          recommendation: isClean
+            ? "IOC is clean and ready to share."
+            : hasCritical
+              ? "Critical issues found. Do NOT share until resolved."
+              : "Minor issues detected. Review the anonymized preview before sharing.",
+        });
+      } catch (error) {
+        log.error("Failed to check anonymization", { error: String(error) });
+        res.status(500).json({ message: "Failed to check anonymization" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 59.5 — IOC QUALITY SCORING
+  // ==========================================================================
+
+  app.get(
+    "/api/community-intel/iocs/:id/quality",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const iocId = String(req.params.id);
+
+        const [ioc] = await db.select().from(sharedIocs).where(eq(sharedIocs.id, iocId)).limit(1);
+
+        if (!ioc) {
+          return res.status(404).json({ message: "IOC not found" });
+        }
+
+        // Source reputation — based on sighting count and confidence
+        const sightingCount = ioc.sightingCount || 0;
+        const sourceReputation = Math.min(100, sightingCount * 15 + (ioc.confidence || 50));
+
+        // Corroboration — how many unique orgs/sectors reported similar IOC
+        const industrySectors = (ioc.industrySectors as string[]) || [];
+        const corroborationCount = industrySectors.length;
+        const corroborationScore = Math.min(100, corroborationCount * 25);
+
+        // Freshness — how recent is the IOC
+        const ageMs = Date.now() - new Date(ioc.lastSeenAt || ioc.createdAt).getTime();
+        const ageDays = ageMs / (1000 * 60 * 60 * 24);
+        const freshnessScore = ageDays < 1 ? 100 : ageDays < 7 ? 85 : ageDays < 30 ? 60 : ageDays < 90 ? 30 : 10;
+
+        // False positive rate — inverse of confidence as proxy
+        const confidence = ioc.confidence || 50;
+        const fpRateScore = confidence; // Higher confidence = lower FP = higher score
+
+        // TLP consideration
+        const tlpBonus = ioc.tlpLevel === "green" || ioc.tlpLevel === "white" ? 10 : 0;
+
+        // Severity weight — higher severity IOCs score a bit higher
+        const severityWeight =
+          ioc.severity === "critical" ? 15 : ioc.severity === "high" ? 10 : ioc.severity === "medium" ? 5 : 0;
+
+        // Overall quality score (weighted average)
+        const overallScore = Math.min(
+          100,
+          Math.round(
+            sourceReputation * 0.25 +
+              corroborationScore * 0.25 +
+              freshnessScore * 0.25 +
+              fpRateScore * 0.15 +
+              tlpBonus +
+              severityWeight * 0.1,
+          ),
+        );
+
+        const grade =
+          overallScore >= 80
+            ? "A"
+            : overallScore >= 60
+              ? "B"
+              : overallScore >= 40
+                ? "C"
+                : overallScore >= 20
+                  ? "D"
+                  : "F";
+
+        res.json({
+          iocId: ioc.id,
+          iocValue: ioc.iocValue,
+          iocType: ioc.iocType,
+          overallScore,
+          grade,
+          breakdown: {
+            sourceReputation: {
+              score: Math.min(100, Math.round(sourceReputation)),
+              weight: 0.25,
+              description: "Based on sighting count and reported confidence",
+            },
+            corroboration: {
+              score: Math.min(100, Math.round(corroborationScore)),
+              weight: 0.25,
+              count: corroborationCount,
+              description: `Reported across ${corroborationCount} industry sector(s)`,
+            },
+            freshness: {
+              score: Math.round(freshnessScore),
+              weight: 0.25,
+              ageDays: Math.round(ageDays),
+              description:
+                ageDays < 1
+                  ? "Very fresh (< 24h)"
+                  : ageDays < 7
+                    ? "Recent (< 7d)"
+                    : ageDays < 30
+                      ? "Aging (< 30d)"
+                      : "Stale (> 30d)",
+            },
+            falsePositiveRate: {
+              score: Math.round(fpRateScore),
+              weight: 0.15,
+              estimatedFpRate: `${100 - confidence}%`,
+              description: `Estimated ${100 - confidence}% false positive rate based on confidence level`,
+            },
+          },
+          metadata: {
+            severity: ioc.severity,
+            tlpLevel: ioc.tlpLevel,
+            sightingCount,
+            isActive: ioc.isActive,
+            firstSeenAt: ioc.firstSeenAt,
+            lastSeenAt: ioc.lastSeenAt,
+          },
+        });
+      } catch (error) {
+        log.error("Failed to compute IOC quality score", { error: String(error) });
+        res.status(500).json({ message: "Failed to compute IOC quality score" });
+      }
+    },
+  );
+
+  // Batch quality scoring for IOC browser
+  app.get(
+    "/api/community-intel/iocs/quality-scores",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const limit = Math.min(Number(req.query.limit) || 20, 100);
+
+        const iocs = await db
+          .select()
+          .from(sharedIocs)
+          .where(eq(sharedIocs.isActive, true))
+          .orderBy(desc(sharedIocs.lastSeenAt))
+          .limit(limit);
+
+        const scored = iocs.map((ioc) => {
+          const sightingCount = ioc.sightingCount || 0;
+          const sourceReputation = Math.min(100, sightingCount * 15 + (ioc.confidence || 50));
+          const industrySectors = (ioc.industrySectors as string[]) || [];
+          const corroborationScore = Math.min(100, industrySectors.length * 25);
+          const ageMs = Date.now() - new Date(ioc.lastSeenAt || ioc.createdAt).getTime();
+          const ageDays = ageMs / (1000 * 60 * 60 * 24);
+          const freshnessScore = ageDays < 1 ? 100 : ageDays < 7 ? 85 : ageDays < 30 ? 60 : ageDays < 90 ? 30 : 10;
+          const fpRateScore = ioc.confidence || 50;
+
+          const overallScore = Math.min(
+            100,
+            Math.round(
+              sourceReputation * 0.25 +
+                corroborationScore * 0.25 +
+                freshnessScore * 0.25 +
+                fpRateScore * 0.15 +
+                (ioc.tlpLevel === "green" || ioc.tlpLevel === "white" ? 10 : 0) +
+                (ioc.severity === "critical" ? 1.5 : ioc.severity === "high" ? 1 : ioc.severity === "medium" ? 0.5 : 0),
+            ),
+          );
+
+          const grade =
+            overallScore >= 80
+              ? "A"
+              : overallScore >= 60
+                ? "B"
+                : overallScore >= 40
+                  ? "C"
+                  : overallScore >= 20
+                    ? "D"
+                    : "F";
+
+          return {
+            iocId: ioc.id,
+            iocValue: ioc.iocValue,
+            iocType: ioc.iocType,
+            severity: ioc.severity,
+            overallScore,
+            grade,
+            sightingCount,
+            ageDays: Math.round(ageDays),
+          };
+        });
+
+        // Sort by quality score descending
+        scored.sort((a, b) => b.overallScore - a.overallScore);
+
+        res.json({ scores: scored, total: scored.length });
+      } catch (error) {
+        log.error("Failed to compute batch IOC quality scores", { error: String(error) });
+        res.status(500).json({ message: "Failed to compute batch quality scores" });
+      }
+    },
+  );
 }
