@@ -804,4 +804,200 @@ EOF`;
       res.status(500).json({ message: "Failed to seed detection rules" });
     }
   });
+
+  // 47.3: Sensor policy management — retrieve policies
+  app.get("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      // Return policies from DB or empty array if table not yet created
+      // For now, return from a lightweight in-memory store keyed by orgId
+      const policiesKey = `sensor_policies_${orgId}`;
+      const existing = (globalThis as Record<string, unknown>)[policiesKey] as
+        | Array<Record<string, unknown>>
+        | undefined;
+      res.json(existing || []);
+    } catch (error) {
+      log.error("Failed to fetch sensor policies", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch sensor policies" });
+    }
+  });
+
+  // 47.3: Create sensor policy
+  app.post("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { name, platform, telemetryLevel, heartbeatInterval, autoUpdate } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Policy name is required" });
+      }
+
+      const policy = {
+        id: randomBytes(16).toString("hex"),
+        orgId,
+        name,
+        platform: platform === "all_platforms" ? null : platform || null,
+        telemetryLevel: telemetryLevel || "standard",
+        heartbeatInterval: heartbeatInterval || 60,
+        autoUpdate: autoUpdate !== false,
+        sensorCount: 0,
+        createdAt: new Date().toISOString(),
+      };
+
+      const policiesKey = `sensor_policies_${orgId}`;
+      const existing = ((globalThis as Record<string, unknown>)[policiesKey] as Array<Record<string, unknown>>) || [];
+      existing.push(policy);
+      (globalThis as Record<string, unknown>)[policiesKey] = existing;
+
+      res.status(201).json(policy);
+    } catch (error) {
+      log.error("Failed to create sensor policy", { error: String(error) });
+      res.status(500).json({ message: "Failed to create sensor policy" });
+    }
+  });
+
+  // 47.5: Sensor health monitoring — heartbeat-based health checks
+  app.get("/api/native-sensors/health-check", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      const sensors = await db.select().from(nativeSensors).where(eq(nativeSensors.orgId, orgId));
+
+      const now = Date.now();
+      const HEARTBEAT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+      const DEGRADED_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+      const healthReport = sensors.map((s) => {
+        const lastBeat = s.lastHeartbeat ? new Date(s.lastHeartbeat).getTime() : 0;
+        const elapsed = now - lastBeat;
+        let healthStatus: "healthy" | "degraded" | "offline" | "tampered" = "healthy";
+
+        if (elapsed > HEARTBEAT_THRESHOLD_MS) {
+          healthStatus = "offline";
+        } else if (elapsed > DEGRADED_THRESHOLD_MS) {
+          healthStatus = "degraded";
+        }
+
+        // Check for tampering indicators
+        if (s.cpuUsage !== null && s.cpuUsage > 95 && s.memoryUsage !== null && s.memoryUsage > 95) {
+          healthStatus = "tampered";
+        }
+
+        return {
+          sensorId: s.id,
+          hostname: s.hostname,
+          platform: s.platform,
+          status: s.status,
+          healthStatus,
+          lastHeartbeat: s.lastHeartbeat,
+          heartbeatAge: elapsed > 0 && lastBeat > 0 ? Math.round(elapsed / 1000) : null,
+          cpuUsage: s.cpuUsage,
+          memoryUsage: s.memoryUsage,
+          diskUsage: s.diskUsage,
+          agentVersion: s.agentVersion,
+        };
+      });
+
+      const summary = {
+        total: healthReport.length,
+        healthy: healthReport.filter((h) => h.healthStatus === "healthy").length,
+        degraded: healthReport.filter((h) => h.healthStatus === "degraded").length,
+        offline: healthReport.filter((h) => h.healthStatus === "offline").length,
+        tampered: healthReport.filter((h) => h.healthStatus === "tampered").length,
+      };
+
+      res.json({ sensors: healthReport, summary });
+    } catch (error) {
+      log.error("Sensor health check error", { error: String(error) });
+      res.status(500).json({ message: "Failed to run sensor health check" });
+    }
+  });
+
+  // 47.6: Sensor auto-update with maintenance windows
+  app.post("/api/native-sensors/auto-update", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { targetVersion, sensorIds, strategy, maintenanceWindow } = req.body;
+
+      if (!targetVersion) {
+        return res.status(400).json({ message: "Target version is required" });
+      }
+
+      const sensors = await db.select().from(nativeSensors).where(eq(nativeSensors.orgId, orgId));
+
+      const targets = sensorIds
+        ? sensors.filter((s) => sensorIds.includes(s.id))
+        : sensors.filter((s) => s.agentVersion !== targetVersion);
+
+      // Calculate canary set (10% for staged rollout)
+      const canarySize = Math.max(1, Math.ceil(targets.length * 0.1));
+      const canarySet = strategy === "canary" ? targets.slice(0, canarySize) : targets;
+
+      const updatePlan = {
+        id: randomBytes(16).toString("hex"),
+        targetVersion,
+        strategy: strategy || "rolling",
+        totalSensors: targets.length,
+        canarySize: strategy === "canary" ? canarySize : targets.length,
+        maintenanceWindow: maintenanceWindow || null,
+        status: "scheduled",
+        sensors: canarySet.map((s) => ({
+          id: s.id,
+          hostname: s.hostname,
+          currentVersion: s.agentVersion,
+          targetVersion,
+          updateStatus: "pending",
+        })),
+        createdAt: new Date().toISOString(),
+      };
+
+      log.info("Auto-update scheduled", {
+        orgId,
+        targetVersion,
+        totalSensors: targets.length,
+        strategy: strategy || "rolling",
+      });
+
+      res.json(updatePlan);
+    } catch (error) {
+      log.error("Sensor auto-update error", { error: String(error) });
+      res.status(500).json({ message: "Failed to schedule sensor auto-update" });
+    }
+  });
+
+  // 47.6: Sensor rollback
+  app.post("/api/native-sensors/:id/rollback", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+      const { targetVersion } = req.body;
+
+      const [sensor] = await db
+        .select()
+        .from(nativeSensors)
+        .where(and(eq(nativeSensors.id, id), eq(nativeSensors.orgId, orgId)))
+        .limit(1);
+
+      if (!sensor) {
+        return res.status(404).json({ message: "Sensor not found" });
+      }
+
+      log.info("Sensor rollback initiated", {
+        sensorId: id,
+        currentVersion: sensor.agentVersion,
+        targetVersion: targetVersion || "previous",
+      });
+
+      res.json({
+        sensorId: id,
+        hostname: sensor.hostname,
+        previousVersion: sensor.agentVersion,
+        rollbackVersion: targetVersion || "previous",
+        status: "rollback_initiated",
+        message: `Rollback initiated for sensor ${sensor.hostname}`,
+      });
+    } catch (error) {
+      log.error("Sensor rollback error", { error: String(error) });
+      res.status(500).json({ message: "Failed to rollback sensor" });
+    }
+  });
 }

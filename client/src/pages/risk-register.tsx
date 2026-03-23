@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,15 @@ import {
   Filter,
   ArrowUpRight,
   ArrowDownRight,
+  DollarSign,
+  Clock,
+  Users,
+  Target,
+  Calendar,
+  CheckCircle2,
+  XCircle,
+  LineChart,
+  Zap,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -260,11 +270,257 @@ function CreateRiskDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+// 46.2: Risk Trend Tracking
+function RiskTrendPanel({ risks }: { risks: RiskEntry[] }) {
+  const byMonth: Record<string, { count: number; avgScore: number; avgResidual: number }> = {};
+  risks.forEach((r) => {
+    const month = r.createdAt?.slice(0, 7) || "unknown";
+    if (!byMonth[month]) byMonth[month] = { count: 0, avgScore: 0, avgResidual: 0 };
+    byMonth[month].count++;
+    byMonth[month].avgScore += r.inherentRiskScore;
+    if (r.residualRiskScore !== null) byMonth[month].avgResidual += r.residualRiskScore;
+  });
+  const months = Object.entries(byMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, data]) => ({
+      month,
+      count: data.count,
+      avgScore: data.count > 0 ? Math.round(data.avgScore / data.count) : 0,
+      avgResidual: data.count > 0 ? Math.round(data.avgResidual / data.count) : 0,
+    }));
+  const maxScore = Math.max(...months.map((m) => m.avgScore), 1);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <LineChart className="h-4 w-4" /> Risk Score Trends
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {months.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            No trend data yet. Add risks to see score trends over time.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-end gap-1 h-32">
+              {months.map((m) => (
+                <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full flex flex-col items-center gap-0.5" style={{ height: "100px" }}>
+                    <div
+                      className="w-full bg-red-500/60 rounded-t"
+                      style={{ height: `${(m.avgScore / maxScore) * 100}%`, minHeight: m.avgScore > 0 ? "4px" : "0" }}
+                      title={`Inherent: ${m.avgScore}`}
+                    />
+                    {m.avgResidual > 0 && (
+                      <div
+                        className="w-full bg-green-500/60 rounded-b"
+                        style={{ height: `${(m.avgResidual / maxScore) * 100}%`, minHeight: "4px" }}
+                        title={`Residual: ${m.avgResidual}`}
+                      />
+                    )}
+                  </div>
+                  <span className="text-[9px] text-muted-foreground">{m.month.slice(5)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-2 bg-red-500/60 rounded" /> Inherent
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-2 bg-green-500/60 rounded" /> Residual
+              </span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// 46.3: Risk Ownership & Accountability
+function RiskOwnershipPanel({ risks }: { risks: RiskEntry[] }) {
+  const owners: Record<string, { total: number; critical: number; overdue: number; treating: number }> = {};
+  risks.forEach((r) => {
+    const owner = r.riskOwner || "Unassigned";
+    if (!owners[owner]) owners[owner] = { total: 0, critical: 0, overdue: 0, treating: 0 };
+    owners[owner].total++;
+    if (r.inherentRiskScore >= 20) owners[owner].critical++;
+    if (r.status === "treating") owners[owner].treating++;
+    const age = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+    if (age > 90 && r.status !== "closed" && r.status !== "monitoring") owners[owner].overdue++;
+  });
+  const sorted = Object.entries(owners).sort(([, a], [, b]) => b.critical - a.critical || b.total - a.total);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Users className="h-4 w-4" /> Risk Ownership
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No risks to display ownership for.</p>
+        ) : (
+          <div className="space-y-2">
+            {sorted.map(([owner, data]) => (
+              <div key={owner} className="flex items-center justify-between p-2 rounded border">
+                <div className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm font-medium">{owner}</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <span>{data.total} risks</span>
+                  {data.critical > 0 && (
+                    <Badge variant="outline" className="bg-red-500/10 text-red-500">
+                      {data.critical} critical
+                    </Badge>
+                  )}
+                  {data.overdue > 0 && (
+                    <Badge variant="outline" className="bg-orange-500/10 text-orange-500">
+                      <Clock className="h-3 w-3 mr-0.5" />
+                      {data.overdue} overdue
+                    </Badge>
+                  )}
+                  {data.treating > 0 && (
+                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500">
+                      {data.treating} treating
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// 46.4: Risk Treatment Plans
+function RiskTreatmentPanel({ risks, onUpdate }: { risks: RiskEntry[]; onUpdate: () => void }) {
+  const { toast } = useToast();
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/risks/${id}`, data);
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Treatment updated" });
+      onUpdate();
+    },
+  });
+
+  const treatmentGroups = {
+    mitigate: risks.filter((r) => r.treatment === "mitigate"),
+    accept: risks.filter((r) => r.treatment === "accept"),
+    transfer: risks.filter((r) => r.treatment === "transfer"),
+    avoid: risks.filter((r) => r.treatment === "avoid"),
+  };
+
+  const TREATMENT_META: Record<string, { label: string; icon: typeof Target; color: string; desc: string }> = {
+    mitigate: {
+      label: "Mitigate",
+      icon: Target,
+      color: "text-blue-500",
+      desc: "Reduce likelihood or impact through controls",
+    },
+    accept: {
+      label: "Accept",
+      icon: CheckCircle2,
+      color: "text-green-500",
+      desc: "Acknowledge and monitor without active treatment",
+    },
+    transfer: {
+      label: "Transfer",
+      icon: ArrowUpRight,
+      color: "text-violet-500",
+      desc: "Transfer to third party (insurance, outsourcing)",
+    },
+    avoid: {
+      label: "Avoid",
+      icon: XCircle,
+      color: "text-red-500",
+      desc: "Eliminate the risk by removing the activity",
+    },
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Target className="h-4 w-4" /> Treatment Plans
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Object.entries(treatmentGroups).map(([type, items]) => {
+            const meta = TREATMENT_META[type];
+            const Icon = meta.icon;
+            return (
+              <div key={type} className="border rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon className={`h-4 w-4 ${meta.color}`} />
+                  <span className="font-medium text-sm">{meta.label}</span>
+                  <Badge variant="outline" className="ml-auto">
+                    {items.length}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mb-2">{meta.desc}</p>
+                {items.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">No risks with this treatment</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {items.slice(0, 5).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-muted/50">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Badge className={RISK_LEVEL_BADGE[riskLevel(r.inherentRiskScore)]} variant="outline">
+                            {r.inherentRiskScore}
+                          </Badge>
+                          <span className="truncate">{r.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Badge variant="outline" className="text-[10px]">
+                            {r.status}
+                          </Badge>
+                          {r.status === "identified" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1 text-[10px]"
+                              onClick={() => updateMutation.mutate({ id: r.id, data: { status: "treating" } })}
+                            >
+                              Start
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {items.length > 5 && (
+                      <p className="text-[10px] text-muted-foreground text-center">+{items.length - 5} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function RiskRegisterPage() {
   usePageTitle("Risk Register");
   const { toast } = useToast();
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [heatmapFilter, setHeatmapFilter] = useState<{ l: number; i: number } | null>(null);
+  const queryClient = useQueryClient();
 
   const { data, isLoading, refetch } = useQuery<{ risks: RiskEntry[]; heatmap: number[][]; stats: RiskStats }>({
     queryKey: ["/api/risks", categoryFilter, statusFilter],
@@ -288,7 +544,10 @@ export default function RiskRegisterPage() {
     },
   });
 
-  const risks = data?.risks || [];
+  const allRisks = data?.risks || [];
+  const risks = heatmapFilter
+    ? allRisks.filter((r) => r.likelihood === heatmapFilter.l + 1 && r.impact === heatmapFilter.i + 1)
+    : allRisks;
   const heatmap = data?.heatmap || Array.from({ length: 5 }, () => Array(5).fill(0));
   const stats = data?.stats || {
     total: 0,
@@ -406,53 +665,91 @@ export default function RiskRegisterPage() {
         </Card>
       </div>
 
-      {/* Heatmap */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Risk Heatmap</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="flex flex-col items-end gap-0 pt-0">
-              <span className="text-[10px] text-muted-foreground -rotate-0 mb-1">Likelihood</span>
-              {likelihoodLabels
-                .slice()
-                .reverse()
-                .map((label, idx) => (
-                  <div key={label} className="h-12 flex items-center">
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {5 - idx}. {label}
-                    </span>
+      {heatmapFilter && (
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">
+            Showing risks: Likelihood {heatmapFilter.l + 1}, Impact {heatmapFilter.i + 1}
+          </Badge>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setHeatmapFilter(null)}>
+            Clear filter
+          </Button>
+        </div>
+      )}
+
+      <Tabs defaultValue="heatmap" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="heatmap">Heatmap</TabsTrigger>
+          <TabsTrigger value="trends">Trends</TabsTrigger>
+          <TabsTrigger value="ownership">Ownership</TabsTrigger>
+          <TabsTrigger value="treatment">Treatment Plans</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="heatmap" className="space-y-4">
+          {/* Heatmap */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Risk Heatmap</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                <div className="flex flex-col items-end gap-0 pt-0">
+                  <span className="text-[10px] text-muted-foreground -rotate-0 mb-1">Likelihood</span>
+                  {likelihoodLabels
+                    .slice()
+                    .reverse()
+                    .map((label, idx) => (
+                      <div key={label} className="h-12 flex items-center">
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          {5 - idx}. {label}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                <div className="flex-1">
+                  <div className="grid grid-cols-5 gap-1">
+                    {[4, 3, 2, 1, 0].map((l) =>
+                      [0, 1, 2, 3, 4].map((i) => (
+                        <div
+                          key={`${l}-${i}`}
+                          className={`h-12 rounded flex items-center justify-center text-sm font-bold text-white cursor-pointer transition-all hover:ring-2 hover:ring-white/50 ${HEATMAP_COLORS[l][i]} ${heatmapFilter?.l === l && heatmapFilter?.i === i ? "ring-2 ring-white" : ""}`}
+                          onClick={() =>
+                            setHeatmapFilter(heatmapFilter?.l === l && heatmapFilter?.i === i ? null : { l, i })
+                          }
+                          title={`Likelihood ${l + 1}, Impact ${i + 1} \u2014 ${heatmap[l][i]} risk(s)`}
+                        >
+                          {heatmap[l][i] > 0 ? heatmap[l][i] : ""}
+                        </div>
+                      )),
+                    )}
                   </div>
-                ))}
-            </div>
-            <div className="flex-1">
-              <div className="grid grid-cols-5 gap-1">
-                {[4, 3, 2, 1, 0].map((l) =>
-                  [0, 1, 2, 3, 4].map((i) => (
-                    <div
-                      key={`${l}-${i}`}
-                      className={`h-12 rounded flex items-center justify-center text-sm font-bold text-white ${HEATMAP_COLORS[l][i]}`}
-                    >
-                      {heatmap[l][i] > 0 ? heatmap[l][i] : ""}
-                    </div>
-                  )),
-                )}
-              </div>
-              <div className="grid grid-cols-5 gap-1 mt-1">
-                {impactLabels.map((label, idx) => (
-                  <div key={label} className="text-center text-[10px] text-muted-foreground">
-                    {idx + 1}. {label}
+                  <div className="grid grid-cols-5 gap-1 mt-1">
+                    {impactLabels.map((label, idx) => (
+                      <div key={label} className="text-center text-[10px] text-muted-foreground">
+                        {idx + 1}. {label}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                  <div className="text-center mt-1">
+                    <span className="text-[10px] text-muted-foreground">Impact</span>
+                  </div>
+                </div>
               </div>
-              <div className="text-center mt-1">
-                <span className="text-[10px] text-muted-foreground">Impact</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="trends">
+          <RiskTrendPanel risks={allRisks} />
+        </TabsContent>
+
+        <TabsContent value="ownership">
+          <RiskOwnershipPanel risks={allRisks} />
+        </TabsContent>
+
+        <TabsContent value="treatment">
+          <RiskTreatmentPanel risks={allRisks} onUpdate={() => refetch()} />
+        </TabsContent>
+      </Tabs>
 
       {/* Filters */}
       <div className="flex gap-2">

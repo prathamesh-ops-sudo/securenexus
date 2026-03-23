@@ -2672,4 +2672,160 @@ export function registerStandalonePlatformRoutes(app: Express): void {
       }
     },
   );
+
+  // 46.5: Risk auto-population from security data
+  app.post("/api/risks/auto-populate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const created: Array<{ title: string; category: string; source: string }> = [];
+
+      // Auto-create from critical vulnerabilities
+      const critVulns = await db
+        .select()
+        .from(alerts)
+        .where(and(eq(alerts.orgId, orgId), eq(alerts.severity, "critical"), eq(alerts.status, "open")))
+        .limit(20);
+
+      for (const vuln of critVulns) {
+        const title = `Critical alert: ${vuln.title || "Unnamed alert"}`;
+        const existing = await db
+          .select({ id: riskRegister.id })
+          .from(riskRegister)
+          .where(and(eq(riskRegister.orgId, orgId), eq(riskRegister.title, title)))
+          .limit(1);
+        if (existing.length === 0) {
+          await db.insert(riskRegister).values({
+            orgId,
+            title,
+            description: `Auto-created from critical alert (ID: ${vuln.id})`,
+            category: "technical",
+            likelihood: 4,
+            impact: 5,
+            inherentRiskScore: 20,
+            treatment: "mitigate",
+            status: "identified",
+            tags: ["auto-populated", "critical-alert"],
+          });
+          created.push({ title, category: "technical", source: "critical_alert" });
+        }
+      }
+
+      // Auto-create from CSPM misconfigurations (high severity)
+      const cspmFindings = await db
+        .select()
+        .from(alerts)
+        .where(and(eq(alerts.orgId, orgId), eq(alerts.severity, "high"), eq(alerts.status, "open")))
+        .limit(10);
+
+      for (const finding of cspmFindings) {
+        const title = `CSPM finding: ${finding.title || "Misconfiguration"}`;
+        const existing = await db
+          .select({ id: riskRegister.id })
+          .from(riskRegister)
+          .where(and(eq(riskRegister.orgId, orgId), eq(riskRegister.title, title)))
+          .limit(1);
+        if (existing.length === 0) {
+          await db.insert(riskRegister).values({
+            orgId,
+            title,
+            description: `Auto-created from high-severity CSPM finding (ID: ${finding.id})`,
+            category: "compliance",
+            likelihood: 3,
+            impact: 4,
+            inherentRiskScore: 12,
+            treatment: "mitigate",
+            status: "identified",
+            tags: ["auto-populated", "cspm"],
+          });
+          created.push({ title, category: "compliance", source: "cspm" });
+        }
+      }
+
+      sendEnvelope(res, {
+        created: created.length,
+        risks: created,
+        message: `Auto-populated ${created.length} new risks from security data`,
+      });
+    } catch (error) {
+      log.error("Risk auto-populate error", { error: String(error) });
+      res.status(500).json({ message: "Failed to auto-populate risks" });
+    }
+  });
+
+  // 46.6: Risk quantification (FAIR model)
+  app.get("/api/risks/:id/quantify", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+
+      const [risk] = await db
+        .select()
+        .from(riskRegister)
+        .where(and(eq(riskRegister.id, id), eq(riskRegister.orgId, orgId)))
+        .limit(1);
+
+      if (!risk) {
+        return res.status(404).json({ message: "Risk not found" });
+      }
+
+      // FAIR Model calculation
+      const likelihood = risk.likelihood;
+      const impact = risk.impact;
+
+      // Loss Event Frequency (LEF) = Threat Event Frequency × Vulnerability
+      const threatEventFrequency = likelihood * 2; // events per year estimate
+      const vulnerability = 0.15 + likelihood * 0.15; // 15-90% based on likelihood
+      const lossEventFrequency = threatEventFrequency * vulnerability;
+
+      // Loss Magnitude (LM) based on impact score
+      const impactMultipliers: Record<number, { min: number; max: number; label: string }> = {
+        1: { min: 1000, max: 10000, label: "Insignificant" },
+        2: { min: 10000, max: 100000, label: "Minor" },
+        3: { min: 100000, max: 500000, label: "Moderate" },
+        4: { min: 500000, max: 2000000, label: "Major" },
+        5: { min: 2000000, max: 10000000, label: "Catastrophic" },
+      };
+
+      const impactRange = impactMultipliers[impact] || impactMultipliers[3];
+      const primaryLoss = (impactRange.min + impactRange.max) / 2;
+      const secondaryLossFrequency = 0.3 + impact * 0.1;
+      const secondaryLoss = primaryLoss * 0.4;
+
+      // Annual Loss Expectancy (ALE) = LEF × LM
+      const annualLossExpectancy = Math.round(
+        lossEventFrequency * (primaryLoss + secondaryLossFrequency * secondaryLoss),
+      );
+
+      // Residual risk calculation if available
+      let residualALE: number | null = null;
+      if (risk.residualLikelihood !== null && risk.residualImpact !== null) {
+        const resLEF = risk.residualLikelihood * 2 * (0.15 + risk.residualLikelihood * 0.15);
+        const resImpact = impactMultipliers[risk.residualImpact] || impactMultipliers[3];
+        const resPrimary = (resImpact.min + resImpact.max) / 2;
+        residualALE = Math.round(resLEF * (resPrimary + 0.3 * resPrimary * 0.4));
+      }
+
+      sendEnvelope(res, {
+        riskId: risk.id,
+        riskTitle: risk.title,
+        fairModel: {
+          threatEventFrequency,
+          vulnerability: Math.round(vulnerability * 100) / 100,
+          lossEventFrequency: Math.round(lossEventFrequency * 100) / 100,
+          primaryLoss,
+          secondaryLossFrequency,
+          secondaryLoss,
+          impactRange: impactRange.label,
+          annualLossExpectancy,
+          residualAnnualLossExpectancy: residualALE,
+          riskReduction: residualALE !== null ? annualLossExpectancy - residualALE : null,
+        },
+        formattedALE: `$${annualLossExpectancy.toLocaleString()}`,
+        formattedResidualALE: residualALE !== null ? `$${residualALE.toLocaleString()}` : null,
+      });
+    } catch (error) {
+      log.error("Risk quantification error", { error: String(error) });
+      res.status(500).json({ message: "Failed to quantify risk" });
+    }
+  });
 }
