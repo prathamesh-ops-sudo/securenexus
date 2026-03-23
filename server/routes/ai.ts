@@ -1175,6 +1175,388 @@ export function registerAiRoutes(app: Express): void {
     },
   );
 
+  // ── 36.1: Budget Burn-Down Chart ──
+  app.get(
+    "/api/ai/budget/burn-down",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const usage = await getAiOrgUsage(orgId);
+        const now = new Date();
+        const dayOfMonth = now.getDate();
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const totalSpent = (usage as any).dailySpendUsd ?? 0;
+        const monthlyLimit = (usage as any).budgetLimitUsd ?? (usage as any).budgetUsd ?? 100;
+        const remaining = Math.max(monthlyLimit - totalSpent * dayOfMonth, 0);
+        const dailyAvgSpend = dayOfMonth > 0 ? (totalSpent * dayOfMonth) / dayOfMonth : 0;
+        const daysRemaining = daysInMonth - dayOfMonth;
+        const projectedTotal = totalSpent * dayOfMonth + dailyAvgSpend * daysRemaining;
+        const exhaustionDay = dailyAvgSpend > 0 ? Math.ceil(remaining / dailyAvgSpend) : null;
+        const exhaustionDate =
+          exhaustionDay !== null && exhaustionDay <= daysRemaining
+            ? new Date(now.getTime() + exhaustionDay * 86400000).toISOString()
+            : null;
+
+        // Generate daily data points for the chart
+        const dailyPoints: { day: number; consumed: number; remaining: number; projected: number }[] = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const consumed = d <= dayOfMonth ? dailyAvgSpend * d : dailyAvgSpend * dayOfMonth;
+          const proj = dailyAvgSpend * d;
+          dailyPoints.push({
+            day: d,
+            consumed: parseFloat(consumed.toFixed(2)),
+            remaining: parseFloat(Math.max(monthlyLimit - consumed, 0).toFixed(2)),
+            projected: parseFloat(Math.min(proj, monthlyLimit).toFixed(2)),
+          });
+        }
+
+        res.json({
+          monthlyLimit,
+          totalSpent: parseFloat((totalSpent * dayOfMonth).toFixed(2)),
+          remaining: parseFloat(remaining.toFixed(2)),
+          dailyAvgSpend: parseFloat(dailyAvgSpend.toFixed(2)),
+          projectedTotal: parseFloat(projectedTotal.toFixed(2)),
+          exhaustionDate,
+          exhaustionDay,
+          daysRemaining,
+          dailyPoints,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch budget burn-down data" });
+      }
+    },
+  );
+
+  // ── 36.2: Budget Alert Thresholds ──
+  app.get(
+    "/api/ai/budget/thresholds",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        // Return configured thresholds (stored in budget config or defaults)
+        const rows = await pool.query(
+          `SELECT budget_usd, invocation_cap, daily_spend_usd, daily_invocations
+           FROM org_ai_budgets WHERE org_id = $1 LIMIT 1`,
+          [orgId],
+        );
+        const budget = rows.rows[0] as
+          | { budget_usd: number; invocation_cap: number; daily_spend_usd: number; daily_invocations: number }
+          | undefined;
+        const monthlyLimit = budget?.budget_usd ?? 100;
+        const dayOfMonth = new Date().getDate();
+        const currentSpend = (budget?.daily_spend_usd ?? 0) * dayOfMonth;
+        const pct = monthlyLimit > 0 ? (currentSpend / monthlyLimit) * 100 : 0;
+
+        const thresholds = [
+          { level: 50, label: "50% consumed", breached: pct >= 50, currentPct: parseFloat(pct.toFixed(1)) },
+          { level: 75, label: "75% consumed", breached: pct >= 75, currentPct: parseFloat(pct.toFixed(1)) },
+          { level: 90, label: "90% consumed", breached: pct >= 90, currentPct: parseFloat(pct.toFixed(1)) },
+          { level: 100, label: "Budget exhausted", breached: pct >= 100, currentPct: parseFloat(pct.toFixed(1)) },
+        ];
+
+        res.json({
+          thresholds,
+          currentPct: parseFloat(pct.toFixed(1)),
+          monthlyLimit,
+          currentSpend: parseFloat(currentSpend.toFixed(2)),
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch budget thresholds" });
+      }
+    },
+  );
+
+  // ── 36.3: Budget Allocation by Use Case ──
+  app.get(
+    "/api/ai/budget/allocation",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const usage = await getAiOrgUsage(orgId);
+        const monthlyLimit = (usage as any).budgetLimitUsd ?? (usage as any).budgetUsd ?? 100;
+
+        // Default allocation percentages
+        const allocations = [
+          {
+            useCase: "Alert Triage",
+            allocatedPct: 40,
+            allocatedUsd: parseFloat((monthlyLimit * 0.4).toFixed(2)),
+            actualUsd: 0,
+            actualPct: 0,
+          },
+          {
+            useCase: "Investigations",
+            allocatedPct: 30,
+            allocatedUsd: parseFloat((monthlyLimit * 0.3).toFixed(2)),
+            actualUsd: 0,
+            actualPct: 0,
+          },
+          {
+            useCase: "Report Generation",
+            allocatedPct: 20,
+            allocatedUsd: parseFloat((monthlyLimit * 0.2).toFixed(2)),
+            actualUsd: 0,
+            actualPct: 0,
+          },
+          {
+            useCase: "Other",
+            allocatedPct: 10,
+            allocatedUsd: parseFloat((monthlyLimit * 0.1).toFixed(2)),
+            actualUsd: 0,
+            actualPct: 0,
+          },
+        ];
+
+        // Calculate actual usage per use case from inference history
+        try {
+          const historyResult = await pool.query(
+            `SELECT prompt_id, COUNT(*) as cnt FROM ai_inference_logs WHERE org_id = $1 AND created_at >= date_trunc('month', CURRENT_DATE) GROUP BY prompt_id`,
+            [orgId],
+          );
+          const totalCalls = historyResult.rows.reduce((s: number, r: any) => s + parseInt(r.cnt, 10), 0);
+          if (totalCalls > 0) {
+            const dayOfMonth = new Date().getDate();
+            const totalSpend = (usage as any).dailySpendUsd ? (usage as any).dailySpendUsd * dayOfMonth : 0;
+            for (const row of historyResult.rows) {
+              const pid = (row as any).prompt_id as string;
+              const cnt = parseInt((row as any).cnt, 10);
+              const fraction = cnt / totalCalls;
+              const cost = totalSpend * fraction;
+              if (pid.includes("triage")) {
+                allocations[0].actualUsd += cost;
+                allocations[0].actualPct += fraction * 100;
+              } else if (pid.includes("investigation") || pid.includes("narrative") || pid.includes("deep")) {
+                allocations[1].actualUsd += cost;
+                allocations[1].actualPct += fraction * 100;
+              } else if (pid.includes("report") || pid.includes("rule")) {
+                allocations[2].actualUsd += cost;
+                allocations[2].actualPct += fraction * 100;
+              } else {
+                allocations[3].actualUsd += cost;
+                allocations[3].actualPct += fraction * 100;
+              }
+            }
+            for (const a of allocations) {
+              a.actualUsd = parseFloat(a.actualUsd.toFixed(2));
+              a.actualPct = parseFloat(a.actualPct.toFixed(1));
+            }
+          }
+        } catch {
+          /* inference logs table may not exist */
+        }
+
+        res.json({ monthlyLimit, allocations });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch budget allocation" });
+      }
+    },
+  );
+
+  // ── 36.4: Cost per Investigation/Action Breakdown ──
+  app.get(
+    "/api/ai/budget/cost-breakdown",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const usage = await getAiOrgUsage(orgId);
+        const dailySpend = (usage as any).dailySpendUsd ?? 0;
+        const dailyInvocations = (usage as any).dailyInvocations ?? 0;
+        const avgCostPerInvocation = dailyInvocations > 0 ? dailySpend / dailyInvocations : 0;
+
+        // Estimate costs per operation type based on typical token usage
+        const operations = [
+          {
+            operation: "Alert Triage",
+            avgCost: parseFloat((avgCostPerInvocation * 0.8).toFixed(4)),
+            avgTokens: 1200,
+            estimatedMonthlyCount: Math.round(dailyInvocations * 30 * 0.4),
+            estimatedMonthlyCost: parseFloat((dailySpend * 30 * 0.4).toFixed(2)),
+          },
+          {
+            operation: "Incident Investigation",
+            avgCost: parseFloat((avgCostPerInvocation * 3.5).toFixed(4)),
+            avgTokens: 4500,
+            estimatedMonthlyCount: Math.round(dailyInvocations * 30 * 0.15),
+            estimatedMonthlyCost: parseFloat((dailySpend * 30 * 0.25).toFixed(2)),
+          },
+          {
+            operation: "Rule Generation",
+            avgCost: parseFloat((avgCostPerInvocation * 2.0).toFixed(4)),
+            avgTokens: 2800,
+            estimatedMonthlyCount: Math.round(dailyInvocations * 30 * 0.1),
+            estimatedMonthlyCost: parseFloat((dailySpend * 30 * 0.15).toFixed(2)),
+          },
+          {
+            operation: "Narrative Generation",
+            avgCost: parseFloat((avgCostPerInvocation * 2.5).toFixed(4)),
+            avgTokens: 3200,
+            estimatedMonthlyCount: Math.round(dailyInvocations * 30 * 0.1),
+            estimatedMonthlyCost: parseFloat((dailySpend * 30 * 0.1).toFixed(2)),
+          },
+          {
+            operation: "Threat Correlation",
+            avgCost: parseFloat((avgCostPerInvocation * 1.5).toFixed(4)),
+            avgTokens: 2000,
+            estimatedMonthlyCount: Math.round(dailyInvocations * 30 * 0.15),
+            estimatedMonthlyCost: parseFloat((dailySpend * 30 * 0.1).toFixed(2)),
+          },
+        ];
+
+        res.json({
+          avgCostPerInvocation: parseFloat(avgCostPerInvocation.toFixed(4)),
+          dailySpend: parseFloat(dailySpend.toFixed(2)),
+          dailyInvocations,
+          operations,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch cost breakdown" });
+      }
+    },
+  );
+
+  // ── 36.5: Hard Budget Enforcement Status ──
+  app.get(
+    "/api/ai/budget/enforcement",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const rows = await pool.query(
+          `SELECT budget_usd, invocation_cap, daily_spend_usd, daily_invocations
+           FROM org_ai_budgets WHERE org_id = $1 LIMIT 1`,
+          [orgId],
+        );
+        const budget = rows.rows[0] as
+          | { budget_usd: number; invocation_cap: number; daily_spend_usd: number; daily_invocations: number }
+          | undefined;
+        const monthlyLimit = budget?.budget_usd ?? 100;
+        const dayOfMonth = new Date().getDate();
+        const currentSpend = (budget?.daily_spend_usd ?? 0) * dayOfMonth;
+        const pct = monthlyLimit > 0 ? (currentSpend / monthlyLimit) * 100 : 0;
+        const invocationPct = budget ? ((budget.daily_invocations ?? 0) / (budget.invocation_cap ?? 5000)) * 100 : 0;
+
+        let enforcementLevel: string;
+        let actions: string[];
+        if (pct >= 100 || invocationPct >= 100) {
+          enforcementLevel = "hard_limit";
+          actions = [
+            "Non-critical AI features disabled",
+            "Switched to cheaper models (e.g., claude-3-haiku)",
+            "Requests queued for next billing cycle",
+            "Only critical alert triage allowed",
+          ];
+        } else if (pct >= 90 || invocationPct >= 90) {
+          enforcementLevel = "degraded";
+          actions = [
+            "Switched to cheaper models for non-critical tasks",
+            "Batch processing enabled to reduce costs",
+            "Report generation paused",
+          ];
+        } else if (pct >= 75 || invocationPct >= 75) {
+          enforcementLevel = "warning";
+          actions = ["Admin notifications sent", "Budget approaching limit — consider increasing"];
+        } else {
+          enforcementLevel = "normal";
+          actions = ["All AI features operating normally"];
+        }
+
+        res.json({
+          enforcementLevel,
+          actions,
+          budgetPct: parseFloat(pct.toFixed(1)),
+          invocationPct: parseFloat(invocationPct.toFixed(1)),
+          monthlyLimit,
+          currentSpend: parseFloat(currentSpend.toFixed(2)),
+          invocationCap: budget?.invocation_cap ?? 5000,
+          currentInvocations: budget?.daily_invocations ?? 0,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch enforcement status" });
+      }
+    },
+  );
+
+  // ── 36.6: Budget Rollover and Adjustment ──
+  app.post(
+    "/api/ai/budget/rollover",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { newLimit, rolloverUnused } = req.body;
+
+        const rows = await pool.query(
+          `SELECT budget_usd, daily_spend_usd FROM org_ai_budgets WHERE org_id = $1 LIMIT 1`,
+          [orgId],
+        );
+        const budget = rows.rows[0] as { budget_usd: number; daily_spend_usd: number } | undefined;
+        const currentLimit = budget?.budget_usd ?? 100;
+        const dayOfMonth = new Date().getDate();
+        const currentSpend = (budget?.daily_spend_usd ?? 0) * dayOfMonth;
+        const unused = Math.max(currentLimit - currentSpend, 0);
+
+        let finalLimit = typeof newLimit === "number" && newLimit > 0 ? newLimit : currentLimit;
+        if (rolloverUnused === true) {
+          finalLimit += unused;
+        }
+
+        await pool.query(`UPDATE org_ai_budgets SET budget_usd = $1, updated_at = NOW() WHERE org_id = $2`, [
+          finalLimit,
+          orgId,
+        ]);
+
+        await storage.createAuditLog({
+          orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Admin",
+          action: "ai_budget_adjusted",
+          resourceType: "ai_budget",
+          resourceId: orgId,
+          details: {
+            previousLimit: currentLimit,
+            newLimit: finalLimit,
+            rolloverAmount: rolloverUnused ? unused : 0,
+            midMonthAdjustment: dayOfMonth > 1,
+          },
+        });
+
+        res.json({
+          previousLimit: currentLimit,
+          newLimit: finalLimit,
+          rolloverAmount: rolloverUnused ? parseFloat(unused.toFixed(2)) : 0,
+          currentSpend: parseFloat(currentSpend.toFixed(2)),
+          auditLogged: true,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to adjust budget" });
+      }
+    },
+  );
+
   app.get("/api/ai/prompts", isAuthenticated, async (_req, res) => {
     try {
       const prompts = await getAllRegisteredPrompts();

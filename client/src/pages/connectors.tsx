@@ -55,6 +55,14 @@ import {
   FileJson,
   ChevronUp,
   Mail,
+  Wand2,
+  ListChecks,
+  ArrowRight,
+  Network,
+  GitBranch,
+  Target,
+  CircleDot,
+  Gauge,
 } from "lucide-react";
 import type { ConnectorJobRun, ConnectorHealthCheck } from "@shared/schema";
 
@@ -1054,6 +1062,331 @@ function ConnectorSyncHistory({ connectorId, connectorName }: { connectorId: str
   );
 }
 
+// ── 37.2: Connector Health Dashboard Component ──
+interface ConnectorHealthSummary {
+  total: number;
+  healthy: number;
+  unhealthy: number;
+  unknown: number;
+  connectors: {
+    id: string;
+    name: string;
+    type: string;
+    status: string;
+    lastSyncAt: string | null;
+    lastSyncStatus: string | null;
+    totalAlertsSynced: number;
+    healthStatus: string;
+    latencyMs: number | null;
+    credentialStatus: string;
+    successRate: number | null;
+    errorRate: number;
+    eventsLast24h: number;
+    dlqDepth: number;
+  }[];
+}
+
+function ConnectorHealthDashboard() {
+  const { data: summary, isLoading } = useQuery<ConnectorHealthSummary>({
+    queryKey: ["/api/connectors/health-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/connectors/health-summary", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch health summary");
+      return res.json();
+    },
+  });
+
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+
+  if (!summary) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <Plug className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-2xl font-bold">{summary.total}</p>
+                <p className="text-xs text-muted-foreground">Total</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              <div>
+                <p className="text-2xl font-bold text-green-500">{summary.healthy}</p>
+                <p className="text-xs text-muted-foreground">Healthy</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="text-2xl font-bold text-destructive">{summary.unhealthy}</p>
+                <p className="text-xs text-muted-foreground">Unhealthy</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              <div>
+                <p className="text-2xl font-bold text-yellow-500">{summary.unknown}</p>
+                <p className="text-xs text-muted-foreground">Unknown</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <HeartPulse className="h-5 w-5" /> At-a-Glance Health
+          </CardTitle>
+          <CardDescription>Quick health status for all connectors</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Connector</TableHead>
+                <TableHead>Health</TableHead>
+                <TableHead>Last Sync</TableHead>
+                <TableHead>Success Rate</TableHead>
+                <TableHead>Events (24h)</TableHead>
+                <TableHead>Error Rate</TableHead>
+                <TableHead>DLQ</TableHead>
+                <TableHead>Credentials</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.connectors.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        c.healthStatus === "healthy"
+                          ? "default"
+                          : c.healthStatus === "unhealthy"
+                            ? "destructive"
+                            : "outline"
+                      }
+                    >
+                      {c.healthStatus === "healthy" ? (
+                        <>
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          GREEN
+                        </>
+                      ) : c.healthStatus === "unhealthy" ? (
+                        <>
+                          <XCircle className="h-3 w-3 mr-1" />
+                          RED
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          YELLOW
+                        </>
+                      )}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {c.lastSyncAt ? formatDateTime(c.lastSyncAt) : "Never"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {c.successRate !== null ? `${(c.successRate * 100).toFixed(0)}%` : "-"}
+                  </TableCell>
+                  <TableCell className="text-sm font-mono">{c.eventsLast24h}</TableCell>
+                  <TableCell className="text-sm">
+                    <span className={c.errorRate > 0.1 ? "text-destructive" : ""}>
+                      {(c.errorRate * 100).toFixed(1)}%
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {c.dlqDepth > 0 ? (
+                      <Badge variant="destructive">{c.dlqDepth}</Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">0</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={c.credentialStatus === "valid" ? "default" : "outline"}>{c.credentialStatus}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── 37.8: Pipeline Verification Component ──
+interface PipelineStatus {
+  connectorId: string;
+  connectorName: string;
+  connectorType: string;
+  overallStatus: string;
+  stages: { stage: string; status: string; detail: string }[];
+  lastSyncAt: string | null;
+  lastSyncStatus: string | null;
+  totalAlertsSynced: number;
+}
+
+function ConnectorPipelineStatus({ connectorId }: { connectorId: string }) {
+  const { data: pipeline, isLoading } = useQuery<PipelineStatus>({
+    queryKey: ["/api/connectors", connectorId, "pipeline-status"],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/${connectorId}/pipeline-status`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch pipeline status");
+      return res.json();
+    },
+  });
+
+  if (isLoading)
+    return (
+      <div className="flex items-center gap-2 px-4 py-2">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span className="text-xs text-muted-foreground">Checking pipeline...</span>
+      </div>
+    );
+
+  if (!pipeline) return null;
+
+  const stageIcons: Record<string, any> = {
+    connect: Network,
+    fetch_events: RefreshCw,
+    normalize: GitBranch,
+    create_alerts: Target,
+  };
+
+  return (
+    <div className="px-4 py-3 space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <ListChecks className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-medium">Pipeline Status</h4>
+        <Badge
+          variant={
+            pipeline.overallStatus === "healthy"
+              ? "default"
+              : pipeline.overallStatus === "unhealthy"
+                ? "destructive"
+                : "secondary"
+          }
+        >
+          {pipeline.overallStatus}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-1">
+        {pipeline.stages.map((stage, i) => {
+          const IconComp = stageIcons[stage.stage] || CircleDot;
+          return (
+            <div key={stage.stage} className="flex items-center gap-1">
+              <div
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
+                  stage.status === "pass"
+                    ? "border-green-500/30 bg-green-500/5 text-green-500"
+                    : stage.status === "fail"
+                      ? "border-destructive/30 bg-destructive/5 text-destructive"
+                      : stage.status === "warn"
+                        ? "border-yellow-500/30 bg-yellow-500/5 text-yellow-500"
+                        : "border-muted text-muted-foreground"
+                }`}
+                title={stage.detail}
+              >
+                <IconComp className="h-3 w-3" />
+                <span className="capitalize">{stage.stage.replace(/_/g, " ")}</span>
+              </div>
+              {i < pipeline.stages.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── 37.6: Rate Limit Status Component ──
+interface RateLimitStatus {
+  connectorId: string;
+  connectorName: string;
+  pollingIntervalMin: number;
+  throttleCount: number;
+  errorRate: number;
+  recentThrottles: number;
+  totalThrottledJobs: number;
+  adaptiveThrottling: {
+    enabled: boolean;
+    currentMultiplier: number;
+    effectiveIntervalMin: number;
+    reason: string;
+  };
+}
+
+function ConnectorRateLimitPanel({ connectorId }: { connectorId: string }) {
+  const { data: rateLimit, isLoading } = useQuery<RateLimitStatus>({
+    queryKey: ["/api/connectors", connectorId, "rate-limit-status"],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/${connectorId}/rate-limit-status`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch rate limit");
+      return res.json();
+    },
+  });
+
+  if (isLoading || !rateLimit) return null;
+
+  return (
+    <div className="px-4 py-3 space-y-2 border-t">
+      <div className="flex items-center gap-2">
+        <Gauge className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-medium">Rate Limiting</h4>
+        {rateLimit.recentThrottles > 0 && (
+          <Badge variant="secondary" className="text-xs">
+            {rateLimit.recentThrottles} recent throttle{rateLimit.recentThrottles !== 1 ? "s" : ""}
+          </Badge>
+        )}
+      </div>
+      <div className="grid grid-cols-4 gap-2 text-xs">
+        <div className="p-2 rounded border">
+          <p className="text-muted-foreground">Base Interval</p>
+          <p className="font-bold">{rateLimit.pollingIntervalMin}m</p>
+        </div>
+        <div className="p-2 rounded border">
+          <p className="text-muted-foreground">Effective Interval</p>
+          <p className="font-bold">{rateLimit.adaptiveThrottling.effectiveIntervalMin.toFixed(1)}m</p>
+        </div>
+        <div className="p-2 rounded border">
+          <p className="text-muted-foreground">Multiplier</p>
+          <p className="font-bold">{rateLimit.adaptiveThrottling.currentMultiplier}x</p>
+        </div>
+        <div className="p-2 rounded border">
+          <p className="text-muted-foreground">Total Throttles</p>
+          <p className="font-bold">{rateLimit.throttleCount}</p>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">{rateLimit.adaptiveThrottling.reason}</p>
+    </div>
+  );
+}
+
 export default function ConnectorsPage() {
   const { toast } = useToast();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -1333,10 +1666,14 @@ export default function ConnectorsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="all-connectors" data-testid="tab-all-connectors">
             <Plug className="h-4 w-4 mr-2" />
             All Connectors
+          </TabsTrigger>
+          <TabsTrigger value="health-dashboard" data-testid="tab-health-dashboard">
+            <HeartPulse className="h-4 w-4 mr-2" />
+            Health Dashboard
           </TabsTrigger>
           <TabsTrigger value="dead-letters" data-testid="tab-dead-letters">
             <Skull className="h-4 w-4 mr-2" />
@@ -1348,6 +1685,11 @@ export default function ConnectorsPage() {
             )}
           </TabsTrigger>
         </TabsList>
+
+        {/* 37.2: Health Dashboard Tab */}
+        <TabsContent value="health-dashboard">
+          <ConnectorHealthDashboard />
+        </TabsContent>
 
         <TabsContent value="all-connectors">
           <Card>
@@ -1583,7 +1925,9 @@ export default function ConnectorsPage() {
                                   </div>
                                 )}
                                 <ConnectorObservabilityPanel connector={connector} />
+                                <ConnectorPipelineStatus connectorId={connector.id} />
                                 <ConnectorSyncHistory connectorId={connector.id} connectorName={connector.name} />
+                                <ConnectorRateLimitPanel connectorId={connector.id} />
                                 <ConnectorSecretRotationPanel connectorId={connector.id} />
                               </TableCell>
                             </TableRow>
