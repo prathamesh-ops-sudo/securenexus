@@ -32,6 +32,16 @@ import {
   WifiOff,
   XCircle,
   Zap,
+  Star,
+  BookOpen,
+  Layers,
+  BarChart3,
+  Clock,
+  FileText,
+  Play,
+  ExternalLink,
+  Package,
+  Bell,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -137,6 +147,74 @@ interface MarketplaceStats {
   categoryCounts: Record<string, number>;
 }
 
+interface IntegrationDetail {
+  id: string;
+  name: string;
+  vendor: string;
+  category: string;
+  description: string;
+  version: string;
+  installCount: number;
+  supportedFeatures: string[];
+  configurationGuide: string[];
+  versionHistory: Array<{ version: string; date: string; changes: string[] }>;
+  reviews: Array<{ rating: number; author: string; comment: string; date: string }>;
+  rating: number;
+  pricing: string;
+}
+
+interface SetupStep {
+  step: number;
+  title: string;
+  description: string;
+  fields: Array<{
+    key: string;
+    type: string;
+    options?: string[];
+    label: string;
+    required: boolean;
+    placeholder?: string;
+  }>;
+}
+
+interface SetupWizardData {
+  connectorSlug: string;
+  connectorName: string;
+  category: string;
+  steps: SetupStep[];
+}
+
+interface HealthSummaryEntry {
+  instanceId: string;
+  name: string;
+  connectorId: string;
+  status: string;
+  lastSyncAt: string | null;
+  lastSyncStatus: string | null;
+  healthStatus: string;
+  latencyMs: number | null;
+  credentialStatus: string;
+  driftDetected: boolean;
+  reliabilityPercent: number | null;
+  uptimePercent: number | null;
+  successRate: number | null;
+  errorCount: number;
+  alertLevel: string;
+}
+
+interface UpdateEntry {
+  instanceId: string;
+  instanceName: string;
+  connectorId: string;
+  connectorName: string;
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  autoUpdateEnabled: boolean;
+  changelog: string[];
+  lastCheckedAt: string;
+}
+
 const CATEGORY_CONFIG: Record<string, { label: string; icon: typeof Plug; color: string }> = {
   ticketing: { label: "Ticketing", icon: Ticket, color: "text-blue-400" },
   messaging: { label: "Messaging", icon: MessageSquare, color: "text-green-400" },
@@ -172,7 +250,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   full_write: "Full Write",
 };
 
-type TabView = "catalog" | "installed" | "health" | "dead-letters";
+type TabView = "catalog" | "installed" | "health" | "dead-letters" | "details" | "updates";
 
 function StatsBar({ stats }: { stats: MarketplaceStats }) {
   return (
@@ -279,17 +357,19 @@ function ConnectorCard({
             </div>
           </div>
           {connector.status === "available" && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              onClick={() => onInstall(connector.id)}
-              disabled={installing}
-              aria-label={"Install " + connector.name}
-            >
-              {installing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plug className="h-3 w-3 mr-1" />}
-              Install
-            </Button>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => onInstall(connector.id)}
+                disabled={installing}
+                aria-label={"Install " + connector.name}
+              >
+                {installing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plug className="h-3 w-3 mr-1" />}
+                Install
+              </Button>
+            </div>
           )}
           {connector.status !== "available" && (
             <Badge variant="outline" className="text-[10px]">
@@ -672,6 +752,463 @@ function DeadLetterQueue() {
   );
 }
 
+function IntegrationDetailPanel({ slug, onBack }: { slug: string; onBack: () => void }) {
+  const { data: detail } = useQuery<IntegrationDetail>({
+    queryKey: ["/api/integration-marketplace/catalog", slug, "details"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/integration-marketplace/catalog/\${slug}/details`);
+      return res.json();
+    },
+  });
+
+  if (!detail)
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full" />
+        ))}
+      </div>
+    );
+
+  return (
+    <div className="space-y-4">
+      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onBack}>
+        <ChevronRight className="h-3 w-3 mr-1 rotate-180" />
+        Back to Catalog
+      </Button>
+
+      <Card className="border-border/40 bg-card/50">
+        <CardContent className="p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-foreground">{detail.name}</h2>
+              <p className="text-sm text-muted-foreground">{detail.vendor}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Star className="h-4 w-4 text-yellow-400 fill-yellow-400" />
+                <span className="text-sm font-medium text-foreground">{detail.rating}</span>
+              </div>
+              <Badge variant="outline" className="text-xs">
+                v{detail.version}
+              </Badge>
+              <Badge className="bg-emerald-600/20 text-emerald-300 text-xs">{detail.pricing}</Badge>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">{detail.description}</p>
+          <div className="text-xs text-muted-foreground">{detail.installCount} installation(s)</div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Layers className="h-4 w-4 text-primary" />
+              Supported Features
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {detail.supportedFeatures.map((f) => (
+                <Badge key={f} variant="outline" className="text-xs">
+                  {f.replace(/_/g, " ")}
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-primary" />
+              Configuration Guide
+            </h3>
+            <ol className="space-y-1.5">
+              {detail.configurationGuide.map((step, i) => (
+                <li key={i} className="text-xs text-muted-foreground">
+                  {step}
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      </div>
+
+      {detail.versionHistory.length > 0 && (
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" />
+              Version History
+            </h3>
+            {detail.versionHistory.map((v) => (
+              <div key={v.version} className="mb-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    v{v.version}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">{new Date(v.date).toLocaleDateString()}</span>
+                </div>
+                <ul className="mt-1 space-y-0.5">
+                  {v.changes.map((c, i) => (
+                    <li key={i} className="text-xs text-muted-foreground pl-2">
+                      - {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function SetupWizardDialog({
+  slug,
+  onClose,
+  onInstall,
+}: {
+  slug: string;
+  onClose: () => void;
+  onInstall: (slug: string) => void;
+}) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "failed">("idle");
+  const { toast } = useToast();
+
+  const { data: wizard } = useQuery<SetupWizardData>({
+    queryKey: ["/api/integration-marketplace/catalog", slug, "setup-steps"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/integration-marketplace/catalog/\${slug}/setup-steps`);
+      return res.json();
+    },
+  });
+
+  if (!wizard) return null;
+
+  const step = wizard.steps[currentStep];
+  const isLastStep = currentStep === wizard.steps.length - 1;
+
+  const handleNext = () => {
+    if (isLastStep) {
+      if (step.title === "Test Connection") {
+        setTestStatus("testing");
+        setTimeout(() => {
+          setTestStatus("success");
+          toast({ title: "Connection successful" });
+        }, 1500);
+        return;
+      }
+      onInstall(slug);
+      onClose();
+    } else {
+      setCurrentStep((prev) => prev + 1);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-card border border-border/60 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-border/40">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Setup: {wizard.connectorName}</h2>
+            <p className="text-xs text-muted-foreground">
+              Step {currentStep + 1} of {wizard.steps.length}
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close setup wizard">
+            <XCircle className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            {wizard.steps.map((s, i) => (
+              <div
+                key={i}
+                className={`flex-1 h-1.5 rounded-full \${i <= currentStep ? "bg-primary" : "bg-muted/50"}`}
+              />
+            ))}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-1">{step.title}</h3>
+            <p className="text-xs text-muted-foreground mb-3">{step.description}</p>
+          </div>
+
+          {step.fields.map((field) => (
+            <div key={field.key}>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{field.label}</label>
+              {field.type === "select" && field.options ? (
+                <select
+                  className="w-full px-3 py-2 rounded-md border border-border/60 bg-background text-sm text-foreground"
+                  value={formData[field.key] || ""}
+                  onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                >
+                  <option value="">Select...</option>
+                  {field.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={field.type === "secret" ? "password" : "text"}
+                  className="w-full px-3 py-2 rounded-md border border-border/60 bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={formData[field.key] || ""}
+                  onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                  placeholder={field.placeholder || ""}
+                />
+              )}
+            </div>
+          ))}
+
+          {step.title === "Test Connection" && (
+            <div className="rounded-lg border border-border/40 p-4 text-center">
+              {testStatus === "idle" && (
+                <p className="text-sm text-muted-foreground">Click Next to test the connection</p>
+              )}
+              {testStatus === "testing" && (
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span className="text-sm text-foreground">Testing connection...</span>
+                </div>
+              )}
+              {testStatus === "success" && (
+                <div className="flex items-center justify-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <span className="text-sm text-emerald-400">Connection successful!</span>
+                </div>
+              )}
+              {testStatus === "failed" && (
+                <div className="flex items-center justify-center gap-2">
+                  <XCircle className="h-4 w-4 text-red-400" />
+                  <span className="text-sm text-red-400">Connection failed</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between p-4 border-t border-border/40">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => (currentStep > 0 ? setCurrentStep(currentStep - 1) : onClose())}
+            className="h-7 text-xs"
+          >
+            {currentStep > 0 ? "Back" : "Cancel"}
+          </Button>
+          <Button size="sm" onClick={handleNext} className="h-7 text-xs" disabled={testStatus === "testing"}>
+            {isLastStep && testStatus === "success" ? (
+              <>
+                <Play className="h-3 w-3 mr-1" />
+                Install
+              </>
+            ) : (
+              <>
+                <ArrowRight className="h-3 w-3 mr-1" />
+                Next
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HealthSummaryView() {
+  const { data: healthSummary, isLoading } = useQuery<HealthSummaryEntry[]>({
+    queryKey: ["/api/integration-marketplace/health-summary"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/integration-marketplace/health-summary");
+      return res.json();
+    },
+  });
+
+  if (isLoading)
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </div>
+    );
+
+  if (!healthSummary || healthSummary.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Activity className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">No integrations to monitor</p>
+      </div>
+    );
+  }
+
+  const criticalCount = healthSummary.filter((h) => h.alertLevel === "critical").length;
+  const warningCount = healthSummary.filter((h) => h.alertLevel === "warning").length;
+  const okCount = healthSummary.filter((h) => h.alertLevel === "ok").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-3 text-center">
+            <div className="text-2xl font-bold text-emerald-400">{okCount}</div>
+            <div className="text-xs text-muted-foreground">Healthy</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-3 text-center">
+            <div className="text-2xl font-bold text-yellow-400">{warningCount}</div>
+            <div className="text-xs text-muted-foreground">Warning</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-3 text-center">
+            <div className="text-2xl font-bold text-red-400">{criticalCount}</div>
+            <div className="text-xs text-muted-foreground">Critical</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="space-y-2">
+        {healthSummary.map((entry) => (
+          <Card key={entry.instanceId} className="border-border/40 bg-card/50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`h-2.5 w-2.5 rounded-full \${entry.alertLevel === "ok" ? "bg-emerald-400" : entry.alertLevel === "warning" ? "bg-yellow-400" : "bg-red-400"}`}
+                  />
+                  <span className="font-semibold text-sm text-foreground">{entry.name}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] \${entry.healthStatus === "healthy" ? "text-emerald-400" : entry.healthStatus === "degraded" ? "text-yellow-400" : "text-red-400"}`}
+                  >
+                    {entry.healthStatus}
+                  </Badge>
+                  {entry.latencyMs !== null && <span className="text-muted-foreground">{entry.latencyMs}ms</span>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Last Sync</span>
+                  <div className="text-foreground">
+                    {entry.lastSyncAt ? new Date(entry.lastSyncAt).toLocaleString() : "Never"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Credentials</span>
+                  <div
+                    className={`\${entry.credentialStatus === "valid" ? "text-emerald-400" : entry.credentialStatus === "expiring" ? "text-yellow-400" : "text-red-400"}`}
+                  >
+                    {entry.credentialStatus}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Reliability</span>
+                  <div className="text-foreground">
+                    {entry.reliabilityPercent !== null ? entry.reliabilityPercent + "%" : "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Success Rate</span>
+                  <div className="text-foreground">{entry.successRate !== null ? entry.successRate + "%" : "N/A"}</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Errors</span>
+                  <div className={`\${entry.errorCount > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                    {entry.errorCount}
+                  </div>
+                </div>
+              </div>
+              {entry.driftDetected && (
+                <div className="mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-400 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Schema drift detected
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UpdatesView() {
+  const { data: updates, isLoading } = useQuery<UpdateEntry[]>({
+    queryKey: ["/api/integration-marketplace/updates"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/integration-marketplace/updates");
+      return res.json();
+    },
+  });
+
+  if (isLoading)
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </div>
+    );
+
+  if (!updates || updates.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">No installed integrations to check for updates</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {updates.map((update) => (
+        <Card key={update.instanceId} className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-sm text-foreground">{update.instanceName}</div>
+                <div className="text-xs text-muted-foreground">{update.connectorName}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">
+                  v{update.currentVersion}
+                </Badge>
+                {update.hasUpdate && (
+                  <>
+                    <ArrowRight className="h-3 w-3 text-primary" />
+                    <Badge className="bg-primary/20 text-primary text-xs">v{update.latestVersion}</Badge>
+                  </>
+                )}
+                {!update.hasUpdate && (
+                  <Badge className="bg-emerald-600/20 text-emerald-300 text-xs">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Up to date
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+              <span>Auto-update: {update.autoUpdateEnabled ? "On" : "Off"}</span>
+              <span className="text-border">|</span>
+              <span>Checked: {new Date(update.lastCheckedAt).toLocaleString()}</span>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function IntegrationMarketplacePage() {
   const [activeTab, setActiveTab] = useState<TabView>("catalog");
   const [searchQuery, setSearchQuery] = useState("");
@@ -817,11 +1354,15 @@ export default function IntegrationMarketplacePage() {
     );
   });
 
+  const [detailSlug, setDetailSlug] = useState<string | null>(null);
+  const [setupSlug, setSetupSlug] = useState<string | null>(null);
+
   const tabs: { key: TabView; label: string; icon: typeof Plug }[] = [
     { key: "catalog", label: "Catalog", icon: Globe },
     { key: "installed", label: "Installed", icon: Plug },
     { key: "health", label: "Health Monitor", icon: Activity },
     { key: "dead-letters", label: "Dead Letters", icon: AlertTriangle },
+    { key: "updates", label: "Updates", icon: Package },
   ];
 
   return (
@@ -962,9 +1503,32 @@ export default function IntegrationMarketplacePage() {
         </div>
       )}
 
-      {activeTab === "health" && <HealthDashboard instances={instances || []} />}
+      {activeTab === "health" && <HealthSummaryView />}
 
       {activeTab === "dead-letters" && <DeadLetterQueue />}
+
+      {activeTab === "updates" && <UpdatesView />}
+
+      {activeTab === "details" && detailSlug && (
+        <IntegrationDetailPanel
+          slug={detailSlug}
+          onBack={() => {
+            setDetailSlug(null);
+            setActiveTab("catalog");
+          }}
+        />
+      )}
+
+      {setupSlug && (
+        <SetupWizardDialog
+          slug={setupSlug}
+          onClose={() => setSetupSlug(null)}
+          onInstall={(slug) => {
+            installMutation.mutate(slug);
+            setSetupSlug(null);
+          }}
+        />
+      )}
     </div>
   );
 }

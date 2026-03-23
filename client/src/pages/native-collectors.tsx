@@ -28,6 +28,17 @@ import {
   WifiOff,
   X,
   Zap,
+  Map,
+  FileCode,
+  Lock,
+  RotateCcw,
+  BarChart3,
+  Eye,
+  Layers,
+  GitBranch,
+  CheckSquare,
+  ArrowRight,
+  Play,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -149,6 +160,81 @@ interface PipelineStats {
   healthScore: number;
 }
 
+interface CollectorHealth {
+  collectorId: string;
+  name: string;
+  status: string;
+  eventsPerSecond: number;
+  lastReceivedEvent: string | null;
+  lastHeartbeat: string | null;
+  heartbeatStale: boolean;
+  dataStale: boolean;
+  parsingErrors: number;
+  dataVolumeBytes: number;
+  uptimePercent: number;
+  latencyP50Ms: number;
+  latencyP99Ms: number;
+  alerts: Array<{ level: string; message: string; timestamp: string }>;
+}
+
+interface CoverageEntry {
+  templateSlug: string;
+  templateName: string;
+  type: string;
+  platforms: string[];
+  dataTypes: string[];
+  deployed: number;
+  active: number;
+  covered: boolean;
+  healthScore: number;
+}
+
+interface CoverageMap {
+  coverage: CoverageEntry[];
+  gaps: CoverageEntry[];
+  totalTemplates: number;
+  coveredTemplates: number;
+  coveragePercent: number;
+}
+
+interface ParserInfo {
+  id: string;
+  name: string;
+  patternType: string;
+  builtIn: boolean;
+  fieldCount: number;
+}
+
+interface CertificateInfo {
+  id: string;
+  collectorId: string;
+  subject: string;
+  issuer: string;
+  serialNumber: string;
+  notBefore: string;
+  notAfter: string;
+  daysUntilExpiry: number;
+  status: string;
+  autoRenew: boolean;
+  fingerprint: string;
+  keyType: string;
+}
+
+interface DeployWizardData {
+  templateSlug: string;
+  templateName: string;
+  requiresAgent: boolean;
+  estimatedMinutes: number;
+  steps: Array<{
+    step: number;
+    title: string;
+    description: string;
+    status: string;
+    fields: Array<{ key: string; type: string; options?: string[]; label: string; required: boolean }>;
+    instructions?: string[];
+  }>;
+}
+
 const TYPE_CONFIG: Record<string, { label: string; icon: typeof Monitor; color: string }> = {
   agent_endpoint: { label: "Endpoint Agent", icon: Monitor, color: "text-blue-400" },
   agent_network: { label: "Network Monitor", icon: Network, color: "text-purple-400" },
@@ -189,7 +275,7 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: "bg-slate-600/20 text-slate-300",
 };
 
-type TabView = "catalog" | "deployed" | "events" | "scans" | "pipeline";
+type TabView = "catalog" | "deployed" | "events" | "scans" | "pipeline" | "health" | "coverage" | "parsers" | "certs";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -1012,6 +1098,460 @@ function ScriptDialog({
   );
 }
 
+function CollectorHealthView() {
+  const { data: instances } = useQuery<CollectorInstance[]>({
+    queryKey: ["/api/native-collectors/instances"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native-collectors/instances");
+      return res.json();
+    },
+  });
+
+  const healthQueries = (instances || []).map((inst) => ({
+    queryKey: ["/api/native-collectors/instances", inst.id, "health"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/native-collectors/instances/\${inst.id}/health`);
+      return res.json() as Promise<CollectorHealth>;
+    },
+    enabled: true,
+  }));
+
+  // Use individual queries instead of batch
+  const { data: healthList } = useQuery<CollectorHealth[]>({
+    queryKey: ["/api/native-collectors/health-all", instances?.length],
+    queryFn: async () => {
+      if (!instances || instances.length === 0) return [];
+      const results: CollectorHealth[] = [];
+      for (const inst of instances) {
+        try {
+          const res = await apiRequest("GET", `/api/native-collectors/instances/\${inst.id}/health`);
+          results.push(await res.json());
+        } catch {
+          // skip failed health checks
+        }
+      }
+      return results;
+    },
+    enabled: (instances?.length ?? 0) > 0,
+  });
+
+  if (!instances || instances.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Activity className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">No collectors deployed to monitor</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {(healthList || []).map((health) => (
+        <Card key={health.collectorId} className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div
+                  className={`h-2.5 w-2.5 rounded-full \${health.status === "active" ? "bg-emerald-400" : health.status === "degraded" ? "bg-yellow-400" : "bg-red-400"}`}
+                />
+                <span className="font-semibold text-sm text-foreground">{health.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge
+                  className={`text-xs \${health.status === "active" ? "bg-emerald-600/20 text-emerald-300" : health.status === "degraded" ? "bg-yellow-600/20 text-yellow-300" : "bg-red-600/20 text-red-300"}`}
+                >
+                  {health.status}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{health.eventsPerSecond} evt/s</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-2">
+              <div>
+                <span className="text-muted-foreground">Last Event</span>
+                <div className="text-foreground">
+                  {health.lastReceivedEvent ? new Date(health.lastReceivedEvent).toLocaleString() : "Never"}
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Parsing Errors</span>
+                <div className={`\${health.parsingErrors > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                  {health.parsingErrors}
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Volume</span>
+                <div className="text-foreground">{formatBytes(health.dataVolumeBytes)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Uptime</span>
+                <div className="text-foreground">{health.uptimePercent}%</div>
+              </div>
+            </div>
+            {health.alerts.length > 0 && (
+              <div className="space-y-1 mt-2">
+                {health.alerts.map((alert, i) => (
+                  <div
+                    key={i}
+                    className={`p-2 rounded text-xs flex items-center gap-1 \${alert.level === "critical" ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-yellow-500/10 border border-yellow-500/20 text-yellow-400"}`}
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    {alert.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function CoverageMapView() {
+  const { data: coverageData, isLoading } = useQuery<CoverageMap>({
+    queryKey: ["/api/native-collectors/coverage-map"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native-collectors/coverage-map");
+      return res.json();
+    },
+  });
+
+  if (isLoading)
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </div>
+    );
+
+  if (!coverageData) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-3 text-center">
+            <div className="text-2xl font-bold text-foreground">{coverageData.coveragePercent}%</div>
+            <div className="text-xs text-muted-foreground">Coverage</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-3 text-center">
+            <div className="text-2xl font-bold text-emerald-400">{coverageData.coveredTemplates}</div>
+            <div className="text-xs text-muted-foreground">Covered</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-3 text-center">
+            <div className="text-2xl font-bold text-red-400">{coverageData.gaps.length}</div>
+            <div className="text-xs text-muted-foreground">Gaps</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {coverageData.gaps.length > 0 && (
+        <Card className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-400" />
+              Coverage Gaps
+            </h3>
+            <div className="space-y-2">
+              {coverageData.gaps.map((gap) => {
+                const cfg = TYPE_CONFIG[gap.type];
+                const Icon = cfg?.icon || Server;
+                return (
+                  <div key={gap.templateSlug} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <Icon className={`h-4 w-4 \${cfg?.color || "text-muted-foreground"}`} />
+                      <span className="text-sm text-foreground">{gap.templateName}</span>
+                    </div>
+                    <Badge variant="outline" className="text-xs text-red-400">
+                      No collection
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="border-border/40 bg-card/50">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">All Log Sources</h3>
+          <div className="space-y-2">
+            {coverageData.coverage.map((entry) => {
+              const cfg = TYPE_CONFIG[entry.type];
+              const Icon = cfg?.icon || Server;
+              return (
+                <div key={entry.templateSlug} className="flex items-center justify-between p-2 rounded-lg bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <Icon className={`h-4 w-4 \${cfg?.color || "text-muted-foreground"}`} />
+                    <div>
+                      <span className="text-sm text-foreground">{entry.templateName}</span>
+                      <div className="text-[10px] text-muted-foreground">{entry.platforms.join(", ")}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {entry.covered ? (
+                      <Badge className="bg-emerald-600/20 text-emerald-300 text-[10px]">
+                        {entry.active}/{entry.deployed} active
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-slate-600/20 text-slate-400 text-[10px]">Not deployed</Badge>
+                    )}
+                    {entry.covered && (
+                      <span className="text-xs text-muted-foreground">{entry.healthScore}% health</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ParsersView() {
+  const { data: parsers, isLoading } = useQuery<ParserInfo[]>({
+    queryKey: ["/api/native-collectors/parsers"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native-collectors/parsers");
+      return res.json();
+    },
+  });
+
+  const [testPattern, setTestPattern] = useState("");
+  const [testType, setTestType] = useState("regex");
+  const [testSample, setTestSample] = useState("");
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    extractedFields: Record<string, string>;
+    fieldCount: number;
+  } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const { toast } = useToast();
+
+  const handleTest = async () => {
+    if (!testPattern || !testSample) return;
+    setTesting(true);
+    try {
+      const res = await apiRequest("POST", "/api/native-collectors/parsers/test", {
+        pattern: testPattern,
+        patternType: testType,
+        sampleLog: testSample,
+      });
+      setTestResult(await res.json());
+    } catch {
+      toast({ title: "Parser test failed", variant: "destructive" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-border/40 bg-card/50">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <FileCode className="h-4 w-4 text-primary" />
+            Test Custom Parser
+          </h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Pattern</label>
+                <input
+                  className="w-full px-3 py-2 rounded-md border border-border/60 bg-background text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={testPattern}
+                  onChange={(e) => setTestPattern(e.target.value)}
+                  placeholder="Enter regex, JSON path, or KV pattern..."
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+                <select
+                  className="w-full px-3 py-2 rounded-md border border-border/60 bg-background text-sm text-foreground"
+                  value={testType}
+                  onChange={(e) => setTestType(e.target.value)}
+                >
+                  <option value="regex">Regex</option>
+                  <option value="json_path">JSON Path</option>
+                  <option value="kv">Key-Value</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Sample Log</label>
+              <textarea
+                className="w-full px-3 py-2 rounded-md border border-border/60 bg-background text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                value={testSample}
+                onChange={(e) => setTestSample(e.target.value)}
+                placeholder="Paste a sample log line..."
+                rows={3}
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={handleTest}
+              disabled={testing || !testPattern || !testSample}
+              className="h-7 text-xs"
+            >
+              {testing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+              Test Parser
+            </Button>
+          </div>
+
+          {testResult && (
+            <div className="mt-4 rounded-lg border border-border/40 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2
+                  className={`h-4 w-4 \${testResult.fieldCount > 0 ? "text-emerald-400" : "text-yellow-400"}`}
+                />
+                <span className="text-sm font-medium text-foreground">{testResult.fieldCount} field(s) extracted</span>
+              </div>
+              {Object.entries(testResult.extractedFields).length > 0 && (
+                <div className="space-y-1">
+                  {Object.entries(testResult.extractedFields).map(([key, value]) => (
+                    <div key={key} className="flex items-center gap-2 text-xs">
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {key}
+                      </Badge>
+                      <span className="text-foreground font-mono">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/50">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">Built-in Parsers</h3>
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(parsers || []).map((parser) => (
+                <div key={parser.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <FileCode className="h-4 w-4 text-cyan-400" />
+                    <span className="text-sm text-foreground">{parser.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px]">
+                      {parser.patternType}
+                    </Badge>
+                    {parser.fieldCount > 0 && (
+                      <span className="text-xs text-muted-foreground">{parser.fieldCount} fields</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CertificatesView() {
+  const { data: instances } = useQuery<CollectorInstance[]>({
+    queryKey: ["/api/native-collectors/instances"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native-collectors/instances");
+      return res.json();
+    },
+  });
+
+  const { data: allCerts } = useQuery<CertificateInfo[]>({
+    queryKey: ["/api/native-collectors/certificates-all", instances?.length],
+    queryFn: async () => {
+      if (!instances || instances.length === 0) return [];
+      const results: CertificateInfo[] = [];
+      for (const inst of instances) {
+        try {
+          const res = await apiRequest("GET", `/api/native-collectors/instances/\${inst.id}/certificates`);
+          const certs: CertificateInfo[] = await res.json();
+          results.push(...certs);
+        } catch {
+          // skip
+        }
+      }
+      return results;
+    },
+    enabled: (instances?.length ?? 0) > 0,
+  });
+
+  if (!instances || instances.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Lock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">No collectors deployed for certificate management</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {(allCerts || []).map((cert) => (
+        <Card key={cert.id} className="border-border/40 bg-card/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Lock
+                  className={`h-4 w-4 \${cert.status === "valid" ? "text-emerald-400" : cert.status === "expiring_soon" ? "text-yellow-400" : "text-red-400"}`}
+                />
+                <span className="font-semibold text-sm text-foreground">{cert.subject}</span>
+              </div>
+              <Badge
+                className={`text-xs \${cert.status === "valid" ? "bg-emerald-600/20 text-emerald-300" : cert.status === "expiring_soon" ? "bg-yellow-600/20 text-yellow-300" : "bg-red-600/20 text-red-300"}`}
+              >
+                {cert.status.replace(/_/g, " ")}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-muted-foreground">Issuer</span>
+                <div className="text-foreground">{cert.issuer}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Expires</span>
+                <div
+                  className={`\${cert.daysUntilExpiry > 30 ? "text-foreground" : cert.daysUntilExpiry > 7 ? "text-yellow-400" : "text-red-400"}`}
+                >
+                  {new Date(cert.notAfter).toLocaleDateString()} ({cert.daysUntilExpiry}d)
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Key Type</span>
+                <div className="text-foreground">{cert.keyType}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Auto-Renew</span>
+                <div className={`\${cert.autoRenew ? "text-emerald-400" : "text-muted-foreground"}`}>
+                  {cert.autoRenew ? "Enabled" : "Disabled"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function NativeCollectorsPage() {
   const [tab, setTab] = useState<TabView>("catalog");
   const [search, setSearch] = useState("");
@@ -1124,9 +1664,13 @@ export default function NativeCollectorsPage() {
 
   const tabs: { id: TabView; label: string; icon: typeof Monitor }[] = [
     { id: "catalog", label: "Catalog", icon: HardDrive },
-    { id: "deployed", label: `Deployed (${instances?.length || 0})`, icon: Server },
+    { id: "deployed", label: `Deployed (\${instances?.length || 0})`, icon: Server },
+    { id: "health", label: "Health", icon: Activity },
+    { id: "coverage", label: "Coverage Map", icon: Map },
     { id: "events", label: "Events", icon: Activity },
     { id: "scans", label: "Scans", icon: ScanSearch },
+    { id: "parsers", label: "Parsers", icon: FileCode },
+    { id: "certs", label: "Certificates", icon: Lock },
     { id: "pipeline", label: "Pipeline", icon: Wifi },
   ];
 
@@ -1258,6 +1802,10 @@ export default function NativeCollectorsPage() {
         </div>
       )}
 
+      {tab === "health" && <CollectorHealthView />}
+      {tab === "coverage" && <CoverageMapView />}
+      {tab === "parsers" && <ParsersView />}
+      {tab === "certs" && <CertificatesView />}
       {tab === "events" && <EventsView />}
       {tab === "scans" && <ScansView />}
       {tab === "pipeline" && stats && <PipelineOverview stats={stats} />}
