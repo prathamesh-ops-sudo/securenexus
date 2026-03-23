@@ -24,6 +24,11 @@ import {
   Server,
   ArrowRight,
   Zap,
+  TrendingUp,
+  History,
+  BarChart3,
+  Link2,
+  Calendar,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -278,6 +283,9 @@ function AccessReviewsTab() {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newCadence, setNewCadence] = useState("quarterly");
+  const [newScope, setNewScope] = useState("all_users");
+  const [newReviewer, setNewReviewer] = useState("");
+  const [newDeadline, setNewDeadline] = useState("");
 
   const { data: campaignsData, isLoading } = useQuery({
     queryKey: ["/api/identity/access-reviews"],
@@ -487,19 +495,51 @@ function AccessReviewsTab() {
                   onChange={(e) => setNewDescription(e.target.value)}
                 />
               </div>
-              <div>
-                <Label>Cadence</Label>
-                <Select value={newCadence} onValueChange={setNewCadence}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="annual">Annual</SelectItem>
-                    <SelectItem value="one_time">One-time</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Cadence</Label>
+                  <Select value={newCadence} onValueChange={setNewCadence}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="annual">Annual</SelectItem>
+                      <SelectItem value="one_time">One-time</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Scope</Label>
+                  <Select value={newScope} onValueChange={setNewScope}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all_users">All Users</SelectItem>
+                      <SelectItem value="privileged">Privileged Accounts</SelectItem>
+                      <SelectItem value="department">By Department</SelectItem>
+                      <SelectItem value="application">By Application</SelectItem>
+                      <SelectItem value="role">By Role</SelectItem>
+                      <SelectItem value="contractors">Contractors Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Reviewer</Label>
+                  <Input
+                    placeholder="Reviewer name or email"
+                    value={newReviewer}
+                    onChange={(e) => setNewReviewer(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Deadline</Label>
+                  <Input type="date" value={newDeadline} onChange={(e) => setNewDeadline(e.target.value)} />
+                </div>
               </div>
               <Button
                 className="w-full"
@@ -508,6 +548,9 @@ function AccessReviewsTab() {
                     name: newName,
                     description: newDescription,
                     cadence: newCadence,
+                    scope: newScope,
+                    reviewerName: newReviewer || undefined,
+                    dueDate: newDeadline || undefined,
                   })
                 }
                 disabled={!newName.trim() || createMutation.isPending}
@@ -555,7 +598,30 @@ function AccessReviewsTab() {
                       <span>{c.reviewedCount} reviewed</span>
                       <span className="text-green-400">{c.approvedCount} approved</span>
                       <span className="text-red-400">{c.revokedCount} revoked</span>
+                      {c.reviewerName ? (
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3 w-3" /> {c.reviewerName}
+                        </span>
+                      ) : null}
+                      {c.dueDate ? (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" /> Due {new Date(c.dueDate).toLocaleDateString()}
+                        </span>
+                      ) : null}
                     </div>
+                    {c.totalEntitlements > 0 ? (
+                      <div className="mt-2">
+                        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{ width: `${Math.round((c.reviewedCount / c.totalEntitlements) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
+                          {Math.round((c.reviewedCount / c.totalEntitlements) * 100)}% complete
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     {c.status === "draft" && (
@@ -1050,58 +1116,380 @@ function BlastRadiusTab() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {profiles.map((p) => (
-            <Card key={p.id}>
+        <div className="space-y-4">
+          {/* 53.2: Blast Radius Visual Graph */}
+          {profiles.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Target className="h-4 w-4 text-red-400" />
+                  Blast Radius Graph — First &amp; Second Hop Access
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-3 items-start">
+                  {profiles.slice(0, 6).map((p) => {
+                    const hopColor = p.canReachCritical
+                      ? "border-red-500 bg-red-500/10"
+                      : p.riskLevel === "high"
+                        ? "border-orange-500 bg-orange-500/10"
+                        : "border-blue-500 bg-blue-500/10";
+                    return (
+                      <div key={p.id} className="flex flex-col items-center gap-1">
+                        <div className={`rounded-full w-14 h-14 flex items-center justify-center border-2 ${hopColor}`}>
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <span className="text-[10px] font-medium text-center max-w-[80px] truncate">{p.userName}</span>
+                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <ArrowRight className="h-2.5 w-2.5" />
+                          <span>{p.accessibleSystems || 0} sys</span>
+                        </div>
+                        {(p.lateralMovementPaths || 0) > 0 ? (
+                          <div className="flex items-center gap-0.5 text-[10px] text-orange-400">
+                            <Network className="h-2.5 w-2.5" />
+                            <span>{p.lateralMovementPaths} 2nd-hop</span>
+                          </div>
+                        ) : null}
+                        {p.canReachCritical ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] h-4 bg-red-500/20 text-red-400 border-red-500/30"
+                          >
+                            Crown Jewel
+                          </Badge>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-3 text-[10px]">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-red-500" /> Critical / Crown Jewel
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-orange-500" /> High Risk
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" /> Standard
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Profile list */}
+          <div className="space-y-2">
+            {profiles.map((p) => (
+              <Card key={p.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{p.userName}</span>
+                        {p.userEmail && <span className="text-xs text-muted-foreground">{p.userEmail}</span>}
+                        {riskBadge(p.riskLevel)}
+                      </div>
+                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <Target className="h-3 w-3" /> Blast Radius: {riskMeter(p.blastRadiusScore || 0)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Server className="h-3 w-3" /> {p.accessibleSystems || 0} systems
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Network className="h-3 w-3" /> {p.lateralMovementPaths || 0} paths
+                        </span>
+                        {p.canReachCritical && (
+                          <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+                            Can reach critical
+                          </Badge>
+                        )}
+                        {p.isStale && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+                          >
+                            Stale ({p.daysSinceActivity}d)
+                          </Badge>
+                        )}
+                        {!p.mfaEnabled && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
+                          >
+                            No MFA
+                          </Badge>
+                        )}
+                        {p.hasExcessivePermissions && (
+                          <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+                            Excessive perms
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right ml-4">
+                      <div className="text-lg font-bold">{p.riskScore}</div>
+                      <div className="text-xs text-muted-foreground">Risk Score</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// 53.3: Privilege Creep Detection
+// ============================================================================
+
+function PrivilegeCreepTab() {
+  const { data, isLoading } = useQuery<{
+    users: Array<{
+      id: string;
+      userName: string;
+      userEmail: string | null;
+      currentPermissions: number;
+      permissionsAdded: number;
+      permissionsRemoved: number;
+      netGrowth: number;
+      oldestUnusedPermission: string | null;
+      riskLevel: string;
+      timeline: Array<{ date: string; action: string; permission: string }>;
+    }>;
+    summary: { totalUsers: number; usersWithCreep: number; avgGrowth: number };
+  }>({
+    queryKey: ["/api/identity/privilege-creep"],
+    queryFn: () => apiRequest("GET", "/api/identity/privilege-creep").then((r) => r.json()),
+  });
+
+  const users = data?.users || [];
+  const summary = data?.summary || { totalUsers: 0, usersWithCreep: 0, avgGrowth: 0 };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold">Privilege Creep Detection</h3>
+        <p className="text-sm text-muted-foreground">
+          Detect users accumulating permissions over time without losing old ones
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold">{summary.totalUsers}</p>
+            <p className="text-xs text-muted-foreground">Users Analyzed</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-orange-400">{summary.usersWithCreep}</p>
+            <p className="text-xs text-muted-foreground">With Privilege Creep</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-yellow-400">
+              {summary.avgGrowth > 0 ? "+" : ""}
+              {summary.avgGrowth}
+            </p>
+            <p className="text-xs text-muted-foreground">Avg Permission Growth</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-8 text-muted-foreground">Analyzing privilege accumulation...</div>
+      ) : users.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Privilege Creep Detected</h3>
+            <p className="text-sm text-muted-foreground">All users have stable or declining permission sets.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {users.map((u) => (
+            <Card key={u.id}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{p.userName}</span>
-                      {p.userEmail && <span className="text-xs text-muted-foreground">{p.userEmail}</span>}
-                      {riskBadge(p.riskLevel)}
+                      <TrendingUp className="h-4 w-4 text-orange-400" />
+                      <span className="font-medium">{u.userName}</span>
+                      {u.userEmail ? <span className="text-xs text-muted-foreground">{u.userEmail}</span> : null}
+                      {riskBadge(u.riskLevel)}
                     </div>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <Target className="h-3 w-3" /> Blast Radius: {riskMeter(p.blastRadiusScore || 0)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Server className="h-3 w-3" /> {p.accessibleSystems || 0} systems
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Network className="h-3 w-3" /> {p.lateralMovementPaths || 0} paths
-                      </span>
-                      {p.canReachCritical && (
-                        <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
-                          Can reach critical
-                        </Badge>
-                      )}
-                      {p.isStale && (
+                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                      <span>Current: {u.currentPermissions} perms</span>
+                      <span className="text-green-400">+{u.permissionsAdded} added</span>
+                      <span className="text-red-400">-{u.permissionsRemoved} removed</span>
+                      <Badge
+                        variant="outline"
+                        className={
+                          u.netGrowth > 5
+                            ? "text-red-400 bg-red-500/10 border-red-500/30 text-xs"
+                            : "text-yellow-400 bg-yellow-500/10 border-yellow-500/30 text-xs"
+                        }
+                      >
+                        Net: +{u.netGrowth}
+                      </Badge>
+                      {u.oldestUnusedPermission ? (
+                        <span className="text-orange-400">Oldest unused: {u.oldestUnusedPermission}</span>
+                      ) : null}
+                    </div>
+                    {u.timeline && u.timeline.length > 0 ? (
+                      <div className="mt-2 flex items-center gap-1">
+                        <History className="h-3 w-3 text-muted-foreground" />
+                        <div className="flex items-center gap-1 overflow-hidden">
+                          {u.timeline.slice(0, 5).map((t, idx) => (
+                            <Badge
+                              key={idx}
+                              variant="outline"
+                              className={`text-[9px] h-4 ${t.action === "grant" ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}
+                            >
+                              {t.action === "grant" ? "+" : "-"}
+                              {t.permission}
+                            </Badge>
+                          ))}
+                          {u.timeline.length > 5 ? (
+                            <span className="text-[10px] text-muted-foreground">+{u.timeline.length - 5} more</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// 53.4: Orphaned Account Detection (enhanced with HR cross-reference)
+// ============================================================================
+
+function OrphanedAccountsTab() {
+  const { data, isLoading } = useQuery<{
+    orphanedAccounts: Array<{
+      id: string;
+      userName: string;
+      userEmail: string | null;
+      accountType: string;
+      reason: string;
+      lastLoginAt: string | null;
+      createdAt: string;
+      hrStatus: string | null;
+      departedDate: string | null;
+      contractEndDate: string | null;
+      permissionCount: number;
+      hasPrivilegedAccess: boolean;
+    }>;
+    summary: { total: number; employees: number; contractors: number; serviceAccounts: number };
+  }>({
+    queryKey: ["/api/identity/orphaned-accounts"],
+    queryFn: () => apiRequest("GET", "/api/identity/orphaned-accounts").then((r) => r.json()),
+  });
+
+  const accounts = data?.orphanedAccounts || [];
+  const summary = data?.summary || { total: 0, employees: 0, contractors: 0, serviceAccounts: 0 };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold">Orphaned Account Detection</h3>
+        <p className="text-sm text-muted-foreground">
+          Accounts with no corresponding employee — cross-referenced with HR/IdP data
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-red-400">{summary.total}</p>
+            <p className="text-xs text-muted-foreground">Orphaned Total</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold">{summary.employees}</p>
+            <p className="text-xs text-muted-foreground">Ex-Employees</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold">{summary.contractors}</p>
+            <p className="text-xs text-muted-foreground">Expired Contractors</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold">{summary.serviceAccounts}</p>
+            <p className="text-xs text-muted-foreground">Orphaned Service Accounts</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-8 text-muted-foreground">Cross-referencing HR data...</div>
+      ) : accounts.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <CheckCircle className="h-12 w-12 mx-auto text-green-400/30 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Orphaned Accounts</h3>
+            <p className="text-sm text-muted-foreground">
+              All accounts have a corresponding active employee or valid contractor agreement.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {accounts.map((a) => (
+            <Card key={a.id}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <UserX className="h-4 w-4 text-red-400" />
+                      <span className="font-medium">{a.userName}</span>
+                      {a.userEmail ? <span className="text-xs text-muted-foreground">{a.userEmail}</span> : null}
+                      <Badge variant="outline" className="text-xs">
+                        {a.accountType}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
+                      <span className="text-red-400 font-medium">{a.reason}</span>
+                      {a.hrStatus ? (
                         <Badge
                           variant="outline"
-                          className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+                          className="text-[10px] bg-orange-500/10 text-orange-400 border-orange-500/30"
                         >
-                          Stale ({p.daysSinceActivity}d)
+                          HR: {a.hrStatus}
                         </Badge>
-                      )}
-                      {!p.mfaEnabled && (
-                        <Badge
-                          variant="outline"
-                          className="text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
-                        >
-                          No MFA
+                      ) : null}
+                      {a.departedDate ? <span>Departed: {new Date(a.departedDate).toLocaleDateString()}</span> : null}
+                      {a.contractEndDate ? (
+                        <span>Contract ended: {new Date(a.contractEndDate).toLocaleDateString()}</span>
+                      ) : null}
+                      <span>{a.permissionCount} permissions</span>
+                      {a.hasPrivilegedAccess ? (
+                        <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-400 border-red-500/30">
+                          Privileged
                         </Badge>
-                      )}
-                      {p.hasExcessivePermissions && (
-                        <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
-                          Excessive perms
-                        </Badge>
-                      )}
+                      ) : null}
                     </div>
                   </div>
-                  <div className="text-right ml-4">
-                    <div className="text-lg font-bold">{p.riskScore}</div>
-                    <div className="text-xs text-muted-foreground">Risk Score</div>
+                  <div className="text-xs text-muted-foreground text-right">
+                    Last login: {a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleDateString() : "Never"}
                   </div>
                 </div>
               </CardContent>
@@ -1387,7 +1775,7 @@ export default function IdentityGovernancePage() {
       <SummaryCards />
 
       <Tabs defaultValue="pam" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-4 md:grid-cols-8">
           <TabsTrigger value="pam" className="text-xs">
             <KeyRound className="h-3 w-3 mr-1" /> PAM
           </TabsTrigger>
@@ -1405,6 +1793,12 @@ export default function IdentityGovernancePage() {
           </TabsTrigger>
           <TabsTrigger value="scim" className="text-xs">
             <RefreshCw className="h-3 w-3 mr-1" /> SCIM
+          </TabsTrigger>
+          <TabsTrigger value="privilege-creep" className="text-xs">
+            <TrendingUp className="h-3 w-3 mr-1" /> Privilege Creep
+          </TabsTrigger>
+          <TabsTrigger value="orphaned" className="text-xs">
+            <Link2 className="h-3 w-3 mr-1" /> Orphaned
           </TabsTrigger>
         </TabsList>
 
@@ -1425,6 +1819,12 @@ export default function IdentityGovernancePage() {
         </TabsContent>
         <TabsContent value="scim">
           <ScimTab />
+        </TabsContent>
+        <TabsContent value="privilege-creep">
+          <PrivilegeCreepTab />
+        </TabsContent>
+        <TabsContent value="orphaned">
+          <OrphanedAccountsTab />
         </TabsContent>
       </Tabs>
     </div>
