@@ -31,8 +31,21 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  BarChart3,
+  Layers,
+  Gauge,
+  Zap,
+  TrendingDown,
+  TrendingUp,
+  Filter,
+  RefreshCw,
+  PieChart,
+  Workflow,
+  ArrowRight,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ApiKeyDisplay {
   id: string;
@@ -74,6 +87,404 @@ interface IngestionStats {
   totalDeduped: number;
   totalFailed: number;
   sourceBreakdown: { source: string; count: number; lastReceived: string | null }[];
+}
+
+interface RateBucket {
+  timestamp: string;
+  eventsPerSecond: number;
+  totalEvents: number;
+}
+
+interface IngestionRate {
+  windowMinutes: number;
+  bucketCount: number;
+  buckets: RateBucket[];
+  anomaly: { detected: boolean; currentRate: number; averageRate: number; message?: string };
+}
+
+interface SourceBreakdown {
+  totalVolume: number;
+  sourceCount: number;
+  breakdown: Array<{ source: string; count: number; percentage: number; lastReceived: string | null; status: string }>;
+  dominant: { source: string; percentage: number } | null;
+  silentSources: string[];
+}
+
+interface PipelineStage {
+  stage: string;
+  count: number;
+  percentage: number;
+  status: string;
+  errors: number;
+}
+
+interface PipelineHealth {
+  overallStatus: string;
+  stages: PipelineStage[];
+  bottleneck: { stage: string; errorRate: number } | null;
+  summary: {
+    totalReceived: number;
+    totalStored: number;
+    totalDeduped: number;
+    totalFailed: number;
+    deduplicationRate: number;
+    failureRate: number;
+  };
+}
+
+interface BackpressureStatus {
+  eventsPerMinute: number;
+  maxEventsPerMinute: number;
+  capacityPercent: number;
+  backpressureActive: boolean;
+  avgProcessingMs: number;
+  queueDepth: number;
+  status: string;
+  recommendations: string[];
+}
+
+interface DataQuality {
+  overallQuality: string;
+  parseSuccessRate: number;
+  normalizationCoverage: number;
+  unparsedPercent: number;
+  unparsedThreshold: number;
+  thresholdExceeded: boolean;
+  perSourceQuality: Array<{ source: string; eventCount: number; quality: string; fieldExtractionRate: number }>;
+  alerts: Array<{ level: string; message: string; timestamp: string }>;
+}
+
+function IngestionRateChart() {
+  const { data: rateData, isLoading } = useQuery<IngestionRate>({
+    queryKey: ["/api/ingestion/rate"],
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (!rateData) return null;
+
+  const maxEps = Math.max(...rateData.buckets.map((b) => b.eventsPerSecond), 1);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            Ingestion Rate
+          </CardTitle>
+          <div className="text-xs text-muted-foreground">Last {rateData.windowMinutes} min</div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {rateData.anomaly.detected && (
+          <div className="mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 flex items-center gap-2">
+            <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+            {rateData.anomaly.message}
+          </div>
+        )}
+        <div className="flex items-end gap-[1px] h-28">
+          {rateData.buckets.map((bucket, i) => {
+            const height = maxEps > 0 ? Math.max((bucket.eventsPerSecond / maxEps) * 100, 2) : 2;
+            return (
+              <div
+                key={i}
+                className="flex-1 bg-primary/60 hover:bg-primary/80 rounded-t transition-colors"
+                style={{ height: `${height}%` }}
+                title={`${new Date(bucket.timestamp).toLocaleTimeString()}: ${bucket.eventsPerSecond} evt/s (${bucket.totalEvents} total)`}
+              />
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+          <span>Current: {rateData.anomaly.currentRate} evt/s</span>
+          <span>Avg: {rateData.anomaly.averageRate} evt/s</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SourceBreakdownPanel() {
+  const { data: breakdown, isLoading } = useQuery<SourceBreakdown>({
+    queryKey: ["/api/ingestion/source-breakdown"],
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (!breakdown) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <PieChart className="h-4 w-4 text-muted-foreground" />
+          Source Breakdown
+        </CardTitle>
+        <CardDescription>
+          {breakdown.sourceCount} sources, {breakdown.totalVolume} total events
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {breakdown.silentSources.length > 0 && (
+          <div className="mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 flex items-center gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {breakdown.silentSources.length} silent source(s): {breakdown.silentSources.join(", ")}
+          </div>
+        )}
+        <div className="space-y-2">
+          {breakdown.breakdown.slice(0, 8).map((source) => (
+            <div key={source.source} className="flex items-center gap-2">
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-xs mb-0.5">
+                  <span className="font-medium truncate">{source.source}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${source.status === "active" ? "text-emerald-400" : source.status === "stale" ? "text-amber-400" : "text-red-400"}`}
+                    >
+                      {source.status}
+                    </Badge>
+                    <span className="text-muted-foreground tabular-nums">{source.percentage}%</span>
+                  </div>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-primary/60 rounded-full" style={{ width: `${source.percentage}%` }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {breakdown.dominant && (
+          <p className="text-[10px] text-muted-foreground mt-2">
+            Dominant source: {breakdown.dominant.source} ({breakdown.dominant.percentage}%)
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PipelineHealthPanel() {
+  const { data: pipeline, isLoading } = useQuery<PipelineHealth>({
+    queryKey: ["/api/ingestion/pipeline-health"],
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (!pipeline) return null;
+
+  const stageIcons: Record<string, string> = {
+    received: "arrow-down",
+    parsed: "file-text",
+    normalized: "layers",
+    enriched: "zap",
+    stored: "database",
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Workflow className="h-4 w-4 text-muted-foreground" />
+            Pipeline Health
+          </CardTitle>
+          <Badge
+            variant="outline"
+            className={`text-xs ${pipeline.overallStatus === "healthy" ? "text-emerald-400" : "text-amber-400"}`}
+          >
+            {pipeline.overallStatus}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {pipeline.bottleneck && (
+          <div className="mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 flex items-center gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            Bottleneck at "{pipeline.bottleneck.stage}" stage ({pipeline.bottleneck.errorRate}% error rate)
+          </div>
+        )}
+        <div className="flex items-center gap-1">
+          {pipeline.stages.map((stage, i) => (
+            <div key={stage.stage} className="flex items-center gap-1 flex-1">
+              <div
+                className={`flex-1 p-2 rounded border text-center ${stage.status === "ok" ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}
+              >
+                <div className="text-[10px] font-medium capitalize">{stage.stage}</div>
+                <div className="text-xs font-bold tabular-nums">{stage.count}</div>
+                <div className={`text-[10px] ${stage.status === "ok" ? "text-emerald-400" : "text-amber-400"}`}>
+                  {stage.percentage}%
+                </div>
+                {stage.errors > 0 && <div className="text-[10px] text-red-400">{stage.errors} err</div>}
+              </div>
+              {i < pipeline.stages.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+          <div className="text-center">
+            <div className="text-muted-foreground">Dedup Rate</div>
+            <div className="font-bold">{pipeline.summary.deduplicationRate}%</div>
+          </div>
+          <div className="text-center">
+            <div className="text-muted-foreground">Failure Rate</div>
+            <div className={`font-bold ${pipeline.summary.failureRate > 5 ? "text-red-400" : "text-emerald-400"}`}>
+              {pipeline.summary.failureRate}%
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-muted-foreground">Stored</div>
+            <div className="font-bold">{pipeline.summary.totalStored}</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BackpressurePanel() {
+  const { data: bp, isLoading } = useQuery<BackpressureStatus>({
+    queryKey: ["/api/ingestion/backpressure"],
+  });
+
+  if (isLoading) return <Skeleton className="h-32 w-full" />;
+  if (!bp) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-muted-foreground" />
+          Backpressure & Capacity
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">Events/min</div>
+            <div className="text-lg font-bold tabular-nums">{bp.eventsPerMinute}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">Capacity</div>
+            <div
+              className={`text-lg font-bold tabular-nums ${bp.capacityPercent > 80 ? "text-red-400" : bp.capacityPercent > 60 ? "text-amber-400" : "text-emerald-400"}`}
+            >
+              {bp.capacityPercent}%
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">Avg Processing</div>
+            <div className="text-lg font-bold tabular-nums">{bp.avgProcessingMs}ms</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">Status</div>
+            <Badge
+              variant="outline"
+              className={`text-xs mt-1 ${bp.status === "ok" ? "text-emerald-400" : bp.status === "warning" ? "text-amber-400" : "text-red-400"}`}
+            >
+              {bp.status}
+            </Badge>
+          </div>
+        </div>
+        <div className="h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${bp.capacityPercent > 80 ? "bg-red-400" : bp.capacityPercent > 60 ? "bg-amber-400" : "bg-emerald-400"}`}
+            style={{ width: `${bp.capacityPercent}%` }}
+          />
+        </div>
+        {bp.recommendations.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {bp.recommendations.map((rec, i) => (
+              <p key={i} className="text-[10px] text-amber-400 flex items-center gap-1">
+                <Zap className="h-3 w-3 shrink-0" />
+                {rec}
+              </p>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataQualityPanel() {
+  const { data: quality, isLoading } = useQuery<DataQuality>({
+    queryKey: ["/api/ingestion/data-quality"],
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (!quality) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            Data Quality
+          </CardTitle>
+          <Badge
+            variant="outline"
+            className={`text-xs ${quality.overallQuality === "healthy" ? "text-emerald-400" : "text-amber-400"}`}
+          >
+            {quality.overallQuality}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {quality.alerts.map((alert, i) => (
+          <div
+            key={i}
+            className="mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 flex items-center gap-2"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {alert.message}
+          </div>
+        ))}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-2 rounded border border-border/40 text-center">
+            <div className="text-[10px] text-muted-foreground">Parse Success</div>
+            <div
+              className={`text-lg font-bold ${quality.parseSuccessRate >= 95 ? "text-emerald-400" : quality.parseSuccessRate >= 80 ? "text-amber-400" : "text-red-400"}`}
+            >
+              {quality.parseSuccessRate}%
+            </div>
+          </div>
+          <div className="p-2 rounded border border-border/40 text-center">
+            <div className="text-[10px] text-muted-foreground">Normalization</div>
+            <div
+              className={`text-lg font-bold ${quality.normalizationCoverage >= 95 ? "text-emerald-400" : "text-amber-400"}`}
+            >
+              {quality.normalizationCoverage}%
+            </div>
+          </div>
+          <div className="p-2 rounded border border-border/40 text-center">
+            <div className="text-[10px] text-muted-foreground">Unparsed</div>
+            <div className={`text-lg font-bold ${quality.thresholdExceeded ? "text-red-400" : "text-emerald-400"}`}>
+              {quality.unparsedPercent}%
+            </div>
+          </div>
+        </div>
+        {quality.perSourceQuality.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            <h5 className="text-xs font-medium text-muted-foreground">Per-Source Quality</h5>
+            {quality.perSourceQuality.slice(0, 5).map((sq) => (
+              <div key={sq.source} className="flex items-center justify-between text-xs">
+                <span className="truncate">{sq.source}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-muted-foreground">{sq.fieldExtractionRate}% extraction</span>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${sq.quality === "good" ? "text-emerald-400" : "text-amber-400"}`}
+                  >
+                    {sq.quality}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function IngestionPage() {
@@ -264,6 +675,18 @@ export default function IngestionPage() {
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <IngestionRateChart />
+        <SourceBreakdownPanel />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PipelineHealthPanel />
+        <BackpressurePanel />
+      </div>
+
+      <DataQualityPanel />
 
       {sourcesData && ingestionStats && (
         <Card>
