@@ -25,7 +25,23 @@ import {
   Target,
   Workflow,
   X,
+  Star,
+  StarOff,
+  Share2,
+  Rocket,
+  Undo2,
+  ShieldQuestion,
+  ArrowRight,
+  Copy,
+  Eye,
+  Filter,
+  Heart,
+  Layers,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +126,56 @@ interface Investigation {
   citations: SourceCitation[];
   createdAt: string;
   completedAt: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 32.1 Artifact Type Selection
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ArtifactTypeTemplate {
+  type: string;
+  label: string;
+  description: string;
+  examplePrompts: string[];
+  bestPractices: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 32.2 Artifact Preview
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ValidationResult {
+  valid: boolean;
+  errors: { field: string; message: string; severity: "error" | "warning" }[];
+  artifactType: string;
+  checkedAt: string;
+}
+
+interface DeploymentRecord {
+  id: string;
+  artifactId: string;
+  investigationId: string;
+  artifactType: string;
+  targetPage: string;
+  status: "pending" | "deployed" | "rolled_back" | "failed";
+  deployedAt: string;
+  rolledBackAt: string | null;
+  deployedBy: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 32.3 Prompt History & Favorites
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface PromptHistoryEntry {
+  id: string;
+  orgId: string;
+  prompt: string;
+  artifactType: string;
+  isFavorite: boolean;
+  sharedWith: string[];
+  usedAt: string;
+  resultId: string | null;
 }
 
 const ARTIFACT_TYPE_CONFIG: Record<string, { icon: typeof BarChart3; color: string; label: string }> = {
@@ -695,9 +761,372 @@ function InvestigationCard({
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 32.1 Artifact Type Selection Component
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ARTIFACT_TYPE_ICONS: Record<string, typeof ShieldAlert> = {
+  alert_rule: ShieldAlert,
+  workflow: Workflow,
+  report: FileText,
+  query: Search,
+  dashboard: BarChart3,
+  investigation: ShieldCheck,
+};
+
+function ArtifactTypeSelector({
+  onSelect,
+  onPromptSet,
+}: {
+  onSelect: (type: string) => void;
+  onPromptSet: (prompt: string) => void;
+}) {
+  const { data: artifactTypes } = useQuery<ArtifactTypeTemplate[]>({
+    queryKey: ["/api/prompt-artifact/artifact-types"],
+  });
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+
+  if (!artifactTypes) return null;
+
+  const selected = artifactTypes.find((t) => t.type === selectedType);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-primary" />
+          <CardTitle className="text-sm font-medium">Choose Artifact Type</CardTitle>
+        </div>
+        <CardDescription className="text-xs">Select what you want to generate</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+          {artifactTypes.map((at) => {
+            const Icon = ARTIFACT_TYPE_ICONS[at.type] || Target;
+            const isSelected = selectedType === at.type;
+            return (
+              <button
+                key={at.type}
+                onClick={() => {
+                  setSelectedType(at.type);
+                  onSelect(at.type);
+                }}
+                className={`p-2.5 rounded-md border text-left transition-colors ${
+                  isSelected ? "border-primary bg-primary/5" : "border-muted-foreground/10 hover:bg-muted/30"
+                }`}
+              >
+                <Icon className={`h-4 w-4 mb-1 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                <p className="text-xs font-medium">{at.label}</p>
+                <p className="text-[10px] text-muted-foreground line-clamp-1">{at.description}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        {selected && (
+          <div className="space-y-3 border-t pt-3">
+            <div>
+              <p className="text-xs font-medium mb-1.5">Example Prompts</p>
+              <div className="space-y-1">
+                {selected.examplePrompts.map((ep, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onPromptSet(ep)}
+                    className="w-full text-left px-2.5 py-1.5 rounded text-xs hover:bg-muted/30 transition-colors border border-transparent hover:border-muted-foreground/10 flex items-center gap-2"
+                  >
+                    <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span>{ep}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium mb-1.5">Best Practices</p>
+              <ul className="space-y-0.5">
+                {selected.bestPractices.map((bp, i) => (
+                  <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1.5">
+                    <Check className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
+                    <span>{bp}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 32.2 Artifact Preview with Syntax Highlighting
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ArtifactPreviewPanel({ investigation }: { investigation: Investigation }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const validateMutation = useMutation({
+    mutationFn: async (params: { investigationId: string; artifactId: string }) => {
+      const res = await apiRequest("POST", "/api/prompt-artifact/artifacts/validate", params);
+      return (await res.json()) as ValidationResult;
+    },
+  });
+
+  const deployMutation = useMutation({
+    mutationFn: async (params: { investigationId: string; artifactId: string }) => {
+      const res = await apiRequest("POST", "/api/prompt-artifact/artifacts/deploy", params);
+      return (await res.json()) as DeploymentRecord;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prompt-artifact/deployments"] });
+      toast({ title: "Artifact deployed", description: `Deployed to ${data.targetPage}` });
+    },
+    onError: () => toast({ title: "Deploy failed", variant: "destructive" }),
+  });
+
+  if (investigation.artifacts.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {investigation.artifacts.map((artifact) => {
+        const contentStr = JSON.stringify(artifact.content, null, 2);
+        return (
+          <Card key={artifact.id}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-sm">{artifact.name}</CardTitle>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() =>
+                      validateMutation.mutate({
+                        investigationId: investigation.id,
+                        artifactId: artifact.id,
+                      })
+                    }
+                    disabled={validateMutation.isPending}
+                  >
+                    {validateMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <ShieldQuestion className="h-3 w-3 mr-1" />
+                    )}
+                    Validate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(contentStr);
+                      toast({ title: "Copied to clipboard" });
+                    }}
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    Copy
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() =>
+                      deployMutation.mutate({
+                        investigationId: investigation.id,
+                        artifactId: artifact.id,
+                      })
+                    }
+                    disabled={deployMutation.isPending}
+                  >
+                    {deployMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <Rocket className="h-3 w-3 mr-1" />
+                    )}
+                    Deploy
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Validation results */}
+              {validateMutation.data && (
+                <div
+                  className={`mb-3 p-2.5 rounded-md border text-xs ${
+                    validateMutation.data.valid
+                      ? "border-emerald-500/20 bg-emerald-500/5"
+                      : "border-red-500/20 bg-red-500/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {validateMutation.data.valid ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    ) : (
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                    )}
+                    <span className="font-medium">
+                      {validateMutation.data.valid ? "Validation Passed" : "Validation Failed"}
+                    </span>
+                  </div>
+                  {validateMutation.data.errors.length > 0 && (
+                    <ul className="space-y-0.5 mt-1">
+                      {validateMutation.data.errors.map((err, i) => (
+                        <li key={i} className="flex items-start gap-1">
+                          {err.severity === "error" ? (
+                            <X className="h-3 w-3 text-red-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
+                          )}
+                          <span>
+                            <strong>{err.field}:</strong> {err.message}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {/* Code preview with syntax highlighting simulation */}
+              <div className="relative">
+                <pre className="bg-muted/30 rounded-md p-3 text-xs font-mono overflow-x-auto max-h-[300px] overflow-y-auto border border-muted-foreground/10">
+                  <code>{contentStr}</code>
+                </pre>
+                <Badge variant="outline" className="absolute top-2 right-2 text-[9px]">
+                  {artifact.type.replace(/_/g, " ").toUpperCase()}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 32.3 Prompt History & Favorites Component
+// ═══════════════════════════════════════════════════════════════════════════
+
+function PromptHistoryPanel({ onSelect }: { onSelect: (prompt: string) => void }) {
+  const [historySearch, setHistorySearch] = useState("");
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: history } = useQuery<PromptHistoryEntry[]>({
+    queryKey: ["/api/prompt-artifact/history", historySearch, showFavoritesOnly],
+  });
+
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async (promptId: string) => {
+      const res = await apiRequest("POST", "/api/prompt-artifact/history/toggle-favorite", { promptId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prompt-artifact/history"] });
+    },
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: async (promptId: string) => {
+      const res = await apiRequest("POST", "/api/prompt-artifact/history/share", {
+        promptId,
+        shareWith: ["team"],
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Prompt shared", description: "Team members can now see this prompt" });
+      queryClient.invalidateQueries({ queryKey: ["/api/prompt-artifact/history"] });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Prompt History</CardTitle>
+          </div>
+          <Button
+            variant={showFavoritesOnly ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+          >
+            <Heart className={`h-3 w-3 mr-1 ${showFavoritesOnly ? "fill-current" : ""}`} />
+            Favorites
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="relative mb-3">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search prompts..."
+            className="h-8 pl-8 text-xs"
+            value={historySearch}
+            onChange={(e) => setHistorySearch(e.target.value)}
+          />
+        </div>
+
+        {!history || history.length === 0 ? (
+          <div className="text-center py-4">
+            <Clock className="h-6 w-6 text-muted-foreground/30 mx-auto mb-1" />
+            <p className="text-xs text-muted-foreground">
+              {showFavoritesOnly ? "No favorite prompts yet" : "No prompt history yet"}
+            </p>
+          </div>
+        ) : (
+          <ScrollArea className="max-h-[200px]">
+            <div className="space-y-1.5">
+              {history.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center gap-2 p-2 rounded-md border border-muted-foreground/10 hover:bg-muted/30 transition-colors group"
+                >
+                  <button onClick={() => onSelect(entry.prompt)} className="flex-1 text-left text-xs line-clamp-1">
+                    {entry.prompt}
+                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => toggleFavoriteMutation.mutate(entry.id)}
+                      className="p-1 hover:bg-muted rounded"
+                    >
+                      {entry.isFavorite ? (
+                        <Star className="h-3 w-3 text-amber-400 fill-amber-400" />
+                      ) : (
+                        <StarOff className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    <button onClick={() => shareMutation.mutate(entry.id)} className="p-1 hover:bg-muted rounded">
+                      <Share2 className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function PromptToArtifactPage() {
   const [prompt, setPrompt] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [selectedArtifactType, setSelectedArtifactType] = useState<string | null>(null);
+
+  const { data: deployments } = useQuery<DeploymentRecord[]>({
+    queryKey: ["/api/prompt-artifact/deployments"],
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -851,6 +1280,12 @@ export default function PromptToArtifactPage() {
         </div>
       )}
 
+      {/* 32.1 Artifact Type Selection */}
+      <ArtifactTypeSelector onSelect={setSelectedArtifactType} onPromptSet={setPrompt} />
+
+      {/* 32.3 Prompt History & Favorites */}
+      <PromptHistoryPanel onSelect={setPrompt} />
+
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {Object.entries(ARTIFACT_TYPE_CONFIG).map(([type, config]) => {
           const count = investigations
@@ -914,6 +1349,71 @@ export default function PromptToArtifactPage() {
           </div>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+        32.2 Artifact Preview for Latest Investigation
+        ═══════════════════════════════════════════════════════════════════════ */}
+      {investigations && investigations.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-bold">Artifact Preview &amp; Deployment</h2>
+          </div>
+          <ArtifactPreviewPanel investigation={investigations[0]} />
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+        32.5 Deployment Pipeline
+        ═══════════════════════════════════════════════════════════════════════ */}
+      {deployments && deployments.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Rocket className="h-4 w-4 text-primary" />
+              <CardTitle className="text-sm font-medium">Deployment History</CardTitle>
+              <Badge variant="outline" className="text-[10px]">
+                {deployments.length}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {deployments.slice(0, 5).map((d) => (
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between p-2 rounded-md border border-muted-foreground/10"
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] ${
+                        d.status === "deployed"
+                          ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                          : d.status === "rolled_back"
+                            ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                            : "text-red-400 bg-red-500/10 border-red-500/20"
+                      }`}
+                    >
+                      {d.status}
+                    </Badge>
+                    <span className="text-xs">{d.targetPage}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(d.deployedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {d.status === "deployed" && (
+                    <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                      <Undo2 className="h-2.5 w-2.5 mr-0.5" />
+                      Rollback available
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

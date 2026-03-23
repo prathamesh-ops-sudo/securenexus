@@ -24,7 +24,19 @@ import {
   TrendingUp,
   TrendingDown,
   Info,
+  Settings,
+  GitCompare,
+  DollarSign,
+  ArrowRightLeft,
+  HeartPulse,
+  Route,
+  FlaskConical,
+  Undo2,
+  Eye,
+  Calendar,
+  Target,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -115,6 +127,161 @@ interface DashboardResponse {
   gateway: GatewayData;
   promptCatalog: PromptCatalog;
   aggregateUsage: AggregateUsage;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.1 Model Comparison
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ModelComparison {
+  modelId: string;
+  requests: number;
+  errors: number;
+  errorRate: number;
+  avgLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
+  cacheHits: number;
+  costPerInputToken: number;
+  costPerOutputToken: number;
+  estimatedCostPerRequest: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.2 Routing Rules
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface RoutingRule {
+  id: string;
+  name: string;
+  useCase: string;
+  modelId: string;
+  priority: number;
+  conditions: { field: string; operator: string; value: string }[];
+  enabled: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.3 Cost Forecast
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface CostForecast {
+  currentPeriod: {
+    totalCostUsd: number;
+    totalInvocations: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    daysElapsed: number;
+  };
+  projections: {
+    daily: number;
+    weekly: number;
+    monthly: number;
+    quarterly: number;
+  };
+  byModel: {
+    modelId: string;
+    requests: number;
+    estimatedCostPerRequest: number;
+    projectedMonthlyCost: number;
+  }[];
+  budgetStatus: {
+    budgetUsd: number | null;
+    usedUsd: number;
+    remainingUsd: number | null;
+    percentUsed: number | null;
+    projectedExceedDate: string | null;
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.4 Model Health
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ModelHealthStatus {
+  modelId: string;
+  backend: string;
+  status: "healthy" | "degraded" | "unhealthy" | "unknown";
+  latencyP50Ms: number;
+  latencyP95Ms: number;
+  errorRate: number;
+  throughputRpm: number;
+  lastChecked: string;
+  circuitBreakerOpen: boolean;
+  failoverTarget: string | null;
+}
+
+interface ModelHealthResponse {
+  models: ModelHealthStatus[];
+  failoverConfig: Record<string, string>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.5 Token Usage
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface TokenUsageResponse {
+  records: {
+    id: string;
+    timestamp: string;
+    modelId: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    costUsd: number;
+    latencyMs: number;
+    useCase: string;
+  }[];
+  summary: {
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalTokens: number;
+    totalCostUsd: number;
+    avgLatencyMs: number;
+    requestCount: number;
+  };
+  byModel: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; requests: number }>;
+  byUseCase: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; requests: number }>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.6 Model Versions
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ModelVersion {
+  id: string;
+  modelId: string;
+  version: string;
+  status: "active" | "testing" | "deprecated" | "rollback";
+  activatedAt: string;
+  performance: {
+    avgLatencyMs: number;
+    errorRate: number;
+    avgCostPerRequest: number;
+    sampleSize: number;
+  };
+}
+
+interface ABTest {
+  id: string;
+  name: string;
+  modelA: string;
+  modelB: string;
+  trafficSplitPercent: number;
+  status: "running" | "completed" | "cancelled";
+  startedAt: string;
+  completedAt: string | null;
+  results: {
+    modelA: { requests: number; avgLatencyMs: number; errorRate: number; avgCost: number };
+    modelB: { requests: number; avgLatencyMs: number; errorRate: number; avgCost: number };
+    winner: string | null;
+  } | null;
+}
+
+interface VersionsResponse {
+  versions: ModelVersion[];
+  abTests: ABTest[];
 }
 
 function formatUptime(ms: number): string {
@@ -457,6 +624,360 @@ function LoadingSkeleton() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.1 Model Comparison Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ModelComparisonPanel({ comparison }: { comparison: ModelComparison[] }) {
+  if (comparison.length === 0) {
+    return (
+      <div className="text-center py-6">
+        <GitCompare className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+        <p className="text-xs text-muted-foreground">No models to compare yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="w-full">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-xs">Model</TableHead>
+            <TableHead className="text-xs text-right">Requests</TableHead>
+            <TableHead className="text-xs text-right">Error Rate</TableHead>
+            <TableHead className="text-xs text-right">Avg Latency</TableHead>
+            <TableHead className="text-xs text-right">P95 Latency</TableHead>
+            <TableHead className="text-xs text-right">Cost/Req</TableHead>
+            <TableHead className="text-xs text-right">Cache Hits</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {comparison.map((model) => (
+            <TableRow key={model.modelId}>
+              <TableCell className="text-xs font-mono">{model.modelId.split(".").pop()}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{model.requests.toLocaleString()}</TableCell>
+              <TableCell className="text-xs text-right">
+                <Badge
+                  variant="outline"
+                  className={`text-[9px] ${
+                    model.errorRate > 5
+                      ? "text-red-400 bg-red-500/10 border-red-500/20"
+                      : model.errorRate > 2
+                        ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                        : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                  }`}
+                >
+                  {model.errorRate}%
+                </Badge>
+              </TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{model.avgLatencyMs}ms</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{model.p95LatencyMs}ms</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">
+                {formatCost(model.estimatedCostPerRequest)}
+              </TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{model.cacheHits}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ScrollArea>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.2 Routing Rules Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+function RoutingRulesPanel({ rules }: { rules: RoutingRule[] }) {
+  return (
+    <div className="space-y-2">
+      {rules.map((rule) => (
+        <div
+          key={rule.id}
+          className={`p-3 rounded-md border transition-colors ${
+            rule.enabled ? "border-border/50 bg-card/50" : "border-muted-foreground/10 bg-muted/10 opacity-50"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-2">
+              <Route className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs font-medium">{rule.name}</span>
+              {!rule.enabled && (
+                <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                  Disabled
+                </Badge>
+              )}
+            </div>
+            <Badge variant="outline" className="text-[9px]">
+              Priority: {rule.priority}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span className="font-mono">{rule.useCase}</span>
+            <ArrowRightLeft className="h-3 w-3" />
+            <span className="font-mono text-primary">{rule.modelId.split(".").pop()}</span>
+          </div>
+          {rule.conditions.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {rule.conditions.map((cond, i) => (
+                <Badge key={i} variant="outline" className="text-[9px] text-muted-foreground">
+                  {cond.field} {cond.operator} {cond.value}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.3 Cost Forecast Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CostForecastPanel({ forecast }: { forecast: CostForecast }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="p-3 rounded-lg border border-border/50 bg-card/50 text-center">
+          <p className="text-xs text-muted-foreground">Daily</p>
+          <p className="text-lg font-bold">{formatCost(forecast.projections.daily)}</p>
+        </div>
+        <div className="p-3 rounded-lg border border-border/50 bg-card/50 text-center">
+          <p className="text-xs text-muted-foreground">Weekly</p>
+          <p className="text-lg font-bold">{formatCost(forecast.projections.weekly)}</p>
+        </div>
+        <div className="p-3 rounded-lg border border-border/50 bg-card/50 text-center">
+          <p className="text-xs text-muted-foreground">Monthly</p>
+          <p className="text-lg font-bold">{formatCost(forecast.projections.monthly)}</p>
+        </div>
+        <div className="p-3 rounded-lg border border-border/50 bg-card/50 text-center">
+          <p className="text-xs text-muted-foreground">Quarterly</p>
+          <p className="text-lg font-bold">{formatCost(forecast.projections.quarterly)}</p>
+        </div>
+      </div>
+
+      {forecast.budgetStatus.budgetUsd !== null && (
+        <div className="p-3 rounded-lg border border-border/50 bg-card/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium">Budget Usage</span>
+            <span className="text-xs text-muted-foreground">
+              {formatCost(forecast.budgetStatus.usedUsd)} / {formatCost(forecast.budgetStatus.budgetUsd)}
+            </span>
+          </div>
+          <Progress value={forecast.budgetStatus.percentUsed || 0} className="h-2" />
+          {forecast.budgetStatus.projectedExceedDate && (
+            <p className="text-[10px] text-amber-400 mt-1.5 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Projected to exceed budget by {forecast.budgetStatus.projectedExceedDate}
+            </p>
+          )}
+        </div>
+      )}
+
+      {forecast.byModel.length > 0 && (
+        <div>
+          <p className="text-xs font-medium mb-2">Cost by Model (Projected Monthly)</p>
+          <div className="space-y-1.5">
+            {forecast.byModel.map((m) => (
+              <div
+                key={m.modelId}
+                className="flex items-center justify-between p-2 rounded border border-muted-foreground/10"
+              >
+                <span className="text-xs font-mono">{m.modelId.split(".").pop()}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-muted-foreground">{m.requests} reqs</span>
+                  <span className="text-xs font-bold">{formatCost(m.projectedMonthlyCost)}/mo</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.4 Model Health Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+const HEALTH_STATUS_CONFIG: Record<string, { color: string; label: string }> = {
+  healthy: { color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", label: "Healthy" },
+  degraded: { color: "text-amber-400 bg-amber-500/10 border-amber-500/20", label: "Degraded" },
+  unhealthy: { color: "text-red-400 bg-red-500/10 border-red-500/20", label: "Unhealthy" },
+  unknown: { color: "text-muted-foreground bg-muted/10 border-muted-foreground/20", label: "Unknown" },
+};
+
+function ModelHealthPanel({ health }: { health: ModelHealthResponse }) {
+  return (
+    <div className="space-y-2">
+      {health.models.map((model) => {
+        const statusConfig = HEALTH_STATUS_CONFIG[model.status] || HEALTH_STATUS_CONFIG.unknown;
+        return (
+          <div key={model.modelId} className="p-3 rounded-md border border-border/50 bg-card/50">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <HeartPulse className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium font-mono">{model.modelId.split(".").pop()}</span>
+              </div>
+              <Badge variant="outline" className={`text-[9px] ${statusConfig.color}`}>
+                {statusConfig.label}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div>
+                <p className="text-[10px] text-muted-foreground">P50</p>
+                <p className="text-xs font-bold tabular-nums">{model.latencyP50Ms}ms</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">P95</p>
+                <p className="text-xs font-bold tabular-nums">{model.latencyP95Ms}ms</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Error</p>
+                <p className="text-xs font-bold tabular-nums">{model.errorRate}%</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">RPM</p>
+                <p className="text-xs font-bold tabular-nums">{model.throughputRpm}</p>
+              </div>
+            </div>
+            {model.failoverTarget && (
+              <div className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
+                <ArrowRightLeft className="h-3 w-3" />
+                Failover: <span className="font-mono text-primary">{model.failoverTarget.split(".").pop()}</span>
+                {model.circuitBreakerOpen && (
+                  <Badge variant="outline" className="text-[9px] text-red-400 bg-red-500/10 border-red-500/20 ml-1">
+                    CB Open
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 33.6 Model Versions Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VERSION_STATUS_CONFIG: Record<string, { color: string }> = {
+  active: { color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+  testing: { color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
+  deprecated: { color: "text-muted-foreground bg-muted/10 border-muted-foreground/20" },
+  rollback: { color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+};
+
+function ModelVersionsPanel({ versions, abTests }: { versions: ModelVersion[]; abTests: ABTest[] }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-medium mb-2">Active Model Versions</p>
+        <div className="space-y-2">
+          {versions.map((v) => {
+            const statusConfig = VERSION_STATUS_CONFIG[v.status] || VERSION_STATUS_CONFIG.deprecated;
+            return (
+              <div key={v.id} className="p-3 rounded-md border border-border/50 bg-card/50">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium font-mono">{v.modelId.split(".").pop()}</span>
+                    <Badge variant="outline" className="text-[9px]">
+                      {v.version}
+                    </Badge>
+                  </div>
+                  <Badge variant="outline" className={`text-[9px] ${statusConfig.color}`}>
+                    {v.status}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
+                  <div>
+                    <p className="text-muted-foreground">Latency</p>
+                    <p className="font-medium">{v.performance.avgLatencyMs}ms</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Error Rate</p>
+                    <p className="font-medium">{v.performance.errorRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Cost/Req</p>
+                    <p className="font-medium">{formatCost(v.performance.avgCostPerRequest)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Samples</p>
+                    <p className="font-medium">{v.performance.sampleSize.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {abTests.length > 0 && (
+        <div>
+          <p className="text-xs font-medium mb-2">A/B Tests</p>
+          <div className="space-y-2">
+            {abTests.map((test) => (
+              <div key={test.id} className="p-3 rounded-md border border-border/50 bg-card/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-xs font-medium">{test.name}</span>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={`text-[9px] ${
+                      test.status === "running"
+                        ? "text-blue-400 bg-blue-500/10 border-blue-500/20"
+                        : test.status === "completed"
+                          ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    {test.status}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span className="font-mono">{test.modelA.split(".").pop()}</span>
+                  <span>vs</span>
+                  <span className="font-mono">{test.modelB.split(".").pop()}</span>
+                  <span>&middot; {test.trafficSplitPercent}% split</span>
+                </div>
+                {test.results && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div
+                      className={`p-2 rounded border text-center text-[10px] ${test.results.winner === test.modelA ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/50"}`}
+                    >
+                      <p className="font-mono">{test.modelA.split(".").pop()}</p>
+                      <p>
+                        {test.results.modelA.avgLatencyMs}ms / {test.results.modelA.errorRate}% err
+                      </p>
+                    </div>
+                    <div
+                      className={`p-2 rounded border text-center text-[10px] ${test.results.winner === test.modelB ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/50"}`}
+                    >
+                      <p className="font-mono">{test.modelB.split(".").pop()}</p>
+                      <p>
+                        {test.results.modelB.avgLatencyMs}ms / {test.results.modelB.errorRate}% err
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ModelGatewayPage() {
   usePageTitle("Model Gateway Dashboard");
   const { toast } = useToast();
@@ -465,6 +986,34 @@ export default function ModelGatewayPage() {
   const { data, isLoading, isError, isFetching, refetch } = useQuery<DashboardResponse>({
     queryKey: ["/api/model-gateway/dashboard"],
     refetchInterval: 15000,
+  });
+
+  const { data: comparison } = useQuery<ModelComparison[]>({
+    queryKey: ["/api/model-gateway/comparison"],
+    refetchInterval: 30000,
+  });
+
+  const { data: routingRules } = useQuery<RoutingRule[]>({
+    queryKey: ["/api/model-gateway/routing-rules"],
+  });
+
+  const { data: costForecast } = useQuery<CostForecast>({
+    queryKey: ["/api/model-gateway/cost-forecast"],
+    refetchInterval: 60000,
+  });
+
+  const { data: modelHealth } = useQuery<ModelHealthResponse>({
+    queryKey: ["/api/model-gateway/health"],
+    refetchInterval: 15000,
+  });
+
+  const { data: tokenUsage } = useQuery<TokenUsageResponse>({
+    queryKey: ["/api/model-gateway/token-usage"],
+    refetchInterval: 30000,
+  });
+
+  const { data: versionsData } = useQuery<VersionsResponse>({
+    queryKey: ["/api/model-gateway/versions"],
   });
 
   const handleRefresh = async () => {
@@ -655,7 +1204,7 @@ export default function ModelGatewayPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-10">
           <TabsTrigger value="overview" className="text-xs">
             <BarChart3 className="h-3.5 w-3.5 mr-1" />
             Latency
@@ -675,6 +1224,26 @@ export default function ModelGatewayPage() {
           <TabsTrigger value="config" className="text-xs">
             <Info className="h-3.5 w-3.5 mr-1" />
             Config
+          </TabsTrigger>
+          <TabsTrigger value="compare" className="text-xs">
+            <GitCompare className="h-3.5 w-3.5 mr-1" />
+            Compare
+          </TabsTrigger>
+          <TabsTrigger value="routing" className="text-xs">
+            <Route className="h-3.5 w-3.5 mr-1" />
+            Routing
+          </TabsTrigger>
+          <TabsTrigger value="costs" className="text-xs">
+            <DollarSign className="h-3.5 w-3.5 mr-1" />
+            Costs
+          </TabsTrigger>
+          <TabsTrigger value="health" className="text-xs">
+            <HeartPulse className="h-3.5 w-3.5 mr-1" />
+            Health
+          </TabsTrigger>
+          <TabsTrigger value="versions" className="text-xs">
+            <FlaskConical className="h-3.5 w-3.5 mr-1" />
+            Versions
           </TabsTrigger>
         </TabsList>
 
@@ -877,6 +1446,104 @@ export default function ModelGatewayPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════════════════════
+          33.1 Model Comparison
+          ═══════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="compare" className="mt-4">
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <GitCompare className="h-4 w-4" />
+                Model Performance Comparison
+              </CardTitle>
+              <CardDescription>
+                Side-by-side comparison of response time, accuracy, cost per query, and error rate
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {comparison ? <ModelComparisonPanel comparison={comparison} /> : <Skeleton className="h-40 w-full" />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════════════════════
+          33.2 Routing Rules
+          ═══════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="routing" className="mt-4">
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Route className="h-4 w-4" />
+                Model Routing Rules
+              </CardTitle>
+              <CardDescription>Visual editor for use case to model routing configuration</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {routingRules ? <RoutingRulesPanel rules={routingRules} /> : <Skeleton className="h-40 w-full" />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════════════════════
+          33.3 Cost Tracking & Forecasting
+          ═══════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="costs" className="mt-4">
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Cost Tracking &amp; Forecasting
+              </CardTitle>
+              <CardDescription>AI cost breakdown by model and use case with budget projections</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {costForecast ? <CostForecastPanel forecast={costForecast} /> : <Skeleton className="h-40 w-full" />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════════════════════
+          33.4 Model Health Monitoring
+          ═══════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="health" className="mt-4">
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <HeartPulse className="h-4 w-4" />
+                Model Health Monitoring
+              </CardTitle>
+              <CardDescription>Latency, error rate, throughput, and auto-failover configuration</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {modelHealth ? <ModelHealthPanel health={modelHealth} /> : <Skeleton className="h-40 w-full" />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════════════════════
+          33.5 + 33.6 Model Versions & A/B Testing
+          ═══════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="versions" className="mt-4">
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FlaskConical className="h-4 w-4" />
+                Model Version Management
+              </CardTitle>
+              <CardDescription>
+                Track model versions, run A/B tests, and rollback underperforming versions
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {versionsData ? (
+                <ModelVersionsPanel versions={versionsData.versions} abTests={versionsData.abTests} />
+              ) : (
+                <Skeleton className="h-40 w-full" />
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
