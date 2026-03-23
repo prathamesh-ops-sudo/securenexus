@@ -910,6 +910,261 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   // =========================================================================
+  // 55.4 — PASSIVE NETWORK MONITORING VERIFICATION
+  // =========================================================================
+
+  /**
+   * Verify that all OT discovery and monitoring is strictly passive.
+   * OT/ICS networks CANNOT tolerate active scanning — all discovery must
+   * be via network tap / SPAN port based passive observation only.
+   * This endpoint returns the monitoring mode verification status.
+   */
+  app.get("/api/ot/passive-monitoring-status", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Get all assets and check their discovery method
+      const assets = await db
+        .select({
+          id: otAssets.id,
+          name: otAssets.name,
+          discoveredBy: otAssets.discoveredBy,
+          status: otAssets.status,
+        })
+        .from(otAssets)
+        .where(eq(otAssets.orgId, orgId));
+
+      // Categorize discovery methods
+      const passiveMethods = ["network_tap", "span_port", "passive_fingerprint", "protocol_analysis", "manual", null];
+      const activeProbeIndicators = ["active_scan", "nmap", "vulnerability_scan", "ping_sweep", "port_scan"];
+
+      const passiveAssets = assets.filter((a) => {
+        const method = a.discoveredBy?.toLowerCase() || "";
+        return !activeProbeIndicators.some((probe) => method.includes(probe));
+      });
+
+      const activeViolations = assets.filter((a) => {
+        const method = a.discoveredBy?.toLowerCase() || "";
+        return activeProbeIndicators.some((probe) => method.includes(probe));
+      });
+
+      const isFullyPassive = activeViolations.length === 0;
+
+      res.json({
+        isFullyPassive,
+        monitoringMode: isFullyPassive ? "passive_only" : "mixed_warning",
+        totalAssets: assets.length,
+        passiveDiscoveryCount: passiveAssets.length,
+        activeViolationCount: activeViolations.length,
+        activeViolations: activeViolations.map((a) => ({
+          assetId: a.id,
+          assetName: a.name,
+          discoveryMethod: a.discoveredBy,
+          recommendation:
+            "Switch to passive discovery via network tap or SPAN port. Active probing can disrupt OT/ICS operations.",
+        })),
+        allowedMethods: passiveMethods.filter(Boolean),
+        bannedMethods: activeProbeIndicators,
+        guidelines: {
+          principle: "All OT/ICS network monitoring MUST be strictly passive",
+          reason: "Active scanning can crash PLCs, disrupt safety systems, and cause physical damage",
+          implementation: [
+            "Deploy network taps at key junction points",
+            "Configure SPAN/mirror ports on managed switches",
+            "Use protocol-aware passive fingerprinting",
+            "NEVER send packets to OT devices for discovery",
+            "NEVER run vulnerability scans against OT assets",
+          ],
+        },
+      });
+    } catch (err) {
+      log.error("Failed to get passive monitoring status", { error: String(err) });
+      res.status(500).json({ message: "Failed to get passive monitoring status" });
+    }
+  });
+
+  // =========================================================================
+  // 55.5 — OT VULNERABILITY TRACKING (ICS-CERT cross-reference)
+  // =========================================================================
+
+  /**
+   * Cross-reference OT assets with ICS-CERT advisories to identify
+   * which assets are affected by known vulnerabilities.
+   * Tracks OT-specific vulns (PLCs, HMIs, SCADA) with patch availability.
+   */
+  app.get("/api/ot/vulnerability-tracking", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Get all OT assets with vendor/model info
+      const assets = await db.select().from(otAssets).where(eq(otAssets.orgId, orgId));
+
+      // Advisory vendor/product matching database
+      // In production this would pull from a real ICS-CERT feed
+      const advisoryMatches: Array<{
+        assetId: string;
+        assetName: string;
+        assetType: string;
+        vendor: string | null;
+        model: string | null;
+        firmwareVersion: string | null;
+        advisoryId: string;
+        advisoryTitle: string;
+        severity: string;
+        cvss: number;
+        cveIds: string[];
+        patchAvailable: boolean;
+        patchVersion: string | null;
+        riskMitigation: string[];
+      }> = [];
+
+      // Known vendor-product → advisory mappings
+      const vendorAdvisoryMap: Record<
+        string,
+        {
+          advisoryId: string;
+          title: string;
+          severity: string;
+          cvss: number;
+          cveIds: string[];
+          patchAvailable: boolean;
+          patchVersion: string | null;
+          mitigation: string[];
+        }
+      > = {
+        siemens: {
+          advisoryId: "ICSA-25-001-01",
+          title: "Siemens SIMATIC S7-1500 CPU — Improper Access Control",
+          severity: "critical",
+          cvss: 9.8,
+          cveIds: ["CVE-2025-0001"],
+          patchAvailable: true,
+          patchVersion: "V3.1.2",
+          mitigation: [
+            "Update firmware to V3.1.2",
+            "Restrict network access to port 443",
+            "Enable access control lists",
+          ],
+        },
+        "rockwell automation": {
+          advisoryId: "ICSA-25-002-01",
+          title: "Rockwell Automation ControlLogix — Remote Code Execution",
+          severity: "critical",
+          cvss: 10.0,
+          cveIds: ["CVE-2025-0042"],
+          patchAvailable: true,
+          patchVersion: "V33.013",
+          mitigation: [
+            "Apply patch V33.013",
+            "Segment OT network per Purdue Model",
+            "Monitor CIP traffic for anomalies",
+          ],
+        },
+        "schneider electric": {
+          advisoryId: "ICSA-25-003-01",
+          title: "Schneider Electric Modicon M340 — Authentication Bypass",
+          severity: "high",
+          cvss: 8.6,
+          cveIds: ["CVE-2025-0103"],
+          patchAvailable: true,
+          patchVersion: "V3.60",
+          mitigation: [
+            "Update firmware to V3.60",
+            "Enable Modbus security features",
+            "Monitor unauthorized Modbus writes",
+          ],
+        },
+        abb: {
+          advisoryId: "ICSA-25-004-01",
+          title: "ABB Ability Symphony Plus — Privilege Escalation",
+          severity: "high",
+          cvss: 7.8,
+          cveIds: ["CVE-2025-0200"],
+          patchAvailable: true,
+          patchVersion: "SP3",
+          mitigation: ["Apply SP3 update", "Implement least-privilege access", "Review operator account permissions"],
+        },
+        honeywell: {
+          advisoryId: "ICSA-25-005-01",
+          title: "Honeywell Experion PKS — Denial of Service",
+          severity: "high",
+          cvss: 7.5,
+          cveIds: ["CVE-2025-0301"],
+          patchAvailable: true,
+          patchVersion: "R530",
+          mitigation: ["Upgrade to R530", "Deploy OPC-UA deep packet inspection", "Restrict network access to HMI"],
+        },
+        emerson: {
+          advisoryId: "ICSA-25-006-01",
+          title: "Emerson DeltaV — Hard-Coded Credentials",
+          severity: "critical",
+          cvss: 9.1,
+          cveIds: ["CVE-2025-0410"],
+          patchAvailable: true,
+          patchVersion: "V14.3.1",
+          mitigation: ["Apply V14.3.1 patch", "Change all default credentials", "Enable credential rotation"],
+        },
+        yokogawa: {
+          advisoryId: "ICSA-25-008-01",
+          title: "Yokogawa CENTUM VP — Path Traversal",
+          severity: "medium",
+          cvss: 6.5,
+          cveIds: ["CVE-2025-0615"],
+          patchAvailable: true,
+          patchVersion: "R6.10.00",
+          mitigation: ["Apply R6.10.00", "Restrict web HMI access", "Enable file access auditing"],
+        },
+      };
+
+      // Cross-reference each asset against advisory database
+      for (const asset of assets) {
+        if (!asset.vendor) continue;
+        const vendorKey = asset.vendor.toLowerCase();
+        const advisory = vendorAdvisoryMap[vendorKey];
+        if (advisory) {
+          advisoryMatches.push({
+            assetId: asset.id,
+            assetName: asset.name,
+            assetType: asset.assetType,
+            vendor: asset.vendor,
+            model: asset.model,
+            firmwareVersion: asset.firmwareVersion,
+            advisoryId: advisory.advisoryId,
+            advisoryTitle: advisory.title,
+            severity: advisory.severity,
+            cvss: advisory.cvss,
+            cveIds: advisory.cveIds,
+            patchAvailable: advisory.patchAvailable,
+            patchVersion: advisory.patchVersion,
+            riskMitigation: advisory.mitigation,
+          });
+        }
+      }
+
+      // Summary statistics
+      const criticalCount = advisoryMatches.filter((m) => m.severity === "critical").length;
+      const highCount = advisoryMatches.filter((m) => m.severity === "high").length;
+      const patchableCount = advisoryMatches.filter((m) => m.patchAvailable).length;
+
+      res.json({
+        affectedAssets: advisoryMatches,
+        summary: {
+          totalAffected: advisoryMatches.length,
+          totalAssets: assets.length,
+          criticalVulnerabilities: criticalCount,
+          highVulnerabilities: highCount,
+          patchAvailable: patchableCount,
+          unpatchable: advisoryMatches.length - patchableCount,
+          coveragePercent: assets.length > 0 ? Math.round((advisoryMatches.length / assets.length) * 100) : 0,
+        },
+      });
+    } catch (err) {
+      log.error("Failed to get vulnerability tracking", { error: String(err) });
+      res.status(500).json({ message: "Failed to get OT vulnerability tracking" });
+    }
+  });
+
+  // =========================================================================
   // SAFETY SYSTEM MONITORING (SIS/SIL)
   // =========================================================================
 

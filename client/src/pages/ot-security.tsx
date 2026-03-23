@@ -42,6 +42,12 @@ import {
   BarChart3,
   BookOpen,
   Plug,
+  ChevronDown,
+  ChevronUp,
+  Wifi,
+  Link2,
+  ShieldCheck,
+  Ban,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { DetailPageSkeleton } from "@/components/page-skeleton";
@@ -544,7 +550,10 @@ function ProtocolDistributionCard({ stats }: { stats?: OtStats }) {
 // PURDUE MODEL VIEW
 // =========================================================================
 
+// 55.1 — Interactive Purdue Model with click-to-drill-down per level
 function PurdueModelView({ topology }: { topology?: TopologyData }) {
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+
   if (!topology) {
     return (
       <Card>
@@ -570,6 +579,19 @@ function PurdueModelView({ topology }: { topology?: TopologyData }) {
     return (order[b.level] ?? 0) - (order[a.level] ?? 0);
   });
 
+  // 55.1 — Identify cross-level policy violations
+  const policyViolations = topology.boundaryCrossings.filter((c) => !c.isAllowed);
+  const violatingLevels = new Set<string>();
+  policyViolations.forEach((v) => {
+    if (v.sourcePurdueLevel) violatingLevels.add(v.sourcePurdueLevel);
+    if (v.destPurdueLevel) violatingLevels.add(v.destPurdueLevel);
+  });
+
+  // Connections for the selected level
+  const selectedLevelConnections = selectedLevel
+    ? topology.connections.filter((c) => c.sourcePurdueLevel === selectedLevel || c.destPurdueLevel === selectedLevel)
+    : [];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -578,19 +600,32 @@ function PurdueModelView({ topology }: { topology?: TopologyData }) {
           <p className="text-sm text-muted-foreground">
             {topology.totalAssets} assets · {topology.totalConnections} connections · {topology.boundaryCrossingCount}{" "}
             boundary crossings
+            {policyViolations.length > 0 && (
+              <span className="text-red-400 ml-1">· {policyViolations.length} policy violations</span>
+            )}
           </p>
         </div>
+        {selectedLevel && (
+          <Button variant="ghost" size="sm" onClick={() => setSelectedLevel(null)}>
+            Clear Selection
+          </Button>
+        )}
       </div>
 
       <div className="space-y-2">
         {sortedLevels.map((level) => {
           const levelInfo = PURDUE_LEVEL_LABELS[level.level];
           const isDmz = level.level === "level_3_5";
+          const isSelected = selectedLevel === level.level;
+          const hasViolation = violatingLevels.has(level.level);
 
           return (
             <div
               key={level.level}
-              className={`rounded-lg border p-4 ${levelInfo?.bgColor || "bg-muted/30 border-border"}`}
+              className={`rounded-lg border p-4 cursor-pointer transition-all ${
+                levelInfo?.bgColor || "bg-muted/30 border-border"
+              } ${isSelected ? "ring-2 ring-primary/50 shadow-md" : ""} ${hasViolation ? "border-red-500/40" : ""}`}
+              onClick={() => setSelectedLevel(isSelected ? null : level.level)}
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -603,10 +638,22 @@ function PurdueModelView({ topology }: { topology?: TopologyData }) {
                       AIR GAP
                     </Badge>
                   ) : null}
+                  {hasViolation ? (
+                    <Badge variant="destructive" className="text-[10px]">
+                      POLICY VIOLATION
+                    </Badge>
+                  ) : null}
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {level.assetCount} asset{level.assetCount !== 1 ? "s" : ""}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {level.assetCount} asset{level.assetCount !== 1 ? "s" : ""}
+                  </span>
+                  {isSelected ? (
+                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
               </div>
 
               <p className="text-xs text-muted-foreground mb-3">{level.description}</p>
@@ -634,6 +681,68 @@ function PurdueModelView({ topology }: { topology?: TopologyData }) {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground italic">No assets at this level</p>
+              )}
+
+              {/* 55.1 — Expanded level detail: traffic flows & alerts */}
+              {isSelected && (
+                <div className="mt-4 pt-3 border-t space-y-3" onClick={(e) => e.stopPropagation()}>
+                  {/* Traffic flows for this level */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">
+                      Traffic Flows ({selectedLevelConnections.length})
+                    </p>
+                    {selectedLevelConnections.length > 0 ? (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {selectedLevelConnections.slice(0, 20).map((c) => (
+                          <div key={c.id} className="flex items-center gap-2 text-xs">
+                            <Badge variant={c.isAllowed ? "secondary" : "destructive"} className="text-[10px] shrink-0">
+                              {c.isAllowed ? "OK" : "BLOCKED"}
+                            </Badge>
+                            <span className="font-mono">{c.sourceIp || "?"}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-mono">{c.destIp || "?"}</span>
+                            <span className="text-muted-foreground">
+                              {c.protocol ? PROTOCOL_LABELS[c.protocol] || c.protocol : ""}
+                            </span>
+                            {c.crossesBoundary && (
+                              <Badge variant="outline" className="text-[10px] border-amber-700 text-amber-400">
+                                CROSS-LEVEL
+                              </Badge>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No traffic flows recorded at this level</p>
+                    )}
+                  </div>
+
+                  {/* Policy violations at this level */}
+                  {hasViolation && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-red-400 mb-2">Policy Violations</p>
+                      <div className="space-y-1">
+                        {policyViolations
+                          .filter((v) => v.sourcePurdueLevel === level.level || v.destPurdueLevel === level.level)
+                          .slice(0, 10)
+                          .map((v) => (
+                            <div
+                              key={v.id}
+                              className="flex items-center gap-2 text-xs rounded bg-red-500/5 border border-red-500/20 p-1.5"
+                            >
+                              <Ban className="h-3 w-3 text-red-400 shrink-0" />
+                              <span className="font-mono">{v.sourceIp || "?"}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className="font-mono">{v.destIp || "?"}</span>
+                              <span className="text-muted-foreground">
+                                {v.sourcePurdueLevel} → {v.destPurdueLevel}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           );
@@ -751,6 +860,7 @@ function AssetInventory({ assets }: { assets?: OtAsset[] }) {
                       ) : null}
                       <StatusBadge status={asset.status} />
                     </div>
+                    {/* 55.2 — Enhanced OT asset detail with protocol info */}
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span>{typeInfo?.label || asset.assetType}</span>
                       {asset.ipAddress ? <span className="font-mono">{asset.ipAddress}</span> : null}
@@ -759,8 +869,44 @@ function AssetInventory({ assets }: { assets?: OtAsset[] }) {
                           {asset.vendor} {asset.model || ""}
                         </span>
                       ) : null}
+                      {asset.firmwareVersion ? (
+                        <span className="font-mono text-[10px]">FW: {asset.firmwareVersion}</span>
+                      ) : null}
                       {levelInfo ? <span className={levelInfo.color}>{levelInfo.label}</span> : null}
                       {asset.discoveredBy ? <span>via {asset.discoveredBy}</span> : null}
+                    </div>
+
+                    {/* 55.2 — Supported protocols */}
+                    {asset.protocols && asset.protocols.length > 0 ? (
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        <Wifi className="h-3 w-3 text-muted-foreground" />
+                        {asset.protocols.map((proto) => (
+                          <Badge key={proto} variant="secondary" className="text-[10px]">
+                            {PROTOCOL_LABELS[proto] || proto}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {/* 55.2 — Compliance status */}
+                    <div className="flex items-center gap-2 mt-1">
+                      {asset.cveCount === 0 ? (
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-500">
+                          <ShieldCheck className="h-3 w-3" />
+                          Compliant
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] text-red-400">
+                          <FileWarning className="h-3 w-3" />
+                          {asset.cveCount} vulnerability{asset.cveCount !== 1 ? "ies" : "y"}
+                        </span>
+                      )}
+                      {asset.lastSeen ? (
+                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          Seen {new Date(asset.lastSeen).toLocaleDateString()}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <div className="text-right text-xs text-muted-foreground">
@@ -838,9 +984,25 @@ function AnomalyDashboard({ anomalies }: { anomalies?: OtAnomaly[] }) {
                   {a.description ? (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{a.description}</p>
                   ) : null}
+                  {/* 55.3 — Enhanced protocol anomaly visualization */}
                   <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                     <span>{ANOMALY_TYPE_LABELS[a.anomalyType] || a.anomalyType}</span>
-                    {a.protocol ? <span className="font-mono">{PROTOCOL_LABELS[a.protocol] || a.protocol}</span> : null}
+                    {a.protocol ? (
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] font-mono ${
+                          a.severity === "critical"
+                            ? "border-red-500 text-red-400"
+                            : a.severity === "high"
+                              ? "border-orange-500 text-orange-400"
+                              : a.severity === "medium"
+                                ? "border-amber-500 text-amber-400"
+                                : "border-border"
+                        }`}
+                      >
+                        {PROTOCOL_LABELS[a.protocol] || a.protocol}
+                      </Badge>
+                    ) : null}
                     {a.sourceIp ? <span>src: {a.sourceIp}</span> : null}
                     {a.destIp ? <span>dst: {a.destIp}</span> : null}
                     {a.mitreTechnique ? (
@@ -854,6 +1016,34 @@ function AnomalyDashboard({ anomalies }: { anomalies?: OtAnomaly[] }) {
                       </Badge>
                     ) : null}
                   </div>
+
+                  {/* 55.3 — Protocol-level anomaly details */}
+                  {(a.functionCode !== null ||
+                    a.anomalyType === "unauthorized_command" ||
+                    a.anomalyType === "register_read_write") && (
+                    <div className="mt-2 rounded bg-muted/50 p-2 text-xs space-y-1">
+                      {a.functionCode !== null ? (
+                        <div className="flex items-center gap-2">
+                          <Zap className="h-3 w-3 text-amber-500" />
+                          <span className="text-muted-foreground">Function Code:</span>
+                          <span className="font-mono font-medium">
+                            0x{a.functionCode.toString(16).padStart(2, "0")}
+                          </span>
+                          <span className="text-muted-foreground">({a.functionCode})</span>
+                        </div>
+                      ) : null}
+                      {a.anomalyType === "unauthorized_command" && (
+                        <p className="text-amber-400">
+                          ⚠ Unauthorized command detected — not in allowed function code whitelist
+                        </p>
+                      )}
+                      {a.anomalyType === "register_read_write" && (
+                        <p className="text-amber-400">
+                          ⚠ Unauthorized register access — read/write to protected register range
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-xs text-muted-foreground">{new Date(a.detectedAt).toLocaleString()}</p>
