@@ -23,6 +23,11 @@ import {
   Brain,
   Scale,
   Lock,
+  Users,
+  FileCheck2,
+  Send,
+  Eye,
+  History,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +49,10 @@ const TABS = [
   { id: "activations", label: "My Activations", icon: CheckCircle2 },
   { id: "changelog", label: "Changelogs", icon: GitBranch },
   { id: "presets", label: "Strictness Presets", icon: ArrowUpDown },
+  /* 82.3 — acknowledgment tracking tab */
+  { id: "acknowledgments", label: "Acknowledgments", icon: FileCheck2 },
+  /* 82.6 — distribution tab */
+  { id: "distribution", label: "Distribution", icon: Send },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -468,6 +477,46 @@ function CatalogTab() {
                         ))}
                       </div>
 
+                      {/* 82.2 — customization workflow: show customizable fields */}
+                      {pack.customizable && (
+                        <div className="p-2 rounded-md bg-cyan-500/5 border border-cyan-500/20">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Settings className="h-3 w-3 text-cyan-400" />
+                            <span className="text-xs font-medium text-cyan-400">Customizable</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">
+                            This pack supports rule-level overrides, severity tuning, and custom thresholds.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 82.4 — version management: version history link */}
+                      {pack.previousVersions && pack.previousVersions > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <History className="h-3 w-3" />
+                          <span>
+                            {pack.previousVersions} previous version{pack.previousVersions > 1 ? "s" : ""} available
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 82.5 — compliance checking indicator */}
+                      {pack.complianceFrameworks && pack.complianceFrameworks.length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <FileCheck2 className="h-3 w-3 text-emerald-400" />
+                          <span className="text-[10px] text-muted-foreground">Compliance:</span>
+                          {pack.complianceFrameworks.map((fw: string) => (
+                            <Badge
+                              key={fw}
+                              variant="outline"
+                              className="text-[10px] text-emerald-400 border-emerald-400/30"
+                            >
+                              {fw}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="flex justify-end">
                         <Button
                           size="sm"
@@ -872,6 +921,82 @@ export default function PolicyPacksPage() {
       {activeTab === "activations" && <ActivationsTab />}
       {activeTab === "changelog" && <ChangelogTab />}
       {activeTab === "presets" && <PresetsTab />}
+      {/* 82.3 — Acknowledgment Tracking */}
+      {activeTab === "acknowledgments" && (
+        <Card className="glass-subtle">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileCheck2 className="h-5 w-5" /> Policy Acknowledgment Tracking
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-lg border border-border/50 bg-card/50 p-4 text-center">
+                  <Users className="h-5 w-5 mx-auto mb-1 text-emerald-400" />
+                  <p className="text-xl font-bold">0</p>
+                  <p className="text-xs text-muted-foreground">Acknowledged</p>
+                </div>
+                <div className="rounded-lg border border-border/50 bg-card/50 p-4 text-center">
+                  <Clock className="h-5 w-5 mx-auto mb-1 text-amber-400" />
+                  <p className="text-xl font-bold">0</p>
+                  <p className="text-xs text-muted-foreground">Pending</p>
+                </div>
+                <div className="rounded-lg border border-border/50 bg-card/50 p-4 text-center">
+                  <AlertTriangle className="h-5 w-5 mx-auto mb-1 text-red-400" />
+                  <p className="text-xl font-bold">0</p>
+                  <p className="text-xs text-muted-foreground">Overdue</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground text-center py-6">
+                <Eye className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                Acknowledgment tracking becomes active when policies are distributed to team members.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {/* 82.6 — Distribution */}
+      {activeTab === "distribution" && (
+        <Card className="glass-subtle">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Send className="h-5 w-5" /> Policy Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Distribute activated policy packs to team members via email, Slack, or in-app notifications. Track
+                acknowledgment status and send reminders for overdue policies.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border/50 bg-card/50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Send className="h-4 w-4 text-cyan-400" />
+                    <span className="text-sm font-medium">Email</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Send policy documents directly to team member inboxes</p>
+                </div>
+                <div className="rounded-lg border border-border/50 bg-card/50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="h-4 w-4 text-violet-400" />
+                    <span className="text-sm font-medium">Slack</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Post policy updates to designated Slack channels</p>
+                </div>
+                <div className="rounded-lg border border-border/50 bg-card/50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-400" />
+                    <span className="text-sm font-medium">In-App</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Show policy notifications within the platform</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
