@@ -298,6 +298,14 @@ export async function setupAuth(app: Express) {
       (user as any).orgId = row.membershipOrgId || null;
       (user as any).orgRole = row.membershipRole || null;
 
+      // Safety-net: auto-promote super-admin on deserialize if DB flag is stale
+      if (!user.isSuperAdmin && user.email) {
+        const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+        if (promoted) {
+          (user as any).isSuperAdmin = true;
+        }
+      }
+
       deserializeCache.set(id, { user, expiresAt: now + DESERIALIZE_CACHE_TTL_MS });
       pruneDeserializeCache();
 
