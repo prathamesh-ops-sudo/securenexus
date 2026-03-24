@@ -34,6 +34,14 @@ import {
   Rocket,
   HardDrive,
   Info,
+  Lock,
+  Unlock,
+  Gift,
+  Star,
+  Timer,
+  ArrowRight,
+  CheckCircle2,
+  Table2,
 } from "lucide-react";
 
 interface PlanLimits {
@@ -250,6 +258,11 @@ function PlanBrowserTab() {
           <h3 className="text-lg font-semibold">Choose Your Plan</h3>
           <p className="text-sm text-muted-foreground">
             Transparent limits. No hidden fees. Upgrade or downgrade anytime.
+          </p>
+          {/* 92.1 — plan comparison hint */}
+          <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+            <Table2 className="h-2.5 w-2.5" />
+            Scroll down for detailed feature comparison across all tiers
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -945,6 +958,86 @@ export default function TieredPackagingPage() {
 
         <TabsContent value="plans">
           <PlanBrowserTab />
+
+          {/* 92.4 — feature gating explanation */}
+          <Card className="mt-4 glass">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                Feature Gating
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <Unlock className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-foreground">Soft Gates</p>
+                    <p>Features available with usage warnings. Exceeding limits triggers upgrade prompts.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Lock className="h-3.5 w-3.5 text-yellow-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-foreground">Hard Gates</p>
+                    <p>Features locked until plan upgrade. New operations blocked at limit.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Star className="h-3.5 w-3.5 text-purple-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-foreground">Enterprise Only</p>
+                    <p>Custom SLAs, dedicated support, and unlimited resources.</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 92.3 — enterprise contact card */}
+          <Card className="mt-4 glass border-amber-500/20">
+            <CardContent className="py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Crown className="h-5 w-5 text-amber-400" />
+                <div>
+                  <p className="text-sm font-medium">Need custom pricing for your enterprise?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Dedicated account manager, custom SLAs, and volume discounts
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" className="border-amber-500/30 text-amber-400">
+                <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                Contact Sales
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* 92.5 — trial management info */}
+          <Card className="mt-4 glass">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Timer className="h-4 w-4 text-muted-foreground" />
+                Trial Management
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Gift className="h-3 w-3 text-blue-400" />
+                  <span>14-day free trial on all paid plans. No credit card required.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                  <span>Full feature access during trial period with production-level limits.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3 w-3 text-yellow-500" />
+                  <span>Automatic downgrade to Free plan after trial expires. No surprise charges.</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="usage">
           <UsageMetersTab />

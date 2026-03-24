@@ -32,6 +32,15 @@ import {
   Settings,
   Navigation,
   Loader2,
+  Save,
+  AlertCircle,
+  ListChecks,
+  PlayCircle,
+  BookOpen,
+  Scan,
+  UserPlus,
+  Clock,
+  TrendingUp,
 } from "lucide-react";
 
 interface WizardStatus {
@@ -43,6 +52,15 @@ interface WizardStatus {
   isComplete: boolean;
   tourCompleted: boolean;
   steps: string[];
+  /* 86.1 — server-side progress persistence */
+  savedProgress?: Record<string, unknown>;
+  lastSavedAt?: string;
+  /* 86.5 — onboarding analytics */
+  analytics?: {
+    startedAt?: string;
+    stepTimestamps?: Record<string, string>;
+    dropOffStep?: string;
+  };
 }
 
 interface WizardOptions {
@@ -343,6 +361,8 @@ function InviteTeamStep({
   };
 
   const validEntries = entries.filter((e) => e.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.email.trim()));
+  /* 86.2 — step validation: highlight invalid email entries */
+  const invalidEntries = entries.filter((e) => e.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.email.trim()));
 
   return (
     <div className="space-y-6">
@@ -350,6 +370,11 @@ function InviteTeamStep({
         <h2 className="text-xl font-semibold">Invite Your Team</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Add team members to collaborate on security operations. You can always add more later.
+        </p>
+        {/* 86.3 — skip and revisit indicator */}
+        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+          <SkipForward className="h-3 w-3" />
+          Optional step &mdash; skip now and invite team members later from Team Management
         </p>
       </div>
 
@@ -360,7 +385,7 @@ function InviteTeamStep({
               placeholder="colleague@company.com"
               value={entry.email}
               onChange={(e) => updateEntry(index, "email", e.target.value)}
-              className="flex-1"
+              className={`flex-1 ${entry.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry.email.trim()) ? "border-destructive" : ""}`}
               type="email"
             />
             <select
@@ -386,6 +411,14 @@ function InviteTeamStep({
           </div>
         ))}
       </div>
+
+      {/* 86.2 — validation error for invalid emails */}
+      {invalidEntries.length > 0 && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" />
+          {invalidEntries.length} email{invalidEntries.length !== 1 ? "s" : ""} invalid — please fix before sending
+        </p>
+      )}
 
       {entries.length < 20 && (
         <Button data-testid="onboarding-wizard-btn-outline-4" variant="outline" size="sm" onClick={addEntry}>
@@ -599,6 +632,7 @@ export default function OnboardingWizardPage() {
 
   const [activeStep, setActiveStep] = useState(0);
 
+  /* 86.1 — resume from server-persisted progress on reload */
   useEffect(() => {
     if (status && !status.isComplete) {
       setActiveStep(status.currentStep);
@@ -811,6 +845,49 @@ export default function OnboardingWizardPage() {
                 </div>
                 <h2 className="text-xl font-semibold">All Set!</h2>
                 <p className="text-sm text-muted-foreground">Your workspace is configured and ready to go.</p>
+
+                {/* 86.3 — skipped steps reminder */}
+                {(status?.skippedSteps?.length ?? 0) > 0 && (
+                  <div className="text-left mx-auto max-w-sm rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                    <p className="text-xs font-medium text-amber-500 flex items-center gap-1 mb-1.5">
+                      <Clock className="h-3 w-3" /> Complete Later
+                    </p>
+                    {status?.skippedSteps?.map((step) => {
+                      const cfg = STEP_CONFIG.find((s) => s.key === step);
+                      return (
+                        <p key={step} className="text-xs text-muted-foreground">
+                          &bull; {cfg?.label || step}
+                        </p>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 86.4 — getting started checklist post-onboarding */}
+                <div className="text-left mx-auto max-w-sm rounded-lg border p-3 space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1">
+                    <ListChecks className="h-3 w-3 text-primary" /> Getting Started Checklist
+                  </p>
+                  {[
+                    { label: "Set up first connector", done: status?.completedSteps?.includes("connect_integration") },
+                    { label: "Configure detection rules", done: false },
+                    { label: "Create a playbook", done: false },
+                    { label: "Run first scan", done: false },
+                  ].map((item) => (
+                    <p
+                      key={item.label}
+                      className={`text-xs flex items-center gap-1.5 ${item.done ? "text-emerald-500" : "text-muted-foreground"}`}
+                    >
+                      {item.done ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <span className="h-3 w-3 border rounded-sm inline-block" />
+                      )}
+                      {item.label}
+                    </p>
+                  ))}
+                </div>
+
                 <Button onClick={() => completeMutation.mutate()} disabled={completeMutation.isPending}>
                   {completeMutation.isPending ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -836,6 +913,32 @@ export default function OnboardingWizardPage() {
             </Button>
           </div>
         )}
+
+        {/* 86.1 — progress persistence indicator */}
+        {status?.lastSavedAt && (
+          <p className="text-center text-[10px] text-muted-foreground mt-2 flex items-center justify-center gap-1">
+            <Save className="h-2.5 w-2.5" />
+            Progress auto-saved &middot; Resume anytime
+          </p>
+        )}
+
+        {/* 86.5 — onboarding analytics indicator */}
+        {status?.analytics?.startedAt ? (
+          <p className="text-center text-[10px] text-muted-foreground mt-1 flex items-center justify-center gap-1">
+            <TrendingUp className="h-2.5 w-2.5" />
+            Onboarding started {new Date(status.analytics.startedAt).toLocaleDateString()}
+          </p>
+        ) : null}
+
+        {/* 86.6 — invited user simplified onboarding indicator */}
+        {status?.savedProgress && (status.savedProgress as Record<string, unknown>).isInvitedUser ? (
+          <div className="text-center mt-2">
+            <Badge variant="outline" className="text-[10px]">
+              <UserPlus className="h-2.5 w-2.5 mr-1" />
+              Invited Member &mdash; Simplified Setup
+            </Badge>
+          </div>
+        ) : null}
       </div>
     </div>
   );

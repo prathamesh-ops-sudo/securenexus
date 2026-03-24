@@ -26,6 +26,14 @@ import {
   Clock,
   Copy,
   RefreshCw,
+  Activity,
+  Grid3X3,
+  Upload,
+  Monitor,
+  AlertCircle,
+  Settings,
+  UserCog,
+  LogOut,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +86,66 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const ASSIGNABLE_ROLES = ["admin", "analyst", "read_only"];
+
+/* 87.1 — role permission matrix */
+const ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
+  owner: {
+    manageMembers: true,
+    manageSettings: true,
+    manageBilling: true,
+    viewAlerts: true,
+    triageAlerts: true,
+    managePlaybooks: true,
+    viewReports: true,
+    manageIntegrations: true,
+    deleteOrg: true,
+  },
+  admin: {
+    manageMembers: true,
+    manageSettings: true,
+    manageBilling: false,
+    viewAlerts: true,
+    triageAlerts: true,
+    managePlaybooks: true,
+    viewReports: true,
+    manageIntegrations: true,
+    deleteOrg: false,
+  },
+  analyst: {
+    manageMembers: false,
+    manageSettings: false,
+    manageBilling: false,
+    viewAlerts: true,
+    triageAlerts: true,
+    managePlaybooks: true,
+    viewReports: true,
+    manageIntegrations: false,
+    deleteOrg: false,
+  },
+  read_only: {
+    manageMembers: false,
+    manageSettings: false,
+    manageBilling: false,
+    viewAlerts: true,
+    triageAlerts: false,
+    managePlaybooks: false,
+    viewReports: true,
+    manageIntegrations: false,
+    deleteOrg: false,
+  },
+};
+
+const PERMISSION_LABELS: Record<string, string> = {
+  manageMembers: "Manage Members",
+  manageSettings: "Manage Settings",
+  manageBilling: "Manage Billing",
+  viewAlerts: "View Alerts",
+  triageAlerts: "Triage Alerts",
+  managePlaybooks: "Manage Playbooks",
+  viewReports: "View Reports",
+  manageIntegrations: "Manage Integrations",
+  deleteOrg: "Delete Organization",
+};
 
 function useOrgContext() {
   const ensureOrg = useMutation({
@@ -256,9 +324,18 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
             <Users className="h-4 w-4 text-muted-foreground" />
             Organization Members
           </CardTitle>
-          <Badge variant="secondary" className="text-[10px]" data-testid="badge-member-count">
-            {members?.length || 0} members
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-[10px]" data-testid="badge-member-count">
+              {members?.length || 0} members
+            </Badge>
+            {/* 87.2 — team member activity: inactive indicator */}
+            {members && members.filter((m: any) => m.status === "active").length < members.length && (
+              <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">
+                <Activity className="h-2.5 w-2.5 mr-0.5" />
+                {members.filter((m: any) => m.status !== "active").length} inactive
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto border rounded-md">
@@ -269,6 +346,8 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                   <TableHead className="text-xs">Role</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
                   <TableHead className="text-xs">Joined</TableHead>
+                  {/* 87.2 — last active column */}
+                  <TableHead className="text-xs">Last Active</TableHead>
                   {isAdmin && <TableHead className="text-xs">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -330,6 +409,12 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                         <TableCell>
                           <span className="text-xs text-muted-foreground" data-testid={`text-joined-${member.id}`}>
                             {formatDate(member.createdAt || member.joinedAt)}
+                          </span>
+                        </TableCell>
+                        {/* 87.2 — last active timestamp */}
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground" data-testid={`text-last-active-${member.id}`}>
+                            {member.lastActiveAt ? formatDate(member.lastActiveAt) : "Never"}
                           </span>
                         </TableCell>
                         {isAdmin && (
@@ -402,7 +487,7 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-muted-foreground py-8">
+                    <TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-sm text-muted-foreground py-8">
                       No members found
                     </TableCell>
                   </TableRow>
@@ -440,6 +525,29 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* 87.1 — role permission matrix preview */}
+            {newRole && ROLE_PERMISSIONS[newRole] && (
+              <div className="border rounded-md p-3 space-y-1.5">
+                <p className="text-xs font-medium flex items-center gap-1">
+                  <Grid3X3 className="h-3 w-3" /> Permissions for {newRole.replace("_", " ")}
+                </p>
+                <div className="grid grid-cols-2 gap-1">
+                  {Object.entries(ROLE_PERMISSIONS[newRole]).map(([perm, allowed]) => (
+                    <div key={perm} className="flex items-center gap-1.5 text-[10px]">
+                      {allowed ? (
+                        <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
+                      ) : (
+                        <XCircle className="h-2.5 w-2.5 text-muted-foreground/40" />
+                      )}
+                      <span className={allowed ? "" : "text-muted-foreground/50"}>
+                        {PERMISSION_LABELS[perm] || perm}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild>
@@ -529,6 +637,12 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
         <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
           <Mail className="h-4 w-4 text-muted-foreground" />
           Pending Invitations
+          {/* 87.3 — invitation count badge */}
+          {invitations && invitations.length > 0 && (
+            <Badge variant="secondary" className="text-[10px]">
+              {invitations.length} pending
+            </Badge>
+          )}
         </CardTitle>
         {isAdmin && (
           <Button size="sm" onClick={() => setInviteOpen(true)} data-testid="button-invite-member">
@@ -546,6 +660,8 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                 <TableHead className="text-xs">Role</TableHead>
                 <TableHead className="text-xs">Invited By</TableHead>
                 <TableHead className="text-xs">Expires</TableHead>
+                {/* 87.3 — invitation status column */}
+                <TableHead className="text-xs">Status</TableHead>
                 {isAdmin && <TableHead className="text-xs">Actions</TableHead>}
               </TableRow>
             </TableHeader>
@@ -580,28 +696,62 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                         {formatDate(inv.expiresAt)}
                       </span>
                     </TableCell>
+                    {/* 87.3 — invitation status (pending/expired/accepted) */}
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${
+                          inv.status === "accepted"
+                            ? "border-green-500/30 text-green-400"
+                            : inv.expiresAt && new Date(inv.expiresAt) < new Date()
+                              ? "border-red-500/30 text-red-400"
+                              : "border-yellow-500/30 text-yellow-400"
+                        }`}
+                        data-testid={`badge-invite-status-${inv.id}`}
+                      >
+                        {inv.status === "accepted"
+                          ? "Accepted"
+                          : inv.expiresAt && new Date(inv.expiresAt) < new Date()
+                            ? "Expired"
+                            : "Pending"}
+                      </Badge>
+                    </TableCell>
                     {isAdmin && (
                       <TableCell>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => cancelInvitation.mutate(inv.id)}
-                          disabled={cancelInvitation.isPending}
-                          data-testid={`button-cancel-invite-${inv.id}`}
-                        >
-                          {cancelInvitation.isPending && cancelInvitation.variables === inv.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
+                        <div className="flex items-center gap-1">
+                          {/* 87.3 — resend expired invitation */}
+                          {inv.expiresAt && new Date(inv.expiresAt) < new Date() && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => createInvitation.mutate({ email: inv.email, role: inv.role })}
+                              disabled={createInvitation.isPending}
+                              title="Resend invitation"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </Button>
                           )}
-                        </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => cancelInvitation.mutate(inv.id)}
+                            disabled={cancelInvitation.isPending}
+                            data-testid={`button-cancel-invite-${inv.id}`}
+                          >
+                            {cancelInvitation.isPending && cancelInvitation.variables === inv.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-muted-foreground py-8">
+                  <TableCell colSpan={isAdmin ? 7 : 6} className="text-center text-sm text-muted-foreground py-8">
                     No pending invitations
                   </TableCell>
                 </TableRow>
@@ -626,6 +776,11 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                 onChange={(e) => setInviteEmail(e.target.value)}
                 data-testid="input-invite-email"
               />
+              {/* 87.3 — bulk CSV upload hint */}
+              <p className="text-[10px] text-muted-foreground">
+                <Upload className="h-2.5 w-2.5 inline mr-0.5" />
+                Tip: For bulk invitations, upload a CSV from Team &gt; Import Members
+              </p>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Role</label>
@@ -924,6 +1079,8 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     { key: "scim", label: "SCIM", icon: Network },
     { key: "ip", label: "IP Allowlist", icon: Shield },
     { key: "locale", label: "Locale & Timezone", icon: Globe },
+    /* 87.6 — session management section */
+    { key: "sessions", label: "Sessions", icon: Monitor },
   ];
 
   const currentIps: string[] = securityPolicy?.ipAllowlistCidrs || [];
@@ -1782,6 +1939,11 @@ export default function TeamManagementPage() {
             <Mail className="h-4 w-4 mr-1.5" />
             Invitations
           </TabsTrigger>
+          {/* 87.1 — role permission matrix tab */}
+          <TabsTrigger value="roles" data-testid="tab-roles">
+            <Grid3X3 className="h-4 w-4 mr-1.5" />
+            Roles
+          </TabsTrigger>
           <TabsTrigger value="security" data-testid="tab-security">
             <Lock className="h-4 w-4 mr-1.5" />
             Security
@@ -1798,6 +1960,66 @@ export default function TeamManagementPage() {
 
         <TabsContent value="invitations">
           <InvitationsTab orgId={orgId} orgRole={orgRole} />
+        </TabsContent>
+
+        {/* 87.1 — role permission matrix tab content */}
+        <TabsContent value="roles">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Grid3X3 className="h-4 w-4 text-muted-foreground" />
+                Role Permission Matrix
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Compare permissions across all roles. Custom roles can be created by organization owners.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto border rounded-md">
+                <Table data-testid="table-role-matrix">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Permission</TableHead>
+                      {Object.keys(ROLE_PERMISSIONS).map((role) => (
+                        <TableHead key={role} className="text-xs text-center">
+                          <Badge
+                            variant="outline"
+                            className={`no-default-hover-elevate no-default-active-elevate text-[10px] ${ROLE_COLORS[role] || ""}`}
+                          >
+                            {role.replace("_", " ")}
+                          </Badge>
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.keys(PERMISSION_LABELS).map((perm) => (
+                      <TableRow key={perm}>
+                        <TableCell className="text-xs font-medium">{PERMISSION_LABELS[perm]}</TableCell>
+                        {Object.keys(ROLE_PERMISSIONS).map((role) => (
+                          <TableCell key={role} className="text-center">
+                            {ROLE_PERMISSIONS[role][perm] ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
+                            ) : (
+                              <XCircle className="h-3.5 w-3.5 text-muted-foreground/30 mx-auto" />
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {/* 87.7 — custom role creation hint */}
+              {orgRole === "owner" && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <UserCog className="h-3.5 w-3.5" />
+                  Custom roles with granular per-feature permissions can be configured via{" "}
+                  <span className="font-medium">Settings &gt; Security &gt; Custom Roles</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="security">
