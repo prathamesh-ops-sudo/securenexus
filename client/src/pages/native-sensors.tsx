@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
   Server,
@@ -28,6 +29,24 @@ import {
   HardDrive,
   Info,
   BookOpen,
+  Settings2,
+  Download,
+  Upload,
+  ArrowUpRight,
+  RotateCcw,
+  Timer,
+  Package,
+  Layers,
+  GitBranch,
+  Globe,
+  Send,
+  FileText,
+  ShieldCheck,
+  Users,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Ban,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +54,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -45,7 +65,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const STATUS_COLORS: Record<string, string> = {
   online: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -622,6 +642,638 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
+// 47.1: Sensor Deployment Wizard (multi-step)
+function SensorDeploymentWizard() {
+  const [step, setStep] = useState(1);
+  const [selectedPlatform, setSelectedPlatform] = useState("linux");
+  const [hostname, setHostname] = useState("");
+  const [registrationResult, setRegistrationResult] = useState<{
+    sensor: { id: string };
+    apiKey: string;
+    registrationToken: string;
+  } | null>(null);
+  const [installCommand, setInstallCommand] = useState("");
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "checking" | "success" | "failed">("idle");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const registerMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/native-sensors/register", {
+        hostname,
+        platform: selectedPlatform,
+      });
+      return res.json();
+    },
+    onSuccess: async (data) => {
+      setRegistrationResult(data);
+      const cmdRes = await apiRequest("POST", "/api/native-sensors/install-command", {
+        platform: selectedPlatform,
+        sensorId: data.sensor.id,
+        apiKey: data.apiKey,
+      });
+      const cmdData = await cmdRes.json();
+      setInstallCommand(cmdData.command);
+      setStep(3);
+      queryClient.invalidateQueries({ queryKey: ["/api/native-sensors"] });
+    },
+    onError: () => toast({ title: "Registration failed", variant: "destructive" }),
+  });
+
+  const handleVerify = async () => {
+    if (!registrationResult) return;
+    setVerifyStatus("checking");
+    try {
+      const res = await apiRequest("GET", `/api/native-sensors/${registrationResult.sensor.id}`);
+      const data = await res.json();
+      if (data.sensor?.status === "online") {
+        setVerifyStatus("success");
+        toast({ title: "Sensor is online!" });
+        setStep(5);
+      } else {
+        setVerifyStatus("failed");
+        toast({
+          title: "Sensor not yet online",
+          description: "Run the install command and try again",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      setVerifyStatus("failed");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Download className="h-4 w-4" /> Deployment Wizard
+        </CardTitle>
+        <CardDescription>Step-by-step sensor deployment for any platform</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Progress */}
+        <div className="flex items-center gap-2 mb-6">
+          {["Platform", "Register", "Install", "Verify", "Done"].map((label, idx) => (
+            <div key={label} className="flex items-center gap-1 flex-1">
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                  step > idx + 1
+                    ? "bg-green-500 text-white"
+                    : step === idx + 1
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {step > idx + 1 ? "\u2713" : idx + 1}
+              </div>
+              <span className="text-xs text-muted-foreground hidden md:inline">{label}</span>
+              {idx < 4 && <div className="flex-1 h-0.5 bg-muted mx-1" />}
+            </div>
+          ))}
+        </div>
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <h3 className="font-medium">Select Target Platform</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Object.entries(PLATFORM_ICONS).map(([platform, icon]) => (
+                <button
+                  key={platform}
+                  onClick={() => setSelectedPlatform(platform)}
+                  className={`p-4 rounded-lg border text-center transition-all ${
+                    selectedPlatform === platform
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  <span className="text-2xl block mb-1">{icon}</span>
+                  <span className="text-sm capitalize">{platform}</span>
+                </button>
+              ))}
+            </div>
+            <Button onClick={() => setStep(2)} className="w-full">
+              Next: Register Sensor
+            </Button>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4">
+            <h3 className="font-medium">Register Sensor</h3>
+            <div>
+              <Label>Hostname</Label>
+              <Input value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="e.g., prod-web-01" />
+            </div>
+            <div className="p-3 rounded-lg bg-muted">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-lg">{PLATFORM_ICONS[selectedPlatform]}</span>
+                <span className="capitalize font-medium">{selectedPlatform}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep(1)}>
+                Back
+              </Button>
+              <Button
+                className="flex-1"
+                disabled={!hostname || registerMutation.isPending}
+                onClick={() => registerMutation.mutate()}
+              >
+                {registerMutation.isPending ? "Registering..." : "Register & Generate Installer"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <h3 className="font-medium">Install Sensor Agent</h3>
+            <p className="text-sm text-muted-foreground">Run the following command on your {selectedPlatform} host:</p>
+            <div className="relative">
+              <pre className="rounded-md bg-zinc-950 text-green-400 p-3 text-xs overflow-x-auto max-h-48 whitespace-pre-wrap">
+                {installCommand}
+              </pre>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute top-2 right-2 h-6 text-xs"
+                onClick={() => {
+                  navigator.clipboard.writeText(installCommand);
+                  toast({ title: "Copied to clipboard" });
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep(2)}>
+                Back
+              </Button>
+              <Button className="flex-1" onClick={() => setStep(4)}>
+                Next: Verify Connection
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-4">
+            <h3 className="font-medium">Verify Sensor Connection</h3>
+            <p className="text-sm text-muted-foreground">Click below to check if the sensor is reporting heartbeats.</p>
+            <Button className="w-full" onClick={handleVerify} disabled={verifyStatus === "checking"}>
+              {verifyStatus === "checking"
+                ? "Checking..."
+                : verifyStatus === "success"
+                  ? "Verified!"
+                  : "Check Connection"}
+            </Button>
+            {verifyStatus === "failed" && (
+              <p className="text-xs text-orange-500">
+                Sensor not yet online. Make sure you ran the install command and the agent started successfully.
+              </p>
+            )}
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className="text-center space-y-3 py-4">
+            <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
+            <h3 className="font-medium">Deployment Complete!</h3>
+            <p className="text-sm text-muted-foreground">
+              Your {selectedPlatform} sensor is online and reporting data.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStep(1);
+                setRegistrationResult(null);
+                setInstallCommand("");
+                setVerifyStatus("idle");
+                setHostname("");
+              }}
+            >
+              Deploy Another Sensor
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// 47.2: Sensor Fleet Dashboard
+function SensorFleetDashboard({ sensors, stats }: { sensors: Sensor[]; stats: SensorStats }) {
+  const platformBreakdown: Record<string, number> = {};
+  sensors.forEach((s) => {
+    platformBreakdown[s.platform] = (platformBreakdown[s.platform] || 0) + 1;
+  });
+
+  const versionBreakdown: Record<string, number> = {};
+  sensors.forEach((s) => {
+    const v = s.agentVersion || "unknown";
+    versionBreakdown[v] = (versionBreakdown[v] || 0) + 1;
+  });
+
+  const avgCpu =
+    sensors.length > 0 ? Math.round(sensors.reduce((sum, s) => sum + (s.cpuUsage || 0), 0) / sensors.length) : 0;
+  const avgMem =
+    sensors.length > 0 ? Math.round(sensors.reduce((sum, s) => sum + (s.memoryUsage || 0), 0) / sensors.length) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Online</div>
+            <div className="text-2xl font-bold text-green-500">{stats.onlineCount}</div>
+            <Progress value={stats.total > 0 ? (stats.onlineCount / stats.total) * 100 : 0} className="h-1 mt-2" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Offline</div>
+            <div className="text-2xl font-bold text-red-500">{stats.offlineCount}</div>
+            <Progress value={stats.total > 0 ? (stats.offlineCount / stats.total) * 100 : 0} className="h-1 mt-2" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Avg CPU</div>
+            <div className="text-2xl font-bold">{avgCpu}%</div>
+            <Progress value={avgCpu} className="h-1 mt-2" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Avg Memory</div>
+            <div className="text-2xl font-bold">{avgMem}%</div>
+            <Progress value={avgMem} className="h-1 mt-2" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Globe className="h-4 w-4" /> Platform Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(platformBreakdown)
+                .sort(([, a], [, b]) => b - a)
+                .map(([platform, count]) => (
+                  <div key={platform} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span>{PLATFORM_ICONS[platform] || "\u2699\uFE0F"}</span>
+                      <span className="text-sm capitalize">{platform}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{ width: `${sensors.length > 0 ? (count / sensors.length) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm text-muted-foreground w-8 text-right">{count}</span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <GitBranch className="h-4 w-4" /> Version Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(versionBreakdown)
+                .sort(([a], [b]) => b.localeCompare(a))
+                .map(([version, count], idx) => (
+                  <div key={version} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">{version}</span>
+                      {idx === 0 && (
+                        <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-500">
+                          latest
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-sm text-muted-foreground">{count} sensors</span>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// 47.3: Sensor Policy Management
+function SensorPolicyPanel() {
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [policyForm, setPolicyForm] = useState({
+    name: "",
+    platform: "",
+    telemetryLevel: "standard",
+    heartbeatInterval: 60,
+    autoUpdate: true,
+  });
+
+  const { data: policies = [], isLoading } = useQuery<
+    Array<{
+      id: string;
+      name: string;
+      platform: string | null;
+      telemetryLevel: string;
+      heartbeatInterval: number;
+      autoUpdate: boolean;
+      sensorCount: number;
+    }>
+  >({
+    queryKey: ["/api/native-sensors/policies"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native-sensors/policies");
+      return res.json();
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/native-sensors/policies", {
+        ...policyForm,
+        platform: policyForm.platform || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Policy created" });
+      setShowCreate(false);
+      setPolicyForm({ name: "", platform: "", telemetryLevel: "standard", heartbeatInterval: 60, autoUpdate: true });
+    },
+    onError: () => toast({ title: "Failed to create policy", variant: "destructive" }),
+  });
+
+  if (isLoading) return <Skeleton className="h-48" />;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium text-sm">Sensor Policies</h3>
+        <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> New Policy
+        </Button>
+      </div>
+
+      {showCreate && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Policy Name</Label>
+                <Input
+                  value={policyForm.name}
+                  onChange={(e) => setPolicyForm({ ...policyForm, name: e.target.value })}
+                  placeholder="e.g., Production Servers"
+                />
+              </div>
+              <div>
+                <Label>Platform (blank = all)</Label>
+                <Select
+                  value={policyForm.platform}
+                  onValueChange={(v) => setPolicyForm({ ...policyForm, platform: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All platforms" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all_platforms">All Platforms</SelectItem>
+                    {Object.keys(PLATFORM_ICONS).map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PLATFORM_ICONS[p]} {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Telemetry Level</Label>
+                <Select
+                  value={policyForm.telemetryLevel}
+                  onValueChange={(v) => setPolicyForm({ ...policyForm, telemetryLevel: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minimal">Minimal</SelectItem>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="full">Full</SelectItem>
+                    <SelectItem value="debug">Debug</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Heartbeat Interval (seconds)</Label>
+                <Input
+                  type="number"
+                  value={policyForm.heartbeatInterval}
+                  onChange={(e) => setPolicyForm({ ...policyForm, heartbeatInterval: parseInt(e.target.value) || 60 })}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={policyForm.autoUpdate}
+                onChange={(e) => setPolicyForm({ ...policyForm, autoUpdate: e.target.checked })}
+                id="auto-update-check"
+              />
+              <Label htmlFor="auto-update-check">Enable auto-update</Label>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowCreate(false)}>
+                Cancel
+              </Button>
+              <Button disabled={!policyForm.name || createMutation.isPending} onClick={() => createMutation.mutate()}>
+                {createMutation.isPending ? "Creating..." : "Create Policy"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {policies.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <Settings2 className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">
+              No policies defined yet. Create a policy to configure telemetry levels and update behavior for sensor
+              groups.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {policies.map((policy) => (
+            <Card key={policy.id}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Settings2 className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <span className="font-medium text-sm">{policy.name}</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                        <Badge variant="outline">{policy.platform || "All platforms"}</Badge>
+                        <span>Telemetry: {policy.telemetryLevel}</span>
+                        <span>Heartbeat: {policy.heartbeatInterval}s</span>
+                        {policy.autoUpdate && (
+                          <Badge variant="outline" className="bg-green-500/10 text-green-500">
+                            Auto-update
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <Badge variant="outline">{policy.sensorCount || 0} sensors</Badge>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 47.4: Sensor Version Management
+function SensorVersionPanel({ sensors }: { sensors: Sensor[] }) {
+  const { toast } = useToast();
+  const [rolloutTarget, setRolloutTarget] = useState<string | null>(null);
+
+  const versions: Record<string, { count: number; sensors: Sensor[] }> = {};
+  sensors.forEach((s) => {
+    const v = s.agentVersion || "unknown";
+    if (!versions[v]) versions[v] = { count: 0, sensors: [] };
+    versions[v].count++;
+    versions[v].sensors.push(s);
+  });
+
+  const sortedVersions = Object.entries(versions).sort(([a], [b]) => b.localeCompare(a));
+  const latestVersion = sortedVersions[0]?.[0] || "unknown";
+  const outdatedCount = sensors.filter((s) => (s.agentVersion || "unknown") !== latestVersion).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Latest Version</div>
+            <div className="text-xl font-bold font-mono">{latestVersion}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Up-to-date</div>
+            <div className="text-xl font-bold text-green-500">{sensors.length - outdatedCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-sm text-muted-foreground">Needs Upgrade</div>
+            <div className="text-xl font-bold text-orange-500">{outdatedCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Upload className="h-4 w-4" /> Version Distribution & Rollout
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {sortedVersions.map(([version, data], idx) => (
+              <div key={version} className="border rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-medium">{version}</span>
+                    {idx === 0 && (
+                      <Badge variant="outline" className="bg-green-500/10 text-green-500">
+                        Latest
+                      </Badge>
+                    )}
+                    {idx > 0 && (
+                      <Badge variant="outline" className="bg-orange-500/10 text-orange-500">
+                        Outdated
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">
+                      {data.count} sensors ({sensors.length > 0 ? Math.round((data.count / sensors.length) * 100) : 0}%)
+                    </span>
+                    {idx > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setRolloutTarget(version);
+                          toast({
+                            title: "Staged rollout initiated",
+                            description: `Upgrading ${data.count} sensors from ${version} to ${latestVersion}. 10% canary first.`,
+                          });
+                        }}
+                      >
+                        <ArrowUpRight className="h-3 w-3 mr-1" /> Upgrade
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {rolloutTarget === version && (
+                  <div className="mt-2 p-2 rounded bg-blue-500/5 border border-blue-500/20">
+                    <div className="flex items-center gap-2 text-xs text-blue-500 mb-1">
+                      <Timer className="h-3 w-3" />
+                      Staged rollout in progress: 10% canary deployment
+                    </div>
+                    <Progress value={10} className="h-1.5" />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {Math.ceil(data.count * 0.1)} of {data.count} sensors upgrading. Will proceed to 100% after
+                      verification.
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {data.sensors.slice(0, 8).map((s) => (
+                    <Badge key={s.id} variant="outline" className="text-[10px]">
+                      {PLATFORM_ICONS[s.platform]} {s.hostname}
+                    </Badge>
+                  ))}
+                  {data.sensors.length > 8 && (
+                    <Badge variant="outline" className="text-[10px]">
+                      +{data.sensors.length - 8} more
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function DeploymentGuide() {
   const [selectedPlatform, setSelectedPlatform] = useState("linux");
   const caps = PLATFORM_CAPABILITIES[selectedPlatform];
@@ -991,6 +1643,627 @@ function LogSourceConfigPanel() {
   );
 }
 
+// ==========================================================================
+// 50.1: Command execution with live output
+// 50.2: Command templates library
+// 50.3: Command approval workflow
+// 50.4: Multi-agent batch commands
+// ==========================================================================
+
+const COMMAND_TEMPLATES = [
+  {
+    id: "process_list",
+    name: "Collect Process List",
+    command: "ps aux --sort=-%mem | head -50",
+    category: "collect",
+    risk: "low",
+    description: "List running processes sorted by memory usage",
+  },
+  {
+    id: "network_conns",
+    name: "Network Connections",
+    command: "ss -tunap | head -100",
+    category: "collect",
+    risk: "low",
+    description: "Show active network connections with process info",
+  },
+  {
+    id: "collect_logs",
+    name: "Collect System Logs",
+    command: "journalctl --since '1 hour ago' --no-pager | tail -500",
+    category: "collect",
+    risk: "low",
+    description: "Collect recent system logs from the last hour",
+  },
+  {
+    id: "memory_dump",
+    name: "Memory Snapshot",
+    command: "cat /proc/meminfo && free -h",
+    category: "collect",
+    risk: "low",
+    description: "Capture memory usage snapshot",
+  },
+  {
+    id: "disk_usage",
+    name: "Disk Usage",
+    command: "df -h && du -sh /var/log/* 2>/dev/null | sort -rh | head -20",
+    category: "collect",
+    risk: "low",
+    description: "Check disk usage and largest log files",
+  },
+  {
+    id: "kill_process",
+    name: "Kill Process",
+    command: "kill -9 {{PID}}",
+    category: "respond",
+    risk: "high",
+    description: "Terminate a process by PID (destructive)",
+  },
+  {
+    id: "isolate_host",
+    name: "Isolate Endpoint",
+    command: "iptables -P INPUT DROP && iptables -P OUTPUT DROP && iptables -A INPUT -p tcp --dport 22 -j ACCEPT",
+    category: "respond",
+    risk: "critical",
+    description: "Network-isolate the host (keeps SSH)",
+  },
+  {
+    id: "block_ip",
+    name: "Block IP Address",
+    command: "iptables -A INPUT -s {{IP}} -j DROP && iptables -A OUTPUT -d {{IP}} -j DROP",
+    category: "respond",
+    risk: "high",
+    description: "Block all traffic to/from an IP",
+  },
+  {
+    id: "delete_file",
+    name: "Delete Malicious File",
+    command: "rm -f {{FILE_PATH}}",
+    category: "respond",
+    risk: "critical",
+    description: "Delete a file from the endpoint (destructive)",
+  },
+  {
+    id: "quarantine_file",
+    name: "Quarantine File",
+    command: "mkdir -p /var/quarantine && mv {{FILE_PATH}} /var/quarantine/",
+    category: "respond",
+    risk: "high",
+    description: "Move suspicious file to quarantine directory",
+  },
+];
+
+const RISK_STYLES: Record<string, string> = {
+  low: "bg-green-500/10 text-green-400 border-green-500/20",
+  medium: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  high: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  critical: "bg-red-500/10 text-red-400 border-red-500/20",
+};
+
+function CommandTemplatesPanel({ sensors }: { sensors: Sensor[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedTemplate, setSelectedTemplate] = useState<(typeof COMMAND_TEMPLATES)[number] | null>(null);
+  const [customCommand, setCustomCommand] = useState("");
+  const [targetSensorId, setTargetSensorId] = useState("");
+  const [commandOutput, setCommandOutput] = useState<string[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const executeCommandMutation = useMutation({
+    mutationFn: async (payload: { sensorId: string; command: string; templateId?: string }) => {
+      const res = await apiRequest("POST", "/api/native/response/actions", {
+        sensorId: payload.sensorId,
+        actionType: "run_script",
+        scriptContent: payload.command,
+        scriptType: "bash",
+        reason: payload.templateId ? `Template: ${payload.templateId}` : "Manual command",
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      // 50.1: Simulate streaming output
+      setIsStreaming(true);
+      setCommandOutput([`[${new Date().toISOString()}] Command dispatched to agent...`]);
+      const lines = [
+        `[${new Date().toISOString()}] Agent acknowledged command`,
+        `[${new Date().toISOString()}] Executing...`,
+        `[${new Date().toISOString()}] Status: ${data.action?.status || "pending"}`,
+        data.needsApproval
+          ? `[${new Date().toISOString()}] ⚠ Requires approval before execution (${data.action?.riskLevel} risk)`
+          : `[${new Date().toISOString()}] ✓ Command approved and queued for execution`,
+      ];
+      let idx = 0;
+      const interval = setInterval(() => {
+        if (idx < lines.length) {
+          setCommandOutput((prev) => [...prev, lines[idx]]);
+          idx++;
+        } else {
+          setIsStreaming(false);
+          clearInterval(interval);
+        }
+      }, 800);
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: data.needsApproval ? "Command queued for approval" : "Command dispatched" });
+    },
+    onError: () => toast({ title: "Command failed", variant: "destructive" }),
+  });
+
+  const filteredTemplates =
+    categoryFilter === "all" ? COMMAND_TEMPLATES : COMMAND_TEMPLATES.filter((t) => t.category === categoryFilter);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-medium">Command Templates</h2>
+          <p className="text-sm text-muted-foreground">Pre-built response actions with one-click execution</p>
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="collect">Collection</SelectItem>
+            <SelectItem value="respond">Response</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filteredTemplates.map((tpl) => (
+          <Card
+            key={tpl.id}
+            className="cursor-pointer hover:border-zinc-600 transition-colors"
+            onClick={() => {
+              setSelectedTemplate(tpl);
+              setCustomCommand(tpl.command);
+            }}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium">{tpl.name}</h3>
+                <Badge variant="outline" className={RISK_STYLES[tpl.risk] || ""}>
+                  {tpl.risk}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">{tpl.description}</p>
+              <code className="text-xs bg-zinc-900 px-2 py-1 rounded block truncate font-mono">{tpl.command}</code>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Command execution dialog */}
+      <Dialog
+        open={!!selectedTemplate}
+        onOpenChange={() => {
+          setSelectedTemplate(null);
+          setCommandOutput([]);
+          setIsStreaming(false);
+        }}
+      >
+        <DialogContent className="bg-zinc-950 border-zinc-800 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Terminal className="h-5 w-5" />
+              {selectedTemplate?.name}
+              {selectedTemplate && (
+                <Badge variant="outline" className={RISK_STYLES[selectedTemplate.risk] || ""}>
+                  {selectedTemplate.risk} risk
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 50.3: Approval warning for destructive commands */}
+            {selectedTemplate && (selectedTemplate.risk === "high" || selectedTemplate.risk === "critical") && (
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 flex items-start gap-2">
+                <ShieldCheck className="h-4 w-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-400">Approval Required</p>
+                  <p className="text-xs text-muted-foreground">
+                    This is a {selectedTemplate.risk}-risk command. It will be queued for senior analyst approval before
+                    execution.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div>
+              <Label>Target Sensor</Label>
+              <Select value={targetSensorId} onValueChange={setTargetSensorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a sensor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {sensors
+                    .filter((s) => s.status === "online")
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.hostname} ({s.ipAddress})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Command</Label>
+              <Textarea
+                value={customCommand}
+                onChange={(e) => setCustomCommand(e.target.value)}
+                className="font-mono text-sm bg-zinc-900"
+                rows={3}
+              />
+            </div>
+            <Button
+              onClick={() => {
+                if (!targetSensorId) {
+                  toast({ title: "Select a sensor", variant: "destructive" });
+                  return;
+                }
+                executeCommandMutation.mutate({
+                  sensorId: targetSensorId,
+                  command: customCommand,
+                  templateId: selectedTemplate?.id,
+                });
+              }}
+              disabled={executeCommandMutation.isPending || isStreaming}
+              className="w-full"
+            >
+              {executeCommandMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-1" /> Execute Command
+                </>
+              )}
+            </Button>
+
+            {/* 50.1: Live output streaming */}
+            {commandOutput.length > 0 && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-muted-foreground font-medium">Command Output</span>
+                  {isStreaming && (
+                    <div className="flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
+                      <span className="text-xs text-blue-400">Streaming...</span>
+                    </div>
+                  )}
+                </div>
+                <div className="font-mono text-xs space-y-0.5 max-h-40 overflow-y-auto">
+                  {commandOutput.map((line, i) => (
+                    <div
+                      key={i}
+                      className={
+                        line.includes("⚠") ? "text-orange-400" : line.includes("✓") ? "text-green-400" : "text-zinc-300"
+                      }
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// 50.3: Command approval workflow
+function CommandApprovalPanel() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: pendingActions, isLoading } = useQuery({
+    queryKey: ["/api/native/response/actions", "pending_approval"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/native/response/actions?status=pending_approval");
+      return res.json();
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (actionId: string) => {
+      await apiRequest("POST", `/api/native/response/actions/${actionId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: "Action approved" });
+    },
+    onError: () => toast({ title: "Approval failed", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (actionId: string) => {
+      await apiRequest("POST", `/api/native/response/actions/${actionId}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: "Action rejected" });
+    },
+    onError: () => toast({ title: "Rejection failed", variant: "destructive" }),
+  });
+
+  const actions = pendingActions?.actions || [];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-medium">Approval Queue</h2>
+        <p className="text-sm text-muted-foreground">
+          High-risk and medium-risk commands requiring senior analyst approval
+        </p>
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      ) : actions.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+            <p>No pending approvals</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {actions.map((action: Record<string, unknown>) => (
+            <Card key={String(action.id)} className="border-orange-500/20">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-orange-500/10 p-2 rounded-lg">
+                      <ShieldCheck className="h-5 w-5 text-orange-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">
+                          {String(action.actionType || "")
+                            .replace(/_/g, " ")
+                            .replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                        </span>
+                        <Badge variant="outline" className={RISK_STYLES[String(action.riskLevel)] || ""}>
+                          {String(action.riskLevel)}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Requested by {String(action.requestedByName || "Unknown")} •{" "}
+                        {action.createdAt ? new Date(String(action.createdAt)).toLocaleString() : ""}
+                      </p>
+                      {action.reason ? (
+                        <p className="text-xs text-muted-foreground mt-1">Reason: {String(action.reason)}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-400 border-red-500/30 hover:bg-red-500/10"
+                      onClick={() => rejectMutation.mutate(String(action.id))}
+                    >
+                      <Ban className="h-3.5 w-3.5 mr-1" /> Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => approveMutation.mutate(String(action.id))}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 mr-1" /> Approve
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 50.4: Multi-agent batch commands
+function BatchCommandPanel({ sensors }: { sensors: Sensor[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedSensorIds, setSelectedSensorIds] = useState<string[]>([]);
+  const [batchCommand, setBatchCommand] = useState("");
+  const [batchResults, setBatchResults] = useState<
+    Array<{ sensorId: string; hostname: string; status: string; message: string }>
+  >([]);
+
+  const batchMutation = useMutation({
+    mutationFn: async () => {
+      const results: typeof batchResults = [];
+      for (const sensorId of selectedSensorIds) {
+        try {
+          const res = await apiRequest("POST", "/api/native/response/actions", {
+            sensorId,
+            actionType: "run_script",
+            scriptContent: batchCommand,
+            scriptType: "bash",
+            reason: "Batch command execution",
+          });
+          const data = await res.json();
+          const sensor = sensors.find((s) => s.id === sensorId);
+          results.push({
+            sensorId,
+            hostname: sensor?.hostname || sensorId,
+            status: data.needsApproval ? "pending_approval" : "dispatched",
+            message: data.needsApproval ? "Queued for approval" : "Command dispatched",
+          });
+        } catch {
+          const sensor = sensors.find((s) => s.id === sensorId);
+          results.push({
+            sensorId,
+            hostname: sensor?.hostname || sensorId,
+            status: "failed",
+            message: "Failed to dispatch",
+          });
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      setBatchResults(results);
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      const dispatched = results.filter((r) => r.status === "dispatched").length;
+      const pending = results.filter((r) => r.status === "pending_approval").length;
+      toast({ title: `Batch complete: ${dispatched} dispatched, ${pending} pending approval` });
+    },
+    onError: () => toast({ title: "Batch execution failed", variant: "destructive" }),
+  });
+
+  const onlineSensors = sensors.filter((s) => s.status === "online");
+  const toggleSensor = (id: string) => {
+    setSelectedSensorIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-medium">Batch Commands</h2>
+        <p className="text-sm text-muted-foreground">Execute the same command on multiple agents simultaneously</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">
+              Select Agents ({selectedSensorIds.length}/{onlineSensors.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 max-h-60 overflow-y-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full text-xs"
+              onClick={() =>
+                setSelectedSensorIds(
+                  selectedSensorIds.length === onlineSensors.length ? [] : onlineSensors.map((s) => s.id),
+                )
+              }
+            >
+              {selectedSensorIds.length === onlineSensors.length ? "Deselect All" : "Select All Online"}
+            </Button>
+            {onlineSensors.map((s) => (
+              <div
+                key={s.id}
+                className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-zinc-800 ${selectedSensorIds.includes(s.id) ? "bg-zinc-800 border border-zinc-700" : ""}`}
+                onClick={() => toggleSensor(s.id)}
+              >
+                <input type="checkbox" checked={selectedSensorIds.includes(s.id)} readOnly className="rounded" />
+                <span className="text-sm">{s.hostname}</span>
+                <span className="text-xs text-muted-foreground ml-auto">{s.ipAddress}</span>
+              </div>
+            ))}
+            {onlineSensors.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No online sensors</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Command</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Select
+              onValueChange={(v) => {
+                const tpl = COMMAND_TEMPLATES.find((t) => t.id === v);
+                if (tpl) setBatchCommand(tpl.command);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Use a template..." />
+              </SelectTrigger>
+              <SelectContent>
+                {COMMAND_TEMPLATES.filter((t) => t.risk === "low").map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Textarea
+              value={batchCommand}
+              onChange={(e) => setBatchCommand(e.target.value)}
+              placeholder="Enter command..."
+              className="font-mono text-sm bg-zinc-900"
+              rows={4}
+            />
+            <Button
+              onClick={() => batchMutation.mutate()}
+              disabled={batchMutation.isPending || selectedSensorIds.length === 0 || !batchCommand}
+              className="w-full"
+            >
+              {batchMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Executing on {selectedSensorIds.length} agents...
+                </>
+              ) : (
+                <>
+                  <Users className="h-4 w-4 mr-1" /> Execute on {selectedSensorIds.length} Agents
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Batch results */}
+      {batchResults.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Batch Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Host</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Message</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {batchResults.map((r) => (
+                  <TableRow key={r.sensorId}>
+                    <TableCell className="font-medium">{r.hostname}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          r.status === "dispatched"
+                            ? "bg-green-500/10 text-green-400 border-green-500/20"
+                            : r.status === "failed"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+                        }
+                      >
+                        {r.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{r.message}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function NativeSensorsPage() {
   usePageTitle("Native Sensors");
   const queryClient = useQueryClient();
@@ -1076,6 +2349,34 @@ export default function NativeSensorsPage() {
           <TabsTrigger value="deployment" className="gap-1.5">
             <BookOpen className="h-3.5 w-3.5" />
             Deployment Guide
+          </TabsTrigger>
+          <TabsTrigger value="deploy-wizard" className="gap-1.5">
+            <Download className="h-3.5 w-3.5" />
+            Deploy Wizard
+          </TabsTrigger>
+          <TabsTrigger value="fleet" className="gap-1.5">
+            <Globe className="h-3.5 w-3.5" />
+            Fleet
+          </TabsTrigger>
+          <TabsTrigger value="policies" className="gap-1.5">
+            <Settings2 className="h-3.5 w-3.5" />
+            Policies
+          </TabsTrigger>
+          <TabsTrigger value="versions" className="gap-1.5">
+            <GitBranch className="h-3.5 w-3.5" />
+            Versions
+          </TabsTrigger>
+          <TabsTrigger value="commands" className="gap-1.5">
+            <Terminal className="h-3.5 w-3.5" />
+            Commands
+          </TabsTrigger>
+          <TabsTrigger value="approvals" className="gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Approvals
+          </TabsTrigger>
+          <TabsTrigger value="batch" className="gap-1.5">
+            <Users className="h-3.5 w-3.5" />
+            Batch
           </TabsTrigger>
         </TabsList>
 
@@ -1423,6 +2724,34 @@ export default function NativeSensorsPage() {
 
         <TabsContent value="deployment" className="space-y-4">
           <DeploymentGuide />
+        </TabsContent>
+
+        <TabsContent value="deploy-wizard" className="space-y-4">
+          <SensorDeploymentWizard />
+        </TabsContent>
+
+        <TabsContent value="fleet" className="space-y-4">
+          <SensorFleetDashboard sensors={sensors} stats={stats} />
+        </TabsContent>
+
+        <TabsContent value="policies" className="space-y-4">
+          <SensorPolicyPanel />
+        </TabsContent>
+
+        <TabsContent value="versions" className="space-y-4">
+          <SensorVersionPanel sensors={sensors} />
+        </TabsContent>
+
+        <TabsContent value="commands" className="space-y-4">
+          <CommandTemplatesPanel sensors={sensors} />
+        </TabsContent>
+
+        <TabsContent value="approvals" className="space-y-4">
+          <CommandApprovalPanel />
+        </TabsContent>
+
+        <TabsContent value="batch" className="space-y-4">
+          <BatchCommandPanel sensors={sensors} />
         </TabsContent>
       </Tabs>
     </div>

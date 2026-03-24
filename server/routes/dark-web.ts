@@ -44,7 +44,7 @@ function decryptApiKey(ciphertext: string | null | undefined): string | null {
   }
 }
 
-const ALLOWED_EXPOSURE_UPDATE_FIELDS = ["status", "severity", "mitigationNotes", "assignedTo"];
+const ALLOWED_EXPOSURE_UPDATE_FIELDS = ["status", "severity", "mitigationNotes", "assignedTo", "responseAction"];
 const ALLOWED_TARGET_FIELDS = ["targetType", "targetValue", "label", "isActive"];
 const ALLOWED_CONFIG_FIELDS = [
   "isEnabled",
@@ -558,6 +558,15 @@ export function registerDarkWebRoutes(app: Express): void {
           .where(and(eq(darkWebExposures.id, exposureId), eq(darkWebExposures.orgId, orgId)))
           .returning();
 
+        // 66.1 — Log response action if provided
+        if (req.body.responseAction) {
+          log.info("Credential response action taken", {
+            exposureId: exposureId,
+            action: String(req.body.responseAction),
+            actorId: (req.user as any)?.id,
+          });
+        }
+
         // If mitigated, update config resolved count
         if (updates.status === "mitigated") {
           await db
@@ -718,6 +727,34 @@ export function registerDarkWebRoutes(app: Express): void {
           .orderBy(desc(darkWebScanHistory.startedAt))
           .limit(1);
 
+        // 66.2 — Brand mention counts
+        const brandMentionCount = exposuresByType
+          .filter((e) => ["brand_mention", "domain_mention", "threat_actor_mention"].includes(e.exposureType))
+          .reduce((sum, e) => sum + Number(e.count), 0);
+
+        // 66.4 — Data source freshness summary
+        const now = Date.now();
+        const sourceFreshness = recentExposures.reduce(
+          (acc, exp) => {
+            const ageMs = now - new Date(exp.discoveredAt).getTime();
+            const days = ageMs / (1000 * 60 * 60 * 24);
+            if (days < 1) acc.live++;
+            else if (days < 7) acc.recent++;
+            else if (days < 30) acc.stale++;
+            else acc.recycled++;
+            return acc;
+          },
+          { live: 0, recent: 0, stale: 0, recycled: 0 },
+        );
+
+        // 66.5 — Credential validation summary
+        const credentialExposures = recentExposures.filter((e) => e.exposureType === "credential_leak");
+        const likelyValid = credentialExposures.filter((e) => {
+          if (!e.breachDate) return false;
+          const days = (now - new Date(e.breachDate).getTime()) / (1000 * 60 * 60 * 24);
+          return days < 30;
+        }).length;
+
         res.json({
           config: config
             ? {
@@ -740,6 +777,9 @@ export function registerDarkWebRoutes(app: Express): void {
           exposuresByType,
           recentExposures,
           lastScan: lastScan || null,
+          brandMentionCount,
+          sourceFreshness,
+          credentialValidation: { likelyValid, total: credentialExposures.length },
         });
       } catch (error) {
         log.error("Failed to get dashboard", { error: String(error) });

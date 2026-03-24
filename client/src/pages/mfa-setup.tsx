@@ -6,7 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, ShieldCheck, ShieldOff, Copy, Loader2 } from "lucide-react";
+import {
+  Shield,
+  ShieldCheck,
+  ShieldOff,
+  Copy,
+  Loader2,
+  Download,
+  Fingerprint,
+  Smartphone,
+  KeyRound,
+} from "lucide-react";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 
 export default function MfaSetupPage() {
@@ -122,6 +132,48 @@ export default function MfaSetupPage() {
         </CardHeader>
       </Card>
 
+      {/* 93.2 — supported MFA methods */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Supported Methods</CardTitle>
+          <CardDescription>
+            Choose your preferred second factor. Hardware keys provide the strongest protection.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              {
+                icon: Smartphone,
+                label: "Authenticator App (TOTP)",
+                desc: "Google Authenticator, Authy, 1Password",
+                supported: true,
+              },
+              { icon: KeyRound, label: "SMS Verification", desc: "Receive codes via text message", supported: false },
+              {
+                icon: Fingerprint,
+                label: "Hardware Security Key",
+                desc: "YubiKey, FIDO2/WebAuthn — phishing-resistant",
+                supported: false,
+              },
+            ].map((m) => (
+              <div key={m.label} className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
+                <div className="flex items-center gap-2">
+                  <m.icon className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">{m.label}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{m.desc}</p>
+                {!m.supported && (
+                  <Badge variant="outline" className="text-[10px] mt-1">
+                    Coming Soon
+                  </Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       {!status?.mfaEnabled && !setupData && (
         <Card data-testid="mfa-enable-card">
           <CardHeader>
@@ -179,6 +231,29 @@ export default function MfaSetupPage() {
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            {/* 93.2 — backup codes with download option */}
+            <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 space-y-2">
+              <p className="text-sm font-medium flex items-center gap-1.5">
+                <Download className="h-3.5 w-3.5 text-amber-500" />
+                Backup Codes
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Save these backup codes in a secure location. Each code can be used once if you lose access to your
+                authenticator.
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                {["A1B2-C3D4", "E5F6-G7H8", "J9K0-L1M2", "N3P4-Q5R6", "S7T8-U9V0", "W1X2-Y3Z4"].map((code) => (
+                  <code key={code} className="text-xs font-mono bg-muted/30 px-2 py-1 rounded">
+                    {code}
+                  </code>
+                ))}
+              </div>
+              <Button size="sm" variant="outline" className="gap-1 text-xs">
+                <Download className="h-3 w-3" />
+                Download Backup Codes
+              </Button>
             </div>
 
             <div className="space-y-2">

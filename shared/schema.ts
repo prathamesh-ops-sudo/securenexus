@@ -762,6 +762,32 @@ export const entityAliases = pgTable(
   ],
 );
 
+export const entityMergeHistory = pgTable(
+  "entity_merge_history",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
+    targetEntityId: varchar("target_entity_id").notNull(),
+    sourceEntityId: varchar("source_entity_id").notNull(),
+    sourceEntitySnapshot: jsonb("source_entity_snapshot").notNull(),
+    targetEntitySnapshot: jsonb("target_entity_snapshot").notNull(),
+    movedAlertIds: text("moved_alert_ids").array(),
+    movedAliasIds: text("moved_alias_ids").array(),
+    mergedBy: varchar("merged_by"),
+    undone: boolean("undone").default(false),
+    undoneAt: timestamp("undone_at"),
+    undoneBy: varchar("undone_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_entity_merge_history_org").on(table.orgId),
+    index("idx_entity_merge_history_target").on(table.targetEntityId),
+    index("idx_entity_merge_history_source").on(table.sourceEntityId),
+  ],
+);
+
 export const alertEntities = pgTable(
   "alert_entities",
   {
@@ -1950,6 +1976,13 @@ export const insertEntitySchema = createInsertSchema(entities).omit({
   lastSeenAt: true,
 });
 export const insertEntityAliasSchema = createInsertSchema(entityAliases).omit({ id: true, createdAt: true });
+export const insertEntityMergeHistorySchema = createInsertSchema(entityMergeHistory).omit({
+  id: true,
+  createdAt: true,
+  undone: true,
+  undoneAt: true,
+  undoneBy: true,
+});
 export const insertAlertEntitySchema = createInsertSchema(alertEntities).omit({ id: true, createdAt: true });
 export const insertCorrelationClusterSchema = createInsertSchema(correlationClusters).omit({
   id: true,
@@ -2144,6 +2177,8 @@ export type Entity = typeof entities.$inferSelect;
 export type InsertEntity = z.infer<typeof insertEntitySchema>;
 export type EntityAlias = typeof entityAliases.$inferSelect;
 export type InsertEntityAlias = z.infer<typeof insertEntityAliasSchema>;
+export type EntityMergeHistory = typeof entityMergeHistory.$inferSelect;
+export type InsertEntityMergeHistory = z.infer<typeof insertEntityMergeHistorySchema>;
 export type AlertEntity = typeof alertEntities.$inferSelect;
 export type InsertAlertEntity = z.infer<typeof insertAlertEntitySchema>;
 export type CorrelationCluster = typeof correlationClusters.$inferSelect;
@@ -7694,6 +7729,9 @@ export const warRooms = pgTable(
     slackChannelName: text("slack_channel_name"),
     teamsChannelId: text("teams_channel_id"),
     resolution: text("resolution"),
+    templateId: varchar("template_id"), // from which template this room was created (15.3)
+    archivedAt: timestamp("archived_at"), // (15.6)
+    archivedBy: varchar("archived_by"), // (15.6)
     createdAt: timestamp("created_at").defaultNow().notNull(),
     closedAt: timestamp("closed_at"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -7774,6 +7812,9 @@ export const warRoomMessages = pgTable(
     actorId: varchar("actor_id"),
     type: text("type").notNull().default("message"),
     content: text("content").notNull(),
+    contentFormat: text("content_format").notNull().default("plain"), // plain | markdown
+    parentMessageId: varchar("parent_message_id"), // for threading (15.2)
+    attachments: jsonb("attachments").default([]), // file attachments (15.1)
     metadata: jsonb("metadata").default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -7781,6 +7822,7 @@ export const warRoomMessages = pgTable(
     index("idx_wr_messages_room").on(table.warRoomId),
     index("idx_wr_messages_org").on(table.orgId),
     index("idx_wr_messages_created").on(table.createdAt),
+    index("idx_wr_messages_parent").on(table.parentMessageId),
   ],
 );
 
@@ -7864,6 +7906,72 @@ export const warRoomHandoffsRelations = relations(warRoomHandoffs, ({ one }) => 
 
 export type WarRoomHandoff = typeof warRoomHandoffs.$inferSelect;
 export type InsertWarRoomHandoff = typeof warRoomHandoffs.$inferInsert;
+
+// ─── War Room Templates (15.3) ──────────────────────────────────────────────
+export const warRoomTemplates = pgTable(
+  "war_room_templates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    incidentType: text("incident_type").notNull(), // ransomware | data_breach | phishing | ddos | insider_threat | supply_chain | generic
+    severity: text("severity").notNull().default("high"),
+    channels: jsonb("channels").default([]), // pre-configured channels/topics
+    checklist: jsonb("checklist").default([]), // pre-created action items
+    roleAssignments: jsonb("role_assignments").default([]), // default role assignments
+    isBuiltIn: boolean("is_built_in").notNull().default(false),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_wr_templates_org").on(table.orgId), index("idx_wr_templates_type").on(table.incidentType)],
+);
+
+export const warRoomTemplatesRelations = relations(warRoomTemplates, ({ one }) => ({
+  organization: one(organizations, { fields: [warRoomTemplates.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomTemplate = typeof warRoomTemplates.$inferSelect;
+export type InsertWarRoomTemplate = typeof warRoomTemplates.$inferInsert;
+
+// ─── War Room Activity Log (15.5) ───────────────────────────────────────────
+export const warRoomActivityLog = pgTable(
+  "war_room_activity_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    warRoomId: varchar("war_room_id")
+      .notNull()
+      .references(() => warRooms.id),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    action: text("action").notNull(), // joined | left | evidence_pinned | evidence_unpinned | status_changed | playbook_triggered | role_changed | call_started | call_ended | archived | template_applied
+    actorId: varchar("actor_id"),
+    actorName: text("actor_name").notNull(),
+    details: jsonb("details").default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_wr_activity_room").on(table.warRoomId),
+    index("idx_wr_activity_org").on(table.orgId),
+    index("idx_wr_activity_created").on(table.createdAt),
+  ],
+);
+
+export const warRoomActivityLogRelations = relations(warRoomActivityLog, ({ one }) => ({
+  warRoom: one(warRooms, { fields: [warRoomActivityLog.warRoomId], references: [warRooms.id] }),
+  organization: one(organizations, { fields: [warRoomActivityLog.orgId], references: [organizations.id] }),
+}));
+
+export type WarRoomActivity = typeof warRoomActivityLog.$inferSelect;
+export type InsertWarRoomActivity = typeof warRoomActivityLog.$inferInsert;
 
 // ─── Threat Hunting Workbench ───────────────────────────────────────────────
 
@@ -8005,6 +8113,134 @@ export type HuntSchedule = typeof huntSchedules.$inferSelect;
 export type InsertHuntSchedule = typeof huntSchedules.$inferInsert;
 export type HuntPlaybook = typeof huntPlaybooks.$inferSelect;
 export type InsertHuntPlaybook = typeof huntPlaybooks.$inferInsert;
+
+// ─── Threat Hunting Notebooks (16.3) ────────────────────────────────────────
+export const huntNotebooks = pgTable(
+  "hunt_notebooks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    steps: jsonb("steps").default([]), // array of { id, title, queryType, queryText, notes, resultSummary, outputVariables }
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_notebooks_org").on(table.orgId)],
+);
+
+export const huntNotebooksRelations = relations(huntNotebooks, ({ one }) => ({
+  organization: one(organizations, { fields: [huntNotebooks.orgId], references: [organizations.id] }),
+}));
+
+export type HuntNotebook = typeof huntNotebooks.$inferSelect;
+export type InsertHuntNotebook = typeof huntNotebooks.$inferInsert;
+
+// ─── Hunt Result Cache (16.6) ───────────────────────────────────────────────
+export const huntCache = pgTable(
+  "hunt_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    queryHash: text("query_hash").notNull(),
+    queryType: text("query_type").notNull(),
+    queryText: text("query_text").notNull(),
+    resultJson: jsonb("result_json").default({}),
+    eventCount: integer("event_count").notNull().default(0),
+    executionDurationMs: integer("execution_duration_ms"),
+    ttlSeconds: integer("ttl_seconds").notNull().default(3600),
+    hitCount: integer("hit_count").notNull().default(0),
+    cachedAt: timestamp("cached_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => [index("idx_th_cache_org").on(table.orgId), index("idx_th_cache_hash").on(table.queryHash)],
+);
+
+export type HuntCacheEntry = typeof huntCache.$inferSelect;
+export type InsertHuntCacheEntry = typeof huntCache.$inferInsert;
+
+// ─── Hunt Collaboration Sessions (16.4) ─────────────────────────────────────
+export const huntCollaborations = pgTable(
+  "hunt_collaborations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id").references(() => threatHunts.id, { onDelete: "cascade" }),
+    sessionName: text("session_name").notNull(),
+    participants: jsonb("participants").default([]), // array of { userId, name, color, cursorPosition, joinedAt }
+    sharedResults: jsonb("shared_results").default([]),
+    chatMessages: jsonb("chat_messages").default([]), // array of { userId, name, message, timestamp }
+    status: text("status").notNull().default("active"), // active | ended
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    endedAt: timestamp("ended_at"),
+  },
+  (table) => [index("idx_th_collab_org").on(table.orgId), index("idx_th_collab_hunt").on(table.huntId)],
+);
+
+export const huntCollaborationsRelations = relations(huntCollaborations, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [huntCollaborations.huntId], references: [threatHunts.id] }),
+}));
+
+export type HuntCollaboration = typeof huntCollaborations.$inferSelect;
+export type InsertHuntCollaboration = typeof huntCollaborations.$inferInsert;
+
+// ─── Hunt Schedule Drift Detection (16.7) ───────────────────────────────────
+export const huntScheduleDrifts = pgTable(
+  "hunt_schedule_drifts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    scheduleId: uuid("schedule_id").references(() => huntSchedules.id, { onDelete: "cascade" }),
+    huntId: uuid("hunt_id").references(() => threatHunts.id, { onDelete: "cascade" }),
+    previousEventCount: integer("previous_event_count").notNull(),
+    currentEventCount: integer("current_event_count").notNull(),
+    driftPercentage: integer("drift_percentage").notNull(), // percentage change
+    driftDirection: text("drift_direction").notNull(), // increase | decrease | stable
+    isSignificant: boolean("is_significant").notNull().default(false),
+    detectedAt: timestamp("detected_at").defaultNow().notNull(),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+  },
+  (table) => [index("idx_th_drift_org").on(table.orgId), index("idx_th_drift_schedule").on(table.scheduleId)],
+);
+
+export const huntScheduleDriftsRelations = relations(huntScheduleDrifts, ({ one }) => ({
+  schedule: one(huntSchedules, { fields: [huntScheduleDrifts.scheduleId], references: [huntSchedules.id] }),
+  hunt: one(threatHunts, { fields: [huntScheduleDrifts.huntId], references: [threatHunts.id] }),
+}));
+
+export type HuntScheduleDrift = typeof huntScheduleDrifts.$inferSelect;
+export type InsertHuntScheduleDrift = typeof huntScheduleDrifts.$inferInsert;
+
+// ─── Community Hunt Shares (16.10) ──────────────────────────────────────────
+export const communityHuntShares = pgTable(
+  "community_hunt_shares",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    huntId: uuid("hunt_id").references(() => threatHunts.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    queryType: text("query_type").notNull(),
+    queryText: text("query_text").notNull(),
+    category: text("category"),
+    mitreTechniques: jsonb("mitre_techniques").default([]),
+    tags: jsonb("tags").default([]),
+    anonymizedStats: jsonb("anonymized_stats").default({}), // { detectionRate, avgExecutionMs, totalRuns }
+    upvotes: integer("upvotes").notNull().default(0),
+    downloads: integer("downloads").notNull().default(0),
+    sharedBy: text("shared_by"),
+    sharedAt: timestamp("shared_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_th_community_org").on(table.orgId), index("idx_th_community_category").on(table.category)],
+);
+
+export const communityHuntSharesRelations = relations(communityHuntShares, ({ one }) => ({
+  hunt: one(threatHunts, { fields: [communityHuntShares.huntId], references: [threatHunts.id] }),
+}));
+
+export type CommunityHuntShare = typeof communityHuntShares.$inferSelect;
+export type InsertCommunityHuntShare = typeof communityHuntShares.$inferInsert;
 
 // ============================
 // Security Data Lake

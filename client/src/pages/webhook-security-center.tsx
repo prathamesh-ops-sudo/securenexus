@@ -26,6 +26,14 @@ import {
   ShieldAlert,
   Zap,
   ArrowRight,
+  Filter,
+  Code,
+  Copy as CopyIcon,
+  RotateCcw,
+  Layers,
+  Settings,
+  ListFilter,
+  Timer,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +73,45 @@ interface TestResult {
   success: boolean;
   statusCode: number;
   responseBody: string;
+}
+
+interface DeliveryHistoryEntry {
+  id: number;
+  webhookId: number;
+  event: string;
+  payload: Record<string, unknown>;
+  responseStatus: number;
+  responseBody: string;
+  success: boolean;
+  createdAt: string;
+  retryCount: number;
+  responseTimeMs: number | null;
+  payloadSize: number;
+}
+
+interface PayloadTemplate {
+  id: string;
+  name: string;
+  description: string;
+  format: string;
+  sample: Record<string, unknown>;
+}
+
+interface RetryConfig {
+  webhookId: number;
+  maxRetries: number;
+  retryDelaysMs: number[];
+  backoffType: string;
+  deadLetterQueueEnabled: boolean;
+  alertOnMaxRetries: boolean;
+  timeoutMs: number;
+}
+
+interface EventType {
+  id: string;
+  category: string;
+  description: string;
+  default: boolean;
 }
 
 function LoadingSkeleton() {
@@ -283,6 +330,15 @@ function WebhookDetailPanel({
         </div>
       )}
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <RetryConfigPanel webhookId={webhook.id} />
+        <EventFilterPanel webhookId={webhook.id} currentEvents={webhook.events} />
+      </div>
+
+      <Separator />
+
+      <DeliveryHistoryPanel webhookId={webhook.id} />
+
       <Separator />
 
       <div>
@@ -348,6 +404,275 @@ function WebhookDetailPanel({
               </TableBody>
             </Table>
           </ScrollArea>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeliveryHistoryPanel({ webhookId }: { webhookId: number }) {
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const { data: envelope, isLoading } = useQuery<{ data: DeliveryHistoryEntry[] }>({
+    queryKey: ["/api/v1/webhooks", webhookId, "delivery-history", statusFilter],
+    queryFn: async () => {
+      const params = statusFilter !== "all" ? `?status=${statusFilter}` : "";
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch(`/api/v1/webhooks/${webhookId}/delivery-history${params}`, {
+        credentials: "include",
+        headers,
+      });
+      return res.json();
+    },
+  });
+
+  const history = envelope?.data ?? [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium flex items-center gap-2">
+          <Clock className="h-4 w-4 text-muted-foreground" />
+          Delivery History
+        </h4>
+        <div className="flex items-center gap-1">
+          {["all", "success", "failed"].map((f) => (
+            <Button
+              key={f}
+              variant={statusFilter === f ? "default" : "outline"}
+              size="sm"
+              className="h-6 text-[10px] px-2"
+              onClick={() => setStatusFilter(f)}
+            >
+              {f === "all" ? "All" : f === "success" ? "Success" : "Failed"}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {isLoading ? (
+        <div className="flex items-center justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : history.length === 0 ? (
+        <div className="text-center py-6 text-muted-foreground">
+          <Send className="h-6 w-6 mx-auto mb-2 opacity-40" />
+          <p className="text-xs">No deliveries found</p>
+        </div>
+      ) : (
+        <ScrollArea className="h-64">
+          <div className="space-y-2">
+            {history.map((entry) => (
+              <div key={entry.id} className="p-2.5 rounded-lg border border-border/40 bg-card/30">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    {entry.success ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-red-400" />
+                    )}
+                    <Badge variant="secondary" className="text-[10px]">
+                      {entry.event}
+                    </Badge>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-[10px]">
+                  <div>
+                    <span className="text-muted-foreground">Status</span>
+                    <div
+                      className={
+                        entry.responseStatus >= 200 && entry.responseStatus < 300 ? "text-emerald-400" : "text-red-400"
+                      }
+                    >
+                      {entry.responseStatus || "N/A"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Duration</span>
+                    <div>{entry.responseTimeMs !== null ? `${entry.responseTimeMs}ms` : "N/A"}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Retries</span>
+                    <div className={entry.retryCount > 0 ? "text-amber-400" : ""}>{entry.retryCount}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Payload</span>
+                    <div>{entry.payloadSize} bytes</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      )}
+    </div>
+  );
+}
+
+function PayloadTemplatesPanel() {
+  const { data: envelope } = useQuery<{ data: PayloadTemplate[] }>({
+    queryKey: ["/api/v1/webhooks/payload-templates"],
+    queryFn: async () => {
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch("/api/v1/webhooks/payload-templates", { credentials: "include", headers });
+      return res.json();
+    },
+  });
+  const { toast } = useToast();
+  const templates = envelope?.data ?? [];
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium flex items-center gap-2">
+        <Code className="h-4 w-4 text-muted-foreground" />
+        Payload Templates
+      </h4>
+      {templates.map((tpl) => (
+        <Card key={tpl.id} className="glass-card">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <span className="text-sm font-medium">{tpl.name}</span>
+                <p className="text-[10px] text-muted-foreground">{tpl.description}</p>
+              </div>
+              <Badge variant="outline" className="text-[10px]">
+                {tpl.format}
+              </Badge>
+            </div>
+            <div className="relative">
+              <pre className="bg-muted/50 p-2 rounded text-[10px] overflow-x-auto max-h-24">
+                {JSON.stringify(tpl.sample, null, 2)}
+              </pre>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute top-1 right-1 h-5 w-5 p-0"
+                onClick={() => {
+                  navigator.clipboard.writeText(JSON.stringify(tpl.sample, null, 2));
+                  toast({ title: "Copied to clipboard" });
+                }}
+              >
+                <CopyIcon className="h-3 w-3" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function RetryConfigPanel({ webhookId }: { webhookId: number }) {
+  const { data: envelope } = useQuery<{ data: RetryConfig }>({
+    queryKey: ["/api/v1/webhooks", webhookId, "retry-config"],
+    queryFn: async () => {
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch(`/api/v1/webhooks/${webhookId}/retry-config`, { credentials: "include", headers });
+      return res.json();
+    },
+  });
+  const config = envelope?.data;
+
+  if (!config) return null;
+
+  return (
+    <div className="p-3 rounded-lg border border-border/50 bg-card/50">
+      <h4 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+        <RotateCcw className="h-3.5 w-3.5" />
+        Retry Configuration
+      </h4>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <span className="text-muted-foreground">Max Retries</span>
+          <div className="font-medium">{config.maxRetries}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Backoff</span>
+          <div className="font-medium capitalize">{config.backoffType}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Delays</span>
+          <div className="font-medium">{config.retryDelaysMs.map((d) => `${d / 1000}s`).join(", ")}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Timeout</span>
+          <div className="font-medium">{config.timeoutMs / 1000}s</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">DLQ</span>
+          <div className={config.deadLetterQueueEnabled ? "text-emerald-400" : "text-muted-foreground"}>
+            {config.deadLetterQueueEnabled ? "Enabled" : "Disabled"}
+          </div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Alert on Max</span>
+          <div className={config.alertOnMaxRetries ? "text-emerald-400" : "text-muted-foreground"}>
+            {config.alertOnMaxRetries ? "Yes" : "No"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventFilterPanel({ webhookId, currentEvents }: { webhookId: number; currentEvents: string[] }) {
+  const { data: envelope } = useQuery<{ data: { eventTypes: EventType[]; categories: string[] } }>({
+    queryKey: ["/api/v1/webhooks/event-types"],
+    queryFn: async () => {
+      const headers: Record<string, string> = {};
+      try {
+        const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+        if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+      } catch {
+        /* privacy mode */
+      }
+      const res = await fetch("/api/v1/webhooks/event-types", { credentials: "include", headers });
+      return res.json();
+    },
+  });
+  const eventTypes = envelope?.data?.eventTypes ?? [];
+  const activeEvents = currentEvents.length > 0 ? currentEvents : eventTypes.filter((e) => e.default).map((e) => e.id);
+
+  return (
+    <div className="p-3 rounded-lg border border-border/50 bg-card/50">
+      <h4 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+        <ListFilter className="h-3.5 w-3.5" />
+        Event Filters ({activeEvents.length > 0 ? activeEvents.length : "All"})
+      </h4>
+      <div className="flex flex-wrap gap-1">
+        {eventTypes.slice(0, 8).map((evt) => (
+          <Badge
+            key={evt.id}
+            variant={activeEvents.includes(evt.id) ? "default" : "outline"}
+            className="text-[10px] cursor-default"
+          >
+            {evt.id}
+          </Badge>
+        ))}
+        {eventTypes.length > 8 && (
+          <Badge variant="outline" className="text-[10px]">
+            +{eventTypes.length - 8} more
+          </Badge>
         )}
       </div>
     </div>
@@ -613,6 +938,11 @@ export default function WebhookSecurityCenterPage() {
         <div className="lg:col-span-2">
           <Card className="glass-card">
             <CardContent className="p-4">
+              {!selectedWebhook && (
+                <div className="mb-4">
+                  <PayloadTemplatesPanel />
+                </div>
+              )}
               {selectedWebhook ? (
                 <WebhookDetailPanel
                   webhook={selectedWebhook}

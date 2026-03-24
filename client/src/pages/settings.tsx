@@ -22,6 +22,19 @@ import {
   ChevronRight,
   Plus,
   AlertTriangle,
+  User,
+  Bell,
+  Palette,
+  Laptop,
+  Smartphone,
+  Monitor,
+  MapPin,
+  Clock,
+  LogOut,
+  Upload,
+  Fingerprint,
+  KeyRound,
+  MessageSquare,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/i18n";
@@ -48,6 +61,45 @@ const ROLES = [
     color: "text-yellow-400",
   },
   { name: "Viewer", description: "Read-only access to dashboards, alerts, and incidents", color: "text-blue-400" },
+];
+
+/* 93.1 — settings categories for side navigation */
+const SETTINGS_CATEGORIES = [
+  { key: "profile", label: "Profile", icon: User, description: "Name, email, avatar" },
+  { key: "security", label: "Security", icon: Shield, description: "MFA, sessions, passwords" },
+  { key: "notifications", label: "Notifications", icon: Bell, description: "Email, in-app, Slack" },
+  { key: "appearance", label: "Appearance", icon: Palette, description: "Theme, density, language" },
+  { key: "integrations", label: "Integrations", icon: Key, description: "API keys, webhooks" },
+];
+
+/* 93.2 — supported MFA methods */
+const MFA_METHODS = [
+  { key: "totp", label: "Authenticator App", icon: Smartphone, description: "Google Authenticator, Authy, 1Password" },
+  { key: "sms", label: "SMS", icon: MessageSquare, description: "Receive codes via text message" },
+  { key: "webauthn", label: "Hardware Security Key", icon: Fingerprint, description: "YubiKey, FIDO2/WebAuthn" },
+];
+
+/* 93.4 — notification preference categories */
+const NOTIFICATION_CATEGORIES = [
+  {
+    type: "critical_alerts",
+    label: "Critical Alerts",
+    channels: "Email + Push",
+    description: "Severity 1 incidents, active breaches",
+  },
+  {
+    type: "medium_alerts",
+    label: "Medium Alerts",
+    channels: "In-app only",
+    description: "Warnings, policy violations",
+  },
+  {
+    type: "status_updates",
+    label: "Status Updates",
+    channels: "Daily digest",
+    description: "Scan results, compliance changes",
+  },
+  { type: "team_activity", label: "Team Activity", channels: "In-app only", description: "Member joins, role changes" },
 ];
 
 const THREAT_INTEL_PROVIDERS = [
@@ -277,16 +329,46 @@ export default function SettingsPage() {
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
 
+      {/* 93.1 — settings categories navigation */}
       <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Quick Navigation</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {SETTINGS_CATEGORIES.map((cat) => (
+              <button
+                key={cat.key}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 hover:bg-muted/50 border border-transparent hover:border-border transition-colors text-left"
+                onClick={() => document.getElementById(`settings-${cat.key}`)?.scrollIntoView({ behavior: "smooth" })}
+              >
+                <cat.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="text-xs font-medium">{cat.label}</p>
+                  <p className="text-[10px] text-muted-foreground">{cat.description}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card id="settings-profile">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold">Profile</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4">
-            <Avatar className="h-14 w-14">
-              <AvatarImage src={user?.profileImageUrl || ""} />
-              <AvatarFallback>{initials}</AvatarFallback>
-            </Avatar>
+            <div className="relative group">
+              <Avatar className="h-14 w-14">
+                <AvatarImage src={user?.profileImageUrl || ""} />
+                <AvatarFallback>{initials}</AvatarFallback>
+              </Avatar>
+              {/* 93.6 — profile picture upload hint */}
+              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                <Upload className="h-4 w-4 text-white" />
+              </div>
+            </div>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold" data-testid="text-user-name">
@@ -304,12 +386,177 @@ export default function SettingsPage() {
               <div className="text-sm text-muted-foreground" data-testid="text-user-email">
                 {user?.email || "No email"}
               </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Hover avatar to upload a profile picture. Gravatar fallback is supported.
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* 93.2 — MFA methods overview */}
+      <Card id="settings-security">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            Security & Authentication
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {MFA_METHODS.map((method) => (
+              <div key={method.key} className="p-3 rounded-md bg-muted/30 space-y-1">
+                <div className="flex items-center gap-2">
+                  <method.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium">{method.label}</span>
+                  {method.key === "totp" && (
+                    <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400">
+                      Active
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground">{method.description}</p>
+              </div>
+            ))}
+          </div>
+          {/* 93.5 — WebAuthn/FIDO2 note */}
+          <div className="p-2 rounded-md bg-muted/30">
+            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <Fingerprint className="h-2.5 w-2.5" />
+              Hardware security keys (FIDO2/WebAuthn) provide phishing-resistant MFA. Required for FedRAMP &amp; CJIS
+              compliance.
+            </p>
+          </div>
+          <Link href="/mfa-setup">
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <KeyRound className="h-3.5 w-3.5" />
+              Configure MFA
+              <ArrowUpRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+
+      {/* 93.3 — active session management */}
       <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Monitor className="h-4 w-4 text-muted-foreground" />
+            Active Sessions
+          </CardTitle>
+          <Button size="sm" variant="outline" className="text-xs gap-1">
+            <LogOut className="h-3 w-3" />
+            Log out all other sessions
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {[
+            { device: "Chrome on macOS", ip: "203.0.113.42", location: "Mumbai, IN", lastActive: "Now", current: true },
+            {
+              device: "Firefox on Windows",
+              ip: "198.51.100.7",
+              location: "Pune, IN",
+              lastActive: "2 hours ago",
+              current: false,
+            },
+            {
+              device: "Safari on iPhone",
+              ip: "192.0.2.15",
+              location: "Delhi, IN",
+              lastActive: "1 day ago",
+              current: false,
+            },
+          ].map((session) => (
+            <div key={session.ip} className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
+              <div className="flex items-center gap-3">
+                {session.device.includes("iPhone") ? (
+                  <Smartphone className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <Laptop className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <p className="text-xs font-medium flex items-center gap-1.5">
+                    {session.device}
+                    {session.current && (
+                      <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400">
+                        Current
+                      </Badge>
+                    )}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-2">
+                    <span className="font-mono">{session.ip}</span>
+                    <span className="flex items-center gap-0.5">
+                      <MapPin className="h-2.5 w-2.5" />
+                      {session.location}
+                    </span>
+                    <span className="flex items-center gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />
+                      {session.lastActive}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              {!session.current && (
+                <Button size="sm" variant="ghost" className="text-xs text-red-400 hover:text-red-300">
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* 93.4 — notification preferences */}
+      <Card id="settings-notifications">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            Notification Preferences
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {NOTIFICATION_CATEGORIES.map((cat) => (
+            <div key={cat.type} className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/30">
+              <div>
+                <p className="text-xs font-medium">{cat.label}</p>
+                <p className="text-[10px] text-muted-foreground">{cat.description}</p>
+              </div>
+              <Badge variant="outline" className="text-[10px]">
+                {cat.channels}
+              </Badge>
+            </div>
+          ))}
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Control notification volume per type. Critical alerts always sent via email + push.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card id="settings-appearance">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Palette className="h-4 w-4 text-muted-foreground" />
+            Appearance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Theme", value: "System (Dark)", desc: "Matches OS preference" },
+              { label: "Density", value: "Comfortable", desc: "Default spacing" },
+              { label: "Language", value: "English", desc: "Interface language" },
+            ].map((pref) => (
+              <div key={pref.label} className="p-3 rounded-md bg-muted/30">
+                <p className="text-xs font-medium">{pref.label}</p>
+                <p className="text-[10px] text-muted-foreground">{pref.value}</p>
+                <p className="text-[10px] text-muted-foreground">{pref.desc}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card id="settings-integrations">
         <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
           <CardTitle className="text-sm font-semibold">Roles & Permissions</CardTitle>
           <Badge variant="secondary" className="text-[10px]">

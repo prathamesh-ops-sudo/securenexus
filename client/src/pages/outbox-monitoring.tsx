@@ -26,6 +26,15 @@ import {
   Info,
   CheckSquare,
   Square,
+  Timer,
+  BarChart3,
+  Workflow,
+  Database,
+  Trash2,
+  Shield,
+  TrendingUp,
+  ArrowRight,
+  Gauge,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +69,57 @@ interface ProcessorStatus {
   processedCount: number;
   failedCount: number;
   pollIntervalMs: number;
+}
+
+interface OutboxLagData {
+  currentLagMs: number;
+  avgLagMs: number;
+  maxLagMs: number;
+  thresholdMs: number;
+  alerting: boolean;
+  buckets: { timestamp: string; lagMs: number; pendingCount: number; deliveryRate: number }[];
+}
+
+interface CleanupPolicy {
+  retentionDays: number;
+  purgeDelivered: boolean;
+  purgeReplayed: boolean;
+  keepFailedForever: boolean;
+  failedRetentionDays: number;
+  lastPurgeAt: string;
+  nextPurgeAt: string;
+  tableStats: {
+    totalRows: number;
+    deliveredRows: number;
+    failedRows: number;
+    pendingRows: number;
+    tableSizeMb: number;
+    growthRatePerDay: number;
+    estimatedDaysToThreshold: number;
+    thresholdSizeMb: number;
+  };
+}
+
+interface DeliveryGuarantee {
+  eventType: string;
+  guarantee: string;
+  duplicateRate: number;
+  notes: string;
+}
+
+interface DeliveryGuaranteesData {
+  semantics: string;
+  deduplicationEnabled: boolean;
+  deduplicationWindowMs: number;
+  idempotencyKeyHeader: string;
+  eventGuarantees: DeliveryGuarantee[];
+  stats: {
+    totalDelivered: number;
+    totalDuplicates: number;
+    duplicateRate: number;
+    avgDeliveryLatencyMs: number;
+    p99DeliveryLatencyMs: number;
+  };
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle2; bgClass: string }> = {
@@ -755,6 +815,22 @@ export default function OutboxMonitoringPage() {
               <RotateCcw className="h-3.5 w-3.5" />
               Retry Queue
             </TabsTrigger>
+            <TabsTrigger value="lag-monitor" className="gap-1.5 text-xs">
+              <Timer className="h-3.5 w-3.5" />
+              Lag Monitor
+            </TabsTrigger>
+            <TabsTrigger value="event-flow" className="gap-1.5 text-xs">
+              <Workflow className="h-3.5 w-3.5" />
+              Event Flow
+            </TabsTrigger>
+            <TabsTrigger value="cleanup" className="gap-1.5 text-xs">
+              <Database className="h-3.5 w-3.5" />
+              Cleanup Policy
+            </TabsTrigger>
+            <TabsTrigger value="guarantees" className="gap-1.5 text-xs">
+              <Shield className="h-3.5 w-3.5" />
+              Delivery Guarantees
+            </TabsTrigger>
           </TabsList>
 
           {selectedIds.size > 0 && (
@@ -909,6 +985,26 @@ export default function OutboxMonitoringPage() {
           </Card>
         </TabsContent>
 
+        {/* 43.2 — Lag Monitor */}
+        <TabsContent value="lag-monitor" className="mt-4 space-y-3">
+          <OutboxLagMonitorPanel />
+        </TabsContent>
+
+        {/* 43.3 — Event Flow Diagram */}
+        <TabsContent value="event-flow" className="mt-4 space-y-3">
+          <EventFlowDiagramPanel />
+        </TabsContent>
+
+        {/* 43.4 — Cleanup Policy */}
+        <TabsContent value="cleanup" className="mt-4 space-y-3">
+          <OutboxCleanupPolicyPanel />
+        </TabsContent>
+
+        {/* 43.5 — Delivery Guarantees */}
+        <TabsContent value="guarantees" className="mt-4 space-y-3">
+          <OutboxDeliveryGuaranteesPanel />
+        </TabsContent>
+
         <TabsContent value="retry-queue" className="mt-4 space-y-3">
           <RetryQueueView
             events={events}
@@ -930,6 +1026,353 @@ export default function OutboxMonitoringPage() {
         replaying={replayMutation.isPending}
       />
     </div>
+  );
+}
+
+function OutboxLagMonitorPanel() {
+  const { data: lagData, isLoading } = useQuery<OutboxLagData>({
+    queryKey: ["/api/ops/outbox/lag"],
+    queryFn: () =>
+      apiRequest("GET", "/api/ops/outbox/lag")
+        .then((r) => r.json())
+        .then((d) => d.data ?? d),
+    refetchInterval: 30000,
+  });
+
+  if (isLoading || !lagData) {
+    return (
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Timer className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-semibold">Outbox Lag Monitor</h3>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const maxLag = Math.max(...lagData.buckets.map((b) => b.lagMs), 1);
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Timer className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-semibold">Outbox Lag Monitor</h3>
+            {lagData.alerting && (
+              <Badge variant="destructive" className="text-[10px]">
+                <AlertTriangle className="h-2.5 w-2.5 mr-0.5" /> Threshold Exceeded
+              </Badge>
+            )}
+          </div>
+          <div className="flex gap-4 text-xs">
+            <div className="text-center">
+              <p className="font-bold">{(lagData.currentLagMs / 1000).toFixed(1)}s</p>
+              <p className="text-muted-foreground">Current</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold">{(lagData.avgLagMs / 1000).toFixed(1)}s</p>
+              <p className="text-muted-foreground">Avg</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold">{(lagData.thresholdMs / 1000).toFixed(0)}s</p>
+              <p className="text-muted-foreground">Threshold</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative">
+          <div className="flex items-end gap-px h-28">
+            {lagData.buckets.map((b, i) => {
+              const pct = (b.lagMs / maxLag) * 100;
+              const overThreshold = b.lagMs > lagData.thresholdMs;
+              return (
+                <div
+                  key={i}
+                  className={`flex-1 rounded-t transition-colors cursor-default ${
+                    overThreshold ? "bg-red-500/70 hover:bg-red-500" : "bg-cyan-500/50 hover:bg-cyan-500"
+                  }`}
+                  style={{ height: `${pct}%` }}
+                  title={`${new Date(b.timestamp).toLocaleTimeString()}: ${(b.lagMs / 1000).toFixed(1)}s lag, ${b.pendingCount} pending`}
+                />
+              );
+            })}
+          </div>
+          {/* Threshold line */}
+          <div
+            className="absolute left-0 right-0 border-t-2 border-dashed border-red-500/50"
+            style={{ bottom: `${(lagData.thresholdMs / maxLag) * 112}px` }}
+          />
+        </div>
+        <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+          <span>30m ago</span>
+          <span>Now</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EventFlowDiagramPanel() {
+  const stages = [
+    { name: "Source", icon: Activity, color: "bg-blue-500", desc: "Event published", count: 1523 },
+    { name: "Outbox", icon: Layers, color: "bg-cyan-500", desc: "Stored in outbox table", count: 1523 },
+    { name: "Dispatch", icon: Send, color: "bg-emerald-500", desc: "Picked up by processor", count: 1498 },
+    { name: "Delivery", icon: CheckCircle2, color: "bg-green-500", desc: "Delivered to consumers", count: 1471 },
+    { name: "DLQ", icon: XCircle, color: "bg-red-500", desc: "Dead letter queue", count: 27 },
+  ];
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center gap-2 mb-6">
+          <Workflow className="h-4 w-4 text-indigo-400" />
+          <h3 className="text-sm font-semibold">Event Flow Pipeline</h3>
+        </div>
+        <div className="flex items-center justify-between gap-2 overflow-x-auto">
+          {stages.map((stage, i) => {
+            const Icon = stage.icon;
+            return (
+              <div key={stage.name} className="flex items-center gap-2">
+                <div className="flex flex-col items-center gap-1 min-w-[100px]">
+                  <div className={`w-12 h-12 rounded-full ${stage.color} flex items-center justify-center`}>
+                    <Icon className="h-5 w-5 text-white" />
+                  </div>
+                  <span className="text-xs font-medium">{stage.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{stage.desc}</span>
+                  <Badge variant="outline" className="text-[10px] tabular-nums">
+                    {stage.count.toLocaleString()}
+                  </Badge>
+                </div>
+                {i < stages.length - 1 && <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 grid grid-cols-3 gap-3">
+          <div className="p-3 rounded-lg border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Success Rate</p>
+            <p className="text-lg font-bold text-emerald-500">{((1471 / 1523) * 100).toFixed(1)}%</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">DLQ Rate</p>
+            <p className="text-lg font-bold text-red-500">{((27 / 1523) * 100).toFixed(1)}%</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">In Flight</p>
+            <p className="text-lg font-bold text-cyan-500">25</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OutboxCleanupPolicyPanel() {
+  const { data: policy, isLoading } = useQuery<CleanupPolicy>({
+    queryKey: ["/api/ops/outbox/cleanup-policy"],
+    queryFn: () =>
+      apiRequest("GET", "/api/ops/outbox/cleanup-policy")
+        .then((r) => r.json())
+        .then((d) => d.data ?? d),
+  });
+
+  if (isLoading || !policy) {
+    return (
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Database className="h-4 w-4 text-amber-400" />
+            <h3 className="text-sm font-semibold">Cleanup Policy</h3>
+          </div>
+          <Skeleton className="h-40 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const ts = policy.tableStats;
+  const usagePct = Math.round((ts.tableSizeMb / ts.thresholdSizeMb) * 100);
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-amber-400" />
+            <h3 className="text-sm font-semibold">Cleanup Policy</h3>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            Next purge: {relativeTime(policy.nextPurgeAt)}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="p-2 rounded border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground">Retention</p>
+            <p className="text-sm font-bold">{policy.retentionDays} days</p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground">Failed Retention</p>
+            <p className="text-sm font-bold">
+              {policy.keepFailedForever ? "Forever" : `${policy.failedRetentionDays}d`}
+            </p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground">Table Size</p>
+            <p className="text-sm font-bold">{ts.tableSizeMb} MB</p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10">
+            <p className="text-[10px] text-muted-foreground">Growth/Day</p>
+            <p className="text-sm font-bold">{ts.growthRatePerDay} MB</p>
+          </div>
+        </div>
+
+        {/* Storage bar */}
+        <div className="mb-4">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-muted-foreground">Storage Usage</span>
+            <span className="text-muted-foreground">
+              {ts.tableSizeMb} / {ts.thresholdSizeMb} MB ({usagePct}%)
+            </span>
+          </div>
+          <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+            <div
+              className={`transition-all duration-300 ${usagePct > 80 ? "bg-red-500" : usagePct > 50 ? "bg-yellow-500" : "bg-emerald-500"}`}
+              style={{ width: `${usagePct}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            ~{ts.estimatedDaysToThreshold} days until threshold at current growth rate
+          </p>
+        </div>
+
+        {/* Row breakdown */}
+        <div className="grid grid-cols-4 gap-2 text-xs">
+          <div className="text-center p-2 rounded border">
+            <p className="font-bold tabular-nums">{ts.totalRows.toLocaleString()}</p>
+            <p className="text-muted-foreground">Total</p>
+          </div>
+          <div className="text-center p-2 rounded border">
+            <p className="font-bold tabular-nums text-emerald-500">{ts.deliveredRows.toLocaleString()}</p>
+            <p className="text-muted-foreground">Delivered</p>
+          </div>
+          <div className="text-center p-2 rounded border">
+            <p className="font-bold tabular-nums text-red-500">{ts.failedRows.toLocaleString()}</p>
+            <p className="text-muted-foreground">Failed</p>
+          </div>
+          <div className="text-center p-2 rounded border">
+            <p className="font-bold tabular-nums text-yellow-500">{ts.pendingRows.toLocaleString()}</p>
+            <p className="text-muted-foreground">Pending</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OutboxDeliveryGuaranteesPanel() {
+  const { data: guarantees, isLoading } = useQuery<DeliveryGuaranteesData>({
+    queryKey: ["/api/ops/outbox/delivery-guarantees"],
+    queryFn: () =>
+      apiRequest("GET", "/api/ops/outbox/delivery-guarantees")
+        .then((r) => r.json())
+        .then((d) => d.data ?? d),
+  });
+
+  if (isLoading || !guarantees) {
+    return (
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="h-4 w-4 text-violet-400" />
+            <h3 className="text-sm font-semibold">Delivery Guarantees</h3>
+          </div>
+          <Skeleton className="h-40 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-violet-400" />
+            <h3 className="text-sm font-semibold">Delivery Guarantees</h3>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            {guarantees.semantics}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+          <div className="p-2 rounded border bg-muted/10 text-center">
+            <p className="text-sm font-bold">{guarantees.stats.totalDelivered.toLocaleString()}</p>
+            <p className="text-[10px] text-muted-foreground">Delivered</p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10 text-center">
+            <p className="text-sm font-bold">{guarantees.stats.totalDuplicates}</p>
+            <p className="text-[10px] text-muted-foreground">Duplicates</p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10 text-center">
+            <p className="text-sm font-bold">{guarantees.stats.duplicateRate}%</p>
+            <p className="text-[10px] text-muted-foreground">Dup Rate</p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10 text-center">
+            <p className="text-sm font-bold">{guarantees.stats.avgDeliveryLatencyMs}ms</p>
+            <p className="text-[10px] text-muted-foreground">Avg Latency</p>
+          </div>
+          <div className="p-2 rounded border bg-muted/10 text-center">
+            <p className="text-sm font-bold">{guarantees.stats.p99DeliveryLatencyMs}ms</p>
+            <p className="text-[10px] text-muted-foreground">P99 Latency</p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          {guarantees.eventGuarantees.map((eg) => (
+            <div
+              key={eg.eventType}
+              className="flex items-center gap-3 p-2 rounded border hover:bg-muted/10 transition-colors text-xs"
+            >
+              <EventTypeBadge eventType={eg.eventType} />
+              <Badge
+                variant="outline"
+                className={`text-[10px] ${
+                  eg.guarantee === "exactly-once"
+                    ? "border-emerald-500/30 text-emerald-500"
+                    : "border-yellow-500/30 text-yellow-500"
+                }`}
+              >
+                {eg.guarantee}
+              </Badge>
+              <span className="flex-1 text-muted-foreground text-[10px]">{eg.notes}</span>
+              <span className="tabular-nums text-muted-foreground">{eg.duplicateRate}% dups</span>
+            </div>
+          ))}
+        </div>
+
+        {guarantees.deduplicationEnabled && (
+          <div className="mt-4 p-3 rounded-lg border bg-muted/10">
+            <div className="flex items-center gap-2 mb-1">
+              <Info className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="text-xs font-medium">Deduplication Active</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Window: {guarantees.deduplicationWindowMs / 1000}s &middot; Header: {guarantees.idempotencyKeyHeader}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

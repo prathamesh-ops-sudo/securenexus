@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId, requirePermission } from "../rbac";
+import { resolveOrgContext, requireOrgId, requirePermission, requireMinRole } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, gte, lte, count, ilike, or } from "drizzle-orm";
@@ -938,6 +938,154 @@ export function registerEmailSecurityRoutes(app: Express): void {
       } catch (err) {
         log.error("Failed to sync Gmail", { error: String(err) });
         res.status(500).json({ error: "Failed to sync Gmail" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 72.5 — Email Gateway Integration Status
+  // ==========================================================================
+
+  // GET /api/email-security/integration-status
+  app.get(
+    "/api/email-security/integration-status",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        // Check integration configs from email policies (integration type policies)
+        const [integrationPolicies] = await Promise.all([
+          db
+            .select()
+            .from(emailPolicies)
+            .where(and(eq(emailPolicies.orgId, orgId), eq(emailPolicies.policyType, "integration"))),
+        ]);
+
+        const gateways = [
+          { provider: "microsoft_365", label: "Microsoft 365", configured: false, lastSync: null as string | null },
+          {
+            provider: "google_workspace",
+            label: "Google Workspace",
+            configured: false,
+            lastSync: null as string | null,
+          },
+          {
+            provider: "exchange_onprem",
+            label: "Exchange On-Premises",
+            configured: false,
+            lastSync: null as string | null,
+          },
+          { provider: "proofpoint", label: "Proofpoint", configured: false, lastSync: null as string | null },
+          { provider: "mimecast", label: "Mimecast", configured: false, lastSync: null as string | null },
+        ];
+
+        for (const policy of integrationPolicies) {
+          const match = gateways.find((g) => g.provider === policy.name);
+          if (match) {
+            match.configured = policy.enabled;
+            match.lastSync = policy.updatedAt ? new Date(policy.updatedAt).toISOString() : null;
+          }
+        }
+
+        res.json({
+          gateways,
+          totalConfigured: gateways.filter((g) => g.configured).length,
+        });
+      } catch (err) {
+        log.error("Failed to check email integration status", { error: String(err) });
+        res.status(500).json({ error: "Failed to check email integration status" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 72.6 — Retroactive IOC Scan Status
+  // ==========================================================================
+
+  // GET /api/email-security/retroactive-scan-history
+  app.get(
+    "/api/email-security/retroactive-scan-history",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        // Get recent retroactive IOC scan findings
+        const scanFindings = await db
+          .select()
+          .from(emailFindings)
+          .where(and(eq(emailFindings.orgId, orgId), eq(emailFindings.findingType, "retroactive_ioc_match")))
+          .orderBy(desc(emailFindings.createdAt))
+          .limit(50);
+
+        res.json({
+          recentMatches: scanFindings,
+          totalMatches: scanFindings.length,
+        });
+      } catch (err) {
+        log.error("Failed to get retroactive scan history", { error: String(err) });
+        res.status(500).json({ error: "Failed to get retroactive scan history" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 72.7 — Email Authentication Verification
+  // ==========================================================================
+
+  // GET /api/email-security/auth-compliance
+  app.get(
+    "/api/email-security/auth-compliance",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+        // Get email messages and check auth results
+        const messages = await db
+          .select()
+          .from(emailMessages)
+          .where(and(eq(emailMessages.orgId, orgId), gte(emailMessages.receivedAt, thirtyDaysAgo)))
+          .limit(1000);
+
+        let spfPass = 0,
+          spfFail = 0;
+        let dkimPass = 0,
+          dkimFail = 0;
+        let dmarcPass = 0,
+          dmarcFail = 0;
+
+        for (const msg of messages) {
+          const auth = (msg as Record<string, unknown>).authResults as Record<string, string> | null;
+          if (!auth) continue;
+          if (auth.spf === "pass") spfPass++;
+          else spfFail++;
+          if (auth.dkim === "pass") dkimPass++;
+          else dkimFail++;
+          if (auth.dmarc === "pass") dmarcPass++;
+          else dmarcFail++;
+        }
+
+        const total = messages.length || 1;
+        res.json({
+          totalAnalyzed: messages.length,
+          spf: { pass: spfPass, fail: spfFail, rate: Math.round((spfPass / total) * 100) },
+          dkim: { pass: dkimPass, fail: dkimFail, rate: Math.round((dkimPass / total) * 100) },
+          dmarc: { pass: dmarcPass, fail: dmarcFail, rate: Math.round((dmarcPass / total) * 100) },
+          overallCompliance: Math.round(((spfPass + dkimPass + dmarcPass) / (total * 3)) * 100),
+        });
+      } catch (err) {
+        log.error("Failed to get email auth compliance", { error: String(err) });
+        res.status(500).json({ error: "Failed to get email auth compliance" });
       }
     },
   );

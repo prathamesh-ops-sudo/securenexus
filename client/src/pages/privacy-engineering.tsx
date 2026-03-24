@@ -94,6 +94,14 @@ interface Dashboard {
     dsarTypes: string[];
     jurisdictions: string[];
   };
+  // 70.1 — Data map: asset type breakdown
+  assetTypeBreakdown?: Record<string, number>;
+  // 70.3 — Consent purpose breakdown
+  consentPurposeBreakdown?: Record<string, number>;
+  // 70.5 — Automated discovery stats
+  discoveryStats?: { lastScanAt: string | null; totalFindings: number; autoClassified: number };
+  // 70.6 — Retention enforcement summary
+  retentionSummary?: { withRetention: number; withoutRetention: number; expiredRetention: number };
 }
 
 interface DataAsset {
@@ -463,6 +471,116 @@ function OverviewTab() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 70.1 — Data Map Visualization: Asset Type Breakdown */}
+      {d?.assetTypeBreakdown && Object.keys(d.assetTypeBreakdown).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Data Map — Asset Type Breakdown</CardTitle>
+            <CardDescription>Distribution of data assets by type across your infrastructure</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Object.entries(d.assetTypeBreakdown).map(([type, cnt]) => (
+                <div key={type} className="p-3 border border-border/50 rounded-lg text-center">
+                  <p className="text-lg font-semibold">{cnt as number}</p>
+                  <p className="text-xs text-muted-foreground">{type.replace(/_/g, " ")}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 70.3 — Consent Management: Purpose Breakdown */}
+      {d?.consentPurposeBreakdown && Object.keys(d.consentPurposeBreakdown).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Consent Purpose Dashboard</CardTitle>
+            <CardDescription>Active consent records grouped by purpose</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(d.consentPurposeBreakdown).map(([purpose, cnt]) => (
+                <div
+                  key={purpose}
+                  className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-blue-400" />
+                    <span className="text-sm">{purpose.replace(/_/g, " ")}</span>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {cnt as number} consents
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 70.5 — Automated Data Discovery Stats */}
+      {d?.discoveryStats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Automated Discovery</CardTitle>
+            <CardDescription>Data discovery scan statistics and auto-classification metrics</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold">{d.discoveryStats.totalFindings}</p>
+                <p className="text-xs text-muted-foreground">Total Findings</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-400">{d.discoveryStats.autoClassified}</p>
+                <p className="text-xs text-muted-foreground">Auto-Classified</p>
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  {d.discoveryStats.lastScanAt
+                    ? `Last scan: ${new Date(d.discoveryStats.lastScanAt).toLocaleDateString()}`
+                    : "No scans run yet"}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 70.6 — Data Retention Enforcement Summary */}
+      {d?.retentionSummary && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Data Retention Enforcement</CardTitle>
+            <CardDescription>Retention policy coverage and expiration tracking</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-400">{d.retentionSummary.withRetention}</p>
+                <p className="text-xs text-muted-foreground">With Retention Policy</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-yellow-400">{d.retentionSummary.withoutRetention}</p>
+                <p className="text-xs text-muted-foreground">No Retention Policy</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-red-400">{d.retentionSummary.expiredRetention}</p>
+                <p className="text-xs text-muted-foreground">Expired / Overdue</p>
+              </div>
+            </div>
+            {d.retentionSummary.withoutRetention > 0 && (
+              <p className="text-xs text-amber-400 mt-3">
+                <AlertTriangle className="h-3 w-3 inline mr-1" />
+                {d.retentionSummary.withoutRetention} asset(s) lack a retention policy — consider adding one to ensure
+                compliance.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Scans */}
       <Card>

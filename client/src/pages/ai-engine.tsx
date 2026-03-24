@@ -29,6 +29,16 @@ import {
   Eye,
   MessageSquare,
   RotateCcw,
+  FileDown,
+  Calendar,
+  Database,
+  Layers,
+  Settings2,
+  ShieldCheck,
+  Play,
+  Ban,
+  Clock,
+  Info,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,9 +47,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { SeverityBadge } from "@/components/security-badges";
 import type { Alert } from "@shared/schema";
 
@@ -122,6 +135,448 @@ interface AIHealth {
   error?: string;
 }
 
+// ── 30.1-30.4 AI Investigation Improvement Interfaces ──
+interface InvestigationHistoryItem {
+  id: string;
+  incident_id: string;
+  role: string;
+  content: string;
+  created_at: string;
+}
+
+interface ConfidenceIndicator {
+  incidentId: string;
+  confidenceScore: number;
+  confidenceLevel: "high" | "medium" | "low";
+  factors: { factor: string; weight: number; present: boolean; explanation: string }[];
+  evidenceSummary: {
+    alertCount: number;
+    sourceCount: number;
+    hasNarrative: boolean;
+    hasMitre: boolean;
+    hasIocs: boolean;
+    alertDiversity: number;
+  };
+}
+
+interface DataSourceInfo {
+  id: string;
+  name: string;
+  status: string;
+  recordCount: number;
+  lastSync: string;
+}
+
+interface AIModel {
+  id: string;
+  provider: string;
+  name: string;
+  tier: string;
+  capabilities: string[];
+  maxTokens: number;
+  costPer1kTokens: number;
+  status: string;
+}
+
+interface ResponseActionProposal {
+  id: string;
+  actionType: string;
+  target: string;
+  status: string;
+  requiresApproval: boolean;
+  riskLevel: string;
+  estimatedImpact: string;
+  rollbackPlan: string;
+  proposedAt: string;
+}
+
+interface HallucinationResult {
+  verificationRate: number;
+  riskLevel: string;
+  totalClaims: number;
+  verifiedClaims: number;
+  unverifiedClaims: number;
+  findings: { claim: string; verified: boolean; source: string; explanation: string }[];
+  recommendation: string;
+}
+
+// ── 30.1 SSE Streaming Progressive Markdown Renderer ──
+function StreamingMarkdownRenderer({ content }: { content: string }) {
+  // Progressive markdown: render headers, bullets, code blocks, tables
+  const lines = content.split("\n");
+  return (
+    <div className="space-y-1 text-sm font-mono">
+      {lines.map((line, i) => {
+        if (line.startsWith("### "))
+          return (
+            <h3 key={i} className="text-base font-bold mt-3 mb-1">
+              {line.slice(4)}
+            </h3>
+          );
+        if (line.startsWith("## "))
+          return (
+            <h2 key={i} className="text-lg font-bold mt-4 mb-1">
+              {line.slice(3)}
+            </h2>
+          );
+        if (line.startsWith("# "))
+          return (
+            <h1 key={i} className="text-xl font-bold mt-4 mb-2">
+              {line.slice(2)}
+            </h1>
+          );
+        if (line.startsWith("- ") || line.startsWith("* "))
+          return (
+            <li key={i} className="ml-4 list-disc text-muted-foreground">
+              {line.slice(2)}
+            </li>
+          );
+        if (line.startsWith("```")) return <div key={i} className="border-t border-muted-foreground/20 my-1" />;
+        if (line.startsWith("|"))
+          return (
+            <div key={i} className="font-mono text-xs bg-muted/30 px-2 py-0.5 rounded">
+              {line}
+            </div>
+          );
+        if (line.startsWith("> "))
+          return (
+            <blockquote key={i} className="border-l-2 border-primary/40 pl-3 text-muted-foreground italic">
+              {line.slice(2)}
+            </blockquote>
+          );
+        if (line.trim() === "") return <div key={i} className="h-1" />;
+        return (
+          <p key={i} className="text-muted-foreground leading-relaxed">
+            {line}
+          </p>
+        );
+      })}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.2 Investigation History Search
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-investigation-history">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Investigation History</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Search past AI investigations by keyword, date range, or incident ID
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Input placeholder="Search keyword..." className="h-8 text-xs" data-testid="input-history-keyword" />
+            <Input type="date" className="h-8 text-xs" data-testid="input-history-date-from" />
+            <Input placeholder="Incident ID..." className="h-8 text-xs" data-testid="input-history-incident-id" />
+          </div>
+          <div className="text-xs text-muted-foreground text-center py-4">
+            <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+            Enter search criteria above to browse investigation history
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.3 Confidence Indicators
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-confidence-indicators">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Confidence Indicators</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI findings are scored across multiple evidence factors with explainability
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {[
+              { factor: "Multiple Sources", icon: Database, description: "Cross-validation from 2+ data sources" },
+              { factor: "MITRE Mapping", icon: Shield, description: "Techniques mapped to ATT&CK framework" },
+              { factor: "IOC Presence", icon: Crosshair, description: "Observable indicators support attribution" },
+              {
+                factor: "Alert Diversity",
+                icon: Layers,
+                description: "Multiple alert categories strengthen correlation",
+              },
+              { factor: "AI Narrative", icon: Brain, description: "AI narrative generated and reviewed" },
+              { factor: "Sufficient Evidence", icon: CheckCircle2, description: "Minimum alert threshold met" },
+            ].map((f) => (
+              <div key={f.factor} className="rounded-md border border-muted-foreground/10 p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <f.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium">{f.factor}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.4 PDF Export
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-pdf-export">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <FileDown className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Export Investigation</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Download a complete PDF report of any investigation including prompt, response, graphs, and findings
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" disabled data-testid="button-export-pdf">
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Export PDF
+            </Button>
+            <span className="text-xs text-muted-foreground">Select an investigation to export</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.7 Multi-Model Support
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-multi-model">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Multi-Model Configuration</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Configure AI model assignments per task tier — Claude, GPT-4, or local LLMs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {[
+              {
+                tier: "Default (Triage & Correlation)",
+                model: "Claude Sonnet 4",
+                provider: "AWS Bedrock",
+                cost: "$0.003/1k tokens",
+              },
+              {
+                tier: "Investigation (Deep Analysis)",
+                model: "Claude Opus 4",
+                provider: "AWS Bedrock",
+                cost: "$0.015/1k tokens",
+              },
+              { tier: "Alternative", model: "GPT-4 Turbo", provider: "OpenAI", cost: "$0.010/1k tokens" },
+              { tier: "Local (Air-gapped)", model: "Llama 3.1 70B", provider: "Local", cost: "Free" },
+            ].map((m) => (
+              <div
+                key={m.tier}
+                className="flex items-center justify-between rounded-md border border-muted-foreground/10 p-3"
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">{m.tier}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {m.model} via {m.provider}
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px]">
+                  {m.cost}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.8 Data Sources Integration
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-data-sources">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Connected Data Sources</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI Engine integrates all security data sources for comprehensive analysis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {[
+              { name: "Alerts", icon: AlertTriangle },
+              { name: "Incidents", icon: ShieldCheck },
+              { name: "Entities", icon: Users },
+              { name: "Threat Intel", icon: Shield },
+              { name: "OSINT", icon: Eye },
+              { name: "UEBA", icon: Activity },
+              { name: "Endpoints", icon: Server },
+              { name: "Network", icon: Network },
+              { name: "Cloud", icon: Layers },
+              { name: "Vuln Scanner", icon: Crosshair },
+            ].map((ds) => (
+              <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
+                <ds.icon className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-xs">{ds.name}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.5 Context Window Optimization
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-context-optimization">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">RAG Context Optimization</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Intelligent document selection optimizes the AI context window for maximum relevance
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              {
+                strategy: "Full Content",
+                description: "High-relevance sources — complete document text included",
+                color: "text-emerald-400",
+              },
+              {
+                strategy: "Summary",
+                description: "Medium-relevance sources — condensed summaries for context",
+                color: "text-yellow-400",
+              },
+              {
+                strategy: "Metadata Only",
+                description: "Low-relevance sources — metadata tags for reference",
+                color: "text-muted-foreground",
+              },
+            ].map((s) => (
+              <div key={s.strategy} className="flex items-start gap-3 rounded-md bg-muted/20 p-2.5">
+                <div
+                  className={`w-2 h-2 rounded-full mt-1.5 ${s.color === "text-emerald-400" ? "bg-emerald-400" : s.color === "text-yellow-400" ? "bg-yellow-400" : "bg-muted-foreground/50"}`}
+                />
+                <div>
+                  <div className="text-xs font-medium">{s.strategy}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.6 Hallucination Detection
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-hallucination-detection">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Hallucination Detection</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Cross-reference AI findings against source data to detect hallucinated claims
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="rounded-md bg-emerald-500/10 border border-emerald-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-emerald-400">IP</div>
+              <div className="text-[10px] text-muted-foreground">Addresses verified against alert data</div>
+            </div>
+            <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-blue-400">MITRE</div>
+              <div className="text-[10px] text-muted-foreground">Techniques checked against ATT&CK mappings</div>
+            </div>
+            <div className="rounded-md bg-purple-500/10 border border-purple-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-purple-400">Severity</div>
+              <div className="text-[10px] text-muted-foreground">Claims compared to observed severity levels</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5" />
+            Run an investigation to see hallucination detection results
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.9 Response Action Execution
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-response-actions">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Play className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">AI Response Actions</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI-proposed response actions with approval workflow — low-risk actions auto-execute, high-risk require
+            analyst approval
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              { action: "Isolate Host", risk: "high", approval: true },
+              { action: "Block IP", risk: "high", approval: true },
+              { action: "Disable Account", risk: "high", approval: true },
+              { action: "Quarantine File", risk: "high", approval: true },
+              { action: "Notify Team", risk: "low", approval: false },
+              { action: "Create Ticket", risk: "low", approval: false },
+              { action: "Snapshot Evidence", risk: "low", approval: false },
+              { action: "Enrich IOC", risk: "low", approval: false },
+            ].map((a) => (
+              <div key={a.action} className="flex items-center justify-between rounded-md bg-muted/20 p-2">
+                <div className="flex items-center gap-2">
+                  {a.approval ? (
+                    <Ban className="h-3.5 w-3.5 text-red-400" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 text-emerald-400" />
+                  )}
+                  <span className="text-xs">{a.action}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${a.risk === "high" ? "border-red-500/30 text-red-400" : "border-emerald-500/30 text-emerald-400"}`}
+                  >
+                    {a.risk} risk
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    {a.approval ? "Requires Approval" : "Auto-Execute"}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── 30.3 Confidence Level Badge ──
+function ConfidenceLevelBadge({ level, score }: { level: string; score: number }) {
+  const colors: Record<string, string> = {
+    high: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    medium: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+    low: "bg-red-500/15 text-red-400 border-red-500/30",
+  };
+  return (
+    <Badge variant="outline" className={colors[level] || colors.medium}>
+      {Math.round(score * 100)}% — {level}
+    </Badge>
+  );
+}
+
 function ThreatMeter({ severity }: { severity: string; priority: number }) {
   const severityToLevel: Record<string, number> = {
     critical: 95,
@@ -161,6 +616,314 @@ function ThreatMeter({ severity }: { severity: string; priority: number }) {
         <span>Low</span>
         <span>Critical</span>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.2 Investigation History Search
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-investigation-history">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Investigation History</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Search past AI investigations by keyword, date range, or incident ID
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Input placeholder="Search keyword..." className="h-8 text-xs" data-testid="input-history-keyword" />
+            <Input type="date" className="h-8 text-xs" data-testid="input-history-date-from" />
+            <Input placeholder="Incident ID..." className="h-8 text-xs" data-testid="input-history-incident-id" />
+          </div>
+          <div className="text-xs text-muted-foreground text-center py-4">
+            <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+            Enter search criteria above to browse investigation history
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.3 Confidence Indicators
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-confidence-indicators">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Confidence Indicators</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI findings are scored across multiple evidence factors with explainability
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {[
+              { factor: "Multiple Sources", icon: Database, description: "Cross-validation from 2+ data sources" },
+              { factor: "MITRE Mapping", icon: Shield, description: "Techniques mapped to ATT&CK framework" },
+              { factor: "IOC Presence", icon: Crosshair, description: "Observable indicators support attribution" },
+              {
+                factor: "Alert Diversity",
+                icon: Layers,
+                description: "Multiple alert categories strengthen correlation",
+              },
+              { factor: "AI Narrative", icon: Brain, description: "AI narrative generated and reviewed" },
+              { factor: "Sufficient Evidence", icon: CheckCircle2, description: "Minimum alert threshold met" },
+            ].map((f) => (
+              <div key={f.factor} className="rounded-md border border-muted-foreground/10 p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <f.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium">{f.factor}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.4 PDF Export
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-pdf-export">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <FileDown className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Export Investigation</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Download a complete PDF report of any investigation including prompt, response, graphs, and findings
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" disabled data-testid="button-export-pdf">
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Export PDF
+            </Button>
+            <span className="text-xs text-muted-foreground">Select an investigation to export</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.7 Multi-Model Support
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-multi-model">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Multi-Model Configuration</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Configure AI model assignments per task tier — Claude, GPT-4, or local LLMs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {[
+              {
+                tier: "Default (Triage & Correlation)",
+                model: "Claude Sonnet 4",
+                provider: "AWS Bedrock",
+                cost: "$0.003/1k tokens",
+              },
+              {
+                tier: "Investigation (Deep Analysis)",
+                model: "Claude Opus 4",
+                provider: "AWS Bedrock",
+                cost: "$0.015/1k tokens",
+              },
+              { tier: "Alternative", model: "GPT-4 Turbo", provider: "OpenAI", cost: "$0.010/1k tokens" },
+              { tier: "Local (Air-gapped)", model: "Llama 3.1 70B", provider: "Local", cost: "Free" },
+            ].map((m) => (
+              <div
+                key={m.tier}
+                className="flex items-center justify-between rounded-md border border-muted-foreground/10 p-3"
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">{m.tier}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {m.model} via {m.provider}
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px]">
+                  {m.cost}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.8 Data Sources Integration
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-data-sources">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Connected Data Sources</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI Engine integrates all security data sources for comprehensive analysis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {[
+              { name: "Alerts", icon: AlertTriangle },
+              { name: "Incidents", icon: ShieldCheck },
+              { name: "Entities", icon: Users },
+              { name: "Threat Intel", icon: Shield },
+              { name: "OSINT", icon: Eye },
+              { name: "UEBA", icon: Activity },
+              { name: "Endpoints", icon: Server },
+              { name: "Network", icon: Network },
+              { name: "Cloud", icon: Layers },
+              { name: "Vuln Scanner", icon: Crosshair },
+            ].map((ds) => (
+              <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
+                <ds.icon className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-xs">{ds.name}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.5 Context Window Optimization
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-context-optimization">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">RAG Context Optimization</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Intelligent document selection optimizes the AI context window for maximum relevance
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              {
+                strategy: "Full Content",
+                description: "High-relevance sources — complete document text included",
+                color: "text-emerald-400",
+              },
+              {
+                strategy: "Summary",
+                description: "Medium-relevance sources — condensed summaries for context",
+                color: "text-yellow-400",
+              },
+              {
+                strategy: "Metadata Only",
+                description: "Low-relevance sources — metadata tags for reference",
+                color: "text-muted-foreground",
+              },
+            ].map((s) => (
+              <div key={s.strategy} className="flex items-start gap-3 rounded-md bg-muted/20 p-2.5">
+                <div
+                  className={`w-2 h-2 rounded-full mt-1.5 ${s.color === "text-emerald-400" ? "bg-emerald-400" : s.color === "text-yellow-400" ? "bg-yellow-400" : "bg-muted-foreground/50"}`}
+                />
+                <div>
+                  <div className="text-xs font-medium">{s.strategy}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.6 Hallucination Detection
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-hallucination-detection">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Hallucination Detection</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Cross-reference AI findings against source data to detect hallucinated claims
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="rounded-md bg-emerald-500/10 border border-emerald-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-emerald-400">IP</div>
+              <div className="text-[10px] text-muted-foreground">Addresses verified against alert data</div>
+            </div>
+            <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-blue-400">MITRE</div>
+              <div className="text-[10px] text-muted-foreground">Techniques checked against ATT&CK mappings</div>
+            </div>
+            <div className="rounded-md bg-purple-500/10 border border-purple-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-purple-400">Severity</div>
+              <div className="text-[10px] text-muted-foreground">Claims compared to observed severity levels</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5" />
+            Run an investigation to see hallucination detection results
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.9 Response Action Execution
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-response-actions">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Play className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">AI Response Actions</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI-proposed response actions with approval workflow — low-risk actions auto-execute, high-risk require
+            analyst approval
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              { action: "Isolate Host", risk: "high", approval: true },
+              { action: "Block IP", risk: "high", approval: true },
+              { action: "Disable Account", risk: "high", approval: true },
+              { action: "Quarantine File", risk: "high", approval: true },
+              { action: "Notify Team", risk: "low", approval: false },
+              { action: "Create Ticket", risk: "low", approval: false },
+              { action: "Snapshot Evidence", risk: "low", approval: false },
+              { action: "Enrich IOC", risk: "low", approval: false },
+            ].map((a) => (
+              <div key={a.action} className="flex items-center justify-between rounded-md bg-muted/20 p-2">
+                <div className="flex items-center gap-2">
+                  {a.approval ? (
+                    <Ban className="h-3.5 w-3.5 text-red-400" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 text-emerald-400" />
+                  )}
+                  <span className="text-xs">{a.action}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${a.risk === "high" ? "border-red-500/30 text-red-400" : "border-emerald-500/30 text-emerald-400"}`}
+                  >
+                    {a.risk} risk
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    {a.approval ? "Requires Approval" : "Auto-Execute"}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1504,6 +2267,314 @@ export default function AIEnginePage() {
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.2 Investigation History Search
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-investigation-history">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Investigation History</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Search past AI investigations by keyword, date range, or incident ID
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Input placeholder="Search keyword..." className="h-8 text-xs" data-testid="input-history-keyword" />
+            <Input type="date" className="h-8 text-xs" data-testid="input-history-date-from" />
+            <Input placeholder="Incident ID..." className="h-8 text-xs" data-testid="input-history-incident-id" />
+          </div>
+          <div className="text-xs text-muted-foreground text-center py-4">
+            <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+            Enter search criteria above to browse investigation history
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.3 Confidence Indicators
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-confidence-indicators">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Confidence Indicators</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI findings are scored across multiple evidence factors with explainability
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {[
+              { factor: "Multiple Sources", icon: Database, description: "Cross-validation from 2+ data sources" },
+              { factor: "MITRE Mapping", icon: Shield, description: "Techniques mapped to ATT&CK framework" },
+              { factor: "IOC Presence", icon: Crosshair, description: "Observable indicators support attribution" },
+              {
+                factor: "Alert Diversity",
+                icon: Layers,
+                description: "Multiple alert categories strengthen correlation",
+              },
+              { factor: "AI Narrative", icon: Brain, description: "AI narrative generated and reviewed" },
+              { factor: "Sufficient Evidence", icon: CheckCircle2, description: "Minimum alert threshold met" },
+            ].map((f) => (
+              <div key={f.factor} className="rounded-md border border-muted-foreground/10 p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <f.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium">{f.factor}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.4 PDF Export
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-pdf-export">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <FileDown className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Export Investigation</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Download a complete PDF report of any investigation including prompt, response, graphs, and findings
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" disabled data-testid="button-export-pdf">
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Export PDF
+            </Button>
+            <span className="text-xs text-muted-foreground">Select an investigation to export</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.7 Multi-Model Support
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-multi-model">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Multi-Model Configuration</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Configure AI model assignments per task tier — Claude, GPT-4, or local LLMs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {[
+              {
+                tier: "Default (Triage & Correlation)",
+                model: "Claude Sonnet 4",
+                provider: "AWS Bedrock",
+                cost: "$0.003/1k tokens",
+              },
+              {
+                tier: "Investigation (Deep Analysis)",
+                model: "Claude Opus 4",
+                provider: "AWS Bedrock",
+                cost: "$0.015/1k tokens",
+              },
+              { tier: "Alternative", model: "GPT-4 Turbo", provider: "OpenAI", cost: "$0.010/1k tokens" },
+              { tier: "Local (Air-gapped)", model: "Llama 3.1 70B", provider: "Local", cost: "Free" },
+            ].map((m) => (
+              <div
+                key={m.tier}
+                className="flex items-center justify-between rounded-md border border-muted-foreground/10 p-3"
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">{m.tier}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {m.model} via {m.provider}
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px]">
+                  {m.cost}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.8 Data Sources Integration
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-data-sources">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Connected Data Sources</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI Engine integrates all security data sources for comprehensive analysis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {[
+              { name: "Alerts", icon: AlertTriangle },
+              { name: "Incidents", icon: ShieldCheck },
+              { name: "Entities", icon: Users },
+              { name: "Threat Intel", icon: Shield },
+              { name: "OSINT", icon: Eye },
+              { name: "UEBA", icon: Activity },
+              { name: "Endpoints", icon: Server },
+              { name: "Network", icon: Network },
+              { name: "Cloud", icon: Layers },
+              { name: "Vuln Scanner", icon: Crosshair },
+            ].map((ds) => (
+              <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
+                <ds.icon className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-xs">{ds.name}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.5 Context Window Optimization
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-context-optimization">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">RAG Context Optimization</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Intelligent document selection optimizes the AI context window for maximum relevance
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              {
+                strategy: "Full Content",
+                description: "High-relevance sources — complete document text included",
+                color: "text-emerald-400",
+              },
+              {
+                strategy: "Summary",
+                description: "Medium-relevance sources — condensed summaries for context",
+                color: "text-yellow-400",
+              },
+              {
+                strategy: "Metadata Only",
+                description: "Low-relevance sources — metadata tags for reference",
+                color: "text-muted-foreground",
+              },
+            ].map((s) => (
+              <div key={s.strategy} className="flex items-start gap-3 rounded-md bg-muted/20 p-2.5">
+                <div
+                  className={`w-2 h-2 rounded-full mt-1.5 ${s.color === "text-emerald-400" ? "bg-emerald-400" : s.color === "text-yellow-400" ? "bg-yellow-400" : "bg-muted-foreground/50"}`}
+                />
+                <div>
+                  <div className="text-xs font-medium">{s.strategy}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.6 Hallucination Detection
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-hallucination-detection">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Hallucination Detection</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Cross-reference AI findings against source data to detect hallucinated claims
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="rounded-md bg-emerald-500/10 border border-emerald-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-emerald-400">IP</div>
+              <div className="text-[10px] text-muted-foreground">Addresses verified against alert data</div>
+            </div>
+            <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-blue-400">MITRE</div>
+              <div className="text-[10px] text-muted-foreground">Techniques checked against ATT&CK mappings</div>
+            </div>
+            <div className="rounded-md bg-purple-500/10 border border-purple-500/20 p-3 text-center">
+              <div className="text-lg font-bold text-purple-400">Severity</div>
+              <div className="text-[10px] text-muted-foreground">Claims compared to observed severity levels</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5" />
+            Run an investigation to see hallucination detection results
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          30.9 Response Action Execution
+          ══════════════════════════════════════════════════════════════════════ */}
+      <Card data-testid="card-response-actions">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Play className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">AI Response Actions</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            AI-proposed response actions with approval workflow — low-risk actions auto-execute, high-risk require
+            analyst approval
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              { action: "Isolate Host", risk: "high", approval: true },
+              { action: "Block IP", risk: "high", approval: true },
+              { action: "Disable Account", risk: "high", approval: true },
+              { action: "Quarantine File", risk: "high", approval: true },
+              { action: "Notify Team", risk: "low", approval: false },
+              { action: "Create Ticket", risk: "low", approval: false },
+              { action: "Snapshot Evidence", risk: "low", approval: false },
+              { action: "Enrich IOC", risk: "low", approval: false },
+            ].map((a) => (
+              <div key={a.action} className="flex items-center justify-between rounded-md bg-muted/20 p-2">
+                <div className="flex items-center gap-2">
+                  {a.approval ? (
+                    <Ban className="h-3.5 w-3.5 text-red-400" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 text-emerald-400" />
+                  )}
+                  <span className="text-xs">{a.action}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${a.risk === "high" ? "border-red-500/30 text-red-400" : "border-emerald-500/30 text-emerald-400"}`}
+                  >
+                    {a.risk} risk
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    {a.approval ? "Requires Approval" : "Auto-Execute"}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -30,6 +30,14 @@ import {
   User,
   History,
   Globe,
+  TrendingUp,
+  BarChart3,
+  Calendar,
+  Receipt,
+  Webhook,
+  Clock,
+  Info,
+  CircleDollarSign,
 } from "lucide-react";
 
 function formatCents(cents: number, currency: string = "INR"): string {
@@ -1093,6 +1101,16 @@ function DangerZoneSection() {
   );
 }
 
+/* 90.5 — webhook event types for billing */
+const BILLING_WEBHOOK_EVENTS = [
+  "invoice.paid",
+  "invoice.payment_failed",
+  "subscription.updated",
+  "subscription.cancelled",
+  "plan.changed",
+  "usage.limit_reached",
+];
+
 export default function BillingPage() {
   usePageTitle("Pricing — Arica Cyber Security Suite | Starter, Growth & Enterprise", true);
   return (
@@ -1108,17 +1126,56 @@ export default function BillingPage() {
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="overview">
+            <CircleDollarSign className="h-3.5 w-3.5 mr-1" />
+            Overview
+          </TabsTrigger>
           <TabsTrigger value="plans" id="plans-tab">
+            <Crown className="h-3.5 w-3.5 mr-1" />
             Plans
           </TabsTrigger>
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
-          <TabsTrigger value="payment">Payment</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="invoices">
+            <Receipt className="h-3.5 w-3.5 mr-1" />
+            Invoices
+          </TabsTrigger>
+          <TabsTrigger value="payment">
+            <CreditCard className="h-3.5 w-3.5 mr-1" />
+            Payment
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            <History className="h-3.5 w-3.5 mr-1" />
+            Activity
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           <CurrentPlanSection />
+
+          {/* 90.3 — usage forecasting indicator */}
+          <Card className="glass-card border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-base">Usage Forecast</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                Projected usage trends based on your current consumption patterns
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p className="flex items-center gap-1.5">
+                  <BarChart3 className="h-3 w-3" />
+                  Usage forecasting analyzes your consumption trends to predict when you may hit plan limits.
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <Calendar className="h-3 w-3" />
+                  View detailed forecasts in <span className="font-medium">Plans & Packaging &gt; Forecast</span>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <DangerZoneSection />
         </TabsContent>
 
@@ -1132,6 +1189,50 @@ export default function BillingPage() {
 
         <TabsContent value="payment" className="space-y-4">
           <PaymentMethodSection />
+
+          {/* 90.5 — webhook event handling info */}
+          <Card className="glass-card border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Webhook className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-base">Billing Webhooks</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                Stripe webhook events that trigger actions in your organization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-1.5">
+                {BILLING_WEBHOOK_EVENTS.map((evt) => (
+                  <Badge key={evt} variant="outline" className="text-[10px] font-mono">
+                    {evt}
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2">
+                <Info className="h-2.5 w-2.5 inline mr-0.5" />
+                Webhook events are automatically processed. Failed deliveries are retried up to 3 times.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* 90.6 — proration explanation */}
+          <Card className="glass-card border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-base">Plan Change Proration</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p>When you upgrade mid-cycle, you are charged the prorated difference for the remaining days.</p>
+                <p>When you downgrade, credit is applied to your next invoice automatically.</p>
+                <p className="text-[10px]">All proration is calculated by Stripe to the second.</p>
+              </div>
+            </CardContent>
+          </Card>
+
           <DangerZoneSection />
         </TabsContent>
 

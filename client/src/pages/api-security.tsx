@@ -33,6 +33,12 @@ import {
   Network,
   Scan,
   Clock,
+  ArrowUpDown,
+  Gauge,
+  GitCompare,
+  Timer,
+  Users,
+  TrendingUp,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
@@ -500,6 +506,9 @@ export default function ApiSecurityPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="findings">Findings</TabsTrigger>
+          <TabsTrigger value="traffic">Traffic</TabsTrigger>
+          <TabsTrigger value="abuse">Abuse</TabsTrigger>
+          <TabsTrigger value="schema">Schema</TabsTrigger>
           <TabsTrigger value="hosts">Hosts</TabsTrigger>
         </TabsList>
 
@@ -978,6 +987,420 @@ export default function ApiSecurityPage() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* ── 57.1 Traffic Analysis ──────────────────────────────────────── */}
+        <TabsContent value="traffic" className="space-y-4">
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-blue-400" />
+                API Traffic Analysis
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {inventoryData?.apis && inventoryData.apis.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-zinc-800 hover:bg-transparent">
+                      <TableHead className="text-[11px]">Method</TableHead>
+                      <TableHead className="text-[11px]">Endpoint</TableHead>
+                      <TableHead className="text-[11px]">Host</TableHead>
+                      <TableHead className="text-[11px]">
+                        <div className="flex items-center gap-1">
+                          <ArrowUpDown className="h-3 w-3" />
+                          Requests 24h
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-[11px]">Error Rate</TableHead>
+                      <TableHead className="text-[11px]">
+                        <div className="flex items-center gap-1">
+                          <Timer className="h-3 w-3" />
+                          Avg Latency
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-[11px]">Auth</TableHead>
+                      <TableHead className="text-[11px]">Schema Drift</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inventoryData.apis
+                      .slice()
+                      .sort((a, b) => b.requestCount24h - a.requestCount24h)
+                      .map((api) => {
+                        const errPct = (api.errorRate24h * 100).toFixed(1);
+                        const errCls =
+                          api.errorRate24h >= 0.1
+                            ? "text-red-400"
+                            : api.errorRate24h >= 0.05
+                              ? "text-orange-400"
+                              : "text-green-400";
+                        const latCls =
+                          api.avgLatencyMs >= 1000
+                            ? "text-red-400"
+                            : api.avgLatencyMs >= 500
+                              ? "text-orange-400"
+                              : "text-green-400";
+                        return (
+                          <TableRow
+                            key={api.id}
+                            className="border-zinc-800 cursor-pointer hover:bg-zinc-800/50"
+                            onClick={() => setSelectedApi(api)}
+                          >
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`font-mono text-[10px] ${methodColors[api.method] || ""}`}
+                              >
+                                {api.method}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-xs max-w-[200px] truncate">{api.path}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{api.host}</TableCell>
+                            <TableCell className="text-xs font-semibold tabular-nums">
+                              {api.requestCount24h.toLocaleString()}
+                            </TableCell>
+                            <TableCell className={`text-xs font-semibold tabular-nums ${errCls}`}>{errPct}%</TableCell>
+                            <TableCell className={`text-xs font-semibold tabular-nums ${latCls}`}>
+                              {api.avgLatencyMs.toFixed(0)}ms
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${api.authType === "none" ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}
+                              >
+                                {authTypeLabels[api.authType] || api.authType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {api.isShadow ? (
+                                <Badge variant="outline" className="text-[10px] bg-purple-500/20 text-purple-400">
+                                  Shadow
+                                </Badge>
+                              ) : api.isDeprecated ? (
+                                <Badge variant="outline" className="text-[10px] bg-zinc-500/20 text-zinc-400">
+                                  Deprecated
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-green-400">OK</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No APIs discovered yet. Import an OpenAPI spec or register endpoints to see traffic analysis.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 57.2 Abuse Detection Timeline ──────────────────────────────── */}
+        <TabsContent value="abuse" className="space-y-4">
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-red-400" />
+                API Abuse Detection Timeline
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {findingsData?.findings && findingsData.findings.length > 0 ? (
+                (() => {
+                  const abuseTypes = [
+                    "bola",
+                    "bfla",
+                    "credential_stuffing",
+                    "rate_abuse",
+                    "injection",
+                    "sensitive_data",
+                  ];
+                  const abuseFindings = findingsData.findings.filter((f) => abuseTypes.includes(f.findingType));
+
+                  if (abuseFindings.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        No abuse events detected. Run a DAST scan to discover potential abuse patterns.
+                      </div>
+                    );
+                  }
+
+                  // Group by date for timeline
+                  const byDate: Record<string, ApiFinding[]> = {};
+                  for (const f of abuseFindings) {
+                    const dateKey = f.createdAt
+                      ? new Date(f.createdAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      : "Unknown";
+                    if (!byDate[dateKey]) byDate[dateKey] = [];
+                    byDate[dateKey].push(f);
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Abuse type summary */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {[
+                          {
+                            type: "bola",
+                            label: "Broken Object Auth",
+                            icon: <Lock className="h-3.5 w-3.5" />,
+                            color: "text-red-400",
+                          },
+                          {
+                            type: "bfla",
+                            label: "Broken Function Auth",
+                            icon: <Unlock className="h-3.5 w-3.5" />,
+                            color: "text-orange-400",
+                          },
+                          {
+                            type: "credential_stuffing",
+                            label: "Credential Stuffing",
+                            icon: <Users className="h-3.5 w-3.5" />,
+                            color: "text-amber-400",
+                          },
+                          {
+                            type: "rate_abuse",
+                            label: "Rate Limit Abuse",
+                            icon: <TrendingUp className="h-3.5 w-3.5" />,
+                            color: "text-yellow-400",
+                          },
+                          {
+                            type: "injection",
+                            label: "Injection Attacks",
+                            icon: <Bug className="h-3.5 w-3.5" />,
+                            color: "text-red-500",
+                          },
+                          {
+                            type: "sensitive_data",
+                            label: "Data Scraping",
+                            icon: <Eye className="h-3.5 w-3.5" />,
+                            color: "text-purple-400",
+                          },
+                        ].map((at) => {
+                          const c = abuseFindings.filter((f) => f.findingType === at.type).length;
+                          return (
+                            <div key={at.type} className="rounded border border-zinc-800 p-2 flex items-center gap-2">
+                              <span className={at.color}>{at.icon}</span>
+                              <div>
+                                <div className="text-xs text-muted-foreground">{at.label}</div>
+                                <div className={`text-sm font-semibold ${at.color}`}>{c}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Timeline */}
+                      <div className="border-l-2 border-zinc-700 ml-3 space-y-3">
+                        {Object.entries(byDate).map(([dateStr, events]) => (
+                          <div key={dateStr} className="relative pl-6">
+                            <div className="absolute left-[-5px] top-1 w-2 h-2 rounded-full bg-zinc-400" />
+                            <div className="text-xs text-muted-foreground font-medium mb-1">{dateStr}</div>
+                            {events.map((evt) => (
+                              <div
+                                key={evt.id}
+                                className="rounded border border-zinc-800 p-2 mb-1 cursor-pointer hover:bg-zinc-800/50"
+                                onClick={() => setSelectedFinding(evt)}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[10px] ${severityColors[evt.severity] || ""}`}
+                                    >
+                                      {evt.severity}
+                                    </Badge>
+                                    <span className="text-xs">{evt.title}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Badge variant="outline" className="text-[10px] bg-zinc-800/50">
+                                      {findingTypeLabels[evt.findingType] || evt.findingType}
+                                    </Badge>
+                                    {evt.endpoint && (
+                                      <code className="text-[10px] text-muted-foreground font-mono">
+                                        {evt.endpoint}
+                                      </code>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No abuse events detected. Run a DAST scan to discover potential abuse patterns.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 57.3 Schema Validation Detail ──────────────────────────────── */}
+        <TabsContent value="schema" className="space-y-4">
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <GitCompare className="h-4 w-4 text-cyan-400" />
+                Schema Validation Detail
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {inventoryData?.apis && inventoryData.apis.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Compare observed request/response schemas against documented specifications. Mismatches indicate
+                    potential data leaks, breaking changes, or undocumented behavior.
+                  </p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-zinc-800 hover:bg-transparent">
+                        <TableHead className="text-[11px]">Endpoint</TableHead>
+                        <TableHead className="text-[11px]">Spec Source</TableHead>
+                        <TableHead className="text-[11px]">Shadow</TableHead>
+                        <TableHead className="text-[11px]">Sensitive Data</TableHead>
+                        <TableHead className="text-[11px]">Schema Status</TableHead>
+                        <TableHead className="text-[11px]">Risk</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inventoryData.apis.map((api) => {
+                        const sdTypes = (api.sensitiveDataTypes || []) as string[];
+                        const hasSchemaIssues = api.isShadow || sdTypes.length > 0 || api.authType === "none";
+                        const schemaStatus = api.isShadow
+                          ? "undocumented"
+                          : sdTypes.length > 0
+                            ? "data_leak_risk"
+                            : api.specSource
+                              ? "validated"
+                              : "no_spec";
+                        const statusColors: Record<string, string> = {
+                          validated: "bg-green-500/20 text-green-400",
+                          undocumented: "bg-purple-500/20 text-purple-400",
+                          data_leak_risk: "bg-orange-500/20 text-orange-400",
+                          no_spec: "bg-zinc-500/20 text-zinc-400",
+                        };
+                        const statusLabels: Record<string, string> = {
+                          validated: "Validated",
+                          undocumented: "Undocumented",
+                          data_leak_risk: "Data Leak Risk",
+                          no_spec: "No Spec",
+                        };
+                        return (
+                          <TableRow
+                            key={api.id}
+                            className="border-zinc-800 cursor-pointer hover:bg-zinc-800/50"
+                            onClick={() => setSelectedApi(api)}
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Badge
+                                  variant="outline"
+                                  className={`font-mono text-[10px] ${methodColors[api.method] || ""}`}
+                                >
+                                  {api.method}
+                                </Badge>
+                                <span className="font-mono text-xs truncate max-w-[200px]">{api.path}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {api.specSource || "traffic"}
+                            </TableCell>
+                            <TableCell>
+                              {api.isShadow ? (
+                                <Badge variant="outline" className="text-[10px] bg-purple-500/20 text-purple-400">
+                                  Yes
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-green-400">No</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {sdTypes.length > 0 ? (
+                                <div className="flex flex-wrap gap-0.5">
+                                  {sdTypes.map((t) => (
+                                    <Badge
+                                      key={t}
+                                      variant="outline"
+                                      className="text-[9px] bg-orange-500/20 text-orange-400 border-orange-500/30"
+                                    >
+                                      {t}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">None</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`text-[10px] ${statusColors[schemaStatus] || ""}`}>
+                                {statusLabels[schemaStatus] || schemaStatus}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <span className={`text-xs font-semibold ${riskColor(api.riskScore)}`}>
+                                {api.riskScore}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  {/* Schema mismatch summary */}
+                  {(() => {
+                    const schemaFindings =
+                      findingsData?.findings?.filter((f) => f.findingType === "schema_violation") || [];
+                    if (schemaFindings.length === 0) return null;
+                    return (
+                      <Card className="bg-zinc-800/30 border-zinc-700">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-xs flex items-center gap-2">
+                            <AlertTriangle className="h-3.5 w-3.5 text-orange-400" />
+                            Schema Violation Findings ({schemaFindings.length})
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-1">
+                          {schemaFindings.slice(0, 5).map((f) => (
+                            <div
+                              key={f.id}
+                              className="flex items-center justify-between text-xs p-1.5 rounded hover:bg-zinc-800/50 cursor-pointer"
+                              onClick={() => setSelectedFinding(f)}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className={`text-[9px] ${severityColors[f.severity] || ""}`}>
+                                  {f.severity}
+                                </Badge>
+                                <span className="truncate max-w-[300px]">{f.title}</span>
+                              </div>
+                              <code className="text-[10px] text-muted-foreground font-mono">{f.endpoint || ""}</code>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No APIs discovered yet. Import an OpenAPI spec to compare schemas.
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ── Hosts ────────────────────────────────────────────────────── */}

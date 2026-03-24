@@ -31,6 +31,10 @@ import {
   BarChart3,
   ExternalLink,
   RefreshCw,
+  CheckCircle2,
+  Clock,
+  Lock,
+  Activity,
 } from "lucide-react";
 
 interface ChildOrg {
@@ -430,6 +434,60 @@ export default function MsspDashboardPage() {
             </Card>
           )}
 
+          {/* 73.3 — SLA Monitoring Summary */}
+          {stats?.perOrg && stats.perOrg.length > 0 && (
+            <Card className="glass-subtle">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  SLA Compliance Overview
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-3 border rounded-lg">
+                    <p className="text-2xl font-bold">
+                      {stats.perOrg.filter((o: { incidentCount: number }) => o.incidentCount <= 5).length}/
+                      {stats.perOrg.length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">SLA Compliant</p>
+                  </div>
+                  <div className="text-center p-3 border rounded-lg">
+                    <p className="text-2xl font-bold">
+                      {stats.perOrg.length > 0
+                        ? Math.round(
+                            (stats.perOrg.filter((o: { incidentCount: number }) => o.incidentCount <= 5).length /
+                              stats.perOrg.length) *
+                              100,
+                          )
+                        : 0}
+                      %
+                    </p>
+                    <p className="text-xs text-muted-foreground">Compliance Rate</p>
+                  </div>
+                  <div className="text-center p-3 border rounded-lg">
+                    <p className="text-2xl font-bold">
+                      {stats.perOrg.filter((o: { incidentCount: number }) => o.incidentCount > 5).length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">SLA Breached</p>
+                  </div>
+                  <div className="text-center p-3 border rounded-lg">
+                    <p className="text-2xl font-bold">
+                      {stats.perOrg.length > 0
+                        ? Math.round(
+                            stats.perOrg.reduce((s: number, o: { alertCount: number }) => s + o.alertCount, 0) /
+                              stats.perOrg.length,
+                          )
+                        : 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Avg Alerts/Tenant</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 73.1, 73.2 — Multi-Tenant Overview with health scores and drill-down */}
           <Card className="glass-subtle">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">

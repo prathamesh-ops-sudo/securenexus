@@ -60,7 +60,31 @@ import {
   RotateCcw,
   Hash,
   Fingerprint,
+  Maximize2,
+  Copy,
+  Undo2 as UndoIcon,
+  Redo2,
+  Map,
+  Layers,
+  BarChart3,
+  Diff,
+  FlaskConical,
+  MonitorPlay,
+  RefreshCw,
+  Download,
+  TrendingUp,
+  CircleDot,
+  Pause,
+  SkipForward,
+  FileText,
+  Bot,
+  ListChecks,
+  Printer,
+  PieChart,
 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import type {
   Playbook,
   PlaybookExecution,
@@ -592,6 +616,30 @@ function configSummary(node: FlowNode): string {
   return parts.join(", ");
 }
 
+// ─── 20.1 Workflow Editor Enhancements ────────────────────────────────────
+// Undo/redo history, copy/paste, zoom-to-fit, minimap, step grouping, routing
+function useUndoRedo<T>(initial: T) {
+  const [history, setHistory] = useState<T[]>([initial]);
+  const [pointer, setPointer] = useState(0);
+  const current = history[pointer];
+  const canUndo = pointer > 0;
+  const canRedo = pointer < history.length - 1;
+  const push = useCallback(
+    (val: T) => {
+      setHistory((prev) => [...prev.slice(0, pointer + 1), val]);
+      setPointer((prev) => prev + 1);
+    },
+    [pointer],
+  );
+  const undo = useCallback(() => {
+    if (canUndo) setPointer((p) => p - 1);
+  }, [canUndo]);
+  const redo = useCallback(() => {
+    if (canRedo) setPointer((p) => p + 1);
+  }, [canRedo]);
+  return { current, push, undo, redo, canUndo, canRedo };
+}
+
 function VisualBuilder({
   nodes,
   setNodes,
@@ -851,6 +899,16 @@ export default function PlaybooksPage() {
   const [showRollbackPlanDialog, setShowRollbackPlanDialog] = useState(false);
   const [rollbackPlanDesc, setRollbackPlanDesc] = useState("");
   const [rollbackSteps, setRollbackSteps] = useState("");
+  const [diffVersion1, setDiffVersion1] = useState("");
+  const [diffVersion2, setDiffVersion2] = useState("");
+  const [showSimRunDialog, setShowSimRunDialog] = useState(false);
+  const [simRunPlaybookId, setSimRunPlaybookId] = useState<string | null>(null);
+  const [simScenarioName, setSimScenarioName] = useState("");
+  const [simRunParams, setSimRunParams] = useState("");
+  const [trackingPlaybookId, setTrackingPlaybookId] = useState<string | null>(null);
+  const [activeTrackingId, setActiveTrackingId] = useState<string | null>(null);
+  const [automationSuggestionId, setAutomationSuggestionId] = useState<string | null>(null);
+  const [showAutomationDialog, setShowAutomationDialog] = useState(false);
 
   usePageTitle("Playbooks");
   const {
@@ -1022,6 +1080,57 @@ export default function PlaybooksPage() {
     enabled: !!selectedGovernancePlaybook,
   });
 
+  // ─── 20.2 Execution Monitoring Dashboard ────────────────────────────────
+  const {
+    data: execDashboard,
+    isLoading: execDashLoading,
+    refetch: refetchExecDash,
+  } = useQuery<any>({
+    queryKey: ["/api/playbook-executions/dashboard"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-executions/dashboard");
+      return r.json();
+    },
+  });
+
+  // ─── 20.3 Version Diffing ────────────────────────────────────────────────
+  const {
+    data: versionDiff,
+    isFetching: diffLoading,
+    refetch: fetchDiff,
+  } = useQuery<any>({
+    queryKey: ["/api/playbook-versions", diffVersion1, "diff", diffVersion2],
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/playbook-versions/${diffVersion1}/diff/${diffVersion2}`);
+      return r.json();
+    },
+    enabled: false,
+  });
+
+  // ─── 20.4 Enhanced Simulation ────────────────────────────────────────────
+  const simulatePlaybookMutation = useMutation({
+    mutationFn: async ({
+      playbookId,
+      scenarioName,
+      parameters,
+    }: {
+      playbookId: string;
+      scenarioName: string;
+      parameters: any;
+    }) => {
+      const r = await apiRequest("POST", `/api/playbooks/${playbookId}/simulate`, { scenarioName, parameters });
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Simulation completed" });
+      setShowSimRunDialog(false);
+      setSimScenarioName("");
+      setSimRunParams("");
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks", selectedGovernancePlaybook, "simulations"] });
+    },
+    onError: (err: any) => toast({ title: "Simulation failed", description: err.message, variant: "destructive" }),
+  });
+
   const createVersionMutation = useMutation({
     mutationFn: async ({ playbookId, changelog }: { playbookId: string; changelog: string }) => {
       const res = await apiRequest("POST", `/api/playbooks/${playbookId}/versions`, { changeDescription: changelog });
@@ -1129,6 +1238,129 @@ export default function PlaybooksPage() {
     onError: (err: any) => toast({ title: "Execution failed", description: err.message, variant: "destructive" }),
   });
 
+  // ─── 20.7 Execution Analytics ──────────────────────────────────────────────
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery<any>({
+    queryKey: ["/api/playbook-analytics"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-analytics");
+      return r.json();
+    },
+  });
+
+  // ─── 20.8 All Response Action Types ──────────────────────────────────────────
+  const { data: actionTypesData } = useQuery<any>({
+    queryKey: ["/api/playbook-action-types"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-action-types");
+      return r.json();
+    },
+  });
+
+  // ─── 20.9 Notification Config ───────────────────────────────────────────────
+  const [selectedNotifPlaybookId, setSelectedNotifPlaybookId] = useState<string | null>(null);
+  const [notifChannel, setNotifChannel] = useState("email");
+  const [notifSubject, setNotifSubject] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [notifRecipients, setNotifRecipients] = useState("");
+
+  const { data: notifConfig, refetch: refetchNotifConfig } = useQuery<any>({
+    queryKey: ["/api/playbooks", selectedNotifPlaybookId, "notification-config"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/playbooks/${selectedNotifPlaybookId}/notification-config`);
+      return r.json();
+    },
+    enabled: !!selectedNotifPlaybookId,
+  });
+
+  const createNotifTemplateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await apiRequest("POST", `/api/playbooks/${selectedNotifPlaybookId}/notification-templates`, data);
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchNotifConfig();
+      setNotifSubject("");
+      setNotifBody("");
+      setNotifRecipients("");
+      toast({ title: "Notification template created" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteNotifTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      await apiRequest("DELETE", `/api/playbooks/${selectedNotifPlaybookId}/notification-templates/${templateId}`);
+    },
+    onSuccess: () => {
+      refetchNotifConfig();
+      toast({ title: "Template deleted" });
+    },
+  });
+
+  // ─── 20.10 Change Management ───────────────────────────────────────────────
+  const [changePlaybookId, setChangePlaybookId] = useState("");
+  const [changeType, setChangeType] = useState("firewall_rule");
+  const [changeSummary, setChangeSummary] = useState("");
+  const [changeDesc, setChangeDesc] = useState("");
+
+  const { data: changeTickets, refetch: refetchChangeTickets } = useQuery<any>({
+    queryKey: ["/api/playbook-change-tickets"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/playbook-change-tickets");
+      return r.json();
+    },
+  });
+
+  const createChangeTicketMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await apiRequest("POST", "/api/playbook-change-tickets", data);
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      setChangeSummary("");
+      setChangeDesc("");
+      toast({ title: "Change ticket created" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const approveChangeTicketMutation = useMutation({
+    mutationFn: async ({ ticketId, decision, note }: { ticketId: string; decision: string; note?: string }) => {
+      const r = await apiRequest("POST", `/api/playbook-change-tickets/${ticketId}/approve`, { decision, note });
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      toast({ title: "Decision recorded" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const implementChangeTicketMutation = useMutation({
+    mutationFn: async (ticketId: string) => {
+      const r = await apiRequest("POST", `/api/playbook-change-tickets/${ticketId}/implement`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      toast({ title: "Change implemented" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const closeChangeTicketMutation = useMutation({
+    mutationFn: async (ticketId: string) => {
+      const r = await apiRequest("POST", `/api/playbook-change-tickets/${ticketId}/close`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchChangeTickets();
+      toast({ title: "Ticket closed" });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
   const proposePlaybookMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ai/playbook-authoring/propose", {
@@ -1144,6 +1376,72 @@ export default function PlaybooksPage() {
     onError: (err: any) => {
       toast({ title: "Proposal failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  // ─── 24.1-24.5 Runbook Tracking, Analytics, Automation ───
+  const startTrackingMutation = useMutation({
+    mutationFn: async (playbookId: string) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/execution-tracking/start`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setActiveTrackingId(data.executionId);
+      setTrackingPlaybookId(data.playbookId?.toString());
+      queryClient.invalidateQueries({ queryKey: ["/api/playbooks/runbook-analytics"] });
+      toast({ title: "Tracking started", description: `Tracking ${data.totalSteps} steps` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to start tracking", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const stepActionMutation = useMutation({
+    mutationFn: async ({ playbookId, executionId, action, stepIndex, notes }: any) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/playbooks/${playbookId}/execution-tracking/${executionId}/step-action`,
+        {
+          action,
+          stepIndex,
+          notes,
+        },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      if (trackingPlaybookId && activeTrackingId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/playbooks", trackingPlaybookId, "execution-tracking"] });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Step action failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: trackingData, refetch: refetchTracking } = useQuery<any>({
+    queryKey: ["/api/playbooks", trackingPlaybookId, "execution-tracking", activeTrackingId],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/playbooks/${trackingPlaybookId}/execution-tracking?executionId=${activeTrackingId}`,
+      );
+      return res.json();
+    },
+    enabled: !!trackingPlaybookId && !!activeTrackingId,
+    refetchInterval: 5000,
+  });
+
+  const { data: runbookAnalytics, isLoading: runbookAnalyticsLoading } = useQuery<any>({
+    queryKey: ["/api/playbooks/runbook-analytics"],
+  });
+
+  const { data: automationSuggestions } = useQuery<any>({
+    queryKey: ["/api/playbooks", automationSuggestionId, "suggest-automation"],
+    queryFn: async () => {
+      const res = await apiRequest("POST", `/api/playbooks/${automationSuggestionId}/suggest-automation`);
+      return res.json();
+    },
+    enabled: !!automationSuggestionId,
   });
 
   function closeDialog() {
@@ -1366,6 +1664,38 @@ export default function PlaybooksPage() {
           <TabsTrigger value="governance" data-testid="tab-governance">
             <Fingerprint className="h-4 w-4 mr-1.5" />
             Governance
+          </TabsTrigger>
+          <TabsTrigger value="monitoring" data-testid="tab-monitoring">
+            <MonitorPlay className="h-4 w-4 mr-1.5" />
+            Monitoring
+          </TabsTrigger>
+          <TabsTrigger value="versiondiff" data-testid="tab-versiondiff">
+            <Diff className="h-4 w-4 mr-1.5" />
+            Version Diff
+          </TabsTrigger>
+          <TabsTrigger value="simulation" data-testid="tab-simulation">
+            <FlaskConical className="h-4 w-4 mr-1.5" />
+            Simulation
+          </TabsTrigger>
+          <TabsTrigger value="analytics" data-testid="tab-analytics">
+            <BarChart3 className="h-4 w-4 mr-1.5" />
+            Analytics
+          </TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-notifications">
+            <Bell className="h-4 w-4 mr-1.5" />
+            Notifications
+          </TabsTrigger>
+          <TabsTrigger value="changes" data-testid="tab-changes">
+            <Ticket className="h-4 w-4 mr-1.5" />
+            Changes
+          </TabsTrigger>
+          <TabsTrigger value="tracking" data-testid="tab-tracking">
+            <ListChecks className="h-4 w-4 mr-1.5" />
+            Tracking
+          </TabsTrigger>
+          <TabsTrigger value="runbook-analytics" data-testid="tab-runbook-analytics">
+            <PieChart className="h-4 w-4 mr-1.5" />
+            Runbook Analytics
           </TabsTrigger>
         </TabsList>
 
@@ -2146,10 +2476,1644 @@ export default function PlaybooksPage() {
                   </Card>
                 )}
               </TabsContent>
+
+              {/* ─── 20.2 Execution Monitoring Dashboard ─────────────────────────── */}
+              <TabsContent value="monitoring" className="mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <MonitorPlay className="h-5 w-5 text-blue-400" />
+                      Execution Monitoring Dashboard
+                    </h2>
+                    <Button size="sm" variant="outline" onClick={() => refetchExecDash()}>
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Refresh
+                    </Button>
+                  </div>
+
+                  {execDashLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} className="h-24" />
+                      ))}
+                    </div>
+                  ) : execDashboard?.summary ? (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <Card>
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground">Total</div>
+                            <div className="text-2xl font-bold">{execDashboard.summary.total}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-blue-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Running
+                            </div>
+                            <div className="text-2xl font-bold text-blue-400">{execDashboard.summary.running}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-yellow-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Awaiting
+                            </div>
+                            <div className="text-2xl font-bold text-yellow-400">
+                              {execDashboard.summary.awaitingApproval}
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-green-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground">Success Rate</div>
+                            <div className="text-2xl font-bold text-green-400">
+                              {execDashboard.summary.successRate}%
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-red-500/20">
+                          <CardContent className="p-4">
+                            <div className="text-xs text-muted-foreground">Failed</div>
+                            <div className="text-2xl font-bold text-red-400">{execDashboard.summary.failed}</div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {/* Active Executions */}
+                      {execDashboard.activeExecutions?.length > 0 && (
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <CircleDot className="h-4 w-4 text-blue-400 animate-pulse" />
+                              Active Executions ({execDashboard.activeExecutions.length})
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              {execDashboard.activeExecutions.map((exec: any) => (
+                                <div
+                                  key={exec.id}
+                                  className="flex items-center gap-3 p-2 bg-muted/10 rounded border border-border"
+                                >
+                                  {executionStatusBadge(exec.status)}
+                                  <span className="text-sm font-medium">{exec.playbookName}</span>
+                                  <span className="text-xs text-muted-foreground">{exec.triggeredBy}</span>
+                                  {exec.dryRun && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      Dry Run
+                                    </Badge>
+                                  )}
+                                  <span className="text-xs text-muted-foreground ml-auto">
+                                    {exec.actionsExecuted} actions
+                                  </span>
+                                  {exec.executionTimeMs && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {(exec.executionTimeMs / 1000).toFixed(1)}s
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Per-playbook Stats */}
+                      {execDashboard.perPlaybook?.length > 0 && (
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <BarChart3 className="h-4 w-4 text-purple-400" />
+                              Per-Playbook Statistics
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-xs">Playbook</TableHead>
+                                  <TableHead className="text-xs text-center">Total</TableHead>
+                                  <TableHead className="text-xs text-center">Completed</TableHead>
+                                  <TableHead className="text-xs text-center">Failed</TableHead>
+                                  <TableHead className="text-xs text-center">Running</TableHead>
+                                  <TableHead className="text-xs text-right">Avg Time</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {execDashboard.perPlaybook.map((stat: any) => (
+                                  <TableRow key={stat.playbookId}>
+                                    <TableCell className="text-sm font-medium">{stat.playbookName}</TableCell>
+                                    <TableCell className="text-center text-sm">{stat.totalExecutions}</TableCell>
+                                    <TableCell className="text-center text-sm text-green-400">
+                                      {stat.completed}
+                                    </TableCell>
+                                    <TableCell className="text-center text-sm text-red-400">{stat.failed}</TableCell>
+                                    <TableCell className="text-center text-sm text-blue-400">{stat.running}</TableCell>
+                                    <TableCell className="text-right text-sm text-muted-foreground">
+                                      {stat.avgTimeMs > 0 ? `${(stat.avgTimeMs / 1000).toFixed(1)}s` : "\u2014"}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Recent Executions */}
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Recent Executions</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <ScrollArea className="h-64">
+                            <div className="space-y-1">
+                              {(execDashboard.recentExecutions || []).map((exec: any) => (
+                                <div key={exec.id} className="flex items-center gap-2 p-2 bg-muted/10 rounded text-xs">
+                                  {executionStatusBadge(exec.status)}
+                                  <span className="font-medium">{exec.playbookName}</span>
+                                  <span className="text-muted-foreground">{exec.triggeredBy}</span>
+                                  <span className="text-muted-foreground">{exec.triggerEvent}</span>
+                                  {exec.dryRun && (
+                                    <Badge variant="outline" className="text-[9px]">
+                                      Dry Run
+                                    </Badge>
+                                  )}
+                                  <span className="text-muted-foreground ml-auto">{exec.actionsCount} actions</span>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+
+                      {/* Failed Executions */}
+                      {execDashboard.failedExecutions?.length > 0 && (
+                        <Card className="border-red-500/20">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <XCircle className="h-4 w-4 text-red-400" />
+                              Failed Executions
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              {execDashboard.failedExecutions.map((exec: any) => (
+                                <div
+                                  key={exec.id}
+                                  className="p-2 bg-red-500/5 rounded border border-red-500/20 text-xs"
+                                >
+                                  <div className="font-medium">{exec.playbookName}</div>
+                                  <div className="text-muted-foreground">
+                                    {exec.triggeredBy} &mdash; {exec.error}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </>
+                  ) : (
+                    <Card>
+                      <CardContent className="py-12 text-center text-muted-foreground">
+                        <MonitorPlay className="h-10 w-10 mx-auto mb-3" />
+                        <p className="text-sm">No execution data available</p>
+                        <p className="text-xs mt-1">Execute a playbook to see monitoring data</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* ─── 20.3 Version Diffing ──────────────────────────────────────── */}
+              <TabsContent value="versiondiff" className="mt-4">
+                <div className="space-y-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Diff className="h-5 w-5 text-orange-400" />
+                    Playbook Version Diffing
+                  </h2>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Compare Two Versions</CardTitle>
+                      <CardDescription className="text-xs">
+                        Select a playbook and two versions to compare changes
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <Label className="text-xs">Playbook</Label>
+                        <Select
+                          value={selectedGovernancePlaybook || ""}
+                          onValueChange={(v) => {
+                            setSelectedGovernancePlaybook(v);
+                            setDiffVersion1("");
+                            setDiffVersion2("");
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Select playbook..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(playbooks || []).map((pb) => (
+                              <SelectItem key={pb.id} value={pb.id} className="text-xs">
+                                {pb.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedGovernancePlaybook && playbookVersions && playbookVersions.length >= 2 && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-xs">Version A (older)</Label>
+                            <Select value={diffVersion1} onValueChange={setDiffVersion1}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select version..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {playbookVersions.map((v) => (
+                                  <SelectItem key={v.id} value={String(v.id)} className="text-xs">
+                                    v{v.version} &mdash; {v.changeDescription || "No description"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Version B (newer)</Label>
+                            <Select value={diffVersion2} onValueChange={setDiffVersion2}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select version..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {playbookVersions.map((v) => (
+                                  <SelectItem key={v.id} value={String(v.id)} className="text-xs">
+                                    v{v.version} &mdash; {v.changeDescription || "No description"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {diffVersion1 && diffVersion2 && diffVersion1 !== diffVersion2 && (
+                        <Button size="sm" onClick={() => fetchDiff()} disabled={diffLoading}>
+                          {diffLoading ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Diff className="h-3 w-3 mr-1" />
+                          )}
+                          Compare Versions
+                        </Button>
+                      )}
+
+                      {selectedGovernancePlaybook && (!playbookVersions || playbookVersions.length < 2) && (
+                        <p className="text-xs text-muted-foreground py-2">
+                          This playbook needs at least 2 versions to compare. Create versions in the Governance tab.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {versionDiff && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">
+                          Diff: v{versionDiff.version1?.version} &rarr; v{versionDiff.version2?.version}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {versionDiff.summary?.totalChanges} changes: {versionDiff.summary?.added} added,{" "}
+                          {versionDiff.summary?.removed} removed, {versionDiff.summary?.modified} modified
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {versionDiff.changes?.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-4 text-center">No differences found</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(versionDiff.changes || []).map((change: any, i: number) => (
+                              <div
+                                key={i}
+                                className={`p-3 rounded border text-xs ${
+                                  change.type === "added"
+                                    ? "bg-green-500/5 border-green-500/20"
+                                    : change.type === "removed"
+                                      ? "bg-red-500/5 border-red-500/20"
+                                      : "bg-yellow-500/5 border-yellow-500/20"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[10px] ${
+                                      change.type === "added"
+                                        ? "border-green-500/40 text-green-400"
+                                        : change.type === "removed"
+                                          ? "border-red-500/40 text-red-400"
+                                          : "border-yellow-500/40 text-yellow-400"
+                                    }`}
+                                  >
+                                    {change.type}
+                                  </Badge>
+                                  <span className="font-medium">{change.field}</span>
+                                  {change.nodeId && (
+                                    <span className="text-muted-foreground">Node: {change.nodeId}</span>
+                                  )}
+                                </div>
+                                {change.type === "modified" && change.field !== "steps" && (
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    <div className="p-2 bg-red-500/5 rounded">
+                                      <span className="text-[10px] text-muted-foreground">Before:</span>
+                                      <pre className="text-[10px] font-mono whitespace-pre-wrap">
+                                        {JSON.stringify(change.oldValue, null, 2)}
+                                      </pre>
+                                    </div>
+                                    <div className="p-2 bg-green-500/5 rounded">
+                                      <span className="text-[10px] text-muted-foreground">After:</span>
+                                      <pre className="text-[10px] font-mono whitespace-pre-wrap">
+                                        {JSON.stringify(change.newValue, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </div>
+                                )}
+                                {change.type === "added" && (
+                                  <pre className="text-[10px] font-mono text-green-400 mt-1 whitespace-pre-wrap">
+                                    + {JSON.stringify(change.newValue, null, 2)}
+                                  </pre>
+                                )}
+                                {change.type === "removed" && (
+                                  <pre className="text-[10px] font-mono text-red-400 mt-1 whitespace-pre-wrap">
+                                    - {JSON.stringify(change.oldValue, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* ─── 20.4 Simulation / Dry-Run Mode ────────────────────────────── */}
+              <TabsContent value="simulation" className="mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <FlaskConical className="h-5 w-5 text-purple-400" />
+                      Playbook Simulation Mode
+                    </h2>
+                  </div>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Run Simulation</CardTitle>
+                      <CardDescription className="text-xs">
+                        Simulate playbook execution without triggering any real actions. Actions are logged but never
+                        executed.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <Label className="text-xs">Playbook</Label>
+                        <Select value={simRunPlaybookId || ""} onValueChange={setSimRunPlaybookId}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Select playbook to simulate..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(playbooks || []).map((pb) => (
+                              <SelectItem key={pb.id} value={pb.id} className="text-xs">
+                                {pb.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Scenario Name (optional)</Label>
+                        <Input
+                          placeholder="e.g. Ransomware containment test"
+                          value={simScenarioName}
+                          onChange={(e) => setSimScenarioName(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (simRunPlaybookId) {
+                            simulatePlaybookMutation.mutate({
+                              playbookId: simRunPlaybookId,
+                              scenarioName: simScenarioName || "Manual simulation",
+                              parameters: {},
+                            });
+                          }
+                        }}
+                        disabled={!simRunPlaybookId || simulatePlaybookMutation.isPending}
+                      >
+                        {simulatePlaybookMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <FlaskConical className="h-3 w-3 mr-1" />
+                        )}
+                        Run Simulation
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {simulatePlaybookMutation.data && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          Simulation Result: {(simulatePlaybookMutation.data as any).playbookName}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {(simulatePlaybookMutation.data as any).summary?.totalSteps} steps | Estimated:{" "}
+                          {((simulatePlaybookMutation.data as any).summary?.estimatedDurationMs / 1000).toFixed(1)}s |{" "}
+                          High-risk: {(simulatePlaybookMutation.data as any).summary?.highRiskSteps} | Approval gates:{" "}
+                          {(simulatePlaybookMutation.data as any).summary?.approvalGates} | Destructive:{" "}
+                          {(simulatePlaybookMutation.data as any).summary?.destructiveActions}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-80">
+                          <div className="space-y-2">
+                            {((simulatePlaybookMutation.data as any).steps || []).map((step: any) => (
+                              <div
+                                key={step.step}
+                                className={`p-3 rounded border text-xs ${
+                                  step.riskLevel === "high"
+                                    ? "bg-red-500/5 border-red-500/20"
+                                    : step.riskLevel === "medium"
+                                      ? "bg-yellow-500/5 border-yellow-500/20"
+                                      : "bg-muted/10 border-border"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    Step {step.step}
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[10px] ${
+                                      step.nodeType === "action"
+                                        ? "border-green-500/40 text-green-400"
+                                        : step.nodeType === "condition"
+                                          ? "border-orange-500/40 text-orange-400"
+                                          : step.nodeType === "approval"
+                                            ? "border-purple-500/40 text-purple-400"
+                                            : "border-blue-500/40 text-blue-400"
+                                    }`}
+                                  >
+                                    {step.nodeType || step.actionType}
+                                  </Badge>
+                                  <span className="font-medium">{step.label}</span>
+                                  {step.wouldBlock && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] border-purple-500/40 text-purple-400"
+                                    >
+                                      Would Block
+                                    </Badge>
+                                  )}
+                                  {step.riskLevel && (
+                                    <Badge
+                                      variant={
+                                        step.riskLevel === "high"
+                                          ? "destructive"
+                                          : step.riskLevel === "medium"
+                                            ? "secondary"
+                                            : "outline"
+                                      }
+                                      className="text-[10px]"
+                                    >
+                                      {step.riskLevel} risk
+                                    </Badge>
+                                  )}
+                                  <span className="text-muted-foreground ml-auto">
+                                    ~{(step.estimatedDurationMs / 1000).toFixed(1)}s
+                                  </span>
+                                </div>
+                                {step.impact?.length > 0 && (
+                                  <div className="mt-1 space-y-0.5">
+                                    {step.impact.map((imp: any, j: number) => (
+                                      <div
+                                        key={j}
+                                        className="text-[10px] text-muted-foreground flex items-center gap-1"
+                                      >
+                                        <span
+                                          className={
+                                            imp.type === "destructive"
+                                              ? "text-red-400"
+                                              : imp.type === "notification"
+                                                ? "text-blue-400"
+                                                : "text-muted-foreground"
+                                          }
+                                        >
+                                          [{imp.type}]
+                                        </span>
+                                        {imp.description}
+                                        {imp.reversible !== undefined && (
+                                          <span className="text-muted-foreground/60">
+                                            ({imp.reversible ? "reversible" : "irreversible"})
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Past simulations from governance tab data */}
+                  {simulations && simulations.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Previous Simulations</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-48">
+                          <div className="space-y-1">
+                            {simulations.map((sim) => (
+                              <div key={sim.id} className="flex items-center gap-2 p-2 bg-muted/10 rounded text-xs">
+                                <Badge
+                                  variant={sim.status === "completed" ? "default" : "secondary"}
+                                  className="text-[10px]"
+                                >
+                                  {sim.status}
+                                </Badge>
+                                <span className="font-medium">
+                                  {(sim.simulatedActions as any)?.[0]?.label || "Simulation"}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {Array.isArray(sim.simulatedActions) ? (sim.simulatedActions as any[]).length : 0}{" "}
+                                  steps
+                                </span>
+                                <span className="text-muted-foreground ml-auto">
+                                  {sim.durationMs ? `${(sim.durationMs / 1000).toFixed(1)}s` : "\u2014"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
             </Tabs>
           )}
         </TabsContent>
+
+        {/* ─── 20.7 Analytics Tab ──────────────────────────────────────────── */}
+        <TabsContent value="analytics" className="mt-4 space-y-4" data-testid="tab-content-analytics">
+          {analyticsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i}>
+                  <CardContent className="p-5">
+                    <Skeleton className="h-8 w-16 mb-2" />
+                    <Skeleton className="h-4 w-24" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : analyticsData ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.overview?.successRate ?? 0}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      {analyticsData.overview?.completedExecutions ?? 0} completed
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Failure Rate</CardTitle>
+                    <XCircle className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.overview?.failureRate ?? 0}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      {analyticsData.overview?.failedExecutions ?? 0} failed
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Avg Execution Time</CardTitle>
+                    <Timer className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {analyticsData.overview?.avgExecutionTimeMs
+                        ? `${(analyticsData.overview.avgExecutionTimeMs / 1000).toFixed(1)}s`
+                        : "—"}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {analyticsData.overview?.totalExecutions ?? 0} total runs
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Playbooks</CardTitle>
+                    <Workflow className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.overview?.activePlaybooks ?? 0}</div>
+                    <p className="text-xs text-muted-foreground">
+                      of {analyticsData.overview?.totalPlaybooks ?? 0} total
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Most Triggered Playbooks</CardTitle>
+                    <CardDescription className="text-xs">Top playbooks by execution count</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-56">
+                      <div className="space-y-2">
+                        {(analyticsData.mostTriggered || []).map((pb: any) => (
+                          <div
+                            key={pb.playbookId}
+                            className="flex items-center justify-between p-2 bg-muted/10 rounded text-xs"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{pb.playbookName}</div>
+                              <div className="text-muted-foreground">{pb.totalExecutions} executions</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default" className="text-[10px]">
+                                {pb.successRate}% success
+                              </Badge>
+                              <span className="text-muted-foreground">
+                                {pb.avgTimeMs ? `${(pb.avgTimeMs / 1000).toFixed(1)}s avg` : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {!(analyticsData.mostTriggered || []).length && (
+                          <p className="text-xs text-muted-foreground text-center py-4">No execution data yet</p>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">High Failure Steps</CardTitle>
+                    <CardDescription className="text-xs">Steps with the highest failure rates</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-56">
+                      <div className="space-y-2">
+                        {(analyticsData.highFailureSteps || []).map((step: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-2 bg-muted/10 rounded text-xs">
+                            <div className="font-medium font-mono">{step.stepId}</div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="destructive" className="text-[10px]">
+                                {step.failureRate}% fail
+                              </Badge>
+                              <span className="text-muted-foreground">
+                                {step.failures}/{step.total} runs
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {!(analyticsData.highFailureSteps || []).length && (
+                          <p className="text-xs text-muted-foreground text-center py-4">No failure data</p>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 20.8 Available Response Action Types */}
+              {actionTypesData && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Available Response Action Types</CardTitle>
+                    <CardDescription className="text-xs">
+                      {actionTypesData.totalCount} action types across {actionTypesData.categories?.length} categories
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {(actionTypesData.categories || []).map((cat: string) => (
+                        <div key={cat} className="space-y-1.5">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            {cat}
+                          </div>
+                          {(actionTypesData.byCategory?.[cat] || []).map((action: any) => (
+                            <div
+                              key={action.actionType}
+                              className="flex items-center gap-2 p-1.5 bg-muted/10 rounded text-xs"
+                            >
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] no-default-hover-elevate no-default-active-elevate ${
+                                  action.risk === "high"
+                                    ? "border-red-500/40 text-red-400"
+                                    : action.risk === "medium"
+                                      ? "border-orange-500/40 text-orange-400"
+                                      : "border-green-500/40 text-green-400"
+                                }`}
+                              >
+                                {action.risk}
+                              </Badge>
+                              <span className="font-medium">{action.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Execution Time Trend */}
+              {analyticsData.executionTimeTrend && analyticsData.executionTimeTrend.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Execution Time Trend</CardTitle>
+                    <CardDescription className="text-xs">
+                      Last {analyticsData.executionTimeTrend.length} completed executions
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-end gap-1 h-24">
+                      {analyticsData.executionTimeTrend.map((t: any, idx: number) => {
+                        const maxTime = Math.max(
+                          ...analyticsData.executionTimeTrend.map((x: any) => x.executionTimeMs || 1),
+                        );
+                        const height = Math.max(4, (t.executionTimeMs / maxTime) * 80);
+                        return (
+                          <div
+                            key={idx}
+                            className="bg-primary/60 rounded-t flex-1 min-w-[4px]"
+                            style={{ height: `${height}px` }}
+                            title={`${(t.executionTimeMs / 1000).toFixed(1)}s`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <BarChart3 className="h-8 w-8 mb-2" />
+                <p className="text-sm">No analytics data available</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ─── 20.9 Notifications Tab ──────────────────────────────────────── */}
+        <TabsContent value="notifications" className="mt-4 space-y-4" data-testid="tab-content-notifications">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Notification Channel Templates</CardTitle>
+              <CardDescription className="text-xs">
+                Configure notification templates for playbook steps — supports email, Slack, Teams, PagerDuty, and
+                webhook
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Select Playbook</Label>
+                  <Select value={selectedNotifPlaybookId || ""} onValueChange={(v) => setSelectedNotifPlaybookId(v)}>
+                    <SelectTrigger data-testid="select-notif-playbook">
+                      <SelectValue placeholder="Choose a playbook..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(playbooks || []).map((pb) => (
+                        <SelectItem key={pb.id} value={String(pb.id)}>
+                          {pb.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedNotifPlaybookId && (
+                  <>
+                    <Separator />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Channel</Label>
+                        <Select value={notifChannel} onValueChange={setNotifChannel}>
+                          <SelectTrigger data-testid="select-notif-channel">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="slack">Slack</SelectItem>
+                            <SelectItem value="teams">Microsoft Teams</SelectItem>
+                            <SelectItem value="pagerduty">PagerDuty</SelectItem>
+                            <SelectItem value="webhook">Webhook</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Subject / Title</Label>
+                        <Input
+                          placeholder="Alert: {{severity}} incident detected"
+                          value={notifSubject}
+                          onChange={(e) => setNotifSubject(e.target.value)}
+                          data-testid="input-notif-subject"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Body Template</Label>
+                      <Textarea
+                        placeholder="Incident {{incident_id}} — {{title}} (Severity: {{severity}}) triggered at {{timestamp}}"
+                        value={notifBody}
+                        onChange={(e) => setNotifBody(e.target.value)}
+                        className="resize-none text-xs"
+                        rows={3}
+                        data-testid="input-notif-body"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Recipients / Channel / Webhook URL</Label>
+                      <Input
+                        placeholder={
+                          notifChannel === "email"
+                            ? "user@example.com"
+                            : notifChannel === "webhook"
+                              ? "https://..."
+                              : "#channel"
+                        }
+                        value={notifRecipients}
+                        onChange={(e) => setNotifRecipients(e.target.value)}
+                        data-testid="input-notif-recipients"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (!notifBody.trim()) return;
+                          createNotifTemplateMutation.mutate({
+                            channel: notifChannel,
+                            subject: notifSubject || null,
+                            body: notifBody,
+                            recipients: notifRecipients || null,
+                            webhookUrl: notifChannel === "webhook" ? notifRecipients : null,
+                          });
+                        }}
+                        disabled={!notifBody.trim() || createNotifTemplateMutation.isPending}
+                        data-testid="button-create-notif-template"
+                      >
+                        {createNotifTemplateMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        Create Template
+                      </Button>
+                    </div>
+
+                    {/* Available Variables */}
+                    {notifConfig?.availableChannels && (
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium">Available variables: </span>
+                        {notifConfig.availableChannels
+                          .find((c: any) => c.channel === notifChannel)
+                          ?.variables?.join(", ") || "—"}
+                      </div>
+                    )}
+
+                    {/* Existing Templates */}
+                    {notifConfig?.templates && notifConfig.templates.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Existing Templates
+                        </h4>
+                        {notifConfig.templates.map((t: any) => (
+                          <div
+                            key={t.id}
+                            className="flex items-start justify-between p-2.5 bg-muted/10 rounded text-xs gap-2"
+                          >
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                                >
+                                  {t.channel}
+                                </Badge>
+                                {t.subject && <span className="font-medium truncate">{t.subject}</span>}
+                              </div>
+                              <p className="text-muted-foreground truncate">{t.body}</p>
+                              <p className="text-muted-foreground/60">
+                                by {t.createdBy} • {t.createdAt ? formatDateShort(new Date(t.createdAt)) : "—"}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => deleteNotifTemplateMutation.mutate(t.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ─── 20.10 Change Management Tab ─────────────────────────────────── */}
+        <TabsContent value="changes" className="mt-4 space-y-4" data-testid="tab-content-changes">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Create Change Ticket</CardTitle>
+              <CardDescription className="text-xs">
+                Track infrastructure changes made by playbook executions
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Playbook</Label>
+                  <Select value={changePlaybookId} onValueChange={setChangePlaybookId}>
+                    <SelectTrigger data-testid="select-change-playbook">
+                      <SelectValue placeholder="Select playbook..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(playbooks || []).map((pb) => (
+                        <SelectItem key={pb.id} value={String(pb.id)}>
+                          {pb.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Change Type</Label>
+                  <Select value={changeType} onValueChange={setChangeType}>
+                    <SelectTrigger data-testid="select-change-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="firewall_rule">Firewall Rule</SelectItem>
+                      <SelectItem value="account_disable">Account Disable</SelectItem>
+                      <SelectItem value="network_block">Network Block</SelectItem>
+                      <SelectItem value="endpoint_isolation">Endpoint Isolation</SelectItem>
+                      <SelectItem value="detection_update">Detection Update</SelectItem>
+                      <SelectItem value="configuration_change">Configuration Change</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Summary</Label>
+                  <Input
+                    placeholder="Brief summary of the change..."
+                    value={changeSummary}
+                    onChange={(e) => setChangeSummary(e.target.value)}
+                    data-testid="input-change-summary"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Description (optional)</Label>
+                <Textarea
+                  placeholder="Detailed description of the change and its impact..."
+                  value={changeDesc}
+                  onChange={(e) => setChangeDesc(e.target.value)}
+                  className="resize-none text-xs"
+                  rows={2}
+                  data-testid="input-change-desc"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (!changePlaybookId || !changeSummary.trim()) return;
+                  createChangeTicketMutation.mutate({
+                    playbookId: Number(changePlaybookId),
+                    changeType,
+                    summary: changeSummary,
+                    description: changeDesc || null,
+                  });
+                }}
+                disabled={!changePlaybookId || !changeSummary.trim() || createChangeTicketMutation.isPending}
+                data-testid="button-create-change-ticket"
+              >
+                {createChangeTicketMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Ticket className="h-4 w-4 mr-2" />
+                )}
+                Create Change Ticket
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Change Tickets</CardTitle>
+              <CardDescription className="text-xs">{changeTickets?.total ?? 0} tickets tracked</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-80">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">ID</TableHead>
+                      <TableHead className="text-xs">Playbook</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Summary</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs">Requested</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(changeTickets?.tickets || []).map((ticket: any) => (
+                      <TableRow key={ticket.id}>
+                        <TableCell className="text-xs font-mono">{ticket.id}</TableCell>
+                        <TableCell className="text-xs">{ticket.playbookName}</TableCell>
+                        <TableCell className="text-xs">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                          >
+                            {ticket.changeType?.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs max-w-[200px] truncate">{ticket.summary}</TableCell>
+                        <TableCell className="text-xs">
+                          <Badge
+                            variant={
+                              ticket.status === "approved" || ticket.status === "implemented"
+                                ? "default"
+                                : ticket.status === "rejected"
+                                  ? "destructive"
+                                  : ticket.status === "closed"
+                                    ? "outline"
+                                    : "secondary"
+                            }
+                            className="text-[10px]"
+                          >
+                            {ticket.status?.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {ticket.requestedBy}
+                          <br />
+                          {ticket.requestedAt ? formatDateShort(new Date(ticket.requestedAt)) : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1">
+                            {ticket.status === "pending_approval" && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px]"
+                                  onClick={() =>
+                                    approveChangeTicketMutation.mutate({ ticketId: ticket.id, decision: "approved" })
+                                  }
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px]"
+                                  onClick={() =>
+                                    approveChangeTicketMutation.mutate({ ticketId: ticket.id, decision: "rejected" })
+                                  }
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            {ticket.status === "approved" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px]"
+                                onClick={() => implementChangeTicketMutation.mutate(ticket.id)}
+                              >
+                                Implement
+                              </Button>
+                            )}
+                            {(ticket.status === "implemented" || ticket.status === "approved") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-[10px]"
+                                onClick={() => closeChangeTicketMutation.mutate(ticket.id)}
+                              >
+                                Close
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!(changeTickets?.tickets || []).length && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
+                          No change tickets yet. Create one above to track infrastructure changes.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        {/* ─── 24.1/24.2 Execution Tracking Tab ─── */}
+        <TabsContent value="tracking" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold">Runbook Execution Tracking</h2>
+            </div>
+          </div>
+
+          {!activeTrackingId ? (
+            <Card>
+              <CardContent className="p-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Select a playbook to start tracking execution progress step-by-step.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {(playbooks || []).map((pb: any) => (
+                    <Card
+                      key={pb.id}
+                      className="cursor-pointer hover:border-primary/40 transition-colors"
+                      onClick={() => startTrackingMutation.mutate(pb.id.toString())}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate">{pb.name}</p>
+                            <p className="text-xs text-muted-foreground">{pb.trigger || "manual"}</p>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`/api/playbooks/${pb.id}/export-pdf`, "_blank");
+                              }}
+                            >
+                              <Printer className="h-3 w-3 mr-1" />
+                              PDF
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAutomationSuggestionId(pb.id.toString());
+                                setShowAutomationDialog(true);
+                              }}
+                            >
+                              <Bot className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-semibold">
+                      Execution: <span className="font-mono text-xs">{activeTrackingId}</span>
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge
+                        variant={
+                          trackingData?.status === "running"
+                            ? "default"
+                            : trackingData?.status === "paused"
+                              ? "outline"
+                              : "secondary"
+                        }
+                      >
+                        {trackingData?.status || "loading"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {trackingData?.progressPercent ?? 0}% complete
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setActiveTrackingId(null);
+                        setTrackingPlaybookId(null);
+                      }}
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Close
+                    </Button>
+                  </div>
+                </div>
+
+                <Progress value={trackingData?.progressPercent ?? 0} className="h-2" />
+
+                <div className="space-y-2">
+                  {(trackingData?.steps || []).map((step: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`border rounded-md p-3 ${step.status === "in_progress" ? "border-primary/50 bg-primary/5" : step.status === "completed" ? "border-green-500/30 bg-green-500/5" : step.status === "skipped" ? "border-muted bg-muted/30" : step.status === "paused" ? "border-yellow-500/30 bg-yellow-500/5" : ""}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          {step.status === "completed" ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : step.status === "in_progress" ? (
+                            <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                          ) : step.status === "skipped" ? (
+                            <SkipForward className="h-4 w-4 text-muted-foreground" />
+                          ) : step.status === "paused" ? (
+                            <Pause className="h-4 w-4 text-yellow-500" />
+                          ) : (
+                            <CircleDot className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span className="text-sm font-medium">
+                            Step {idx + 1}: {step.label}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                          >
+                            {step.type}
+                          </Badge>
+                        </div>
+                        {step.status === "in_progress" && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() =>
+                                stepActionMutation.mutate({
+                                  playbookId: trackingPlaybookId,
+                                  executionId: activeTrackingId,
+                                  action: "complete",
+                                  stepIndex: idx,
+                                })
+                              }
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Complete
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                stepActionMutation.mutate({
+                                  playbookId: trackingPlaybookId,
+                                  executionId: activeTrackingId,
+                                  action: "skip",
+                                  stepIndex: idx,
+                                })
+                              }
+                            >
+                              <SkipForward className="h-3 w-3 mr-1" />
+                              Skip
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                stepActionMutation.mutate({
+                                  playbookId: trackingPlaybookId,
+                                  executionId: activeTrackingId,
+                                  action: "pause",
+                                  stepIndex: idx,
+                                })
+                              }
+                            >
+                              <Pause className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        {step.status === "paused" && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() =>
+                              stepActionMutation.mutate({
+                                playbookId: trackingPlaybookId,
+                                executionId: activeTrackingId,
+                                action: "resume",
+                                stepIndex: idx,
+                              })
+                            }
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Resume
+                          </Button>
+                        )}
+                      </div>
+                      {step.timeSpentMs > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Time spent: {Math.round(step.timeSpentMs / 1000)}s
+                        </p>
+                      )}
+                      {step.notes && <p className="text-xs text-muted-foreground mt-1 italic">Notes: {step.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ─── 24.4 Runbook Analytics Tab ─── */}
+        <TabsContent value="runbook-analytics" className="mt-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <PieChart className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Runbook Analytics</h2>
+          </div>
+
+          {runbookAnalyticsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <Skeleton className="h-16 w-full" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : runbookAnalytics ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Total Runbooks
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.totalRunbooks}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Total Executions
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.totalExecutions}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Completion Rate
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.overallCompletionRate}%</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                      Avg Completion Time
+                    </p>
+                    <p className="text-2xl font-bold mt-1">
+                      {runbookAnalytics.avgCompletionTimeMs > 0
+                        ? `${Math.round(runbookAnalytics.avgCompletionTimeMs / 1000)}s`
+                        : "N/A"}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {runbookAnalytics.mostSkippedSteps?.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Most Skipped Steps</h3>
+                    <div className="space-y-2">
+                      {runbookAnalytics.mostSkippedSteps.map((step: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{step.label}</span>
+                          <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate">
+                            {step.count} skips
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {runbookAnalytics.longestSteps?.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Longest Duration Steps</h3>
+                    <div className="space-y-2">
+                      {runbookAnalytics.longestSteps.map((step: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{step.label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{step.totalRuns} runs</span>
+                            <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate">
+                              avg {Math.round(step.avgDurationMs / 1000)}s
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {runbookAnalytics.perRunbook?.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Per-Runbook Statistics</h3>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Runbook</TableHead>
+                          <TableHead>Executions</TableHead>
+                          <TableHead>Completed</TableHead>
+                          <TableHead>Failed</TableHead>
+                          <TableHead>Completion Rate</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {runbookAnalytics.perRunbook.map((stat: any) => (
+                          <TableRow key={stat.playbookId}>
+                            <TableCell className="font-medium">{stat.playbookName}</TableCell>
+                            <TableCell>{stat.totalExecutions}</TableCell>
+                            <TableCell>{stat.completedExecutions}</TableCell>
+                            <TableCell>{stat.failedExecutions}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Progress value={stat.completionRate} className="h-1.5 w-16" />
+                                <span className="text-xs">{stat.completionRate}%</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <PieChart className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">No analytics data available</p>
+                <p className="text-xs text-muted-foreground mt-1">Execute runbooks to start collecting analytics</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* ─── 24.5 Automation Suggestion Dialog ─── */}
+      <Dialog open={showAutomationDialog} onOpenChange={setShowAutomationDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5" />
+              Automation Suggestions
+            </DialogTitle>
+            <DialogDescription>
+              Analysis of which runbook steps can be converted to automated playbook actions.
+            </DialogDescription>
+          </DialogHeader>
+          {automationSuggestions ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <Card>
+                  <CardContent className="p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Total Steps</p>
+                    <p className="text-xl font-bold">{automationSuggestions.totalSteps}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Automatable</p>
+                    <p className="text-xl font-bold text-green-500">{automationSuggestions.automatableSteps}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Coverage</p>
+                    <p className="text-xl font-bold">{automationSuggestions.automationCoverage}%</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <ScrollArea className="max-h-[300px]">
+                <div className="space-y-2">
+                  {(automationSuggestions.suggestions || []).map((s: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`border rounded-md p-3 ${s.convertible ? "border-green-500/30" : "border-muted"}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            Step {s.stepIndex + 1}: {s.label}
+                          </span>
+                          {s.convertible ? (
+                            <Badge variant="default" className="text-[10px]">
+                              Automatable
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] no-default-hover-elevate no-default-active-elevate"
+                            >
+                              Manual
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          Confidence: {Math.round(s.automationConfidence * 100)}%
+                        </span>
+                      </div>
+                      {s.suggestedIntegration && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Integration: <span className="font-medium text-foreground">{s.suggestedIntegration}</span> —{" "}
+                          {s.integrationDescription}
+                        </p>
+                      )}
+                      {s.manualReason && <p className="text-xs text-muted-foreground mt-1">{s.manualReason}</p>}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+
+              {automationSuggestions.recommendedIntegrations?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">Recommended Integrations</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {automationSuggestions.recommendedIntegrations.map((int: string, idx: number) => (
+                      <Badge key={idx} variant="secondary" className="text-xs">
+                        {int}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
         <DialogContent className="max-w-md">

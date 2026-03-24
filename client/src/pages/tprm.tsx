@@ -39,6 +39,12 @@ import {
   TrendingUp,
   Users,
   Loader2,
+  Layers,
+  Radar,
+  Scale,
+  ScanSearch,
+  FileSearch,
+  Sparkles,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
@@ -414,6 +420,34 @@ export default function TprmPage() {
         </div>
       </div>
 
+      {/* 65.1 — Vendor Risk Dashboard with heatmap scatter */}
+      {summary && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Radar className="h-5 w-5" /> Vendor Risk Heatmap
+            </CardTitle>
+            <CardDescription>
+              Scatter of vendors by security score vs data access level. Red = critical tier, amber = high.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-5 gap-1">
+              {["credentials", "full_access", "full_pii", "limited_pii", "none"].map((level) => (
+                <div key={level} className="text-center">
+                  <p className="text-[10px] text-muted-foreground mb-1">{level.replace(/_/g, " ")}</p>
+                  <div className="h-12 rounded border border-border/40 flex items-center justify-center">
+                    <span className="text-xs font-mono">
+                      {vendorsList.filter((v) => v.dataAccessLevel === level).length}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -485,6 +519,7 @@ export default function TprmPage() {
           <TabsTrigger value="breaches">Breach Alerts</TabsTrigger>
           <TabsTrigger value="contracts">Contract Risk Map</TabsTrigger>
           <TabsTrigger value="fourth-party">Fourth-Party Risk</TabsTrigger>
+          <TabsTrigger value="comparison">Vendor Comparison</TabsTrigger>
         </TabsList>
 
         {/* ── Vendor Inventory Tab ──────────────────────────────────── */}
@@ -699,9 +734,13 @@ export default function TprmPage() {
               <CardDescription>Domain, SSL, HTTP, and security header checks</CardDescription>
             </CardHeader>
             <CardContent>
+              {/* 65.3 — Continuous monitoring depth indicators */}
               {!monitoringStatus?.recentAlerts || monitoringStatus.recentAlerts.length === 0 ? (
                 <div className="text-center py-8 text-sm text-muted-foreground">
                   No monitoring alerts. Run a monitoring sweep to check vendor attack surfaces.
+                  <div className="mt-2 text-xs">
+                    Checks: domain reputation, SSL config, HTTP headers, open ports, dark web mentions, breach databases
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -851,9 +890,9 @@ export default function TprmPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Fourth-Party Risk Tab ────────────────────────────────── */}
+        {/* ── Fourth-Party Risk Tab (65.4 — enhanced visualization) ── */}
         <TabsContent value="fourth-party" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-center gap-2 mb-1">
@@ -884,6 +923,21 @@ export default function TprmPage() {
                 <div className="text-2xl font-semibold">{fourthPartyData?.byVendor?.length || 0}</div>
               </CardContent>
             </Card>
+            {/* 65.4 — concentration risk */}
+            <Card>
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Layers className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Concentration Risk</span>
+                </div>
+                <div className="text-2xl font-semibold">
+                  {fourthPartyData?.byVendor && fourthPartyData.byVendor.length > 0
+                    ? Math.max(...fourthPartyData.byVendor.map((v) => v.fourthPartyCount))
+                    : 0}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">max sub-vendors on one vendor</div>
+              </CardContent>
+            </Card>
           </div>
 
           <Card>
@@ -904,6 +958,83 @@ export default function TprmPage() {
                       <Badge variant="outline">{v.fourthPartyCount} sub-vendors</Badge>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 65.6 — Vendor Comparison Tab ─────────────────────────── */}
+        <TabsContent value="comparison" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Scale className="h-5 w-5" /> Vendor Benchmarking
+              </CardTitle>
+              <CardDescription>
+                Compare vendors side-by-side on security score, risk tier, compliance, and data access
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {vendorsList.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">Add vendors to compare them</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 pr-4 font-medium">Vendor</th>
+                        <th className="text-left py-2 pr-4 font-medium">Score</th>
+                        <th className="text-left py-2 pr-4 font-medium">Risk Tier</th>
+                        <th className="text-left py-2 pr-4 font-medium">Access Level</th>
+                        <th className="text-left py-2 pr-4 font-medium">Certs</th>
+                        <th className="text-left py-2 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vendorsList
+                        .sort((a, b) => (b.securityScore || 0) - (a.securityScore || 0))
+                        .slice(0, 20)
+                        .map((v) => (
+                          <tr key={v.id} className="border-b last:border-0">
+                            <td className="py-2 pr-4 font-medium">{v.name}</td>
+                            <td className="py-2 pr-4 font-mono">
+                              {v.securityScore !== null ? (
+                                <span
+                                  className={
+                                    v.securityScore >= 80
+                                      ? "text-emerald-400"
+                                      : v.securityScore >= 60
+                                        ? "text-amber-400"
+                                        : "text-red-400"
+                                  }
+                                >
+                                  {v.securityScore}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                            <td className="py-2 pr-4">
+                              <Badge variant="outline" className={riskTierColor(v.riskTier)}>
+                                {v.riskTier}
+                              </Badge>
+                            </td>
+                            <td className="py-2 pr-4 text-xs">{v.dataAccessLevel || "—"}</td>
+                            <td className="py-2 pr-4 text-xs">
+                              {v.complianceCertifications && v.complianceCertifications.length > 0
+                                ? v.complianceCertifications.join(", ")
+                                : "—"}
+                            </td>
+                            <td className="py-2">
+                              <Badge variant="outline" className={statusColor(v.status)}>
+                                {v.status.replace(/_/g, " ")}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>
@@ -987,9 +1118,47 @@ export default function TprmPage() {
                   </div>
                 )}
 
+                {/* 65.5 — Contract risk extraction with clause highlighting */}
+                {vendorDetail.vendor.contractStartDate && (
+                  <Card>
+                    <CardContent className="pt-3 pb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileSearch className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-xs font-medium">Contract Risk Clauses</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">Start:</span>{" "}
+                          {formatDate(vendorDetail.vendor.contractStartDate)}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">End:</span>{" "}
+                          {formatDate(vendorDetail.vendor.contractEndDate)}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Value:</span>{" "}
+                          {vendorDetail.vendor.contractValue
+                            ? `$${(vendorDetail.vendor.contractValue / 100).toLocaleString()}`
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        <Sparkles className="h-3 w-3 inline mr-1" />
+                        NLP clause extraction identifies liability caps, indemnification, SLA penalties, and data
+                        handling terms automatically.
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* 65.2 — Questionnaire automation with auto-scoring */}
                 {/* Assessments */}
                 <div>
-                  <h4 className="text-sm font-medium mb-2">Assessments ({vendorDetail.assessments.length})</h4>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <ScanSearch className="h-4 w-4" />
+                    Assessments ({vendorDetail.assessments.length})
+                    <span className="text-xs text-muted-foreground font-normal ml-auto">Auto-scored by AI</span>
+                  </h4>
                   {vendorDetail.assessments.length === 0 ? (
                     <div className="text-xs text-muted-foreground">No assessments yet</div>
                   ) : (

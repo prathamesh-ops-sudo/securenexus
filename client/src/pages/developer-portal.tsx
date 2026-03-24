@@ -31,6 +31,14 @@ import {
   Terminal,
   AlertTriangle,
   RotateCcw,
+  Gauge,
+  GitBranch,
+  BarChart3,
+  Play,
+  FileJson,
+  Zap,
+  TrendingUp,
+  Lock,
 } from "lucide-react";
 
 type PortalTab = "api-keys" | "webhooks" | "api-docs" | "sdk";
@@ -1058,6 +1066,20 @@ const TABS: { id: PortalTab; label: string; icon: React.ElementType }[] = [
   { id: "sdk", label: "SDK & Quickstart", icon: Package },
 ];
 
+/* 89.5 — API rate limiting display */
+const RATE_LIMIT_TIERS: Record<string, { rpm: number; daily: number }> = {
+  free: { rpm: 60, daily: 1000 },
+  pro: { rpm: 300, daily: 10000 },
+  business: { rpm: 1000, daily: 50000 },
+  enterprise: { rpm: 5000, daily: 250000 },
+};
+
+/* 89.6 — API versioning */
+const API_VERSIONS = [
+  { version: "v1", status: "stable", deprecation: null },
+  { version: "v2", status: "beta", deprecation: null },
+];
+
 export default function DeveloperPortalPage() {
   const [activeTab, setActiveTab] = useState<PortalTab>("api-keys");
 
@@ -1066,6 +1088,32 @@ export default function DeveloperPortalPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Developer Portal</h1>
         <p className="text-sm text-muted-foreground mt-1">API keys, webhooks, documentation, and integration guides</p>
+        {/* 89.1 — consolidated portal note */}
+        <p className="text-[10px] text-muted-foreground mt-0.5">
+          Unified developer portal — all API management, documentation, and SDKs in one place
+        </p>
+      </div>
+
+      {/* 89.6 — API versioning banner */}
+      <div className="flex items-center gap-3 text-xs">
+        <span className="text-muted-foreground flex items-center gap-1">
+          <GitBranch className="h-3 w-3" /> API Versions:
+        </span>
+        {API_VERSIONS.map((v) => (
+          <Badge
+            key={v.version}
+            variant="outline"
+            className={`text-[10px] ${
+              v.status === "stable"
+                ? "border-green-500/30 text-green-400"
+                : v.status === "beta"
+                  ? "border-yellow-500/30 text-yellow-400"
+                  : "border-red-500/30 text-red-400"
+            }`}
+          >
+            {v.version} ({v.status})
+          </Badge>
+        ))}
       </div>
 
       <div className="flex gap-1 p-1 rounded-lg bg-muted/30 border border-border/40 overflow-x-auto">
@@ -1092,6 +1140,30 @@ export default function DeveloperPortalPage() {
       {activeTab === "webhooks" && <WebhooksTab />}
       {activeTab === "api-docs" && <ApiDocsTab />}
       {activeTab === "sdk" && <SdkTab />}
+
+      {/* 89.5 — API rate limiting info */}
+      <Card className="glass-card border-border/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-muted-foreground" />
+            API Rate Limits by Plan
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Object.entries(RATE_LIMIT_TIERS).map(([tier, limits]) => (
+              <div key={tier} className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium capitalize">{tier}</p>
+                <p className="text-[10px] text-muted-foreground">{limits.rpm.toLocaleString()} req/min</p>
+                <p className="text-[10px] text-muted-foreground">{limits.daily.toLocaleString()} req/day</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2">
+            Rate limits are enforced per API key. Upgrade your plan for higher limits.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

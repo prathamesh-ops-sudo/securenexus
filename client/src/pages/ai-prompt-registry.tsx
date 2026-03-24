@@ -27,6 +27,15 @@ import {
   ArrowRight,
   Minus,
   Plus,
+  BarChart3,
+  ListFilter,
+  ShieldCheck,
+  Undo2,
+  Variable,
+  Info,
+  FolderOpen,
+  Trophy,
+  AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -100,6 +109,46 @@ interface TestPromptResult {
   cached: boolean;
   prompt: { id: string; version: number; name: string; tier: string };
 }
+
+interface PromptABTestResult {
+  id: string;
+  promptId: string;
+  versionA: number;
+  versionB: number;
+  status: "running" | "completed" | "paused";
+  startedAt: string;
+  completedAt: string | null;
+  sampleSize: number;
+  results: {
+    versionA: { avgQuality: number; avgLatencyMs: number; avgSatisfaction: number; sampleCount: number };
+    versionB: { avgQuality: number; avgLatencyMs: number; avgSatisfaction: number; sampleCount: number };
+  };
+}
+
+interface PromptVariableInfo {
+  name: string;
+  description: string;
+  required: boolean;
+  exampleValue: string;
+  type: string;
+}
+
+interface PromptQualityScore {
+  promptId: string;
+  version: number;
+  scores: { relevance: number; accuracy: number; actionability: number; formatCompliance: number; overall: number };
+  evaluatedAt: string;
+  sampleOutput: string;
+}
+
+const PROMPT_CATEGORIES: Record<string, { label: string; description: string }> = {
+  triage: { label: "Triage", description: "Initial alert classification and severity assessment" },
+  investigation: { label: "Investigation", description: "Deep-dive analysis and threat hunting" },
+  summarization: { label: "Summarization", description: "Executive summaries and report generation" },
+  rule_generation: { label: "Rule Generation", description: "Detection rule and YARA/Sigma authoring" },
+  report_generation: { label: "Report Generation", description: "Compliance and incident reports" },
+  health: { label: "Health & Monitoring", description: "System health checks and operational monitoring" },
+};
 
 /* ── Inline diff helper ── */
 function computeLineDiff(
@@ -777,6 +826,379 @@ function TestPromptDialog({
   );
 }
 
+/* ── 34.1: A/B Testing Dashboard ── */
+function ABTestingDashboard({ promptId }: { promptId: string | null }) {
+  const { data: tests, isLoading } = useQuery<PromptABTestResult[]>({
+    queryKey: ["/api/ai/prompts", promptId, "ab-tests"],
+    queryFn: async () => {
+      if (!promptId) return [];
+      const res = await apiRequest("GET", `/api/ai/prompts/${promptId}/ab-tests`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!promptId,
+  });
+
+  if (!promptId) {
+    return (
+      <Card className="glass-card">
+        <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <BarChart3 className="h-10 w-10 mb-3 opacity-30" />
+          <p className="text-sm font-medium">Select a prompt to view A/B test results</p>
+          <p className="text-xs mt-1">Choose a prompt from the Catalog tab first</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="glass-card">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <BarChart3 className="h-4 w-4" />
+          A/B Test Results
+        </CardTitle>
+        <CardDescription>
+          Compare quality scores, response times, and user satisfaction between prompt versions
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !tests || tests.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <BarChart3 className="h-10 w-10 mb-3 opacity-40" />
+            <p className="text-sm font-medium">No A/B tests yet</p>
+            <p className="text-xs mt-1">Create an A/B test to compare prompt versions</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {tests.map((test) => (
+              <div key={test.id} className="border border-border/50 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      v{test.versionA} vs v{test.versionB}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${
+                        test.status === "running"
+                          ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
+                          : test.status === "completed"
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                            : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                      }`}
+                    >
+                      {test.status}
+                    </Badge>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(test.startedAt).toLocaleDateString()} | {test.sampleSize} samples
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+                    <p className="text-xs font-medium text-blue-400 mb-2">Version A (v{test.versionA})</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Quality</p>
+                        <p className="text-sm font-bold tabular-nums">{test.results.versionA.avgQuality.toFixed(1)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Latency</p>
+                        <p className="text-sm font-bold tabular-nums">{test.results.versionA.avgLatencyMs}ms</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Satisfaction</p>
+                        <p className="text-sm font-bold tabular-nums">
+                          {test.results.versionA.avgSatisfaction.toFixed(1)}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {test.results.versionA.sampleCount} samples
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/20">
+                    <p className="text-xs font-medium text-purple-400 mb-2">Version B (v{test.versionB})</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Quality</p>
+                        <p className="text-sm font-bold tabular-nums">{test.results.versionB.avgQuality.toFixed(1)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Latency</p>
+                        <p className="text-sm font-bold tabular-nums">{test.results.versionB.avgLatencyMs}ms</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Satisfaction</p>
+                        <p className="text-sm font-bold tabular-nums">
+                          {test.results.versionB.avgSatisfaction.toFixed(1)}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {test.results.versionB.sampleCount} samples
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── 34.2: Variable Documentation ── */
+function VariableDocumentation({ promptId }: { promptId: string | null }) {
+  const { data: vars, isLoading } = useQuery<{ promptId: string; promptName: string; variables: PromptVariableInfo[] }>(
+    {
+      queryKey: ["/api/ai/prompts", promptId, "variables"],
+      queryFn: async () => {
+        const res = await apiRequest("GET", `/api/ai/prompts/${promptId}/variables`);
+        return res.json();
+      },
+      enabled: !!promptId,
+    },
+  );
+
+  if (!promptId) {
+    return (
+      <Card className="glass-card">
+        <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <Variable className="h-10 w-10 mb-3 opacity-30" />
+          <p className="text-sm font-medium">Select a prompt to view its variables</p>
+          <p className="text-xs mt-1">Each prompt documents its available template variables</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="glass-card">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Variable className="h-4 w-4" />
+          Template Variables {vars?.promptName ? `- ${vars.promptName}` : ""}
+        </CardTitle>
+        <CardDescription>
+          Available variables, required status, and example values for this prompt template
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !vars || vars.variables.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <Variable className="h-10 w-10 mb-3 opacity-40" />
+            <p className="text-sm font-medium">No template variables found</p>
+            <p className="text-xs mt-1">This prompt does not use {"{{variable}}"} syntax</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Variable</TableHead>
+                <TableHead className="text-xs">Type</TableHead>
+                <TableHead className="text-xs">Required</TableHead>
+                <TableHead className="text-xs">Description</TableHead>
+                <TableHead className="text-xs">Example</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {vars.variables.map((v) => (
+                <TableRow key={v.name}>
+                  <TableCell className="font-mono text-xs text-cyan-400">{"{{" + v.name + "}}"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-[10px]">
+                      {v.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {v.required ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Optional</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs max-w-[200px]">{v.description}</TableCell>
+                  <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[150px] truncate">
+                    {v.exampleValue}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── 34.3: Categories Panel ── */
+function CategoriesPanel() {
+  const { data: categories, isLoading } = useQuery<
+    Record<string, { category: string; label: string; description: string; promptCount: number; promptIds: string[] }>
+  >({
+    queryKey: ["/api/ai/prompts/categories"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/ai/prompts/categories");
+      return res.json();
+    },
+  });
+
+  return (
+    <Card className="glass-card">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <FolderOpen className="h-4 w-4" />
+          Prompt Categories
+        </CardTitle>
+        <CardDescription>
+          Organize prompts by purpose: Triage, Investigation, Summarization, Rule Generation, Report Generation
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !categories ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <p className="text-sm">No categories available</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(categories).map(([catId, cat]) => (
+              <div
+                key={catId}
+                className="border border-border/50 rounded-lg p-4 space-y-2 hover:border-cyan-500/30 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">{cat.label}</h4>
+                  <Badge variant="outline" className="text-xs tabular-nums">
+                    {cat.promptCount} prompt{cat.promptCount !== 1 ? "s" : ""}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">{cat.description}</p>
+                {cat.promptIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {cat.promptIds.slice(0, 5).map((id) => (
+                      <Badge key={id} variant="secondary" className="text-[10px] font-mono">
+                        {id.length > 20 ? id.slice(0, 20) + "..." : id}
+                      </Badge>
+                    ))}
+                    {cat.promptIds.length > 5 && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        +{cat.promptIds.length - 5} more
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── 34.4: Quality Scores Panel ── */
+function QualityScoresPanel({ promptId }: { promptId: string | null }) {
+  const { data: scores, isLoading } = useQuery<PromptQualityScore[]>({
+    queryKey: ["/api/ai/prompts", promptId, "quality-scores"],
+    queryFn: async () => {
+      if (!promptId) return [];
+      const res = await apiRequest("GET", `/api/ai/prompts/${promptId}/quality-scores`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!promptId,
+  });
+
+  if (!promptId) {
+    return (
+      <Card className="glass-card">
+        <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <Trophy className="h-10 w-10 mb-3 opacity-30" />
+          <p className="text-sm font-medium">Select a prompt to view quality scores</p>
+          <p className="text-xs mt-1">Track relevance, accuracy, actionability, and format compliance</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="glass-card">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Trophy className="h-4 w-4" />
+          Quality Scores
+        </CardTitle>
+        <CardDescription>
+          Automatic quality scoring: relevance, accuracy, actionability, format compliance
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !scores || scores.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <Trophy className="h-10 w-10 mb-3 opacity-40" />
+            <p className="text-sm font-medium">No quality evaluations yet</p>
+            <p className="text-xs mt-1">Scores will appear as prompt outputs are automatically evaluated</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {scores
+              .slice(-10)
+              .reverse()
+              .map((score, i) => (
+                <div
+                  key={`${score.promptId}-${score.evaluatedAt}-${i}`}
+                  className="border border-border/50 rounded-lg p-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className="text-xs tabular-nums">
+                      v{score.version}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(score.evaluatedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {(["relevance", "accuracy", "actionability", "formatCompliance", "overall"] as const).map((key) => {
+                      const val = score.scores[key];
+                      const color = val >= 80 ? "text-emerald-400" : val >= 60 ? "text-amber-400" : "text-red-400";
+                      return (
+                        <div key={key} className="text-center">
+                          <p className="text-[10px] text-muted-foreground capitalize">
+                            {key === "formatCompliance" ? "Format" : key}
+                          </p>
+                          <p className={`text-sm font-bold tabular-nums ${color}`}>{val}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AiPromptRegistryPage() {
   usePageTitle("AI Prompt Registry");
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
@@ -932,7 +1354,11 @@ export default function AiPromptRegistryPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="catalog">Prompt Catalog</TabsTrigger>
-          <TabsTrigger value="audit">Global Audit Log</TabsTrigger>
+          <TabsTrigger value="ab-testing">A/B Testing</TabsTrigger>
+          <TabsTrigger value="variables">Variables</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="quality">Quality Scores</TabsTrigger>
+          <TabsTrigger value="audit">Audit Log</TabsTrigger>
           <TabsTrigger value="tiers">Tier Breakdown</TabsTrigger>
         </TabsList>
 
@@ -1121,6 +1547,26 @@ export default function AiPromptRegistryPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* 34.1: A/B Testing Dashboard */}
+        <TabsContent value="ab-testing" className="mt-4">
+          <ABTestingDashboard promptId={selectedPromptId} />
+        </TabsContent>
+
+        {/* 34.2: Variable Documentation */}
+        <TabsContent value="variables" className="mt-4">
+          <VariableDocumentation promptId={selectedPromptId} />
+        </TabsContent>
+
+        {/* 34.3: Categories */}
+        <TabsContent value="categories" className="mt-4">
+          <CategoriesPanel />
+        </TabsContent>
+
+        {/* 34.4: Quality Scores */}
+        <TabsContent value="quality" className="mt-4">
+          <QualityScoresPanel promptId={selectedPromptId} />
         </TabsContent>
 
         <TabsContent value="tiers" className="mt-4">

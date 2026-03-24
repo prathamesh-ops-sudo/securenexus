@@ -31,6 +31,11 @@ import {
   BarChart3,
   Network,
   Plug,
+  TrendingUp,
+  Clock,
+  Layers,
+  Scale,
+  Gauge,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { useLocation } from "wouter";
@@ -198,6 +203,7 @@ export default function SupplyChainPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [iacScanOpen, setIacScanOpen] = useState(false);
   const [selectedFinding, setSelectedFinding] = useState<SupplyChainFinding | null>(null);
+  const [depGraphView, setDepGraphView] = useState<"table" | "tree">("table");
 
   // Upload form state
   const [sbomName, setSbomName] = useState("");
@@ -252,6 +258,26 @@ export default function SupplyChainPage() {
       return apiFetch(`/api/supply-chain/dependencies?${params}`);
     },
     enabled: tab === "dependencies",
+  });
+
+  // 52.2: SBOM Dashboard data
+  const { data: sbomDashboardData } = useQuery<{
+    sboms: Array<SbomArtifact & { freshnessDays: number; vulnExposure: number }>;
+    totals: { uniqueDeps: number; totalVulns: number; avgFreshness: number; coveragePercent: number };
+  }>({
+    queryKey: ["/api/supply-chain/sbom-dashboard"],
+    queryFn: () => apiFetch("/api/supply-chain/sbom-dashboard"),
+    enabled: tab === "sbom-dashboard",
+  });
+
+  // 52.3: Typosquatting candidates from dependency graph
+  const { data: typosquatData } = useQuery<{
+    candidates: Array<DependencyEntry & { downloadCount?: number; authorReputation?: number }>;
+    whitelisted: string[];
+  }>({
+    queryKey: ["/api/supply-chain/typosquatting-review"],
+    queryFn: () => apiFetch("/api/supply-chain/typosquatting-review"),
+    enabled: tab === "typosquatting",
   });
 
   // ── Mutations ───────────────────────────────────────────────────────────
@@ -315,6 +341,17 @@ export default function SupplyChainPage() {
     onError: (err: Error) => {
       toast({ title: "IaC scan failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  // 52.3: Whitelist typosquat candidate
+  const whitelistPackage = useMutation({
+    mutationFn: (depId: string) => apiFetch(`/api/supply-chain/dependencies/${depId}/whitelist`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/supply-chain/typosquatting-review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supply-chain/dependencies"] });
+      toast({ title: "Package whitelisted" });
+    },
+    onError: () => toast({ title: "Failed to whitelist", variant: "destructive" }),
   });
 
   const handleSbomUpload = () => {
@@ -450,6 +487,18 @@ export default function SupplyChainPage() {
           <TabsTrigger value="sboms" className="gap-1.5">
             <Package className="h-3.5 w-3.5" />
             SBOMs ({sbomsData?.total ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="sbom-dashboard" className="gap-1.5">
+            <Gauge className="h-3.5 w-3.5" />
+            SBOM Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="dep-viz" className="gap-1.5">
+            <Layers className="h-3.5 w-3.5" />
+            Dep Tree
+          </TabsTrigger>
+          <TabsTrigger value="typosquatting" className="gap-1.5">
+            <Eye className="h-3.5 w-3.5" />
+            Typosquatting
           </TabsTrigger>
         </TabsList>
 
@@ -1051,6 +1100,363 @@ export default function SupplyChainPage() {
                       </TableRow>
                     ))
                   )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 52.1: Dependency Tree Visualization ── */}
+        <TabsContent value="dep-viz" className="mt-4 space-y-4">
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Layers className="h-4 w-4 text-teal-400" />
+                Dependency Tree Visualization
+              </CardTitle>
+              <div className="flex items-center gap-3 text-[10px] mt-1">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-500" /> Clean
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-red-500" /> Vulnerable
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-yellow-500" /> License Risk
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" /> Typosquat
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-0.5 max-h-[500px] overflow-y-auto">
+              {!depsData?.dependencies?.length ? (
+                <EmptyState
+                  icon={Layers}
+                  title="No dependencies found"
+                  description="Upload an SBOM to visualize your dependency tree with vulnerability and license risk highlighting."
+                  action={{ label: "Upload SBOM", icon: Upload, onClick: () => setUploadOpen(true) }}
+                  compact
+                />
+              ) : (
+                depsData.dependencies.slice(0, 120).map((d) => {
+                  const isLicenseRisk =
+                    d.license != null &&
+                    ["GPL", "AGPL", "SSPL"].some((l) => (d.license ?? "").toUpperCase().includes(l));
+                  const dotColor = d.isVulnerable
+                    ? "bg-red-500"
+                    : d.typosquatCandidate
+                      ? "bg-purple-500"
+                      : isLicenseRisk
+                        ? "bg-yellow-500"
+                        : "bg-green-500/60";
+                  const textColor = d.isVulnerable
+                    ? "text-red-400"
+                    : d.typosquatCandidate
+                      ? "text-purple-400"
+                      : isLicenseRisk
+                        ? "text-yellow-400"
+                        : "";
+                  return (
+                    <div
+                      key={d.id}
+                      className="flex items-center gap-2 py-1 px-2 rounded hover:bg-zinc-800/50"
+                      style={{ paddingLeft: `${(d.depth || 0) * 20 + 8}px` }}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                      <span className={`font-mono text-xs ${textColor}`}>
+                        {d.packageName}
+                        <span className="text-muted-foreground">@{d.packageVersion || "?"}</span>
+                      </span>
+                      {d.isDirect ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] h-4 bg-teal-500/10 text-teal-400 border-teal-500/30"
+                        >
+                          direct
+                        </Badge>
+                      ) : null}
+                      {d.isVulnerable ? (
+                        <span className="text-[10px] text-red-400 ml-auto">{d.cveCount} CVE</span>
+                      ) : null}
+                      {d.typosquatCandidate && d.typosquatSimilarTo ? (
+                        <span className="text-[10px] text-purple-400 ml-1">~{d.typosquatSimilarTo}</span>
+                      ) : null}
+                      {d.license ? (
+                        <span
+                          className={`text-[10px] ${isLicenseRisk ? "text-yellow-400" : "text-muted-foreground"} ${!d.isVulnerable ? "ml-auto" : ""}`}
+                        >
+                          {d.license}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 52.2: SBOM Dashboard ── */}
+        <TabsContent value="sbom-dashboard" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="p-3">
+                <div className="text-[11px] text-muted-foreground">Applications with SBOM</div>
+                <div className="text-xl font-semibold mt-0.5">
+                  {sbomDashboardData?.sboms?.length ?? sbomsData?.total ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="p-3">
+                <div className="text-[11px] text-muted-foreground">Unique Dependencies</div>
+                <div className="text-xl font-semibold mt-0.5">
+                  {sbomDashboardData?.totals?.uniqueDeps ?? riskSummary?.dependencies.total ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="p-3">
+                <div className="text-[11px] text-red-400">Total Vulnerabilities</div>
+                <div className="text-xl font-semibold mt-0.5 text-red-400">
+                  {sbomDashboardData?.totals?.totalVulns ?? riskSummary?.sboms.totalVulnerabilities ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="p-3">
+                <div className="text-[11px] text-teal-400">Avg Freshness</div>
+                <div className="text-xl font-semibold mt-0.5 text-teal-400">
+                  {sbomDashboardData?.totals?.avgFreshness ?? 0}d
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-teal-400" />
+                SBOM Coverage by Application
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!sbomsData?.sboms?.length ? (
+                <EmptyState
+                  icon={Package}
+                  title="No SBOMs uploaded"
+                  description="Upload SBOMs to see application-level coverage, freshness, and vulnerability exposure."
+                  action={{ label: "Upload SBOM", icon: Upload, onClick: () => setUploadOpen(true) }}
+                  compact
+                />
+              ) : (
+                <div className="space-y-3">
+                  {(sbomDashboardData?.sboms ?? sbomsData?.sboms ?? []).map(
+                    (s: SbomArtifact & { freshnessDays?: number; vulnExposure?: number }) => {
+                      const freshness =
+                        s.freshnessDays ?? Math.floor((Date.now() - new Date(s.createdAt).getTime()) / 86400000);
+                      const vulnExposure =
+                        s.vulnExposure ??
+                        (s.componentCount > 0 ? Math.round((s.vulnerabilityCount / s.componentCount) * 100) : 0);
+                      const freshColor =
+                        freshness <= 7 ? "text-green-400" : freshness <= 30 ? "text-yellow-400" : "text-red-400";
+                      return (
+                        <div key={s.id} className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Package className="h-4 w-4 text-teal-400" />
+                              <span className="font-medium text-sm">{s.name}</span>
+                              {s.version ? <span className="text-xs text-muted-foreground">v{s.version}</span> : null}
+                              <Badge variant="outline" className="text-[10px] uppercase">
+                                {s.format}
+                              </Badge>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={
+                                s.status === "completed"
+                                  ? "bg-green-500/20 text-green-400 border-green-500/30"
+                                  : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                              }
+                            >
+                              {s.status}
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-4 gap-4 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Components</span>
+                              <p className="font-semibold mt-0.5">{s.componentCount}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Vulnerabilities</span>
+                              <p
+                                className={`font-semibold mt-0.5 ${s.vulnerabilityCount > 0 ? "text-red-400" : "text-green-400"}`}
+                              >
+                                {s.vulnerabilityCount}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Freshness</span>
+                              <p className={`font-semibold mt-0.5 flex items-center gap-1 ${freshColor}`}>
+                                <Clock className="h-3 w-3" />
+                                {freshness}d ago
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Vuln Exposure</span>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <div className="w-16 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${vulnExposure > 20 ? "bg-red-500" : vulnExposure > 5 ? "bg-yellow-500" : "bg-green-500"}`}
+                                    style={{ width: `${Math.min(vulnExposure, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="font-semibold">{vulnExposure}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 52.3: Typosquatting Alert Review ── */}
+        <TabsContent value="typosquatting" className="mt-4 space-y-4">
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Eye className="h-4 w-4 text-purple-400" />
+                Typosquatting Detection Review
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-800 hover:bg-transparent">
+                    <TableHead className="text-muted-foreground">Suspicious Package</TableHead>
+                    <TableHead className="text-muted-foreground">Likely Legitimate</TableHead>
+                    <TableHead className="text-muted-foreground">Similarity</TableHead>
+                    <TableHead className="text-muted-foreground">Ecosystem</TableHead>
+                    <TableHead className="text-muted-foreground">Maintainer Score</TableHead>
+                    <TableHead className="text-muted-foreground">Status</TableHead>
+                    <TableHead className="text-muted-foreground text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(() => {
+                    const candidates =
+                      typosquatData?.candidates ??
+                      depsData?.dependencies?.filter((d: DependencyEntry) => d.typosquatCandidate) ??
+                      [];
+                    if (candidates.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={7}>
+                            <EmptyState
+                              icon={ShieldCheck}
+                              title="No typosquatting candidates"
+                              description="No suspicious package names detected in your dependency graph."
+                              compact
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
+                    return candidates.map(
+                      (d: DependencyEntry & { downloadCount?: number; authorReputation?: number }) => {
+                        const distance = d.typosquatDistance ?? 1;
+                        const similarity = Math.max(
+                          0,
+                          Math.round(
+                            (1 - distance / Math.max((d.typosquatSimilarTo || "").length, d.packageName.length)) * 100,
+                          ),
+                        );
+                        return (
+                          <TableRow key={d.id} className="border-zinc-800 hover:bg-zinc-800/50">
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="h-3.5 w-3.5 text-purple-400" />
+                                <span className="font-mono text-sm font-medium text-purple-400">{d.packageName}</span>
+                                <span className="text-xs text-muted-foreground">@{d.packageVersion || "?"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-mono text-sm text-green-400">
+                                {d.typosquatSimilarTo || "\u2014"}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <div className="w-12 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${similarity >= 90 ? "bg-red-500" : similarity >= 70 ? "bg-orange-500" : "bg-yellow-500"}`}
+                                    style={{ width: `${similarity}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-semibold">{similarity}%</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="bg-zinc-800/50 border-zinc-700 text-xs">
+                                {d.ecosystem}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {d.maintainerScore !== null && d.maintainerScore !== undefined ? (
+                                <span
+                                  className={
+                                    d.maintainerScore >= 70
+                                      ? "text-green-400"
+                                      : d.maintainerScore >= 40
+                                        ? "text-yellow-400"
+                                        : "text-red-400"
+                                  }
+                                >
+                                  {d.maintainerScore}/100
+                                </span>
+                              ) : (
+                                "\u2014"
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {d.isVulnerable ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-red-500/20 text-red-400 border-red-500/30 text-xs"
+                                >
+                                  {d.cveCount} CVE
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs"
+                                >
+                                  Suspect
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs border-green-500/30 text-green-400 hover:bg-green-500/10"
+                                onClick={() => whitelistPackage.mutate(d.id)}
+                                disabled={whitelistPackage.isPending}
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" /> Whitelist
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      },
+                    );
+                  })()}
                 </TableBody>
               </Table>
             </CardContent>

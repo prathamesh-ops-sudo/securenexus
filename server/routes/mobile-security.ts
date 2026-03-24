@@ -1270,6 +1270,252 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   // =========================================================================
+  // 56.4 — MDM INTEGRATION VALIDATION
+  // =========================================================================
+
+  /** Validate MDM integration actually syncs real device data */
+  app.get("/api/mobile/mdm/validate", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Check devices grouped by MDM provider
+      const byProvider = await db
+        .select({
+          mdmProvider: mobileDevices.mdmProvider,
+          count: count(),
+        })
+        .from(mobileDevices)
+        .where(and(eq(mobileDevices.orgId, orgId), sql`${mobileDevices.mdmProvider} IS NOT NULL`))
+        .groupBy(mobileDevices.mdmProvider);
+
+      // For each configured provider, validate data freshness & completeness
+      const providerValidation = [
+        { provider: "jamf", label: "Jamf Pro", expectedFields: ["serialNumber", "osVersion", "model"] },
+        {
+          provider: "intune",
+          label: "Microsoft Intune",
+          expectedFields: ["serialNumber", "osVersion", "model", "isEncrypted"],
+        },
+        {
+          provider: "workspace-one",
+          label: "VMware Workspace ONE",
+          expectedFields: ["serialNumber", "osVersion", "isEncrypted", "hasScreenLock"],
+        },
+      ];
+
+      const results = [];
+
+      for (const pv of providerValidation) {
+        const providerRow = byProvider.find((b) => b.mdmProvider === pv.provider);
+        const deviceCount = Number(providerRow?.count || 0);
+
+        if (deviceCount === 0) {
+          results.push({
+            provider: pv.provider,
+            label: pv.label,
+            configured: false,
+            deviceCount: 0,
+            dataFreshness: null,
+            missingFields: [],
+            isUsingRealData: false,
+            validationStatus: "not_configured",
+            recommendations: ["Connect your MDM to start syncing device inventory"],
+          });
+          continue;
+        }
+
+        // Check data freshness — how recently were devices updated?
+        const [freshness] = await db
+          .select({
+            newest: sql<string>`MAX(${mobileDevices.lastCheckIn})`,
+            oldest: sql<string>`MIN(${mobileDevices.lastCheckIn})`,
+          })
+          .from(mobileDevices)
+          .where(and(eq(mobileDevices.orgId, orgId), eq(mobileDevices.mdmProvider, pv.provider)));
+
+        // Check for missing critical fields (indicator of simulated data)
+        const missingFields: string[] = [];
+        const [sample] = await db
+          .select()
+          .from(mobileDevices)
+          .where(and(eq(mobileDevices.orgId, orgId), eq(mobileDevices.mdmProvider, pv.provider)))
+          .limit(1);
+
+        if (sample) {
+          const sampleRecord = sample as Record<string, unknown>;
+          for (const field of pv.expectedFields) {
+            if (sampleRecord[field] === null || sampleRecord[field] === undefined || sampleRecord[field] === "") {
+              missingFields.push(field);
+            }
+          }
+        }
+
+        const newestDate = freshness.newest ? new Date(freshness.newest) : null;
+        const staleThreshold = 24 * 60 * 60 * 1000; // 24 hours
+        const isStale = newestDate ? Date.now() - newestDate.getTime() > staleThreshold : true;
+        const isUsingRealData = missingFields.length === 0 && !isStale;
+
+        const recommendations: string[] = [];
+        if (isStale) recommendations.push("Device check-in data is stale (>24h) — verify MDM sync schedule");
+        if (missingFields.length > 0)
+          recommendations.push(`Missing fields: ${missingFields.join(", ")} — verify API permissions`);
+        if (!isUsingRealData)
+          recommendations.push("Posture checks may be using incomplete data — review MDM integration");
+
+        results.push({
+          provider: pv.provider,
+          label: pv.label,
+          configured: true,
+          deviceCount,
+          dataFreshness: newestDate ? newestDate.toISOString() : null,
+          isStale,
+          missingFields,
+          isUsingRealData,
+          validationStatus: isUsingRealData ? "healthy" : isStale ? "stale" : "incomplete",
+          recommendations,
+        });
+      }
+
+      const allHealthy = results.every((r) => !r.configured || r.validationStatus === "healthy");
+      res.json({
+        providers: results,
+        overallStatus: allHealthy ? "healthy" : "needs_attention",
+        summary: `${results.filter((r) => r.configured).length}/${results.length} providers configured, ${results.filter((r) => r.isUsingRealData).length} using real data`,
+      });
+    } catch (err) {
+      log.error("Failed to validate MDM integration", { error: String(err) });
+      res.status(500).json({ message: "Failed to validate MDM integration" });
+    }
+  });
+
+  // =========================================================================
+  // 56.5 — APP RISK ANALYSIS
+  // =========================================================================
+
+  /** Analyze installed apps on managed devices for risk */
+  app.get("/api/mobile/app-risk", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Known-malicious and dangerous-permission app patterns
+      const MALICIOUS_PATTERNS = [
+        { pattern: /^com\.hack/i, reason: "Known hacking tool package" },
+        { pattern: /^com\.spy/i, reason: "Potential spyware" },
+        { pattern: /^com\.keylog/i, reason: "Keylogger detected" },
+        { pattern: /^com\.exploit/i, reason: "Exploit toolkit" },
+        { pattern: /xhelper/i, reason: "Known malware family: xHelper" },
+        { pattern: /joker/i, reason: "Known malware family: Joker" },
+        { pattern: /hiddad/i, reason: "Known malware family: HiddAd" },
+      ];
+
+      const DANGEROUS_PERMISSIONS = [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_CONTACTS",
+        "ACCESS_FINE_LOCATION",
+        "READ_SMS",
+        "SEND_SMS",
+        "READ_CALL_LOG",
+        "SYSTEM_ALERT_WINDOW",
+        "BIND_ACCESSIBILITY_SERVICE",
+        "BIND_DEVICE_ADMIN",
+      ];
+
+      const devices = await db
+        .select({
+          id: mobileDevices.id,
+          deviceName: mobileDevices.deviceName,
+          platform: mobileDevices.platform,
+          installedApps: mobileDevices.installedApps,
+          sideloadedApps: mobileDevices.sideloadedApps,
+        })
+        .from(mobileDevices)
+        .where(eq(mobileDevices.orgId, orgId));
+
+      const flaggedApps: Array<{
+        deviceId: string;
+        deviceName: string;
+        appName: string;
+        appPackage: string;
+        riskLevel: string;
+        reasons: string[];
+        isSideloaded: boolean;
+      }> = [];
+
+      let totalAppsScanned = 0;
+
+      for (const device of devices) {
+        const installed = Array.isArray(device.installedApps) ? device.installedApps : [];
+        const sideloaded = Array.isArray(device.sideloadedApps) ? device.sideloadedApps : [];
+        const sideloadedSet = new Set(sideloaded.map((s: unknown) => String(s)));
+
+        for (const app of installed) {
+          totalAppsScanned++;
+          const appStr = String(app);
+          const reasons: string[] = [];
+
+          // Check against known-malicious patterns
+          for (const mal of MALICIOUS_PATTERNS) {
+            if (mal.pattern.test(appStr)) {
+              reasons.push(mal.reason);
+            }
+          }
+
+          // Flag sideloaded apps
+          const isSideloaded = sideloadedSet.has(appStr);
+          if (isSideloaded) {
+            reasons.push("App installed from unknown source (sideloaded)");
+          }
+
+          if (reasons.length > 0) {
+            const riskLevel = reasons.some(
+              (r) => r.includes("malware") || r.includes("Keylogger") || r.includes("spyware"),
+            )
+              ? "critical"
+              : reasons.some((r) => r.includes("hacking") || r.includes("Exploit"))
+                ? "high"
+                : isSideloaded
+                  ? "medium"
+                  : "low";
+
+            flaggedApps.push({
+              deviceId: device.id,
+              deviceName: device.deviceName,
+              appName: appStr.split(".").pop() || appStr,
+              appPackage: appStr,
+              riskLevel,
+              reasons,
+              isSideloaded,
+            });
+          }
+        }
+      }
+
+      // Sort by risk level
+      const riskOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+      flaggedApps.sort((a, b) => (riskOrder[a.riskLevel] ?? 4) - (riskOrder[b.riskLevel] ?? 4));
+
+      res.json({
+        totalDevicesScanned: devices.length,
+        totalAppsScanned,
+        flaggedApps,
+        summary: {
+          total: flaggedApps.length,
+          critical: flaggedApps.filter((a) => a.riskLevel === "critical").length,
+          high: flaggedApps.filter((a) => a.riskLevel === "high").length,
+          medium: flaggedApps.filter((a) => a.riskLevel === "medium").length,
+          low: flaggedApps.filter((a) => a.riskLevel === "low").length,
+          sideloaded: flaggedApps.filter((a) => a.isSideloaded).length,
+        },
+        dangerousPermissions: DANGEROUS_PERMISSIONS,
+      });
+    } catch (err) {
+      log.error("Failed to analyze app risk", { error: String(err) });
+      res.status(500).json({ message: "Failed to analyze app risk" });
+    }
+  });
+
+  // =========================================================================
   // DASHBOARD / STATISTICS
   // =========================================================================
 

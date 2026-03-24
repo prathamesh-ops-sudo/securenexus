@@ -641,6 +641,388 @@ export function registerConnectorsRoutes(app: Express): void {
     },
   );
 
+  // ── 37.5: Connector Credential Rotation Status ──
+  app.get("/api/connectors/:id/credential-status", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const connector = await storage.getConnector(p(req.params.id));
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
+      const rotations = await storage.getConnectorSecretRotations(connector.id);
+      const healthChecks = await storage.getConnectorHealthChecks(connector.id, 1);
+      const latestHealth = healthChecks[0];
+
+      const credentialFields = rotations.map((r) => ({
+        field: r.secretField,
+        lastRotated: r.lastRotatedAt,
+        nextDue: r.nextRotationDue,
+        intervalDays: r.rotationIntervalDays,
+        status: r.status,
+        rotatedBy: r.rotatedByName,
+        isExpiringSoon: r.nextRotationDue ? new Date(r.nextRotationDue).getTime() - Date.now() < 14 * 86400000 : false,
+        isExpired: r.nextRotationDue ? new Date(r.nextRotationDue).getTime() < Date.now() : false,
+      }));
+
+      res.json({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        credentialStatus: latestHealth?.credentialStatus || "unknown",
+        credentialExpiresAt: latestHealth?.credentialExpiresAt || null,
+        rotationSchedules: credentialFields,
+        totalSchedules: credentialFields.length,
+        expiringSoon: credentialFields.filter((c) => c.isExpiringSoon).length,
+        expired: credentialFields.filter((c) => c.isExpired).length,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch credential status" });
+    }
+  });
+
+  // ── 37.6: Connector Rate Limiting Status ──
+  app.get("/api/connectors/:id/rate-limit-status", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const connector = await storage.getConnector(p(req.params.id));
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
+      const metrics = await storage.getConnectorMetrics(p(req.params.id));
+      const jobs = await storage.getConnectorJobRuns(p(req.params.id), 50);
+      const throttledJobs = jobs.filter((j) => j.throttled);
+      const recentThrottles = throttledJobs.filter(
+        (j) => j.startedAt && new Date(j.startedAt).getTime() > Date.now() - 3600000,
+      );
+
+      res.json({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        pollingIntervalMin: connector.pollingIntervalMin || 5,
+        throttleCount: metrics?.throttleCount ?? 0,
+        errorRate: metrics?.errorRate ?? 0,
+        recentThrottles: recentThrottles.length,
+        totalThrottledJobs: throttledJobs.length,
+        adaptiveThrottling: {
+          enabled: true,
+          currentMultiplier: recentThrottles.length > 3 ? 2.0 : recentThrottles.length > 0 ? 1.5 : 1.0,
+          effectiveIntervalMin:
+            (connector.pollingIntervalMin || 5) *
+            (recentThrottles.length > 3 ? 2.0 : recentThrottles.length > 0 ? 1.5 : 1.0),
+          reason:
+            recentThrottles.length > 3
+              ? "Heavy throttling detected — interval doubled"
+              : recentThrottles.length > 0
+                ? "Moderate throttling — interval increased 50%"
+                : "No throttling — operating at full speed",
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch rate limit status" });
+    }
+  });
+
+  // ── 37.7: Connector Data Mapping Configuration ──
+  app.get("/api/connectors/:id/field-mapping", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const connector = await storage.getConnector(p(req.params.id));
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
+
+      // Return the default field mapping for this connector type
+      const defaultMappings: Record<string, { sourceField: string; targetField: string; transform?: string }[]> = {
+        crowdstrike: [
+          { sourceField: "detection_id", targetField: "externalId" },
+          { sourceField: "max_severity_displayname", targetField: "severity" },
+          { sourceField: "scenario", targetField: "title" },
+          { sourceField: "description", targetField: "description" },
+          { sourceField: "created_timestamp", targetField: "timestamp" },
+          { sourceField: "tactic", targetField: "category", transform: "lowercase" },
+        ],
+        sentinelone: [
+          { sourceField: "id", targetField: "externalId" },
+          { sourceField: "threatInfo.confidenceLevel", targetField: "severity", transform: "map_severity" },
+          { sourceField: "threatInfo.threatName", targetField: "title" },
+          { sourceField: "threatInfo.classification", targetField: "category" },
+          { sourceField: "createdAt", targetField: "timestamp" },
+        ],
+        splunk: [
+          { sourceField: "sid", targetField: "externalId" },
+          { sourceField: "severity", targetField: "severity" },
+          { sourceField: "search_name", targetField: "title" },
+          { sourceField: "description", targetField: "description" },
+          { sourceField: "_time", targetField: "timestamp" },
+        ],
+      };
+
+      const typeKey = connector.type.toLowerCase().replace(/[^a-z]/g, "");
+      const mapping = defaultMappings[typeKey] || [
+        { sourceField: "id", targetField: "externalId" },
+        { sourceField: "severity", targetField: "severity" },
+        { sourceField: "title", targetField: "title" },
+        { sourceField: "description", targetField: "description" },
+        { sourceField: "timestamp", targetField: "timestamp" },
+      ];
+
+      const customMappings = (connector.config as any)?.fieldMappings || null;
+
+      res.json({
+        connectorId: connector.id,
+        connectorType: connector.type,
+        defaultMappings: mapping,
+        customMappings,
+        targetSchema: [
+          { field: "externalId", type: "string", required: true, description: "Unique ID from source system" },
+          { field: "severity", type: "enum", required: true, description: "critical | high | medium | low | info" },
+          { field: "title", type: "string", required: true, description: "Alert title" },
+          { field: "description", type: "string", required: false, description: "Alert description" },
+          { field: "timestamp", type: "datetime", required: true, description: "When the alert occurred" },
+          { field: "category", type: "string", required: false, description: "Alert category (e.g., MITRE tactic)" },
+          { field: "source", type: "string", required: false, description: "Source system name" },
+        ],
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch field mapping" });
+    }
+  });
+
+  // ── 37.8: Connector Pipeline Verification ──
+  app.get("/api/connectors/:id/pipeline-status", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const connector = await storage.getConnector(p(req.params.id));
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
+      const jobs = await storage.getConnectorJobRuns(p(req.params.id), 10);
+      const healthChecks = await storage.getConnectorHealthChecks(connector.id, 1);
+
+      const stages = [
+        {
+          stage: "connect",
+          status:
+            healthChecks.length > 0 && healthChecks[0].status === "healthy"
+              ? "pass"
+              : connector.status === "active"
+                ? "pass"
+                : "fail",
+          detail: healthChecks.length > 0 ? `Last health check: ${healthChecks[0].status}` : "No health checks run",
+        },
+        {
+          stage: "fetch_events",
+          status: jobs.some((j) => (j.alertsReceived ?? 0) > 0) ? "pass" : jobs.length > 0 ? "warn" : "unknown",
+          detail:
+            jobs.length > 0 ? `Last fetch: ${jobs[0].alertsReceived ?? 0} events received` : "No sync runs recorded",
+        },
+        {
+          stage: "normalize",
+          status: jobs.some((j) => (j.alertsCreated ?? 0) > 0)
+            ? "pass"
+            : jobs.some((j) => (j.alertsReceived ?? 0) > 0)
+              ? "warn"
+              : "unknown",
+          detail:
+            jobs.length > 0
+              ? `Last run: ${jobs[0].alertsCreated ?? 0} alerts created from ${jobs[0].alertsReceived ?? 0} events`
+              : "No normalization data",
+        },
+        {
+          stage: "create_alerts",
+          status: (connector.totalAlertsSynced ?? 0) > 0 ? "pass" : "unknown",
+          detail: `Total alerts synced: ${connector.totalAlertsSynced ?? 0}`,
+        },
+      ];
+
+      const overallStatus = stages.every((s) => s.status === "pass")
+        ? "healthy"
+        : stages.some((s) => s.status === "fail")
+          ? "unhealthy"
+          : "partial";
+
+      res.json({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        connectorType: connector.type,
+        overallStatus,
+        stages,
+        lastSyncAt: connector.lastSyncAt,
+        lastSyncStatus: connector.lastSyncStatus,
+        totalAlertsSynced: connector.totalAlertsSynced ?? 0,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch pipeline status" });
+    }
+  });
+
+  // ── 37.9: Connector Response Action Capabilities ──
+  app.get("/api/connectors/:id/response-actions", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const connector = await storage.getConnector(p(req.params.id));
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
+
+      // Define response actions per connector type
+      const actionsByType: Record<
+        string,
+        { action: string; description: string; category: string; requiresApproval: boolean }[]
+      > = {
+        crowdstrike: [
+          {
+            action: "isolate_host",
+            description: "Network-isolate a compromised endpoint",
+            category: "EDR",
+            requiresApproval: true,
+          },
+          {
+            action: "contain_host",
+            description: "Apply containment policy to endpoint",
+            category: "EDR",
+            requiresApproval: true,
+          },
+          {
+            action: "kill_process",
+            description: "Terminate a malicious process",
+            category: "EDR",
+            requiresApproval: false,
+          },
+          {
+            action: "quarantine_file",
+            description: "Quarantine a suspicious file",
+            category: "EDR",
+            requiresApproval: false,
+          },
+        ],
+        sentinelone: [
+          {
+            action: "isolate_endpoint",
+            description: "Disconnect endpoint from network",
+            category: "EDR",
+            requiresApproval: true,
+          },
+          {
+            action: "rollback_threat",
+            description: "Roll back threat changes",
+            category: "EDR",
+            requiresApproval: true,
+          },
+          { action: "kill_process", description: "Kill malicious process", category: "EDR", requiresApproval: false },
+        ],
+        paloalto: [
+          {
+            action: "block_ip",
+            description: "Block IP address at firewall",
+            category: "Firewall",
+            requiresApproval: true,
+          },
+          { action: "block_url", description: "Block malicious URL", category: "Firewall", requiresApproval: false },
+          {
+            action: "quarantine_host",
+            description: "Quarantine host via firewall policy",
+            category: "Firewall",
+            requiresApproval: true,
+          },
+        ],
+        okta: [
+          {
+            action: "disable_account",
+            description: "Disable compromised user account",
+            category: "Identity",
+            requiresApproval: true,
+          },
+          {
+            action: "force_mfa",
+            description: "Force MFA re-enrollment",
+            category: "Identity",
+            requiresApproval: false,
+          },
+          {
+            action: "revoke_sessions",
+            description: "Revoke all active sessions",
+            category: "Identity",
+            requiresApproval: false,
+          },
+        ],
+      };
+
+      const typeKey = connector.type.toLowerCase().replace(/[^a-z]/g, "");
+      const supportedActions = actionsByType[typeKey] || [];
+
+      res.json({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        connectorType: connector.type,
+        supportsResponseActions: supportedActions.length > 0,
+        actions: supportedActions,
+        totalActions: supportedActions.length,
+        requiresApprovalCount: supportedActions.filter((a) => a.requiresApproval).length,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch response actions" });
+    }
+  });
+
+  // ── 37.8: Connector Health Summary (all connectors) ──
+  app.get("/api/connectors/health-summary", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      const { items } = await storage.getConnectorsPaginated({ orgId, offset: 0, limit: 200 });
+
+      const summary = await Promise.all(
+        items.map(async (c) => {
+          const healthChecks = await storage.getConnectorHealthChecks(c.id, 1);
+          const latestHealth = healthChecks[0];
+          const metrics = await storage.getConnectorMetrics(c.id);
+          return {
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            status: c.status,
+            lastSyncAt: c.lastSyncAt,
+            lastSyncStatus: c.lastSyncStatus,
+            totalAlertsSynced: c.totalAlertsSynced ?? 0,
+            healthStatus: latestHealth?.status || "unknown",
+            latencyMs: latestHealth?.latencyMs || null,
+            credentialStatus: latestHealth?.credentialStatus || "unknown",
+            successRate: metrics?.successRate ?? null,
+            errorRate: metrics?.errorRate ?? 0,
+            eventsLast24h: c.lastSyncAlerts ?? 0,
+            dlqDepth: 0, // Populated below if applicable
+          };
+        }),
+      );
+
+      // Get DLQ counts per connector
+      try {
+        const dlqItems = await storage.getDeadLetterJobRuns(orgId);
+        for (const dl of dlqItems) {
+          const entry = summary.find((s) => s.id === dl.connectorId);
+          if (entry) entry.dlqDepth++;
+        }
+      } catch {
+        /* DLQ may be empty */
+      }
+
+      const healthy = summary.filter((s) => s.healthStatus === "healthy" || s.status === "active").length;
+      const unhealthy = summary.filter((s) => s.healthStatus === "unhealthy" || s.status === "error").length;
+      const unknown = summary.filter(
+        (s) => s.healthStatus === "unknown" && s.status !== "active" && s.status !== "error",
+      ).length;
+
+      res.json({
+        total: summary.length,
+        healthy,
+        unhealthy,
+        unknown,
+        connectors: summary,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch health summary" });
+    }
+  });
+
   app.get("/api/v1/connectors", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;

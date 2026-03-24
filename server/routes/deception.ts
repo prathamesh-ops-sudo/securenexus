@@ -14,6 +14,7 @@ import {
 
 const log = logger.child("deception");
 
+// 54.4 — Expanded canary token types
 const ALLOWED_TOKEN_TYPES = [
   "aws_key",
   "database_credential",
@@ -25,7 +26,75 @@ const ALLOWED_TOKEN_TYPES = [
   "kubeconfig",
   "ssh_key",
   "slack_webhook",
+  // 54.4 — New canary token types
+  "usb_canary",
+  "web_bug",
+  "document_canary",
+  "email_canary",
 ];
+
+// 54.4 — Token type generation & monitoring metadata
+const TOKEN_TYPE_META: Record<string, { generation: string; monitoring: string }> = {
+  aws_key: {
+    generation: "Fake AWS access key ID + secret access key pair",
+    monitoring: "CloudTrail API call monitoring",
+  },
+  database_credential: {
+    generation: "Fake DB connection string with callback",
+    monitoring: "Connection attempt detection",
+  },
+  api_key: {
+    generation: "Fake API key (sk-...) with embedded callback",
+    monitoring: "HTTP request to callback endpoint",
+  },
+  document: {
+    generation: "Tracking pixel embedded in document metadata",
+    monitoring: "Image load callback on document open",
+  },
+  email_pixel: { generation: "1x1 transparent GIF in email body", monitoring: "HTTP GET on image load" },
+  dns_token: { generation: "Unique DNS subdomain per canary", monitoring: "DNS resolution monitoring" },
+  url_token: { generation: "Unique URL endpoint per canary", monitoring: "HTTP request to canary URL" },
+  kubeconfig: { generation: "Fake kubeconfig with canary API server", monitoring: "API call to fake K8s cluster" },
+  ssh_key: { generation: "Fake SSH private key with embedded marker", monitoring: "SSH auth attempt with canary key" },
+  slack_webhook: { generation: "Fake Slack webhook URL", monitoring: "HTTP POST to webhook endpoint" },
+  usb_canary: {
+    generation: "Autorun-triggered callback on USB mount",
+    monitoring: "Callback on USB insertion/mount event",
+  },
+  web_bug: { generation: "Invisible tracking element in web pages", monitoring: "HTTP request from page render" },
+  document_canary: {
+    generation: "Office/PDF macro with phone-home callback",
+    monitoring: "Macro execution triggers network callback",
+  },
+  email_canary: {
+    generation: "Full email message with embedded tracking",
+    monitoring: "Open tracking + link click + reply detection",
+  },
+};
+
+// 54.5 — Honeypot emulation depth levels
+const EMULATION_DEPTH_LEVELS = ["low", "medium", "high"] as const;
+type EmulationDepth = (typeof EMULATION_DEPTH_LEVELS)[number];
+
+const EMULATION_DEPTH_META: Record<EmulationDepth, { label: string; description: string; resourceCost: string }> = {
+  low: {
+    label: "Low Interaction",
+    description: "Simple protocol response — banner grabbing, basic service emulation. Minimal attacker TTP capture.",
+    resourceCost: "Minimal (< 128 MB RAM)",
+  },
+  medium: {
+    label: "Medium Interaction",
+    description:
+      "OS-level simulation — fake filesystem, process list, user accounts. Captures reconnaissance and lateral movement TTPs.",
+    resourceCost: "Moderate (256-512 MB RAM)",
+  },
+  high: {
+    label: "High Interaction",
+    description:
+      "Full virtual machine — real OS with monitoring hooks. Captures full attacker toolchain, malware, and exploitation TTPs.",
+    resourceCost: "High (1-4 GB RAM, dedicated CPU)",
+  },
+};
 
 const ALLOWED_ASSET_TYPES = [
   "honey_account",
@@ -600,6 +669,89 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // =========================================================================
+  // 54.4 — CANARY TOKEN TYPES METADATA
+  // =========================================================================
+
+  /** List all supported canary token types with generation & monitoring info */
+  app.get("/api/deception/token-types", isAuthenticated, async (_req, res) => {
+    try {
+      const types = ALLOWED_TOKEN_TYPES.map((type) => ({
+        type,
+        ...(TOKEN_TYPE_META[type] || { generation: "Standard canary token", monitoring: "Callback-based" }),
+      }));
+      res.json({ types });
+    } catch (error) {
+      log.error("List token types error", { error: String(error) });
+      res.status(500).json({ message: "Failed to list token types" });
+    }
+  });
+
+  // =========================================================================
+  // 54.5 — HONEYPOT EMULATION DEPTH
+  // =========================================================================
+
+  /** Get emulation depth options */
+  app.get("/api/deception/emulation-depths", isAuthenticated, async (_req, res) => {
+    try {
+      const depths = EMULATION_DEPTH_LEVELS.map((level) => ({
+        level,
+        ...EMULATION_DEPTH_META[level],
+      }));
+      res.json({ depths });
+    } catch (error) {
+      log.error("List emulation depths error", { error: String(error) });
+      res.status(500).json({ message: "Failed to list emulation depths" });
+    }
+  });
+
+  /** Set emulation depth on a honeypot asset */
+  app.patch("/api/deception/honeypot-assets/:id/emulation-depth", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+      const { emulationDepth } = req.body;
+
+      if (!emulationDepth || !(EMULATION_DEPTH_LEVELS as readonly string[]).includes(emulationDepth)) {
+        return res
+          .status(400)
+          .json({ message: `Invalid emulation depth. Must be one of: ${EMULATION_DEPTH_LEVELS.join(", ")}` });
+      }
+
+      const [asset] = await db
+        .select()
+        .from(honeypotAssets)
+        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
+
+      if (!asset) {
+        return res.status(404).json({ message: "Asset not found" });
+      }
+
+      // Store emulation depth in the configuration JSON field
+      const existingConfig = (asset.configuration as Record<string, unknown>) || {};
+      const newConfig = { ...existingConfig, emulationDepth };
+
+      const [updated] = await db
+        .update(honeypotAssets)
+        .set({ configuration: newConfig, updatedAt: new Date() })
+        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)))
+        .returning();
+
+      const depthInfo = EMULATION_DEPTH_META[emulationDepth as EmulationDepth];
+
+      res.json({
+        asset: updated,
+        emulationDepth: {
+          level: emulationDepth,
+          ...depthInfo,
+        },
+      });
+    } catch (error) {
+      log.error("Set emulation depth error", { error: String(error) });
+      res.status(500).json({ message: "Failed to set emulation depth" });
+    }
+  });
+
+  // =========================================================================
   // DASHBOARD STATS
   // =========================================================================
 
@@ -757,6 +909,16 @@ function maskTokenValue(tokenType: string, value: string): string {
   }
   if (tokenType === "api_key") {
     return value.substring(0, 6) + "****";
+  }
+  // 54.4 — Mask new canary token types
+  if (tokenType === "usb_canary" || tokenType === "document_canary") {
+    return "[canary-payload-" + value.substring(0, 8) + "...]";
+  }
+  if (tokenType === "web_bug") {
+    return '<img src="...' + value.substring(0, 6) + '" />';
+  }
+  if (tokenType === "email_canary") {
+    return "[email-canary-" + value.substring(0, 8) + "...]";
   }
   if (value.length > 20) {
     return value.substring(0, 15) + "...****";

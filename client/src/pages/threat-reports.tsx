@@ -459,6 +459,79 @@ export default function ThreatReportsPage() {
         </Card>
       </div>
 
+      {/* 76.1 — Threat Category Breakdown */}
+      {list.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4" /> Threat Category Distribution
+            </CardTitle>
+            <CardDescription>Breakdown of reported threats by category and severity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {Object.entries(
+                list.reduce<Record<string, number>>((acc, r) => {
+                  acc[r.category] = (acc[r.category] || 0) + 1;
+                  return acc;
+                }, {}),
+              )
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([cat, count]) => {
+                  const CatIcon = CATEGORY_ICONS[cat] || Flag;
+                  return (
+                    <div key={cat} className="flex items-center gap-2 p-2 border rounded-lg">
+                      <CatIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {cat.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {count} report{count !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 76.3 — Response Time Metrics */}
+      {list.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-4 w-4" /> Response Metrics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{stats.total}</p>
+                <p className="text-xs text-muted-foreground">Total Reports</p>
+              </div>
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{stats.pending}</p>
+                <p className="text-xs text-muted-foreground">Awaiting Review</p>
+              </div>
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">
+                  {stats.total > 0 ? Math.round((stats.resolved / stats.total) * 100) : 0}%
+                </p>
+                <p className="text-xs text-muted-foreground">Resolution Rate</p>
+              </div>
+              <div className="text-center p-3 border rounded-lg">
+                <p className="text-2xl font-bold">{list.filter((r) => r.linkedIncidentId).length}</p>
+                <p className="text-xs text-muted-foreground">Escalated to Incidents</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filters */}
       <div className="flex gap-2">
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>

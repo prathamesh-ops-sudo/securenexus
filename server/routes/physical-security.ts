@@ -312,7 +312,7 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
           return res.status(400).json({ error: "eventType and location are required" });
         }
 
-        // Determine if this is an anomaly
+        // 67.2 — Enhanced access anomaly detection
         const anomalyTypes = [
           "door_forced",
           "tailgate_detected",
@@ -320,8 +320,35 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
           "duress_alarm",
           "card_unknown",
         ];
-        const isAnomaly = anomalyTypes.includes(eventType);
-        const anomalyReason = isAnomaly ? `Anomalous event type: ${eventType}` : null;
+        let isAnomaly = anomalyTypes.includes(eventType);
+        let anomalyReason = isAnomaly ? `Anomalous event type: ${eventType}` : null;
+
+        // 67.2 — Detect after-hours access
+        const eventHour = new Date().getUTCHours();
+        if (!isAnomaly && (eventHour < 6 || eventHour >= 22)) {
+          isAnomaly = true;
+          anomalyReason = `After-hours access detected at ${eventHour}:00 UTC`;
+        }
+
+        // 67.2 — Detect simultaneous badge use (cloned badge detection)
+        if (badgeNumber && !isAnomaly) {
+          const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+          const recentBadgeUses = await db
+            .select()
+            .from(badgeEvents)
+            .where(
+              and(
+                eq(badgeEvents.orgId, orgId),
+                eq(badgeEvents.badgeNumber, badgeNumber),
+                gte(badgeEvents.occurredAt, fiveMinAgo),
+              ),
+            )
+            .limit(1);
+          if (recentBadgeUses.length > 0 && recentBadgeUses[0].location !== location) {
+            isAnomaly = true;
+            anomalyReason = `Simultaneous badge use: badge ${badgeNumber} used at ${recentBadgeUses[0].location} and ${location} within 5 minutes (possible clone)`;
+          }
+        }
 
         const [created] = await db
           .insert(badgeEvents)
@@ -758,6 +785,39 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
             .limit(10),
         ]);
 
+        // 67.1 — Facility floor plan status summary (assets by zone/status)
+        const assetsByZone = await db
+          .select({
+            zone: physicalAssets.zone,
+            assetType: physicalAssets.assetType,
+            online: sql<number>`count(*) filter (where ${physicalAssets.isOnline} = true)`,
+            offline: sql<number>`count(*) filter (where ${physicalAssets.isOnline} = false)`,
+            total: count(),
+          })
+          .from(physicalAssets)
+          .where(eq(physicalAssets.orgId, orgId))
+          .groupBy(physicalAssets.zone, physicalAssets.assetType);
+
+        // 67.4 — Physical-cyber convergence: recent correlated events
+        const recentAnomalies = await db
+          .select()
+          .from(badgeEvents)
+          .where(
+            and(eq(badgeEvents.orgId, orgId), eq(badgeEvents.isAnomaly, true), gte(badgeEvents.occurredAt, last24h)),
+          )
+          .orderBy(desc(badgeEvents.occurredAt))
+          .limit(5);
+
+        // 67.3 — Visitor check-in/check-out flow stats
+        const [{ value: totalVisitors }] = await db
+          .select({ value: count() })
+          .from(visitors)
+          .where(eq(visitors.orgId, orgId));
+        const [{ value: preRegistered }] = await db
+          .select({ value: count() })
+          .from(visitors)
+          .where(and(eq(visitors.orgId, orgId), eq(visitors.status, "pre_registered")));
+
         res.json({
           totalAssets,
           totalEvents24h,
@@ -765,6 +825,9 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
           openIncidents,
           activeVisitors,
           recentEvents,
+          assetsByZone,
+          recentAnomalies,
+          visitorStats: { total: totalVisitors, preRegistered, checkedIn: activeVisitors },
           eventTypes: BADGE_EVENT_TYPES,
           assetTypes: PHYSICAL_ASSET_TYPES,
           incidentStatuses: PHYSICAL_INCIDENT_STATUSES,

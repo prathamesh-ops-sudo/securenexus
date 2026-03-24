@@ -117,6 +117,7 @@ interface Visitor {
   purpose: string | null;
   status: string;
   badgeNumber: string | null;
+  badgeExpiry: string | null;
   scheduledAt: string | null;
   checkedInAt: string | null;
   checkedOutAt: string | null;
@@ -131,6 +132,19 @@ interface Dashboard {
   openIncidents: number;
   activeVisitors: number;
   recentEvents: BadgeEvent[];
+  // 67.1 — Facility zone status
+  assetsByZone?: Array<{ zone: string; assetType: string; online: number; offline: number; total: number }>;
+  // 67.2 — Recent anomalies for convergence display
+  recentAnomalies?: Array<{
+    id: string;
+    eventType: string;
+    location: string;
+    badgeNumber: string | null;
+    anomalyReason: string | null;
+    occurredAt: string;
+  }>;
+  // 67.3 — Visitor stats
+  visitorStats?: { total: number; preRegistered: number; checkedIn: number; checkedOut: number };
 }
 
 interface CorrelationRule {
@@ -491,6 +505,120 @@ export default function PhysicalSecurityPage() {
             </Card>
           </div>
 
+          {/* 67.1 — Facility Floor Plan Status (zone-level asset summary) */}
+          {dashboard?.assetsByZone && dashboard.assetsByZone.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Facility Zone Status</CardTitle>
+                <CardDescription>Real-time asset status by zone and type</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {dashboard.assetsByZone.map(
+                    (
+                      z: { zone: string; assetType: string; online: number; offline: number; total: number },
+                      i: number,
+                    ) => (
+                      <div key={i} className="p-3 border border-border/50 rounded-lg">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium">{z.zone || "Unzoned"}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {formatLabel(z.assetType)}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-green-500">{z.online} online</span>
+                          <span className="text-red-400">{z.offline} offline</span>
+                          <span className="text-muted-foreground">{z.total} total</span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-green-500 rounded-full"
+                            style={{ width: `${z.total > 0 ? (z.online / z.total) * 100 : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 67.4 — Physical-Cyber Convergence (recent anomalies) */}
+          {dashboard?.recentAnomalies && dashboard.recentAnomalies.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Physical-Cyber Convergence Events</CardTitle>
+                <CardDescription>Anomalous badge events correlated with digital security alerts</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {dashboard.recentAnomalies.map(
+                    (a: {
+                      id: string;
+                      eventType: string;
+                      location: string;
+                      badgeNumber: string | null;
+                      anomalyReason: string | null;
+                      occurredAt: string;
+                    }) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <AlertTriangle className="h-4 w-4 text-orange-400" />
+                          <div>
+                            <p className="text-sm font-medium">
+                              {formatLabel(a.eventType)} at {a.location}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {a.anomalyReason || "Anomalous event detected"}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatDateTime(a.occurredAt)}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 67.3 — Visitor Stats */}
+          {dashboard?.visitorStats && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Visitor Management Summary</CardTitle>
+                <CardDescription>Current visitor check-in status and pre-registration overview</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{dashboard.visitorStats.total}</p>
+                    <p className="text-xs text-muted-foreground">Total Visitors</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-400">{dashboard.visitorStats.preRegistered}</p>
+                    <p className="text-xs text-muted-foreground">Pre-Registered</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-400">{dashboard.visitorStats.checkedIn}</p>
+                    <p className="text-xs text-muted-foreground">Checked In</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-muted-foreground">{dashboard.visitorStats.checkedOut}</p>
+                    <p className="text-xs text-muted-foreground">Checked Out</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Recent Events */}
           <Card>
             <CardHeader>
@@ -527,6 +655,8 @@ export default function PhysicalSecurityPage() {
                             Anomaly
                           </Badge>
                         )}
+                        {/* 67.5 — Camera feed indicator */}
+                        <Camera className="h-3 w-3 text-muted-foreground opacity-50" />
                         <span className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</span>
                       </div>
                     </div>
@@ -699,6 +829,17 @@ export default function PhysicalSecurityPage() {
                             <AlertTriangle className="h-3 w-3 mr-1" /> Anomaly
                           </Badge>
                         )}
+                        {/* 67.2 — Anomaly reason display */}
+                        {event.isAnomaly && event.anomalyReason && (
+                          <span
+                            className="text-[10px] text-orange-400 max-w-[200px] truncate"
+                            title={event.anomalyReason}
+                          >
+                            {event.anomalyReason}
+                          </span>
+                        )}
+                        {/* 67.5 — Camera indicator */}
+                        <Camera className="h-3 w-3 text-muted-foreground opacity-40" />
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {formatDateTime(event.occurredAt)}
                         </span>
@@ -864,6 +1005,18 @@ export default function PhysicalSecurityPage() {
                           </Badge>
                           {visitor.purpose && <span className="text-xs text-muted-foreground">{visitor.purpose}</span>}
                         </div>
+                        {/* 67.3 — Temporary badge display */}
+                        {visitor.badgeNumber && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            <Shield className="h-3 w-3 inline mr-1" />
+                            Badge: {visitor.badgeNumber}
+                            {visitor.badgeExpiry && (
+                              <span className="ml-1 text-yellow-500">
+                                (expires {formatDateTime(visitor.badgeExpiry)})
+                              </span>
+                            )}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-1">
                         {visitor.status === "pre_registered" && (

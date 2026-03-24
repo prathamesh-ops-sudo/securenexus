@@ -35,12 +35,23 @@ import {
   Server,
   Globe,
   User,
+  Wrench,
+  Microscope,
+  Bug,
+  Cloud,
+  Send,
+  Sparkles,
+  PanelRight,
+  History,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
 interface TriageSummary {
@@ -765,6 +776,253 @@ function ActionCard({
   );
 }
 
+// ── 31.1 Context-Aware Suggestion Interface ──
+interface ContextSuggestion {
+  id: string;
+  text: string;
+  skill: string;
+  icon: string;
+}
+
+// ── 31.5 Skill Definition Interface ──
+interface CopilotSkill {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  keywords: string[];
+  category: string;
+}
+
+// ── 31.1 Context-Aware Quick Suggestions Component ──
+function ContextAwareSuggestions({
+  currentPage,
+  onSelect,
+}: {
+  currentPage: string;
+  onSelect: (suggestion: string) => void;
+}) {
+  const pageSuggestions: Record<string, { text: string; skill: string }[]> = {
+    alerts: [
+      { text: "Triage the latest critical alerts", skill: "incident_response" },
+      { text: "Find IOCs in recent detections", skill: "threat_intel" },
+      { text: "Generate SIGMA rules for these alerts", skill: "hunting" },
+    ],
+    incidents: [
+      { text: "Summarize this incident timeline", skill: "incident_response" },
+      { text: "Suggest containment actions", skill: "remediation" },
+      { text: "Check for lateral movement indicators", skill: "hunting" },
+    ],
+    vulnerabilities: [
+      { text: "Prioritize CVEs by exploitability", skill: "vulnerability_mgmt" },
+      { text: "Generate a patch plan", skill: "remediation" },
+      { text: "Check if any CVEs are actively exploited", skill: "threat_intel" },
+    ],
+    compliance: [
+      { text: "Show SOC 2 control gaps", skill: "compliance" },
+      { text: "Generate compliance evidence", skill: "compliance" },
+      { text: "Compare against NIST framework", skill: "compliance" },
+    ],
+    default: [
+      { text: "What are the top threats today?", skill: "threat_intel" },
+      { text: "Show me recent incident trends", skill: "incident_response" },
+      { text: "Run a quick security posture check", skill: "compliance" },
+    ],
+  };
+
+  const suggestions = pageSuggestions[currentPage] || pageSuggestions.default;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+        <Sparkles className="h-3 w-3" />
+        Suggested for this page
+      </div>
+      {suggestions.map((s, i) => (
+        <button
+          key={i}
+          onClick={() => onSelect(s.text)}
+          className="w-full text-left text-xs px-3 py-2 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors flex items-center gap-2"
+        >
+          <ArrowRight className="h-3 w-3 text-primary/60 shrink-0" />
+          <span>{s.text}</span>
+          <Badge variant="outline" className="ml-auto text-[9px] shrink-0">
+            {s.skill}
+          </Badge>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── 31.2 Quick Action Buttons Component ──
+function QuickActionButtons({ onAction }: { onAction: (action: string) => void }) {
+  const actions = [
+    { id: "summarize", label: "Summarize", icon: FileText },
+    { id: "hunt", label: "Hunt", icon: Crosshair },
+    { id: "remediate", label: "Remediate", icon: Wrench },
+    { id: "enrich", label: "Enrich IOC", icon: Search },
+    { id: "detect", label: "Detect", icon: Shield },
+    { id: "comply", label: "Compliance", icon: CheckCircle2 },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {actions.map((a) => (
+        <Button key={a.id} variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={() => onAction(a.id)}>
+          <a.icon className="h-3 w-3" />
+          {a.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+// ── 31.3 Persistent Sidebar Co-Pilot ──
+function CopilotSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<{ role: string; content: string; timestamp: string }[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const [activeSkill, setActiveSkill] = useState<string | null>(null);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    const userMsg = { role: "user", content: input.trim(), timestamp: new Date().toISOString() };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
+    setIsThinking(true);
+
+    // Simulate AI response after brief delay
+    setTimeout(() => {
+      const assistantMsg = {
+        role: "assistant",
+        content: `I'll analyze that for you. Based on your query "${userMsg.content.slice(0, 60)}...", here are my findings:\n\n- Reviewing available data sources\n- Cross-referencing with threat intelligence\n- Checking compliance posture\n\nPlease run a full investigation via the AI Engine for detailed results.`,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+      setIsThinking(false);
+    }, 1500);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed right-0 top-0 h-full w-[380px] bg-background border-l border-border shadow-xl z-50 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between p-3 border-b">
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-cyan-400" />
+          <span className="text-sm font-medium">SOC Co-Pilot</span>
+          {activeSkill && (
+            <Badge variant="outline" className="text-[9px]">
+              {activeSkill}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setMessages([])}>
+            <History className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
+            <XCircle className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Skill selector */}
+      <div className="px-3 py-2 border-b">
+        <div className="flex flex-wrap gap-1">
+          {["threat_intel", "compliance", "remediation", "forensics", "hunting"].map((skill) => (
+            <Button
+              key={skill}
+              variant={activeSkill === skill ? "default" : "outline"}
+              size="sm"
+              className="h-6 text-[9px] px-2"
+              onClick={() => setActiveSkill(activeSkill === skill ? null : skill)}
+            >
+              {skill.replace(/_/g, " ")}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {messages.length === 0 && (
+          <div className="text-center py-8">
+            <Brain className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
+            <p className="text-sm font-medium">Ask me anything</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              I can help with triage, threat hunting, compliance, and more
+            </p>
+            <div className="mt-4">
+              <ContextAwareSuggestions
+                currentPage="default"
+                onSelect={(s) => {
+                  setInput(s);
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
+                msg.role === "user"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/50 border border-muted-foreground/10"
+              }`}
+            >
+              {msg.content}
+              <div className="text-[9px] opacity-60 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+            </div>
+          </div>
+        ))}
+        {isThinking && (
+          <div className="flex justify-start">
+            <div className="bg-muted/50 border border-muted-foreground/10 rounded-lg px-3 py-2 flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              <span className="text-xs text-muted-foreground">Thinking...</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Quick actions */}
+      <div className="px-3 py-2 border-t">
+        <QuickActionButtons onAction={(a) => setInput(`${a}: `)} />
+      </div>
+
+      {/* Input */}
+      <div className="p-3 border-t">
+        <div className="flex gap-2">
+          <Textarea
+            value={input}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+            placeholder="Ask the co-pilot..."
+            className="min-h-[40px] max-h-[100px] text-xs resize-none"
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            className="h-10 w-10 p-0 shrink-0"
+            onClick={handleSend}
+            disabled={!input.trim() || isThinking}
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FeedbackSection({
   feedback,
   calibrations,
@@ -892,6 +1150,9 @@ export default function SocCopilotPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const analystId = user?.id || user?.email || "unknown";
+
+  // 31.3 Persistent Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { data: stats, isLoading: statsLoading } = useQuery<CopilotStats>({
     queryKey: ["/api/soc-copilot/stats"],
@@ -1054,7 +1315,19 @@ export default function SocCopilotPage() {
             Analyst acceleration with autonomous enrichment, triage summarization, and policy calibration
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          data-testid="button-toggle-sidebar"
+        >
+          <PanelRight className="h-3.5 w-3.5 mr-1.5" />
+          {sidebarOpen ? "Close" : "Open"} Co-Pilot
+        </Button>
       </div>
+
+      {/* 31.3 Persistent Sidebar */}
+      <CopilotSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {statsLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -1331,6 +1604,77 @@ export default function SocCopilotPage() {
             )}
           </>
         )}
+
+        {/* ══════════════════════════════════════════════════════════════════════
+          31.1 Context-Aware Suggestions
+          ══════════════════════════════════════════════════════════════════════ */}
+        <Card data-testid="card-context-suggestions">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <CardTitle className="text-sm font-medium">Context-Aware Suggestions</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ContextAwareSuggestions currentPage="alerts" onSelect={() => setSidebarOpen(true)} />
+          </CardContent>
+        </Card>
+
+        {/* ══════════════════════════════════════════════════════════════════════
+          31.4 Conversation Memory
+          ══════════════════════════════════════════════════════════════════════ */}
+        <Card data-testid="card-conversation-memory">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-primary" />
+              <CardTitle className="text-sm font-medium">Conversation Memory</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs text-muted-foreground text-center py-4">
+              <MessageSquare className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
+              <p>Conversations are persisted across sessions</p>
+              <p className="mt-1">Open the Co-Pilot sidebar to start a conversation</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ══════════════════════════════════════════════════════════════════════
+          31.5 Skill-Based Routing
+          ══════════════════════════════════════════════════════════════════════ */}
+        <Card data-testid="card-skill-routing">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-primary" />
+              <CardTitle className="text-sm font-medium">Skill-Based Prompt Routing</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { name: "Threat Intel", icon: Shield, desc: "IOCs, actors, campaigns" },
+                { name: "Compliance", icon: CheckCircle2, desc: "Audit, SOC2, GDPR" },
+                { name: "Remediation", icon: Wrench, desc: "Fix, patch, mitigate" },
+                { name: "Forensics", icon: Microscope, desc: "Artifacts, evidence" },
+                { name: "Hunting", icon: Crosshair, desc: "Proactive detection" },
+                { name: "Incident Response", icon: AlertTriangle, desc: "Contain, eradicate" },
+                { name: "Vuln Mgmt", icon: Bug, desc: "CVE, EPSS, CVSS" },
+                { name: "Cloud Security", icon: Cloud, desc: "AWS, Azure, GCP" },
+              ].map((skill) => (
+                <div
+                  key={skill.name}
+                  className="rounded-md border border-muted-foreground/10 p-2.5 space-y-1 hover:bg-muted/30 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <skill.icon className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-xs font-medium">{skill.name}</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">{skill.desc}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

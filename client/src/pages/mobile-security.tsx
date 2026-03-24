@@ -42,6 +42,12 @@ import {
   Server,
   Users,
   TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  MapPin,
+  Fingerprint,
+  HardDrive,
+  KeyRound,
 } from "lucide-react";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 
@@ -258,6 +264,96 @@ function DashboardTab() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 56.1 — Device Posture At-a-Glance */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Fingerprint className="h-4 w-4" />
+            Device Posture Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const total = dashboard.totalDevices || 1;
+            const compliant = (dashboard.byCompliance || []).find(
+              (c: { complianceStatus: string; count: number }) => c.complianceStatus === "compliant",
+            );
+            const nonCompliant = (dashboard.byCompliance || []).find(
+              (c: { complianceStatus: string; count: number }) => c.complianceStatus === "non-compliant",
+            );
+            const compliantCount = Number(compliant?.count || 0);
+            const nonCompliantCount = Number(nonCompliant?.count || 0);
+            const rooted = dashboard.rootedDevices || 0;
+            const unencrypted = dashboard.unencryptedDevices || 0;
+            const noMdm = dashboard.noMdmDevices || 0;
+
+            const postureItems = [
+              {
+                label: "Compliant",
+                count: compliantCount,
+                pct: Math.round((compliantCount / total) * 100),
+                color: "bg-green-500",
+                textColor: "text-green-500",
+                icon: <CheckCircle2 className="h-4 w-4 text-green-500" />,
+              },
+              {
+                label: "Non-Compliant",
+                count: nonCompliantCount,
+                pct: Math.round((nonCompliantCount / total) * 100),
+                color: "bg-red-500",
+                textColor: "text-red-500",
+                icon: <XCircle className="h-4 w-4 text-red-500" />,
+              },
+              {
+                label: "Rooted / Jailbroken",
+                count: rooted,
+                pct: Math.round((rooted / total) * 100),
+                color: "bg-red-600",
+                textColor: "text-red-600",
+                icon: <ShieldAlert className="h-4 w-4 text-red-600" />,
+              },
+              {
+                label: "Missing Encryption",
+                count: unencrypted,
+                pct: Math.round((unencrypted / total) * 100),
+                color: "bg-orange-500",
+                textColor: "text-orange-500",
+                icon: <Unlock className="h-4 w-4 text-orange-500" />,
+              },
+              {
+                label: "No MDM / Screen Lock",
+                count: noMdm,
+                pct: Math.round((noMdm / total) * 100),
+                color: "bg-yellow-500",
+                textColor: "text-yellow-500",
+                icon: <Monitor className="h-4 w-4 text-yellow-500" />,
+              },
+            ];
+
+            return (
+              <div className="space-y-3">
+                {postureItems.map((item) => (
+                  <div key={item.label} className="flex items-center gap-3">
+                    {item.icon}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span>{item.label}</span>
+                        <span className={`font-semibold ${item.textColor}`}>
+                          {item.count} ({item.pct}%)
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {/* Recent Threats */}
       <Card>
@@ -678,6 +774,64 @@ function ZtnaTab() {
 
   return (
     <div className="space-y-4">
+      {/* 56.2 — Visual Policy Builder Summary */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <KeyRound className="h-4 w-4" />
+            Visual Policy Builder
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-3">
+            Each policy below evaluates as a rule: IF conditions THEN action. Policies are evaluated top-down by
+            priority.
+          </p>
+          {policies.length > 0 ? (
+            <div className="space-y-2">
+              {policies.map((p: Record<string, unknown>, idx: number) => {
+                const conditions: string[] = [];
+                if (p.requireEncryption) conditions.push("device_encrypted = true");
+                if (p.requireMdm) conditions.push("mdm_enrolled = true");
+                if (p.requireScreenLock) conditions.push("screen_lock = true");
+                if (p.blockRooted) conditions.push("is_rooted = false");
+                if (p.requireMfa) conditions.push("mfa_verified = true");
+                if (p.maxRiskScore) conditions.push(`risk_score < ${p.maxRiskScore as number}`);
+                return (
+                  <div key={String(p.id)} className="rounded border p-3 bg-muted/30 font-mono text-xs space-y-1">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <span className="font-sans text-[10px] font-semibold uppercase">Rule {idx + 1}</span>
+                      <span className="font-sans">({p.name as string})</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-400 font-semibold">IF </span>
+                      {conditions.length > 0 ? (
+                        conditions.map((c, ci) => (
+                          <span key={ci}>
+                            {ci > 0 && <span className="text-muted-foreground"> AND </span>}
+                            <span className="text-foreground">{c}</span>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground italic">no conditions</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-green-400 font-semibold">THEN </span>
+                      <Badge className={actionColors[p.action as string] || "bg-muted"} variant="secondary">
+                        {p.action as string}
+                      </Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No policies yet. Create one below.</p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Zero Trust Network Access policies evaluate device posture before granting access
@@ -864,6 +1018,77 @@ function SessionsTab() {
         <Card>
           <CardContent className="p-6 text-center text-muted-foreground">
             No {activeOnly ? "active " : ""}remote worker sessions found
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 56.3 — Remote Worker Risk Map (geographic summary) */}
+      {sessions.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <MapPin className="h-4 w-4" />
+              Remote Worker Risk Map
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const countryMap: Record<string, { count: number; totalRisk: number; highRisk: number }> = {};
+              for (const s of sessions as Array<Record<string, unknown>>) {
+                const country = String(s.country || "Unknown");
+                if (!countryMap[country]) countryMap[country] = { count: 0, totalRisk: 0, highRisk: 0 };
+                countryMap[country].count++;
+                countryMap[country].totalRisk += (s.riskScore as number) || 0;
+                if (((s.riskScore as number) || 0) >= 50) countryMap[country].highRisk++;
+              }
+              const sorted = Object.entries(countryMap).sort((a, b) => {
+                const avgA = a[1].totalRisk / a[1].count;
+                const avgB = b[1].totalRisk / b[1].count;
+                return avgB - avgA;
+              });
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {sorted.map(([country, data]) => {
+                    const avgRisk = Math.round(data.totalRisk / data.count);
+                    const riskCls =
+                      avgRisk >= 75
+                        ? "border-red-500/50 bg-red-500/5"
+                        : avgRisk >= 50
+                          ? "border-orange-500/50 bg-orange-500/5"
+                          : avgRisk >= 25
+                            ? "border-yellow-500/50 bg-yellow-500/5"
+                            : "border-green-500/50 bg-green-500/5";
+                    const riskTxt =
+                      avgRisk >= 75
+                        ? "text-red-500"
+                        : avgRisk >= 50
+                          ? "text-orange-500"
+                          : avgRisk >= 25
+                            ? "text-yellow-500"
+                            : "text-green-500";
+                    return (
+                      <div key={country} className={`rounded border p-2 ${riskCls}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">{country}</span>
+                          </div>
+                          <span className={`text-sm font-bold ${riskTxt}`}>{avgRisk}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
+                          <span>
+                            {data.count} worker{data.count !== 1 ? "s" : ""}
+                          </span>
+                          {data.highRisk > 0 ? (
+                            <span className="text-orange-500">{data.highRisk} high risk</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       )}

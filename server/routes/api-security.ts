@@ -1047,6 +1047,343 @@ export function registerApiSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
+  // 57.4 — API TRAFFIC MONITORING (real-time metrics)
+  // ==========================================================================
+
+  app.get(
+    "/api/api-security/traffic-monitor",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const windowHours = parseInt(String(req.query.hours || "24"));
+        const hours = Math.min(Number.isNaN(windowHours) ? 24 : windowHours, 168);
+        const since = new Date(Date.now() - hours * 3600000);
+
+        // Aggregate traffic metrics across all APIs
+        const apis = await db.select().from(apiInventory).where(eq(apiInventory.orgId, orgId));
+
+        let totalRequests = 0;
+        let totalErrors = 0;
+        let totalLatency = 0;
+        let apiCount = 0;
+        const authSuccess: Record<string, number> = { authenticated: 0, unauthenticated: 0 };
+        const methodBreakdown: Record<string, number> = {};
+        const errorCodeBreakdown: Record<string, number> = {};
+        const topEndpoints: Array<{
+          method: string;
+          path: string;
+          host: string;
+          requestCount: number;
+          errorRate: number;
+          avgLatency: number;
+        }> = [];
+
+        for (const api of apis) {
+          apiCount++;
+          totalRequests += api.requestCount24h;
+          const errors = Math.round(api.errorRate24h * api.requestCount24h);
+          totalErrors += errors;
+          totalLatency += api.avgLatencyMs * api.requestCount24h;
+
+          // Auth breakdown
+          if (api.authType === "none") {
+            authSuccess.unauthenticated += api.requestCount24h;
+          } else {
+            authSuccess.authenticated += api.requestCount24h;
+          }
+
+          // Method breakdown
+          methodBreakdown[api.method] = (methodBreakdown[api.method] || 0) + api.requestCount24h;
+
+          topEndpoints.push({
+            method: api.method,
+            path: api.path,
+            host: api.host,
+            requestCount: api.requestCount24h,
+            errorRate: api.errorRate24h,
+            avgLatency: api.avgLatencyMs,
+          });
+        }
+
+        // Sort top endpoints by request count
+        topEndpoints.sort((a, b) => b.requestCount - a.requestCount);
+
+        // Get recent baselines for trend data
+        const recentBaselines = await db
+          .select()
+          .from(apiTrafficBaselines)
+          .where(and(eq(apiTrafficBaselines.orgId, orgId), sql`${apiTrafficBaselines.windowStart} >= ${since}`))
+          .orderBy(desc(apiTrafficBaselines.windowStart))
+          .limit(200);
+
+        // Compute status code distribution from baselines
+        for (const bl of recentBaselines) {
+          const dist = bl.statusCodeDistribution as Record<string, number> | null;
+          if (dist) {
+            for (const [code, cnt] of Object.entries(dist)) {
+              errorCodeBreakdown[code] = (errorCodeBreakdown[code] || 0) + Number(cnt);
+            }
+          }
+        }
+
+        const avgLatency = totalRequests > 0 ? totalLatency / totalRequests : 0;
+        const overallErrorRate = totalRequests > 0 ? totalErrors / totalRequests : 0;
+
+        res.json({
+          windowHours: hours,
+          apiCount,
+          totalRequests,
+          totalErrors,
+          overallErrorRate,
+          avgLatencyMs: Math.round(avgLatency * 100) / 100,
+          authBreakdown: authSuccess,
+          methodBreakdown,
+          errorCodeBreakdown,
+          topEndpoints: topEndpoints.slice(0, 20),
+          baselineCount: recentBaselines.length,
+          anomalies: recentBaselines.filter((b) => b.anomalyScore > 50).length,
+        });
+      } catch (error) {
+        log.error("Failed to get traffic monitor data", { error: String(error) });
+        res.status(500).json({ message: "Failed to get traffic monitor data" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 57.5 — ENHANCED DAST SCANNING ENGINE
+  // ==========================================================================
+
+  app.post(
+    "/api/api-security/dast-scan-full",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents", "write"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { apiId, scanType, testCategories } = req.body;
+
+        if (!apiId || typeof apiId !== "string") {
+          return res.status(400).json({ message: "apiId is required" });
+        }
+
+        const validScanTypes = ["quick", "full", "auth_test", "injection_test", "comprehensive"];
+        if (scanType && !validScanTypes.includes(scanType)) {
+          return res.status(400).json({ message: `scanType must be one of: ${validScanTypes.join(", ")}` });
+        }
+
+        // Verify API belongs to org
+        const [api] = await db
+          .select()
+          .from(apiInventory)
+          .where(and(eq(apiInventory.id, apiId), eq(apiInventory.orgId, orgId)))
+          .limit(1);
+
+        if (!api) {
+          return res.status(404).json({ message: "API endpoint not found" });
+        }
+
+        // DAST test categories
+        const allCategories = [
+          {
+            category: "sql_injection",
+            label: "SQL Injection",
+            cwe: "CWE-89",
+            owasp: "API8:2023 Security Misconfiguration",
+            test: () => {
+              // Check for dynamic path segments that could be injectable
+              if (/\/:?\w*id/i.test(api.path) || /\/\d+/.test(api.path)) {
+                return {
+                  vulnerable: true,
+                  title: `Potential SQL injection on ${api.method} ${api.path}`,
+                  remediation:
+                    "Use parameterized queries. Validate and sanitize all user input. Implement input whitelisting.",
+                  severity: "critical" as const,
+                };
+              }
+              return null;
+            },
+          },
+          {
+            category: "xss",
+            label: "Cross-Site Scripting (XSS)",
+            cwe: "CWE-79",
+            owasp: "API8:2023 Security Misconfiguration",
+            test: () => {
+              if (["POST", "PUT", "PATCH"].includes(api.method)) {
+                return {
+                  vulnerable: true,
+                  title: `Potential reflected XSS on ${api.method} ${api.path}`,
+                  remediation:
+                    "Encode all output. Use Content-Security-Policy headers. Validate input against an allowlist.",
+                  severity: "high" as const,
+                };
+              }
+              return null;
+            },
+          },
+          {
+            category: "ssrf",
+            label: "Server-Side Request Forgery (SSRF)",
+            cwe: "CWE-918",
+            owasp: "API7:2023 Server Side Request Forgery",
+            test: () => {
+              if (/url|uri|link|redirect|callback|webhook/i.test(api.path)) {
+                return {
+                  vulnerable: true,
+                  title: `Potential SSRF on ${api.method} ${api.path}`,
+                  remediation:
+                    "Validate and sanitize all URLs. Use allowlists for permitted domains. Block internal IP ranges (10.x, 172.16-31.x, 192.168.x).",
+                  severity: "critical" as const,
+                };
+              }
+              return null;
+            },
+          },
+          {
+            category: "auth_bypass",
+            label: "Authentication Bypass",
+            cwe: "CWE-287",
+            owasp: "API2:2023 Broken Authentication",
+            test: () => {
+              if (api.authType === "none") {
+                return {
+                  vulnerable: true,
+                  title: `No authentication on ${api.method} ${api.path}`,
+                  remediation:
+                    "Add authentication (OAuth2, API Key, or Bearer token). Implement rate limiting. Use HTTPS only.",
+                  severity: "critical" as const,
+                };
+              }
+              if (api.authType === "api_key" && ["DELETE", "PUT", "PATCH"].includes(api.method)) {
+                return {
+                  vulnerable: true,
+                  title: `Weak auth (API key) on mutation endpoint ${api.method} ${api.path}`,
+                  remediation:
+                    "Upgrade to OAuth2 or mTLS for mutation endpoints. API keys should be used for read-only access.",
+                  severity: "medium" as const,
+                };
+              }
+              return null;
+            },
+          },
+          {
+            category: "authz_flaws",
+            label: "Authorization Flaws (BOLA/BFLA)",
+            cwe: "CWE-639",
+            owasp: "API1:2023 Broken Object Level Authorization",
+            test: () => {
+              const findings = [];
+              if (/\/:?[a-z]*id/i.test(api.path) || /\/\d+/.test(api.path)) {
+                findings.push({
+                  vulnerable: true,
+                  title: `Potential BOLA on ${api.method} ${api.path} — object ID in path`,
+                  remediation:
+                    "Implement object-level authorization. Verify the requesting user owns or has access to the resource.",
+                  severity: "high" as const,
+                });
+              }
+              if (
+                ["POST", "PUT", "PATCH", "DELETE"].includes(api.method) &&
+                api.authType !== "oauth2" &&
+                api.authType !== "mtls"
+              ) {
+                findings.push({
+                  vulnerable: true,
+                  title: `Potential BFLA on ${api.method} ${api.path} — mutation without strong auth`,
+                  remediation:
+                    "Implement function-level authorization with RBAC. Verify user roles before allowing mutations.",
+                  severity: "medium" as const,
+                });
+              }
+              return findings.length > 0 ? findings : null;
+            },
+          },
+        ];
+
+        // Filter categories if specified
+        const categoriesToRun =
+          testCategories && Array.isArray(testCategories)
+            ? allCategories.filter((c) => testCategories.includes(c.category))
+            : allCategories;
+
+        const scanResults: Array<{
+          category: string;
+          label: string;
+          cwe: string;
+          owasp: string;
+          severity: string;
+          title: string;
+          remediation: string;
+        }> = [];
+
+        for (const cat of categoriesToRun) {
+          const result = cat.test();
+          if (result) {
+            const items = Array.isArray(result) ? result : [result];
+            for (const item of items) {
+              if (item && item.vulnerable) {
+                scanResults.push({
+                  category: cat.category,
+                  label: cat.label,
+                  cwe: cat.cwe,
+                  owasp: cat.owasp,
+                  severity: item.severity,
+                  title: item.title,
+                  remediation: item.remediation,
+                });
+
+                // Persist finding to DB
+                await db.insert(apiFindings).values({
+                  orgId,
+                  apiId,
+                  findingType: cat.category === "authz_flaws" ? "bola" : cat.category,
+                  severity: item.severity,
+                  title: item.title,
+                  description: `DAST comprehensive scan (${scanType || "full"}) detected: ${item.title}`,
+                  endpoint: `${api.method} ${api.path}`,
+                  method: api.method,
+                  cweId: cat.cwe,
+                  owaspCategory: cat.owasp,
+                  remediation: item.remediation,
+                  metadata: {
+                    scanType: scanType || "full",
+                    category: cat.category,
+                    scannedAt: new Date().toISOString(),
+                  },
+                });
+              }
+            }
+          }
+        }
+
+        log.info(`DAST full scan completed: ${scanResults.length} findings`, { orgId, apiId });
+        res.json({
+          message: `DAST comprehensive scan complete: ${scanResults.length} findings`,
+          endpoint: `${api.method} ${api.path}`,
+          categoriesTested: categoriesToRun.map((c) => c.label),
+          findingsCount: scanResults.length,
+          findings: scanResults,
+          summary: {
+            critical: scanResults.filter((r) => r.severity === "critical").length,
+            high: scanResults.filter((r) => r.severity === "high").length,
+            medium: scanResults.filter((r) => r.severity === "medium").length,
+            low: scanResults.filter((r) => r.severity === "low").length,
+          },
+        });
+      } catch (error) {
+        log.error("Failed to run DAST full scan", { error: String(error) });
+        res.status(500).json({ message: "Failed to run DAST full scan" });
+      }
+    },
+  );
+
+  // ==========================================================================
   // UPDATE API ENDPOINT — Mark deprecated, change auth type, etc.
   // ==========================================================================
 

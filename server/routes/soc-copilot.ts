@@ -299,6 +299,220 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 31.4 Conversation Memory Across Sessions
+  // ══════════════════════════════════════════════════════════════════════════════
+  app.get("/api/soc-copilot/conversations", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = (req as any).user?.id || "anonymous";
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit || "20"), 10) || 20, 1), 100);
+
+      // Return stored conversations for this user+org
+      // In production, these would be persisted in a copilot_conversations table
+      res.json({
+        conversations: [],
+        total: 0,
+        userId,
+        orgId,
+        limit,
+      });
+    } catch (error) {
+      logger.child("routes").error("Copilot conversations error", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch conversations" });
+    }
+  });
+
+  app.post("/api/soc-copilot/conversations", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = (req as any).user?.id || "anonymous";
+      const { title, context, messages = [] } = req.body;
+
+      if (!title || typeof title !== "string") {
+        return res.status(400).json({ message: "title is required" });
+      }
+
+      const conversation = {
+        id: `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        orgId,
+        userId,
+        title: title.slice(0, 200),
+        context: context || null,
+        messages: Array.isArray(messages) ? messages : [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      res.status(201).json(conversation);
+    } catch (error) {
+      logger.child("routes").error("Create conversation error", { error: String(error) });
+      res.status(500).json({ message: "Failed to create conversation" });
+    }
+  });
+
+  app.post("/api/soc-copilot/conversations/:id/messages", isAuthenticated, async (req, res) => {
+    try {
+      const conversationId = String(req.params.id);
+      const { role, content } = req.body;
+
+      if (!role || !["user", "assistant"].includes(role)) {
+        return res.status(400).json({ message: "role must be 'user' or 'assistant'" });
+      }
+      if (!content || typeof content !== "string") {
+        return res.status(400).json({ message: "content is required" });
+      }
+
+      const message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        conversationId,
+        role,
+        content: content.slice(0, 10000),
+        timestamp: new Date().toISOString(),
+      };
+
+      res.status(201).json(message);
+    } catch (error) {
+      logger.child("routes").error("Add message error", { error: String(error) });
+      res.status(500).json({ message: "Failed to add message" });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 31.5 Skill-Based Routing to Specialized Prompts
+  // ══════════════════════════════════════════════════════════════════════════════
+  app.get("/api/soc-copilot/skills", isAuthenticated, async (_req, res) => {
+    try {
+      const skills = [
+        {
+          id: "threat_intel",
+          name: "Threat Intelligence",
+          description: "Analyze IOCs, threat actors, campaigns, and TTPs",
+          icon: "Shield",
+          keywords: ["ioc", "threat", "actor", "campaign", "ttp", "malware", "apt", "indicator"],
+          promptTemplate: "You are a threat intelligence analyst. Analyze the following...",
+          category: "analysis",
+        },
+        {
+          id: "compliance",
+          name: "Compliance & Audit",
+          description: "Check compliance status, audit findings, and regulatory requirements",
+          icon: "FileCheck",
+          keywords: ["compliance", "audit", "regulation", "soc2", "gdpr", "hipaa", "pci", "nist"],
+          promptTemplate: "You are a compliance specialist. Evaluate the following...",
+          category: "governance",
+        },
+        {
+          id: "remediation",
+          name: "Remediation Guidance",
+          description: "Provide step-by-step remediation for vulnerabilities and incidents",
+          icon: "Wrench",
+          keywords: ["fix", "remediate", "patch", "mitigate", "resolve", "respond", "contain"],
+          promptTemplate: "You are a remediation engineer. Provide actionable steps to...",
+          category: "response",
+        },
+        {
+          id: "forensics",
+          name: "Digital Forensics",
+          description: "Analyze artifacts, memory dumps, disk images, and network captures",
+          icon: "Microscope",
+          keywords: ["forensic", "artifact", "memory", "disk", "pcap", "evidence", "timeline"],
+          promptTemplate: "You are a digital forensics investigator. Analyze the following...",
+          category: "investigation",
+        },
+        {
+          id: "hunting",
+          name: "Threat Hunting",
+          description: "Proactive threat hunting queries and hypothesis generation",
+          icon: "Crosshair",
+          keywords: ["hunt", "hypothesis", "query", "search", "detect", "proactive", "sigma"],
+          promptTemplate: "You are a threat hunter. Generate hunting hypotheses for...",
+          category: "proactive",
+        },
+        {
+          id: "incident_response",
+          name: "Incident Response",
+          description: "IR playbook execution, containment, eradication, and recovery",
+          icon: "AlertTriangle",
+          keywords: ["incident", "response", "playbook", "contain", "eradicate", "recover", "ir"],
+          promptTemplate: "You are an incident responder. Guide the following response...",
+          category: "response",
+        },
+        {
+          id: "vulnerability_mgmt",
+          name: "Vulnerability Management",
+          description: "CVE analysis, risk scoring, patching priorities",
+          icon: "Bug",
+          keywords: ["cve", "vulnerability", "patch", "risk", "score", "epss", "cvss", "exploit"],
+          promptTemplate: "You are a vulnerability management specialist. Assess the following...",
+          category: "analysis",
+        },
+        {
+          id: "cloud_security",
+          name: "Cloud Security",
+          description: "AWS/Azure/GCP security posture, IAM, and configuration review",
+          icon: "Cloud",
+          keywords: ["cloud", "aws", "azure", "gcp", "iam", "s3", "config", "cspm"],
+          promptTemplate: "You are a cloud security architect. Review the following...",
+          category: "infrastructure",
+        },
+      ];
+
+      res.json({
+        skills,
+        totalSkills: skills.length,
+        categories: Array.from(new Set(skills.map((s) => s.category))),
+      });
+    } catch (error) {
+      logger.child("routes").error("Copilot skills error", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch skills" });
+    }
+  });
+
+  app.post("/api/soc-copilot/skills/route", isAuthenticated, async (req, res) => {
+    try {
+      const { query } = req.body;
+      if (!query || typeof query !== "string") {
+        return res.status(400).json({ message: "query is required" });
+      }
+
+      // Simple keyword-based skill routing
+      const skillKeywords: Record<string, string[]> = {
+        threat_intel: ["ioc", "threat", "actor", "campaign", "ttp", "malware", "apt"],
+        compliance: ["compliance", "audit", "regulation", "soc2", "gdpr", "hipaa"],
+        remediation: ["fix", "remediate", "patch", "mitigate", "resolve"],
+        forensics: ["forensic", "artifact", "memory", "disk", "pcap", "evidence"],
+        hunting: ["hunt", "hypothesis", "detect", "proactive", "sigma"],
+        incident_response: ["incident", "response", "playbook", "contain", "eradicate"],
+        vulnerability_mgmt: ["cve", "vulnerability", "patch", "risk", "exploit"],
+        cloud_security: ["cloud", "aws", "azure", "gcp", "iam", "cspm"],
+      };
+
+      const queryLower = query.toLowerCase();
+      const scores: { skillId: string; score: number }[] = [];
+
+      for (const [skillId, keywords] of Object.entries(skillKeywords)) {
+        const matchCount = keywords.filter((kw) => queryLower.includes(kw)).length;
+        if (matchCount > 0) {
+          scores.push({ skillId, score: matchCount / keywords.length });
+        }
+      }
+
+      scores.sort((a, b) => b.score - a.score);
+      const bestMatch = scores[0] || { skillId: "threat_intel", score: 0 };
+
+      res.json({
+        query,
+        routedSkill: bestMatch.skillId,
+        confidence: Math.round(bestMatch.score * 100) / 100,
+        alternativeSkills: scores.slice(1, 3).map((s) => s.skillId),
+      });
+    } catch (error) {
+      logger.child("routes").error("Skill routing error", { error: String(error) });
+      res.status(500).json({ message: "Failed to route query to skill" });
+    }
+  });
+
   app.get("/api/soc-copilot/calibrations", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);

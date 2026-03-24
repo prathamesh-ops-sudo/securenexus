@@ -42,6 +42,17 @@ import {
   MonitorSpeaker,
   Copy,
   Plug,
+  MapPin,
+  Gauge,
+  Star,
+  Clock,
+  UserX,
+  Usb,
+  Bug,
+  Crosshair,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { DetailPageSkeleton } from "@/components/page-skeleton";
@@ -57,6 +68,11 @@ const TOKEN_TYPE_LABELS: Record<string, { label: string; icon: typeof Key; descr
   kubeconfig: { label: "Kubeconfig", icon: Terminal, description: "Fake Kubernetes config" },
   ssh_key: { label: "SSH Key", icon: Key, description: "Fake SSH private key" },
   slack_webhook: { label: "Slack Webhook", icon: Link, description: "Fake Slack webhook URL" },
+  // 54.4 — New canary token types
+  usb_canary: { label: "USB Canary", icon: Usb, description: "Triggers on USB mount/autorun" },
+  web_bug: { label: "Web Bug", icon: Bug, description: "Invisible tracking in web pages" },
+  document_canary: { label: "Document Canary", icon: FileText, description: "Macro-based phone-home in Office/PDF" },
+  email_canary: { label: "Email Canary", icon: Mail, description: "Full email with open/click/reply tracking" },
 };
 
 const ASSET_TYPE_LABELS: Record<string, { label: string; icon: typeof Server; description: string }> = {
@@ -326,6 +342,20 @@ function RecentHitsCard({ hits }: { hits: Array<Record<string, unknown>> }) {
 // DECEPTION COVERAGE CARD
 // =========================================================================
 
+// 54.1 — Network segment constants for coverage gap analysis
+const NETWORK_SEGMENTS = [
+  { id: "corporate_lan", label: "Corporate LAN", icon: Network },
+  { id: "dmz", label: "DMZ", icon: Shield },
+  { id: "cloud_aws", label: "AWS Cloud", icon: Globe },
+  { id: "cloud_azure", label: "Azure Cloud", icon: Globe },
+  { id: "ci_cd", label: "CI/CD Pipeline", icon: Activity },
+  { id: "active_directory", label: "Active Directory", icon: Key },
+  { id: "developer_env", label: "Developer Env", icon: Terminal },
+  { id: "database_tier", label: "Database Tier", icon: Database },
+  { id: "file_servers", label: "File Servers", icon: HardDrive },
+  { id: "email_system", label: "Email System", icon: Mail },
+];
+
 function DeceptionCoverageCard({
   tokens,
   assets,
@@ -336,14 +366,94 @@ function DeceptionCoverageCard({
   const tokenTypes = new Set(tokens.map((t) => String(t.tokenType)));
   const assetTypes = new Set(assets.map((a) => String(a.assetType)));
 
+  // 54.1 — Build segment coverage from deployment targets
+  const deployedSegments = new Set<string>();
+  tokens.forEach((t) => {
+    if (t.deployedTo) deployedSegments.add(String(t.deployedTo));
+  });
+  assets.forEach((a) => {
+    if (a.decoyHostname) deployedSegments.add("corporate_lan");
+    if (a.listenAddress) deployedSegments.add("corporate_lan");
+  });
+  // Map deployment targets to segments
+  const targetToSegment: Record<string, string> = {
+    s3_bucket: "cloud_aws",
+    github_repo: "developer_env",
+    email: "email_system",
+    shared_drive: "file_servers",
+    active_directory: "active_directory",
+    kubernetes: "ci_cd",
+    ci_cd_pipeline: "ci_cd",
+    internal_wiki: "corporate_lan",
+  };
+  tokens.forEach((t) => {
+    const seg = targetToSegment[String(t.deployedTo || "")];
+    if (seg) deployedSegments.add(seg);
+  });
+
+  const coveredCount = NETWORK_SEGMENTS.filter((s) => deployedSegments.has(s.id)).length;
+  const gapCount = NETWORK_SEGMENTS.length - coveredCount;
+  const coveragePct = NETWORK_SEGMENTS.length > 0 ? Math.round((coveredCount / NETWORK_SEGMENTS.length) * 100) : 0;
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Deception Coverage</CardTitle>
-        <CardDescription>Deployed deception assets across your infrastructure</CardDescription>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <MapPin className="h-4 w-4" />
+          Deception Coverage Map
+        </CardTitle>
+        <CardDescription>
+          {coveragePct}% network coverage — {coveredCount} segments covered, {gapCount} gaps
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
+          {/* Network Segment Coverage Grid */}
+          <div>
+            <p className="text-sm font-medium mb-2">Network Segment Coverage</p>
+            <div className="grid grid-cols-2 gap-2">
+              {NETWORK_SEGMENTS.map((seg) => {
+                const covered = deployedSegments.has(seg.id);
+                const SegIcon = seg.icon;
+                return (
+                  <div
+                    key={seg.id}
+                    className={`flex items-center gap-2 rounded border p-2 text-xs ${
+                      covered ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/5 border-red-500/20 opacity-70"
+                    }`}
+                  >
+                    <SegIcon className={`h-3.5 w-3.5 ${covered ? "text-emerald-500" : "text-red-400"}`} />
+                    <span className={covered ? "" : "text-muted-foreground"}>{seg.label}</span>
+                    {covered ? (
+                      <Badge variant="secondary" className="ml-auto text-[10px]">
+                        Covered
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="ml-auto text-[10px] border-red-500/30 text-red-400">
+                        Gap
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Coverage progress bar */}
+          <div>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-muted-foreground">Overall Coverage</span>
+              <span className="font-medium">{coveragePct}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full ${coveragePct >= 80 ? "bg-emerald-500" : coveragePct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                style={{ width: `${coveragePct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Token & Asset type coverage (original) */}
           <div>
             <p className="text-sm font-medium mb-2">Canary Token Types</p>
             <div className="flex flex-wrap gap-2">
@@ -464,7 +574,8 @@ function CanaryTokensSection({ tokens }: { tokens: Array<Record<string, unknown>
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  {/* 54.3 — Decoy authenticity scoring */}
+                  <div className="mt-3 grid grid-cols-4 gap-2 text-center">
                     <div>
                       <p className="text-lg font-bold">{String(token.hitCount || 0)}</p>
                       <p className="text-xs text-muted-foreground">Hits</p>
@@ -480,6 +591,24 @@ function CanaryTokensSection({ tokens }: { tokens: Array<Record<string, unknown>
                         {token.createdAt ? new Date(String(token.createdAt)).toLocaleDateString() : "—"}
                       </p>
                       <p className="text-xs text-muted-foreground">Created</p>
+                    </div>
+                    <div>
+                      {(() => {
+                        const hits = Number(token.hitCount || 0);
+                        const deployed = token.deployedTo ? 1 : 0;
+                        const hasDesc = token.description ? 1 : 0;
+                        // Authenticity score: 0-100 based on completeness + interaction
+                        const baseScore = deployed * 30 + (hasDesc ? 20 : 0) + Math.min(hits * 10, 50);
+                        const score = Math.min(baseScore, 100);
+                        const color =
+                          score >= 70 ? "text-emerald-500" : score >= 40 ? "text-amber-500" : "text-red-400";
+                        return (
+                          <>
+                            <p className={`text-lg font-bold ${color}`}>{score}</p>
+                            <p className="text-xs text-muted-foreground">Authenticity</p>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -614,11 +743,41 @@ function HoneypotAssetsSection({ assets }: { assets: Array<Record<string, unknow
                     {asset.protocol ? <p>Protocol: {String(asset.protocol).toUpperCase()}</p> : null}
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-sm">
-                      <span className="font-bold">{String(asset.hitCount || 0)}</span>{" "}
-                      <span className="text-muted-foreground">hits</span>
-                    </span>
+                  {/* 54.3 — Decoy authenticity scoring for honeypots */}
+                  <div className="mt-3 pt-2 border-t">
+                    <div className="flex items-center gap-4 mb-2">
+                      <span className="text-sm">
+                        <span className="font-bold">{String(asset.hitCount || 0)}</span>{" "}
+                        <span className="text-muted-foreground">hits</span>
+                      </span>
+                      {(() => {
+                        const hits = Number(asset.hitCount || 0);
+                        const hasAddr = asset.listenAddress || asset.decoyHostname ? 1 : 0;
+                        const hasProto = asset.protocol ? 1 : 0;
+                        const hasDesc = asset.description ? 1 : 0;
+                        const baseScore =
+                          hasAddr * 25 + (hasProto ? 15 : 0) + (hasDesc ? 10 : 0) + Math.min(hits * 10, 50);
+                        const score = Math.min(baseScore, 100);
+                        const color =
+                          score >= 70 ? "text-emerald-500" : score >= 40 ? "text-amber-500" : "text-red-400";
+                        const tip =
+                          score < 40
+                            ? "Low authenticity — not attractive enough to attackers"
+                            : score < 70
+                              ? "Moderate authenticity — consider adding more detail"
+                              : "High authenticity — convincing decoy";
+                        return (
+                          <span className="text-xs flex items-center gap-1" title={tip}>
+                            <Star className={`h-3 w-3 ${color}`} />
+                            <span className={color}>{score}/100</span>
+                            <span className="text-muted-foreground">authenticity</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span />
                     <div className="flex items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => toggleMutation.mutate(String(asset.id))}>
                         {isActive ? <PowerOff className="h-3 w-3 mr-1" /> : <Power className="h-3 w-3 mr-1" />}
@@ -647,7 +806,10 @@ function HoneypotAssetsSection({ assets }: { assets: Array<Record<string, unknow
 // DECEPTION HITS SECTION
 // =========================================================================
 
+// 54.2 — Alert drill-down for deception triggers
 function DeceptionHitsSection({ hits }: { hits: Array<Record<string, unknown>> }) {
+  const [expandedHit, setExpandedHit] = useState<string | null>(null);
+
   if (hits.length === 0) {
     return (
       <Card>
@@ -672,63 +834,178 @@ function DeceptionHitsSection({ hits }: { hits: Array<Record<string, unknown>> }
       </h3>
 
       <div className="space-y-3">
-        {hits.map((hit) => (
-          <Card key={String(hit.id)}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle
-                    className={`h-5 w-5 mt-0.5 ${hit.severity === "critical" ? "text-red-500" : "text-orange-500"}`}
-                  />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{String(hit.sourceName || "Unknown Source")}</p>
-                      <SeverityBadge severity={String(hit.severity)} />
-                      {hit.isInternal === true && (
-                        <Badge variant="destructive" className="text-xs">
-                          INTERNAL
-                        </Badge>
-                      )}
+        {hits.map((hit) => {
+          const hitId = String(hit.id);
+          const isExpanded = expandedHit === hitId;
+          const hitTime = hit.hitAt ? new Date(String(hit.hitAt)) : null;
+
+          return (
+            <Card
+              key={hitId}
+              className={`cursor-pointer transition-all ${isExpanded ? "ring-1 ring-primary/30" : ""}`}
+              onClick={() => setExpandedHit(isExpanded ? null : hitId)}
+            >
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle
+                      className={`h-5 w-5 mt-0.5 ${hit.severity === "critical" ? "text-red-500" : "text-orange-500"}`}
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{String(hit.sourceName || "Unknown Source")}</p>
+                        <SeverityBadge severity={String(hit.severity)} />
+                        {hit.isInternal === true && (
+                          <Badge variant="destructive" className="text-xs">
+                            INTERNAL
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {String(hit.sourceType || "")
+                          .replace(":", " — ")
+                          .replace(/_/g, " ")}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {String(hit.sourceType || "")
-                        .replace(":", " — ")
-                        .replace(/_/g, " ")}
-                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right text-sm text-muted-foreground">
+                      {hitTime ? hitTime.toLocaleString() : ""}
+                    </div>
+                    {isExpanded ? (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    )}
                   </div>
                 </div>
-                <div className="text-right text-sm text-muted-foreground">
-                  {hit.hitAt ? new Date(String(hit.hitAt)).toLocaleString() : ""}
-                </div>
-              </div>
 
-              <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-muted-foreground">Source IP</p>
-                  <p className="font-mono">{String(hit.sourceIp || "—")}</p>
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Source IP</p>
+                    <p className="font-mono">{String(hit.sourceIp || "—")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Hostname</p>
+                    <p className="truncate">{String(hit.sourceHostname || "—")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Method</p>
+                    <p className="font-mono">{String(hit.httpMethod || "—")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">User Agent</p>
+                    <p className="truncate text-xs">{String(hit.sourceUserAgent || "—")}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Hostname</p>
-                  <p className="truncate">{String(hit.sourceHostname || "—")}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Method</p>
-                  <p className="font-mono">{String(hit.httpMethod || "—")}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">User Agent</p>
-                  <p className="truncate text-xs">{String(hit.sourceUserAgent || "—")}</p>
-                </div>
-              </div>
 
-              {hit.alertId ? (
-                <div className="mt-2 text-xs text-muted-foreground">
-                  Alert created: <span className="font-mono">{String(hit.alertId)}</span>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        ))}
+                {/* 54.2 — Expanded drill-down panel */}
+                {isExpanded && (
+                  <div className="mt-4 pt-4 border-t space-y-4">
+                    {/* Who / What triggered */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">Who / What Triggered</p>
+                        <div className="rounded border p-3 space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Source Name</span>
+                            <span className="font-mono">{String(hit.sourceName || "Unknown")}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">IP Address</span>
+                            <span className="font-mono">{String(hit.sourceIp || "—")}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Hostname</span>
+                            <span className="font-mono">{String(hit.sourceHostname || "—")}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Internal Actor</span>
+                            <span>{hit.isInternal === true ? "Yes (insider threat)" : "External"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Taken */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">Action Details</p>
+                        <div className="rounded border p-3 space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">HTTP Method</span>
+                            <span className="font-mono">{String(hit.httpMethod || "N/A")}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Request Path</span>
+                            <span className="font-mono truncate max-w-[200px]">
+                              {String(hit.httpPath || hit.requestUrl || "—")}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">User Agent</span>
+                            <span className="truncate max-w-[200px] text-xs">{String(hit.sourceUserAgent || "—")}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Source Type</span>
+                            <span>{String(hit.sourceType || "—").replace(/_/g, " ")}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Activity Timeline</p>
+                      <div className="rounded border p-3">
+                        <div className="flex items-center gap-3 text-xs">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-muted-foreground">Hit detected:</span>
+                            <span className="font-medium">{hitTime ? hitTime.toLocaleString() : "Unknown"}</span>
+                          </div>
+                          {hit.alertId ? (
+                            <div className="flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3 text-amber-500" />
+                              <span className="text-muted-foreground">Alert created:</span>
+                              <span className="font-mono">{String(hit.alertId).slice(0, 8)}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recommended Response */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Recommended Response</p>
+                      <div className="rounded bg-amber-500/10 border border-amber-500/20 p-3 text-sm space-y-1">
+                        {hit.severity === "critical" ? (
+                          <>
+                            <p>1. Immediately isolate source IP {String(hit.sourceIp || "")} from the network</p>
+                            <p>2. Check if the source host is compromised — run endpoint forensics</p>
+                            <p>3. Rotate any real credentials near the triggered canary</p>
+                            <p>4. Escalate to incident response team</p>
+                          </>
+                        ) : (
+                          <>
+                            <p>1. Investigate source {String(hit.sourceIp || "")} for suspicious activity</p>
+                            <p>2. Check if this is an authorized security scan or pentest</p>
+                            <p>3. Review adjacent logs for lateral movement indicators</p>
+                            <p>4. Update canary placement if repeatedly triggered by scans</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {hit.alertId && !isExpanded ? (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Alert created: <span className="font-mono">{String(hit.alertId)}</span>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

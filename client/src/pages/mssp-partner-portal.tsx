@@ -1556,7 +1556,41 @@ export default function MsspPartnerPortalPage() {
                 />
               </div>
 
-              {/* Quick actions */}
+              {/* 74.2 — Usage and Billing Dashboard Summary */}
+              <Card className="glass-subtle">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-emerald-400" />
+                    Usage & Billing Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div className="text-center p-3 border rounded-lg">
+                      <p className="text-2xl font-bold">{formatCurrency(stats.billingTotalRevenue)}</p>
+                      <p className="text-xs text-muted-foreground">Total Revenue</p>
+                    </div>
+                    <div className="text-center p-3 border rounded-lg">
+                      <p className="text-2xl font-bold">{stats.clientCount}</p>
+                      <p className="text-xs text-muted-foreground">Active Tenants</p>
+                    </div>
+                    <div className="text-center p-3 border rounded-lg">
+                      <p className="text-2xl font-bold">{stats.billingDraftInvoices}</p>
+                      <p className="text-xs text-muted-foreground">Draft Invoices</p>
+                    </div>
+                    <div className="text-center p-3 border rounded-lg">
+                      <p className="text-2xl font-bold">
+                        {stats.clientCount > 0
+                          ? formatCurrency(Math.round(stats.billingTotalRevenue / stats.clientCount))
+                          : "$0"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Avg Revenue/Tenant</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 74.1 — Partner Onboarding Wizard Quick Actions */}
               <Card className="glass-subtle">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Quick Actions</CardTitle>

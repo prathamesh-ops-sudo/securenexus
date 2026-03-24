@@ -32,6 +32,14 @@ import {
   Plus,
   Eye,
   Zap,
+  ListChecks,
+  Activity,
+  Plug,
+  Undo2,
+  ShieldCheck,
+  Settings2,
+  ArrowRight,
+  Info,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
@@ -306,6 +314,109 @@ export default function AgentResponsePage() {
     },
   });
 
+  // ─── 21.1 Approval Queue ──────────────────────────────────────────────────
+  const { data: approvalQueue, isLoading: approvalQueueLoading } = useQuery<any>({
+    queryKey: ["/api/native/response/approval-queue"],
+    queryFn: () => apiFetch("/api/native/response/approval-queue"),
+  });
+
+  const batchDecision = useMutation({
+    mutationFn: (body: { actionIds: string[]; decision: string; reason?: string }) =>
+      apiFetch("/api/native/response/approval-queue/batch", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response"] });
+      toast({ title: `Batch ${data.summary?.succeeded ?? 0} actions processed` });
+    },
+    onError: () => toast({ title: "Batch operation failed", variant: "destructive" }),
+  });
+
+  const [selectedQueueIds, setSelectedQueueIds] = useState<string[]>([]);
+
+  // ─── 21.2 Impact Preview ──────────────────────────────────────────────────
+  const [impactPreviewId, setImpactPreviewId] = useState<string | null>(null);
+  const { data: impactData, isLoading: impactLoading } = useQuery<any>({
+    queryKey: ["/api/native/response/actions", impactPreviewId, "impact-preview"],
+    queryFn: () => apiFetch(`/api/native/response/actions/${impactPreviewId}/impact-preview`),
+    enabled: !!impactPreviewId,
+  });
+
+  // ─── 21.3 Timeline ────────────────────────────────────────────────────────
+  const [timelineActionType, setTimelineActionType] = useState("all");
+  const [timelineStatus, setTimelineStatus] = useState("all");
+  const [timelineTarget, setTimelineTarget] = useState("");
+  const { data: timelineData, isLoading: timelineLoading } = useQuery<any>({
+    queryKey: ["/api/native/response/timeline", timelineActionType, timelineStatus, timelineTarget],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (timelineActionType !== "all") p.set("actionType", timelineActionType);
+      if (timelineStatus !== "all") p.set("status", timelineStatus);
+      if (timelineTarget) p.set("target", timelineTarget);
+      return apiFetch(`/api/native/response/timeline?${p}`);
+    },
+  });
+
+  // ─── 21.5 Verify Action ───────────────────────────────────────────────────
+  const verifyAction = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/native/response/actions/${id}/verify`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      toast({
+        title: `Verification: ${data.verificationStatus}`,
+        description: `${data.checks?.length ?? 0} checks run`,
+      });
+    },
+    onError: () => toast({ title: "Verification failed", variant: "destructive" }),
+  });
+
+  // ─── 21.6 Autonomous Config ───────────────────────────────────────────────
+  const { data: autonomousConfig } = useQuery<any>({
+    queryKey: ["/api/native/response/autonomous-config"],
+    queryFn: () => apiFetch("/api/native/response/autonomous-config"),
+  });
+
+  const updateThresholds = useMutation({
+    mutationFn: (thresholds: Record<string, any>) =>
+      apiFetch("/api/native/response/autonomous-config", { method: "PATCH", body: JSON.stringify({ thresholds }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response/autonomous-config"] });
+      toast({ title: "Thresholds updated" });
+    },
+    onError: () => toast({ title: "Failed to update thresholds", variant: "destructive" }),
+  });
+
+  // ─── 21.7 Connector Status ────────────────────────────────────────────────
+  const { data: connectorData } = useQuery<any>({
+    queryKey: ["/api/native/response/connector-status"],
+    queryFn: () => apiFetch("/api/native/response/connector-status"),
+  });
+
+  const executeViaConnector = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/native/response/actions/${id}/execute-via-connector`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response/actions"] });
+      toast({ title: data.executionDetails?.isLiveExecution ? "Executed via connector" : "Simulated execution" });
+    },
+    onError: () => toast({ title: "Connector execution failed", variant: "destructive" }),
+  });
+
+  // ─── 21.8 Rollback ────────────────────────────────────────────────────────
+  const rollbackAction = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/native/response/actions/${id}/rollback`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native/response/actions"] });
+      toast({ title: "Rollback completed", description: data.message });
+    },
+    onError: () => toast({ title: "Rollback failed", variant: "destructive" }),
+  });
+
+  const verifyRollback = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/native/response/actions/${id}/verify-rollback`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      toast({ title: `Rollback ${data.verificationStatus}`, description: `${data.checks?.length ?? 0} checks` });
+    },
+    onError: () => toast({ title: "Rollback verification failed", variant: "destructive" }),
+  });
+
   const stats = actionsData?.stats;
   const pendingActions = pendingData?.actions || [];
 
@@ -394,6 +505,22 @@ export default function AgentResponsePage() {
           <TabsTrigger value="all" className="gap-1.5">
             <Zap className="h-3.5 w-3.5" />
             All Actions ({stats?.total ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="approval-queue" className="gap-1.5">
+            <ListChecks className="h-3.5 w-3.5" />
+            Approval Queue
+          </TabsTrigger>
+          <TabsTrigger value="timeline" className="gap-1.5">
+            <Activity className="h-3.5 w-3.5" />
+            Timeline
+          </TabsTrigger>
+          <TabsTrigger value="connectors" className="gap-1.5">
+            <Plug className="h-3.5 w-3.5" />
+            Connectors
+          </TabsTrigger>
+          <TabsTrigger value="automation" className="gap-1.5">
+            <Settings2 className="h-3.5 w-3.5" />
+            Automation
           </TabsTrigger>
         </TabsList>
 
@@ -648,7 +775,593 @@ export default function AgentResponsePage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* 21.1 APPROVAL QUEUE TAB */}
+        <TabsContent value="approval-queue" className="mt-4 space-y-4">
+          {approvalQueue?.stats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-yellow-400">Pending</div>
+                  <div className="text-2xl font-semibold mt-1 text-yellow-400">{approvalQueue.stats.pendingCount}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-red-400">High Risk</div>
+                  <div className="text-2xl font-semibold mt-1 text-red-400">{approvalQueue.stats.highRiskPending}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-yellow-400">Medium Risk</div>
+                  <div className="text-2xl font-semibold mt-1">{approvalQueue.stats.mediumRiskPending}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground">Avg Wait</div>
+                  <div className="text-2xl font-semibold mt-1">
+                    {Math.round((approvalQueue.stats.avgWaitSeconds || 0) / 60)}m
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {selectedQueueIds.length > 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+              <span className="text-sm text-muted-foreground">{selectedQueueIds.length} selected</span>
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                onClick={() => {
+                  batchDecision.mutate({ actionIds: selectedQueueIds, decision: "approved" });
+                  setSelectedQueueIds([]);
+                }}
+              >
+                Approve All
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-red-500/30 text-red-400"
+                onClick={() => {
+                  batchDecision.mutate({ actionIds: selectedQueueIds, decision: "rejected", reason: "Batch rejected" });
+                  setSelectedQueueIds([]);
+                }}
+              >
+                Reject All
+              </Button>
+            </div>
+          )}
+
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-800 hover:bg-transparent">
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={
+                          selectedQueueIds.length === (approvalQueue?.queue?.length || 0) && selectedQueueIds.length > 0
+                        }
+                        onChange={(e) =>
+                          setSelectedQueueIds(
+                            e.target.checked ? (approvalQueue?.queue || []).map((a: any) => a.id) : [],
+                          )
+                        }
+                      />
+                    </TableHead>
+                    <TableHead className="text-muted-foreground">Action</TableHead>
+                    <TableHead className="text-muted-foreground">Target</TableHead>
+                    <TableHead className="text-muted-foreground">Risk</TableHead>
+                    <TableHead className="text-muted-foreground">Sensor</TableHead>
+                    <TableHead className="text-muted-foreground">Impact</TableHead>
+                    <TableHead className="text-muted-foreground">Waiting</TableHead>
+                    <TableHead className="text-muted-foreground text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {approvalQueueLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        Loading...
+                      </TableCell>
+                    </TableRow>
+                  ) : !approvalQueue?.queue?.length ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-12">
+                        <div className="flex flex-col items-center gap-2">
+                          <CheckCircle className="h-10 w-10 text-green-400/50" />
+                          <p className="text-muted-foreground">No actions awaiting approval</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    (approvalQueue.queue as any[]).map((item: any) => (
+                      <TableRow key={item.id} className="border-zinc-800">
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            className="rounded"
+                            checked={selectedQueueIds.includes(item.id)}
+                            onChange={(e) =>
+                              setSelectedQueueIds(
+                                e.target.checked
+                                  ? [...selectedQueueIds, item.id]
+                                  : selectedQueueIds.filter((x) => x !== item.id),
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {actionIcons[item.actionType]}
+                            <span className="font-medium">{actionLabels[item.actionType] || item.actionType}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{item.targetSummary}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={riskColors[item.riskLevel] || ""}>
+                            {item.riskLevel}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{item.sensor?.hostname || "—"}</TableCell>
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground">
+                            {item.riskAssessment?.affectedScope?.slice(0, 50)}...
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {Math.round((item.waitingDuration || 0) / 60000)}m
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-1 justify-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => setImpactPreviewId(item.id)}
+                            >
+                              <Eye className="h-3 w-3 mr-1" />
+                              Preview
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                              onClick={() => approveAction.mutate(item.id)}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-red-500/30 text-red-400"
+                              onClick={() => setShowRejectModal(item.id)}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 21.3 TIMELINE TAB */}
+        <TabsContent value="timeline" className="mt-4 space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search target..."
+                className="pl-9 bg-zinc-900/50 border-zinc-800"
+                value={timelineTarget}
+                onChange={(e) => setTimelineTarget(e.target.value)}
+              />
+            </div>
+            <Select value={timelineActionType} onValueChange={setTimelineActionType}>
+              <SelectTrigger className="w-[160px] bg-zinc-900/50 border-zinc-800">
+                <SelectValue placeholder="Action Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {Object.entries(actionLabels).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={timelineStatus} onValueChange={setTimelineStatus}>
+              <SelectTrigger className="w-[160px] bg-zinc-900/50 border-zinc-800">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="pending_approval">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            {timelineLoading ? (
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-6 text-center text-muted-foreground">Loading timeline...</CardContent>
+              </Card>
+            ) : !timelineData?.timeline?.length ? (
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-12 text-center">
+                  <Activity className="h-10 w-10 text-muted-foreground/50 mx-auto mb-2" />
+                  <p className="text-muted-foreground">No actions match the current filters</p>
+                </CardContent>
+              </Card>
+            ) : (
+              (timelineData.timeline as any[]).map((entry: any) => (
+                <Card key={entry.id} className="bg-zinc-900/50 border-zinc-800">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-zinc-800">
+                          {actionIcons[entry.actionType] || <Terminal className="h-4 w-4" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{actionLabels[entry.actionType] || entry.actionType}</span>
+                            <Badge variant="outline" className={statusColors[entry.status] || ""}>
+                              {entry.status.replace(/_/g, " ")}
+                            </Badge>
+                            <Badge variant="outline" className={riskColors[entry.riskLevel] || ""}>
+                              {entry.riskLevel}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                            <span>
+                              Target: <span className="font-mono">{entry.target}</span>
+                            </span>
+                            <span>Sensor: {entry.sensorHostname}</span>
+                            <span>By: {entry.requestedBy}</span>
+                            {entry.durationMs != null && <span>Duration: {(entry.durationMs / 1000).toFixed(1)}s</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right text-xs text-muted-foreground">
+                        <div>{entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : "—"}</div>
+                        <div className="flex gap-1 mt-1 justify-end">
+                          {entry.status === "completed" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[10px]"
+                                onClick={() => verifyAction.mutate(entry.id)}
+                              >
+                                <ShieldCheck className="h-3 w-3 mr-0.5" />
+                                Verify
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[10px]"
+                                onClick={() => rollbackAction.mutate(entry.id)}
+                              >
+                                <Undo2 className="h-3 w-3 mr-0.5" />
+                                Rollback
+                              </Button>
+                            </>
+                          )}
+                          {entry.status === "approved" && (
+                            <Button
+                              size="sm"
+                              className="h-6 text-[10px] bg-blue-600 hover:bg-blue-700"
+                              onClick={() => executeViaConnector.mutate(entry.id)}
+                            >
+                              <Play className="h-3 w-3 mr-0.5" />
+                              Execute
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {entry.outcome && (
+                      <pre className="mt-2 text-xs bg-zinc-900 rounded p-2 border border-zinc-800 whitespace-pre-wrap font-mono text-muted-foreground">
+                        {entry.outcome}
+                      </pre>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* 21.7 CONNECTORS TAB */}
+        <TabsContent value="connectors" className="mt-4 space-y-4">
+          {connectorData?.summary && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground">Action Types</div>
+                  <div className="text-2xl font-semibold mt-1">{connectorData.summary.totalActionTypes}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-zinc-900/50 border-green-500/20 border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-green-400">Connected</div>
+                  <div className="text-2xl font-semibold mt-1 text-green-400">
+                    {connectorData.summary.connectedActionTypes}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-yellow-400">Simulated</div>
+                  <div className="text-2xl font-semibold mt-1 text-yellow-400">
+                    {connectorData.summary.simulatedActionTypes}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground">Active Integrations</div>
+                  <div className="text-2xl font-semibold mt-1">{connectorData.summary.activeIntegrations}</div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {(connectorData?.connectorStatus || []).map((connector: any) => (
+              <Card key={connector.actionType} className="bg-zinc-900/50 border-zinc-800">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-zinc-800">
+                        {actionIcons[connector.actionType] || <Terminal className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">
+                            {actionLabels[connector.actionType] || connector.actionType}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={
+                              connector.isConnected
+                                ? "bg-green-500/20 text-green-400 border-green-500/30"
+                                : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                            }
+                          >
+                            {connector.isConnected ? "Live" : "Simulated"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{connector.executionMethod}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {connector.connectedPlatforms?.length > 0 ? (
+                        <div className="flex gap-1 flex-wrap justify-end">
+                          {connector.connectedPlatforms.map((p: any) => (
+                            <Badge
+                              key={p.id}
+                              variant="outline"
+                              className="text-[10px] bg-green-500/10 text-green-400 border-green-500/20"
+                            >
+                              {p.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No integration connected</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <p className="text-xs text-muted-foreground">
+                      Supported: {connector.supportedPlatforms?.join(", ")}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* 21.6 AUTOMATION TAB */}
+        <TabsContent value="automation" className="mt-4 space-y-4">
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-teal-400" />
+                Graduated Autonomous Response Thresholds
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Configure confidence thresholds per action type. Actions above the auto-execute threshold run without
+                human review. Actions between approval and auto-execute thresholds are queued for approval. Below the
+                approval threshold, actions are suggested only.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-800 hover:bg-transparent">
+                    <TableHead className="text-muted-foreground">Action Type</TableHead>
+                    <TableHead className="text-muted-foreground">Auto-Execute (%)</TableHead>
+                    <TableHead className="text-muted-foreground">Require Approval (%)</TableHead>
+                    <TableHead className="text-muted-foreground">Below Approval</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {autonomousConfig?.thresholds &&
+                    Object.entries(autonomousConfig.thresholds as Record<string, any>).map(
+                      ([actionType, thresholds]: [string, any]) => (
+                        <TableRow key={actionType} className="border-zinc-800">
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {actionIcons[actionType]}
+                              <span className="font-medium">{actionLabels[actionType] || actionType}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                className="w-20 h-8 text-sm bg-zinc-900/50 border-zinc-800"
+                                defaultValue={thresholds.autoExecute}
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val)) updateThresholds.mutate({ [actionType]: { autoExecute: val } });
+                                }}
+                              />
+                              <span className="text-xs text-green-400">Auto</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                className="w-20 h-8 text-sm bg-zinc-900/50 border-zinc-800"
+                                defaultValue={thresholds.requireApproval}
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val)) updateThresholds.mutate({ [actionType]: { requireApproval: val } });
+                                }}
+                              />
+                              <span className="text-xs text-yellow-400">Approval</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs text-muted-foreground">Suggest only</span>
+                          </TableCell>
+                        </TableRow>
+                      ),
+                    )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* 21.2 Impact Preview Modal */}
+      <Dialog open={!!impactPreviewId} onOpenChange={() => setImpactPreviewId(null)}>
+        <DialogContent className="bg-zinc-950 border-zinc-800 max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-400" />
+              Impact Preview
+            </DialogTitle>
+          </DialogHeader>
+          {impactLoading ? (
+            <div className="py-8 text-center text-muted-foreground">Analyzing impact...</div>
+          ) : impactData ? (
+            <div className="space-y-4">
+              <div
+                className={`p-3 rounded-lg border ${
+                  impactData.impact?.severity === "critical"
+                    ? "border-red-500/30 bg-red-500/10"
+                    : impactData.impact?.severity === "high"
+                      ? "border-orange-500/30 bg-orange-500/10"
+                      : impactData.impact?.severity === "medium"
+                        ? "border-yellow-500/30 bg-yellow-500/10"
+                        : "border-green-500/30 bg-green-500/10"
+                }`}
+              >
+                <p className="text-sm font-medium">{impactData.impact?.summary}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+                  <div className="text-xs text-muted-foreground">Severity</div>
+                  <div className="font-semibold mt-1 capitalize">{impactData.impact?.severity || "—"}</div>
+                </div>
+                <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+                  <div className="text-xs text-muted-foreground">Reversible</div>
+                  <div className="font-semibold mt-1">{impactData.impact?.reversible ? "Yes" : "No"}</div>
+                </div>
+                <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+                  <div className="text-xs text-muted-foreground">Est. Downtime</div>
+                  <div className="text-sm mt-1">{impactData.impact?.estimatedDowntime || "—"}</div>
+                </div>
+                <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+                  <div className="text-xs text-muted-foreground">Rollback</div>
+                  <div className="text-sm mt-1">{impactData.impact?.rollbackAction || "—"}</div>
+                </div>
+              </div>
+
+              {impactData.impact?.affectedServices?.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Affected Services</p>
+                  <div className="flex gap-1 flex-wrap">
+                    {impactData.impact.affectedServices.map((s: string) => (
+                      <Badge key={s} variant="outline" className="text-xs">
+                        {s}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {impactData.impact?.warnings?.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Warnings</p>
+                  <ul className="space-y-1">
+                    {impactData.impact.warnings.map((w: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="h-3.5 w-3.5 text-yellow-400 mt-0.5 shrink-0" />
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {impactData.history && (
+                <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+                  <p className="text-xs text-muted-foreground">History on this target</p>
+                  <p className="text-sm mt-1">
+                    {impactData.history.pastActionsOnSameTarget} past actions
+                    {impactData.history.pastSuccessRate != null &&
+                      ` (${impactData.history.pastSuccessRate}% success rate)`}
+                  </p>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setImpactPreviewId(null)}>
+                  Close
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    if (impactPreviewId) {
+                      approveAction.mutate(impactPreviewId);
+                      setImpactPreviewId(null);
+                    }
+                  }}
+                >
+                  Approve Action
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Create Action Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>

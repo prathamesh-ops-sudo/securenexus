@@ -578,6 +578,126 @@ export function registerDnsSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
+  // 71.5 — DNS Log Ingestion Verification
+  // ==========================================================================
+
+  // GET /api/dns-security/ingestion-status
+  app.get(
+    "/api/dns-security/ingestion-status",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const now = new Date();
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        // Count events in last 24h grouped by source type
+        const recentEvents = await db
+          .select({
+            source: dnsEvents.sourceHostname,
+            cnt: count(),
+          })
+          .from(dnsEvents)
+          .where(and(eq(dnsEvents.orgId, orgId), gte(dnsEvents.timestamp, oneDayAgo)))
+          .groupBy(dnsEvents.sourceHostname);
+
+        const totalLast24h = recentEvents.reduce((s, r) => s + Number(r.cnt), 0);
+
+        // Known DNS source types and their expected presence
+        const sources = [
+          { type: "recursive_resolver", label: "Recursive Resolvers", detected: false, eventCount: 0 },
+          { type: "dns_firewall", label: "DNS Firewalls", detected: false, eventCount: 0 },
+          { type: "cloud_route53", label: "AWS Route 53", detected: false, eventCount: 0 },
+          { type: "cloud_azure_dns", label: "Azure DNS", detected: false, eventCount: 0 },
+          { type: "cloud_gcp_dns", label: "Google Cloud DNS", detected: false, eventCount: 0 },
+        ];
+
+        for (const ev of recentEvents) {
+          const src = (ev.source || "").toLowerCase();
+          for (const s of sources) {
+            if (src.includes(s.type) || src.includes(s.type.replace(/_/g, "-"))) {
+              s.detected = true;
+              s.eventCount += Number(ev.cnt);
+            }
+          }
+        }
+
+        res.json({
+          totalEventsLast24h: totalLast24h,
+          activeSources: recentEvents.length,
+          sources,
+          healthy: totalLast24h > 0,
+          lastCheck: now.toISOString(),
+        });
+      } catch (err) {
+        log.error("Failed to check DNS ingestion status", { error: String(err) });
+        res.status(500).json({ error: "Failed to check DNS ingestion status" });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // 71.6 — DNS Policy Enforcement
+  // ==========================================================================
+
+  // GET /api/dns-security/policy-stats
+  app.get(
+    "/api/dns-security/policy-stats",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        // Count blocked events in last 30 days
+        const [{ value: blockedCount }] = await db
+          .select({ value: count() })
+          .from(dnsEvents)
+          .where(
+            and(
+              eq(dnsEvents.orgId, orgId),
+              eq(dnsEvents.eventType, "blocked"),
+              gte(dnsEvents.timestamp, thirtyDaysAgo),
+            ),
+          );
+
+        // Count active sinkhole domains (acting as RPZ)
+        const [{ value: rpzEntries }] = await db
+          .select({ value: count() })
+          .from(sinkholedDomains)
+          .where(and(eq(sinkholedDomains.orgId, orgId), eq(sinkholedDomains.status, "active")));
+
+        // Sinkhole hit count in last 30 days
+        const [{ value: sinkholeHits30d }] = await db
+          .select({ value: count() })
+          .from(dnsEvents)
+          .where(
+            and(
+              eq(dnsEvents.orgId, orgId),
+              eq(dnsEvents.eventType, "sinkholed"),
+              gte(dnsEvents.timestamp, thirtyDaysAgo),
+            ),
+          );
+
+        res.json({
+          blockedQueries30d: Number(blockedCount),
+          activeRpzEntries: Number(rpzEntries),
+          sinkholeHits30d: Number(sinkholeHits30d),
+          enforcementActive: Number(rpzEntries) > 0,
+        });
+      } catch (err) {
+        log.error("Failed to get DNS policy stats", { error: String(err) });
+        res.status(500).json({ error: "Failed to get DNS policy stats" });
+      }
+    },
+  );
+
+  // ==========================================================================
   // Reference Data
   // ==========================================================================
 

@@ -38,7 +38,15 @@ import {
   FileWarning,
   Crosshair,
   Rss,
+  Award,
+  BarChart3,
+  Star,
+  Filter,
+  GitBranch,
+  ArrowRight,
+  Calendar,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -366,6 +374,97 @@ function DashboardTab() {
         </Card>
       </div>
 
+      {/* 59.1 — Sharing Dashboard with gamification */}
+      {org && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Award className="h-4 w-4" />
+              Sharing Dashboard
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="text-center p-3 border rounded">
+                <Share2 className="h-4 w-4 mx-auto text-blue-400 mb-1" />
+                <div className="text-xl font-bold">{org.contributedIocCount}</div>
+                <div className="text-xs text-muted-foreground">IOCs Shared</div>
+              </div>
+              <div className="text-center p-3 border rounded">
+                <Globe className="h-4 w-4 mx-auto text-green-400 mb-1" />
+                <div className="text-xl font-bold">{org.receivedIocCount}</div>
+                <div className="text-xs text-muted-foreground">IOCs Received</div>
+              </div>
+              <div className="text-center p-3 border rounded">
+                <Star className="h-4 w-4 mx-auto text-amber-400 mb-1" />
+                <div className="text-xl font-bold">
+                  {org.contributedIocCount > 0
+                    ? Math.min(
+                        100,
+                        Math.round(
+                          (org.contributedIocCount / Math.max(1, org.contributedIocCount + org.receivedIocCount)) *
+                            100 +
+                            (stats?.avgConfidence || 0) / 2,
+                        ),
+                      )
+                    : 0}
+                </div>
+                <div className="text-xs text-muted-foreground">Quality Score</div>
+              </div>
+              <div className="text-center p-3 border rounded">
+                <Users className="h-4 w-4 mx-auto text-purple-400 mb-1" />
+                <div className="text-xl font-bold">
+                  {stats?.participatingOrgs ? `${Math.round((1 / Math.max(1, stats.participatingOrgs)) * 100)}%` : "—"}
+                </div>
+                <div className="text-xs text-muted-foreground">Participation Rate</div>
+              </div>
+            </div>
+            {/* Gamification: contribution level */}
+            {(() => {
+              const count = org.contributedIocCount;
+              const level =
+                count >= 100
+                  ? "Diamond"
+                  : count >= 50
+                    ? "Gold"
+                    : count >= 20
+                      ? "Silver"
+                      : count >= 5
+                        ? "Bronze"
+                        : "Newcomer";
+              const nextThreshold = count >= 100 ? 100 : count >= 50 ? 100 : count >= 20 ? 50 : count >= 5 ? 20 : 5;
+              const progress = Math.min(100, Math.round((count / nextThreshold) * 100));
+              return (
+                <div className="flex items-center gap-3">
+                  <Badge
+                    className={`text-xs ${
+                      level === "Diamond"
+                        ? "bg-cyan-500/20 text-cyan-400"
+                        : level === "Gold"
+                          ? "bg-amber-500/20 text-amber-400"
+                          : level === "Silver"
+                            ? "bg-zinc-400/20 text-zinc-300"
+                            : level === "Bronze"
+                              ? "bg-orange-500/20 text-orange-400"
+                              : "bg-zinc-700 text-zinc-400"
+                    }`}
+                  >
+                    <Star className="h-3 w-3 mr-1" />
+                    {level} Contributor
+                  </Badge>
+                  <div className="flex-1">
+                    <Progress value={progress} className="h-2" />
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {count}/{nextThreshold} IOCs
+                  </span>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Severity Breakdown + Top Sectors */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
@@ -619,6 +718,7 @@ function SharingPreferencesTab() {
 function CommunityFeedsTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [sectorFilter, setSectorFilter] = useState<string>("all");
 
   const { data, isLoading } = useQuery<{ feeds: CommunityFeed[] }>({
     queryKey: ["/api/community-intel/feeds"],
@@ -646,6 +746,10 @@ function CommunityFeedsTab() {
 
   const feeds = data?.feeds || [];
 
+  // 59.2 — Industry feed curation: extract unique sectors
+  const sectors = Array.from(new Set(feeds.map((f) => f.industrySector).filter(Boolean) as string[]));
+  const filteredFeeds = sectorFilter === "all" ? feeds : feeds.filter((f) => f.industrySector === sectorFilter);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -657,8 +761,45 @@ function CommunityFeedsTab() {
         </div>
       </div>
 
+      {/* 59.2 — Industry Feed Curation Filter */}
+      {sectors.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Filter className="h-4 w-4" />
+              Filter by Industry Sector
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={sectorFilter === "all" ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => setSectorFilter("all")}
+              >
+                All ({feeds.length})
+              </Badge>
+              {sectors.map((sector) => {
+                const count = feeds.filter((f) => f.industrySector === sector).length;
+                const subscribed = feeds.filter((f) => f.industrySector === sector && f.isSubscribed).length;
+                return (
+                  <Badge
+                    key={sector}
+                    variant={sectorFilter === sector ? "default" : "outline"}
+                    className="cursor-pointer capitalize"
+                    onClick={() => setSectorFilter(sector)}
+                  >
+                    {sector} ({subscribed}/{count})
+                  </Badge>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {feeds.map((feed) => (
+        {filteredFeeds.map((feed) => (
           <Card key={feed.id}>
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
@@ -702,11 +843,13 @@ function CommunityFeedsTab() {
         ))}
       </div>
 
-      {feeds.length === 0 && (
+      {filteredFeeds.length === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             <Rss className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>No community feeds available yet.</p>
+            <p>
+              {sectorFilter === "all" ? "No community feeds available yet." : `No feeds for "${sectorFilter}" sector.`}
+            </p>
           </CardContent>
         </Card>
       )}
@@ -874,6 +1017,8 @@ function CampaignsTab() {
     },
   });
 
+  const campaigns = data?.campaigns || [];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -894,11 +1039,119 @@ function CampaignsTab() {
         </Button>
       </div>
 
+      {/* 59.3 — Campaign Correlation Visualization */}
+      {campaigns.length >= 2 &&
+        (() => {
+          // Build shared infrastructure / common targets visualization
+          const allSectors = new Set<string>();
+          const allActors = new Set<string>();
+          const timeline: { date: string; campaign: string; severity: string }[] = [];
+
+          for (const c of campaigns) {
+            if (c.targetSectors) {
+              for (const s of c.targetSectors as string[]) allSectors.add(s);
+            }
+            if (c.threatActorName) allActors.add(c.threatActorName);
+            timeline.push({ date: c.firstSeenAt, campaign: c.campaignName, severity: c.severity });
+          }
+          timeline.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+          // Find campaigns sharing same actors or sectors (correlation)
+          const correlations: { a: string; b: string; reason: string }[] = [];
+          for (let i = 0; i < campaigns.length; i++) {
+            for (let j = i + 1; j < campaigns.length; j++) {
+              const ci = campaigns[i];
+              const cj = campaigns[j];
+              if (ci.threatActorName && ci.threatActorName === cj.threatActorName) {
+                correlations.push({
+                  a: ci.campaignName,
+                  b: cj.campaignName,
+                  reason: `Shared actor: ${ci.threatActorName}`,
+                });
+              }
+              const sharedSectors = ((ci.targetSectors || []) as string[]).filter((s) =>
+                ((cj.targetSectors || []) as string[]).includes(s),
+              );
+              if (sharedSectors.length > 0) {
+                correlations.push({
+                  a: ci.campaignName,
+                  b: cj.campaignName,
+                  reason: `Common targets: ${sharedSectors.join(", ")}`,
+                });
+              }
+            }
+          }
+
+          return (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <GitBranch className="h-4 w-4" />
+                  Campaign Correlation
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {/* Summary row */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="text-center p-2 border rounded">
+                    <div className="text-lg font-bold">{campaigns.length}</div>
+                    <div className="text-xs text-muted-foreground">Active Campaigns</div>
+                  </div>
+                  <div className="text-center p-2 border rounded">
+                    <div className="text-lg font-bold">{allActors.size}</div>
+                    <div className="text-xs text-muted-foreground">Threat Actors</div>
+                  </div>
+                  <div className="text-center p-2 border rounded">
+                    <div className="text-lg font-bold">{allSectors.size}</div>
+                    <div className="text-xs text-muted-foreground">Target Sectors</div>
+                  </div>
+                </div>
+
+                {/* Correlations */}
+                {correlations.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Detected Correlations:</p>
+                    <div className="space-y-1">
+                      {correlations.slice(0, 5).map((cor, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs">
+                          <Badge variant="outline" className="text-xs truncate max-w-[120px]">
+                            {cor.a}
+                          </Badge>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <Badge variant="outline" className="text-xs truncate max-w-[120px]">
+                            {cor.b}
+                          </Badge>
+                          <span className="text-muted-foreground ml-1">{cor.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeline progression */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Timeline:</p>
+                  <div className="space-y-1">
+                    {timeline.slice(0, 8).map((t, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs">
+                        <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="text-muted-foreground w-20 shrink-0">{formatDate(t.date)}</span>
+                        <Badge className={`text-xs ${severityBadge(t.severity)}`}>{t.severity}</Badge>
+                        <span className="truncate">{t.campaign}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
       {isLoading ? (
         <div className="py-8 text-center text-muted-foreground">Loading campaigns...</div>
       ) : (
         <div className="space-y-3">
-          {(data?.campaigns || []).map((c) => (
+          {campaigns.map((c) => (
             <Card key={c.id}>
               <CardContent className="py-4 px-4">
                 <div className="flex items-start justify-between gap-4">
@@ -947,11 +1200,11 @@ function CampaignsTab() {
             </Card>
           ))}
 
-          {(data?.campaigns || []).length === 0 && (
+          {campaigns.length === 0 && (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
                 <Network className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No campaigns correlated yet. Click "Run Correlation" to analyze shared IOCs.</p>
+                <p>No campaigns correlated yet. Click &quot;Run Correlation&quot; to analyze shared IOCs.</p>
               </CardContent>
             </Card>
           )}

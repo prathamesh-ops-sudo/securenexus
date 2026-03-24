@@ -20,6 +20,16 @@ import {
   RefreshCw,
   Lock,
   Copy,
+  Search,
+  ScrollText,
+  History,
+  Key,
+  Fingerprint,
+  Shield,
+  Network,
+  Bell,
+  Plug,
+  CreditCard,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,6 +106,30 @@ interface OrgSettings {
   updatedAt: string | null;
 }
 
+/* 88.1 — settings organization: logical groups */
+const SETTINGS_SECTIONS = [
+  { key: "general", label: "General", icon: Building2, description: "Organization name, industry, size" },
+  { key: "contact", label: "Contact", icon: Mail, description: "Email, phone, address" },
+  { key: "branding", label: "Branding", icon: Palette, description: "Logo, colors, theme" },
+  { key: "security", label: "Security", icon: Shield, description: "SSO, domains, MFA" },
+  { key: "notifications", label: "Notifications", icon: Bell, description: "Alert channels, digests" },
+  { key: "integrations", label: "Integrations", icon: Plug, description: "Connected services" },
+  { key: "billing", label: "Billing", icon: CreditCard, description: "Plan, invoices, payment" },
+  { key: "danger", label: "Danger Zone", icon: AlertTriangle, description: "Delete, transfer" },
+];
+
+/* 88.2 — cross-settings search keywords */
+const SETTINGS_SEARCH_KEYWORDS: Record<string, string[]> = {
+  general: ["name", "industry", "size", "timezone", "slug"],
+  contact: ["email", "phone", "address", "billing email"],
+  branding: ["logo", "color", "theme", "brand"],
+  security: ["sso", "saml", "oidc", "mfa", "domain", "password", "session"],
+  notifications: ["alert", "email", "slack", "webhook", "digest"],
+  integrations: ["connector", "api", "siem", "edr"],
+  billing: ["plan", "invoice", "payment", "subscription", "stripe"],
+  danger: ["delete", "transfer", "ownership"],
+};
+
 export default function OrgSettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -106,6 +140,8 @@ export default function OrgSettingsPage() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferTargetId, setTransferTargetId] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
+  /* 88.2 — settings search state */
+  const [settingsSearch, setSettingsSearch] = useState("");
 
   const isOwner = currentRole === "owner";
   const isAdmin = currentRole === "admin" || isOwner;
@@ -348,8 +384,62 @@ export default function OrgSettingsPage() {
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
 
+      {/* 88.2 — cross-settings search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder='Search settings (e.g. "MFA", "logo", "billing")'
+          value={settingsSearch}
+          onChange={(e) => setSettingsSearch(e.target.value)}
+          className="pl-9"
+          data-testid="input-settings-search"
+        />
+      </div>
+
+      {/* 88.1 — settings section quick-nav */}
+      {!settingsSearch && (
+        <div className="flex gap-1.5 flex-wrap">
+          {SETTINGS_SECTIONS.map((sec) => {
+            const Icon = sec.icon;
+            return (
+              <Button
+                key={sec.key}
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById(`section-${sec.key}`)?.scrollIntoView({ behavior: "smooth" })}
+                className="text-xs"
+              >
+                <Icon className="h-3 w-3 mr-1" />
+                {sec.label}
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 88.2 — search results indicator */}
+      {settingsSearch && (
+        <div className="text-xs text-muted-foreground flex items-center gap-1">
+          <Search className="h-3 w-3" />
+          Showing settings matching &ldquo;{settingsSearch}&rdquo; &mdash;
+          {
+            Object.entries(SETTINGS_SEARCH_KEYWORDS).filter(([_, keywords]) =>
+              keywords.some((kw) => kw.includes(settingsSearch.toLowerCase())),
+            ).length
+          }{" "}
+          section(s) matched
+        </div>
+      )}
+
       {/* General Section */}
-      <Card>
+      <Card
+        id="section-general"
+        className={
+          settingsSearch && !SETTINGS_SEARCH_KEYWORDS.general?.some((kw) => kw.includes(settingsSearch.toLowerCase()))
+            ? "hidden"
+            : ""
+        }
+      >
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Building2 className="h-4 w-4" />
@@ -464,7 +554,14 @@ export default function OrgSettingsPage() {
       </Card>
 
       {/* Contact Section */}
-      <Card>
+      <Card
+        id="section-contact"
+        className={
+          settingsSearch && !SETTINGS_SEARCH_KEYWORDS.contact?.some((kw) => kw.includes(settingsSearch.toLowerCase()))
+            ? "hidden"
+            : ""
+        }
+      >
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Mail className="h-4 w-4" />
@@ -803,6 +900,30 @@ export default function OrgSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 88.3 — settings change audit trail indicator */}
+      {org.updatedAt && (
+        <Card id="section-audit">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              Recent Settings Changes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p className="flex items-center gap-1.5">
+                <ScrollText className="h-3 w-3" />
+                Last updated: {new Date(org.updatedAt).toLocaleString()}
+              </p>
+              <p className="text-[10px]">
+                All settings changes are logged in the organization audit trail. View full history in{" "}
+                <span className="font-medium">Team Management &gt; Audit Trail</span>.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Transfer Ownership Confirmation Dialog */}
       <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>

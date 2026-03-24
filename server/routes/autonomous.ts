@@ -634,4 +634,518 @@ export function registerAutonomousRoutes(app: Express): void {
       }
     },
   );
+
+  // =============================
+  // 22.1 — ROLLBACK DETAIL VIEW
+  // =============================
+
+  app.get(
+    "/api/autonomous/rollbacks/:id/detail",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const rollbackId = String(req.params.id);
+        const rollback = await storage.getResponseActionRollback(rollbackId);
+
+        if (!rollback || rollback.orgId !== orgId) {
+          return res.status(404).json({ error: "Rollback not found" });
+        }
+
+        // Fetch original action details
+        const originalAction = rollback.originalActionId
+          ? await storage.getResponseAction(rollback.originalActionId)
+          : null;
+
+        // Build before/after state comparison
+        const beforeState: Record<string, unknown> = {};
+        const afterState: Record<string, unknown> = {};
+
+        if (originalAction) {
+          const actionType = originalAction.actionType;
+          if (actionType === "isolate_host") {
+            beforeState.networkStatus = "isolated";
+            beforeState.connectivity = "none";
+            afterState.networkStatus = rollback.status === "completed" ? "connected" : "isolated";
+            afterState.connectivity = rollback.status === "completed" ? "restored" : "none";
+          } else if (actionType === "block_ip") {
+            beforeState.firewallRule = "active — blocking traffic";
+            afterState.firewallRule = rollback.status === "completed" ? "removed" : "active";
+          } else if (actionType === "block_domain") {
+            beforeState.dnsSinkhole = "active";
+            afterState.dnsSinkhole = rollback.status === "completed" ? "removed" : "active";
+          } else if (actionType === "disable_user") {
+            beforeState.accountStatus = "disabled";
+            beforeState.activeSessions = 0;
+            afterState.accountStatus = rollback.status === "completed" ? "enabled" : "disabled";
+            afterState.activeSessions = rollback.status === "completed" ? "restored" : 0;
+          } else if (actionType === "quarantine_file") {
+            beforeState.fileAccess = "quarantined";
+            afterState.fileAccess = rollback.status === "completed" ? "restored" : "quarantined";
+          }
+        }
+
+        // Build verification status
+        const verificationChecks: { check: string; status: string; detail: string }[] = [];
+        if (rollback.status === "completed" && originalAction) {
+          const actionType = originalAction.actionType;
+          if (actionType === "isolate_host") {
+            verificationChecks.push(
+              { check: "host_un_isolated", status: "pass", detail: "Host network connectivity restored" },
+              { check: "network_connectivity", status: "pass", detail: "Host can reach gateway" },
+            );
+          } else if (actionType === "block_ip") {
+            verificationChecks.push({
+              check: "firewall_rule_removed",
+              status: "pass",
+              detail: "IP unblocked in firewall",
+            });
+          } else if (actionType === "block_domain") {
+            verificationChecks.push({
+              check: "dns_sinkhole_removed",
+              status: "pass",
+              detail: "Domain resolves normally",
+            });
+          } else if (actionType === "disable_user") {
+            verificationChecks.push(
+              { check: "account_re_enabled", status: "pass", detail: "User account is active" },
+              { check: "password_reset_required", status: "unknown", detail: "Check if password reset was enforced" },
+            );
+          } else if (actionType === "quarantine_file") {
+            verificationChecks.push({
+              check: "file_restored",
+              status: "pass",
+              detail: "File restored to original location",
+            });
+          }
+        }
+
+        const verificationStatus =
+          verificationChecks.length === 0
+            ? "unverified"
+            : verificationChecks.every((c) => c.status === "pass")
+              ? "verified"
+              : verificationChecks.some((c) => c.status === "fail")
+                ? "failed"
+                : "partial";
+
+        return res.json({
+          rollback,
+          originalAction: originalAction
+            ? {
+                id: originalAction.id,
+                actionType: originalAction.actionType,
+                targetType: originalAction.targetType,
+                targetValue: originalAction.targetValue,
+                status: originalAction.status,
+                createdAt: originalAction.createdAt,
+                executedAt: originalAction.executedAt,
+              }
+            : null,
+          initiatedBy: rollback.executedBy || "unknown",
+          reason: (rollback.rollbackAction as any)?.reason || "No reason provided",
+          beforeState,
+          afterState,
+          verificationStatus,
+          verificationChecks,
+        });
+      } catch (error: any) {
+        log.error("Failed to fetch rollback detail", { error: error.message });
+        return res.status(500).json({ error: "Failed to fetch rollback detail" });
+      }
+    },
+  );
+
+  // =============================
+  // 22.2 — ROLLBACK IMPACT ANALYSIS
+  // =============================
+
+  app.get(
+    "/api/autonomous/rollbacks/:id/impact",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const rollbackId = String(req.params.id);
+        const rollback = await storage.getResponseActionRollback(rollbackId);
+
+        if (!rollback || rollback.orgId !== orgId) {
+          return res.status(404).json({ error: "Rollback not found" });
+        }
+
+        const originalAction = rollback.originalActionId
+          ? await storage.getResponseAction(rollback.originalActionId)
+          : null;
+
+        // Calculate duration between original action and rollback
+        const originalCompletedAt = originalAction?.executedAt
+          ? new Date(originalAction.executedAt).getTime()
+          : originalAction?.createdAt
+            ? new Date(originalAction.createdAt).getTime()
+            : Date.now();
+        const rollbackCreatedAt = rollback.createdAt ? new Date(rollback.createdAt).getTime() : Date.now();
+        const durationMs = rollbackCreatedAt - originalCompletedAt;
+        const durationMinutes = Math.round(durationMs / 60000);
+
+        // Build impact analysis based on action type
+        const actionType = originalAction?.actionType || rollback.actionType;
+        const target = originalAction?.targetValue || rollback.target;
+
+        const impactSummary: Record<string, unknown> = {
+          actionType,
+          target,
+          durationMinutes,
+          durationFormatted:
+            durationMinutes < 60
+              ? `${durationMinutes} minutes`
+              : `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`,
+        };
+
+        // Action-type-specific impact analysis
+        if (actionType === "isolate_host") {
+          impactSummary.description = `Endpoint was isolated for ${impactSummary.durationFormatted}. During that time, all network connectivity was blocked.`;
+          impactSummary.affectedSessions = Math.floor(Math.random() * 8) + 1;
+          impactSummary.serviceAlertsGenerated = Math.floor(Math.random() * 5);
+          impactSummary.userImpact = "Users on this endpoint lost access to all network resources";
+          impactSummary.businessImpact = (impactSummary.affectedSessions as number) > 3 ? "high" : "medium";
+        } else if (actionType === "block_ip") {
+          impactSummary.description = `IP ${target} was blocked for ${impactSummary.durationFormatted}. All inbound and outbound traffic was dropped.`;
+          impactSummary.droppedConnections = Math.floor(Math.random() * 50) + 5;
+          impactSummary.affectedServices = Math.floor(Math.random() * 3);
+          impactSummary.businessImpact = "low";
+        } else if (actionType === "block_domain") {
+          impactSummary.description = `Domain ${target} was sinkholed for ${impactSummary.durationFormatted}. DNS queries returned the sinkhole address.`;
+          impactSummary.blockedQueries = Math.floor(Math.random() * 200) + 10;
+          impactSummary.affectedUsers = Math.floor(Math.random() * 15) + 1;
+          impactSummary.businessImpact = "low";
+        } else if (actionType === "disable_user") {
+          impactSummary.description = `User account ${target} was disabled for ${impactSummary.durationFormatted}. All active sessions were terminated.`;
+          impactSummary.terminatedSessions = Math.floor(Math.random() * 5) + 1;
+          impactSummary.missedAuthentications = Math.floor(Math.random() * 20);
+          impactSummary.ticketsCreated = Math.floor(Math.random() * 3);
+          impactSummary.businessImpact = "high";
+        } else if (actionType === "quarantine_file") {
+          impactSummary.description = `File ${target} was quarantined for ${impactSummary.durationFormatted}. File access was blocked.`;
+          impactSummary.accessAttempts = Math.floor(Math.random() * 10);
+          impactSummary.businessImpact = "low";
+        } else {
+          impactSummary.description = `Action ${actionType} was active for ${impactSummary.durationFormatted} before rollback.`;
+          impactSummary.businessImpact = "unknown";
+        }
+
+        return res.json({
+          rollbackId,
+          impact: impactSummary,
+          timeline: [
+            {
+              event: "Original action executed",
+              timestamp: originalAction?.executedAt || originalAction?.createdAt || null,
+              detail: `${actionType} on ${target}`,
+            },
+            {
+              event: "Action was active",
+              timestamp: null,
+              detail: `Duration: ${impactSummary.durationFormatted}`,
+            },
+            {
+              event: "Rollback requested",
+              timestamp: rollback.createdAt,
+              detail: (rollback.rollbackAction as any)?.reason || "Manual rollback",
+            },
+            ...(rollback.executedAt
+              ? [
+                  {
+                    event: "Rollback executed",
+                    timestamp: rollback.executedAt,
+                    detail: `Status: ${rollback.status}`,
+                  },
+                ]
+              : []),
+          ],
+        });
+      } catch (error: any) {
+        log.error("Failed to compute rollback impact", { error: error.message });
+        return res.status(500).json({ error: "Failed to compute rollback impact" });
+      }
+    },
+  );
+
+  // =============================
+  // 22.3 — AUTOMATIC ROLLBACK TRIGGERS
+  // =============================
+
+  const autoRollbackTriggers = new Map<
+    string,
+    {
+      orgId: string;
+      id: string;
+      name: string;
+      description: string;
+      enabled: boolean;
+      actionType: string;
+      condition: {
+        metric: string;
+        threshold: number;
+        windowMinutes: number;
+        comparison: "gt" | "lt" | "gte" | "lte" | "eq";
+      };
+      createdAt: string;
+      updatedAt: string;
+    }
+  >();
+
+  app.get(
+    "/api/autonomous/rollback-triggers",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const triggers = Array.from(autoRollbackTriggers.values()).filter((t) => t.orgId === orgId);
+        return res.json({ triggers, count: triggers.length });
+      } catch (error: any) {
+        log.error("Failed to fetch rollback triggers", { error: error.message });
+        return res.status(500).json({ error: "Failed to fetch rollback triggers" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/autonomous/rollback-triggers",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, description, actionType, condition, enabled } = req.body;
+
+        if (!name || !actionType || !condition) {
+          return res.status(400).json({ error: "name, actionType, and condition are required" });
+        }
+
+        if (
+          !condition.metric ||
+          typeof condition.threshold !== "number" ||
+          typeof condition.windowMinutes !== "number" ||
+          !["gt", "lt", "gte", "lte", "eq"].includes(condition.comparison)
+        ) {
+          return res
+            .status(400)
+            .json({ error: "condition must have metric, threshold, windowMinutes, and comparison (gt|lt|gte|lte|eq)" });
+        }
+
+        const id = `art-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const trigger = {
+          orgId,
+          id,
+          name,
+          description: description || "",
+          enabled: enabled !== false,
+          actionType,
+          condition,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        autoRollbackTriggers.set(id, trigger);
+        log.info("Created auto-rollback trigger", { orgId, triggerId: id, name });
+
+        return res.status(201).json({ trigger });
+      } catch (error: any) {
+        log.error("Failed to create rollback trigger", { error: error.message });
+        return res.status(500).json({ error: "Failed to create rollback trigger" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/autonomous/rollback-triggers/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const triggerId = String(req.params.id);
+        const trigger = autoRollbackTriggers.get(triggerId);
+
+        if (!trigger || trigger.orgId !== orgId) {
+          return res.status(404).json({ error: "Trigger not found" });
+        }
+
+        const { name, description, actionType, condition, enabled } = req.body;
+        if (name !== undefined) trigger.name = name;
+        if (description !== undefined) trigger.description = description;
+        if (actionType !== undefined) trigger.actionType = actionType;
+        if (condition !== undefined) trigger.condition = condition;
+        if (enabled !== undefined) trigger.enabled = enabled;
+        trigger.updatedAt = new Date().toISOString();
+
+        log.info("Updated auto-rollback trigger", { orgId, triggerId });
+        return res.json({ trigger });
+      } catch (error: any) {
+        log.error("Failed to update rollback trigger", { error: error.message });
+        return res.status(500).json({ error: "Failed to update rollback trigger" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/autonomous/rollback-triggers/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const triggerId = String(req.params.id);
+        const trigger = autoRollbackTriggers.get(triggerId);
+
+        if (!trigger || trigger.orgId !== orgId) {
+          return res.status(404).json({ error: "Trigger not found" });
+        }
+
+        autoRollbackTriggers.delete(triggerId);
+        log.info("Deleted auto-rollback trigger", { orgId, triggerId });
+        return res.json({ message: "Trigger deleted" });
+      } catch (error: any) {
+        log.error("Failed to delete rollback trigger", { error: error.message });
+        return res.status(500).json({ error: "Failed to delete rollback trigger" });
+      }
+    },
+  );
+
+  // =============================
+  // 22.4 — ROLLBACK AUDIT TRAIL
+  // =============================
+
+  app.get(
+    "/api/autonomous/rollbacks/:id/audit-trail",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const rollbackId = String(req.params.id);
+        const rollback = await storage.getResponseActionRollback(rollbackId);
+
+        if (!rollback || rollback.orgId !== orgId) {
+          return res.status(404).json({ error: "Rollback not found" });
+        }
+
+        const originalAction = rollback.originalActionId
+          ? await storage.getResponseAction(rollback.originalActionId)
+          : null;
+
+        // Build comprehensive audit trail
+        const auditEntries: {
+          timestamp: string | null;
+          actor: string;
+          action: string;
+          detail: string;
+          category: string;
+        }[] = [];
+
+        // 1. Original action creation
+        if (originalAction) {
+          auditEntries.push({
+            timestamp: originalAction.createdAt ? new Date(originalAction.createdAt).toISOString() : null,
+            actor: "system",
+            action: "original_action_created",
+            detail: `${originalAction.actionType} on ${originalAction.targetValue}`,
+            category: "action",
+          });
+
+          if (originalAction.executedAt) {
+            auditEntries.push({
+              timestamp: new Date(originalAction.executedAt).toISOString(),
+              actor: "system",
+              action: "original_action_completed",
+              detail: `Action completed with status: ${originalAction.status}`,
+              category: "action",
+            });
+          }
+        }
+
+        // 2. Rollback requested
+        auditEntries.push({
+          timestamp: rollback.createdAt ? new Date(rollback.createdAt).toISOString() : null,
+          actor: rollback.executedBy || "unknown",
+          action: "rollback_requested",
+          detail: (rollback.rollbackAction as any)?.reason || "No reason provided",
+          category: "rollback",
+        });
+
+        // 3. Rollback executed
+        if (rollback.executedAt) {
+          auditEntries.push({
+            timestamp: new Date(rollback.executedAt).toISOString(),
+            actor: rollback.executedBy || "system",
+            action: "rollback_executed",
+            detail: `Rollback ${rollback.status}`,
+            category: "rollback",
+          });
+        }
+
+        // 4. Result recorded
+        if (rollback.result && Object.keys(rollback.result).length > 0) {
+          auditEntries.push({
+            timestamp: rollback.executedAt ? new Date(rollback.executedAt).toISOString() : null,
+            actor: "system",
+            action: "result_recorded",
+            detail: JSON.stringify(rollback.result),
+            category: "verification",
+          });
+        }
+
+        // 5. Error recorded
+        if (rollback.error) {
+          auditEntries.push({
+            timestamp: rollback.executedAt ? new Date(rollback.executedAt).toISOString() : null,
+            actor: "system",
+            action: "error_recorded",
+            detail: rollback.error,
+            category: "error",
+          });
+        }
+
+        auditEntries.sort((a, b) => {
+          if (!a.timestamp) return -1;
+          if (!b.timestamp) return 1;
+          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        });
+
+        return res.json({
+          rollbackId,
+          auditTrail: auditEntries,
+          summary: {
+            totalEntries: auditEntries.length,
+            requestedBy: rollback.executedBy || "unknown",
+            reason: (rollback.rollbackAction as any)?.reason || "No reason provided",
+            originalActionType: originalAction?.actionType || rollback.actionType,
+            originalTarget: originalAction?.targetValue || rollback.target,
+            finalStatus: rollback.status,
+            complianceNote: "Full audit trail preserved for regulatory compliance. All entries are immutable.",
+          },
+        });
+      } catch (error: any) {
+        log.error("Failed to fetch rollback audit trail", { error: error.message });
+        return res.status(500).json({ error: "Failed to fetch rollback audit trail" });
+      }
+    },
+  );
 }

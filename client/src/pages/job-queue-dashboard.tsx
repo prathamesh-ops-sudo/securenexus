@@ -17,6 +17,13 @@ import {
   Timer,
   ChevronUp,
   Eye,
+  ArrowUpDown,
+  GitBranch,
+  AlertCircle,
+  Settings,
+  TrendingUp,
+  Zap,
+  Shield,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +54,41 @@ interface QueueStats {
   throughputPerMinute: number;
   avgDurationMs: number;
   jobs: Job[];
+}
+
+interface JobDependency {
+  jobId: string;
+  jobType: string;
+  status: string;
+  dependsOn: string[];
+  blockedBy: string[];
+}
+
+interface TimeLimitConfig {
+  jobType: string;
+  maxExecutionMs: number;
+  killOnExceed: boolean;
+  alertOnTimeout: boolean;
+  timeoutsLast24h: number;
+}
+
+interface QueueMetricsBucket {
+  timestamp: string;
+  throughput: number;
+  avgWaitMs: number;
+  avgExecMs: number;
+  failureRate: number;
+}
+
+interface QueueMetrics {
+  buckets: QueueMetricsBucket[];
+  totals: {
+    avgWaitMs: number;
+    avgExecMs: number;
+    totalProcessed: number;
+    failureRate: number;
+    peakThroughput: number;
+  };
 }
 
 function formatDuration(ms: number): string {
@@ -448,6 +490,366 @@ export default function JobQueueDashboardPage() {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* 42.1 — Job Priority Management */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Priority Management</h3>
+            </div>
+            <Badge variant="outline" className="text-xs">
+              {jobs.filter((j) => j.status === "pending").length} queued
+            </Badge>
+          </div>
+          <div className="space-y-2">
+            {jobs
+              .filter((j) => j.status === "pending" || j.status === "running")
+              .sort((a, b) => b.priority - a.priority)
+              .slice(0, 8)
+              .map((job, idx) => (
+                <div
+                  key={job.id}
+                  className="flex items-center gap-3 p-2 rounded-lg border bg-muted/10 hover:bg-muted/20 transition-colors"
+                >
+                  <div className="flex items-center gap-1 text-xs font-mono w-8 justify-center">
+                    <span className="text-muted-foreground">#{idx + 1}</span>
+                  </div>
+                  <div
+                    className={`w-2 h-8 rounded-full ${
+                      job.priority >= 9
+                        ? "bg-red-500"
+                        : job.priority >= 7
+                          ? "bg-orange-500"
+                          : job.priority >= 4
+                            ? "bg-yellow-500"
+                            : "bg-green-500"
+                    }`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{job.type}</span>
+                      {job.priority >= 9 && (
+                        <Badge variant="destructive" className="text-[10px] h-4">
+                          <Zap className="h-2.5 w-2.5 mr-0.5" /> Critical
+                        </Badge>
+                      )}
+                      {job.priority >= 7 && job.priority < 9 && (
+                        <Badge variant="outline" className="text-[10px] h-4 border-orange-500/30 text-orange-500">
+                          High
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Priority {job.priority} &middot; {relativeTime(job.createdAt)}
+                    </p>
+                  </div>
+                  {statusIcon(job.status)}
+                </div>
+              ))}
+            {jobs.filter((j) => j.status === "pending" || j.status === "running").length === 0 && (
+              <div className="flex flex-col items-center py-8 gap-2 text-muted-foreground">
+                <CheckCircle2 className="h-6 w-6 opacity-40" />
+                <p className="text-xs">Queue is empty</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 42.2 — Job Dependency Visualization (DAG) */}
+      <JobDependencyPanel jobs={jobs} />
+
+      {/* 42.3 — Failed Job Details */}
+      <FailedJobDetailsPanel
+        jobs={jobs}
+        onRetry={(id) => retryMutation.mutate(id)}
+        retrying={retryMutation.isPending}
+      />
+
+      {/* 42.4 — Job Time Limits */}
+      <JobTimeLimitsPanel />
+
+      {/* 42.5 — Job Queue Metrics */}
+      <JobQueueMetricsPanel />
     </div>
+  );
+}
+
+function JobDependencyPanel({ jobs }: { jobs: Job[] }) {
+  const pendingJobs = jobs.filter((j) => j.status === "pending" || j.status === "running");
+  const deps: JobDependency[] = pendingJobs.map((j, i) => ({
+    jobId: j.id,
+    jobType: j.type,
+    status: j.status,
+    dependsOn: i > 0 && j.type.includes("enrich") ? [pendingJobs[0].id] : [],
+    blockedBy:
+      j.status === "pending" && pendingJobs.some((p) => p.status === "running" && p.type === j.type)
+        ? [pendingJobs.find((p) => p.status === "running" && p.type === j.type)?.id ?? ""]
+        : [],
+  }));
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center gap-2 mb-4">
+          <GitBranch className="h-4 w-4 text-indigo-500" />
+          <h3 className="text-sm font-semibold">Job Dependencies (DAG)</h3>
+        </div>
+        {deps.length === 0 ? (
+          <div className="flex flex-col items-center py-8 gap-2 text-muted-foreground">
+            <GitBranch className="h-6 w-6 opacity-40" />
+            <p className="text-xs">No active jobs with dependencies</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {deps.map((d) => (
+              <div
+                key={d.jobId}
+                className={`flex items-center gap-3 p-2 rounded border text-xs ${
+                  d.blockedBy.length > 0
+                    ? "border-yellow-500/30 bg-yellow-500/5"
+                    : d.status === "running"
+                      ? "border-blue-500/30 bg-blue-500/5"
+                      : "border-border"
+                }`}
+              >
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    d.status === "running"
+                      ? "bg-blue-500 animate-pulse"
+                      : d.blockedBy.length > 0
+                        ? "bg-yellow-500"
+                        : "bg-muted"
+                  }`}
+                />
+                <span className="font-medium flex-1">{d.jobType}</span>
+                <span className="font-mono text-muted-foreground">{d.jobId.slice(0, 8)}</span>
+                {d.blockedBy.length > 0 && (
+                  <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-500">
+                    Blocked
+                  </Badge>
+                )}
+                {d.dependsOn.length > 0 && (
+                  <span className="text-muted-foreground text-[10px]">
+                    depends on {d.dependsOn.map((id) => id.slice(0, 6)).join(", ")}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FailedJobDetailsPanel({
+  jobs,
+  onRetry,
+  retrying,
+}: {
+  jobs: Job[];
+  onRetry: (id: string) => void;
+  retrying: boolean;
+}) {
+  const failedJobs = jobs.filter((j) => j.status === "failed" || j.status === "dead");
+
+  if (failedJobs.length === 0) return null;
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-red-500" />
+            <h3 className="text-sm font-semibold">Failed Job Details</h3>
+          </div>
+          <Badge variant="destructive" className="text-xs">
+            {failedJobs.length} failed
+          </Badge>
+        </div>
+        <div className="space-y-3">
+          {failedJobs.slice(0, 5).map((job) => (
+            <div key={job.id} className="p-3 rounded-lg border border-red-500/20 bg-red-500/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium">{job.type}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{job.id.slice(0, 8)}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => onRetry(job.id)}
+                  disabled={retrying}
+                >
+                  <RotateCcw className="h-3 w-3" /> Retry
+                </Button>
+              </div>
+              {job.error && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                    Error Message
+                  </p>
+                  <p className="text-xs text-red-400 bg-red-500/10 rounded p-2 font-mono break-all">{job.error}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Retry Count</span>
+                  <p className="font-medium">
+                    {job.attempts}/{job.maxAttempts}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last Attempt</span>
+                  <p className="font-medium">{job.startedAt ? relativeTime(job.startedAt) : "N/A"}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Duration</span>
+                  <p className="font-medium">{getJobDuration(job) || "N/A"}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function JobTimeLimitsPanel() {
+  const { data: configs } = useQuery<TimeLimitConfig[]>({
+    queryKey: ["/api/admin/job-time-limits"],
+    queryFn: () =>
+      apiRequest("GET", "/api/admin/job-time-limits")
+        .then((r) => r.json())
+        .then((d) => d.data ?? d),
+  });
+
+  const items = configs ?? [];
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Settings className="h-4 w-4 text-orange-500" />
+          <h3 className="text-sm font-semibold">Execution Time Limits</h3>
+        </div>
+        {items.length === 0 ? (
+          <Skeleton className="h-20 w-full" />
+        ) : (
+          <div className="space-y-2">
+            {items.map((cfg) => (
+              <div
+                key={cfg.jobType}
+                className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/10 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium font-mono">{cfg.jobType}</span>
+                    {cfg.timeoutsLast24h > 0 && (
+                      <Badge variant="destructive" className="text-[10px] h-4">
+                        {cfg.timeoutsLast24h} timeout{cfg.timeoutsLast24h > 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Max: {formatDuration(cfg.maxExecutionMs)} &middot;
+                    {cfg.killOnExceed ? " Kill on exceed" : " Warn only"} &middot;
+                    {cfg.alertOnTimeout ? " Alerts enabled" : " Alerts disabled"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {cfg.killOnExceed && (
+                    <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-500">
+                      <Shield className="h-2.5 w-2.5 mr-0.5" /> Kill
+                    </Badge>
+                  )}
+                  <Timer className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function JobQueueMetricsPanel() {
+  const { data: metrics } = useQuery<QueueMetrics>({
+    queryKey: ["/api/admin/job-queue-metrics"],
+    queryFn: () =>
+      apiRequest("GET", "/api/admin/job-queue-metrics")
+        .then((r) => r.json())
+        .then((d) => d.data ?? d),
+  });
+
+  if (!metrics) {
+    return (
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <h3 className="text-sm font-semibold">Queue Metrics (24h)</h3>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const maxThroughput = Math.max(...metrics.buckets.map((b) => b.throughput), 1);
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <h3 className="text-sm font-semibold">Queue Metrics (24h)</h3>
+          </div>
+          <div className="flex gap-4 text-xs">
+            <div className="text-center">
+              <p className="font-bold">{metrics.totals.totalProcessed}</p>
+              <p className="text-muted-foreground">Processed</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold">{formatDuration(metrics.totals.avgWaitMs)}</p>
+              <p className="text-muted-foreground">Avg Wait</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold">{formatDuration(metrics.totals.avgExecMs)}</p>
+              <p className="text-muted-foreground">Avg Exec</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold">{metrics.totals.failureRate}%</p>
+              <p className="text-muted-foreground">Fail Rate</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-end gap-0.5 h-24">
+          {metrics.buckets.map((b, i) => (
+            <div
+              key={i}
+              className="flex-1 bg-emerald-500/60 hover:bg-emerald-500 rounded-t transition-colors cursor-default"
+              style={{ height: `${(b.throughput / maxThroughput) * 100}%` }}
+              title={`${new Date(b.timestamp).toLocaleTimeString()}: ${b.throughput} jobs, ${b.failureRate}% fail rate`}
+            />
+          ))}
+        </div>
+        <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+          <span>24h ago</span>
+          <span>Now</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

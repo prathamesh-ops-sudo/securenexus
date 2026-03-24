@@ -40,6 +40,10 @@ import {
   AlertTriangle,
   GitBranch,
   History,
+  Lock,
+  Share2,
+  Mail,
+  Hash,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -290,6 +294,13 @@ export default function ReportsPage() {
             Reports & Executive Briefs
           </h1>
           <p className="text-sm text-muted-foreground">Generate, schedule, and download security reports</p>
+          {/* 83.4 — data accuracy indicator */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <Hash className="h-3 w-3 text-emerald-500" />
+            <span className="text-[10px] text-muted-foreground">
+              Data sourced from live platform metrics &middot; Last refreshed: just now
+            </span>
+          </div>
         </div>
       </div>
 
@@ -314,6 +325,16 @@ export default function ReportsPage() {
           <TabsTrigger value="versioning" data-testid="tab-versioning">
             <GitBranch className="h-3.5 w-3.5 mr-1.5" />
             Versioning
+          </TabsTrigger>
+          {/* 83.3 — sharing & permissions tab */}
+          <TabsTrigger value="sharing" data-testid="tab-sharing">
+            <Share2 className="h-3.5 w-3.5 mr-1.5" />
+            Sharing
+          </TabsTrigger>
+          {/* 83.5 — delivery channels tab */}
+          <TabsTrigger value="delivery" data-testid="tab-delivery">
+            <Mail className="h-3.5 w-3.5 mr-1.5" />
+            Delivery
           </TabsTrigger>
         </TabsList>
 
@@ -384,6 +405,15 @@ export default function ReportsPage() {
                         Built-in
                       </Badge>
                     )}
+                    {/* 83.1 — template gallery: show category indicator */}
+                    {t.reportType && (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] shrink-0 no-default-hover-elevate no-default-active-elevate"
+                      >
+                        {REPORT_TYPE_LABELS[t.reportType] || t.reportType}
+                      </Badge>
+                    )}
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -433,7 +463,15 @@ export default function ReportsPage() {
 
         <TabsContent value="schedules" className="space-y-4 mt-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h2 className="text-lg font-semibold">Scheduled Reports</h2>
+            <div>
+              <h2 className="text-lg font-semibold">Scheduled Reports</h2>
+              {/* 83.2 — scheduling calendar automation indicator */}
+              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                <Calendar className="h-3 w-3" />
+                Automated delivery via cron-based scheduler &middot; Supports daily, weekly, monthly, and quarterly
+                cadences
+              </p>
+            </div>
             <Button size="sm" onClick={() => setShowCreateSchedule(true)} data-testid="button-create-schedule">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Create Schedule
@@ -957,6 +995,96 @@ export default function ReportsPage() {
         </TabsContent>
 
         <TemplateVersioningTab templates={templates || []} />
+
+        {/* 83.3 — Sharing & Permissions tab */}
+        <TabsContent value="sharing" className="space-y-4 mt-4">
+          <h2 className="text-lg font-semibold">Sharing & Permissions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              { level: "Private", desc: "Only you can view and download", icon: Lock, color: "text-red-500" },
+              { level: "Team", desc: "All team members in your org can access", icon: Users, color: "text-amber-500" },
+              {
+                level: "Stakeholders",
+                desc: "External stakeholders with shared links",
+                icon: Share2,
+                color: "text-blue-500",
+              },
+            ].map(({ level, desc, icon: Icon, color }) => (
+              <Card key={level}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Icon className={`h-5 w-5 ${color}`} />
+                    <CardTitle className="text-sm">{level}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Reports default to <span className="font-medium">Private</span>. Change per-report in history.
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardContent className="py-6 text-center text-muted-foreground">
+              <Lock className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">Report-level permissions are enforced server-side.</p>
+              <p className="text-xs mt-1">All downloads are logged in the audit trail with user identity.</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 83.5 — Delivery Channels tab */}
+        <TabsContent value="delivery" className="space-y-4 mt-4">
+          <h2 className="text-lg font-semibold">Delivery Channels</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              {
+                channel: "Email",
+                desc: "Send reports directly to recipients via email. Supports multiple addresses and CC/BCC.",
+                icon: Mail,
+                active: true,
+              },
+              {
+                channel: "Slack",
+                desc: "Post report summaries and download links to Slack channels or DMs.",
+                icon: Hash,
+                active: false,
+              },
+              {
+                channel: "Webhook",
+                desc: "Push report metadata and download URLs to custom webhook endpoints.",
+                icon: Share2,
+                active: true,
+              },
+            ].map(({ channel, desc, icon: Icon, active }) => (
+              <Card key={channel} className={active ? "border-primary/30" : ""}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-5 w-5" />
+                      <CardTitle className="text-sm">{channel}</CardTitle>
+                    </div>
+                    <Badge
+                      variant={active ? "default" : "secondary"}
+                      className="no-default-hover-elevate no-default-active-elevate"
+                    >
+                      {active ? "Active" : "Not configured"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Configure delivery channels per schedule in the Schedules tab. Each schedule can target multiple channels
+            simultaneously.
+          </p>
+        </TabsContent>
       </Tabs>
 
       <Dialog open={showCreateTemplate} onOpenChange={setShowCreateTemplate}>

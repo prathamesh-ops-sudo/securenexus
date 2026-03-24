@@ -40,6 +40,19 @@ import {
   Unlock,
   Trash2,
   Play,
+  Layers,
+  DollarSign,
+  BookOpen,
+  Settings,
+  Wrench,
+  GitBranch,
+  Gauge,
+  TrendingUp,
+  ArrowRight,
+  BarChart3,
+  Eye,
+  Zap,
+  ChevronDown,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
@@ -1344,6 +1357,587 @@ function TieringTab() {
   );
 }
 
+// ─── 44.1 Storage Tier Visualization ─────────────────────────────────────────
+
+function TierVisualizationTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/data-lake/tier-visualization"],
+    queryFn: () => apiRequest("/api/data-lake/tier-visualization").then((r) => r.data || r),
+  });
+
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+
+  const tiers = data?.tiers || [];
+  const totalGb = data?.totalGb || 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium flex items-center gap-2">
+            <Layers className="h-5 w-5" /> Storage Tier Breakdown
+          </h3>
+          <p className="text-sm text-muted-foreground">Data distribution across storage tiers with cost analysis</p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold">{formatBytes(totalGb * 1024 * 1024 * 1024)}</p>
+          <p className="text-sm text-muted-foreground">${data?.totalMonthlyCost || 0}/mo</p>
+        </div>
+      </div>
+
+      {/* Visual tier bar */}
+      <div className="flex h-8 rounded-lg overflow-hidden border">
+        {tiers.map((t: any) => (
+          <div
+            key={t.tier}
+            className="transition-all"
+            style={{ width: `${(t.volumeGb / totalGb) * 100}%`, backgroundColor: t.color }}
+            title={`${t.label}: ${t.volumeGb} GB`}
+          />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {tiers.map((t: any) => (
+          <Card key={t.tier}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                <CardTitle className="text-base">{t.label}</CardTitle>
+              </div>
+              <CardDescription>{t.accessTime} access</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Volume</span>
+                <span className="font-medium">{t.volumeGb} GB</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Records</span>
+                <span className="font-medium">{t.recordCount.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Cost</span>
+                <span className="font-medium">${(t.volumeGb * t.costPerGbMonth).toFixed(2)}/mo</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">$/GB</span>
+                <span className="font-medium">${t.costPerGbMonth}</span>
+              </div>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {(t.dataTypes || []).map((dt: string) => (
+                  <Badge key={dt} variant="outline" className="text-[10px]">
+                    {dt}
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── 44.2 Query Cost Estimation ──────────────────────────────────────────────
+
+function QueryCostEstimationTab() {
+  const [query, setQuery] = useState("");
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [estimation, setEstimation] = useState<any>(null);
+
+  const estimateMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiRequest("/api/data-lake/estimate-query", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: (d) => setEstimation(d.data || d),
+  });
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-medium flex items-center gap-2">
+          <DollarSign className="h-5 w-5" /> Query Cost Estimation
+        </h3>
+        <p className="text-sm text-muted-foreground">Preview estimated cost before executing data lake queries</p>
+      </div>
+
+      <Card>
+        <CardContent className="pt-4 space-y-4">
+          <div>
+            <Label>Query</Label>
+            <Textarea
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="SELECT * FROM alerts WHERE severity = 'critical' AND createdAt > '2025-01-01'"
+              rows={3}
+              className="font-mono text-sm"
+            />
+          </div>
+          <div>
+            <Label>Data Types (optional)</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {DATA_TYPES.map((dt) => (
+                <Badge
+                  key={dt}
+                  variant={selectedTypes.includes(dt) ? "default" : "outline"}
+                  className="cursor-pointer text-xs"
+                  onClick={() =>
+                    setSelectedTypes((prev) => (prev.includes(dt) ? prev.filter((t) => t !== dt) : [...prev, dt]))
+                  }
+                >
+                  {dt}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <Button
+            onClick={() =>
+              estimateMutation.mutate({ query, dataTypes: selectedTypes.length > 0 ? selectedTypes : undefined })
+            }
+            disabled={!query || estimateMutation.isPending}
+          >
+            {estimateMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-1" /> Estimating...
+              </>
+            ) : (
+              <>
+                <Gauge className="h-4 w-4 mr-1" /> Estimate Cost
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {estimation && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Cost Estimate</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 rounded-lg border bg-muted/10 text-center">
+                <p className="text-2xl font-bold">{estimation.estimatedScanGb} GB</p>
+                <p className="text-xs text-muted-foreground">Data Scanned</p>
+              </div>
+              <div className="p-3 rounded-lg border bg-muted/10 text-center">
+                <p className="text-2xl font-bold">{formatDuration(estimation.estimatedTimeMs)}</p>
+                <p className="text-xs text-muted-foreground">Est. Time</p>
+              </div>
+              <div className="p-3 rounded-lg border bg-muted/10 text-center">
+                <p className="text-2xl font-bold text-emerald-500">${estimation.estimatedCostUsd}</p>
+                <p className="text-xs text-muted-foreground">Est. Cost</p>
+              </div>
+              <div className="p-3 rounded-lg border bg-muted/10 text-center">
+                <p className="text-2xl font-bold">{estimation.tiersQueried?.length || 0}</p>
+                <p className="text-xs text-muted-foreground">Tiers Queried</p>
+              </div>
+            </div>
+            {estimation.warning && (
+              <div className="mt-4 p-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
+                <p className="text-sm text-yellow-500">{estimation.warning}</p>
+              </div>
+            )}
+            <div className="mt-4 flex gap-2">
+              {(estimation.tiersQueried || []).map((t: string) => (
+                <Badge key={t} variant="outline">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── 44.3 Data Catalog ───────────────────────────────────────────────────────
+
+function DataCatalogTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/data-lake/catalog"],
+    queryFn: () => apiRequest("/api/data-lake/catalog").then((r) => r.data || r),
+  });
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+
+  const catalog = data?.catalog || [];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-medium flex items-center gap-2">
+          <BookOpen className="h-5 w-5" /> Data Catalog
+        </h3>
+        <p className="text-sm text-muted-foreground">Browse tables, fields, and data freshness</p>
+      </div>
+
+      <div className="space-y-2">
+        {catalog.map((tbl: any) => {
+          const fresh = tbl.freshnessMs < 60000;
+          return (
+            <Card
+              key={tbl.table}
+              className="cursor-pointer hover:shadow-sm transition-shadow"
+              onClick={() => setExpanded(expanded === tbl.table ? null : tbl.table)}
+            >
+              <CardContent className="py-3">
+                <div className="flex items-center gap-4">
+                  <Database className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-sm">{tbl.table}</span>
+                      <Badge variant={fresh ? "default" : "outline"} className="text-[10px]">
+                        {fresh ? "Fresh" : `${Math.round(tbl.freshnessMs / 60000)}m ago`}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {tbl.rowCount.toLocaleString()} rows &middot; {tbl.sizeGb} GB &middot; {tbl.fields.length} fields
+                    </p>
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${expanded === tbl.table ? "rotate-180" : ""}`}
+                  />
+                </div>
+                {expanded === tbl.table && (
+                  <div className="mt-3 pt-3 border-t">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Field</TableHead>
+                          <TableHead className="text-xs">Type</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {tbl.fields.map((f: any) => (
+                          <TableRow key={f.name}>
+                            <TableCell className="font-mono text-xs py-1.5">{f.name}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-[10px]">
+                                {f.type}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── 44.4 Legal Hold Management (enhanced) ───────────────────────────────────
+// (Already exists as LegalHoldsTab — adding detail panel is covered by existing tab)
+
+// ─── 44.5 Auto-Tiering Tab ──────────────────────────────────────────────────
+
+function AutoTieringTab() {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["/api/data-lake/auto-tiering"],
+    queryFn: () => apiRequest("/api/data-lake/auto-tiering").then((r) => r.data || r),
+  });
+
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+
+  const rules = data?.rules || [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium flex items-center gap-2">
+            <Settings className="h-5 w-5" /> Automated Data Tiering
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Configure automatic data movement between storage tiers based on age
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {rules.map((rule: any) => (
+          <Card key={rule.dataType}>
+            <CardContent className="py-3">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-mono font-medium text-sm">{rule.dataType}</span>
+                    <Badge variant={rule.enabled ? "default" : "outline"} className="text-[10px]">
+                      {rule.enabled ? "Active" : "Disabled"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="text-[10px] bg-red-500/5">
+                      Hot
+                    </Badge>
+                    <ArrowRight className="h-3 w-3" />
+                    <span>{rule.hotToWarmDays}d</span>
+                    <ArrowRight className="h-3 w-3" />
+                    <Badge variant="outline" className="text-[10px] bg-yellow-500/5">
+                      Warm
+                    </Badge>
+                    <ArrowRight className="h-3 w-3" />
+                    <span>{rule.warmToColdDays}d</span>
+                    <ArrowRight className="h-3 w-3" />
+                    <Badge variant="outline" className="text-[10px] bg-blue-500/5">
+                      Cold
+                    </Badge>
+                    <ArrowRight className="h-3 w-3" />
+                    <span>{rule.coldToArchiveDays}d</span>
+                    <ArrowRight className="h-3 w-3" />
+                    <Badge variant="outline" className="text-[10px] bg-indigo-500/5">
+                      Archive
+                    </Badge>
+                  </div>
+                </div>
+                <div className="text-right text-xs">
+                  {rule.lastRun && <p className="text-muted-foreground">Last run: {formatDate(rule.lastRun)}</p>}
+                  {rule.recordsMoved > 0 && (
+                    <p className="font-medium">{rule.recordsMoved.toLocaleString()} records moved</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── 44.6 Compaction Tab ─────────────────────────────────────────────────────
+
+function CompactionTab() {
+  const { toast } = useToast();
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["/api/data-lake/compaction-status"],
+    queryFn: () => apiRequest("/api/data-lake/compaction-status").then((r) => r.data || r),
+  });
+
+  const compactMutation = useMutation({
+    mutationFn: () => apiRequest("/api/data-lake/compact", { method: "POST" }),
+    onSuccess: () => {
+      toast({ title: "Compaction started" });
+      refetch();
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+
+  const tables = data?.tables || [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium flex items-center gap-2">
+            <Wrench className="h-5 w-5" /> Data Compaction & Optimization
+          </h3>
+          <p className="text-sm text-muted-foreground">Merge small files, rebuild indexes, update statistics</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+          </Button>
+          <Button size="sm" onClick={() => compactMutation.mutate()} disabled={compactMutation.isPending}>
+            {compactMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Play className="h-4 w-4 mr-1" />
+            )}
+            Run Compaction
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-4 text-center">
+            <p className="text-2xl font-bold">{formatBytes((data?.totalSavedGb || 0) * 1024 * 1024 * 1024)}</p>
+            <p className="text-xs text-muted-foreground">Space Saved</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 text-center">
+            <p className="text-2xl font-bold">{formatDate(data?.lastCompactionAt)}</p>
+            <p className="text-xs text-muted-foreground">Last Compaction</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 text-center">
+            <p className="text-2xl font-bold">{formatDate(data?.nextScheduledAt)}</p>
+            <p className="text-xs text-muted-foreground">Next Scheduled</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Per-Table Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Table</TableHead>
+                <TableHead className="text-right">Small Files</TableHead>
+                <TableHead className="text-right">Merged</TableHead>
+                <TableHead className="text-right">Saved</TableHead>
+                <TableHead>Indexes</TableHead>
+                <TableHead>Stats</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tables.map((t: any) => (
+                <TableRow key={t.table}>
+                  <TableCell className="font-mono text-sm">{t.table}</TableCell>
+                  <TableCell className="text-right">{t.smallFiles}</TableCell>
+                  <TableCell className="text-right">{t.mergedFiles}</TableCell>
+                  <TableCell className="text-right">{t.savedSpaceGb} GB</TableCell>
+                  <TableCell>
+                    {t.indexesRebuilt ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-yellow-500" />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {t.statsUpdated ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-yellow-500" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── 44.7 Cross-Tier Query Federation ────────────────────────────────────────
+
+function CrossTierTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/data-lake/cross-tier-stats"],
+    queryFn: () => apiRequest("/api/data-lake/cross-tier-stats").then((r) => r.data || r),
+  });
+
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+
+  const queries = data?.recentQueries || [];
+  const avgByTier = data?.avgResponseByTier || {};
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-medium flex items-center gap-2">
+          <GitBranch className="h-5 w-5" /> Cross-Tier Query Federation
+        </h3>
+        <p className="text-sm text-muted-foreground">See how queries span tiers and performance per tier</p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Object.entries(avgByTier).map(([tier, ms]) => (
+          <Card key={tier}>
+            <CardContent className="pt-4 text-center">
+              <p className="text-2xl font-bold">{formatDuration(ms as number)}</p>
+              <p className="text-xs text-muted-foreground capitalize">{tier} Avg Response</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recent Cross-Tier Queries</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Query ID</TableHead>
+                <TableHead>Tiers</TableHead>
+                <TableHead className="text-right">Total Time</TableHead>
+                <TableHead className="text-right">Records</TableHead>
+                <TableHead>Time per Tier</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {queries.map((q: any) => (
+                <TableRow key={q.queryId}>
+                  <TableCell className="font-mono text-xs">{q.queryId}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      {q.tiersQueried.map((t: string) => (
+                        <Badge key={t} variant="outline" className="text-[10px]">
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-medium">{formatDuration(q.totalMs)}</TableCell>
+                  <TableCell className="text-right">{q.recordsScanned.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2 text-xs">
+                      {Object.entries(q.timePerTier || {}).map(([t, ms]) => (
+                        <span key={t} className="text-muted-foreground">
+                          {t}: {formatDuration(ms as number)}
+                        </span>
+                      ))}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function DataLakePage() {
@@ -1381,6 +1975,24 @@ export default function DataLakePage() {
           <TabsTrigger value="ediscovery" className="gap-1">
             <FileText className="h-3.5 w-3.5" /> eDiscovery
           </TabsTrigger>
+          <TabsTrigger value="tier-viz" className="gap-1">
+            <Layers className="h-3.5 w-3.5" /> Tier View
+          </TabsTrigger>
+          <TabsTrigger value="query-cost" className="gap-1">
+            <DollarSign className="h-3.5 w-3.5" /> Query Cost
+          </TabsTrigger>
+          <TabsTrigger value="catalog" className="gap-1">
+            <BookOpen className="h-3.5 w-3.5" /> Data Catalog
+          </TabsTrigger>
+          <TabsTrigger value="auto-tiering" className="gap-1">
+            <Settings className="h-3.5 w-3.5" /> Auto-Tiering
+          </TabsTrigger>
+          <TabsTrigger value="compaction" className="gap-1">
+            <Wrench className="h-3.5 w-3.5" /> Compaction
+          </TabsTrigger>
+          <TabsTrigger value="cross-tier" className="gap-1">
+            <GitBranch className="h-3.5 w-3.5" /> Cross-Tier
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -1400,6 +2012,24 @@ export default function DataLakePage() {
         </TabsContent>
         <TabsContent value="ediscovery">
           <EDiscoveryTab />
+        </TabsContent>
+        <TabsContent value="tier-viz">
+          <TierVisualizationTab />
+        </TabsContent>
+        <TabsContent value="query-cost">
+          <QueryCostEstimationTab />
+        </TabsContent>
+        <TabsContent value="catalog">
+          <DataCatalogTab />
+        </TabsContent>
+        <TabsContent value="auto-tiering">
+          <AutoTieringTab />
+        </TabsContent>
+        <TabsContent value="compaction">
+          <CompactionTab />
+        </TabsContent>
+        <TabsContent value="cross-tier">
+          <CrossTierTab />
         </TabsContent>
       </Tabs>
     </div>
