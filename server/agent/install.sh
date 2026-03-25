@@ -604,12 +604,19 @@ poll_and_execute_actions() {
         target_ip=$(echo "$action" | jq -r '.targetIp // empty')
         if [ -n "$target_ip" ]; then
           if check_cmd iptables; then
-            output=$(iptables -I INPUT -s "$target_ip" -j DROP 2>&1 && iptables -I OUTPUT -d "$target_ip" -j DROP 2>&1 && echo "IP $target_ip blocked via iptables" || echo "iptables failed")
-            success=true
+            if iptables -I INPUT -s "$target_ip" -j DROP 2>&1 && iptables -I OUTPUT -d "$target_ip" -j DROP 2>&1; then
+              output="IP $target_ip blocked via iptables"
+              success=true
+            else
+              output="iptables failed to block $target_ip"
+            fi
           elif check_cmd pfctl; then
-            echo "block drop from $target_ip" | pfctl -a ats-sensor -f - 2>&1
-            output="IP $target_ip blocked via pf"
-            success=true
+            if echo "block drop from $target_ip" | pfctl -a ats-sensor -f - 2>&1; then
+              output="IP $target_ip blocked via pf"
+              success=true
+            else
+              output="pfctl failed to block $target_ip"
+            fi
           else
             output="No firewall tool available (iptables/pfctl)"
           fi
@@ -709,10 +716,13 @@ poll_and_execute_actions() {
         target_user=$(echo "$action" | jq -r '.targetUserName // empty')
         if [ -n "$target_user" ]; then
           if check_cmd usermod; then
-            usermod -L "$target_user" 2>&1
-            pkill -u "$target_user" 2>/dev/null || true
-            output="User $target_user disabled and sessions terminated"
-            success=true
+            if usermod -L "$target_user" 2>&1; then
+              pkill -u "$target_user" 2>/dev/null || true
+              output="User $target_user disabled and sessions terminated"
+              success=true
+            else
+              output="Failed to disable user $target_user"
+            fi
           else
             output="usermod not available"
           fi
