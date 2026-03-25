@@ -302,6 +302,30 @@ export async function deleteSuppressionRule(id: string): Promise<boolean> {
   return !!deleted;
 }
 
+export async function getActiveSuppressionRules(orgId: string): Promise<SuppressionRule[]> {
+  return db
+    .select()
+    .from(suppressionRules)
+    .where(
+      and(
+        eq(suppressionRules.orgId, orgId),
+        eq(suppressionRules.enabled, true),
+        or(isNull(suppressionRules.expiresAt), sql`${suppressionRules.expiresAt} > NOW()`),
+      ),
+    )
+    .orderBy(desc(suppressionRules.createdAt));
+}
+
+export async function incrementSuppressionMatchCount(ruleId: string): Promise<void> {
+  await db
+    .update(suppressionRules)
+    .set({
+      matchCount: sql`COALESCE(${suppressionRules.matchCount}, 0) + 1`,
+      lastMatchAt: new Date(),
+    })
+    .where(eq(suppressionRules.id, ruleId));
+}
+
 // Alert Dedup Clusters
 
 export async function listFeatureFlags(): Promise<FeatureFlag[]> {
