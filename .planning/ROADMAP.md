@@ -64,12 +64,12 @@ Plans:
   3. server/routes/playbooks.ts is split into domain modules (crud, execution, scheduling, templates) with no route contract changes
   4. All existing tests pass without modification after the split
   5. No single file in the split domains exceeds 800 lines
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md -- Split storage.ts (6,243 lines) into ~18 domain modules with barrel index.ts
+- [ ] 03-02-PLAN.md -- Split routes/ai.ts (3,544 lines) into ~12 domain modules
+- [ ] 03-03-PLAN.md -- Split routes/playbooks.ts (3,541 lines) into ~5 domain modules
 
 ### Phase 4: Structured Logging & Observability
 **Goal**: Every log call is structured and searchable, the health endpoint reveals subsystem status, and unhandled errors carry full context
@@ -80,7 +80,7 @@ Plans:
   2. Every log entry includes a request correlation ID from AsyncLocalStorage when called within a request context
   3. GET /api/health returns subsystem health for DB pool, connector status, job queue depth, and AI service availability
   4. Unhandled errors logged with request context, org context, and full stack trace
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 04-01: TBD
@@ -96,7 +96,7 @@ Plans:
   3. Correlation confidence score is populated from algorithm consensus and visible in the incident detail UI
   4. Integration tests ingest 10+ alerts from 3+ sources and verify correct incident grouping end-to-end
   5. Each correlation algorithm has isolated unit tests with mocked storage
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 05-01: TBD
@@ -113,7 +113,7 @@ Plans:
   3. Dashboard shows deduplication and suppression metrics (count per period)
   4. Every API endpoint returns real data -- zero hardcoded/mock responses remain, including AI context-optimization
   5. All dashboard widgets display real aggregated data, not placeholder values
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 06-01: TBD
@@ -130,7 +130,7 @@ Plans:
   3. POST /api/incidents/{id}/rollback-actions generates and executes reverse operations with a full audit trail
   4. Every response action creates an audit_logs entry with action type, parameters, result, duration, and triggering user
   5. Test suite covers dry-run, rollback, permission checks, and concurrent execution on the same incident
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 07-01: TBD
@@ -146,7 +146,7 @@ Plans:
   3. Connector status is visible on the connectors page with green/yellow/red indicators
   4. Per-connector circuit breaker opens after 5 failures in 60 seconds, half-opens after 30 seconds, and closes on success
   5. Connector integration tests cover failure modes (timeout, 401, 403, rate limit) and large paginated results
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 08-01: TBD
@@ -162,7 +162,7 @@ Plans:
   3. AI triage requests return 202 Accepted with a job ID and notify via SSE when processing completes
   4. Entity graph uses LRU cache with 5-minute TTL, invalidated on entity change events
   5. AI narrative generation enforces token budgets -- counts tokens, reserves response space, selects highest-value RAG chunks
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 09-01: TBD
@@ -179,7 +179,7 @@ Plans:
   3. Billing/metering tests verify Stripe webhook handling, usage calculation accuracy, and org limit enforcement
   4. ESLint pre-commit hooks enforce no-console: error and @typescript-eslint/no-explicit-any: error -- commits with violations are rejected
   5. All endpoints have verified org-level rate limits via a rate limiting consistency audit
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 10-01: TBD
