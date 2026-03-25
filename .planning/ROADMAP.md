@@ -76,15 +76,15 @@ Plans:
 **Depends on**: Phase 3 (split files make targeted logging replacement manageable)
 **Requirements**: QUAL-02, OBS-01, OBS-02, OBS-03
 **Success Criteria** (what must be TRUE):
-  1. Zero console.log/console.error calls remain in server code -- all 238 are replaced with logger.child("module") calls
+  1. Zero console.log/console.error calls remain in server code -- all replaced with logger.child("module") calls
   2. Every log entry includes a request correlation ID from AsyncLocalStorage when called within a request context
   3. GET /api/health returns subsystem health for DB pool, connector status, job queue depth, and AI service availability
   4. Unhandled errors logged with request context, org context, and full stack trace
-**Plans**: 3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- Replace 24 console.* calls with logger.child() and enhance error tracker context (QUAL-02, OBS-01, OBS-03)
+- [ ] 04-02-PLAN.md -- Enrich /api/health with subsystem health: DB pool, connectors, job queue, AI (OBS-02)
 
 ### Phase 5: Correlation Engine Hardening
 **Goal**: The correlation engine -- the platform's core value -- produces correct, conflict-free incident groupings backed by a full test suite
