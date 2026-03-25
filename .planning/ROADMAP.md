@@ -99,9 +99,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
-- [ ] 05-03: TBD
+- [x] 05-01-PLAN.md -- Schema + typed GraphNode + weighted voting aggregator with unit tests (CORR-02, CORR-05, CORR-06)
+- [ ] 05-02-PLAN.md -- Transaction-wrap correlation writes + unit tests for all 3 algorithms (CORR-01, CORR-04)
+- [ ] 05-03-PLAN.md -- Integration test suite + UI confidence badges and Review filter (CORR-03, CORR-06)
 
 ### Phase 6: Alert Pipeline Hardening
 **Goal**: Alert ingestion is production-grade with intelligent deduplication, operator-controlled suppression, and zero stub endpoints remaining

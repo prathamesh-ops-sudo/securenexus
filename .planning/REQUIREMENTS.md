@@ -10,11 +10,11 @@ Requirements for production-hardening milestone. Each maps to roadmap phases.
 ### Correlation Engine Reliability
 
 - [ ] **CORR-01**: Correlation engine wraps all writes in database transactions with appropriate isolation level
-- [ ] **CORR-02**: Conflict resolution algorithm resolves disagreements between AI semantic, graph-based, and rule-based correlation (weighted scoring with analyst review flag on divergence)
+- [x] **CORR-02**: Conflict resolution algorithm resolves disagreements between AI semantic, graph-based, and rule-based correlation (weighted scoring with analyst review flag on divergence)
 - [ ] **CORR-03**: Integration test suite: ingest 10+ alerts across 3 sources and verify correct incident grouping
 - [ ] **CORR-04**: Unit test suite: each correlation algorithm tested in isolation with mocked storage
-- [ ] **CORR-05**: Replace `any[]` parameters in graph-correlation.ts and correlation-engine.ts with typed `Alert[]` and `Entity[]` interfaces
-- [ ] **CORR-06**: Correlation confidence scoring populated meaningfully from algorithm consensus and displayed in incident detail UI
+- [x] **CORR-05**: Replace `any[]` parameters in graph-correlation.ts and correlation-engine.ts with typed `Alert[]` and `Entity[]` interfaces
+- [x] **CORR-06**: Correlation confidence scoring populated meaningfully from algorithm consensus and displayed in incident detail UI
 
 ### Automated Response Safety
 
@@ -146,11 +146,11 @@ Deferred to future release. Tracked but not in current roadmap.
 | OBS-02 | Phase 4 | Pending |
 | OBS-03 | Phase 4 | Pending |
 | CORR-01 | Phase 5 | Pending |
-| CORR-02 | Phase 5 | Pending |
+| CORR-02 | Phase 5 | Complete |
 | CORR-03 | Phase 5 | Pending |
 | CORR-04 | Phase 5 | Pending |
-| CORR-05 | Phase 5 | Pending |
-| CORR-06 | Phase 5 | Pending |
+| CORR-05 | Phase 5 | Complete |
+| CORR-06 | Phase 5 | Complete |
 | DEDUP-01 | Phase 6 | Pending |
 | DEDUP-02 | Phase 6 | Pending |
 | DEDUP-03 | Phase 6 | Pending |
