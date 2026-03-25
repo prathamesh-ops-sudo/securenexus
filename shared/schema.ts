@@ -332,6 +332,8 @@ export const incidents = pgTable(
     status: text("status").notNull().default("open"),
     priority: integer("priority").default(3),
     confidence: real("confidence"),
+    needsReview: boolean("needs_review").default(false),
+    algorithmScores: jsonb("algorithm_scores"),
     attackerProfile: jsonb("attacker_profile"),
     mitreTactics: text("mitre_tactics").array(),
     mitreTechniques: text("mitre_techniques").array(),
