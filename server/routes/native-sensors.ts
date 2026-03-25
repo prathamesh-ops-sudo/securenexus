@@ -4,7 +4,8 @@ import { resolveOrgContext, requireOrgId } from "../rbac";
 import { logger, getOrgId, generateApiKey, hashApiKey } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
+import type { Request, Response, NextFunction } from "express";
 import {
   nativeSensors,
   sensorEvents,
@@ -22,6 +23,49 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 const log = logger.child("native-sensors");
+
+/** Timing-safe comparison of two hex-encoded hashes */
+function safeHashEqual(a: string | null | undefined, b: string): boolean {
+  if (!a) return false;
+  try {
+    const bufA = Buffer.from(a, "hex");
+    const bufB = Buffer.from(b, "hex");
+    if (bufA.length !== bufB.length) return false;
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Middleware: authenticate a sensor agent via API key (Bearer token or X-API-Key header).
+ * On success sets req.sensorId and req.sensorOrgId on the request for downstream handlers.
+ */
+async function sensorApiKeyAuth(req: Request, res: Response, next: NextFunction) {
+  const sensorId = String(req.params.id);
+  const bearerToken =
+    req.headers["x-api-key"] ||
+    (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
+  if (!bearerToken || typeof bearerToken !== "string") {
+    return res.status(401).json({ message: "Missing sensor API key" });
+  }
+  const keyHash = hashApiKey(bearerToken);
+
+  const [sensor] = await db
+    .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
+    .from(nativeSensors)
+    .where(eq(nativeSensors.id, sensorId))
+    .limit(1);
+
+  if (!sensor || !safeHashEqual(sensor.apiKey, keyHash)) {
+    return res.status(401).json({ message: "Invalid sensor credentials" });
+  }
+
+  // Attach sensor context to request for downstream handlers
+  (req as any).sensorId = sensor.id;
+  (req as any).sensorOrgId = sensor.orgId;
+  next();
+}
 
 export function registerNativeSensorRoutes(app: Express): void {
   // ==========================================================================
@@ -183,10 +227,10 @@ export function registerNativeSensorRoutes(app: Express): void {
     }
   });
 
-  // Heartbeat — agent calls home every 30s
-  app.post("/api/native-sensors/:id/heartbeat", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  // Heartbeat — agent calls home every 30s (supports both session auth and sensor API key auth)
+  app.post("/api/native-sensors/:id/heartbeat", sensorApiKeyAuth, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = (req as any).sensorOrgId;
       const sensorId = String(req.params.id);
 
       const [sensor] = await db
@@ -221,10 +265,10 @@ export function registerNativeSensorRoutes(app: Express): void {
     }
   });
 
-  // Bulk event ingestion — up to 500 events per call
-  app.post("/api/native-sensors/:id/events", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  // Bulk event ingestion — up to 500 events per call (supports both session auth and sensor API key auth)
+  app.post("/api/native-sensors/:id/events", sensorApiKeyAuth, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = (req as any).sensorOrgId;
       const sensorId = String(req.params.id);
 
       const [sensor] = await db
@@ -513,7 +557,7 @@ EOF`;
         .where(eq(nativeSensors.id, sensorId))
         .limit(1);
 
-      if (!sensor || sensor.apiKey !== keyHash) {
+      if (!sensor || !safeHashEqual(sensor.apiKey, keyHash)) {
         return res.status(401).json({ message: "Invalid sensor credentials", actions: [] });
       }
 
@@ -586,7 +630,7 @@ EOF`;
         .where(eq(nativeSensors.id, sensorId))
         .limit(1);
 
-      if (!sensorCheck || sensorCheck.apiKey !== keyHash) {
+      if (!sensorCheck || !safeHashEqual(sensorCheck.apiKey, keyHash)) {
         return res.status(401).json({ message: "Invalid sensor credentials" });
       }
 

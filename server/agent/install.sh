@@ -623,15 +623,18 @@ poll_and_execute_actions() {
           # Allow management channel (the server URL), drop everything else
           local server_host
           server_host=$(echo "$SERVER_URL" | sed -E 's|https?://||' | cut -d: -f1 | cut -d/ -f1)
-          iptables -F 2>/dev/null || true
-          iptables -A INPUT -s "$server_host" -j ACCEPT
-          iptables -A OUTPUT -d "$server_host" -j ACCEPT
-          iptables -A INPUT -i lo -j ACCEPT
-          iptables -A OUTPUT -o lo -j ACCEPT
-          iptables -P INPUT DROP
-          iptables -P OUTPUT DROP
-          iptables -P FORWARD DROP
-          output="Host isolated. Only management channel ($server_host) allowed."
+          # Remove only ATS-ISOLATE rules (preserve existing firewall rules)
+          iptables -S 2>/dev/null | grep 'ATS-ISOLATE' | sed 's/^-A/-D/' | while IFS= read -r rule; do
+            eval "iptables $rule" 2>/dev/null || true
+          done
+          iptables -A INPUT -s "$server_host" -j ACCEPT -m comment --comment "ATS-ISOLATE"
+          iptables -A OUTPUT -d "$server_host" -j ACCEPT -m comment --comment "ATS-ISOLATE"
+          iptables -A INPUT -i lo -j ACCEPT -m comment --comment "ATS-ISOLATE"
+          iptables -A OUTPUT -o lo -j ACCEPT -m comment --comment "ATS-ISOLATE"
+          iptables -A INPUT -j DROP -m comment --comment "ATS-ISOLATE"
+          iptables -A OUTPUT -j DROP -m comment --comment "ATS-ISOLATE"
+          iptables -A FORWARD -j DROP -m comment --comment "ATS-ISOLATE"
+          output="Host isolated. Only management channel ($server_host) allowed. Existing rules preserved."
           success=true
         else
           output="iptables not available for host isolation"

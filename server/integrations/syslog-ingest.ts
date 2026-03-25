@@ -166,19 +166,9 @@ export function parseSyslog(raw: string): ParsedSyslogMessage | null {
   const rfc3164 = parseRfc3164(raw);
   if (rfc3164) return rfc3164;
 
-  // Last resort: treat the whole thing as a message
-  log.debug(`Could not parse syslog message, treating as raw: ${raw.slice(0, 100)}`);
-  return {
-    facility: 1,
-    severity: 6,
-    timestamp: new Date(),
-    hostname: "unknown",
-    appName: "unknown",
-    procId: null,
-    msgId: null,
-    message: raw,
-    structuredData: {},
-  };
+  // No parser matched — return null so callers can count real parse failures
+  log.debug(`Could not parse syslog message: ${raw.slice(0, 100)}`);
+  return null;
 }
 
 // ─── Normalize syslog to sensor event ───────────────────────────────────────
