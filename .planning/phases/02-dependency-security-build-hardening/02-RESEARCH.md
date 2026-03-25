@@ -65,15 +65,15 @@ Current state: 3 migrations exist (0000, 0001, 0002). The next migration will be
 
 Current flow in `server/routes/shared.ts`:
 ```
-Request -> apiKeyAuth middleware -> hashApiKey(header) -> storage.getApiKeyByHash(hash) -> check isActive -> attach orgId
+Request → apiKeyAuth middleware → hashApiKey(header) → storage.getApiKeyByHash(hash) → check isActive → attach orgId
 ```
 
 For rotation with grace period, the auth flow must be extended:
 ```
-Request -> apiKeyAuth middleware -> hashApiKey(header) -> storage.getApiKeyByHash(hash)
-  -> if active: allow
-  -> if deprecated AND graceExpiresAt > now(): allow (with deprecation warning header)
-  -> if revoked or grace expired: reject
+Request → apiKeyAuth middleware → hashApiKey(header) → storage.getApiKeyByHash(hash)
+  → if active: allow
+  → if deprecated AND graceExpiresAt > now(): allow (with deprecation warning header)
+  → if revoked or grace expired: reject
 ```
 
 ### API Key Rotation Flow (for SEC-04)
