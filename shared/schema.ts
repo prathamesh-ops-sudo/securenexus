@@ -544,6 +544,9 @@ export const apiKeys = pgTable(
     createdBy: varchar("created_by"),
     createdAt: timestamp("created_at").defaultNow(),
     revokedAt: timestamp("revoked_at"),
+    deprecatedAt: timestamp("deprecated_at"),
+    graceExpiresAt: timestamp("grace_expires_at"),
+    replacedByKeyId: varchar("replaced_by_key_id"),
   },
   (table) => [index("idx_api_keys_org").on(table.orgId), index("idx_api_keys_hash").on(table.keyHash)],
 );
@@ -1950,6 +1953,9 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
   createdAt: true,
   lastUsedAt: true,
   revokedAt: true,
+  deprecatedAt: true,
+  graceExpiresAt: true,
+  replacedByKeyId: true,
 });
 export const insertIngestionLogSchema = createInsertSchema(ingestionLogs).omit({ id: true, receivedAt: true });
 export const insertConnectorSchema = createInsertSchema(connectors).omit({

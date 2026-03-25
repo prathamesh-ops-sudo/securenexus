@@ -29,6 +29,13 @@
       "when": 1774433489571,
       "tag": "0003_hard_george_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774433940380,
+      "tag": "0004_nappy_queen_noir",
+      "breakpoints": true
     }
   ]
 }

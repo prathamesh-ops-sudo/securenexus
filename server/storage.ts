@@ -442,7 +442,9 @@ export interface IStorage {
   createApiKey(key: InsertApiKey): Promise<ApiKey>;
   getApiKeys(orgId?: string): Promise<ApiKey[]>;
   getApiKeyByHash(hash: string): Promise<ApiKey | undefined>;
+  getApiKeyById(id: string): Promise<ApiKey | undefined>;
   revokeApiKey(id: string): Promise<ApiKey | undefined>;
+  deprecateApiKey(keyId: string, replacedByKeyId: string): Promise<void>;
   updateApiKeyLastUsed(id: string): Promise<void>;
 
   createIngestionLog(log: InsertIngestionLog): Promise<IngestionLog>;
@@ -1610,7 +1612,12 @@ export class DatabaseStorage implements IStorage {
     const [key] = await db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.isActive, true)));
+      .where(eq(apiKeys.keyHash, hash));
+    return key;
+  }
+
+  async getApiKeyById(id: string): Promise<ApiKey | undefined> {
+    const [key] = await db.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
     return key;
   }
 
@@ -1621,6 +1628,20 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apiKeys.id, id))
       .returning();
     return updated;
+  }
+
+  async deprecateApiKey(keyId: string, replacedByKeyId: string): Promise<void> {
+    const now = new Date();
+    const graceExpires = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+    await db
+      .update(apiKeys)
+      .set({
+        isActive: false,
+        deprecatedAt: now,
+        graceExpiresAt: graceExpires,
+        replacedByKeyId: replacedByKeyId,
+      })
+      .where(eq(apiKeys.id, keyId));
   }
 
   async updateApiKeyLastUsed(id: string): Promise<void> {
