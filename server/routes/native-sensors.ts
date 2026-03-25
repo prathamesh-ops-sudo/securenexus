@@ -515,22 +515,27 @@ EOF`;
         return res.status(401).json({ message: "Invalid sensor credentials", actions: [] });
       }
 
-      // Fetch approved actions for this sensor that haven't been dispatched yet
-      const pendingActions = await db.execute(sql`
-        SELECT id, action_type, status, target_pid, target_process_name,
-               target_ip, target_file_path, target_user_name, target_domain,
-               target_service_name, script_content, script_type, parameters,
-               reason, timeout_seconds, created_at
-        FROM agent_response_actions
-        WHERE sensor_id = ${sensorId}
-          AND org_id = ${sensor.orgId}
-          AND status = 'approved'
-          AND dispatched_at IS NULL
-        ORDER BY created_at ASC
-        LIMIT 10
+      // Atomically claim and return approved actions (prevents double-dispatch on concurrent polls)
+      const claimedActions = await db.execute(sql`
+        UPDATE agent_response_actions
+        SET status = 'executing', dispatched_at = NOW(), updated_at = NOW()
+        WHERE id IN (
+          SELECT id FROM agent_response_actions
+          WHERE sensor_id = ${sensorId}
+            AND org_id = ${sensor.orgId}
+            AND status = 'approved'
+            AND dispatched_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT 10
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, action_type, status, target_pid, target_process_name,
+                  target_ip, target_file_path, target_user_name, target_domain,
+                  target_service_name, script_content, script_type, parameters,
+                  reason, timeout_seconds, created_at
       `);
 
-      const actions = ((pendingActions as any).rows || []).map((row: any) => ({
+      const actions = ((claimedActions as any).rows || []).map((row: any) => ({
         id: row.id,
         actionType: row.action_type,
         status: row.status,
@@ -548,17 +553,6 @@ EOF`;
         timeoutSeconds: row.timeout_seconds,
         createdAt: row.created_at,
       }));
-
-      // Mark these actions as dispatched
-      if (actions.length > 0) {
-        const actionIds = actions.map((a: { id: string }) => a.id);
-        await db.execute(sql`
-          UPDATE agent_response_actions
-          SET status = 'executing', dispatched_at = NOW(), updated_at = NOW()
-          WHERE id = ANY(${actionIds})
-            AND sensor_id = ${sensorId}
-        `);
-      }
 
       res.json({ actions, count: actions.length });
     } catch (error) {

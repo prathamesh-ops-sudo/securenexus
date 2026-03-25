@@ -375,10 +375,31 @@ function Execute-PendingActions {
                 }
             }
             "isolate_host" {
-                # Disable all network adapters except management
-                Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Disable-NetAdapter -Confirm:$false 2>$null
-                $output = "All network adapters disabled (host isolated)"
-                $success = $true
+                # Isolate host via Windows Firewall — preserve management channel to server
+                try {
+                    $serverHost = ([System.Uri]$ServerUrl).Host
+                    $serverIp = [System.Net.Dns]::GetHostAddresses($serverHost) | Select-Object -First 1 -ExpandProperty IPAddressToString
+
+                    # Remove any previous ATS isolation rules
+                    Get-NetFirewallRule -DisplayName "ATS Isolate*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+
+                    # Allow inbound/outbound to management server
+                    New-NetFirewallRule -DisplayName "ATS Isolate Allow Server In" -Direction Inbound -RemoteAddress $serverIp -Action Allow -Profile Any 2>$null
+                    New-NetFirewallRule -DisplayName "ATS Isolate Allow Server Out" -Direction Outbound -RemoteAddress $serverIp -Action Allow -Profile Any 2>$null
+
+                    # Allow loopback
+                    New-NetFirewallRule -DisplayName "ATS Isolate Allow Loopback In" -Direction Inbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any 2>$null
+                    New-NetFirewallRule -DisplayName "ATS Isolate Allow Loopback Out" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any 2>$null
+
+                    # Block all other traffic
+                    New-NetFirewallRule -DisplayName "ATS Isolate Block All In" -Direction Inbound -Action Block -Profile Any 2>$null
+                    New-NetFirewallRule -DisplayName "ATS Isolate Block All Out" -Direction Outbound -Action Block -Profile Any 2>$null
+
+                    $output = "Host isolated via Windows Firewall (management channel to $serverIp preserved)"
+                    $success = $true
+                } catch {
+                    $output = "Failed to isolate host: $_"
+                }
             }
             default {
                 $output = "Unknown action type: $actionType"

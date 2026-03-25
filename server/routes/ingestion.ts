@@ -817,6 +817,7 @@ export function registerIngestionRoutes(app: Express): void {
 
         // Insert normalized events as alerts via the standard pipeline
         let created = 0;
+        let insertFailed = 0;
         for (const event of normalizedEvents) {
           try {
             const normalized = normalizeAlert(String(event.source || "syslog"), event);
@@ -824,18 +825,19 @@ export function registerIngestionRoutes(app: Express): void {
             const { isNew } = await storage.upsertAlert(insertData);
             if (isNew) created++;
           } catch {
-            failed++;
+            insertFailed++;
           }
         }
 
+        const totalFailed = failed + insertFailed;
         await storage.createIngestionLog({
           orgId,
           source: source || "syslog",
-          status: failed === messages.length ? "failed" : created > 0 ? "success" : "deduped",
+          status: totalFailed === messages.length ? "failed" : created > 0 ? "success" : "deduped",
           alertsReceived: messages.length,
           alertsCreated: created,
-          alertsDeduped: parsed - created,
-          alertsFailed: failed,
+          alertsDeduped: parsed - created - insertFailed,
+          alertsFailed: totalFailed,
           requestId,
           ipAddress: req.ip || null,
           processingTimeMs: Date.now() - startTime,
@@ -843,12 +845,12 @@ export function registerIngestionRoutes(app: Express): void {
 
         res.status(created > 0 ? 201 : 200).json({
           requestId,
-          status: failed === messages.length ? "failed" : "success",
+          status: totalFailed === messages.length ? "failed" : "success",
           summary: {
             received: messages.length,
             parsed,
             created,
-            failed,
+            failed: totalFailed,
           },
         });
       } catch (error: any) {
