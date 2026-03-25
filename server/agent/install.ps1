@@ -390,9 +390,8 @@ function Execute-PendingActions {
                     New-NetFirewallRule -DisplayName "ATS Isolate Allow Loopback In" -Direction Inbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any 2>$null
                     New-NetFirewallRule -DisplayName "ATS Isolate Allow Loopback Out" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any 2>$null
 
-                    # Block all other traffic
-                    New-NetFirewallRule -DisplayName "ATS Isolate Block All In" -Direction Inbound -Action Block -Profile Any 2>$null
-                    New-NetFirewallRule -DisplayName "ATS Isolate Block All Out" -Direction Outbound -Action Block -Profile Any 2>$null
+                    # Block all other traffic via profile defaults (explicit Block rules override Allow rules in Windows Firewall)
+                    Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Block
 
                     $output = "Host isolated via Windows Firewall (management channel to $serverIp preserved)"
                     $success = $true
