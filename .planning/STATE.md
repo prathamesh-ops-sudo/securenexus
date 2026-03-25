@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-25T13:30:38.213Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-25T13:49:29.450Z"
 progress:
   total_phases: 10
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 12
-  completed_plans: 13
+  completed_plans: 15
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 ## Current Position
 
 Phase: 06 (alert-pipeline-hardening) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -52,6 +52,8 @@ Plan: 2 of 3
 | Phase 05 P03 | 6min | 2 tasks | 4 files |
 | Phase 05 P02 | 8min | 2 tasks | 7 files |
 | Phase 06 P01 | 5min | 2 tasks | 5 files |
+| Phase 06 P02 | 6min | 2 tasks | 6 files |
+| Phase 06 P03 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +78,10 @@ Recent decisions affecting current work:
 - [Phase 05]: Added algorithmScore to CorrelationResult for downstream aggregation
 - [Phase 06]: Used COALESCE(occurrence_count, 1) + 1 SQL pattern for safe null-tolerant increment in temporal dedup
 - [Phase 06]: Default dedup window 60min, configurable per-call; alerts outside window create new records
+- [Phase 06]: Suppressed alerts bypass upsert via createAlert, skip entity resolution and correlation
+- [Phase 06]: Expiry defaults 7 days, max 30 days; regex validated at CRUD and evaluation time
+- [Phase 06]: Field extraction rate computed as alertsCreated/alertsReceived per source from ingestion_logs
+- [Phase 06]: MTTD from alert detectedAt-createdAt delta; MTTR from incident createdAt-resolvedAt; Alert Coverage from active/total connectors ratio
 
 ### Pending Todos
 
@@ -89,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T13:30:38.210Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-25T13:49:29.447Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None

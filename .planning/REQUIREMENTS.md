@@ -27,8 +27,8 @@ Requirements for production-hardening milestone. Each maps to roadmap phases.
 ### Alert Deduplication & Suppression
 
 - [x] **DEDUP-01**: Temporal deduplication — alerts with same (orgId, source, sourceEventId) within configurable time window update lastSeenAt and increment occurrenceCount instead of creating duplicate
-- [ ] **DEDUP-02**: Suppression rules engine — operators can define conditions (source, severity, title pattern, time window) to suppress noisy alerts while preserving data
-- [ ] **DEDUP-03**: Dedup/suppression metrics visible on dashboard (how many alerts deduplicated/suppressed per period)
+- [x] **DEDUP-02**: Suppression rules engine — operators can define conditions (source, severity, title pattern, time window) to suppress noisy alerts while preserving data
+- [x] **DEDUP-03**: Dedup/suppression metrics visible on dashboard (how many alerts deduplicated/suppressed per period)
 
 ### Connector Health & Failover
 
@@ -88,9 +88,9 @@ Requirements for production-hardening milestone. Each maps to roadmap phases.
 
 ### Stub Elimination
 
-- [ ] **STUB-01**: Audit all API endpoints — identify and fix any returning hardcoded/mock data
-- [ ] **STUB-02**: AI context-optimization endpoint (currently stub) returns real optimized context
-- [ ] **STUB-03**: All dashboard widgets display real aggregated data, not placeholder values
+- [x] **STUB-01**: Audit all API endpoints — identify and fix any returning hardcoded/mock data
+- [x] **STUB-02**: AI context-optimization endpoint (currently stub) returns real optimized context
+- [x] **STUB-03**: All dashboard widgets display real aggregated data, not placeholder values
 
 ## v2 Requirements
 
@@ -152,11 +152,11 @@ Deferred to future release. Tracked but not in current roadmap.
 | CORR-05 | Phase 5 | Complete |
 | CORR-06 | Phase 5 | Complete |
 | DEDUP-01 | Phase 6 | Complete |
-| DEDUP-02 | Phase 6 | Pending |
-| DEDUP-03 | Phase 6 | Pending |
-| STUB-01 | Phase 6 | Pending |
-| STUB-02 | Phase 6 | Pending |
-| STUB-03 | Phase 6 | Pending |
+| DEDUP-02 | Phase 6 | Complete |
+| DEDUP-03 | Phase 6 | Complete |
+| STUB-01 | Phase 6 | Complete |
+| STUB-02 | Phase 6 | Complete |
+| STUB-03 | Phase 6 | Complete |
 | RESP-01 | Phase 7 | Pending |
 | RESP-02 | Phase 7 | Pending |
 | RESP-03 | Phase 7 | Pending |

@@ -117,8 +117,8 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md -- Schema + temporal dedup logic in upsertAlert with unit tests (DEDUP-01)
-- [ ] 06-02-PLAN.md -- Suppression engine + ingestion wiring + dashboard metrics (DEDUP-02, DEDUP-03)
-- [ ] 06-03-PLAN.md -- Eliminate stub endpoints returning Math.random() or hardcoded data (STUB-01, STUB-02, STUB-03)
+- [x] 06-02-PLAN.md -- Suppression engine + ingestion wiring + dashboard metrics (DEDUP-02, DEDUP-03)
+- [x] 06-03-PLAN.md -- Eliminate stub endpoints returning Math.random() or hardcoded data (STUB-01, STUB-02, STUB-03)
 
 ### Phase 7: Automated Response Safety
 **Goal**: Response actions are safe to execute in production with validation, dry-run preview, rollback capability, and full audit trail
