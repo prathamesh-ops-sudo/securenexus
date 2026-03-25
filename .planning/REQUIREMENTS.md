@@ -26,7 +26,7 @@ Requirements for production-hardening milestone. Each maps to roadmap phases.
 
 ### Alert Deduplication & Suppression
 
-- [ ] **DEDUP-01**: Temporal deduplication — alerts with same (orgId, source, sourceEventId) within configurable time window update lastSeenAt and increment occurrenceCount instead of creating duplicate
+- [x] **DEDUP-01**: Temporal deduplication — alerts with same (orgId, source, sourceEventId) within configurable time window update lastSeenAt and increment occurrenceCount instead of creating duplicate
 - [ ] **DEDUP-02**: Suppression rules engine — operators can define conditions (source, severity, title pattern, time window) to suppress noisy alerts while preserving data
 - [ ] **DEDUP-03**: Dedup/suppression metrics visible on dashboard (how many alerts deduplicated/suppressed per period)
 
@@ -151,7 +151,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CORR-04 | Phase 5 | Complete |
 | CORR-05 | Phase 5 | Complete |
 | CORR-06 | Phase 5 | Complete |
-| DEDUP-01 | Phase 6 | Pending |
+| DEDUP-01 | Phase 6 | Complete |
 | DEDUP-02 | Phase 6 | Pending |
 | DEDUP-03 | Phase 6 | Pending |
 | STUB-01 | Phase 6 | Pending |

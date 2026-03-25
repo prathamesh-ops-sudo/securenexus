@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-03-25T12:54:27.097Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-25T13:30:38.213Z"
 progress:
   total_phases: 10
-  completed_phases: 5
+  completed_phases: 4
   total_plans: 12
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** Every feature that exists in the UI must actually work end-to-end with real data -- no stubs, no hardcoded returns, no demo-quality shortcuts.
-**Current focus:** Phase 05 — correlation-engine-hardening
+**Current focus:** Phase 06 — alert-pipeline-hardening
 
 ## Current Position
 
-Phase: 05 (correlation-engine-hardening) — EXECUTING
-Plan: 3 of 3
+Phase: 06 (alert-pipeline-hardening) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Plan: 3 of 3
 | Phase 05 P01 | 7min | 2 tasks | 5 files |
 | Phase 05 P03 | 6min | 2 tasks | 4 files |
 | Phase 05 P02 | 8min | 2 tasks | 7 files |
+| Phase 06 P01 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Recent decisions affecting current work:
 - [Phase 05]: ConfidenceBadge defined inline in incident-detail.tsx rather than separate component file
 - [Phase 05]: Used repeatable read for correlateAlert, serializable with retry for promoteClusterToIncident
 - [Phase 05]: Added algorithmScore to CorrelationResult for downstream aggregation
+- [Phase 06]: Used COALESCE(occurrence_count, 1) + 1 SQL pattern for safe null-tolerant increment in temporal dedup
+- [Phase 06]: Default dedup window 60min, configurable per-call; alerts outside window create new records
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T12:54:27.094Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-03-25T13:30:38.210Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
