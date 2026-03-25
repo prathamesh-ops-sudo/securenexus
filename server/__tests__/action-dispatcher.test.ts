@@ -293,3 +293,50 @@ describe("Concurrent Execution Safety (RESP-05)", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// RESP-01 / RESP-05: Permission Checks (Gap Closure)
+// ---------------------------------------------------------------------------
+describe("Permission Checks (RESP-01, RESP-05)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects dispatch when callerOrgId does not match target orgId", async () => {
+    const ctx = makeContext({ orgId: "org-1", callerOrgId: "org-other" });
+    const result = await dispatchAction("block_ip", { ip: "10.0.0.1" }, ctx);
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("Permission denied");
+    expect(result.details?.permissionDenied).toBe(true);
+  });
+
+  it("rejects read_only role from executing actions", async () => {
+    const ctx = makeContext({ callerRole: "read_only" });
+    const result = await dispatchAction("block_ip", { ip: "10.0.0.1" }, ctx);
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("Permission denied");
+  });
+
+  it("rejects read_only role from dry-run actions", async () => {
+    const ctx = makeContext({ callerRole: "read_only", dryRun: true });
+    const result = await dispatchAction("block_ip", { ip: "10.0.0.1" }, ctx);
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("Permission denied");
+  });
+
+  it("allows analyst role to execute actions", async () => {
+    const ctx = makeContext({ callerRole: "analyst" });
+    const result = await dispatchAction("add_tag", { tag: "test" }, ctx);
+    expect(result.status).not.toBe("failed");
+  });
+
+  it("creates audit log with permission_denied action on denial", async () => {
+    const ctx = makeContext({ callerRole: "read_only" });
+    await dispatchAction("block_ip", { ip: "10.0.0.1" }, ctx);
+    expect(createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "response_action_permission_denied",
+      }),
+    );
+  });
+});
