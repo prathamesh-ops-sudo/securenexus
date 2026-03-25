@@ -940,9 +940,9 @@ export function registerEmailSecurityRoutes(app: Express): void {
             parsed.subject || "",
             parsed.bodyPreview || "",
             parsedHeaders,
-            [], // attachmentNames
-            [], // extractedUrls
-            null, // replyTo
+            parsed.attachmentNames || [],
+            extractUrls(parsed.bodyPreview || ""),
+            parsed.replyTo,
             [], // trustedDomains
             [], // executiveNames
           );
@@ -1054,9 +1054,9 @@ export function registerEmailSecurityRoutes(app: Express): void {
             parsed.subject || "",
             parsed.bodyPreview || "",
             gmailHeaders,
-            [], // attachmentNames
-            [], // extractedUrls
-            null, // replyTo
+            parsed.attachmentNames || [],
+            extractUrls(parsed.bodyPreview || ""),
+            parsed.replyTo,
             [], // trustedDomains
             [], // executiveNames
           );
