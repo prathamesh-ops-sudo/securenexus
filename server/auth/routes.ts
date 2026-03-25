@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
-import { isAuthenticated, hashPassword } from "./session";
+import { isAuthenticated, hashPassword, invalidateDeserializeCache } from "./session";
+import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 import { storage } from "../storage";
 import { config } from "../config";
 import {
@@ -227,6 +228,15 @@ export function registerAuthRoutes(app: Express): void {
       const user = await authStorage.getUser(req.user.id);
       if (!user) {
         return replyNotFound(res, "User not found");
+      }
+      // Belt-and-suspenders: auto-promote super-admin on every user fetch
+      // so the panel appears immediately without requiring re-login
+      if (!user.isSuperAdmin && user.email) {
+        const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+        if (promoted) {
+          user.isSuperAdmin = true;
+          invalidateDeserializeCache(user.id);
+        }
       }
       const { passwordHash, ...safeUser } = user;
       return reply(res, {
