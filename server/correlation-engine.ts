@@ -94,7 +94,7 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
         .limit(20);
 
       threatIntelBoost = computeThreatIntelConfidenceBoost(
-        enrichedEntities.map((e) => e.metadata as Record<string, any> | null),
+        enrichedEntities.map((e) => e.metadata as Record<string, unknown> | null),
       );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

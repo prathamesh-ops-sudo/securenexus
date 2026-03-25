@@ -7,7 +7,7 @@ import { createHash } from "crypto";
 interface GraphNode {
   id: string;
   type: "alert" | "entity";
-  data: any;
+  data: Record<string, unknown>;
 }
 
 interface GraphEdge {
@@ -270,8 +270,8 @@ export function findAttackPaths(
 }
 
 export function computePathConfidence(
-  alertDataList: any[],
-  entityDataList: any[],
+  alertDataList: Alert[],
+  entityDataList: Entity[],
   hopCount: number,
   timeSpanHours: number,
 ): number {
@@ -329,7 +329,7 @@ export function computePathConfidence(
   return Math.round(Math.min(score, 1.0) * 100) / 100;
 }
 
-export function generateCampaignFingerprint(attackPath: AttackPathResult, alertDataList: any[]): CampaignFingerprint {
+export function generateCampaignFingerprint(attackPath: AttackPathResult, alertDataList: Alert[]): CampaignFingerprint {
   const sortedTactics = Array.from(new Set(attackPath.tacticsSequence)).sort();
 
   const entityTypes = Array.from(
@@ -490,7 +490,7 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
   };
 }
 
-function buildReasoningTrace(path: AttackPathResult, alertDataList: any[]): string {
+function buildReasoningTrace(path: AttackPathResult, alertDataList: Alert[]): string {
   const lines: string[] = [];
   lines.push(`GRAPH CORRELATION ANALYSIS — Confidence: ${(path.confidence * 100).toFixed(1)}%`);
   lines.push(`Method: Graph Traversal v2 (no time window constraint)`);
