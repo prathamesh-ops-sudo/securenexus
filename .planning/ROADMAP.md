@@ -13,7 +13,7 @@ SecureNexus has a complete feature surface (28 pages, 110+ routes, 8 connectors)
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Prerequisite Safety Fixes** - Fix empty catches, eliminate any types in critical modules, make error surface visible
-- [ ] **Phase 2: Dependency Security & Build Hardening** - Upgrade vulnerable deps, move runtime DDL to migrations, secure API key rotation
+- [x] **Phase 2: Dependency Security & Build Hardening** - Upgrade vulnerable deps, move runtime DDL to migrations, secure API key rotation
 - [ ] **Phase 3: God File Decomposition** - Split storage.ts, ai.ts, and playbooks.ts into domain modules with barrel exports
 - [ ] **Phase 4: Structured Logging & Observability** - Replace console.log calls with structured logger, enrich health endpoint, add error context
 - [ ] **Phase 5: Correlation Engine Hardening** - Transaction isolation, conflict resolution, confidence scoring, and full test suite
@@ -194,7 +194,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Prerequisite Safety Fixes | 2/2 | Complete | 2026-03-25 |
-| 2. Dependency Security & Build Hardening | 0/2 | Not started | - |
+| 2. Dependency Security & Build Hardening | 2/2 | Complete | 2026-03-25 |
 | 3. God File Decomposition | 0/3 | Not started | - |
 | 4. Structured Logging & Observability | 0/2 | Not started | - |
 | 5. Correlation Engine Hardening | 0/3 | Not started | - |
