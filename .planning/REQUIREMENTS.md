@@ -131,13 +131,61 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated during roadmap creation) | | |
+| QUAL-01 | Phase 1 | Pending |
+| QUAL-04 | Phase 1 | Pending |
+| SEC-01 | Phase 2 | Pending |
+| SEC-02 | Phase 2 | Pending |
+| SEC-03 | Phase 2 | Pending |
+| SEC-04 | Phase 2 | Pending |
+| SEC-05 | Phase 2 | Pending |
+| SPLIT-01 | Phase 3 | Pending |
+| SPLIT-02 | Phase 3 | Pending |
+| SPLIT-03 | Phase 3 | Pending |
+| QUAL-02 | Phase 4 | Pending |
+| OBS-01 | Phase 4 | Pending |
+| OBS-02 | Phase 4 | Pending |
+| OBS-03 | Phase 4 | Pending |
+| CORR-01 | Phase 5 | Pending |
+| CORR-02 | Phase 5 | Pending |
+| CORR-03 | Phase 5 | Pending |
+| CORR-04 | Phase 5 | Pending |
+| CORR-05 | Phase 5 | Pending |
+| CORR-06 | Phase 5 | Pending |
+| DEDUP-01 | Phase 6 | Pending |
+| DEDUP-02 | Phase 6 | Pending |
+| DEDUP-03 | Phase 6 | Pending |
+| STUB-01 | Phase 6 | Pending |
+| STUB-02 | Phase 6 | Pending |
+| STUB-03 | Phase 6 | Pending |
+| RESP-01 | Phase 7 | Pending |
+| RESP-02 | Phase 7 | Pending |
+| RESP-03 | Phase 7 | Pending |
+| RESP-04 | Phase 7 | Pending |
+| RESP-05 | Phase 7 | Pending |
+| CONN-01 | Phase 8 | Pending |
+| CONN-02 | Phase 8 | Pending |
+| CONN-03 | Phase 8 | Pending |
+| CONN-04 | Phase 8 | Pending |
+| TEST-02 | Phase 8 | Pending |
+| API-01 | Phase 9 | Pending |
+| API-02 | Phase 9 | Pending |
+| API-03 | Phase 10 | Pending |
+| API-04 | Phase 9 | Pending |
+| PERF-01 | Phase 9 | Pending |
+| PERF-02 | Phase 9 | Pending |
+| PERF-03 | Phase 9 | Pending |
+| PERF-04 | Phase 9 | Pending |
+| PERF-05 | Phase 9 | Pending |
+| TEST-01 | Phase 10 | Pending |
+| TEST-03 | Phase 10 | Pending |
+| TEST-04 | Phase 10 | Pending |
+| QUAL-03 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 50 total
-- Mapped to phases: 0
-- Unmapped: 50
+- v1 requirements: 49 total
+- Mapped to phases: 49
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after initial definition*
+*Last updated: 2026-03-25 after roadmap creation -- traceability populated*
