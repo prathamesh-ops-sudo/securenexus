@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-25T12:41:50.150Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-03-25T12:54:27.097Z"
 progress:
   total_phases: 10
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 12
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 ## Current Position
 
 Phase: 05 (correlation-engine-hardening) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -49,6 +49,8 @@ Plan: 2 of 3
 | Phase 01 P02 | 19 min | 3 tasks | 6 files |
 | Phase 03 P01 | 30min | 2 tasks | 25 files |
 | Phase 05 P01 | 7min | 2 tasks | 5 files |
+| Phase 05 P03 | 6min | 2 tasks | 4 files |
+| Phase 05 P02 | 8min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -67,6 +69,10 @@ Recent decisions affecting current work:
 - [Phase 03]: Decomposed 6,243-line storage.ts into 22 domain modules with barrel index.ts delegation pattern
 - [Phase 05]: IEEE 754 floating point means exact 0.3 spread triggers needsReview (0.30000000000000004 > 0.3)
 - [Phase 05]: Used local AlertNodeData/EntityNodeData interfaces for graph nodes rather than reusing full Alert/Entity schema types
+- [Phase 05]: Used transaction mock proxy pattern to test db.transaction callbacks without real DB
+- [Phase 05]: ConfidenceBadge defined inline in incident-detail.tsx rather than separate component file
+- [Phase 05]: Used repeatable read for correlateAlert, serializable with retry for promoteClusterToIncident
+- [Phase 05]: Added algorithmScore to CorrelationResult for downstream aggregation
 
 ### Pending Todos
 
@@ -80,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T12:41:50.147Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-03-25T12:54:27.094Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None

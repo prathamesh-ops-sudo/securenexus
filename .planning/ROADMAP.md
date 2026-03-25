@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Dependency Security & Build Hardening** - Upgrade vulnerable deps, move runtime DDL to migrations, secure API key rotation
 - [x] **Phase 3: God File Decomposition** - Split storage.ts, ai.ts, and playbooks.ts into domain modules with barrel exports
 - [ ] **Phase 4: Structured Logging & Observability** - Replace console.log calls with structured logger, enrich health endpoint, add error context
-- [ ] **Phase 5: Correlation Engine Hardening** - Transaction isolation, conflict resolution, confidence scoring, and full test suite
+- [x] **Phase 5: Correlation Engine Hardening** - Transaction isolation, conflict resolution, confidence scoring, and full test suite (completed 2026-03-25)
 - [ ] **Phase 6: Alert Pipeline Hardening** - Temporal deduplication, suppression rules, dashboard metrics, and stub elimination
 - [ ] **Phase 7: Automated Response Safety** - Zod validation, dry-run mode, rollback API, audit trail, and dispatcher tests
 - [ ] **Phase 8: Connector Health & Resilience** - Health check loop, auto-restart, circuit breaker, status UI, and connector tests
@@ -100,8 +100,8 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md -- Schema + typed GraphNode + weighted voting aggregator with unit tests (CORR-02, CORR-05, CORR-06)
-- [ ] 05-02-PLAN.md -- Transaction-wrap correlation writes + unit tests for all 3 algorithms (CORR-01, CORR-04)
-- [ ] 05-03-PLAN.md -- Integration test suite + UI confidence badges and Review filter (CORR-03, CORR-06)
+- [x] 05-02-PLAN.md -- Transaction-wrap correlation writes + unit tests for all 3 algorithms (CORR-01, CORR-04)
+- [x] 05-03-PLAN.md -- Integration test suite + UI confidence badges and Review filter (CORR-03, CORR-06)
 
 ### Phase 6: Alert Pipeline Hardening
 **Goal**: Alert ingestion is production-grade with intelligent deduplication, operator-controlled suppression, and zero stub endpoints remaining
@@ -197,7 +197,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 2. Dependency Security & Build Hardening | 2/2 | Complete | 2026-03-25 |
 | 3. God File Decomposition | 3/3 | Complete | 2026-03-25 |
 | 4. Structured Logging & Observability | 0/2 | Not started | - |
-| 5. Correlation Engine Hardening | 0/3 | Not started | - |
+| 5. Correlation Engine Hardening | 3/3 | Complete   | 2026-03-25 |
 | 6. Alert Pipeline Hardening | 0/3 | Not started | - |
 | 7. Automated Response Safety | 0/2 | Not started | - |
 | 8. Connector Health & Resilience | 0/2 | Not started | - |
