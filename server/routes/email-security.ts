@@ -911,8 +911,10 @@ export function registerEmailSecurityRoutes(app: Express): void {
         }
 
         // Authenticate with Graph API
-        const accessToken = await getGraphAccessToken({ tenantId, clientId, clientSecret });
-        if (!accessToken) {
+        let accessToken: string;
+        try {
+          accessToken = await getGraphAccessToken({ tenantId, clientId, clientSecret });
+        } catch (authErr) {
           return res
             .status(401)
             .json({ error: "Failed to authenticate with Microsoft Graph API. Check your credentials." });
@@ -1025,8 +1027,10 @@ export function registerEmailSecurityRoutes(app: Express): void {
         }
 
         // Authenticate with Gmail API
-        const accessToken = await getGmailAccessToken({ clientId, clientSecret, refreshToken });
-        if (!accessToken) {
+        let accessToken: string;
+        try {
+          accessToken = await getGmailAccessToken({ clientId, clientSecret, refreshToken });
+        } catch (authErr) {
           return res.status(401).json({ error: "Failed to authenticate with Gmail API. Check your credentials." });
         }
 

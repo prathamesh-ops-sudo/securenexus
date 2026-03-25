@@ -495,15 +495,24 @@ EOF`;
     try {
       const sensorId = String(req.params.id);
 
-      // Verify sensor exists (lightweight check without org context since agents call this)
+      // Authenticate sensor via API key (Bearer token or X-API-Key header)
+      const bearerToken =
+        req.headers["x-api-key"] ||
+        (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
+      if (!bearerToken || typeof bearerToken !== "string") {
+        return res.status(401).json({ message: "Missing sensor API key", actions: [] });
+      }
+      const keyHash = hashApiKey(bearerToken);
+
+      // Verify sensor exists AND API key matches
       const [sensor] = await db
-        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId })
+        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
         .from(nativeSensors)
         .where(eq(nativeSensors.id, sensorId))
         .limit(1);
 
-      if (!sensor) {
-        return res.status(404).json({ message: "Sensor not found", actions: [] });
+      if (!sensor || sensor.apiKey !== keyHash) {
+        return res.status(401).json({ message: "Invalid sensor credentials", actions: [] });
       }
 
       // Fetch approved actions for this sensor that haven't been dispatched yet
@@ -564,6 +573,26 @@ EOF`;
       const sensorId = String(req.params.id);
       const actionId = String(req.params.actionId);
       const { status, resultOutput } = req.body;
+
+      // Authenticate sensor via API key
+      const bearerToken =
+        req.headers["x-api-key"] ||
+        (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
+      if (!bearerToken || typeof bearerToken !== "string") {
+        return res.status(401).json({ message: "Missing sensor API key" });
+      }
+      const keyHash = hashApiKey(bearerToken);
+
+      // Verify sensor exists AND API key matches
+      const [sensorCheck] = await db
+        .select({ id: nativeSensors.id, apiKey: nativeSensors.apiKey })
+        .from(nativeSensors)
+        .where(eq(nativeSensors.id, sensorId))
+        .limit(1);
+
+      if (!sensorCheck || sensorCheck.apiKey !== keyHash) {
+        return res.status(401).json({ message: "Invalid sensor credentials" });
+      }
 
       if (!status || !["completed", "failed"].includes(status)) {
         return res.status(400).json({ message: "status must be 'completed' or 'failed'" });
