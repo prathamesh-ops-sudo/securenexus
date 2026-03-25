@@ -29,6 +29,7 @@ export const ALERT_STATUSES = [
   "resolved",
   "dismissed",
   "false_positive",
+  "deduped",
 ] as const;
 export const INCIDENT_SEVERITIES = ["critical", "high", "medium", "low"] as const;
 export const INCIDENT_STATUSES = [
@@ -298,10 +299,12 @@ export const alerts = pgTable(
     confidenceSource: text("confidence_source"),
     confidenceNotes: text("confidence_notes"),
     dedupClusterId: varchar("dedup_cluster_id"),
+    occurrenceCount: integer("occurrence_count").default(1),
     analystNotes: text("analyst_notes"),
     assignedTo: varchar("assigned_to"),
     detectedAt: timestamp("detected_at"),
     ingestedAt: timestamp("ingested_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [
@@ -4010,10 +4013,12 @@ export const alertsArchive = pgTable(
     confidenceSource: text("confidence_source"),
     confidenceNotes: text("confidence_notes"),
     dedupClusterId: varchar("dedup_cluster_id"),
+    occurrenceCount: integer("occurrence_count").default(1),
     analystNotes: text("analyst_notes"),
     assignedTo: varchar("assigned_to"),
     detectedAt: timestamp("detected_at"),
     ingestedAt: timestamp("ingested_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").defaultNow(),
     archivedAt: timestamp("archived_at").defaultNow(),
     archiveReason: text("archive_reason"),

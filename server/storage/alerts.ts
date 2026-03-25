@@ -15,7 +15,7 @@ import {
   tags,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 
 export async function getAlerts(orgId?: string): Promise<Alert[]> {
   if (orgId) {
@@ -79,15 +79,33 @@ export async function findAlertByDedup(orgId: string | null, source: string, sou
   return existing;
 }
 
-export async function upsertAlert(alert: InsertAlert): Promise<{ alert: Alert; isNew: boolean }> {
+export async function upsertAlert(
+  alert: InsertAlert,
+  dedupWindowMinutes: number = 60,
+): Promise<{ alert: Alert; isNew: boolean; isDuplicate: boolean }> {
   if (alert.sourceEventId) {
     const existing = await findAlertByDedup(alert.orgId || null, alert.source, alert.sourceEventId);
     if (existing) {
-      return { alert: existing, isNew: false };
+      const cutoff = new Date(Date.now() - dedupWindowMinutes * 60 * 1000);
+      const alertTime = existing.ingestedAt || existing.createdAt;
+      if (alertTime && alertTime >= cutoff) {
+        // Within dedup window: update existing record
+        const [updated] = await db
+          .update(alerts)
+          .set({
+            occurrenceCount: sql`COALESCE(${alerts.occurrenceCount}, 1) + 1`,
+            lastSeenAt: new Date(),
+            status: "deduped",
+          })
+          .where(eq(alerts.id, existing.id))
+          .returning();
+        return { alert: updated, isNew: false, isDuplicate: true };
+      }
+      // Outside dedup window: fall through to create new alert
     }
   }
   const created = await createAlert(alert);
-  return { alert: created, isNew: true };
+  return { alert: created, isNew: true, isDuplicate: false };
 }
 
 export async function getAlertsPaginated(params: {
