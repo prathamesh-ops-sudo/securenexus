@@ -259,15 +259,22 @@ export function syslogToEvent(parsed: ParsedSyslogMessage, source: string): Norm
     }
   }
 
-  // Extract port numbers
-  const portRegex = /(?:port|dpt|spt|dst_port|src_port)[=:\s]+(\d+)/gi;
-  const ports: number[] = [];
+  // Extract port numbers — use direction prefix (spt/dpt/src_port/dst_port) to assign correctly
+  const portRegex = /(port|dpt|spt|dst_port|src_port)[=:\s]+(\d+)/gi;
   let portMatch;
   while ((portMatch = portRegex.exec(msg)) !== null) {
-    ports.push(parseInt(portMatch[1], 10));
+    const prefix = portMatch[1].toLowerCase();
+    const portNum = parseInt(portMatch[2], 10);
+    if (prefix === "spt" || prefix === "src_port") {
+      event.srcPort = portNum;
+    } else if (prefix === "dpt" || prefix === "dst_port") {
+      event.dstPort = portNum;
+    } else if (!event.srcPort) {
+      event.srcPort = portNum;
+    } else if (!event.dstPort) {
+      event.dstPort = portNum;
+    }
   }
-  if (ports.length >= 1) event.srcPort = ports[0];
-  if (ports.length >= 2) event.dstPort = ports[1];
 
   // Extract username
   const userRegex = /(?:user|uid|account)[=:\s]+["']?(\w+)["']?/i;
