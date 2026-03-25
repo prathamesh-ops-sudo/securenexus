@@ -18,6 +18,9 @@ import { reply, replyNotFound, replyBadRequest, replyError } from "../api-respon
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
 import { bodySchemas, validateBody, validatePathId } from "../request-validator";
+import { db } from "../db";
+import { ingestionLogs } from "@shared/schema";
+import { sql, eq } from "drizzle-orm";
 import { correlateAlert } from "../correlation-engine";
 import { resolveAndLinkEntities } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
@@ -878,12 +881,35 @@ export function registerIngestionRoutes(app: Express): void {
       const unparsedPercent = total > 0 ? Math.round((stats.totalFailed / total) * 10000) / 100 : 0;
       const UNPARSED_THRESHOLD = 5; // alert if >5% unparsed
 
-      const perSourceQuality = stats.sourceBreakdown.map((s) => ({
-        source: s.source,
-        eventCount: s.count,
-        quality: "good" as string, // Would compute from actual field extraction rates
-        fieldExtractionRate: 95 + Math.round(Math.random() * 5), // Simulated
-      }));
+      // Query real per-source field extraction rates from ingestion logs
+      const orgCondition = orgId ? eq(ingestionLogs.orgId, orgId) : undefined;
+      const perSourceRates = await db
+        .select({
+          source: ingestionLogs.source,
+          totalReceived: sql<number>`COALESCE(SUM(${ingestionLogs.alertsReceived}), 0)::int`,
+          totalCreated: sql<number>`COALESCE(SUM(${ingestionLogs.alertsCreated}), 0)::int`,
+          totalFailed: sql<number>`COALESCE(SUM(${ingestionLogs.alertsFailed}), 0)::int`,
+        })
+        .from(ingestionLogs)
+        .where(orgCondition)
+        .groupBy(ingestionLogs.source);
+
+      const rateMap = new Map(
+        perSourceRates.map((r) => [
+          r.source,
+          r.totalReceived > 0 ? Math.round((r.totalCreated / r.totalReceived) * 10000) / 100 : 100,
+        ]),
+      );
+
+      const perSourceQuality = stats.sourceBreakdown.map((s) => {
+        const extractionRate = rateMap.get(s.source) ?? 100;
+        return {
+          source: s.source,
+          eventCount: s.count,
+          quality: extractionRate >= 95 ? "good" : extractionRate >= 80 ? "degraded" : "poor",
+          fieldExtractionRate: extractionRate,
+        };
+      });
 
       res.json({
         overallQuality: unparsedPercent > UNPARSED_THRESHOLD ? "degraded" : "healthy",

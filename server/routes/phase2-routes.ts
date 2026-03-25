@@ -65,7 +65,11 @@ export function registerPhase2Routes(app: Express): void {
       const user = (req as any).user;
       const role = user?.role || "analyst";
 
-      const [alerts, incidents] = await Promise.all([storage.getAlerts(orgId), storage.getIncidents(orgId)]);
+      const [alerts, incidents, connectors] = await Promise.all([
+        storage.getAlerts(orgId),
+        storage.getIncidents(orgId),
+        storage.getConnectors(orgId),
+      ]);
 
       const openAlerts = alerts.filter((a: any) => a.status === "open" || a.status === "new").length;
       const activeIncidents = incidents.filter(
@@ -77,6 +81,40 @@ export function registerPhase2Routes(app: Express): void {
         const today = new Date();
         return resolved.toDateString() === today.toDateString();
       }).length;
+
+      // Pending Reviews: incidents in "investigating" or "open" status that need analyst attention
+      const pendingReviews = incidents.filter(
+        (i: any) => i.status === "investigating" || i.status === "open",
+      ).length;
+
+      // MTTD: average minutes between detectedAt and createdAt for alerts with detectedAt set
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const alertsWithDetection = alerts.filter(
+        (a: any) => a.detectedAt && new Date(a.createdAt) >= todayStart,
+      );
+      let mttdMinutes = 0;
+      if (alertsWithDetection.length > 0) {
+        const totalMs = alertsWithDetection.reduce((sum: number, a: any) => {
+          return sum + (new Date(a.createdAt).getTime() - new Date(a.detectedAt).getTime());
+        }, 0);
+        mttdMinutes = Math.round(totalMs / alertsWithDetection.length / 60000);
+      }
+
+      // MTTR: average minutes between createdAt and resolvedAt for resolved incidents
+      const resolvedIncidents = incidents.filter((i: any) => i.status === "resolved" && i.resolvedAt);
+      let mttrMinutes = 0;
+      if (resolvedIncidents.length > 0) {
+        const totalMs = resolvedIncidents.reduce((sum: number, i: any) => {
+          return sum + (new Date(i.resolvedAt).getTime() - new Date(i.createdAt).getTime());
+        }, 0);
+        mttrMinutes = Math.round(totalMs / resolvedIncidents.length / 60000);
+      }
+
+      // Alert Coverage: percentage of connectors that are active
+      const totalConnectors = connectors.length;
+      const activeConnectors = connectors.filter((c: any) => c.status === "active").length;
+      const alertCoverage = totalConnectors > 0 ? Math.round((activeConnectors / totalConnectors) * 100) : 0;
 
       sendEnvelope(res, {
         role,
@@ -97,14 +135,21 @@ export function registerPhase2Routes(app: Express): void {
             trend: 0,
             status: activeIncidents > 5 ? "warning" : "good",
           },
-          { id: "w3", title: "Pending Reviews", type: "counter", value: 0, trend: 0, status: "good" },
+          {
+            id: "w3",
+            title: "Pending Reviews",
+            type: "counter",
+            value: pendingReviews,
+            trend: 0,
+            status: pendingReviews > 10 ? "warning" : "good",
+          },
           { id: "w4", title: "Resolved Today", type: "counter", value: resolvedToday, trend: 0, status: "good" },
         ],
         recentActivity: [],
         kpis: [
-          { label: "Mean Time to Detect", value: 0, target: 15, unit: "min" },
-          { label: "Mean Time to Respond", value: 0, target: 60, unit: "min" },
-          { label: "Alert Coverage", value: 0, target: 95, unit: "%" },
+          { label: "Mean Time to Detect", value: mttdMinutes, target: 15, unit: "min" },
+          { label: "Mean Time to Respond", value: mttrMinutes, target: 60, unit: "min" },
+          { label: "Alert Coverage", value: alertCoverage, target: 95, unit: "%" },
         ],
       });
     } catch (err) {
