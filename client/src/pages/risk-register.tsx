@@ -25,7 +25,6 @@ import {
   LineChart,
   Zap,
 } from "lucide-react";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

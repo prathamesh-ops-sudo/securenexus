@@ -30,7 +30,7 @@ import {
   Gauge,
   Database,
 } from "lucide-react";
-import { SuccessIcon, PlayPauseIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 function jobStatusStyle(status: string) {
   const styles: Record<string, string> = {

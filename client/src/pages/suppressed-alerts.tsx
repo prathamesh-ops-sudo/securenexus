@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, fetchPaginated } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { EyeOff, RefreshCw, Loader2, AlertTriangle, Eye, Filter, Shield, Clock, User, Search } from "lucide-react";
-import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

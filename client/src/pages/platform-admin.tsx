@@ -44,7 +44,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 type AdminTab =
   | "overview"

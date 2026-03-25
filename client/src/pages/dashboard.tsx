@@ -44,7 +44,6 @@ import {
   SunriseIcon,
   RainbowIcon,
 } from "@/components/ui/animated-weather-icons";
-import { SuccessIcon, NotificationIcon as AnimatedBellIcon, PlayPauseIcon } from "@/components/ui/animated-state-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

@@ -1,5 +1,5 @@
 import { Shield, Globe, Database, Lock, Users, CheckCircle2, Building2, MapPin } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 const challenges = [

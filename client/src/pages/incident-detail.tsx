@@ -48,7 +48,7 @@ import {
   GitBranch,
   Workflow,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon, SendIcon as AnimatedSendIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FileManager } from "@/components/file-manager";

@@ -38,12 +38,7 @@ import {
   Heart,
   Layers,
 } from "lucide-react";
-import {
-  SuccessIcon,
-  EyeToggleIcon,
-  SendIcon as AnimatedSendIcon,
-  HeartIcon as AnimatedHeartIcon,
-} from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";

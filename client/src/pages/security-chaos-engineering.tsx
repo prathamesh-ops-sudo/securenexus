@@ -45,7 +45,6 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ───────────────────────────────────────────────────────────────

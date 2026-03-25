@@ -43,8 +43,7 @@ import {
   Gauge,
   ScanLine,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ──────────────────────────────────────────────────

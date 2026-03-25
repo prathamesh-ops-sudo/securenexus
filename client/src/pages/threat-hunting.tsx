@@ -70,8 +70,7 @@ import {
   ChevronRight,
   Copy,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
-import { WindIcon, FogIcon } from "@/components/ui/animated-weather-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { EmptyState } from "@/components/empty-state";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";

@@ -35,7 +35,7 @@ import {
   UserCog,
   LogOut,
 } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

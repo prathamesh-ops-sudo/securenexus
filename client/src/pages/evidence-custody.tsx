@@ -43,7 +43,7 @@ import {
   Filter,
   Activity,
 } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";

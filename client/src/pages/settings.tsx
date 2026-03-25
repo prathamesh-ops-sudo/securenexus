@@ -36,14 +36,7 @@ import {
   KeyRound,
   MessageSquare,
 } from "lucide-react";
-import {
-  LockUnlockIcon,
-  NotificationIcon as AnimatedBellIcon,
-  SendIcon as AnimatedSendIcon,
-  ToggleIcon,
-  EyeToggleIcon,
-  SuccessIcon,
-} from "@/components/ui/animated-state-icons";
+import { LockUnlockIcon, NotificationIcon as AnimatedBellIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/i18n";
 import { useAuth } from "@/hooks/use-auth";

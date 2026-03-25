@@ -43,7 +43,6 @@ import {
   Users,
   TrendingUp,
 } from "lucide-react";
-import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 // ── Types ───────────────────────────────────────────────────────────
 

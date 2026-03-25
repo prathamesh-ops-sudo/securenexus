@@ -50,7 +50,6 @@ import {
   Eye,
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 

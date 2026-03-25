@@ -46,7 +46,6 @@ import {
   FileSearch,
   Sparkles,
 } from "lucide-react";
-import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 

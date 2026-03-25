@@ -33,7 +33,7 @@ import {
   ToggleRight,
   Server,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 type DevTab = "api-docs" | "playground" | "webhooks" | "database" | "config" | "deployment";
 

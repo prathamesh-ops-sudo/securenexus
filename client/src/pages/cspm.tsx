@@ -48,8 +48,7 @@ import {
   Timer,
   Globe,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon, PlayPauseIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon, CloudIcon } from "@/components/ui/animated-weather-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";

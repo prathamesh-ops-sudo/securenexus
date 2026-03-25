@@ -27,13 +27,6 @@ import {
   Lightbulb,
   Star,
 } from "lucide-react";
-import {
-  SuccessIcon,
-  LockUnlockIcon,
-  SendIcon as AnimatedSendIcon,
-  HeartIcon as AnimatedHeartIcon,
-} from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon, CloudIcon, RainbowIcon, SunriseIcon } from "@/components/ui/animated-weather-icons";
 import { FaGoogle, FaGithub } from "react-icons/fa";
 import {
   SiSplunk,

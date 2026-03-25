@@ -34,14 +34,7 @@ import {
   Network,
   GripVertical,
 } from "lucide-react";
-import {
-  VolumeIcon,
-  NotificationIcon as AnimatedBellIcon,
-  SuccessIcon,
-  EyeToggleIcon,
-  DownloadDoneIcon,
-} from "@/components/ui/animated-state-icons";
-import { ThunderIcon } from "@/components/ui/animated-weather-icons";
+import { VolumeIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

@@ -28,8 +28,7 @@ import {
   Bell,
   BellRing,
 } from "lucide-react";
-import { SuccessIcon, NotificationIcon } from "@/components/ui/animated-state-icons";
-import { WindIcon, FogIcon } from "@/components/ui/animated-weather-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

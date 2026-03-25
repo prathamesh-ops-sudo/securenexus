@@ -35,7 +35,6 @@ import {
   Network,
   Server,
 } from "lucide-react";
-import { LockUnlockIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import type { EndpointAsset, EndpointTelemetry } from "@shared/schema";
 
 function statusDot(status: string | null | undefined) {
