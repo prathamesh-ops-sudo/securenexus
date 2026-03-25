@@ -17,6 +17,8 @@ export async function getDashboardStats(orgId?: string): Promise<{
   resolvedIncidents: number;
   newAlertsToday: number;
   escalatedIncidents: number;
+  alertsDeduplicatedToday: number;
+  alertsSuppressedToday: number;
 }> {
   const conditions = orgId ? [eq(alerts.orgId, orgId)] : [];
   const incidentConditions = orgId ? [eq(incidents.orgId, orgId)] : [];
@@ -65,6 +67,23 @@ export async function getDashboardStats(orgId?: string): Promise<{
         : eq(incidents.escalated, true),
     );
 
+  const [dedupedResult] = await db
+    .select({ count: count() })
+    .from(alerts)
+    .where(
+      conditions.length
+        ? and(conditions[0], eq(alerts.status, "deduped"), sql`${alerts.createdAt} >= ${today}`)
+        : and(eq(alerts.status, "deduped"), sql`${alerts.createdAt} >= ${today}`),
+    );
+  const [suppressedResult] = await db
+    .select({ count: count() })
+    .from(alerts)
+    .where(
+      conditions.length
+        ? and(conditions[0], eq(alerts.suppressed, true), sql`${alerts.createdAt} >= ${today}`)
+        : and(eq(alerts.suppressed, true), sql`${alerts.createdAt} >= ${today}`),
+    );
+
   return {
     totalAlerts: totalAlertsResult?.count ?? 0,
     openIncidents: openResult?.count ?? 0,
@@ -72,6 +91,8 @@ export async function getDashboardStats(orgId?: string): Promise<{
     resolvedIncidents: resolvedResult?.count ?? 0,
     newAlertsToday: newTodayResult?.count ?? 0,
     escalatedIncidents: escalatedResult?.count ?? 0,
+    alertsDeduplicatedToday: dedupedResult?.count ?? 0,
+    alertsSuppressedToday: suppressedResult?.count ?? 0,
   };
 }
 

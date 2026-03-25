@@ -484,6 +484,9 @@ export function registerComplianceRoutes(app: Express): void {
   );
 
   // Suppression Rules
+  const MAX_SUPPRESSION_DAYS = 30;
+  const DEFAULT_SUPPRESSION_DAYS = 7;
+
   app.get("/api/suppression-rules", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -522,6 +525,32 @@ export function registerComplianceRoutes(app: Express): void {
       if (!scopeValue || typeof scopeValue !== "string" || !scopeValue.trim()) {
         return res.status(400).json({ message: "scopeValue is required" });
       }
+
+      // Validate regex patterns in matcher conditions
+      if (matcher && Array.isArray(matcher)) {
+        for (const condition of matcher) {
+          if (condition.op === "regex" && condition.value) {
+            try {
+              new RegExp(condition.value);
+            } catch {
+              return res.status(400).json({ message: `Invalid regex pattern: ${condition.value}` });
+            }
+          }
+        }
+      }
+
+      // Validate and apply expiry (max 30 days, default 7 days)
+      let resolvedExpiresAt: Date;
+      if (expiresAt) {
+        resolvedExpiresAt = new Date(expiresAt);
+        const maxExpiry = new Date(Date.now() + MAX_SUPPRESSION_DAYS * 24 * 60 * 60 * 1000);
+        if (resolvedExpiresAt > maxExpiry) {
+          return res.status(400).json({ message: `Expiry cannot exceed ${MAX_SUPPRESSION_DAYS} days from now` });
+        }
+      } else {
+        resolvedExpiresAt = new Date(Date.now() + DEFAULT_SUPPRESSION_DAYS * 24 * 60 * 60 * 1000);
+      }
+
       const ruleData: Record<string, unknown> = {
         name: name.trim(),
         scope: scope.trim(),
@@ -529,6 +558,7 @@ export function registerComplianceRoutes(app: Express): void {
         orgId,
         createdBy: userId,
         ownedBy: userId,
+        expiresAt: resolvedExpiresAt,
       };
       if (description !== undefined) ruleData.description = description;
       if (matcher !== undefined) ruleData.matcher = matcher;
@@ -537,7 +567,6 @@ export function registerComplianceRoutes(app: Express): void {
       if (severity !== undefined) ruleData.severity = severity;
       if (category !== undefined) ruleData.category = category;
       if (enabled !== undefined) ruleData.enabled = enabled;
-      if (expiresAt !== undefined) ruleData.expiresAt = expiresAt ? new Date(expiresAt) : null;
       const rule = await storage.createSuppressionRule(ruleData as any);
       res.status(201).json(rule);
     } catch (error) {
@@ -553,6 +582,29 @@ export function registerComplianceRoutes(app: Express): void {
       if (!existing) return res.status(404).json({ message: "Suppression rule not found" });
       if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
         return res.status(403).json({ message: "Access denied" });
+
+      // Validate regex patterns in matcher conditions if being updated
+      if (req.body.matcher && Array.isArray(req.body.matcher)) {
+        for (const condition of req.body.matcher) {
+          if (condition.op === "regex" && condition.value) {
+            try {
+              new RegExp(condition.value);
+            } catch {
+              return res.status(400).json({ message: `Invalid regex pattern: ${condition.value}` });
+            }
+          }
+        }
+      }
+
+      // Validate expiry if being updated (max 30 days from now)
+      if (req.body.expiresAt) {
+        const newExpiry = new Date(req.body.expiresAt);
+        const maxExpiry = new Date(Date.now() + MAX_SUPPRESSION_DAYS * 24 * 60 * 60 * 1000);
+        if (newExpiry > maxExpiry) {
+          return res.status(400).json({ message: `Expiry cannot exceed ${MAX_SUPPRESSION_DAYS} days from now` });
+        }
+      }
+
       const rule = await storage.updateSuppressionRule(p(req.params.id), req.body);
       res.json(rule);
     } catch (error) {

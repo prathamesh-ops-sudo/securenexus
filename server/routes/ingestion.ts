@@ -22,6 +22,7 @@ import { correlateAlert } from "../correlation-engine";
 import { resolveAndLinkEntities } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { SOURCE_KEYS, normalizeAlert, toInsertAlert } from "../normalizer";
+import { evaluateSuppression } from "../suppression-engine";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
@@ -304,6 +305,36 @@ export function registerIngestionRoutes(app: Express): void {
 
         const normalized = normalizeAlert(source, payload);
         const insertData = toInsertAlert(normalized, orgId);
+
+        // Evaluate suppression rules before dedup/correlation
+        const suppression = await evaluateSuppression(insertData, orgId);
+        if (suppression.suppressed) {
+          insertData.suppressed = true;
+          insertData.suppressedBy = "rule";
+          insertData.suppressionRuleId = suppression.ruleId;
+          const created = await storage.createAlert(insertData);
+          await storage.createIngestionLog({
+            orgId,
+            source: normalized.source,
+            status: "success",
+            alertsReceived: 1,
+            alertsCreated: 1,
+            alertsDeduped: 0,
+            alertsFailed: 0,
+            requestId,
+            ipAddress: req.ip || null,
+            processingTimeMs: Date.now() - startTime,
+          });
+          cacheInvalidate("dashboard:");
+          return res.status(201).json({
+            requestId,
+            status: "suppressed",
+            alertId: created.id,
+            source: normalized.source,
+            suppressionRuleId: suppression.ruleId,
+          });
+        }
+
         const { alert, isNew, isDuplicate } = await storage.upsertAlert(insertData);
 
         let entityCount = 0;
@@ -446,13 +477,32 @@ export function registerIngestionRoutes(app: Express): void {
 
         let created = 0,
           deduped = 0,
-          failed = 0;
+          failed = 0,
+          suppressed = 0;
         const results: any[] = [];
 
         for (const event of events) {
           try {
             const normalized = normalizeAlert(source, event);
             const insertData = toInsertAlert(normalized, orgId);
+
+            // Evaluate suppression rules before dedup/correlation
+            const suppressionCheck = await evaluateSuppression(insertData, orgId);
+            if (suppressionCheck.suppressed) {
+              insertData.suppressed = true;
+              insertData.suppressedBy = "rule";
+              insertData.suppressionRuleId = suppressionCheck.ruleId;
+              const suppressedAlert = await storage.createAlert(insertData);
+              suppressed++;
+              created++;
+              results.push({
+                alertId: suppressedAlert.id,
+                status: "suppressed",
+                suppressionRuleId: suppressionCheck.ruleId,
+              });
+              continue;
+            }
+
             const { alert, isNew, isDuplicate } = await storage.upsertAlert(insertData);
             if (isNew) {
               created++;

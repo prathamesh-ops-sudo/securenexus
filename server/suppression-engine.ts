@@ -1,5 +1,5 @@
 import type { InsertAlert, SuppressionRule } from "@shared/schema";
-import logger from "./logger";
+import { logger } from "./logger";
 import { getActiveSuppressionRules, incrementSuppressionMatchCount } from "./storage/misc";
 
 const log = logger.child("suppression-engine");

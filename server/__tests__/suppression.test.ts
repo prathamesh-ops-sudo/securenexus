@@ -9,7 +9,7 @@ vi.mock("../storage/misc", () => ({
 
 // Mock logger
 vi.mock("../logger", () => ({
-  default: {
+  logger: {
     child: () => ({
       debug: vi.fn(),
       info: vi.fn(),
