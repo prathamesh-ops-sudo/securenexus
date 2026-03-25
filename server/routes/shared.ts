@@ -116,8 +116,30 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
   if (!apiKey) {
     return replyUnauthenticated(res, "Invalid API key.", ERROR_CODES.API_KEY_INVALID);
   }
-  if (!apiKey.isActive) {
-    return replyForbidden(res, "API key has been revoked.", ERROR_CODES.API_KEY_REVOKED);
+  // Check revocation first (hard revoke always rejected)
+  if (apiKey.revokedAt) {
+    return replyUnauthenticated(res, "API key has been revoked.", ERROR_CODES.API_KEY_REVOKED);
+  }
+  // Handle deprecated keys with grace period
+  if (!apiKey.isActive && apiKey.deprecatedAt && apiKey.graceExpiresAt) {
+    const now = new Date();
+    if (now <= new Date(apiKey.graceExpiresAt)) {
+      // Deprecated but within grace period -- allow with warning headers
+      res.setHeader("X-API-Key-Deprecated", "true");
+      res.setHeader("X-API-Key-Expires", new Date(apiKey.graceExpiresAt).toISOString());
+      if (apiKey.replacedByKeyId) {
+        res.setHeader("X-API-Key-Replacement", apiKey.replacedByKeyId);
+      }
+      // Fall through to normal auth flow
+    } else {
+      return replyUnauthenticated(
+        res,
+        "API key grace period has expired. Use the rotated key.",
+        ERROR_CODES.API_KEY_EXPIRED,
+      );
+    }
+  } else if (!apiKey.isActive) {
+    return replyForbidden(res, "API key is not active.", ERROR_CODES.API_KEY_INVALID);
   }
   storage
     .updateApiKeyLastUsed(apiKey.id)

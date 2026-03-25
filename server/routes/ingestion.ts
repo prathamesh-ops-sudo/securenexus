@@ -14,6 +14,7 @@ import {
   storage,
   verifyWebhookSignature,
 } from "./shared";
+import { reply, replyNotFound, replyBadRequest, replyError } from "../api-response";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
 import { bodySchemas, validateBody, validatePathId } from "../request-validator";
@@ -184,6 +185,86 @@ export function registerIngestionRoutes(app: Express): void {
         res.json({ message: "API key revoked" });
       } catch (error) {
         res.status(500).json({ message: "Failed to revoke API key" });
+      }
+    },
+  );
+
+  // API Key Rotation with 24-hour grace period
+  app.post(
+    "/api/api-keys/:id/rotate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("api_keys", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const id = p(req.params.id);
+        const orgId = getOrgId(req);
+
+        // 1. Get existing key
+        const existingKey = await storage.getApiKeyById(id);
+        if (!existingKey || existingKey.orgId !== orgId) {
+          return replyNotFound(res, "API key not found.");
+        }
+        if (!existingKey.isActive) {
+          return replyBadRequest(res, "Cannot rotate an inactive API key.");
+        }
+
+        // 2. Generate new key
+        const { key, prefix, hash } = generateApiKey();
+
+        // 3. Create new key (inherits scopes from old key)
+        const newKey = await storage.createApiKey({
+          orgId: existingKey.orgId,
+          name: `${existingKey.name} (rotated)`,
+          keyHash: hash,
+          keyPrefix: prefix,
+          scopes: existingKey.scopes,
+          isActive: true,
+          createdBy: (req as any).user?.id || null,
+        });
+
+        // 4. Deprecate old key with 24h grace period
+        await storage.deprecateApiKey(id, newKey.id);
+
+        const graceExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        // 5. Audit log
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "api_key.rotated",
+          resourceType: "api_key",
+          resourceId: id,
+          details: {
+            oldKeyId: id,
+            oldKeyPrefix: existingKey.keyPrefix,
+            newKeyId: newKey.id,
+            newKeyPrefix: prefix,
+            graceExpiresAt,
+          },
+        });
+
+        return reply(res, {
+          newKey: {
+            id: newKey.id,
+            key,
+            prefix,
+            scopes: existingKey.scopes,
+          },
+          oldKey: {
+            id: existingKey.id,
+            prefix: existingKey.keyPrefix,
+            deprecatedAt: new Date().toISOString(),
+            graceExpiresAt,
+          },
+        });
+      } catch (error) {
+        logger.child("ingestion").error("API key rotation failed", { error: String(error) });
+        return replyError(res, 500, [{ code: "INTERNAL_ERROR", message: "Failed to rotate API key." }]);
       }
     },
   );
