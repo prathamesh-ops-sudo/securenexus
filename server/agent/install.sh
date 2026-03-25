@@ -165,7 +165,13 @@ api_get() {
 
 get_cpu_usage() {
   if [ "$PLATFORM" = "linux" ]; then
-    grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {printf "%.1f", usage}'
+    # Two-sample delta measurement for current CPU usage (not cumulative average)
+    local cpu1 cpu2
+    cpu1=$(grep 'cpu ' /proc/stat)
+    sleep 1
+    cpu2=$(grep 'cpu ' /proc/stat)
+    echo "$cpu1
+$cpu2" | awk 'NR==1{u1=$2+$4; t1=$2+$4+$5} NR==2{u2=$2+$4; t2=$2+$4+$5; if(t2-t1>0) printf "%.1f", (u2-u1)*100/(t2-t1); else printf "0.0"}'
   elif [ "$PLATFORM" = "macos" ]; then
     top -l 1 -n 0 2>/dev/null | awk '/CPU usage/ {print $3}' | tr -d '%' || echo "0"
   fi
@@ -791,7 +797,7 @@ ${fpath}:${hash}"
 }
 
 # Trap signals for clean shutdown
-trap 'log "INFO" "Agent shutting down..."; flush_events; exit 0' SIGTERM SIGINT
+trap 'log "INFO" "Agent shutting down..."; flush_events; exit 0' EXIT
 
 main "$@"
 AGENTEOF

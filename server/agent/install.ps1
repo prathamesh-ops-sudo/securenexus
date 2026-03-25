@@ -98,7 +98,7 @@ $EventBatchSize = [int]($config["EVENT_BATCH_SIZE"] ?? "100")
 
 function Write-Log {
     param([string]$Level, [string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     $entry = "$timestamp [$Level] $Message"
     Add-Content -Path $LogFile -Value $entry
 }

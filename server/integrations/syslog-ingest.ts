@@ -92,9 +92,13 @@ export function parseRfc3164(raw: string): ParsedSyslogMessage | null {
 
   // Parse BSD-style timestamp (e.g., "Mar 25 06:45:12")
   const currentYear = new Date().getFullYear();
-  const timestamp = new Date(`${match[2]} ${currentYear}`);
+  let timestamp = new Date(`${match[2]} ${currentYear}`);
   if (isNaN(timestamp.getTime())) {
     return null;
+  }
+  // If parsed timestamp is more than 1 day in the future, it likely belongs to the previous year
+  if (timestamp.getTime() > Date.now() + 86_400_000) {
+    timestamp = new Date(`${match[2]} ${currentYear - 1}`);
   }
 
   return {
