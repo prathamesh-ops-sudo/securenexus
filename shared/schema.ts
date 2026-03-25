@@ -10,6 +10,7 @@ import {
   jsonb,
   real,
   doublePrecision,
+  serial,
   index,
   uniqueIndex,
   uuid,
@@ -12812,3 +12813,33 @@ export type EmailUrlRewrite = typeof emailUrlRewrites.$inferSelect;
 export type InsertEmailUrlRewrite = typeof emailUrlRewrites.$inferInsert;
 export type EmailQuarantineItem = typeof emailQuarantineItems.$inferSelect;
 export type InsertEmailQuarantineItem = typeof emailQuarantineItems.$inferInsert;
+
+// ─── AI Inference Log ─────────────────────────────────────────────────────────
+
+export const aiInferenceLog = pgTable(
+  "ai_inference_log",
+  {
+    id: serial("id").primaryKey(),
+    tier: varchar("tier").notNull(),
+    model: varchar("model").notNull(),
+    promptId: varchar("prompt_id"),
+    promptVersion: integer("prompt_version"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    latencyMs: integer("latency_ms").notNull().default(0),
+    costEstimateUsd: doublePrecision("cost_estimate_usd").notNull().default(0),
+    cached: boolean("cached").notNull().default(false),
+    success: boolean("success").notNull().default(true),
+    errorMessage: text("error_message"),
+    orgId: varchar("org_id"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_inference_log_tier").on(table.tier),
+    index("idx_ai_inference_log_created").on(table.createdAt),
+    index("idx_ai_inference_log_org").on(table.orgId),
+  ],
+);
+
+export type AiInferenceLog = typeof aiInferenceLog.$inferSelect;
+export type InsertAiInferenceLog = typeof aiInferenceLog.$inferInsert;

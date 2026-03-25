@@ -55,34 +55,6 @@ interface InferenceMetrics {
 
 // ─── Persistent Inference Log (DB-backed) ─────────────────────────────────────
 
-const INFERENCE_TABLE_ENSURED = { done: false };
-
-async function ensureInferenceTable(): Promise<void> {
-  if (INFERENCE_TABLE_ENSURED.done) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_inference_log (
-      id SERIAL PRIMARY KEY,
-      tier VARCHAR NOT NULL,
-      model VARCHAR NOT NULL,
-      prompt_id VARCHAR,
-      prompt_version INTEGER,
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      latency_ms INTEGER NOT NULL DEFAULT 0,
-      cost_estimate_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
-      cached BOOLEAN NOT NULL DEFAULT false,
-      success BOOLEAN NOT NULL DEFAULT true,
-      error_message TEXT,
-      org_id VARCHAR,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_tier ON ai_inference_log (tier)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_created ON ai_inference_log (created_at)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_org ON ai_inference_log (org_id)`);
-  INFERENCE_TABLE_ENSURED.done = true;
-}
-
 async function persistInferenceEntry(
   metrics: InferenceMetrics,
   success: boolean = true,
@@ -90,7 +62,7 @@ async function persistInferenceEntry(
   orgId?: string,
 ): Promise<void> {
   try {
-    await ensureInferenceTable();
+
     await pool.query(
       `INSERT INTO ai_inference_log (tier, model, prompt_id, prompt_version, input_tokens, output_tokens, latency_ms, cost_estimate_usd, cached, success, error_message, org_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -137,7 +109,7 @@ export async function getInferenceHistory(options: {
     createdAt: string;
   }>
 > {
-  await ensureInferenceTable();
+
   const safeLimit = Math.min(Math.max(options.limit || 100, 1), 1000);
   const since = options.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // default 7 days
 
@@ -202,7 +174,7 @@ export async function getInferenceStats(
     }
   >;
 }> {
-  await ensureInferenceTable();
+
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const orgFilter = orgId ? ` AND org_id = $2` : ``;
@@ -1237,7 +1209,7 @@ export async function getInferenceMetrics(): Promise<{
   operationsByTier: Record<string, { count: number; avgLatencyMs: number; totalCostUsd: number; cachedCount: number }>;
 }> {
   try {
-    await ensureInferenceTable();
+
 
     // Fetch recent 20 operations from DB
     const recentResult = await pool.query(
