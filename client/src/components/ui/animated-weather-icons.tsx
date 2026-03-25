@@ -246,7 +246,7 @@ export function WindIcon({ size = 48, className }: WeatherIconProps) {
         transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
       />
       <motion.path
-        d="M10 30h18a3 3 0 000-0"
+        d="M10 30h18a3 3 0 000-6"
         stroke="#94A3B8"
         strokeWidth={2}
         strokeLinecap="round"
