@@ -45,6 +45,7 @@ import {
   History,
   Loader2,
 } from "lucide-react";
+import { SuccessIcon, SendIcon as AnimatedSendIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -553,7 +554,7 @@ function HypothesisCard({
               <ul className="space-y-1">
                 {hypothesis.supportingEvidence.map((ev, i) => (
                   <li key={i} className="text-xs flex items-start gap-1.5">
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400 mt-0.5 shrink-0" aria-hidden="true" />
+                    <SuccessIcon size={12} color="#22c55e" aria-hidden="true" />
                     {ev}
                   </li>
                 ))}

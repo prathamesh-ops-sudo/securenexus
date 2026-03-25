@@ -44,6 +44,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 
 type AdminTab =
   | "overview"
@@ -1441,7 +1442,7 @@ function EmailLogsTab() {
                     </td>
                     <td className="p-3">
                       {entry.success ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        <SuccessIcon size={16} color="#22c55e" />
                       ) : (
                         <XCircle className="h-4 w-4 text-red-500" />
                       )}

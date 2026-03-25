@@ -1,16 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useContext } from "react";
-import {
-  Bell,
-  AlertTriangle,
-  Shield,
-  FileWarning,
-  ArrowUpRight,
-  CheckCircle2,
-  X,
-  BellRing,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
+import { AlertTriangle, Shield, FileWarning, ArrowUpRight, X } from "lucide-react";
+import { NotificationIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
+import { VolumeIcon } from "@/components/ui/animated-state-icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
@@ -227,11 +219,7 @@ export function NotificationBell() {
         aria-expanded={isOpen}
         title="Critical alert notifications"
       >
-        {unreadCount > 0 ? (
-          <BellRing className="h-4 w-4 animate-pulse" aria-hidden="true" />
-        ) : (
-          <Bell className="h-4 w-4" aria-hidden="true" />
-        )}
+        <NotificationIcon size={18} color="currentColor" aria-hidden="true" />
         {unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-background">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -261,7 +249,7 @@ export function NotificationBell() {
                     onClick={markAllRead}
                     title="Mark all as read"
                   >
-                    <CheckCircle2 className="h-3 w-3" />
+                    <SuccessIcon size={12} color="currentColor" />
                   </Button>
                   <Button
                     size="sm"
@@ -281,7 +269,9 @@ export function NotificationBell() {
           <div className="max-h-72 overflow-y-auto">
             {notifications.length === 0 ? (
               <div className="px-3 py-8 text-center">
-                <CheckCircle2 className="h-6 w-6 mx-auto text-emerald-500 mb-2" />
+                <div className="flex justify-center mb-2">
+                  <SuccessIcon size={24} color="#10b981" />
+                </div>
                 <p className="text-xs font-medium text-muted-foreground">No critical alerts</p>
                 <p className="text-[10px] text-muted-foreground mt-1">
                   Critical and high-severity alerts will appear here in real time
@@ -335,11 +325,7 @@ export function NotificationBell() {
           {/* Footer — Push notification opt-in */}
           <div className="px-3 py-2 border-t border-border bg-muted/20 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              {pushOptIn ? (
-                <Volume2 className="h-3 w-3 text-emerald-500" />
-              ) : (
-                <VolumeX className="h-3 w-3 text-muted-foreground" />
-              )}
+              <VolumeIcon size={14} color={pushOptIn ? "#10b981" : "#6b7280"} />
               <span className="text-[10px] text-muted-foreground">
                 {pushOptIn ? "Push notifications on" : "Push notifications off"}
               </span>

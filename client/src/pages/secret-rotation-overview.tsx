@@ -29,6 +29,7 @@ import {
   Search,
   XCircle,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -403,7 +404,7 @@ function SecretInventoryTab() {
         <CardContent className="p-0">
           {filtered.length === 0 ? (
             <div className="p-8 text-center">
-              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-50" />
+              <SuccessIcon size={32} color="#22c55e" />
               <p className="text-sm text-muted-foreground">No secrets match filters</p>
             </div>
           ) : (
@@ -718,7 +719,7 @@ function RotationActionsTab() {
         <CardContent className="p-4 pt-0 space-y-2">
           {actionableSecrets.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <SuccessIcon size={32} color="#22c55e" />
               <p className="text-sm">All secrets are healthy</p>
               <p className="text-xs mt-1">No rotations needed at this time</p>
             </div>
@@ -991,7 +992,7 @@ export default function SecretRotationOverviewPage() {
         >
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              <SuccessIcon size={16} color="#22c55e" />
             </div>
             <div>
               <p className="text-2xl font-bold tabular-nums text-emerald-400">
@@ -1072,7 +1073,7 @@ export default function SecretRotationOverviewPage() {
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="p-8 text-center">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-400 mx-auto mb-2" />
+                  <SuccessIcon size={32} color="#22c55e" />
                   <p className="text-sm font-medium">No rotations found</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {statusFilter !== "all"

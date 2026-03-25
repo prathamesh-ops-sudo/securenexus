@@ -43,6 +43,7 @@ import {
   Workflow,
   ArrowRight,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";

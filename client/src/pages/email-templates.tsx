@@ -23,6 +23,7 @@ import {
   Monitor,
   Info,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -360,11 +361,7 @@ function TemplateEditor({
                     </span>
                     <span className="text-xs font-medium truncate flex-1">{preview.subject}</span>
                     <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={handleCopySubject}>
-                      {copiedSubject ? (
-                        <CheckCircle2 className="h-3 w-3 text-green-400" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
+                      {copiedSubject ? <SuccessIcon size={12} color="#22c55e" /> : <Copy className="h-3 w-3" />}
                     </Button>
                   </div>
                 )}
@@ -548,7 +545,7 @@ export default function EmailTemplatesPage() {
               <Badge variant={emailStatus.emailEnabled ? "default" : "secondary"} className="text-[10px]">
                 {emailStatus.emailEnabled ? (
                   <>
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    <SuccessIcon size={12} color="#22c55e" />
                     SES Active
                   </>
                 ) : (

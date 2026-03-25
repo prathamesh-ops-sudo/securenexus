@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Settings,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -328,7 +329,7 @@ export default function ReportSchedulingPage() {
                 {s.slaMet !== null && (
                   <div className="flex items-center gap-1 mt-1">
                     {s.slaMet ? (
-                      <CheckCircle2 className="h-3 w-3 text-green-400" />
+                      <SuccessIcon size={12} color="#22c55e" />
                     ) : (
                       <AlertTriangle className="h-3 w-3 text-red-400" />
                     )}
@@ -439,7 +440,7 @@ export default function ReportSchedulingPage() {
                       >
                         <div className="flex items-center gap-3">
                           {d.slaMet ? (
-                            <CheckCircle2 className="h-5 w-5 text-green-400" />
+                            <SuccessIcon size={20} color="#22c55e" />
                           ) : (
                             <XCircle className="h-5 w-5 text-red-400" />
                           )}

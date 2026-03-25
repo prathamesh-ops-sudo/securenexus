@@ -49,6 +49,7 @@ import {
   Radio,
   Package,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

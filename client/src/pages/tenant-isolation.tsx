@@ -13,6 +13,7 @@ import {
   Users,
   BarChart3,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,7 +173,7 @@ export default function TenantIsolationPage() {
               {quotaStatus.throttled ? (
                 <XCircle className="h-5 w-5 text-red-500" />
               ) : (
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <SuccessIcon size={20} color="#22c55e" />
               )}
               <div>
                 <p className="text-lg font-bold">{quotaStatus.throttled ? "Throttled" : "Active"}</p>

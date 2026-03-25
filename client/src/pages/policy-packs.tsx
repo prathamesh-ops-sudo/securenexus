@@ -29,6 +29,7 @@ import {
   Eye,
   History,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -596,7 +597,7 @@ function ActivationsTab() {
     return (
       <Card className="glass-subtle">
         <CardContent className="p-8 text-center text-muted-foreground">
-          <CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-40" />
+          <SuccessIcon size={48} color="#22c55e" />
           <p className="font-medium">No active policy packs</p>
           <p className="text-xs mt-1">Go to the Pack Catalog tab to activate policy packs for your organization.</p>
         </CardContent>

@@ -43,6 +43,7 @@ import {
   Package,
   Bell,
 } from "lucide-react";
+import { SuccessIcon, HeartIcon as AnimatedHeartIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -979,7 +980,7 @@ function SetupWizardDialog({
               )}
               {testStatus === "success" && (
                 <div className="flex items-center justify-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <SuccessIcon size={16} color="#22c55e" />
                   <span className="text-sm text-emerald-400">Connection successful!</span>
                 </div>
               )}
@@ -1191,7 +1192,7 @@ function UpdatesView() {
                 )}
                 {!update.hasUpdate && (
                   <Badge className="bg-emerald-600/20 text-emerald-300 text-xs">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    <SuccessIcon size={12} color="#22c55e" />
                     Up to date
                   </Badge>
                 )}

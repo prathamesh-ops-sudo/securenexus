@@ -31,6 +31,7 @@ import {
   Plug,
   CreditCard,
 } from "lucide-react";
+import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1064,7 +1065,7 @@ function DomainAutoJoinSection({ orgId, toast }: { orgId: string; toast: any }) 
                         variant="default"
                         className="text-[10px] bg-green-500/10 text-green-600 border-green-500/20"
                       >
-                        <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                        <SuccessIcon size={12} color="#22c55e" />
                         Verified
                       </Badge>
                     ) : (

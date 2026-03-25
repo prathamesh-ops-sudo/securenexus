@@ -35,6 +35,7 @@ import {
   Copy,
   Play,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -346,7 +347,7 @@ function IntegrityVerificationPanel({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
           {integrityValid ? (
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            <SuccessIcon size={16} color="#22c55e" />
           ) : (
             <AlertTriangle className="h-4 w-4 text-red-400" />
           )}
@@ -730,7 +731,7 @@ function EvidenceCustodyManager() {
                     <span className="text-xs font-medium truncate">{item.name}</span>
                     <div className="flex items-center gap-1">
                       {item.integrityValid ? (
-                        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                        <SuccessIcon size={12} color="#22c55e" />
                       ) : (
                         <AlertTriangle className="h-3 w-3 text-red-400" />
                       )}
@@ -1175,7 +1176,7 @@ export default function EvidenceChainViewerPage() {
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     {verification.valid ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+                      <SuccessIcon size={20} color="#22c55e" />
                     ) : (
                       <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
                     )}

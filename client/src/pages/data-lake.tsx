@@ -54,6 +54,7 @@ import {
   Zap,
   ChevronDown,
 } from "lucide-react";
+import { LockUnlockIcon } from "@/components/ui/animated-state-icons";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
 const apiRequest = async (url: string, options?: RequestInit) => {

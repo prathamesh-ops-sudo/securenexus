@@ -38,6 +38,7 @@ import {
   Trash2,
   RefreshCw,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 
 // ── API helpers ─────────────────────────────────────────────────────
 

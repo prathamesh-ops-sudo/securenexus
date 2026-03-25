@@ -46,6 +46,12 @@ import {
   Crown,
   UserCog,
 } from "lucide-react";
+import {
+  SuccessIcon,
+  EyeToggleIcon,
+  SendIcon as AnimatedSendIcon,
+  PlayPauseIcon,
+} from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

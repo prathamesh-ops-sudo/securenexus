@@ -43,6 +43,7 @@ import {
   GitBranch,
   Zap,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { EmptyState } from "@/components/empty-state";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
@@ -191,7 +192,7 @@ function statusColor(status: string) {
 function eventTypeIcon(type: string) {
   switch (type) {
     case "access_granted":
-      return <CheckCircle2 className="h-4 w-4 text-green-400" />;
+      return <SuccessIcon size={16} color="#22c55e" />;
     case "access_denied":
       return <XCircle className="h-4 w-4 text-red-400" />;
     case "door_forced":

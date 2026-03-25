@@ -19,6 +19,7 @@ import {
   BookmarkPlus,
   Keyboard,
 } from "lucide-react";
+import { SuccessIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -731,7 +732,7 @@ export default function IncidentsPage() {
           data-testid="button-export-incidents"
           onClick={() => window.open("/api/export/incidents", "_blank")}
         >
-          <Download className="h-4 w-4" />
+          <DownloadDoneIcon size={18} color="currentColor" />
         </Button>
         <Button variant="outline" size="sm" onClick={() => setShowQueryBuilder(!showQueryBuilder)}>
           <Filter className="h-3.5 w-3.5 mr-1.5" />
@@ -1266,7 +1267,7 @@ export default function IncidentsPage() {
                         Escalate <kbd className="ml-1 text-[9px] opacity-50">E</kbd>
                       </Button>
                       <Button size="sm" variant="outline" className="text-xs h-8" onClick={resolveFocused}>
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        <SuccessIcon size={12} color="#22c55e" />
                         Resolve <kbd className="ml-1 text-[9px] opacity-50">R</kbd>
                       </Button>
                     </div>

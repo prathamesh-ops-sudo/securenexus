@@ -32,6 +32,8 @@ import {
   LayoutDashboard,
   Archive,
 } from "lucide-react";
+import { SuccessIcon, LockUnlockIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -458,7 +460,7 @@ function ComplianceCenterTab() {
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+              <SuccessIcon size={16} color="#22c55e" aria-hidden="true" />
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Audit Readiness
               </span>
@@ -843,7 +845,7 @@ function PoliciesTab() {
                   onClick={() => toggleFramework(fw)}
                   data-testid={`badge-framework-${fw}`}
                 >
-                  {frameworks.includes(fw) && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                  {frameworks.includes(fw) && <SuccessIcon size={12} color="#22c55e" />}
                   {fw}
                 </Badge>
               ))}
@@ -1176,7 +1178,7 @@ function DsarTab() {
                                 {fulfillDsar.isPending && fulfillDsar.variables === req.id ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
-                                  <CheckCircle2 className="h-3 w-3" />
+                                  <SuccessIcon size={12} color="#22c55e" />
                                 )}
                               </Button>
                               {statusUpdateId === req.id ? (
@@ -1204,7 +1206,7 @@ function DsarTab() {
                                     {updateStatus.isPending ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
                                     ) : (
-                                      <CheckCircle2 className="h-3 w-3" />
+                                      <SuccessIcon size={12} color="#22c55e" />
                                     )}
                                   </Button>
                                 </div>
@@ -1448,7 +1450,7 @@ function AuditIntegrityTab() {
             <div className="space-y-3 pt-2" data-testid="section-verify-result">
               <div className="flex items-center gap-3 p-4 rounded-md bg-muted/30">
                 {verifyResult.verified ? (
-                  <CheckCircle2 className="h-8 w-8 text-green-500 flex-shrink-0" />
+                  <SuccessIcon size={32} color="#22c55e" />
                 ) : (
                   <XCircle className="h-8 w-8 text-red-500 flex-shrink-0" />
                 )}
@@ -1512,7 +1514,7 @@ function AuditIntegrityTab() {
             <div className="flex items-center gap-3">
               {verifyResult ? (
                 verifyResult.verified ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
                 )
@@ -2246,7 +2248,7 @@ function EvidenceLockerTab() {
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
           <div>
             <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
-              <Lock className="h-4 w-4 text-muted-foreground" />
+              <LockUnlockIcon size={18} color="currentColor" />
               Evidence Locker
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">Audit-ready artifacts for compliance evidence</p>

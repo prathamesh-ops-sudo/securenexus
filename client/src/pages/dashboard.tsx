@@ -35,6 +35,16 @@ import {
   ChevronDown,
   Pause,
 } from "lucide-react";
+import {
+  SunIcon,
+  ThunderIcon,
+  RainIcon,
+  CloudIcon,
+  WindIcon,
+  SunriseIcon,
+  RainbowIcon,
+} from "@/components/ui/animated-weather-icons";
+import { SuccessIcon, NotificationIcon as AnimatedBellIcon, PlayPauseIcon } from "@/components/ui/animated-state-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -288,6 +298,17 @@ function SecurityScorePill({ score }: { score: number }) {
         <div className="absolute inset-0 flex items-center justify-center">
           <span className={`text-[11px] font-bold tabular-nums ${color}`}>{score}</span>
         </div>
+      </div>
+      <div className="flex items-center">
+        {score >= 90 ? (
+          <SunIcon size={20} className="mr-1" />
+        ) : score >= 70 ? (
+          <SunriseIcon size={20} className="mr-1" />
+        ) : score >= 50 ? (
+          <RainIcon size={20} className="mr-1" />
+        ) : (
+          <ThunderIcon size={20} className="mr-1" />
+        )}
       </div>
       <div className="leading-tight">
         <div className="text-[10px] font-medium text-muted-foreground tracking-wider">Security score</div>
@@ -652,7 +673,7 @@ function ConnectorHealthWidget({ data }: { data: AnalyticsData["connectorHealth"
     <Card className="h-full">
       <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
         <div className="flex items-center gap-2">
-          <Plug className="h-4 w-4 text-muted-foreground" />
+          <CloudIcon size={18} className="flex-shrink-0" />
           <CardTitle className="text-sm font-semibold tracking-tight">Connector Health</CardTitle>
         </div>
         <Link href="/connectors" className="text-xs text-primary hover:underline font-medium">
@@ -852,7 +873,7 @@ function WhatChangedWidget({
     <Card className="h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          <WindIcon size={18} className="flex-shrink-0" />
           <CardTitle className="text-sm font-semibold tracking-tight">What Changed (Last 24h)</CardTitle>
         </div>
       </CardHeader>
@@ -1666,7 +1687,9 @@ export default function Dashboard() {
                     ) : null}
                     {!stats?.criticalAlerts && !stats?.openIncidents && !stats?.escalatedIncidents && (
                       <div className="px-3 py-6 text-center">
-                        <CheckCircle2 className="h-5 w-5 mx-auto text-emerald-500 mb-1.5" />
+                        <div className="flex justify-center mb-1.5">
+                          <RainbowIcon size={24} />
+                        </div>
                         <p className="text-xs text-muted-foreground">All clear — no new notifications</p>
                       </div>
                     )}

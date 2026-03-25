@@ -39,6 +39,8 @@ import {
   Wrench,
   Search,
 } from "lucide-react";
+import { LockUnlockIcon } from "@/components/ui/animated-state-icons";
+import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 
 function scoreColor(score: number): string {
   if (score >= 80) return "text-green-500";
@@ -506,7 +508,7 @@ function AIDeploymentTab() {
 
           <div className="space-y-2">
             <Label htmlFor="data-residency" className="text-sm font-medium flex items-center gap-2">
-              <Lock className="h-4 w-4 text-muted-foreground" />
+              <LockUnlockIcon size={18} color="currentColor" />
               Data Residency
             </Label>
             <Select value={dataResidency} onValueChange={setDataResidency}>

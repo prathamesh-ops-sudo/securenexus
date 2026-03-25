@@ -29,6 +29,8 @@ import {
   Globe,
   Tag,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
+import { WindIcon, FogIcon } from "@/components/ui/animated-weather-icons";
 
 interface ThreatIntelArticle {
   id: string;

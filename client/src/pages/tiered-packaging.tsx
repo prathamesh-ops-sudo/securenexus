@@ -43,6 +43,7 @@ import {
   CheckCircle2,
   Table2,
 } from "lucide-react";
+import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
 
 interface PlanLimits {
   users: number;
@@ -963,7 +964,7 @@ export default function TieredPackagingPage() {
           <Card className="mt-4 glass">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <Lock className="h-4 w-4 text-muted-foreground" />
+                <LockUnlockIcon size={18} color="currentColor" />
                 Feature Gating
               </CardTitle>
             </CardHeader>
@@ -1028,7 +1029,7 @@ export default function TieredPackagingPage() {
                   <span>14-day free trial on all paid plans. No credit card required.</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                  <SuccessIcon size={12} color="#22c55e" />
                   <span>Full feature access during trial period with production-level limits.</span>
                 </div>
                 <div className="flex items-center gap-2">

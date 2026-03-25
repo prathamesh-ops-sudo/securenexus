@@ -64,6 +64,8 @@ import {
   CircleDot,
   Gauge,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { CloudIcon } from "@/components/ui/animated-weather-icons";
 import type { ConnectorJobRun, ConnectorHealthCheck } from "@shared/schema";
 
 interface ConnectorType {

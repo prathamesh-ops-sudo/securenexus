@@ -11,6 +11,7 @@ import {
   Workflow,
   CheckCircle2,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 const capabilities = [

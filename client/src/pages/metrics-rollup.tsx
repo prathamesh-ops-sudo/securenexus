@@ -22,6 +22,7 @@ import {
   Timer,
   Trash2,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -745,7 +746,7 @@ export default function MetricsRollupPage() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-400" />
+                      <SuccessIcon size={16} color="#22c55e" />
                       Last Rollup Result
                     </CardTitle>
                   </CardHeader>

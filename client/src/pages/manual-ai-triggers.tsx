@@ -16,6 +16,7 @@ import {
   Zap,
   Bot,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -159,7 +160,7 @@ export default function ManualAiTriggersPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     {r.status === "success" ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <SuccessIcon size={16} color="#22c55e" />
                     ) : (
                       <AlertTriangle className="h-4 w-4 text-red-500" />
                     )}

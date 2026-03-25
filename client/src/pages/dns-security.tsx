@@ -25,6 +25,7 @@ import {
   BarChart3,
   Clock,
 } from "lucide-react";
+import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
