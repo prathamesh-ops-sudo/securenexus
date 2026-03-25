@@ -36,8 +36,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Fix 22 empty .catch(() => {}) handlers with warn-level logging
-- [ ] 01-02-PLAN.md -- Eliminate any types in 6 critical modules (correlation, action dispatcher, auth, AI)
+- [x] 01-01-PLAN.md -- Fix 22 empty .catch(() => {}) handlers with warn-level logging
+- [x] 01-02-PLAN.md -- Eliminate any types in 6 critical modules (correlation, action dispatcher, auth, AI)
 
 ### Phase 2: Dependency Security & Build Hardening
 **Goal**: Known vulnerabilities are eliminated, runtime DDL hacks are replaced with proper migrations, and API keys can be safely rotated

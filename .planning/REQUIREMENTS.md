@@ -46,7 +46,7 @@ Requirements for production-hardening milestone. Each maps to roadmap phases.
 
 ### Code Quality
 
-- [ ] **QUAL-01**: Eliminate `any` types in 41 identified files — replace with explicit TypeScript interfaces (priority: correlation, action dispatcher, auth, AI)
+- [x] **QUAL-01**: Eliminate `any` types in 41 identified files — replace with explicit TypeScript interfaces (priority: correlation, action dispatcher, auth, AI)
 - [ ] **QUAL-02**: Replace 238 console.log/error calls across 78 files with structured `logger.child("module")` calls
 - [ ] **QUAL-03**: ESLint pre-commit hooks enforcing `no-console: error` and `@typescript-eslint/no-explicit-any: error`
 - [ ] **QUAL-04**: Fix 23 empty catch blocks with proper error handling or explicit logging
@@ -131,7 +131,7 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| QUAL-01 | Phase 1 | Pending |
+| QUAL-01 | Phase 1 | Complete |
 | QUAL-04 | Phase 1 | Pending |
 | SEC-01 | Phase 2 | Pending |
 | SEC-02 | Phase 2 | Pending |
